@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { can, Action } from '../../utils/rbac';
-import { AlertTriangle, ArrowLeft } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, LogOut } from 'lucide-react';
 
 interface RouteGuardProps {
   children: React.ReactNode;
@@ -16,7 +16,7 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
   resource = 'all',
   fallback 
 }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   if (!can(user, requiredAction, resource)) {
     if (fallback) {
@@ -36,13 +36,22 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
             </p>
           </div>
           
-          <button
-            onClick={() => window.history.back()}
-            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors mx-auto"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Return to Dashboard</span>
-          </button>
+          <div className="flex flex-col space-y-3">
+            <button
+              onClick={() => window.history.back()}
+              className="flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Return to Dashboard</span>
+            </button>
+            <button
+              onClick={logout}
+              className="flex items-center justify-center space-x-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
       </div>
     );
