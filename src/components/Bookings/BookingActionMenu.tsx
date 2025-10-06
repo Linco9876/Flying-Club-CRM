@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, Edit, Trash2, FileText, Eye, X } from 'lucide-react';
+import { MoreVertical, CreditCard as Edit, Trash2, FileText, Eye, X } from 'lucide-react';
 import { Booking } from '../../types';
 import { formatLocalDateTime } from '../../utils/timeUtils';
 
