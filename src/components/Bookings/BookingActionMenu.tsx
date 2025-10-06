@@ -100,7 +100,6 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
               {/* Log Flight / View Training Record */}
               {hasTrainingRecord ? (
                 <button
-                  onClick={() => handleAction(onViewTrainingRecord || (() => {}))}
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2 focus:outline-none focus:bg-gray-50"
                   role="menuitem"
                   onClick={(e) => {
