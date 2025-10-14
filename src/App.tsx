@@ -157,6 +157,8 @@ const AppContent: React.FC = () => {
         return <ReportsDashboard />;
       case 'safety':
         return <SafetyDashboard />;
+      case 'syllabus-management':
+        return <SyllabusManagementPage />;
       case 'profile':
         return <StudentProfile />;
       case 'settings':
@@ -236,6 +238,7 @@ const getRequiredActionForView = (view: string) => {
     'aircraft': 'view-aircraft',
     'maintenance': 'view-maintenance',
     'training': 'view-training',
+    'syllabus-management': 'view-training',
     'billing': 'view-billing',
     'reports': 'view-reports',
     'safety': 'view-safety',
