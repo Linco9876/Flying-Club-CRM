@@ -87,14 +87,14 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       });
       setCostStructure({
         aircraft: {
-          prepaid: aircraft.hourlyRate || 0,
-          payg: 0,
-          account: 0
+          prepaid: aircraft.aircraftRates?.prepaid || aircraft.hourlyRate || 0,
+          payg: aircraft.aircraftRates?.payg || 0,
+          account: aircraft.aircraftRates?.account || 0
         },
         instructor: {
-          prepaid: 85,
-          payg: 95,
-          account: 85
+          prepaid: aircraft.instructorRates?.prepaid || 85,
+          payg: aircraft.instructorRates?.payg || 95,
+          account: aircraft.instructorRates?.account || 85
         }
       });
     }

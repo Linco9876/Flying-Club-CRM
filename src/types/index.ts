@@ -43,6 +43,16 @@ export interface Aircraft {
   maxWeight?: number;
   tachStart?: number;
   defects: Defect[];
+  aircraftRates?: {
+    prepaid: number;
+    payg: number;
+    account: number;
+  };
+  instructorRates?: {
+    prepaid: number;
+    payg: number;
+    account: number;
+  };
 }
 
 export interface Booking {
