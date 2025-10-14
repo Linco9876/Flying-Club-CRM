@@ -36,7 +36,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     make: aircraft?.make || '',
     model: aircraft?.model || '',
     type: aircraft?.type || 'single-engine' as const,
-    tachStart: 0,
+    tachStart: aircraft?.totalHours || 0,
     fuelCapacity: 0,
     emptyWeight: 0,
     maxWeight: 0,

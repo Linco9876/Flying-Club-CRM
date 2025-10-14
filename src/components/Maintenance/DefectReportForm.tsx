@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
-import { mockAircraft, mockStudents } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
+import { useAircraft } from '../../hooks/useAircraft';
 import { Defect } from '../../types';
 import toast from 'react-hot-toast';
 
@@ -12,13 +12,14 @@ interface DefectReportFormProps {
   preSelectedAircraftId?: string;
 }
 
-export const DefectReportForm: React.FC<DefectReportFormProps> = ({ 
-  isOpen, 
-  onClose, 
+export const DefectReportForm: React.FC<DefectReportFormProps> = ({
+  isOpen,
+  onClose,
   onSubmit,
-  preSelectedAircraftId 
+  preSelectedAircraftId
 }) => {
   const { user } = useAuth();
+  const { aircraft } = useAircraft();
   const [formData, setFormData] = useState({
     aircraftId: preSelectedAircraftId || '',
     discoveredDateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm format
@@ -106,7 +107,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   if (!isOpen) return null;
 
-  const selectedAircraft = mockAircraft.find(a => a.id === formData.aircraftId);
+  const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -139,9 +140,9 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 disabled={!!preSelectedAircraftId}
               >
                 <option value="">Select aircraft</option>
-                {mockAircraft.map(aircraft => (
-                  <option key={aircraft.id} value={aircraft.id}>
-                    {aircraft.registration} - {aircraft.make} {aircraft.model}
+                {aircraft.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.registration} - {a.make} {a.model}
                   </option>
                 ))}
               </select>

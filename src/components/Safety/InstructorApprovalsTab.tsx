@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { mockStudents } from '../../data/mockData';
+import { useStudents } from '../../hooks/useStudents';
 import { Download, Search, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -16,11 +16,11 @@ interface InstructorApproval {
 }
 
 export const InstructorApprovalsTab: React.FC = () => {
+  const { students } = useStudents();
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Calculate instructor approval data
   const calculateInstructorApprovals = (): InstructorApproval[] => {
-    const instructors = mockStudents.filter(s => s.role === 'instructor');
+    const instructors = students.filter(s => s.role === 'instructor');
     const today = new Date();
 
     return instructors.map(instructor => {

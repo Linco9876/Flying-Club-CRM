@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
-import { mockDefects, mockAircraft } from '../../data/mockData';
 import { DefectReportForm } from './DefectReportForm';
-import { AlertTriangle, Wrench, CheckCircle, Plus, Camera } from 'lucide-react';
+import { AlertTriangle, Wrench, CheckCircle, Plus, Camera, Loader2 } from 'lucide-react';
+import { useAircraft } from '../../hooks/useAircraft';
 
 export const MaintenanceBoard: React.FC = () => {
+  const { aircraft, loading } = useAircraft();
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showDefectForm, setShowDefectForm] = useState(false);
 
-  const filteredDefects = selectedStatus === 'all' 
-    ? mockDefects 
-    : mockDefects.filter(defect => defect.status === selectedStatus);
+  const allDefects = aircraft.flatMap(a =>
+    a.defects.map(d => ({ ...d, aircraftId: a.id }))
+  );
+
+  const filteredDefects = selectedStatus === 'all'
+    ? allDefects
+    : allDefects.filter(defect => defect.status === selectedStatus);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -40,15 +45,22 @@ export const MaintenanceBoard: React.FC = () => {
   };
 
   const getAircraftRegistration = (aircraftId: string) => {
-    const aircraft = mockAircraft.find(a => a.id === aircraftId);
-    return aircraft?.registration || 'Unknown';
+    const a = aircraft.find(a => a.id === aircraftId);
+    return a?.registration || 'Unknown';
   };
 
   const handleDefectSubmit = (defectData: any) => {
-    // In a real app, this would save to backend
     console.log('Defect reported:', defectData);
     setShowDefectForm(false);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">

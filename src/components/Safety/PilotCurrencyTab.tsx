@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockStudents, mockBookings } from '../../data/mockData';
+import { useStudents } from '../../hooks/useStudents';
+import { useBookings } from '../../hooks/useBookings';
 import { Download, Search, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -18,24 +19,23 @@ interface PilotCurrency {
 
 export const PilotCurrencyTab: React.FC = () => {
   const { user } = useAuth();
+  const { students } = useStudents();
+  const { bookings } = useBookings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [endorsementFilter, setEndorsementFilter] = useState('');
 
-  // Calculate pilot currency data
   const calculatePilotCurrency = (): PilotCurrency[] => {
-    let pilots = mockStudents.filter(s => s.role === 'student');
-    
-    // If user is a student, only show their own currency
+    let pilots = students.filter(s => s.role === 'student');
+
     if (user?.role === 'student') {
       pilots = pilots.filter(p => p.id === user.id);
     }
-    
+
     const today = new Date();
 
     return pilots.map(pilot => {
-      // Find last flight
-      const pilotBookings = mockBookings.filter(b => 
+      const pilotBookings = bookings.filter(b =>
         b.studentId === pilot.id && b.status === 'completed'
       );
       const lastFlightDate = pilotBookings.length > 0 
