@@ -122,7 +122,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       model: formData.model,
       type: formData.type,
       status: formData.status,
-      totalHours: formData.totalHours,
+      totalHours: formData.tachStart,
       hourlyRate: costStructure.aircraft.prepaid,
       seatCapacity: formData.seatCapacity,
       fuelCapacity: formData.fuelCapacity,
@@ -360,7 +360,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
             <div className="space-y-4">
               <div>
                 <h4 className="text-md font-medium text-gray-800 mb-3">Aircraft Hourly Rates</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Prepaid ($)
@@ -391,27 +391,12 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Account ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.aircraft.account}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        aircraft: { ...prev.aircraft, account: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
                 </div>
               </div>
 
               <div>
                 <h4 className="text-md font-medium text-gray-800 mb-3">Instructor Hourly Rates</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Prepaid ($)
@@ -438,21 +423,6 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                       onChange={(e) => setCostStructure(prev => ({
                         ...prev,
                         instructor: { ...prev.instructor, payg: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Account ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.instructor.account}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        instructor: { ...prev.instructor, account: parseFloat(e.target.value) || 0 }
                       }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
