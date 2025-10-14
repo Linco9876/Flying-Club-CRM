@@ -1,20 +1,21 @@
 import React from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockStudents, mockTrainingRecords } from '../../data/mockData';
+import { mockTrainingRecords } from '../../data/mockData';
 import { StudentForm } from './StudentForm';
 import { StudentDetails } from './StudentDetails';
 import { Student } from '../../types';
-import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle } from 'lucide-react';
+import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useStudents } from '../../hooks/useStudents';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
+  const { students, loading, addStudent, updateStudent } = useStudents();
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showStudentDetails, setShowStudentDetails] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
-  const [students, setStudents] = useState(mockStudents);
 
   const getStudentStats = (studentId: string) => {
     const records = mockTrainingRecords.filter(r => r.studentId === studentId);
@@ -28,22 +29,16 @@ export const StudentList: React.FC = () => {
     return daysUntilExpiry <= 60;
   };
 
-  const handleAddStudent = (studentData: Omit<Student, 'id'>) => {
-    const newStudent: Student = {
-      ...studentData,
-      id: (students.length + 1).toString()
-    };
-    setStudents(prev => [...prev, newStudent]);
+  const handleAddStudent = async (studentData: Omit<Student, 'id'>) => {
+    await addStudent(studentData);
+    setShowStudentForm(false);
   };
 
-  const handleEditStudent = (studentData: Omit<Student, 'id'>) => {
+  const handleEditStudent = async (studentData: Omit<Student, 'id'>) => {
     if (editingStudent) {
-      const updatedStudent: Student = {
-        ...studentData,
-        id: editingStudent.id
-      };
-      setStudents(prev => prev.map(s => s.id === editingStudent.id ? updatedStudent : s));
+      await updateStudent(editingStudent.id, studentData);
       setEditingStudent(null);
+      setShowStudentForm(false);
     }
   };
 
@@ -65,6 +60,14 @@ export const StudentList: React.FC = () => {
     setShowStudentDetails(false);
     setViewingStudent(null);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">

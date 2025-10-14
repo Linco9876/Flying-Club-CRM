@@ -14,6 +14,8 @@ export interface Student extends User {
   medicalType?: string;
   medicalExpiry?: Date;
   licenceExpiry?: Date;
+  occupation?: string;
+  alternatePhone?: string;
   emergencyContact?: {
     name: string;
     phone: string;

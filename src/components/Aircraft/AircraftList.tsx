@@ -1,35 +1,29 @@
 import React from 'react';
 import { useState } from 'react';
-import { mockAircraft } from '../../data/mockData';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft } from '../../types';
-import { Plane, Wrench, AlertTriangle, CheckCircle, Flag } from 'lucide-react';
+import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAircraft } from '../../hooks/useAircraft';
 
 export const AircraftList: React.FC = () => {
+  const { aircraft, loading, addAircraft, updateAircraft } = useAircraft();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
   const [selectedAircraftForDefect, setSelectedAircraftForDefect] = useState<string>('');
-  const [aircraft, setAircraft] = useState(mockAircraft);
 
-  const handleAddAircraft = (aircraftData: Omit<Aircraft, 'id'>) => {
-    const newAircraft: Aircraft = {
-      ...aircraftData,
-      id: (aircraft.length + 1).toString()
-    };
-    setAircraft(prev => [...prev, newAircraft]);
+  const handleAddAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'>) => {
+    await addAircraft(aircraftData);
+    setShowAircraftForm(false);
   };
 
-  const handleEditAircraft = (aircraftData: Omit<Aircraft, 'id'>) => {
+  const handleEditAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'>) => {
     if (editingAircraft) {
-      const updatedAircraft: Aircraft = {
-        ...aircraftData,
-        id: editingAircraft.id
-      };
-      setAircraft(prev => prev.map(a => a.id === editingAircraft.id ? updatedAircraft : a));
+      await updateAircraft(editingAircraft.id, aircraftData);
       setEditingAircraft(null);
+      setShowAircraftForm(false);
     }
   };
 
@@ -42,6 +36,14 @@ export const AircraftList: React.FC = () => {
     setShowAircraftForm(false);
     setEditingAircraft(null);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   const handleReportDefect = (aircraftId: string) => {
     setSelectedAircraftForDefect(aircraftId);

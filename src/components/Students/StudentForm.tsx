@@ -27,7 +27,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     dateOfBirth: student?.dateOfBirth?.toISOString().split('T')[0] || '',
     medicalType: student?.medicalType || '',
     medicalExpiry: student?.medicalExpiry?.toISOString().split('T')[0] || '',
-    licenceExpiry: student?.licenceExpiry?.toISOString().split('T')[0] || '',
+    membershipExpiry: student?.licenceExpiry?.toISOString().split('T')[0] || '',
+    occupation: student?.occupation || '',
+    alternatePhone: student?.alternatePhone || '',
     prepaidBalance: student?.prepaidBalance || 0,
     emergencyContact: {
       name: student?.emergencyContact?.name || '',
@@ -64,9 +66,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       return;
     }
 
-    // Conditional validation for RAAus licence expiry
-    if (formData.raausId && !formData.licenceExpiry) {
-      toast.error('Licence expiry is required when RAAus ID is provided');
+    // Conditional validation for RAAus membership expiry
+    if (formData.raausId && !formData.membershipExpiry) {
+      toast.error('Membership expiry is required when RAAus ID is provided');
       return;
     }
 
@@ -80,7 +82,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       role: 'student' as const,
       dateOfBirth: formData.dateOfBirth ? new Date(formData.dateOfBirth) : undefined,
       medicalExpiry: formData.medicalExpiry ? new Date(formData.medicalExpiry) : undefined,
-      licenceExpiry: formData.licenceExpiry ? new Date(formData.licenceExpiry) : undefined,
+      licenceExpiry: formData.membershipExpiry ? new Date(formData.membershipExpiry) : undefined,
+      occupation: formData.occupation || undefined,
+      alternatePhone: formData.alternatePhone || undefined,
       emergencyContact: formData.emergencyContact.name ? formData.emergencyContact : undefined
     };
 
@@ -192,6 +196,19 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Alternate Contact Number
+                </label>
+                <input
+                  type="tel"
+                  value={formData.alternatePhone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, alternatePhone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="+61 400 123 456"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Date of Birth
                 </label>
                 <input
@@ -199,6 +216,19 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   value={formData.dateOfBirth}
                   onChange={(e) => setFormData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Occupation
+                </label>
+                <input
+                  type="text"
+                  value={formData.occupation}
+                  onChange={(e) => setFormData(prev => ({ ...prev, occupation: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Engineer, Teacher"
                 />
               </div>
             </div>
@@ -226,12 +256,12 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Licence Expiry
+                  Membership Expiry
                 </label>
                 <input
                   type="date"
-                  value={formData.licenceExpiry}
-                  onChange={(e) => setFormData(prev => ({ ...prev, licenceExpiry: e.target.value }))}
+                  value={formData.membershipExpiry}
+                  onChange={(e) => setFormData(prev => ({ ...prev, membershipExpiry: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required={!!formData.raausId}
                 />
@@ -378,6 +408,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
               <h4 className="text-sm font-medium text-gray-700 mb-3">Add Endorsement</h4>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
+                  <label className="block text-xs text-gray-600 mb-1">Type</label>
                   <select
                     value={newEndorsement.type}
                     onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value as any }))}
@@ -389,24 +420,24 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs text-gray-600 mb-1">Obtained</label>
                   <input
                     type="date"
                     value={newEndorsement.dateObtained}
                     onChange={(e) => setNewEndorsement(prev => ({ ...prev, dateObtained: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Date Obtained"
                   />
                 </div>
                 <div>
+                  <label className="block text-xs text-gray-600 mb-1">Expiry</label>
                   <input
                     type="date"
                     value={newEndorsement.expiryDate}
                     onChange={(e) => setNewEndorsement(prev => ({ ...prev, expiryDate: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Expiry Date (Optional)"
                   />
                 </div>
-                <div>
+                <div className="flex items-end">
                   <button
                     type="button"
                     onClick={addEndorsement}

@@ -1,6 +1,5 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { mockAircraft, mockStudents } from '../../data/mockData';
 import { Booking } from '../../types';
 import { Calendar, Clock, Plane, User, MapPin } from 'lucide-react';
 import { BookingActionMenu } from './BookingActionMenu';
@@ -8,6 +7,8 @@ import { FlightLogForm } from './FlightLogForm';
 import BookingForm from './BookingForm';
 import { isPastBooking } from '../../utils/timeUtils';
 import toast from 'react-hot-toast';
+import { useAircraft } from '../../hooks/useAircraft';
+import { useStudents } from '../../hooks/useStudents';
 
 interface BookingsListProps {
   bookings: Booking[];
@@ -16,30 +17,30 @@ interface BookingsListProps {
   onOpenTrainingRecord?: (booking: Booking) => void;
 }
 
-export const BookingsList: React.FC<BookingsListProps> = ({ 
-  bookings, 
+export const BookingsList: React.FC<BookingsListProps> = ({
+  bookings,
   onUpdateBooking,
   onDeleteBooking,
-  onOpenTrainingRecord 
+  onOpenTrainingRecord
 }) => {
   const { user } = useAuth();
+  const { aircraft } = useAircraft();
+  const { students } = useStudents();
   const [showFlightLogForm, setShowFlightLogForm] = React.useState(false);
   const [showEditForm, setShowEditForm] = React.useState(false);
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null);
-  
-  const userBookings = user?.role === 'student' 
+
+  const userBookings = user?.role === 'student'
     ? bookings.filter(b => b.studentId === user.id)
     : bookings;
 
   const getAircraftInfo = (aircraftId: string) => {
-    return mockAircraft.find(a => a.id === aircraftId);
+    return aircraft.find(a => a.id === aircraftId);
   };
-
 
   const handleFlightLog = (flightLogData: any) => {
     if (selectedBooking && onUpdateBooking) {
-      // Update student balance
-      const student = mockStudents.find(s => s.id === selectedBooking.studentId);
+      const student = students.find(s => s.id === selectedBooking.studentId);
       if (student) {
         student.prepaidBalance -= flightLogData.totalCost;
       }
