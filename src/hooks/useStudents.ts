@@ -86,19 +86,37 @@ export const useStudents = () => {
 
   const addStudent = async (studentData: Omit<Student, 'id'>) => {
     try {
-      const { data: userData, error: userError } = await supabase
+      const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
+
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: studentData.email,
+        password: tempPassword,
+        options: {
+          data: {
+            name: studentData.name,
+            role: 'student'
+          },
+          emailRedirectTo: undefined
+        }
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Failed to create user');
+
+      const { error: userError } = await supabase
         .from('users')
         .insert({
+          id: authData.user.id,
           email: studentData.email,
           name: studentData.name,
           role: 'student',
           phone: studentData.phone,
           avatar_url: studentData.avatar
-        })
-        .select()
-        .single();
+        });
 
       if (userError) throw userError;
+
+      const userData = { id: authData.user.id };
 
       const { error: studentError } = await supabase
         .from('students')
