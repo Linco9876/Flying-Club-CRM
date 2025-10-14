@@ -77,10 +77,10 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         make: aircraft.make,
         model: aircraft.model,
         type: aircraft.type,
-        tachStart: aircraft.totalHours || 0,
-        fuelCapacity: 0,
-        emptyWeight: 0,
-        maxWeight: 0,
+        tachStart: aircraft.tachStart || aircraft.totalHours || 0,
+        fuelCapacity: aircraft.fuelCapacity || 0,
+        emptyWeight: aircraft.emptyWeight || 0,
+        maxWeight: aircraft.maxWeight || 0,
         seatCapacity: aircraft.seatCapacity || 2,
         status: aircraft.status,
         totalHours: aircraft.totalHours || 0
@@ -116,10 +116,19 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       return;
     }
 
-    const aircraftData: Omit<Aircraft, 'id'> = {
-      ...formData,
-      hourlyRate: costStructure.aircraft.prepaid, // Use prepaid as default rate
-      defects: aircraft?.defects || [],
+    const aircraftData: Omit<Aircraft, 'id' | 'defects'> = {
+      registration: formData.registration,
+      make: formData.make,
+      model: formData.model,
+      type: formData.type,
+      status: formData.status,
+      totalHours: formData.totalHours,
+      hourlyRate: costStructure.aircraft.prepaid,
+      seatCapacity: formData.seatCapacity,
+      fuelCapacity: formData.fuelCapacity,
+      emptyWeight: formData.emptyWeight,
+      maxWeight: formData.maxWeight,
+      tachStart: formData.tachStart,
       lastMaintenance: aircraft?.lastMaintenance,
       nextMaintenance: aircraft?.nextMaintenance
     };

@@ -52,9 +52,14 @@ export const useAircraft = () => {
         type: a.type,
         status: a.status,
         hourlyRate: parseFloat(a.hourly_rate),
-        totalHours: parseFloat(a.total_hours),
+        totalHours: a.total_hours ? parseFloat(a.total_hours) : 0,
         lastMaintenance: a.last_maintenance ? new Date(a.last_maintenance) : undefined,
         nextMaintenance: a.next_maintenance ? new Date(a.next_maintenance) : undefined,
+        seatCapacity: a.seat_capacity,
+        fuelCapacity: a.fuel_capacity ? parseFloat(a.fuel_capacity) : undefined,
+        emptyWeight: a.empty_weight ? parseFloat(a.empty_weight) : undefined,
+        maxWeight: a.max_weight ? parseFloat(a.max_weight) : undefined,
+        tachStart: a.total_hours ? parseFloat(a.total_hours) : 0,
         defects: defectsMap.get(a.id) || []
       }));
 
@@ -79,10 +84,14 @@ export const useAircraft = () => {
           model: aircraftData.model,
           type: aircraftData.type,
           status: aircraftData.status,
-          hourly_rate: aircraftData.hourlyRate,
-          total_hours: aircraftData.totalHours,
+          hourly_rate: aircraftData.hourlyRate || 0,
+          total_hours: aircraftData.totalHours || 0,
           last_maintenance: aircraftData.lastMaintenance,
-          next_maintenance: aircraftData.nextMaintenance
+          next_maintenance: aircraftData.nextMaintenance,
+          seat_capacity: aircraftData.seatCapacity || 2,
+          fuel_capacity: aircraftData.fuelCapacity || null,
+          empty_weight: aircraftData.emptyWeight || null,
+          max_weight: aircraftData.maxWeight || null
         });
 
       if (error) throw error;
@@ -108,6 +117,10 @@ export const useAircraft = () => {
       if (aircraftData.totalHours !== undefined) updateData.total_hours = aircraftData.totalHours;
       if (aircraftData.lastMaintenance !== undefined) updateData.last_maintenance = aircraftData.lastMaintenance;
       if (aircraftData.nextMaintenance !== undefined) updateData.next_maintenance = aircraftData.nextMaintenance;
+      if (aircraftData.seatCapacity !== undefined) updateData.seat_capacity = aircraftData.seatCapacity;
+      if (aircraftData.fuelCapacity !== undefined) updateData.fuel_capacity = aircraftData.fuelCapacity;
+      if (aircraftData.emptyWeight !== undefined) updateData.empty_weight = aircraftData.emptyWeight;
+      if (aircraftData.maxWeight !== undefined) updateData.max_weight = aircraftData.maxWeight;
 
       const { error } = await supabase
         .from('aircraft')

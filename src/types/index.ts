@@ -37,6 +37,11 @@ export interface Aircraft {
   totalHours: number;
   lastMaintenance?: Date;
   nextMaintenance?: Date;
+  seatCapacity?: number;
+  fuelCapacity?: number;
+  emptyWeight?: number;
+  maxWeight?: number;
+  tachStart?: number;
   defects: Defect[];
 }
 

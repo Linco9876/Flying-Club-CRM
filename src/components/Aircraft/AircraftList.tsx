@@ -259,6 +259,23 @@ export const AircraftList: React.FC = () => {
                 </div>
               </div>
 
+              {(viewingAircraft.fuelCapacity || viewingAircraft.emptyWeight || viewingAircraft.maxWeight) && (
+                <div className="grid grid-cols-3 gap-6">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-1">Fuel Capacity</h3>
+                    <p className="text-gray-900">{viewingAircraft.fuelCapacity ? `${viewingAircraft.fuelCapacity} L` : 'N/A'}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-1">Empty Weight</h3>
+                    <p className="text-gray-900">{viewingAircraft.emptyWeight ? `${viewingAircraft.emptyWeight} kg` : 'N/A'}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-1">Max Weight</h3>
+                    <p className="text-gray-900">{viewingAircraft.maxWeight ? `${viewingAircraft.maxWeight} kg` : 'N/A'}</p>
+                  </div>
+                </div>
+              )}
+
               {viewingAircraft.lastMaintenance && (
                 <div className="grid grid-cols-2 gap-6">
                   <div>
