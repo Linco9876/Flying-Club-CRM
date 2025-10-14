@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 interface AircraftFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (aircraft: Omit<Aircraft, 'id'>) => void;
+  onSubmit: (aircraft: any) => void;
   aircraft?: Aircraft;
   isEdit?: boolean;
 }
@@ -51,7 +51,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   }>({
     aircraft: {
       prepaid: aircraft?.hourlyRate || 0,
-      payg: aircraft?.hourlyRate ? aircraft.hourlyRate * 1.1 : 0,
+      payg: aircraft?.hourlyRate ? parseFloat((aircraft.hourlyRate * 1.1).toFixed(2)) : 0,
       account: aircraft?.hourlyRate || 0
     },
     instructor: {
@@ -88,7 +88,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       setCostStructure({
         aircraft: {
           prepaid: aircraft.hourlyRate || 0,
-          payg: aircraft.hourlyRate ? aircraft.hourlyRate * 1.1 : 0,
+          payg: aircraft.hourlyRate ? parseFloat((aircraft.hourlyRate * 1.1).toFixed(2)) : 0,
           account: aircraft.hourlyRate || 0
         },
         instructor: {
@@ -116,7 +116,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       return;
     }
 
-    const aircraftData: Omit<Aircraft, 'id' | 'defects'> = {
+    const aircraftData = {
       registration: formData.registration,
       make: formData.make,
       model: formData.model,
@@ -130,7 +130,27 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       maxWeight: formData.maxWeight,
       tachStart: formData.tachStart,
       lastMaintenance: aircraft?.lastMaintenance,
-      nextMaintenance: aircraft?.nextMaintenance
+      nextMaintenance: aircraft?.nextMaintenance,
+      aircraftRates: {
+        prepaid: costStructure.aircraft.prepaid,
+        payg: costStructure.aircraft.payg,
+        account: costStructure.aircraft.account
+      },
+      instructorRates: {
+        prepaid: costStructure.instructor.prepaid,
+        payg: costStructure.instructor.payg,
+        account: costStructure.instructor.account
+      },
+      milestones: maintenanceMilestones.map(m => ({
+        title: m.title,
+        dueCondition: m.dueCondition,
+        dueValue: m.dueValue
+      })),
+      documents: uploadedFiles.map(f => ({
+        name: f.name,
+        type: f.type,
+        size: f.size
+      }))
     };
 
     onSubmit(aircraftData);

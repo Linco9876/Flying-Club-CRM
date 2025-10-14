@@ -74,9 +74,14 @@ export const useAircraft = () => {
     }
   };
 
-  const addAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'>) => {
+  const addAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'> & {
+    aircraftRates?: { prepaid: number; payg: number; account: number };
+    instructorRates?: { prepaid: number; payg: number; account: number };
+    milestones?: Array<{ title: string; dueCondition: string; dueValue: string }>;
+    documents?: Array<{ name: string; type: string; size: number }>;
+  }) => {
     try {
-      const { error } = await supabase
+      const { data: newAircraft, error } = await supabase
         .from('aircraft')
         .insert({
           registration: aircraftData.registration,
@@ -92,9 +97,51 @@ export const useAircraft = () => {
           fuel_capacity: aircraftData.fuelCapacity || null,
           empty_weight: aircraftData.emptyWeight || null,
           max_weight: aircraftData.maxWeight || null
-        });
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (newAircraft && aircraftData.aircraftRates) {
+        await supabase.from('aircraft_rates').insert([
+          { aircraft_id: newAircraft.id, rate_type: 'aircraft_prepaid', amount: aircraftData.aircraftRates.prepaid },
+          { aircraft_id: newAircraft.id, rate_type: 'aircraft_payg', amount: aircraftData.aircraftRates.payg },
+          { aircraft_id: newAircraft.id, rate_type: 'aircraft_account', amount: aircraftData.aircraftRates.account }
+        ]);
+      }
+
+      if (newAircraft && aircraftData.instructorRates) {
+        await supabase.from('aircraft_rates').insert([
+          { aircraft_id: newAircraft.id, rate_type: 'instructor_prepaid', amount: aircraftData.instructorRates.prepaid },
+          { aircraft_id: newAircraft.id, rate_type: 'instructor_payg', amount: aircraftData.instructorRates.payg },
+          { aircraft_id: newAircraft.id, rate_type: 'instructor_account', amount: aircraftData.instructorRates.account }
+        ]);
+      }
+
+      if (newAircraft && aircraftData.milestones && aircraftData.milestones.length > 0) {
+        await supabase.from('maintenance_milestones').insert(
+          aircraftData.milestones.map(m => ({
+            aircraft_id: newAircraft.id,
+            title: m.title,
+            due_condition: m.dueCondition,
+            due_value: m.dueValue
+          }))
+        );
+      }
+
+      if (newAircraft && aircraftData.documents && aircraftData.documents.length > 0) {
+        await supabase.from('aircraft_documents').insert(
+          aircraftData.documents.map(d => ({
+            aircraft_id: newAircraft.id,
+            filename: d.name,
+            file_path: `/documents/${newAircraft.id}/${d.name}`,
+            file_type: d.type,
+            file_size: d.size,
+            uploaded_by: null
+          }))
+        );
+      }
 
       await fetchAircraft();
       toast.success('Aircraft added successfully');
