@@ -104,23 +104,29 @@ export const useAircraft = () => {
       if (error) throw error;
 
       if (newAircraft && aircraftData.aircraftRates) {
-        await supabase.from('aircraft_rates').insert([
+        const { error: ratesError } = await supabase.from('aircraft_rates').insert([
           { aircraft_id: newAircraft.id, rate_type: 'aircraft_prepaid', amount: aircraftData.aircraftRates.prepaid },
           { aircraft_id: newAircraft.id, rate_type: 'aircraft_payg', amount: aircraftData.aircraftRates.payg },
           { aircraft_id: newAircraft.id, rate_type: 'aircraft_account', amount: aircraftData.aircraftRates.account }
         ]);
+        if (ratesError) {
+          console.error('Error saving aircraft rates:', ratesError);
+        }
       }
 
       if (newAircraft && aircraftData.instructorRates) {
-        await supabase.from('aircraft_rates').insert([
+        const { error: instructorRatesError } = await supabase.from('aircraft_rates').insert([
           { aircraft_id: newAircraft.id, rate_type: 'instructor_prepaid', amount: aircraftData.instructorRates.prepaid },
           { aircraft_id: newAircraft.id, rate_type: 'instructor_payg', amount: aircraftData.instructorRates.payg },
           { aircraft_id: newAircraft.id, rate_type: 'instructor_account', amount: aircraftData.instructorRates.account }
         ]);
+        if (instructorRatesError) {
+          console.error('Error saving instructor rates:', instructorRatesError);
+        }
       }
 
       if (newAircraft && aircraftData.milestones && aircraftData.milestones.length > 0) {
-        await supabase.from('maintenance_milestones').insert(
+        const { error: milestonesError } = await supabase.from('maintenance_milestones').insert(
           aircraftData.milestones.map(m => ({
             aircraft_id: newAircraft.id,
             title: m.title,
@@ -128,10 +134,13 @@ export const useAircraft = () => {
             due_value: m.dueValue
           }))
         );
+        if (milestonesError) {
+          console.error('Error saving milestones:', milestonesError);
+        }
       }
 
       if (newAircraft && aircraftData.documents && aircraftData.documents.length > 0) {
-        await supabase.from('aircraft_documents').insert(
+        const { error: documentsError } = await supabase.from('aircraft_documents').insert(
           aircraftData.documents.map(d => ({
             aircraft_id: newAircraft.id,
             filename: d.name,
@@ -141,6 +150,9 @@ export const useAircraft = () => {
             uploaded_by: null
           }))
         );
+        if (documentsError) {
+          console.error('Error saving documents:', documentsError);
+        }
       }
 
       await fetchAircraft();

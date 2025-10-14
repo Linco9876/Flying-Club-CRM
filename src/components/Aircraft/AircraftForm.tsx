@@ -51,8 +51,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   }>({
     aircraft: {
       prepaid: aircraft?.hourlyRate || 0,
-      payg: aircraft?.hourlyRate ? parseFloat((aircraft.hourlyRate * 1.1).toFixed(2)) : 0,
-      account: aircraft?.hourlyRate || 0
+      payg: 0,
+      account: 0
     },
     instructor: {
       prepaid: 85,
@@ -88,8 +88,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       setCostStructure({
         aircraft: {
           prepaid: aircraft.hourlyRate || 0,
-          payg: aircraft.hourlyRate ? parseFloat((aircraft.hourlyRate * 1.1).toFixed(2)) : 0,
-          account: aircraft.hourlyRate || 0
+          payg: 0,
+          account: 0
         },
         instructor: {
           prepaid: 85,
