@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plane, Save, Upload, Plus, Trash2 } from 'lucide-react';
 import { Aircraft } from '../../types';
 import toast from 'react-hot-toast';
@@ -69,6 +69,36 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   });
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+
+  useEffect(() => {
+    if (aircraft && isEdit) {
+      setFormData({
+        registration: aircraft.registration,
+        make: aircraft.make,
+        model: aircraft.model,
+        type: aircraft.type,
+        tachStart: aircraft.totalHours || 0,
+        fuelCapacity: 0,
+        emptyWeight: 0,
+        maxWeight: 0,
+        seatCapacity: aircraft.seatCapacity || 2,
+        status: aircraft.status,
+        totalHours: aircraft.totalHours || 0
+      });
+      setCostStructure({
+        aircraft: {
+          prepaid: aircraft.hourlyRate || 0,
+          payg: aircraft.hourlyRate ? aircraft.hourlyRate * 1.1 : 0,
+          account: aircraft.hourlyRate || 0
+        },
+        instructor: {
+          prepaid: 85,
+          payg: 95,
+          account: 85
+        }
+      });
+    }
+  }, [aircraft, isEdit]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

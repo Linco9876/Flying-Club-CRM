@@ -19,7 +19,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
   preSelectedAircraftId
 }) => {
   const { user } = useAuth();
-  const { aircraft } = useAircraft();
+  const { aircraft, loading } = useAircraft();
   const [formData, setFormData] = useState({
     aircraftId: preSelectedAircraftId || '',
     discoveredDateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm format
@@ -137,15 +137,22 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
-                disabled={!!preSelectedAircraftId}
+                disabled={!!preSelectedAircraftId || loading}
               >
-                <option value="">Select aircraft</option>
+                <option value="">
+                  {loading ? 'Loading aircraft...' : aircraft.length === 0 ? 'No aircraft available' : 'Select aircraft'}
+                </option>
                 {aircraft.map(a => (
                   <option key={a.id} value={a.id}>
                     {a.registration} - {a.make} {a.model}
                   </option>
                 ))}
               </select>
+              {aircraft.length === 0 && !loading && (
+                <p className="text-xs text-red-600 mt-1">
+                  No aircraft found. Please add aircraft first.
+                </p>
+              )}
             </div>
 
             <div>
