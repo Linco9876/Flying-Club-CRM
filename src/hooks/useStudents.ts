@@ -86,6 +86,17 @@ export const useStudents = () => {
 
   const addStudent = async (studentData: Omit<Student, 'id'>) => {
     try {
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('email')
+        .eq('email', studentData.email)
+        .maybeSingle();
+
+      if (existingUser) {
+        toast.error('A user with this email already exists');
+        throw new Error('User with this email already exists');
+      }
+
       const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -100,7 +111,13 @@ export const useStudents = () => {
         }
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        if (authError.message.includes('already registered')) {
+          toast.error('A user with this email already exists');
+          throw new Error('User with this email already exists');
+        }
+        throw authError;
+      }
       if (!authData.user) throw new Error('Failed to create user');
 
       const { error: userError } = await supabase
@@ -159,6 +176,9 @@ export const useStudents = () => {
       toast.success('Student added successfully');
     } catch (err) {
       console.error('Error adding student:', err);
+      if (err instanceof Error && err.message.includes('already exists')) {
+        return;
+      }
       toast.error('Failed to add student');
       throw err;
     }
