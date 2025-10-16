@@ -84,18 +84,35 @@ export const useBookings = () => {
         .select();
 
       if (error) {
-        console.error('Supabase error:', error);
-        throw error;
+        console.error('Supabase error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          full: error
+        });
+        const errorMsg = error.message || error.details || 'Unknown database error';
+        toast.error(`Failed to create booking: ${errorMsg}`);
+        throw new Error(errorMsg);
       }
 
       console.log('Booking created:', data);
 
       await fetchBookings();
       toast.success('Booking created successfully');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error adding booking:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create booking';
-      toast.error(`Failed to create booking: ${errorMessage}`);
+      console.error('Error details:', {
+        message: err?.message,
+        details: err?.details,
+        hint: err?.hint,
+        code: err?.code
+      });
+
+      const errorMessage = err?.message || err?.details || 'Unknown error occurred';
+      if (!err?.message?.includes('Failed to create booking')) {
+        toast.error(`Failed to create booking: ${errorMessage}`);
+      }
       throw err;
     }
   };
