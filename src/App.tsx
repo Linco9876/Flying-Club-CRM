@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { mockBookings } from './data/mockData';
+import { useBookings } from './hooks/useBookings';
 import { Booking } from './types';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
@@ -27,10 +27,10 @@ import { format } from 'date-fns';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
+  const { bookings, loading: bookingsLoading, addBooking, updateBooking, deleteBooking } = useBookings();
   const [activeView, setActiveView] = useState('dashboard');
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [showTrainingRecordForm, setShowTrainingRecordForm] = useState(false);
-  const [bookings, setBookings] = useState<Booking[]>(mockBookings);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [selectedBookingForRecord, setSelectedBookingForRecord] = useState<Booking | null>(null);
   const [bookingFormData, setBookingFormData] = useState<{
@@ -39,7 +39,7 @@ const AppContent: React.FC = () => {
     endTime?: string;
   }>({});
 
-  if (isLoading) {
+  if (isLoading || bookingsLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
@@ -87,41 +87,55 @@ const handleNewBookingWithResource = (
   setShowBookingForm(true);
 };
   
-  const handleBookingSubmit = (bookingData: any) => {
-    const newBooking: Booking = {
-      id: (bookings.length + 1).toString(),
-      studentId: bookingData.studentId,
-      instructorId: bookingData.instructorId || undefined,
-      aircraftId: bookingData.aircraftId,
-      startTime: new Date(`${bookingData.date}T${bookingData.startTime}`),
-      endTime: new Date(`${bookingData.endDate}T${bookingData.endTime}`),
-      paymentType: bookingData.paymentType,
-      notes: bookingData.notes,
-      status: 'confirmed'
-    };
-    setBookings(prev => [...prev, newBooking]);
-    toast.success('Booking created successfully!');
-  };
-
-  const handleUpdateBooking = (bookingId: string, updates: Partial<Booking>) => {
-    setBookings(prev => prev.map(booking => 
-      booking.id === bookingId ? { ...booking, ...updates } : booking
-    ));
-  };
-
-  const handleTrainingRecordSubmit = (recordData: any) => {
-    // In a real app, this would save to backend
-    console.log('Training record submitted:', recordData);
-    
-    // Update booking status if needed
-    if (selectedBookingForRecord) {
-      setBookings(prev => prev.map(booking => 
-        booking.id === selectedBookingForRecord.id 
-          ? { ...booking, status: 'completed' as const }
-          : booking
-      ));
+  const handleBookingSubmit = async (bookingData: any) => {
+    try {
+      if (editingBooking) {
+        await updateBooking(editingBooking.id, {
+          studentId: bookingData.studentId,
+          instructorId: bookingData.instructorId || undefined,
+          aircraftId: bookingData.aircraftId,
+          startTime: new Date(`${bookingData.date}T${bookingData.startTime}`),
+          endTime: new Date(`${bookingData.endDate}T${bookingData.endTime}`),
+          paymentType: bookingData.paymentType,
+          notes: bookingData.notes,
+          status: editingBooking.status
+        });
+      } else {
+        await addBooking({
+          studentId: bookingData.studentId,
+          instructorId: bookingData.instructorId || undefined,
+          aircraftId: bookingData.aircraftId,
+          startTime: new Date(`${bookingData.date}T${bookingData.startTime}`),
+          endTime: new Date(`${bookingData.endDate}T${bookingData.endTime}`),
+          paymentType: bookingData.paymentType,
+          notes: bookingData.notes,
+          status: 'confirmed'
+        });
+      }
+    } catch (error) {
+      console.error('Error saving booking:', error);
     }
-    
+  };
+
+  const handleUpdateBooking = async (bookingId: string, updates: Partial<Booking>) => {
+    try {
+      await updateBooking(bookingId, updates);
+    } catch (error) {
+      console.error('Error updating booking:', error);
+    }
+  };
+
+  const handleTrainingRecordSubmit = async (recordData: any) => {
+    console.log('Training record submitted:', recordData);
+
+    if (selectedBookingForRecord) {
+      try {
+        await updateBooking(selectedBookingForRecord.id, { status: 'completed' as const });
+      } catch (error) {
+        console.error('Error updating booking status:', error);
+      }
+    }
+
     setShowTrainingRecordForm(false);
     setSelectedBookingForRecord(null);
   };
@@ -146,11 +160,15 @@ const handleNewBookingWithResource = (
           onUpdateBooking={handleUpdateBooking}
         />;
       case 'bookings':
-        return <BookingsList 
-          bookings={bookings} 
+        return <BookingsList
+          bookings={bookings}
           onUpdateBooking={handleUpdateBooking}
-          onDeleteBooking={(bookingId) => {
-            setBookings(prev => prev.filter(b => b.id !== bookingId));
+          onDeleteBooking={async (bookingId) => {
+            try {
+              await deleteBooking(bookingId);
+            } catch (error) {
+              console.error('Error deleting booking:', error);
+            }
           }}
           onOpenTrainingRecord={handleOpenTrainingRecord}
         />;
@@ -167,7 +185,7 @@ const handleNewBookingWithResource = (
       case 'safety':
         return <SafetyDashboard />;
       case 'syllabus-management':
-        return <SyllabusManagementPage />;
+        return <Dashboard />;
       case 'profile':
         return <StudentProfile />;
       case 'settings':
