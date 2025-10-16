@@ -65,10 +65,18 @@ export const useBookings = () => {
     try {
       console.log('Creating booking with data:', bookingData);
 
+      // Validate required fields
+      if (!bookingData.studentId || bookingData.studentId.trim() === '') {
+        throw new Error('Student is required');
+      }
+      if (!bookingData.aircraftId || bookingData.aircraftId.trim() === '') {
+        throw new Error('Aircraft is required');
+      }
+
       const insertData = {
-        student_id: bookingData.studentId || null,
+        student_id: bookingData.studentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
-        aircraft_id: bookingData.aircraftId || null,
+        aircraft_id: bookingData.aircraftId,
         start_time: bookingData.startTime.toISOString(),
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
@@ -120,9 +128,21 @@ export const useBookings = () => {
   const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>) => {
     try {
       const updateData: any = {};
-      if (bookingData.studentId !== undefined) updateData.student_id = bookingData.studentId || null;
-      if (bookingData.instructorId !== undefined) updateData.instructor_id = bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null;
-      if (bookingData.aircraftId !== undefined) updateData.aircraft_id = bookingData.aircraftId || null;
+      if (bookingData.studentId !== undefined) {
+        if (!bookingData.studentId || bookingData.studentId.trim() === '') {
+          throw new Error('Student is required');
+        }
+        updateData.student_id = bookingData.studentId;
+      }
+      if (bookingData.instructorId !== undefined) {
+        updateData.instructor_id = bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null;
+      }
+      if (bookingData.aircraftId !== undefined) {
+        if (!bookingData.aircraftId || bookingData.aircraftId.trim() === '') {
+          throw new Error('Aircraft is required');
+        }
+        updateData.aircraft_id = bookingData.aircraftId;
+      }
       if (bookingData.startTime !== undefined) updateData.start_time = bookingData.startTime.toISOString();
       if (bookingData.endTime !== undefined) updateData.end_time = bookingData.endTime.toISOString();
       if (bookingData.paymentType !== undefined) updateData.payment_type = bookingData.paymentType;
