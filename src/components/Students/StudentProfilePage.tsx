@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { mockStudents, mockTrainingRecords, mockAircraft } from '../../data/mockData';
-import { TrainingRecord, Student } from '../../types';
-import { 
-  ArrowLeft, 
+import { TrainingRecord } from '../../types';
+import {
+  ArrowLeft,
   User, 
   Phone, 
   Mail, 
@@ -20,6 +19,10 @@ import {
   Filter
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useStudents } from '../../hooks/useStudents';
+import { useTrainingRecords } from '../../hooks/useTrainingRecords';
+import { useAircraft } from '../../hooks/useAircraft';
+import { useUsers } from '../../hooks/useUsers';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -29,15 +32,38 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const { studentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [student, setStudent] = useState<Student | null>(null);
-  const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [recordsLoading, setRecordsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('profile');
   const [showMatrixView, setShowMatrixView] = useState(true);
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
   const [instructorFilter, setInstructorFilter] = useState('');
+
+  const { students, loading: studentsLoading } = useStudents();
+  const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
+  const { aircraft: aircraftList } = useAircraft();
+  const { users } = useUsers();
+
+  const student = useMemo(() => {
+    if (!studentId) {
+      return null;
+    }
+    return students.find(s => s.id === studentId) ?? null;
+  }, [students, studentId]);
+
+  const studentTrainingRecords = useMemo(
+    () => trainingRecords.filter(record => record.studentId === studentId),
+    [trainingRecords, studentId]
+  );
+
+  useEffect(() => {
+    if (!studentsLoading && studentId && !student) {
+      toast.error('Student not found');
+      navigate('/students');
+    }
+  }, [studentsLoading, studentId, student, navigate]);
+
+  const loading = studentsLoading;
+  const recordsLoading = trainingRecordsLoading;
 
   // Syllabus sequences for competency matrix
   const syllabusSequences = [
@@ -63,44 +89,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     { code: 'PT', label: 'Practice Flight Test / Flight Test' }
   ];
 
-  useEffect(() => {
-    // Simulate API call to fetch student
-    const fetchStudent = async () => {
-      setLoading(true);
-      try {
-        const foundStudent = mockStudents.find(s => s.id === studentId);
-        if (foundStudent) {
-          setStudent(foundStudent);
-        } else {
-          toast.error('Student not found');
-          navigate('/students');
-        }
-      } catch (error) {
-        toast.error('Failed to load student profile');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // Simulate API call to fetch training records
-    const fetchTrainingRecords = async () => {
-      setRecordsLoading(true);
-      try {
-        const records = mockTrainingRecords.filter(r => r.studentId === studentId);
-        setTrainingRecords(records);
-      } catch (error) {
-        toast.error('Failed to load training records');
-      } finally {
-        setRecordsLoading(false);
-      }
-    };
-
-    if (studentId) {
-      fetchStudent();
-      fetchTrainingRecords();
-    }
-  }, [studentId, navigate]);
-
   const handleAddTrainingRecord = () => {
     if (onOpenTrainingRecord && student) {
       // Create a mock booking for the training record form
@@ -108,7 +96,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
         id: 'new-record',
         studentId: student.id,
         instructorId: user?.id,
-        aircraftId: mockAircraft[0]?.id || '1',
+        aircraftId: aircraftList[0]?.id || '',
         startTime: new Date(),
         endTime: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours later
         paymentType: 'prepaid' as const,
@@ -161,16 +149,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   };
 
   // Apply filters to training records
-  const filteredRecords = trainingRecords.filter(record => {
+  const filteredRecords = studentTrainingRecords.filter(record => {
     const matchesDateRange = (!dateFilter.start || record.date >= new Date(dateFilter.start)) &&
                             (!dateFilter.end || record.date <= new Date(dateFilter.end));
     const matchesAircraft = !aircraftFilter || record.registration === aircraftFilter;
     const matchesInstructor = !instructorFilter || record.instructorId === instructorFilter;
-    
+
     return matchesDateRange && matchesAircraft && matchesInstructor;
   });
 
-  const sortedRecords = [...filteredRecords].sort((a, b) => 
+  const sortedRecords = [...filteredRecords].sort((a, b) =>
     new Date(b.date).getTime() - new Date(a.date).getTime()
   );
 
@@ -222,11 +210,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     );
   }
 
-  const totalDualTime = trainingRecords.reduce((sum, record) => sum + record.dualTimeMin, 0);
-  const totalSoloTime = trainingRecords.reduce((sum, record) => sum + record.soloTimeMin, 0);
+  const totalDualTime = studentTrainingRecords.reduce((sum, record) => sum + record.dualTimeMin, 0);
+  const totalSoloTime = studentTrainingRecords.reduce((sum, record) => sum + record.soloTimeMin, 0);
   const totalFlightTime = totalDualTime + totalSoloTime;
-  const lastFlightDate = trainingRecords.length > 0 
-    ? new Date(Math.max(...trainingRecords.map(r => r.date.getTime())))
+  const lastFlightDate = studentTrainingRecords.length > 0
+    ? new Date(Math.max(...studentTrainingRecords.map(r => r.date.getTime())))
     : null;
 
   const isExpiryNear = (date?: Date) => {
@@ -447,13 +435,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg">
                   <p className="text-sm font-medium text-blue-900">Lessons Completed</p>
-                  <p className="text-2xl font-bold text-blue-600">{trainingRecords.length}</p>
+                  <p className="text-2xl font-bold text-blue-600">{studentTrainingRecords.length}</p>
                 </div>
-                
+
                 <div className="bg-green-50 p-4 rounded-lg">
                   <p className="text-sm font-medium text-green-900">Competent Sequences</p>
                   <p className="text-2xl font-bold text-green-600">
-                    {trainingRecords.reduce((sum, r) => sum + r.sequences.filter(s => s.competence === 'C').length, 0)}
+                    {studentTrainingRecords.reduce((sum, r) => sum + r.sequences.filter(s => s.competence === 'C').length, 0)}
                   </p>
                 </div>
                 
@@ -465,7 +453,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                 </div>
               </div>
 
-              {trainingRecords.length === 0 ? (
+              {studentTrainingRecords.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No training records yet</h3>
@@ -484,8 +472,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                 <div>
                   <h3 className="text-md font-medium text-gray-900 mb-3">Recent Training Activity</h3>
                   <div className="space-y-3">
-                    {trainingRecords.slice(0, 5).map(record => {
-                      const instructor = mockStudents.find(s => s.id === record.instructorId);
+                    {studentTrainingRecords.slice(0, 5).map(record => {
+                      const instructor = users.find(u => u.id === record.instructorId);
                       return (
                         <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                           <div>
@@ -493,7 +481,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                               {record.date.toLocaleDateString()} - {record.registration}
                             </p>
                             <p className="text-xs text-gray-600">
-                              {instructor?.name} | {formatDecimalTime(record.dualTimeMin + record.soloTimeMin)}h
+                              {instructor?.name || 'Unknown'} | {formatDecimalTime(record.dualTimeMin + record.soloTimeMin)}h
                             </p>
                           </div>
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
@@ -558,7 +546,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">All Aircraft</option>
-                  {Array.from(new Set(trainingRecords.map(r => r.registration))).map(reg => (
+                  {Array.from(new Set(studentTrainingRecords.map(r => r.registration))).map(reg => (
                     <option key={reg} value={reg}>{reg}</option>
                   ))}
                 </select>
@@ -571,7 +559,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">All Instructors</option>
-                  {mockStudents.filter(s => s.role === 'instructor').map(instructor => (
+                  {users.filter(u => u.role === 'instructor' || u.role === 'admin').map(instructor => (
                     <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
                   ))}
                 </select>
@@ -672,7 +660,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {sortedRecords.map(record => {
-                          const instructor = mockStudents.find(s => s.id === record.instructorId);
+                          const instructor = users.find(u => u.id === record.instructorId);
                           return (
                             <tr key={record.id} className="hover:bg-gray-50">
                               {/* Sticky columns */}
@@ -713,7 +701,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
               {!showMatrixView && (
                 <div className="space-y-4">
                   {sortedRecords.map(record => {
-                    const instructor = mockStudents.find(s => s.id === record.instructorId);
+                    const instructor = users.find(u => u.id === record.instructorId);
                     const totalTime = (record.dualTimeMin + record.soloTimeMin) / 60;
                     
                     return (
