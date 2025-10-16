@@ -23,6 +23,7 @@ import { SafetyDashboard } from './components/Safety/SafetyDashboard';
 import { TrainingRecordForm } from './components/Training/TrainingRecordForm';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import toast from 'react-hot-toast';
+import { format } from 'date-fns';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -52,32 +53,40 @@ const AppContent: React.FC = () => {
   if (!user) {
     return <LoginForm />;
   }
-  const handleNewBookingWithTime = (date: Date, startTime: string, endTime?: string) => {
-    setBookingFormData({
-      date: date.toISOString().split('T')[0],
-      startTime,
-      endTime
-    });
-    setShowBookingForm(true);
-  };
+const handleNewBookingWithTime = (
+  date: Date,
+  startTime: string,
+  endTime?: string
+) => {
+  setBookingFormData({
+    date: format(date, 'yyyy-MM-dd'),  // use local date
+    startTime,
+    endTime,
+  });
+  setShowBookingForm(true);
+};
 
-  const handleNewBookingWithResource = (date: Date, startTime: string, endTime?: string, resourceId?: string, resourceType?: 'aircraft' | 'instructor') => {
-    const formData: any = {
-      date: date.toISOString().split('T')[0],
-      startTime,
-      endTime
-    };
-    
-    if (resourceType === 'aircraft') {
-      formData.aircraftId = resourceId;
-    } else if (resourceType === 'instructor') {
-      formData.instructorId = resourceId;
-    }
-    
-    setBookingFormData(formData);
-    setShowBookingForm(true);
+const handleNewBookingWithResource = (
+  date: Date,
+  startTime: string,
+  endTime?: string,
+  resourceId?: string,
+  resourceType?: 'aircraft' | 'instructor'
+) => {
+  const formData: any = {
+    date: format(date, 'yyyy-MM-dd'),  // use local date
+    startTime,
+    endTime,
   };
-
+  if (resourceType === 'aircraft') {
+    formData.aircraftId = resourceId;
+  } else if (resourceType === 'instructor') {
+    formData.instructorId = resourceId;
+  }
+  setBookingFormData(formData);
+  setShowBookingForm(true);
+};
+  
   const handleBookingSubmit = (bookingData: any) => {
     const newBooking: Booking = {
       id: (bookings.length + 1).toString(),
