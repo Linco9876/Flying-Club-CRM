@@ -98,7 +98,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
 
     const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
-    if (selectedAircraft?.status !== 'serviceable') {
+    if (selectedAircraft && selectedAircraft.status !== 'serviceable') {
       toast.error('Selected aircraft is not serviceable');
       return;
     }
