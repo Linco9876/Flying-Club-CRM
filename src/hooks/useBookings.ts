@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Booking, FlightLog } from '../types';
+import { Booking, FlightLog, BookingConflict } from '../types';
 import toast from 'react-hot-toast';
 
 export const useBookings = () => {
@@ -47,6 +47,7 @@ export const useBookings = () => {
         paymentType: b.payment_type,
         notes: b.notes,
         status: b.status,
+        hasConflict: b.has_conflict || false,
         flightLog: flightLogsMap.get(b.id)
       }));
 
@@ -71,6 +72,27 @@ export const useBookings = () => {
       }
       if (!bookingData.aircraftId || bookingData.aircraftId.trim() === '') {
         throw new Error('Aircraft is required');
+      }
+
+      // Check for conflicts before creating booking
+      const { data: conflicts, error: conflictError } = await supabase
+        .rpc('check_booking_conflicts', {
+          p_booking_id: null,
+          p_aircraft_id: bookingData.aircraftId,
+          p_instructor_id: bookingData.instructorId || null,
+          p_start_time: bookingData.startTime.toISOString(),
+          p_end_time: bookingData.endTime.toISOString()
+        });
+
+      if (conflictError) {
+        console.error('Error checking conflicts:', conflictError);
+      }
+
+      if (conflicts && conflicts.length > 0) {
+        const conflictMessages = conflicts.map((c: BookingConflict) =>
+          `${c.conflictType === 'aircraft' ? 'Aircraft' : 'Instructor'} is already booked during this time`
+        );
+        throw new Error(conflictMessages.join('. '));
       }
 
       const insertData = {

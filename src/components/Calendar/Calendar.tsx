@@ -686,7 +686,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                 return (
                   <div
                     key={`${booking.id}-${resource.id}`}
-                    className={`bg-blue-500 text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move hover:bg-blue-600 transition-colors z-10 border border-blue-600 ${
+                    className={`${
+                      booking.hasConflict
+                        ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                        : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
+                    } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                       draggedBooking?.id === booking.id
                         ? 'opacity-75'
                         : ''
@@ -1091,7 +1095,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-aircraft`}
-                      className={`bg-blue-500 text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move hover:bg-blue-600 transition-colors z-10 border border-blue-600 ${
+                      className={`${
+                        booking.hasConflict
+                          ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                          : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
+                      } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         draggedBooking?.id === booking.id ? 'opacity-75' : ''
                       }`}
                       style={{
@@ -1146,7 +1154,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-instructor`}
-                      className={`bg-green-500 text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move hover:bg-green-600 transition-colors z-10 border border-green-600 ${
+                      className={`${
+                        booking.hasConflict
+                          ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                          : 'bg-green-500 border-green-600 hover:bg-green-600'
+                      } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         draggedBooking?.id === booking.id ? 'opacity-75' : ''
                       }`}
                       style={{

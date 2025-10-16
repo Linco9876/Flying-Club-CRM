@@ -5,6 +5,7 @@ export interface User {
   role: 'admin' | 'instructor' | 'student';
   phone?: string;
   avatar?: string;
+  isAvailable?: boolean;
 }
 
 export interface Student extends User {
@@ -42,6 +43,7 @@ export interface Aircraft {
   emptyWeight?: number;
   maxWeight?: number;
   tachStart?: number;
+  isAvailable?: boolean;
   defects: Defect[];
   aircraftRates?: {
     prepaid: number;
@@ -65,6 +67,7 @@ export interface Booking {
   paymentType: 'prepaid' | 'payg' | 'account';
   notes?: string;
   status: 'confirmed' | 'cancelled' | 'completed' | 'no-show';
+  hasConflict?: boolean;
   flightLog?: FlightLog;
 }
 
@@ -172,4 +175,21 @@ export interface InvoiceItem {
   quantity: number;
   rate: number;
   total: number;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: 'conflict' | 'cancellation' | 'reminder' | 'system';
+  title: string;
+  message: string;
+  bookingId?: string;
+  isRead: boolean;
+  createdAt: Date;
+}
+
+export interface BookingConflict {
+  conflictType: 'aircraft' | 'instructor';
+  conflictWith: string;
+  conflictingBookingId: string;
 }

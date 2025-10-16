@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Plane, Bell, User, LogOut } from 'lucide-react';
+import { Plane, User, LogOut } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 
 export const Header: React.FC = () => {
   const { user, logout } = useAuth();
@@ -29,10 +30,8 @@ export const Header: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-4">
-            <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
-              <Bell className="h-5 w-5" />
-            </button>
-            
+            <NotificationBell />
+
             <div className="flex items-center space-x-3">
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-900">{user?.name}</p>
