@@ -63,26 +63,39 @@ export const useBookings = () => {
 
   const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>) => {
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .insert({
-          student_id: bookingData.studentId,
-          instructor_id: bookingData.instructorId,
-          aircraft_id: bookingData.aircraftId,
-          start_time: bookingData.startTime.toISOString(),
-          end_time: bookingData.endTime.toISOString(),
-          payment_type: bookingData.paymentType,
-          notes: bookingData.notes,
-          status: bookingData.status
-        });
+      console.log('Creating booking with data:', bookingData);
 
-      if (error) throw error;
+      const insertData = {
+        student_id: bookingData.studentId,
+        instructor_id: bookingData.instructorId || null,
+        aircraft_id: bookingData.aircraftId,
+        start_time: bookingData.startTime.toISOString(),
+        end_time: bookingData.endTime.toISOString(),
+        payment_type: bookingData.paymentType,
+        notes: bookingData.notes || null,
+        status: bookingData.status
+      };
+
+      console.log('Insert data:', insertData);
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .insert(insertData)
+        .select();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Booking created:', data);
 
       await fetchBookings();
       toast.success('Booking created successfully');
     } catch (err) {
       console.error('Error adding booking:', err);
-      toast.error('Failed to create booking');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create booking';
+      toast.error(`Failed to create booking: ${errorMessage}`);
       throw err;
     }
   };

@@ -89,28 +89,38 @@ const handleNewBookingWithResource = (
   
   const handleBookingSubmit = async (bookingData: any) => {
     try {
+      console.log('Form data received:', bookingData);
+
+      const startTime = new Date(`${bookingData.date}T${bookingData.startTime}`);
+      const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}`);
+
+      console.log('Parsed times:', { startTime, endTime });
+
       if (editingBooking) {
         await updateBooking(editingBooking.id, {
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
           aircraftId: bookingData.aircraftId,
-          startTime: new Date(`${bookingData.date}T${bookingData.startTime}`),
-          endTime: new Date(`${bookingData.endDate}T${bookingData.endTime}`),
+          startTime,
+          endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
           status: editingBooking.status
         });
       } else {
-        await addBooking({
+        const newBookingData = {
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
           aircraftId: bookingData.aircraftId,
-          startTime: new Date(`${bookingData.date}T${bookingData.startTime}`),
-          endTime: new Date(`${bookingData.endDate}T${bookingData.endTime}`),
+          startTime,
+          endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
-          status: 'confirmed'
-        });
+          status: 'confirmed' as const
+        };
+
+        console.log('Creating new booking:', newBookingData);
+        await addBooking(newBookingData);
       }
     } catch (error) {
       console.error('Error saving booking:', error);
