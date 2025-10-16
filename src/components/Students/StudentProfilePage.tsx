@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { mockStudents, mockTrainingRecords, mockAircraft } from '../../data/mockData';
+import { mockTrainingRecords, mockAircraft } from '../../data/mockData';
 import { TrainingRecord, Student } from '../../types';
+import { useStudents } from '../../hooks/useStudents';
 import { 
   ArrowLeft, 
   User, 
@@ -29,9 +30,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const { studentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { students, loading: studentsLoading } = useStudents();
   const [student, setStudent] = useState<Student | null>(null);
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [recordsLoading, setRecordsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('profile');
   const [showMatrixView, setShowMatrixView] = useState(true);
@@ -64,25 +65,18 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   ];
 
   useEffect(() => {
-    // Simulate API call to fetch student
-    const fetchStudent = async () => {
-      setLoading(true);
-      try {
-        const foundStudent = mockStudents.find(s => s.id === studentId);
-        if (foundStudent) {
-          setStudent(foundStudent);
-        } else {
-          toast.error('Student not found');
-          navigate('/students');
-        }
-      } catch (error) {
-        toast.error('Failed to load student profile');
-      } finally {
-        setLoading(false);
+    if (!studentsLoading && studentId) {
+      const foundStudent = students.find(s => s.id === studentId);
+      if (foundStudent) {
+        setStudent(foundStudent);
+      } else {
+        toast.error('Student not found');
+        navigate('/students');
       }
-    };
+    }
+  }, [studentId, students, studentsLoading, navigate]);
 
-    // Simulate API call to fetch training records
+  useEffect(() => {
     const fetchTrainingRecords = async () => {
       setRecordsLoading(true);
       try {
@@ -96,10 +90,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     };
 
     if (studentId) {
-      fetchStudent();
       fetchTrainingRecords();
     }
-  }, [studentId, navigate]);
+  }, [studentId]);
 
   const handleAddTrainingRecord = () => {
     if (onOpenTrainingRecord && student) {
@@ -174,7 +167,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     new Date(b.date).getTime() - new Date(a.date).getTime()
   );
 
-  if (loading) {
+  if (studentsLoading) {
     return (
       <div className="p-6">
         <div className="animate-pulse">
