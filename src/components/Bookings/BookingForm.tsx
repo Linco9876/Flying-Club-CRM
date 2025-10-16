@@ -191,6 +191,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 value={formData.startTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                step={900}
                 required={isFieldRequired('startTime', userRole)}
               />
             </div>
@@ -221,6 +222,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 value={formData.endTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                step={900}
                 required={isFieldRequired('endTime', userRole)}
               />
             </div>

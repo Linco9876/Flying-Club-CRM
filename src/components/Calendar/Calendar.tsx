@@ -216,15 +216,18 @@ export const Calendar: React.FC<CalendarProps> = ({
   const getTimeSlots = () => {
     const slots = [];
     for (let hour = 6; hour < 20; hour++) {
-      slots.push(hour * 2); // 30-minute slots: 12, 13, 14, etc.
-      slots.push(hour * 2 + 1);
+      // 15-minute slots: 24, 25, 26, 27, etc.
+      slots.push(hour * 4);
+      slots.push(hour * 4 + 1);
+      slots.push(hour * 4 + 2);
+      slots.push(hour * 4 + 3);
     }
     return slots;
   };
 
   const getTimeFromSlot = (slot: number) => {
-    const hour = Math.floor(slot / 2);
-    const minute = (slot % 2) * 30;
+    const hour = Math.floor(slot / 4);
+    const minute = (slot % 4) * 15;
     return { hour, minute };
   };
 
@@ -296,16 +299,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     const startMinute = startTime.getMinutes();
 
     // Calculate position from 6:00 AM start
-    const startSlot =
-      (startHour - 6) * 2 + (startMinute >= 30 ? 1 : 0);
+    const startSlot = (startHour - 6) * 4 + Math.floor(startMinute / 15);
     const durationMs = endTime.getTime() - startTime.getTime();
     const durationHours = durationMs / (1000 * 60 * 60);
-    const durationInSlots = Math.max(1, Math.ceil(durationHours * 2));
+    const durationInSlots = Math.max(1, Math.ceil(durationHours * 4));
+    const remainderMinutes = startMinute % 15;
+    const minuteHeight = slotHeight / 15;
 
     return {
       gridRowStart: startSlot + 2, // +2 because grid starts with header row
       gridRowEnd: startSlot + 2 + durationInSlots,
-      marginTop: startMinute % 30 === 0 ? 0 : `${startMinute % 30}px`,
+      marginTop:
+        remainderMinutes === 0 ? 0 : remainderMinutes * minuteHeight,
     };
   };
 
@@ -364,7 +369,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     if (onNewBookingWithTime) {
       const startTime = formatTimeSlot(slot);
-      const endTime = formatTimeSlot(slot + 2); // Default 1 hour booking
+      const endTime = formatTimeSlot(slot + 4); // Default 1 hour booking
       onNewBookingWithTime(
         date,
         startTime,
@@ -607,17 +612,22 @@ export const Calendar: React.FC<CalendarProps> = ({
                     resource.id,
                     resource.type
                   );
+                  const isQuarterSlot = slot % 4 === 1 || slot % 4 === 3;
+                  const cursorClass = unavailability
+                    ? 'cursor-not-allowed'
+                    : 'cursor-pointer';
+                  const backgroundClass = unavailability
+                    ? ''
+                    : isInDragRange
+                    ? 'bg-blue-100'
+                    : isQuarterSlot
+                    ? 'bg-blue-50 hover:bg-blue-100'
+                    : 'hover:bg-gray-50';
 
                   return (
                     <div
                       key={`${resource.id}-${slot}`}
-                      className={`border-r border-gray-200 border-b border-gray-100 relative cursor-pointer transition-colors ${
-                        unavailability
-                          ? 'cursor-not-allowed'
-                          : isInDragRange
-                          ? 'bg-blue-100'
-                          : 'hover:bg-gray-50'
-                      }`}
+                      className={`border-r border-gray-200 border-b border-gray-100 relative transition-colors ${cursorClass} ${backgroundClass}`}
                       style={{
                         height: slotHeight,
                         gridColumn: resourceIndex + 2,
@@ -682,6 +692,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                 currentDate
               ).map((booking) => {
                 const position = getBookingPosition(booking);
+                const bookingStart = new Date(booking.startTime);
+                const bookingEnd = new Date(booking.endTime);
+                const startOffset = bookingStart.getMinutes() % 30;
+                const endOffset = bookingEnd.getMinutes() % 30;
+                const showHalfHourMarker = startOffset === 15 || endOffset === 15;
 
                 return (
                   <div
@@ -690,7 +705,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       booking.hasConflict
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
-                    } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                    } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                       draggedBooking?.id === booking.id
                         ? 'opacity-75'
                         : ''
@@ -719,6 +734,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                       }
                     }}
                   >
+                    {showHalfHourMarker && (
+                      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                    )}
                     <div className="font-medium text-xs truncate">
                       {resource.type === 'aircraft'
                         ? resource.name
@@ -920,17 +938,22 @@ export const Calendar: React.FC<CalendarProps> = ({
                       dayIndex
                     );
                     const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                    const isQuarterSlot = slot % 4 === 1 || slot % 4 === 3;
+                    const cursorClass = unavailability
+                      ? 'cursor-not-allowed'
+                      : 'cursor-pointer';
+                    const backgroundClass = unavailability
+                      ? ''
+                      : isInDragRange
+                      ? 'bg-blue-100'
+                      : isQuarterSlot
+                      ? 'bg-blue-50 hover:bg-blue-100'
+                      : 'hover:bg-gray-50';
 
                     daySlots.push(
                       <div
                         key={`${dayIndex}-aircraft-${slot}`}
-                        className={`border-r border-gray-200 border-b border-gray-100 relative cursor-pointer transition-colors ${
-                          unavailability
-                            ? 'cursor-not-allowed'
-                            : isInDragRange
-                            ? 'bg-blue-100'
-                            : 'hover:bg-gray-50'
-                        }`}
+                        className={`border-r border-gray-200 border-b border-gray-100 relative transition-colors ${cursorClass} ${backgroundClass}`}
                         style={{
                           height: slotHeight,
                           gridColumn: columnIndex + 2,
@@ -1003,17 +1026,22 @@ export const Calendar: React.FC<CalendarProps> = ({
                       dayIndex
                     );
                     const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                    const isQuarterSlot = slot % 4 === 1 || slot % 4 === 3;
+                    const cursorClass = unavailability
+                      ? 'cursor-not-allowed'
+                      : 'cursor-pointer';
+                    const backgroundClass = unavailability
+                      ? ''
+                      : isInDragRange
+                      ? 'bg-blue-100'
+                      : isQuarterSlot
+                      ? 'bg-blue-50 hover:bg-blue-100'
+                      : 'hover:bg-gray-50';
 
                     daySlots.push(
                       <div
                         key={`${dayIndex}-instructor-${slot}`}
-                        className={`border-r border-gray-200 border-b border-gray-100 relative cursor-pointer transition-colors ${
-                          unavailability
-                            ? 'cursor-not-allowed'
-                            : isInDragRange
-                            ? 'bg-blue-100'
-                            : 'hover:bg-gray-50'
-                        }`}
+                        className={`border-r border-gray-200 border-b border-gray-100 relative transition-colors ${cursorClass} ${backgroundClass}`}
                         style={{
                           height: slotHeight,
                           gridColumn: columnIndex + 2,
@@ -1091,6 +1119,12 @@ export const Calendar: React.FC<CalendarProps> = ({
 
                 aircraftBookings.forEach((booking) => {
                   const position = getBookingPosition(booking);
+                  const bookingStart = new Date(booking.startTime);
+                  const bookingEnd = new Date(booking.endTime);
+                  const startOffset = bookingStart.getMinutes() % 30;
+                  const endOffset = bookingEnd.getMinutes() % 30;
+                  const showHalfHourMarker =
+                    startOffset === 15 || endOffset === 15;
 
                   bookingElements.push(
                     <div
@@ -1099,7 +1133,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
-                      } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                      } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         draggedBooking?.id === booking.id ? 'opacity-75' : ''
                       }`}
                       style={{
@@ -1116,6 +1150,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }
                       }}
                     >
+                      {showHalfHourMarker && (
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                      )}
                       <div className="font-medium text-xs truncate">
                         Aircraft
                       </div>
@@ -1150,6 +1187,12 @@ export const Calendar: React.FC<CalendarProps> = ({
 
                 instructorBookings.forEach((booking) => {
                   const position = getBookingPosition(booking);
+                  const bookingStart = new Date(booking.startTime);
+                  const bookingEnd = new Date(booking.endTime);
+                  const startOffset = bookingStart.getMinutes() % 30;
+                  const endOffset = bookingEnd.getMinutes() % 30;
+                  const showHalfHourMarker =
+                    startOffset === 15 || endOffset === 15;
 
                   bookingElements.push(
                     <div
@@ -1158,7 +1201,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-green-500 border-green-600 hover:bg-green-600'
-                      } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                      } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         draggedBooking?.id === booking.id ? 'opacity-75' : ''
                       }`}
                       style={{
@@ -1175,6 +1218,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }
                       }}
                     >
+                      {showHalfHourMarker && (
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                      )}
                       <div className="font-medium text-xs truncate">
                         Instructor
                       </div>

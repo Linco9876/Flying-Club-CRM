@@ -29,7 +29,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({ isVi
   const timeSlot = getTimeSlotFromMinutes(currentMinutes);
   
   // Don't show if outside calendar hours (6 AM - 8 PM)
-  if (timeSlot < 0 || timeSlot >= 28) return null; // 28 slots = 14 hours * 2
+  if (timeSlot < 0 || timeSlot >= 56) return null; // 56 slots = 14 hours * 4
 
   // Calculate position within the calendar grid
   const startHour = 6; // 6:00 AM
