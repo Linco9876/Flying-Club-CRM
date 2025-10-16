@@ -30,6 +30,7 @@ import { PortalUxSettings } from './PortalUxSettings';
 import { RolesPermissionsSettings } from './RolesPermissionsSettings';
 import { AuditDataSettings } from './AuditDataSettings';
 import { PersonalPreferencesSettings } from './PersonalPreferencesSettings';
+import { BookingFieldSettings } from './BookingFieldSettings';
 import toast from 'react-hot-toast';
 
 interface SettingsSection {
@@ -51,6 +52,7 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'organisation', label: 'Organisation', icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
     { id: 'calendar', label: 'Calendar', icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
     { id: 'booking-rules', label: 'Bookings & Rules', icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
+    { id: 'booking-fields', label: 'Booking Form Fields', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BookingFieldSettings },
     { id: 'roster', label: 'Roster & Availability', icon: <Users className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
     { id: 'training', label: 'Training / Syllabus', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: DocumentsTemplatesSettings },
     { id: 'billing', label: 'Billing & Rates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },

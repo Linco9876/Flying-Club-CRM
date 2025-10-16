@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { X, Calendar, Clock, Plane, User, CreditCard } from 'lucide-react';
-import { mockAircraft, mockStudents } from '../../data/mockData';
+import { X, Calendar, Clock, Plane, User, CreditCard, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useAircraft } from '../../hooks/useAircraft';
+import { useUsers } from '../../hooks/useUsers';
+import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
+import { Booking } from '../../types';
 import toast from 'react-hot-toast';
 
 interface BookingFormProps {
@@ -21,6 +24,9 @@ interface BookingFormProps {
 
 const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, prefilledData }) => {
   const { user } = useAuth();
+  const { aircraft, loading: aircraftLoading } = useAircraft();
+  const { users, getInstructors, loading: usersLoading } = useUsers();
+  const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const [formData, setFormData] = useState({
     studentId: booking?.studentId || (user?.role === 'student' ? user.id : ''),
     date: booking ? format(new Date(booking.startTime), 'yyyy-MM-dd') : (prefilledData?.date || format(new Date(), 'yyyy-MM-dd')),
@@ -59,17 +65,49 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   }, [prefilledData, booking]);
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validation
-    if (!formData.studentId || !formData.aircraftId || !formData.date || !formData.endDate || !formData.startTime || !formData.endTime) {
-      toast.error('Please fill in all required fields');
+
+    const userRole = user?.role || 'student';
+
+    if (isFieldRequired('pilot', userRole) && !formData.studentId) {
+      toast.error('Pilot is required');
+      return;
+    }
+    if (isFieldRequired('aircraft', userRole) && !formData.aircraftId) {
+      toast.error('Aircraft is required');
+      return;
+    }
+    if (isFieldRequired('startDate', userRole) && !formData.date) {
+      toast.error('Start date is required');
+      return;
+    }
+    if (isFieldRequired('startTime', userRole) && !formData.startTime) {
+      toast.error('Start time is required');
+      return;
+    }
+    if (isFieldRequired('endDate', userRole) && !formData.endDate) {
+      toast.error('End date is required');
+      return;
+    }
+    if (isFieldRequired('endTime', userRole) && !formData.endTime) {
+      toast.error('End time is required');
+      return;
+    }
+    if (isFieldRequired('paymentType', userRole) && !formData.paymentType) {
+      toast.error('Payment type is required');
       return;
     }
 
-    // Check aircraft availability
-    const aircraft = mockAircraft.find(a => a.id === formData.aircraftId);
-    if (aircraft?.status !== 'serviceable') {
+    const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
+    if (selectedAircraft?.status !== 'serviceable') {
       toast.error('Selected aircraft is not serviceable');
+      return;
+    }
+
+    const startDateTime = new Date(`${formData.date}T${formData.startTime}`);
+    const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
+
+    if (endDateTime <= startDateTime) {
+      toast.error('End time must be after start time');
       return;
     }
 
@@ -79,7 +117,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
   if (!isOpen) return null;
 
-  const availableAircraft = mockAircraft.filter(a => a.status === 'serviceable');
+  const availableAircraft = aircraft.filter(a => a.status === 'serviceable');
+  const instructors = getInstructors();
+  const userRole = user?.role || 'student';
+  const isLoading = aircraftLoading || usersLoading;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -97,132 +138,152 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {(user?.role === 'admin' || user?.role === 'instructor') && (
+          {isLoading && (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          )}
+
+          {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <User className="h-4 w-4 inline mr-2" />
-                Student *
+                Pilot {isFieldRequired('pilot', userRole) && <span className="text-red-500">*</span>}
               </label>
               <select
                 value={formData.studentId}
                 onChange={(e) => setFormData(prev => ({ ...prev, studentId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
+                required={isFieldRequired('pilot', userRole)}
               >
-                <option value="">Select a student</option>
-                {mockStudents.map(student => (
-                  <option key={student.id} value={student.id}>
-                    {student.name} - {student.email}
+                <option value="">Select a pilot</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} - {u.email}
                   </option>
                 ))}
               </select>
             </div>
           )}
 
+          {!isLoading && isFieldVisible('startDate', userRole) && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Date *
+                Start Date {isFieldRequired('startDate', userRole) && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                required
+                required={isFieldRequired('startDate', userRole)}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <Clock className="h-4 w-4 inline mr-2" />
-                Start Time *
+                Start Time {isFieldRequired('startTime', userRole) && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="time"
                 value={formData.startTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                required
+                required={isFieldRequired('startTime', userRole)}
               />
             </div>
           </div>
+          )}
 
+          {!isLoading && isFieldVisible('endDate', userRole) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Date *
+                End Date {isFieldRequired('endDate', userRole) && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="date"
                 value={formData.endDate}
                 onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                required
+                required={isFieldRequired('endDate', userRole)}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Time *
+                End Time {isFieldRequired('endTime', userRole) && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="time"
                 value={formData.endTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                required
+                required={isFieldRequired('endTime', userRole)}
               />
             </div>
           </div>
+          )}
 
+          {!isLoading && isFieldVisible('aircraft', userRole) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Plane className="h-4 w-4 inline mr-2" />
-              Aircraft *
+              Aircraft {isFieldRequired('aircraft', userRole) && <span className="text-red-500">*</span>}
             </label>
             <select
               value={formData.aircraftId}
               onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
+              required={isFieldRequired('aircraft', userRole)}
             >
               <option value="">Select an aircraft</option>
-              {availableAircraft.map(aircraft => (
-                <option key={aircraft.id} value={aircraft.id}>
-                  {aircraft.registration} - {aircraft.make} {aircraft.model} (${aircraft.hourlyRate}/hr)
+              {availableAircraft.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.registration} - {a.make} {a.model} (${a.hourlyRate}/hr)
                 </option>
               ))}
             </select>
           </div>
 
+            {isFieldVisible('instructor', userRole) && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Instructor (Optional)
+                Instructor {isFieldRequired('instructor', userRole) ? <span className="text-red-500">*</span> : '(Optional)'}
               </label>
               <select
                 value={formData.instructorId}
                 onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required={isFieldRequired('instructor', userRole)}
               >
                 <option value="">Solo flight</option>
-                <option value="2">Chief Flying Instructor</option>
+                {instructors.map(instructor => (
+                  <option key={instructor.id} value={instructor.id}>
+                    {instructor.name}
+                  </option>
+                ))}
               </select>
             </div>
+            )}
           </div>
+          )}
 
+          {!isLoading && isFieldVisible('paymentType', userRole) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <CreditCard className="h-4 w-4 inline mr-2" />
-                Payment Type *
+                Payment Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
               </label>
               <select
                 value={formData.paymentType}
                 onChange={(e) => setFormData(prev => ({ ...prev, paymentType: e.target.value as any }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
+                required={isFieldRequired('paymentType', userRole)}
               >
                 <option value="prepaid">Prepaid Account</option>
                 <option value="payg">Pay As You Go</option>
@@ -230,10 +291,12 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               </select>
             </div>
           </div>
+          )}
 
+          {!isLoading && isFieldVisible('notes', userRole) && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notes
+              Notes {isFieldRequired('notes', userRole) && <span className="text-red-500">*</span>}
             </label>
             <textarea
               value={formData.notes}
@@ -241,8 +304,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={3}
               placeholder="Lesson details, special requirements, etc."
+              required={isFieldRequired('notes', userRole)}
             />
           </div>
+          )}
 
           <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
             <button

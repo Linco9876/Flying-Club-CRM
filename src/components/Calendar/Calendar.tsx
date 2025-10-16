@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { format, addDays, isSameDay, isToday, startOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus, Filter, Plane, User } from 'lucide-react';
-import { mockAircraft, mockStudents } from '../../data/mockData';
+import { useAircraft } from '../../hooks/useAircraft';
+import { useUsers } from '../../hooks/useUsers';
+import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
+import { MonthView } from './MonthView';
 import { isPastBooking } from '../../utils/timeUtils';
 import toast from 'react-hot-toast';
 
@@ -34,13 +37,16 @@ interface UnavailabilityPeriod {
 
 type ViewMode = 'day' | 'week' | 'month';
 
-export const Calendar: React.FC<CalendarProps> = ({ 
-  bookings, 
-  onNewBooking, 
-  onNewBookingWithTime, 
-  onEditBooking, 
-  onUpdateBooking 
+export const Calendar: React.FC<CalendarProps> = ({
+  bookings,
+  onNewBooking,
+  onNewBookingWithTime,
+  onEditBooking,
+  onUpdateBooking
 }) => {
+  const { aircraft } = useAircraft();
+  const { getInstructors } = useUsers();
+  const instructors = getInstructors();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
@@ -58,6 +64,17 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [dragStart, setDragStart] = useState<{ hour: number; resourceId: string; resourceType: 'aircraft' | 'instructor'; dayIndex?: number } | null>(null);
   const [dragEnd, setDragEnd] = useState<{ hour: number; resourceId: string; resourceType: 'aircraft' | 'instructor'; dayIndex?: number } | null>(null);
 
+  useKeyboardNavigation({
+    onArrowLeft: () => navigateDate('prev'),
+    onArrowRight: () => navigateDate('next'),
+    onEscape: () => {
+      setIsDragging(false);
+      setDragStart(null);
+      setDragEnd(null);
+    },
+    enabled: true
+  });
+
   const navigateDate = (direction: 'prev' | 'next') => {
     if (viewMode === 'day') {
       setCurrentDate(prev => addDays(prev, direction === 'next' ? 1 : -1));
@@ -73,22 +90,22 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getSelectedResources = (): Resource[] => {
     const resources: Resource[] = [];
-    
+
     if (selectedAircraftId) {
-      const aircraft = mockAircraft.find(a => a.id === selectedAircraftId);
-      if (aircraft) {
+      const selectedAircraft = aircraft.find(a => a.id === selectedAircraftId);
+      if (selectedAircraft) {
         resources.push({
-          id: aircraft.id,
-          name: aircraft.registration,
+          id: selectedAircraft.id,
+          name: selectedAircraft.registration,
           type: 'aircraft',
           icon: <Plane className="h-4 w-4" />,
-          status: aircraft.status
+          status: selectedAircraft.status
         });
       }
     }
-    
+
     if (selectedInstructorId) {
-      const instructor = mockStudents.find(s => s.id === selectedInstructorId && s.role === 'instructor');
+      const instructor = instructors.find(i => i.id === selectedInstructorId);
       if (instructor) {
         resources.push({
           id: instructor.id,
@@ -98,27 +115,27 @@ export const Calendar: React.FC<CalendarProps> = ({
         });
       }
     }
-    
+
     return resources;
   };
 
   const getAllResources = (): Resource[] => {
     const resources: Resource[] = [];
-    
+
     if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
-      mockAircraft.forEach(aircraft => {
+      aircraft.forEach(a => {
         resources.push({
-          id: aircraft.id,
-          name: aircraft.registration,
+          id: a.id,
+          name: a.registration,
           type: 'aircraft',
           icon: <Plane className="h-4 w-4" />,
-          status: aircraft.status
+          status: a.status
         });
       });
     }
-    
+
     if (resourceFilter === 'instructors' || resourceFilter === 'both') {
-      mockStudents.filter(s => s.role === 'instructor').forEach(instructor => {
+      instructors.forEach(instructor => {
         resources.push({
           id: instructor.id,
           name: instructor.name,
@@ -127,7 +144,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         });
       });
     }
-    
+
     return resources;
   };
 
@@ -323,9 +340,9 @@ export const Calendar: React.FC<CalendarProps> = ({
           className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">Select Aircraft</option>
-          {mockAircraft.map(aircraft => (
-            <option key={aircraft.id} value={aircraft.id}>
-              {aircraft.registration} - {aircraft.make} {aircraft.model}
+          {aircraft.map(a => (
+            <option key={a.id} value={a.id}>
+              {a.registration} - {a.make} {a.model}
             </option>
           ))}
         </select>
@@ -339,7 +356,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">Select Instructor</option>
-          {mockStudents.filter(s => s.role === 'instructor').map(instructor => (
+          {instructors.map(instructor => (
             <option key={instructor.id} value={instructor.id}>
               {instructor.name}
             </option>
@@ -546,19 +563,19 @@ export const Calendar: React.FC<CalendarProps> = ({
                 
                 // Add aircraft column if selected
                 if (hasAircraft) {
-                  const aircraft = mockAircraft.find(a => a.id === selectedAircraftId);
-                  if (aircraft) {
+                  const selectedAircraft = aircraft.find(a => a.id === selectedAircraftId);
+                  if (selectedAircraft) {
                     dayColumns.push(
                       <div key={`${dayIndex}-aircraft`} className="bg-gray-50 border-r border-gray-200 p-2 text-center h-[80px] flex flex-col justify-center">
                         <div className="flex items-center justify-center space-x-1 mb-1">
                           <Plane className="h-4 w-4" />
-                          <span className="text-xs font-semibold text-gray-900 truncate">{aircraft.registration}</span>
+                          <span className="text-xs font-semibold text-gray-900 truncate">{selectedAircraft.registration}</span>
                         </div>
                         <div className={`text-xs font-medium ${isToday(day) ? 'text-blue-600' : 'text-gray-500'}`}>
                           {format(day, 'EEE d')}
                         </div>
-                        {aircraft.status && aircraft.status !== 'serviceable' && (
-                          <div className="text-xs text-red-600 mt-1 capitalize">{aircraft.status}</div>
+                        {selectedAircraft.status && selectedAircraft.status !== 'serviceable' && (
+                          <div className="text-xs text-red-600 mt-1 capitalize">{selectedAircraft.status}</div>
                         )}
                       </div>
                     );
@@ -567,7 +584,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 
                 // Add instructor column if selected
                 if (hasInstructor) {
-                  const instructor = mockStudents.find(s => s.id === selectedInstructorId && s.role === 'instructor');
+                  const instructor = instructors.find(i => i.id === selectedInstructorId);
                   if (instructor) {
                     dayColumns.push(
                       <div key={`${dayIndex}-instructor`} className="bg-gray-50 border-r border-gray-200 p-2 text-center h-[80px] flex flex-col justify-center">
@@ -892,12 +909,16 @@ export const Calendar: React.FC<CalendarProps> = ({
       {viewMode === 'day' && renderDayView()}
       {viewMode === 'week' && renderWeekView()}
       {viewMode === 'month' && (
-        <div className="p-6">
-          <div className="text-center py-12">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Month View</h3>
-            <p className="text-gray-600">Month view coming soon...</p>
-          </div>
-        </div>
+        <MonthView
+          currentDate={currentDate}
+          bookings={bookings}
+          aircraft={aircraft}
+          instructors={instructors}
+          onDayClick={(date) => {
+            setCurrentDate(date);
+            setViewMode('day');
+          }}
+        />
       )}
     </div>
   );
