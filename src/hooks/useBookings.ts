@@ -66,9 +66,9 @@ export const useBookings = () => {
       console.log('Creating booking with data:', bookingData);
 
       const insertData = {
-        student_id: bookingData.studentId,
-        instructor_id: bookingData.instructorId || null,
-        aircraft_id: bookingData.aircraftId,
+        student_id: bookingData.studentId || null,
+        instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
+        aircraft_id: bookingData.aircraftId || null,
         start_time: bookingData.startTime.toISOString(),
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
@@ -120,13 +120,13 @@ export const useBookings = () => {
   const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>) => {
     try {
       const updateData: any = {};
-      if (bookingData.studentId !== undefined) updateData.student_id = bookingData.studentId;
-      if (bookingData.instructorId !== undefined) updateData.instructor_id = bookingData.instructorId;
-      if (bookingData.aircraftId !== undefined) updateData.aircraft_id = bookingData.aircraftId;
+      if (bookingData.studentId !== undefined) updateData.student_id = bookingData.studentId || null;
+      if (bookingData.instructorId !== undefined) updateData.instructor_id = bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null;
+      if (bookingData.aircraftId !== undefined) updateData.aircraft_id = bookingData.aircraftId || null;
       if (bookingData.startTime !== undefined) updateData.start_time = bookingData.startTime.toISOString();
       if (bookingData.endTime !== undefined) updateData.end_time = bookingData.endTime.toISOString();
       if (bookingData.paymentType !== undefined) updateData.payment_type = bookingData.paymentType;
-      if (bookingData.notes !== undefined) updateData.notes = bookingData.notes;
+      if (bookingData.notes !== undefined) updateData.notes = bookingData.notes || null;
       if (bookingData.status !== undefined) updateData.status = bookingData.status;
 
       const { error } = await supabase
