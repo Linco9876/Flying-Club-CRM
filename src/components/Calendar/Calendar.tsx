@@ -238,6 +238,11 @@ export const Calendar: React.FC<CalendarProps> = ({
       .padStart(2, '0')}`;
   };
 
+  const formatHourLabel = (slot: number) => {
+    const { hour } = getTimeFromSlot(slot);
+    return `${hour}:${'00'}`;
+  };
+
   // Mock unavailability data
   const getUnavailabilityPeriods = (date: Date): UnavailabilityPeriod[] => {
     return [
@@ -591,7 +596,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
               const isHalfHour = minute === 30;
-              const timeLabel = isHourStart ? formatTimeSlot(slot) : '';
+              const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const timeCellBorders = `${
                 isHourStart ? ' border-t border-gray-200' : ''
               }${isHalfHour ? ' border-b border-gray-100' : ''}`;
@@ -600,11 +605,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                 <React.Fragment key={slot}>
                   {/* Time label */}
                   <div
-                    className={`bg-white border-r border-gray-200${timeCellBorders} p-2 flex items-start justify-end`}
+                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 pt-1 pb-0.5 flex items-start justify-end`}
                     style={{ height: slotHeight }}
                   >
                     {timeLabel && (
-                      <span className="text-xs font-medium text-gray-500">
+                      <span className="text-xs font-semibold text-gray-500 leading-none">
                         {timeLabel}
                       </span>
                     )}
@@ -926,7 +931,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
               const isHalfHour = minute === 30;
-              const timeLabel = isHourStart ? formatTimeSlot(slot) : '';
+              const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const timeCellBorders = `${
                 isHourStart ? ' border-t border-gray-200' : ''
               }${isHalfHour ? ' border-b border-gray-100' : ''}`;
@@ -935,11 +940,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                 <React.Fragment key={slot}>
                   {/* Time label */}
                   <div
-                    className={`bg-white border-r border-gray-200${timeCellBorders} p-2 flex items-start justify-end`}
+                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 pt-1 pb-0.5 flex items-start justify-end`}
                     style={{ height: slotHeight }}
                   >
                     {timeLabel && (
-                      <span className="text-xs font-medium text-gray-500">
+                      <span className="text-xs font-semibold text-gray-500 leading-none">
                         {timeLabel}
                       </span>
                     )}

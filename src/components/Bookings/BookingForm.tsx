@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Calendar, Clock, Plane, User, CreditCard, AlertCircle } from 'lucide-react';
+import { X, Clock, Plane, User, CreditCard } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -29,10 +29,18 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const [formData, setFormData] = useState({
     studentId: booking?.studentId || (user?.role === 'student' ? user.id : ''),
-    date: booking ? format(new Date(booking.startTime), 'yyyy-MM-dd') : (prefilledData?.date || format(new Date(), 'yyyy-MM-dd')),
-    endDate: booking ? format(new Date(booking.endTime), 'yyyy-MM-dd') : (prefilledData?.date || format(new Date(), 'yyyy-MM-dd')),
-    startTime: booking ? format(new Date(booking.startTime), 'HH:mm') : (prefilledData?.startTime || '09:00'),
-    endTime: booking ? format(new Date(booking.endTime), 'HH:mm') : (prefilledData?.endTime || '11:00'),
+    date: booking
+      ? format(new Date(booking.startTime), 'yyyy-MM-dd')
+      : prefilledData?.date || format(new Date(), 'yyyy-MM-dd'),
+    endDate: booking
+      ? format(new Date(booking.endTime), 'yyyy-MM-dd')
+      : prefilledData?.date || format(new Date(), 'yyyy-MM-dd'),
+    startTime: booking
+      ? normalizeToQuarterHour(format(new Date(booking.startTime), 'HH:mm'))
+      : normalizeToQuarterHour(prefilledData?.startTime) || '09:00',
+    endTime: booking
+      ? normalizeToQuarterHour(format(new Date(booking.endTime), 'HH:mm'))
+      : normalizeToQuarterHour(prefilledData?.endTime) || '11:00',
     aircraftId: booking?.aircraftId || prefilledData?.aircraftId || '',
     instructorId: booking?.instructorId || prefilledData?.instructorId || '',
     paymentType: booking?.paymentType || 'prepaid' as const,
@@ -46,8 +54,12 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         studentId: booking.studentId,
         date: format(new Date(booking.startTime), 'yyyy-MM-dd'),
         endDate: format(new Date(booking.endTime), 'yyyy-MM-dd'),
-        startTime: format(new Date(booking.startTime), 'HH:mm'),
-        endTime: format(new Date(booking.endTime), 'HH:mm'),
+        startTime: normalizeToQuarterHour(
+          format(new Date(booking.startTime), 'HH:mm')
+        ),
+        endTime: normalizeToQuarterHour(
+          format(new Date(booking.endTime), 'HH:mm')
+        ),
         aircraftId: booking.aircraftId,
         instructorId: booking.instructorId || '',
         paymentType: booking.paymentType,
@@ -58,8 +70,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         ...prev,
         date: prefilledData.date || prev.date,
         endDate: prefilledData.date || prev.endDate,
-        startTime: prefilledData.startTime || prev.startTime,
-        endTime: prefilledData.endTime || prev.endTime
+        startTime:
+          normalizeToQuarterHour(prefilledData.startTime) || prev.startTime,
+        endTime:
+          normalizeToQuarterHour(prefilledData.endTime) || prev.endTime
       }));
     }
   }, [prefilledData, booking]);
@@ -199,9 +213,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     {option}
                   </option>
                 ))}
-                {!timeOptions.includes(formData.startTime) && formData.startTime && (
-                  <option value={formData.startTime}>{formData.startTime}</option>
-                )}
               </select>
             </div>
           </div>
@@ -238,9 +249,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     {option}
                   </option>
                 ))}
-                {!timeOptions.includes(formData.endTime) && formData.endTime && (
-                  <option value={formData.endTime}>{formData.endTime}</option>
-                )}
               </select>
             </div>
           </div>
@@ -377,6 +385,25 @@ function format(date: Date | number, formatStr: string): string {
   }
   
   return d.toLocaleDateString();
+}
+
+function normalizeToQuarterHour(time?: string): string {
+  if (!time) return '';
+
+  const [hourPart = '', minutePart = ''] = time.split(':');
+  const hour = parseInt(hourPart, 10);
+  const minute = parseInt(minutePart, 10);
+
+  if (Number.isNaN(hour) || Number.isNaN(minute)) {
+    return '';
+  }
+
+  const clampedHour = Math.min(Math.max(hour, 0), 23);
+  const normalizedMinute = Math.floor(minute / 15) * 15;
+
+  return `${clampedHour.toString().padStart(2, '0')}:${normalizedMinute
+    .toString()
+    .padStart(2, '0')}`;
 }
 
 function generateTimeOptions(startHour: number, endHour: number): string[] {
