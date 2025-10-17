@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, User, Mail, Phone, Calendar, FileText, AlertTriangle, Save } from 'lucide-react';
 import { Student, Endorsement } from '../../types';
 import toast from 'react-hot-toast';
@@ -11,33 +11,40 @@ interface StudentFormProps {
   isEdit?: boolean;
 }
 
-export const StudentForm: React.FC<StudentFormProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSubmit, 
-  student, 
-  isEdit = false 
+const buildFormData = (student?: Student) => ({
+  email: student?.email || '',
+  name: student?.name || '',
+  phone: student?.phone || '',
+  raausId: student?.raausId || '',
+  casaId: student?.casaId || '',
+  dateOfBirth: student?.dateOfBirth?.toISOString().split('T')[0] || '',
+  medicalType: student?.medicalType || '',
+  medicalExpiry: student?.medicalExpiry?.toISOString().split('T')[0] || '',
+  membershipExpiry: student?.licenceExpiry?.toISOString().split('T')[0] || '',
+  occupation: student?.occupation || '',
+  alternatePhone: student?.alternatePhone || '',
+  prepaidBalance: student?.prepaidBalance || 0,
+  emergencyContact: {
+    name: student?.emergencyContact?.name || '',
+    phone: student?.emergencyContact?.phone || '',
+    relationship: student?.emergencyContact?.relationship || ''
+  },
+  endorsements: student?.endorsements || []
+});
+
+export const StudentForm: React.FC<StudentFormProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  student,
+  isEdit = false
 }) => {
-  const [formData, setFormData] = useState({
-    email: student?.email || '',
-    name: student?.name || '',
-    phone: student?.phone || '',
-    raausId: student?.raausId || '',
-    casaId: student?.casaId || '',
-    dateOfBirth: student?.dateOfBirth?.toISOString().split('T')[0] || '',
-    medicalType: student?.medicalType || '',
-    medicalExpiry: student?.medicalExpiry?.toISOString().split('T')[0] || '',
-    membershipExpiry: student?.licenceExpiry?.toISOString().split('T')[0] || '',
-    occupation: student?.occupation || '',
-    alternatePhone: student?.alternatePhone || '',
-    prepaidBalance: student?.prepaidBalance || 0,
-    emergencyContact: {
-      name: student?.emergencyContact?.name || '',
-      phone: student?.emergencyContact?.phone || '',
-      relationship: student?.emergencyContact?.relationship || ''
-    },
-    endorsements: student?.endorsements || []
-  });
+  const [formData, setFormData] = useState(buildFormData(student));
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(buildFormData(student));
+  }, [student, isOpen]);
 
   const [newEndorsement, setNewEndorsement] = useState({
     type: 'PC' as const,

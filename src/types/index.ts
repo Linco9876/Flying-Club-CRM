@@ -44,6 +44,7 @@ export interface Aircraft {
   maxWeight?: number;
   tachStart?: number;
   isAvailable?: boolean;
+  isGrounded?: boolean;
   defects: Defect[];
   aircraftRates?: {
     prepaid: number;

@@ -21,21 +21,21 @@ export const useAuth = () => {
 // Mock users for demo
 const mockUsers: User[] = [
   {
-    id: '1',
+    id: '00000000-0000-0000-0000-000000000001',
     email: 'admin@flyingclub.com',
     name: 'Club Administrator',
     role: 'admin',
     phone: '+61 400 123 456'
   },
   {
-    id: '2',
+    id: '00000000-0000-0000-0000-000000000002',
     email: 'instructor@flyingclub.com',
     name: 'Chief Flying Instructor',
     role: 'instructor',
     phone: '+61 400 789 012'
   },
   {
-    id: '3',
+    id: '00000000-0000-0000-0000-000000000003',
     email: 'student@flyingclub.com',
     name: 'John Pilot',
     role: 'student',

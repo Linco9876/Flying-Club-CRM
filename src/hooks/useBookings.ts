@@ -24,6 +24,13 @@ export const useBookings = () => {
 
       if (flightLogsError) throw flightLogsError;
 
+      const { data: conflictsData, error: conflictsError } = await supabase
+        .from('booking_conflicts')
+        .select('*')
+        .eq('is_resolved', false);
+
+      if (conflictsError) throw conflictsError;
+
       const flightLogsMap = new Map(flightLogsData?.map(fl => [fl.booking_id, {
         id: fl.id,
         bookingId: fl.booking_id,
@@ -37,6 +44,8 @@ export const useBookings = () => {
         notes: fl.notes
       } as FlightLog]) || []);
 
+      const conflictsSet = new Set(conflictsData?.map(c => c.booking_id) || []);
+
       const combinedBookings: Booking[] = (bookingsData || []).map(b => ({
         id: b.id,
         studentId: b.student_id,
@@ -47,7 +56,7 @@ export const useBookings = () => {
         paymentType: b.payment_type,
         notes: b.notes,
         status: b.status,
-        hasConflict: b.has_conflict || false,
+        hasConflict: conflictsSet.has(b.id),
         flightLog: flightLogsMap.get(b.id)
       }));
 

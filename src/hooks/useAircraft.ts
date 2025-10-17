@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Aircraft, Defect } from '../types';
 import toast from 'react-hot-toast';
 
-export const useAircraft = () => {
+export const useAircraft = (includeGrounded: boolean = true) => {
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +71,7 @@ export const useAircraft = () => {
         ratesMap.set(r.aircraft_id, aircraftRates);
       });
 
-      const combinedAircraft: Aircraft[] = (aircraftData || []).map(a => {
+      let combinedAircraft: Aircraft[] = (aircraftData || []).map(a => {
         const rates = ratesMap.get(a.id);
         return {
           id: a.id,
@@ -91,9 +91,14 @@ export const useAircraft = () => {
           tachStart: a.total_hours ? parseFloat(a.total_hours) : 0,
           defects: defectsMap.get(a.id) || [],
           aircraftRates: rates?.aircraft,
-          instructorRates: rates?.instructor
+          instructorRates: rates?.instructor,
+          isGrounded: a.is_grounded || false
         };
       });
+
+      if (!includeGrounded) {
+        combinedAircraft = combinedAircraft.filter(a => !a.isGrounded);
+      }
 
       setAircraft(combinedAircraft);
       setError(null);

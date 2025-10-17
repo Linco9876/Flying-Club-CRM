@@ -1,85 +1,117 @@
 import React, { useState } from 'react';
-import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
+import { X, AlertTriangle, Camera, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
-import { Defect } from '../../types';
+import { useDefectReports, DefectReport } from '../../hooks/useDefectReports';
 import toast from 'react-hot-toast';
 
 interface DefectReportFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (defectData: Omit<Defect, 'id'>) => void;
+  onRefresh?: () => void;
   preSelectedAircraftId?: string;
 }
 
 export const DefectReportForm: React.FC<DefectReportFormProps> = ({
   isOpen,
   onClose,
-  onSubmit,
+  onRefresh,
   preSelectedAircraftId
 }) => {
   const { user } = useAuth();
   const { aircraft, loading } = useAircraft();
+  const { createDefectReport } = useDefectReports();
+  const isAdmin = user?.role === 'admin';
   const [formData, setFormData] = useState({
     aircraftId: preSelectedAircraftId || '',
-    discoveredDateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm format
-    reporter: user?.name || '',
+    discoveredDateTime: new Date().toISOString().slice(0, 16),
+    reporterId: user?.id || '',
     location: '',
-    defectSummary: '',
-    detailedDescription: '',
-    severity: 'Minor' as 'Minor' | 'Major' | 'Critical',
-    melNotes: '',
+    briefSummary: '',
+    detailedSummary: '',
+    severity: 'minor' as 'minor' | 'major' | 'critical',
     groundAircraft: false,
-    tachHours: '',
-    hobbsHours: ''
+    engineHours: ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validation
-    if (!formData.aircraftId || !formData.defectSummary || !formData.detailedDescription) {
-      toast.error('Aircraft, defect summary, and detailed description are required');
+
+    if (!formData.aircraftId || !formData.location || !formData.briefSummary || !formData.detailedSummary) {
+      toast.error('Please fill in all required fields');
       return;
     }
 
-    const defectData: Omit<Defect, 'id'> = {
-      aircraftId: formData.aircraftId,
-      reportedBy: formData.reporter,
-      dateReported: new Date(formData.discoveredDateTime),
-      description: formData.detailedDescription,
-      status: 'open',
-      photos: uploadedFiles.map(file => file.name), // In real app, would upload files first
-      melNotes: formData.melNotes || undefined
-    };
-
-    onSubmit(defectData);
-    
-    if (formData.groundAircraft) {
-      toast.success('Defect reported and aircraft grounded successfully!');
-    } else {
-      toast.success('Defect reported successfully!');
+    if (formData.briefSummary.length > 50) {
+      toast.error('Brief summary must be 50 characters or less');
+      return;
     }
-    
-    onClose();
-    
-    // Reset form
-    setFormData({
-      aircraftId: preSelectedAircraftId || '',
-      discoveredDateTime: new Date().toISOString().slice(0, 16),
-      reporter: user?.name || '',
-      location: '',
-      defectSummary: '',
-      detailedDescription: '',
-      severity: 'Minor',
-      melNotes: '',
-      groundAircraft: false,
-      tachHours: '',
-      hobbsHours: ''
-    });
-    setUploadedFiles([]);
+
+    if (formData.detailedSummary.length > 500) {
+      toast.error('Detailed summary must be 500 characters or less');
+      return;
+    }
+
+    if (uploadedFiles.some(f => f.size > 10485760)) {
+      toast.error('File size must not exceed 10MB');
+      return;
+    }
+
+    if (formData.groundAircraft) {
+      const confirmed = window.confirm(
+        'Are you sure you want to ground this aircraft? This will:\n' +
+        '- Mark the aircraft as unserviceable\n' +
+        '- Block all future bookings\n' +
+        '- Notify affected pilots and instructors\n\n' +
+        'This action requires approval to reverse.'
+      );
+      if (!confirmed) return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await createDefectReport({
+        aircraftId: formData.aircraftId,
+        reporterId: formData.reporterId,
+        discoveryDate: new Date(formData.discoveredDateTime),
+        location: formData.location,
+        briefSummary: formData.briefSummary,
+        detailedSummary: formData.detailedSummary,
+        severity: formData.severity,
+        isUnserviceable: formData.groundAircraft,
+        engineHours: formData.engineHours ? parseFloat(formData.engineHours) : undefined,
+        status: 'open'
+      });
+
+      if (formData.groundAircraft) {
+        toast.success('Defect reported and aircraft grounded successfully');
+      } else {
+        toast.success('Defect reported successfully');
+      }
+
+      onRefresh?.();
+      onClose();
+
+      setFormData({
+        aircraftId: preSelectedAircraftId || '',
+        discoveredDateTime: new Date().toISOString().slice(0, 16),
+        reporterId: user?.id || '',
+        location: '',
+        briefSummary: '',
+        detailedSummary: '',
+        severity: 'minor',
+        groundAircraft: false,
+        engineHours: ''
+      });
+      setUploadedFiles([]);
+    } catch (error) {
+      console.error('Error submitting defect report:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -94,11 +126,11 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'Critical':
+      case 'critical':
         return 'bg-red-100 text-red-800 border-red-200';
-      case 'Major':
+      case 'major':
         return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'Minor':
+      case 'minor':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
@@ -177,16 +209,22 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               </label>
               <input
                 type="text"
-                value={formData.reporter}
-                onChange={(e) => setFormData(prev => ({ ...prev, reporter: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={user?.name || ''}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={!isAdmin}
+                readOnly={!isAdmin}
                 required
               />
+              {!isAdmin && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Only admins can modify the reporter field
+                </p>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Location (Optional)
+                Location of Discovery *
               </label>
               <input
                 type="text"
@@ -194,38 +232,45 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="e.g., Hangar 2, Ramp, Runway"
+                required
               />
             </div>
           </div>
 
-          {/* Defect Summary */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Defect Summary *
+              Brief Summary * <span className="text-gray-500 text-xs">(max 50 characters)</span>
             </label>
             <input
               type="text"
-              value={formData.defectSummary}
-              onChange={(e) => setFormData(prev => ({ ...prev, defectSummary: e.target.value }))}
+              value={formData.briefSummary}
+              onChange={(e) => setFormData(prev => ({ ...prev, briefSummary: e.target.value }))}
+              maxLength={50}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Brief description of the defect"
               required
             />
+            <p className="text-xs text-gray-500 mt-1">
+              {formData.briefSummary.length}/50 characters
+            </p>
           </div>
 
-          {/* Detailed Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Detailed Description *
+              Detailed Summary * <span className="text-gray-500 text-xs">(max 500 characters)</span>
             </label>
             <textarea
-              value={formData.detailedDescription}
-              onChange={(e) => setFormData(prev => ({ ...prev, detailedDescription: e.target.value }))}
+              value={formData.detailedSummary}
+              onChange={(e) => setFormData(prev => ({ ...prev, detailedSummary: e.target.value }))}
+              maxLength={500}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={4}
               placeholder="Detailed description of the defect, circumstances, and any relevant information"
               required
             />
+            <p className="text-xs text-gray-500 mt-1">
+              {formData.detailedSummary.length}/500 characters
+            </p>
           </div>
 
           {/* Severity and Ground Aircraft */}
@@ -234,18 +279,41 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Severity *
               </label>
-              <select
-                value={formData.severity}
-                onChange={(e) => setFormData(prev => ({ ...prev, severity: e.target.value as any }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="Minor">Minor</option>
-                <option value="Major">Major</option>
-                <option value="Critical">Critical</option>
-              </select>
+              <div className="space-y-2">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    value="minor"
+                    checked={formData.severity === 'minor'}
+                    onChange={(e) => setFormData(prev => ({ ...prev, severity: e.target.value as any }))}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm">Minor</span>
+                </label>
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    value="major"
+                    checked={formData.severity === 'major'}
+                    onChange={(e) => setFormData(prev => ({ ...prev, severity: e.target.value as any }))}
+                    className="h-4 w-4 text-orange-600 focus:ring-orange-500"
+                  />
+                  <span className="text-sm">Major</span>
+                </label>
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    value="critical"
+                    checked={formData.severity === 'critical'}
+                    onChange={(e) => setFormData(prev => ({ ...prev, severity: e.target.value as any }))}
+                    className="h-4 w-4 text-red-600 focus:ring-red-500"
+                  />
+                  <span className="text-sm">Critical</span>
+                </label>
+              </div>
               <div className="mt-2">
                 <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getSeverityColor(formData.severity)}`}>
-                  {formData.severity}
+                  {formData.severity.charAt(0).toUpperCase() + formData.severity.slice(1)}
                 </span>
               </div>
             </div>
@@ -262,61 +330,41 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, groundAircraft: e.target.checked }))}
                   className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
                 />
-                <label htmlFor="groundAircraft" className="text-sm text-gray-700">
-                  Ground aircraft (mark as unserviceable)
+                <label htmlFor="groundAircraft" className="text-sm font-medium text-gray-700">
+                  Mark as Unserviceable (Ground Aircraft)
                 </label>
               </div>
               {formData.groundAircraft && (
-                <p className="text-xs text-red-600 mt-1">
-                  ⚠️ Aircraft will be marked unserviceable and bookings will be blocked
-                </p>
+                <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-xs text-red-700 font-medium">
+                    Warning: This will immediately:
+                  </p>
+                  <ul className="text-xs text-red-600 mt-1 ml-4 list-disc space-y-1">
+                    <li>Remove aircraft from calendar</li>
+                    <li>Block all future bookings</li>
+                    <li>Create conflicts for existing bookings</li>
+                    <li>Send notifications to affected users</li>
+                  </ul>
+                </div>
               )}
             </div>
           </div>
 
-          {/* Tach/Hobbs Hours */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tach Hours (Optional)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={formData.tachHours}
-                onChange={(e) => setFormData(prev => ({ ...prev, tachHours: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Hobbs Hours (Optional)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={formData.hobbsHours}
-                onChange={(e) => setFormData(prev => ({ ...prev, hobbsHours: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.0"
-              />
-            </div>
-          </div>
-
-          {/* MEL Notes */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              MEL/Notes (Optional)
+              Engine Hours at Discovery
             </label>
-            <textarea
-              value={formData.melNotes}
-              onChange={(e) => setFormData(prev => ({ ...prev, melNotes: e.target.value }))}
+            <input
+              type="number"
+              step="0.1"
+              value={formData.engineHours}
+              onChange={(e) => setFormData(prev => ({ ...prev, engineHours: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              rows={3}
-              placeholder="Minimum Equipment List notes or additional information"
+              placeholder="0.0"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Record the engine hours (tach or hobbs) when defect was discovered
+            </p>
           </div>
 
           {/* File Upload */}
@@ -374,10 +422,11 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
             </button>
             <button
               type="submit"
-              className="flex items-center space-x-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center space-x-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4" />
-              <span>Report Defect</span>
+              <span>{isSubmitting ? 'Submitting...' : 'Report Defect'}</span>
             </button>
           </div>
         </form>
