@@ -121,6 +121,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const instructors = getInstructors();
   const userRole = user?.role || 'student';
   const isLoading = aircraftLoading || usersLoading;
+  const timeOptions = React.useMemo(() => generateTimeOptions(6, 21), []);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -186,14 +187,22 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 <Clock className="h-4 w-4 inline mr-2" />
                 Start Time {isFieldRequired('startTime', userRole) && <span className="text-red-500">*</span>}
               </label>
-              <input
-                type="time"
+              <select
                 value={formData.startTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                step={900}
                 required={isFieldRequired('startTime', userRole)}
-              />
+              >
+                <option value="">Select a start time</option>
+                {timeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+                {!timeOptions.includes(formData.startTime) && formData.startTime && (
+                  <option value={formData.startTime}>{formData.startTime}</option>
+                )}
+              </select>
             </div>
           </div>
           )}
@@ -217,14 +226,22 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 End Time {isFieldRequired('endTime', userRole) && <span className="text-red-500">*</span>}
               </label>
-              <input
-                type="time"
+              <select
                 value={formData.endTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
-                step={900}
                 required={isFieldRequired('endTime', userRole)}
-              />
+              >
+                <option value="">Select an end time</option>
+                {timeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+                {!timeOptions.includes(formData.endTime) && formData.endTime && (
+                  <option value={formData.endTime}>{formData.endTime}</option>
+                )}
+              </select>
             </div>
           </div>
           )}
@@ -360,6 +377,24 @@ function format(date: Date | number, formatStr: string): string {
   }
   
   return d.toLocaleDateString();
+}
+
+function generateTimeOptions(startHour: number, endHour: number): string[] {
+  const options: string[] = [];
+  const normalizedStart = Math.max(0, Math.min(23, startHour));
+  const normalizedEnd = Math.max(normalizedStart, Math.min(23, endHour));
+
+  for (let hour = normalizedStart; hour <= normalizedEnd; hour++) {
+    for (let quarter = 0; quarter < 4; quarter++) {
+      const minute = quarter * 15;
+      const time = `${hour.toString().padStart(2, '0')}:${minute
+        .toString()
+        .padStart(2, '0')}`;
+      options.push(time);
+    }
+  }
+
+  return options;
 }
 
 export default BookingForm;

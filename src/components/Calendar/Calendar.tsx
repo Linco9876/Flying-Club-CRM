@@ -451,21 +451,21 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const renderViewModeButtons = () => (
     <div className="flex bg-gray-100 rounded-lg p-1">
-      {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
-        <button
-          key={mode}
-          onClick={() => setViewMode(mode)}
-          className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-            viewMode === mode
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          {mode.charAt(0).toUpperCase() + mode.slice(1)}
-        </button>
-      ))}
-    </div>
-  );
+        {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => setViewMode(mode)}
+            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+              viewMode === mode
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            {mode.charAt(0).toUpperCase() + mode.slice(1)}
+          </button>
+        ))}
+      </div>
+    );
 
   const renderResourceSelectors = () => (
     <div className="flex items-center space-x-4">
@@ -571,7 +571,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       </div>
                     )}
                 </div>
-              ))}
+                ))}
             </div>
           </div>
 
@@ -587,102 +587,118 @@ export const Calendar: React.FC<CalendarProps> = ({
             {/* Current Time Indicator */}
             <CurrentTimeIndicator isVisible={isToday(currentDate)} />
 
-            {timeSlots.map((slot, slotIndex) => (
-              <React.Fragment key={slot}>
-                {/* Time label */}
-                <div
-                  className="bg-white border-r border-gray-200 border-b border-gray-100 p-2 flex items-center justify-end"
-                  style={{ height: slotHeight }}
-                >
-                  <span className="text-xs text-gray-500">
-                    {formatTimeSlot(slot)}
-                  </span>
-                </div>
+            {timeSlots.map((slot, slotIndex) => {
+              const { minute } = getTimeFromSlot(slot);
+              const isHourStart = minute === 0;
+              const isHalfHour = minute === 30;
+              const timeLabel = isHourStart ? formatTimeSlot(slot) : '';
+              const timeCellBorders = `${
+                isHourStart ? ' border-t border-gray-200' : ''
+              }${isHalfHour ? ' border-b border-gray-100' : ''}`;
 
-                {/* Resource columns */}
-                {resources.map((resource, resourceIndex) => {
-                  const unavailability = getUnavailabilityForSlot(
-                    resource.id,
-                    resource.type,
-                    slot,
-                    currentDate
-                  );
-                  const isInDragRange = isTimeSlotInDragRange(
-                    slot,
-                    resource.id,
-                    resource.type
-                  );
-                  const isQuarterSlot = slot % 4 === 1 || slot % 4 === 3;
-                  const cursorClass = unavailability
-                    ? 'cursor-not-allowed'
-                    : 'cursor-pointer';
-                  const backgroundClass = unavailability
-                    ? ''
-                    : isInDragRange
-                    ? 'bg-blue-100'
-                    : isQuarterSlot
-                    ? 'bg-blue-50 hover:bg-blue-100'
-                    : 'hover:bg-gray-50';
+              return (
+                <React.Fragment key={slot}>
+                  {/* Time label */}
+                  <div
+                    className={`bg-white border-r border-gray-200${timeCellBorders} p-2 flex items-start justify-end`}
+                    style={{ height: slotHeight }}
+                  >
+                    {timeLabel && (
+                      <span className="text-xs font-medium text-gray-500">
+                        {timeLabel}
+                      </span>
+                    )}
+                  </div>
 
-                  return (
-                    <div
-                      key={`${resource.id}-${slot}`}
-                      className={`border-r border-gray-200 border-b border-gray-100 relative transition-colors ${cursorClass} ${backgroundClass}`}
-                      style={{
-                        height: slotHeight,
-                        gridColumn: resourceIndex + 2,
-                        gridRow: slotIndex + 1,
-                        background: unavailability
-                          ? unavailability.pattern === 'diagonal'
-                            ? `repeating-linear-gradient(
-                                45deg,
-                                rgba(156, 163, 175, 0.3),
-                                rgba(156, 163, 175, 0.3) 4px,
-                                transparent 4px,
-                                transparent 8px
-                              )`
-                            : 'rgba(156, 163, 175, 0.5)'
-                          : undefined,
-                      }}
-                      onClick={() =>
-                        !unavailability &&
-                        handleTimeSlotClick(
-                          slot,
-                          resource.id,
-                          resource.type,
-                          currentDate
-                        )
-                      }
-                      onMouseDown={() =>
-                        !unavailability &&
-                        handleMouseDown(
-                          slot,
-                          resource.id,
-                          resource.type,
-                          currentDate
-                        )
-                      }
-                      onMouseUp={() => handleMouseUp(currentDate)}
-                      onMouseEnter={() =>
-                        handleMouseEnter(
-                          slot,
-                          resource.id,
-                          resource.type
-                        )
-                      }
-                    >
-                      {unavailability && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                            {unavailability.reason}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </React.Fragment>
-            ))}
+                  {/* Resource columns */}
+                  {resources.map((resource, resourceIndex) => {
+                    const unavailability = getUnavailabilityForSlot(
+                      resource.id,
+                      resource.type,
+                      slot,
+                      currentDate
+                    );
+                    const isInDragRange = isTimeSlotInDragRange(
+                      slot,
+                      resource.id,
+                      resource.type
+                    );
+                    const hourIndex = Math.floor(slot / 4);
+                    const isAlternateHour = hourIndex % 2 === 1;
+                    const cursorClass = unavailability
+                      ? 'cursor-not-allowed'
+                      : 'cursor-pointer';
+                    const backgroundClass = unavailability
+                      ? ''
+                      : isInDragRange
+                      ? 'bg-blue-100'
+                      : isAlternateHour
+                      ? 'bg-blue-50 hover:bg-blue-100'
+                      : 'hover:bg-gray-50';
+                    const borderClasses = `${
+                      isHourStart ? ' border-t border-gray-200' : ''
+                    }${isHalfHour ? ' border-b border-gray-100' : ''}`;
+
+                    return (
+                      <div
+                        key={`${resource.id}-${slot}`}
+                        className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                        style={{
+                          height: slotHeight,
+                          gridColumn: resourceIndex + 2,
+                          gridRow: slotIndex + 1,
+                          background: unavailability
+                            ? unavailability.pattern === 'diagonal'
+                              ? `repeating-linear-gradient(
+                                  45deg,
+                                  rgba(156, 163, 175, 0.3),
+                                  rgba(156, 163, 175, 0.3) 4px,
+                                  transparent 4px,
+                                  transparent 8px
+                                )`
+                              : 'rgba(156, 163, 175, 0.5)'
+                            : undefined,
+                        }}
+                        onClick={() =>
+                          !unavailability &&
+                          handleTimeSlotClick(
+                            slot,
+                            resource.id,
+                            resource.type,
+                            currentDate
+                          )
+                        }
+                        onMouseDown={() =>
+                          !unavailability &&
+                          handleMouseDown(
+                            slot,
+                            resource.id,
+                            resource.type,
+                            currentDate
+                          )
+                        }
+                        onMouseUp={() => handleMouseUp(currentDate)}
+                        onMouseEnter={() =>
+                          handleMouseEnter(
+                            slot,
+                            resource.id,
+                            resource.type
+                          )
+                        }
+                      >
+                        {unavailability && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
+                              {unavailability.reason}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
 
             {/* Render bookings as grid items */}
             {resources.map((resource, resourceIndex) =>
@@ -906,202 +922,217 @@ export const Calendar: React.FC<CalendarProps> = ({
               isVisible={weekDays.some((day) => isToday(day))}
             />
 
-            {timeSlots.map((slot, slotIndex) => (
-              <React.Fragment key={slot}>
-                {/* Time label */}
-                <div
-                  className="bg-white border-r border-gray-200 border-b border-gray-100 p-2 flex items-center justify-end"
-                  style={{ height: slotHeight }}
-                >
-                  <span className="text-xs text-gray-500">
-                    {formatTimeSlot(slot)}
-                  </span>
-                </div>
+            {timeSlots.map((slot, slotIndex) => {
+              const { minute } = getTimeFromSlot(slot);
+              const isHourStart = minute === 0;
+              const isHalfHour = minute === 30;
+              const timeLabel = isHourStart ? formatTimeSlot(slot) : '';
+              const timeCellBorders = `${
+                isHourStart ? ' border-t border-gray-200' : ''
+              }${isHalfHour ? ' border-b border-gray-100' : ''}`;
 
-                {/* Resource columns for each day */}
-                {weekDays.map((day, dayIndex) => {
-                  const daySlots = [];
-                  let columnOffset = 0;
+              return (
+                <React.Fragment key={slot}>
+                  {/* Time label */}
+                  <div
+                    className={`bg-white border-r border-gray-200${timeCellBorders} p-2 flex items-start justify-end`}
+                    style={{ height: slotHeight }}
+                  >
+                    {timeLabel && (
+                      <span className="text-xs font-medium text-gray-500">
+                        {timeLabel}
+                      </span>
+                    )}
+                  </div>
 
-                  // Add aircraft column if selected
-                  if (hasAircraft) {
-                    const unavailability = getUnavailabilityForSlot(
-                      selectedAircraftId,
-                      'aircraft',
-                      slot,
-                      day
-                    );
-                    const isInDragRange = isTimeSlotInDragRange(
-                      slot,
-                      selectedAircraftId,
-                      'aircraft',
-                      dayIndex
-                    );
-                    const columnIndex = dayIndex * columnsPerDay + columnOffset;
-                    const isQuarterSlot = slot % 4 === 1 || slot % 4 === 3;
-                    const cursorClass = unavailability
-                      ? 'cursor-not-allowed'
-                      : 'cursor-pointer';
-                    const backgroundClass = unavailability
-                      ? ''
-                      : isInDragRange
-                      ? 'bg-blue-100'
-                      : isQuarterSlot
-                      ? 'bg-blue-50 hover:bg-blue-100'
-                      : 'hover:bg-gray-50';
+                  {/* Resource columns for each day */}
+                  {weekDays.map((day, dayIndex) => {
+                    const daySlots = [];
+                    let columnOffset = 0;
+                    const hourIndex = Math.floor(slot / 4);
+                    const isAlternateHour = hourIndex % 2 === 1;
+                    const borderClasses = `${
+                      isHourStart ? ' border-t border-gray-200' : ''
+                    }${isHalfHour ? ' border-b border-gray-100' : ''}`;
 
-                    daySlots.push(
-                      <div
-                        key={`${dayIndex}-aircraft-${slot}`}
-                        className={`border-r border-gray-200 border-b border-gray-100 relative transition-colors ${cursorClass} ${backgroundClass}`}
-                        style={{
-                          height: slotHeight,
-                          gridColumn: columnIndex + 2,
-                          gridRow: slotIndex + 1,
-                          background: unavailability
-                            ? unavailability.pattern === 'diagonal'
-                              ? `repeating-linear-gradient(
-                                  45deg,
-                                  rgba(156, 163, 175, 0.3),
-                                  rgba(156, 163, 175, 0.3) 4px,
-                                  transparent 4px,
-                                  transparent 8px
-                                )`
-                              : 'rgba(156, 163, 175, 0.5)'
-                            : undefined,
-                        }}
-                        onClick={() =>
-                          !unavailability &&
-                          handleTimeSlotClick(
-                            slot,
-                            selectedAircraftId,
-                            'aircraft',
-                            day
-                          )
-                        }
-                        onMouseDown={() =>
-                          !unavailability &&
-                          handleMouseDown(
-                            slot,
-                            selectedAircraftId,
-                            'aircraft',
-                            day,
-                            dayIndex
-                          )
-                        }
-                        onMouseUp={() => handleMouseUp(day)}
-                        onMouseEnter={() =>
-                          handleMouseEnter(
-                            slot,
-                            selectedAircraftId,
-                            'aircraft',
-                            dayIndex
-                          )
-                        }
-                      >
-                        {unavailability && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                              {unavailability.reason}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                    columnOffset++;
-                  }
+                    // Add aircraft column if selected
+                    if (hasAircraft) {
+                      const unavailability = getUnavailabilityForSlot(
+                        selectedAircraftId,
+                        'aircraft',
+                        slot,
+                        day
+                      );
+                      const isInDragRange = isTimeSlotInDragRange(
+                        slot,
+                        selectedAircraftId,
+                        'aircraft',
+                        dayIndex
+                      );
+                      const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                      const cursorClass = unavailability
+                        ? 'cursor-not-allowed'
+                        : 'cursor-pointer';
+                      const backgroundClass = unavailability
+                        ? ''
+                        : isInDragRange
+                        ? 'bg-blue-100'
+                        : isAlternateHour
+                        ? 'bg-blue-50 hover:bg-blue-100'
+                        : 'hover:bg-gray-50';
 
-                  // Add instructor column if selected
-                  if (hasInstructor) {
-                    const unavailability = getUnavailabilityForSlot(
-                      selectedInstructorId,
-                      'instructor',
-                      slot,
-                      day
-                    );
-                    const isInDragRange = isTimeSlotInDragRange(
-                      slot,
-                      selectedInstructorId,
-                      'instructor',
-                      dayIndex
-                    );
-                    const columnIndex = dayIndex * columnsPerDay + columnOffset;
-                    const isQuarterSlot = slot % 4 === 1 || slot % 4 === 3;
-                    const cursorClass = unavailability
-                      ? 'cursor-not-allowed'
-                      : 'cursor-pointer';
-                    const backgroundClass = unavailability
-                      ? ''
-                      : isInDragRange
-                      ? 'bg-blue-100'
-                      : isQuarterSlot
-                      ? 'bg-blue-50 hover:bg-blue-100'
-                      : 'hover:bg-gray-50';
+                      daySlots.push(
+                        <div
+                          key={`${dayIndex}-aircraft-${slot}`}
+                          className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          style={{
+                            height: slotHeight,
+                            gridColumn: columnIndex + 2,
+                            gridRow: slotIndex + 1,
+                            background: unavailability
+                              ? unavailability.pattern === 'diagonal'
+                                ? `repeating-linear-gradient(
+                                    45deg,
+                                    rgba(156, 163, 175, 0.3),
+                                    rgba(156, 163, 175, 0.3) 4px,
+                                    transparent 4px,
+                                    transparent 8px
+                                  )`
+                                : 'rgba(156, 163, 175, 0.5)'
+                              : undefined,
+                          }}
+                          onClick={() =>
+                            !unavailability &&
+                            handleTimeSlotClick(
+                              slot,
+                              selectedAircraftId,
+                              'aircraft',
+                              day
+                            )
+                          }
+                          onMouseDown={() =>
+                            !unavailability &&
+                            handleMouseDown(
+                              slot,
+                              selectedAircraftId,
+                              'aircraft',
+                              day,
+                              dayIndex
+                            )
+                          }
+                          onMouseUp={() => handleMouseUp(day)}
+                          onMouseEnter={() =>
+                            handleMouseEnter(
+                              slot,
+                              selectedAircraftId,
+                              'aircraft',
+                              dayIndex
+                            )
+                          }
+                        >
+                          {unavailability && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
+                                {unavailability.reason}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                      columnOffset++;
+                    }
 
-                    daySlots.push(
-                      <div
-                        key={`${dayIndex}-instructor-${slot}`}
-                        className={`border-r border-gray-200 border-b border-gray-100 relative transition-colors ${cursorClass} ${backgroundClass}`}
-                        style={{
-                          height: slotHeight,
-                          gridColumn: columnIndex + 2,
-                          gridRow: slotIndex + 1,
-                          background: unavailability
-                            ? unavailability.pattern === 'diagonal'
-                              ? `repeating-linear-gradient(
-                                  45deg,
-                                  rgba(156, 163, 175, 0.3),
-                                  rgba(156, 163, 175, 0.3) 4px,
-                                  transparent 4px,
-                                  transparent 8px
-                                )`
-                              : 'rgba(156, 163, 175, 0.5)'
-                            : undefined,
-                        }}
-                        onClick={() =>
-                          !unavailability &&
-                          handleTimeSlotClick(
-                            slot,
-                            selectedInstructorId,
-                            'instructor',
-                            day
-                          )
-                        }
-                        onMouseDown={() =>
-                          !unavailability &&
-                          handleMouseDown(
-                            slot,
-                            selectedInstructorId,
-                            'instructor',
-                            day,
-                            dayIndex
-                          )
-                        }
-                        onMouseUp={() => handleMouseUp(day)}
-                        onMouseEnter={() =>
-                          handleMouseEnter(
-                            slot,
-                            selectedInstructorId,
-                            'instructor',
-                            dayIndex
-                          )
-                        }
-                      >
-                        {unavailability && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                              {unavailability.reason}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
+                    // Add instructor column if selected
+                    if (hasInstructor) {
+                      const unavailability = getUnavailabilityForSlot(
+                        selectedInstructorId,
+                        'instructor',
+                        slot,
+                        day
+                      );
+                      const isInDragRange = isTimeSlotInDragRange(
+                        slot,
+                        selectedInstructorId,
+                        'instructor',
+                        dayIndex
+                      );
+                      const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                      const cursorClass = unavailability
+                        ? 'cursor-not-allowed'
+                        : 'cursor-pointer';
+                      const backgroundClass = unavailability
+                        ? ''
+                        : isInDragRange
+                        ? 'bg-blue-100'
+                        : isAlternateHour
+                        ? 'bg-blue-50 hover:bg-blue-100'
+                        : 'hover:bg-gray-50';
 
-                  return daySlots;
-                })}
-              </React.Fragment>
-            ))}
+                      daySlots.push(
+                        <div
+                          key={`${dayIndex}-instructor-${slot}`}
+                          className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          style={{
+                            height: slotHeight,
+                            gridColumn: columnIndex + 2,
+                            gridRow: slotIndex + 1,
+                            background: unavailability
+                              ? unavailability.pattern === 'diagonal'
+                                ? `repeating-linear-gradient(
+                                    45deg,
+                                    rgba(156, 163, 175, 0.3),
+                                    rgba(156, 163, 175, 0.3) 4px,
+                                    transparent 4px,
+                                    transparent 8px
+                                  )`
+                                : 'rgba(156, 163, 175, 0.5)'
+                              : undefined,
+                          }}
+                          onClick={() =>
+                            !unavailability &&
+                            handleTimeSlotClick(
+                              slot,
+                              selectedInstructorId,
+                              'instructor',
+                              day
+                            )
+                          }
+                          onMouseDown={() =>
+                            !unavailability &&
+                            handleMouseDown(
+                              slot,
+                              selectedInstructorId,
+                              'instructor',
+                              day,
+                              dayIndex
+                            )
+                          }
+                          onMouseUp={() => handleMouseUp(day)}
+                          onMouseEnter={() =>
+                            handleMouseEnter(
+                              slot,
+                              selectedInstructorId,
+                              'instructor',
+                              dayIndex
+                            )
+                          }
+                        >
+                          {unavailability && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
+                                {unavailability.reason}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return daySlots;
+                  })}
+                  </React.Fragment>
+                );
+              })}
 
             {/* Render bookings as grid items */}
             {weekDays.map((day, dayIndex) => {
