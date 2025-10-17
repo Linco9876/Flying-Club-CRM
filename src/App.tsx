@@ -135,6 +135,14 @@ const handleNewBookingWithResource = (
     }
   };
 
+  const handleCancelBooking = async (bookingId: string) => {
+    try {
+      await updateBooking(bookingId, { status: 'cancelled' as const });
+    } catch (error) {
+      console.error('Error cancelling booking:', error);
+    }
+  };
+
   const handleTrainingRecordSubmit = async (recordData: any) => {
     console.log('Training record submitted:', recordData);
 
@@ -236,8 +244,8 @@ const handleNewBookingWithResource = (
               </main>
             </div>
             
-            <BookingForm 
-              isOpen={showBookingForm} 
+            <BookingForm
+              isOpen={showBookingForm}
               onClose={() => {
                 setShowBookingForm(false);
                 setBookingFormData({});
@@ -245,6 +253,7 @@ const handleNewBookingWithResource = (
               }}
               prefilledData={bookingFormData}
               onSubmit={handleBookingSubmit}
+              onCancelBooking={editingBooking ? handleCancelBooking : undefined}
               booking={editingBooking}
               isEdit={!!editingBooking}
             />
