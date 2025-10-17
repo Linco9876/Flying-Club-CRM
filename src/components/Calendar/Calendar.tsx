@@ -240,7 +240,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const formatHourLabel = (slot: number) => {
     const { hour } = getTimeFromSlot(slot);
-    return `${hour}:${'00'}`;
+    return `${hour.toString().padStart(2, '0')}:00`;
   };
 
   // Mock unavailability data
@@ -312,8 +312,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     const minuteHeight = slotHeight / 15;
 
     return {
-      gridRowStart: startSlot + 2, // +2 because grid starts with header row
-      gridRowEnd: startSlot + 2 + durationInSlots,
+      gridRowStart: startSlot + 1,
+      gridRowEnd: startSlot + 1 + durationInSlots,
       marginTop:
         remainderMinutes === 0 ? 0 : remainderMinutes * minuteHeight,
     };
@@ -605,8 +605,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                 <React.Fragment key={slot}>
                   {/* Time label */}
                   <div
-                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 pt-1 pb-0.5 flex items-start justify-end`}
-                    style={{ height: slotHeight }}
+                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 flex items-start justify-end`}
+                    style={{
+                      height: slotHeight,
+                      gridColumn: 1,
+                      gridRow: slotIndex + 1,
+                      paddingTop: isHourStart ? 2 : 0,
+                    }}
                   >
                     {timeLabel && (
                       <span className="text-xs font-semibold text-gray-500 leading-none">
@@ -940,8 +945,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                 <React.Fragment key={slot}>
                   {/* Time label */}
                   <div
-                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 pt-1 pb-0.5 flex items-start justify-end`}
-                    style={{ height: slotHeight }}
+                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 flex items-start justify-end`}
+                    style={{
+                      height: slotHeight,
+                      gridColumn: 1,
+                      gridRow: slotIndex + 1,
+                      paddingTop: isHourStart ? 2 : 0,
+                    }}
                   >
                     {timeLabel && (
                       <span className="text-xs font-semibold text-gray-500 leading-none">
