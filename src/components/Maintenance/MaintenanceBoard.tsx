@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { DefectReportForm } from './DefectReportForm';
 import { AlertTriangle, Wrench, CheckCircle, Plus, Camera, Loader2 } from 'lucide-react';
 import { useAircraft } from '../../hooks/useAircraft';
+import { Defect } from '../../types';
 
 export const MaintenanceBoard: React.FC = () => {
-  const { aircraft, loading } = useAircraft();
+  const { aircraft, loading, reportDefect } = useAircraft();
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showDefectForm, setShowDefectForm] = useState(false);
 
@@ -49,9 +50,14 @@ export const MaintenanceBoard: React.FC = () => {
     return a?.registration || 'Unknown';
   };
 
-  const handleDefectSubmit = (defectData: any) => {
-    console.log('Defect reported:', defectData);
-    setShowDefectForm(false);
+  const handleDefectSubmit = async (defectData: Omit<Defect, 'id'>) => {
+    try {
+      await reportDefect(defectData);
+      setShowDefectForm(false);
+    } catch (error) {
+      console.error('Error reporting defect:', error);
+      throw error;
+    }
   };
 
   if (loading) {

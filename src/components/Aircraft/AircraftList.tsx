@@ -2,13 +2,13 @@ import React from 'react';
 import { useState } from 'react';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
-import { Aircraft } from '../../types';
+import { Aircraft, Defect } from '../../types';
 import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 
 export const AircraftList: React.FC = () => {
-  const { aircraft, loading, addAircraft, updateAircraft } = useAircraft();
+  const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -52,10 +52,14 @@ export const AircraftList: React.FC = () => {
     setShowDefectForm(true);
   };
 
-  const handleDefectSubmit = (defectData: any) => {
-    console.log('Defect reported:', defectData);
-    setShowDefectForm(false);
-    setSelectedAircraftForDefect('');
+  const handleDefectSubmit = async (defectData: Omit<Defect, 'id'>) => {
+    try {
+      await reportDefect(defectData);
+      setSelectedAircraftForDefect('');
+    } catch (error) {
+      console.error('Error reporting defect:', error);
+      throw error;
+    }
   };
 
   const openViewModal = (aircraft: Aircraft) => {
