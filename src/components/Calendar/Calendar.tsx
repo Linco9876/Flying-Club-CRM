@@ -595,11 +595,15 @@ export const Calendar: React.FC<CalendarProps> = ({
             {timeSlots.map((slot, slotIndex) => {
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHour = minute === 30;
+              const isHalfHourMarker = minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
-              }${isHalfHour ? ' border-b border-gray-100' : ''}`;
+              }${
+                isHalfHourMarker
+                  ? ' border-b border-dotted border-gray-300'
+                  : ''
+              }`;
 
               return (
                 <React.Fragment key={slot}>
@@ -619,7 +623,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         </span>
                       )}
                       <div
-                        className="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
+                        className="pointer-events-none absolute left-0 right-0 border-b border-dotted border-gray-300"
                         style={{ top: '50%' }}
                       />
                     </div>
@@ -938,11 +942,15 @@ export const Calendar: React.FC<CalendarProps> = ({
             {timeSlots.map((slot, slotIndex) => {
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHour = minute === 30;
+              const isHalfHourMarker = minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
-              }${isHalfHour ? ' border-b border-gray-100' : ''}`;
+              }${
+                isHalfHourMarker
+                  ? ' border-b border-dotted border-gray-300'
+                  : ''
+              }`;
 
               return (
                 <React.Fragment key={slot}>
@@ -962,7 +970,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         </span>
                       )}
                       <div
-                        className="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
+                        className="pointer-events-none absolute left-0 right-0 border-b border-dotted border-gray-300"
                         style={{ top: '50%' }}
                       />
                     </div>
