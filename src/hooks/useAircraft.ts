@@ -106,6 +106,33 @@ export const useAircraft = () => {
     }
   };
 
+  const reportDefect = async (defectData: Omit<Defect, 'id'>) => {
+    try {
+      const { error } = await supabase
+        .from('defects')
+        .insert({
+          aircraft_id: defectData.aircraftId,
+          reported_by: defectData.reportedBy,
+          date_reported: defectData.dateReported.toISOString(),
+          description: defectData.description,
+          status: defectData.status,
+          photos: defectData.photos ?? [],
+          mel_notes: defectData.melNotes ?? null,
+          severity: defectData.severity ?? null,
+          location: defectData.location ?? null,
+          tach_hours: defectData.tachHours ?? null,
+          hobbs_hours: defectData.hobbsHours ?? null
+        });
+
+      if (error) throw error;
+
+      await fetchAircraft();
+    } catch (err) {
+      console.error('Error reporting defect:', err);
+      throw err;
+    }
+  };
+
   const addAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'> & {
     aircraftRates?: { prepaid: number; payg: number; account: number };
     instructorRates?: { prepaid: number; payg: number; account: number };
@@ -256,6 +283,7 @@ export const useAircraft = () => {
     loading,
     error,
     addAircraft,
+    reportDefect,
     updateAircraft,
     deleteAircraft,
     refetch: fetchAircraft

@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 interface DefectReportFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (defectData: Omit<Defect, 'id'>) => void;
+  onSubmit: (defectData: Omit<Defect, 'id'>) => Promise<void>;
   preSelectedAircraftId?: string;
 }
 
@@ -36,7 +36,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validation
@@ -45,6 +45,12 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       return;
     }
 
+    const parseOptionalNumber = (value: string) => {
+      if (!value) return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
     const defectData: Omit<Defect, 'id'> = {
       aircraftId: formData.aircraftId,
       reportedBy: formData.reporter,
@@ -52,11 +58,21 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       description: formData.detailedDescription,
       status: 'open',
       photos: uploadedFiles.map(file => file.name), // In real app, would upload files first
-      melNotes: formData.melNotes || undefined
+      melNotes: formData.melNotes || undefined,
+      severity: formData.severity,
+      location: formData.location.trim() || undefined,
+      tachHours: parseOptionalNumber(formData.tachHours),
+      hobbsHours: parseOptionalNumber(formData.hobbsHours)
     };
 
-    onSubmit(defectData);
-    
+    try {
+      await onSubmit(defectData);
+    } catch (error) {
+      console.error('Error submitting defect report:', error);
+      toast.error('Failed to create defect report');
+      return;
+    }
+
     if (formData.groundAircraft) {
       toast.success('Defect reported and aircraft grounded successfully!');
     } else {
@@ -64,7 +80,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
     }
     
     onClose();
-    
+
     // Reset form
     setFormData({
       aircraftId: preSelectedAircraftId || '',
