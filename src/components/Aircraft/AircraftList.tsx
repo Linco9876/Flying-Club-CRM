@@ -151,7 +151,9 @@ export const AircraftList: React.FC = () => {
               {aircraftItem.defects.length > 0 && (
                 <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
                   <p className="text-xs text-red-600 font-medium">Open Defects: {aircraftItem.defects.length}</p>
-                  <p className="text-xs text-red-700 mt-1">{aircraftItem.defects[0].description}</p>
+                  <p className="text-xs text-red-700 mt-1">
+                    {aircraftItem.defects[0].summary || aircraftItem.defects[0].description}
+                  </p>
                 </div>
               )}
 
@@ -301,7 +303,12 @@ export const AircraftList: React.FC = () => {
                       <div key={index} className="bg-red-50 border border-red-200 p-3 rounded-lg">
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="text-sm font-medium text-red-900">{defect.description}</p>
+                            <p className="text-sm font-medium text-red-900">
+                              {defect.summary || defect.description}
+                            </p>
+                            <p className="text-xs text-red-800 mt-1 leading-snug">
+                              {defect.description}
+                            </p>
                             <p className="text-xs text-red-700 mt-1">
                               Reported: {defect.dateReported.toLocaleDateString()} by {defect.reportedBy}
                             </p>

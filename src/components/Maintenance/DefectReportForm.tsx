@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -36,6 +36,14 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(prev => ({
+      ...prev,
+      aircraftId: preSelectedAircraftId || ''
+    }));
+  }, [preSelectedAircraftId, isOpen]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -55,6 +63,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       aircraftId: formData.aircraftId,
       reportedBy: formData.reporter,
       dateReported: new Date(formData.discoveredDateTime),
+      summary: formData.defectSummary,
       description: formData.detailedDescription,
       status: 'open',
       photos: uploadedFiles.map(file => file.name), // In real app, would upload files first
@@ -153,7 +162,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
-                disabled={!!preSelectedAircraftId || loading}
+                disabled={loading}
               >
                 <option value="">
                   {loading ? 'Loading aircraft...' : aircraft.length === 0 ? 'No aircraft available' : 'Select aircraft'}
