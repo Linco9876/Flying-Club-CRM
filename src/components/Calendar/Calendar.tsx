@@ -597,28 +597,33 @@ export const Calendar: React.FC<CalendarProps> = ({
               const isHourStart = minute === 0;
               const isHalfHour = minute === 30;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
-              const timeCellBorders = `${
+              const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
               }${isHalfHour ? ' border-b border-gray-100' : ''}`;
 
               return (
                 <React.Fragment key={slot}>
                   {/* Time label */}
-                  <div
-                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 flex items-start justify-end`}
-                    style={{
-                      height: slotHeight,
-                      gridColumn: 1,
-                      gridRow: slotIndex + 1,
-                      paddingTop: isHourStart ? 2 : 0,
-                    }}
-                  >
-                    {timeLabel && (
-                      <span className="text-xs font-semibold text-gray-500 leading-none">
-                        {timeLabel}
-                      </span>
-                    )}
-                  </div>
+                  {isHourStart && (
+                    <div
+                      className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
+                      style={{
+                        gridColumn: 1,
+                        gridRow: `${slotIndex + 1} / span 4`,
+                        paddingTop: 2,
+                      }}
+                    >
+                      {timeLabel && (
+                        <span className="text-xs font-semibold text-gray-500 leading-none">
+                          {timeLabel}
+                        </span>
+                      )}
+                      <div
+                        className="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
+                        style={{ top: '50%' }}
+                      />
+                    </div>
+                  )}
 
                   {/* Resource columns */}
                   {resources.map((resource, resourceIndex) => {
@@ -645,9 +650,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       : isAlternateHour
                       ? 'bg-blue-50 hover:bg-blue-100'
                       : 'hover:bg-gray-50';
-                    const borderClasses = `${
-                      isHourStart ? ' border-t border-gray-200' : ''
-                    }${isHalfHour ? ' border-b border-gray-100' : ''}`;
+                    const borderClasses = resourceBorderClasses;
 
                     return (
                       <div
@@ -937,28 +940,33 @@ export const Calendar: React.FC<CalendarProps> = ({
               const isHourStart = minute === 0;
               const isHalfHour = minute === 30;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
-              const timeCellBorders = `${
+              const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
               }${isHalfHour ? ' border-b border-gray-100' : ''}`;
 
               return (
                 <React.Fragment key={slot}>
                   {/* Time label */}
-                  <div
-                    className={`bg-white border-r border-gray-200${timeCellBorders} pr-2 flex items-start justify-end`}
-                    style={{
-                      height: slotHeight,
-                      gridColumn: 1,
-                      gridRow: slotIndex + 1,
-                      paddingTop: isHourStart ? 2 : 0,
-                    }}
-                  >
-                    {timeLabel && (
-                      <span className="text-xs font-semibold text-gray-500 leading-none">
-                        {timeLabel}
-                      </span>
-                    )}
-                  </div>
+                  {isHourStart && (
+                    <div
+                      className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
+                      style={{
+                        gridColumn: 1,
+                        gridRow: `${slotIndex + 1} / span 4`,
+                        paddingTop: 2,
+                      }}
+                    >
+                      {timeLabel && (
+                        <span className="text-xs font-semibold text-gray-500 leading-none">
+                          {timeLabel}
+                        </span>
+                      )}
+                      <div
+                        className="pointer-events-none absolute left-0 right-0 border-b border-gray-100"
+                        style={{ top: '50%' }}
+                      />
+                    </div>
+                  )}
 
                   {/* Resource columns for each day */}
                   {weekDays.map((day, dayIndex) => {
@@ -966,9 +974,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     let columnOffset = 0;
                     const hourIndex = Math.floor(slot / 4);
                     const isAlternateHour = hourIndex % 2 === 1;
-                    const borderClasses = `${
-                      isHourStart ? ' border-t border-gray-200' : ''
-                    }${isHalfHour ? ' border-b border-gray-100' : ''}`;
+                    const borderClasses = resourceBorderClasses;
 
                     // Add aircraft column if selected
                     if (hasAircraft) {
