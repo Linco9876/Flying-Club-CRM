@@ -129,13 +129,13 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     onClose();
   };
 
-  if (!isOpen) return null;
-
   const availableAircraft = aircraft.filter(a => a.status === 'serviceable');
   const instructors = getInstructors();
   const userRole = user?.role || 'student';
   const isLoading = aircraftLoading || usersLoading;
   const timeOptions = React.useMemo(() => generateTimeOptions(6, 21), []);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
