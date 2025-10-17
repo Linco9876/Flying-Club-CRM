@@ -44,6 +44,7 @@ export const useBookingFieldSettings = () => {
     } catch (err) {
       console.error('Error fetching booking field settings:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch settings');
+      setSettings([]);
     } finally {
       setLoading(false);
     }

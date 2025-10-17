@@ -55,6 +55,9 @@ const BookingForm: React.FC<BookingFormProps> = ({
     paymentType: booking?.paymentType || 'prepaid' as const,
     notes: booking?.notes || ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const isCancelledBooking = booking?.status === 'cancelled';
 
   // Update form data when prefilledData changes
   React.useEffect(() => {
@@ -86,9 +89,6 @@ const BookingForm: React.FC<BookingFormProps> = ({
       }));
     }
   }, [prefilledData, booking]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const isCancelledBooking = booking?.status === 'cancelled';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
