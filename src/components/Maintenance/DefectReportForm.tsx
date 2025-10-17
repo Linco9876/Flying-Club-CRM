@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 interface DefectReportFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (defectData: Omit<Defect, 'id'>) => void;
+  onSubmit: (defectData: Omit<Defect, 'id'>) => Promise<void>;
   preSelectedAircraftId?: string;
 }
 
@@ -36,7 +36,15 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(prev => ({
+      ...prev,
+      aircraftId: preSelectedAircraftId || ''
+    }));
+  }, [preSelectedAircraftId, isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validation
@@ -45,18 +53,35 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       return;
     }
 
+    const parseOptionalNumber = (value: string) => {
+      if (!value) return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
     const defectData: Omit<Defect, 'id'> = {
       aircraftId: formData.aircraftId,
       reportedBy: formData.reporter,
       dateReported: new Date(formData.discoveredDateTime),
+      summary: formData.defectSummary,
       description: formData.detailedDescription,
       status: 'open',
       photos: uploadedFiles.map(file => file.name), // In real app, would upload files first
-      melNotes: formData.melNotes || undefined
+      melNotes: formData.melNotes || undefined,
+      severity: formData.severity,
+      location: formData.location.trim() || undefined,
+      tachHours: parseOptionalNumber(formData.tachHours),
+      hobbsHours: parseOptionalNumber(formData.hobbsHours)
     };
 
-    onSubmit(defectData);
-    
+    try {
+      await onSubmit(defectData);
+    } catch (error) {
+      console.error('Error submitting defect report:', error);
+      toast.error('Failed to create defect report');
+      return;
+    }
+
     if (formData.groundAircraft) {
       toast.success('Defect reported and aircraft grounded successfully!');
     } else {
@@ -64,7 +89,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
     }
     
     onClose();
-    
+
     // Reset form
     setFormData({
       aircraftId: preSelectedAircraftId || '',
@@ -137,7 +162,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
-                disabled={!!preSelectedAircraftId || loading}
+                disabled={loading}
               >
                 <option value="">
                   {loading ? 'Loading aircraft...' : aircraft.length === 0 ? 'No aircraft available' : 'Select aircraft'}
