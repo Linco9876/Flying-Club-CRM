@@ -10,7 +10,10 @@ export const useNotifications = () => {
   const { user } = useAuth();
 
   const fetchNotifications = async () => {
-    if (!user) return;
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
