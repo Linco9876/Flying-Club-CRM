@@ -38,6 +38,7 @@ export const useAircraft = () => {
           aircraftId: d.aircraft_id,
           reportedBy: d.reported_by,
           dateReported: new Date(d.date_reported),
+          summary: d.summary || undefined,
           description: d.description,
           status: d.status,
           photos: d.photos,
@@ -103,6 +104,59 @@ export const useAircraft = () => {
       toast.error('Failed to load aircraft');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const reportDefect = async (defectData: Omit<Defect, 'id'>) => {
+    try {
+      const { error } = await supabase
+        .from('defects')
+        .insert({
+          aircraft_id: defectData.aircraftId,
+          reported_by: defectData.reportedBy,
+          date_reported: defectData.dateReported.toISOString(),
+          summary: defectData.summary ?? null,
+          description: defectData.description,
+          status: defectData.status,
+          photos: defectData.photos ?? [],
+          mel_notes: defectData.melNotes ?? null,
+          severity: defectData.severity ?? null,
+          location: defectData.location ?? null,
+          tach_hours: defectData.tachHours ?? null,
+          hobbs_hours: defectData.hobbsHours ?? null
+        });
+
+      if (error) throw error;
+
+      await fetchAircraft();
+    } catch (err) {
+      console.error('Error reporting defect:', err);
+      throw err;
+    }
+  };
+
+  const updateDefectStatus = async (
+    defectId: string,
+    updates: { status: Defect['status']; melNotes?: string }
+  ) => {
+    try {
+      const { error } = await supabase
+        .from('defects')
+        .update({
+          status: updates.status,
+          mel_notes: updates.melNotes ?? null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', defectId);
+
+      if (error) throw error;
+
+      await fetchAircraft();
+      toast.success('Defect status updated');
+    } catch (err) {
+      console.error('Error updating defect status:', err);
+      toast.error('Failed to update defect status');
+      throw err;
     }
   };
 
@@ -255,6 +309,8 @@ export const useAircraft = () => {
     aircraft,
     loading,
     error,
+    reportDefect,
+    updateDefectStatus,
     addAircraft,
     updateAircraft,
     deleteAircraft,

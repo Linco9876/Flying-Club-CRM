@@ -2,13 +2,13 @@ import React from 'react';
 import { useState } from 'react';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
-import { Aircraft } from '../../types';
+import { Aircraft, Defect } from '../../types';
 import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 
 export const AircraftList: React.FC = () => {
-  const { aircraft, loading, addAircraft, updateAircraft } = useAircraft();
+  const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -52,10 +52,14 @@ export const AircraftList: React.FC = () => {
     setShowDefectForm(true);
   };
 
-  const handleDefectSubmit = (defectData: any) => {
-    console.log('Defect reported:', defectData);
-    setShowDefectForm(false);
-    setSelectedAircraftForDefect('');
+  const handleDefectSubmit = async (defectData: Omit<Defect, 'id'>) => {
+    try {
+      await reportDefect(defectData);
+      setSelectedAircraftForDefect('');
+    } catch (error) {
+      console.error('Error reporting defect:', error);
+      throw error;
+    }
   };
 
   const openViewModal = (aircraft: Aircraft) => {
@@ -147,7 +151,9 @@ export const AircraftList: React.FC = () => {
               {aircraftItem.defects.length > 0 && (
                 <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
                   <p className="text-xs text-red-600 font-medium">Open Defects: {aircraftItem.defects.length}</p>
-                  <p className="text-xs text-red-700 mt-1">{aircraftItem.defects[0].description}</p>
+                  <p className="text-xs text-red-700 mt-1">
+                    {aircraftItem.defects[0].summary || aircraftItem.defects[0].description}
+                  </p>
                 </div>
               )}
 
@@ -297,7 +303,12 @@ export const AircraftList: React.FC = () => {
                       <div key={index} className="bg-red-50 border border-red-200 p-3 rounded-lg">
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="text-sm font-medium text-red-900">{defect.description}</p>
+                            <p className="text-sm font-medium text-red-900">
+                              {defect.summary || defect.description}
+                            </p>
+                            <p className="text-xs text-red-800 mt-1 leading-snug">
+                              {defect.description}
+                            </p>
                             <p className="text-xs text-red-700 mt-1">
                               Reported: {defect.dateReported.toLocaleDateString()} by {defect.reportedBy}
                             </p>

@@ -151,6 +151,7 @@ export interface Defect {
   aircraftId: string;
   reportedBy: string;
   dateReported: Date;
+  summary?: string;
   description: string;
   status: 'open' | 'mel' | 'fixed' | 'deferred';
   photos?: string[];

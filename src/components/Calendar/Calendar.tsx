@@ -216,15 +216,18 @@ export const Calendar: React.FC<CalendarProps> = ({
   const getTimeSlots = () => {
     const slots = [];
     for (let hour = 6; hour < 20; hour++) {
-      slots.push(hour * 2); // 30-minute slots: 12, 13, 14, etc.
-      slots.push(hour * 2 + 1);
+      // 15-minute slots: 24, 25, 26, 27, etc.
+      slots.push(hour * 4);
+      slots.push(hour * 4 + 1);
+      slots.push(hour * 4 + 2);
+      slots.push(hour * 4 + 3);
     }
     return slots;
   };
 
   const getTimeFromSlot = (slot: number) => {
-    const hour = Math.floor(slot / 2);
-    const minute = (slot % 2) * 30;
+    const hour = Math.floor(slot / 4);
+    const minute = (slot % 4) * 15;
     return { hour, minute };
   };
 
@@ -233,6 +236,11 @@ export const Calendar: React.FC<CalendarProps> = ({
     return `${hour.toString().padStart(2, '0')}:${minute
       .toString()
       .padStart(2, '0')}`;
+  };
+
+  const formatHourLabel = (slot: number) => {
+    const { hour } = getTimeFromSlot(slot);
+    return `${hour.toString().padStart(2, '0')}:00`;
   };
 
   // Mock unavailability data
@@ -296,16 +304,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     const startMinute = startTime.getMinutes();
 
     // Calculate position from 6:00 AM start
-    const startSlot =
-      (startHour - 6) * 2 + (startMinute >= 30 ? 1 : 0);
+    const startSlot = (startHour - 6) * 4 + Math.floor(startMinute / 15);
     const durationMs = endTime.getTime() - startTime.getTime();
     const durationHours = durationMs / (1000 * 60 * 60);
-    const durationInSlots = Math.max(1, Math.ceil(durationHours * 2));
+    const durationInSlots = Math.max(1, Math.ceil(durationHours * 4));
+    const remainderMinutes = startMinute % 15;
+    const minuteHeight = slotHeight / 15;
 
     return {
-      gridRowStart: startSlot + 2, // +2 because grid starts with header row
-      gridRowEnd: startSlot + 2 + durationInSlots,
-      marginTop: startMinute % 30 === 0 ? 0 : `${startMinute % 30}px`,
+      gridRowStart: startSlot + 1,
+      gridRowEnd: startSlot + 1 + durationInSlots,
+      marginTop:
+        remainderMinutes === 0 ? 0 : remainderMinutes * minuteHeight,
     };
   };
 
@@ -364,7 +374,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     if (onNewBookingWithTime) {
       const startTime = formatTimeSlot(slot);
-      const endTime = formatTimeSlot(slot + 2); // Default 1 hour booking
+      const endTime = formatTimeSlot(slot + 4); // Default 1 hour booking
       onNewBookingWithTime(
         date,
         startTime,
@@ -446,21 +456,21 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const renderViewModeButtons = () => (
     <div className="flex bg-gray-100 rounded-lg p-1">
-      {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
-        <button
-          key={mode}
-          onClick={() => setViewMode(mode)}
-          className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
-            viewMode === mode
-              ? 'bg-white text-blue-600 shadow-sm'
-              : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          {mode.charAt(0).toUpperCase() + mode.slice(1)}
-        </button>
-      ))}
-    </div>
-  );
+        {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => setViewMode(mode)}
+            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+              viewMode === mode
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            {mode.charAt(0).toUpperCase() + mode.slice(1)}
+          </button>
+        ))}
+      </div>
+    );
 
   const renderResourceSelectors = () => (
     <div className="flex items-center space-x-4">
@@ -566,7 +576,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       </div>
                     )}
                 </div>
-              ))}
+                ))}
             </div>
           </div>
 
@@ -582,97 +592,130 @@ export const Calendar: React.FC<CalendarProps> = ({
             {/* Current Time Indicator */}
             <CurrentTimeIndicator isVisible={isToday(currentDate)} />
 
-            {timeSlots.map((slot, slotIndex) => (
-              <React.Fragment key={slot}>
-                {/* Time label */}
-                <div
-                  className="bg-white border-r border-gray-200 border-b border-gray-100 p-2 flex items-center justify-end"
-                  style={{ height: slotHeight }}
-                >
-                  <span className="text-xs text-gray-500">
-                    {formatTimeSlot(slot)}
-                  </span>
-                </div>
+            {timeSlots.map((slot, slotIndex) => {
+              const { minute } = getTimeFromSlot(slot);
+              const isHourStart = minute === 0;
+              const isHalfHourMarker = minute === 15;
+              const timeLabel = isHourStart ? formatHourLabel(slot) : '';
+              const resourceBorderClasses = `${
+                isHourStart ? ' border-t border-gray-200' : ''
+              }${
+                isHalfHourMarker
+                  ? ' border-b border-dotted border-gray-300'
+                  : ''
+              }`;
 
-                {/* Resource columns */}
-                {resources.map((resource, resourceIndex) => {
-                  const unavailability = getUnavailabilityForSlot(
-                    resource.id,
-                    resource.type,
-                    slot,
-                    currentDate
-                  );
-                  const isInDragRange = isTimeSlotInDragRange(
-                    slot,
-                    resource.id,
-                    resource.type
-                  );
-
-                  return (
+              return (
+                <React.Fragment key={slot}>
+                  {/* Time label */}
+                  {isHourStart && (
                     <div
-                      key={`${resource.id}-${slot}`}
-                      className={`border-r border-gray-200 border-b border-gray-100 relative cursor-pointer transition-colors ${
-                        unavailability
-                          ? 'cursor-not-allowed'
-                          : isInDragRange
-                          ? 'bg-blue-100'
-                          : 'hover:bg-gray-50'
-                      }`}
+                      className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
                       style={{
-                        height: slotHeight,
-                        gridColumn: resourceIndex + 2,
-                        gridRow: slotIndex + 1,
-                        background: unavailability
-                          ? unavailability.pattern === 'diagonal'
-                            ? `repeating-linear-gradient(
-                                45deg,
-                                rgba(156, 163, 175, 0.3),
-                                rgba(156, 163, 175, 0.3) 4px,
-                                transparent 4px,
-                                transparent 8px
-                              )`
-                            : 'rgba(156, 163, 175, 0.5)'
-                          : undefined,
+                        gridColumn: 1,
+                        gridRow: `${slotIndex + 1} / span 4`,
+                        paddingTop: 2,
                       }}
-                      onClick={() =>
-                        !unavailability &&
-                        handleTimeSlotClick(
-                          slot,
-                          resource.id,
-                          resource.type,
-                          currentDate
-                        )
-                      }
-                      onMouseDown={() =>
-                        !unavailability &&
-                        handleMouseDown(
-                          slot,
-                          resource.id,
-                          resource.type,
-                          currentDate
-                        )
-                      }
-                      onMouseUp={() => handleMouseUp(currentDate)}
-                      onMouseEnter={() =>
-                        handleMouseEnter(
-                          slot,
-                          resource.id,
-                          resource.type
-                        )
-                      }
                     >
-                      {unavailability && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                            {unavailability.reason}
-                          </span>
-                        </div>
+                      {timeLabel && (
+                        <span className="text-xs font-semibold text-gray-500 leading-none">
+                          {timeLabel}
+                        </span>
                       )}
+                      <div
+                        className="pointer-events-none absolute left-0 right-0 border-b border-dotted border-gray-300"
+                        style={{ top: '50%' }}
+                      />
                     </div>
-                  );
-                })}
-              </React.Fragment>
-            ))}
+                  )}
+
+                  {/* Resource columns */}
+                  {resources.map((resource, resourceIndex) => {
+                    const unavailability = getUnavailabilityForSlot(
+                      resource.id,
+                      resource.type,
+                      slot,
+                      currentDate
+                    );
+                    const isInDragRange = isTimeSlotInDragRange(
+                      slot,
+                      resource.id,
+                      resource.type
+                    );
+                    const hourIndex = Math.floor(slot / 4);
+                    const isAlternateHour = hourIndex % 2 === 1;
+                    const cursorClass = unavailability
+                      ? 'cursor-not-allowed'
+                      : 'cursor-pointer';
+                    const backgroundClass = unavailability
+                      ? ''
+                      : isInDragRange
+                      ? 'bg-blue-100'
+                      : isAlternateHour
+                      ? 'bg-blue-50 hover:bg-blue-100'
+                      : 'hover:bg-gray-50';
+                    const borderClasses = resourceBorderClasses;
+
+                    return (
+                      <div
+                        key={`${resource.id}-${slot}`}
+                        className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                        style={{
+                          height: slotHeight,
+                          gridColumn: resourceIndex + 2,
+                          gridRow: slotIndex + 1,
+                          background: unavailability
+                            ? unavailability.pattern === 'diagonal'
+                              ? `repeating-linear-gradient(
+                                  45deg,
+                                  rgba(156, 163, 175, 0.3),
+                                  rgba(156, 163, 175, 0.3) 4px,
+                                  transparent 4px,
+                                  transparent 8px
+                                )`
+                              : 'rgba(156, 163, 175, 0.5)'
+                            : undefined,
+                        }}
+                        onClick={() =>
+                          !unavailability &&
+                          handleTimeSlotClick(
+                            slot,
+                            resource.id,
+                            resource.type,
+                            currentDate
+                          )
+                        }
+                        onMouseDown={() =>
+                          !unavailability &&
+                          handleMouseDown(
+                            slot,
+                            resource.id,
+                            resource.type,
+                            currentDate
+                          )
+                        }
+                        onMouseUp={() => handleMouseUp(currentDate)}
+                        onMouseEnter={() =>
+                          handleMouseEnter(
+                            slot,
+                            resource.id,
+                            resource.type
+                          )
+                        }
+                      >
+                        {unavailability && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
+                              {unavailability.reason}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
 
             {/* Render bookings as grid items */}
             {resources.map((resource, resourceIndex) =>
@@ -682,6 +725,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                 currentDate
               ).map((booking) => {
                 const position = getBookingPosition(booking);
+                const bookingStart = new Date(booking.startTime);
+                const bookingEnd = new Date(booking.endTime);
+                const startOffset = bookingStart.getMinutes() % 30;
+                const endOffset = bookingEnd.getMinutes() % 30;
+                const showHalfHourMarker = startOffset === 15 || endOffset === 15;
 
                 return (
                   <div
@@ -690,7 +738,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       booking.hasConflict
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
-                    } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                    } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                       draggedBooking?.id === booking.id
                         ? 'opacity-75'
                         : ''
@@ -719,6 +767,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                       }
                     }}
                   >
+                    {showHalfHourMarker && (
+                      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                    )}
                     <div className="font-medium text-xs truncate">
                       {resource.type === 'aircraft'
                         ? resource.name
@@ -888,192 +939,229 @@ export const Calendar: React.FC<CalendarProps> = ({
               isVisible={weekDays.some((day) => isToday(day))}
             />
 
-            {timeSlots.map((slot, slotIndex) => (
-              <React.Fragment key={slot}>
-                {/* Time label */}
-                <div
-                  className="bg-white border-r border-gray-200 border-b border-gray-100 p-2 flex items-center justify-end"
-                  style={{ height: slotHeight }}
-                >
-                  <span className="text-xs text-gray-500">
-                    {formatTimeSlot(slot)}
-                  </span>
-                </div>
+            {timeSlots.map((slot, slotIndex) => {
+              const { minute } = getTimeFromSlot(slot);
+              const isHourStart = minute === 0;
+              const isHalfHourMarker = minute === 15;
+              const timeLabel = isHourStart ? formatHourLabel(slot) : '';
+              const resourceBorderClasses = `${
+                isHourStart ? ' border-t border-gray-200' : ''
+              }${
+                isHalfHourMarker
+                  ? ' border-b border-dotted border-gray-300'
+                  : ''
+              }`;
 
-                {/* Resource columns for each day */}
-                {weekDays.map((day, dayIndex) => {
-                  const daySlots = [];
-                  let columnOffset = 0;
-
-                  // Add aircraft column if selected
-                  if (hasAircraft) {
-                    const unavailability = getUnavailabilityForSlot(
-                      selectedAircraftId,
-                      'aircraft',
-                      slot,
-                      day
-                    );
-                    const isInDragRange = isTimeSlotInDragRange(
-                      slot,
-                      selectedAircraftId,
-                      'aircraft',
-                      dayIndex
-                    );
-                    const columnIndex = dayIndex * columnsPerDay + columnOffset;
-
-                    daySlots.push(
+              return (
+                <React.Fragment key={slot}>
+                  {/* Time label */}
+                  {isHourStart && (
+                    <div
+                      className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
+                      style={{
+                        gridColumn: 1,
+                        gridRow: `${slotIndex + 1} / span 4`,
+                        paddingTop: 2,
+                      }}
+                    >
+                      {timeLabel && (
+                        <span className="text-xs font-semibold text-gray-500 leading-none">
+                          {timeLabel}
+                        </span>
+                      )}
                       <div
-                        key={`${dayIndex}-aircraft-${slot}`}
-                        className={`border-r border-gray-200 border-b border-gray-100 relative cursor-pointer transition-colors ${
-                          unavailability
-                            ? 'cursor-not-allowed'
-                            : isInDragRange
-                            ? 'bg-blue-100'
-                            : 'hover:bg-gray-50'
-                        }`}
-                        style={{
-                          height: slotHeight,
-                          gridColumn: columnIndex + 2,
-                          gridRow: slotIndex + 1,
-                          background: unavailability
-                            ? unavailability.pattern === 'diagonal'
-                              ? `repeating-linear-gradient(
-                                  45deg,
-                                  rgba(156, 163, 175, 0.3),
-                                  rgba(156, 163, 175, 0.3) 4px,
-                                  transparent 4px,
-                                  transparent 8px
-                                )`
-                              : 'rgba(156, 163, 175, 0.5)'
-                            : undefined,
-                        }}
-                        onClick={() =>
-                          !unavailability &&
-                          handleTimeSlotClick(
-                            slot,
-                            selectedAircraftId,
-                            'aircraft',
-                            day
-                          )
-                        }
-                        onMouseDown={() =>
-                          !unavailability &&
-                          handleMouseDown(
-                            slot,
-                            selectedAircraftId,
-                            'aircraft',
-                            day,
-                            dayIndex
-                          )
-                        }
-                        onMouseUp={() => handleMouseUp(day)}
-                        onMouseEnter={() =>
-                          handleMouseEnter(
-                            slot,
-                            selectedAircraftId,
-                            'aircraft',
-                            dayIndex
-                          )
-                        }
-                      >
-                        {unavailability && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                              {unavailability.reason}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                    columnOffset++;
-                  }
+                        className="pointer-events-none absolute left-0 right-0 border-b border-dotted border-gray-300"
+                        style={{ top: '50%' }}
+                      />
+                    </div>
+                  )}
 
-                  // Add instructor column if selected
-                  if (hasInstructor) {
-                    const unavailability = getUnavailabilityForSlot(
-                      selectedInstructorId,
-                      'instructor',
-                      slot,
-                      day
-                    );
-                    const isInDragRange = isTimeSlotInDragRange(
-                      slot,
-                      selectedInstructorId,
-                      'instructor',
-                      dayIndex
-                    );
-                    const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                  {/* Resource columns for each day */}
+                  {weekDays.map((day, dayIndex) => {
+                    const daySlots = [];
+                    let columnOffset = 0;
+                    const hourIndex = Math.floor(slot / 4);
+                    const isAlternateHour = hourIndex % 2 === 1;
+                    const borderClasses = resourceBorderClasses;
 
-                    daySlots.push(
-                      <div
-                        key={`${dayIndex}-instructor-${slot}`}
-                        className={`border-r border-gray-200 border-b border-gray-100 relative cursor-pointer transition-colors ${
-                          unavailability
-                            ? 'cursor-not-allowed'
-                            : isInDragRange
-                            ? 'bg-blue-100'
-                            : 'hover:bg-gray-50'
-                        }`}
-                        style={{
-                          height: slotHeight,
-                          gridColumn: columnIndex + 2,
-                          gridRow: slotIndex + 1,
-                          background: unavailability
-                            ? unavailability.pattern === 'diagonal'
-                              ? `repeating-linear-gradient(
-                                  45deg,
-                                  rgba(156, 163, 175, 0.3),
-                                  rgba(156, 163, 175, 0.3) 4px,
-                                  transparent 4px,
-                                  transparent 8px
-                                )`
-                              : 'rgba(156, 163, 175, 0.5)'
-                            : undefined,
-                        }}
-                        onClick={() =>
-                          !unavailability &&
-                          handleTimeSlotClick(
-                            slot,
-                            selectedInstructorId,
-                            'instructor',
-                            day
-                          )
-                        }
-                        onMouseDown={() =>
-                          !unavailability &&
-                          handleMouseDown(
-                            slot,
-                            selectedInstructorId,
-                            'instructor',
-                            day,
-                            dayIndex
-                          )
-                        }
-                        onMouseUp={() => handleMouseUp(day)}
-                        onMouseEnter={() =>
-                          handleMouseEnter(
-                            slot,
-                            selectedInstructorId,
-                            'instructor',
-                            dayIndex
-                          )
-                        }
-                      >
-                        {unavailability && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                              {unavailability.reason}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
+                    // Add aircraft column if selected
+                    if (hasAircraft) {
+                      const unavailability = getUnavailabilityForSlot(
+                        selectedAircraftId,
+                        'aircraft',
+                        slot,
+                        day
+                      );
+                      const isInDragRange = isTimeSlotInDragRange(
+                        slot,
+                        selectedAircraftId,
+                        'aircraft',
+                        dayIndex
+                      );
+                      const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                      const cursorClass = unavailability
+                        ? 'cursor-not-allowed'
+                        : 'cursor-pointer';
+                      const backgroundClass = unavailability
+                        ? ''
+                        : isInDragRange
+                        ? 'bg-blue-100'
+                        : isAlternateHour
+                        ? 'bg-blue-50 hover:bg-blue-100'
+                        : 'hover:bg-gray-50';
 
-                  return daySlots;
-                })}
-              </React.Fragment>
-            ))}
+                      daySlots.push(
+                        <div
+                          key={`${dayIndex}-aircraft-${slot}`}
+                          className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          style={{
+                            height: slotHeight,
+                            gridColumn: columnIndex + 2,
+                            gridRow: slotIndex + 1,
+                            background: unavailability
+                              ? unavailability.pattern === 'diagonal'
+                                ? `repeating-linear-gradient(
+                                    45deg,
+                                    rgba(156, 163, 175, 0.3),
+                                    rgba(156, 163, 175, 0.3) 4px,
+                                    transparent 4px,
+                                    transparent 8px
+                                  )`
+                                : 'rgba(156, 163, 175, 0.5)'
+                              : undefined,
+                          }}
+                          onClick={() =>
+                            !unavailability &&
+                            handleTimeSlotClick(
+                              slot,
+                              selectedAircraftId,
+                              'aircraft',
+                              day
+                            )
+                          }
+                          onMouseDown={() =>
+                            !unavailability &&
+                            handleMouseDown(
+                              slot,
+                              selectedAircraftId,
+                              'aircraft',
+                              day,
+                              dayIndex
+                            )
+                          }
+                          onMouseUp={() => handleMouseUp(day)}
+                          onMouseEnter={() =>
+                            handleMouseEnter(
+                              slot,
+                              selectedAircraftId,
+                              'aircraft',
+                              dayIndex
+                            )
+                          }
+                        >
+                          {unavailability && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
+                                {unavailability.reason}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                      columnOffset++;
+                    }
+
+                    // Add instructor column if selected
+                    if (hasInstructor) {
+                      const unavailability = getUnavailabilityForSlot(
+                        selectedInstructorId,
+                        'instructor',
+                        slot,
+                        day
+                      );
+                      const isInDragRange = isTimeSlotInDragRange(
+                        slot,
+                        selectedInstructorId,
+                        'instructor',
+                        dayIndex
+                      );
+                      const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                      const cursorClass = unavailability
+                        ? 'cursor-not-allowed'
+                        : 'cursor-pointer';
+                      const backgroundClass = unavailability
+                        ? ''
+                        : isInDragRange
+                        ? 'bg-blue-100'
+                        : isAlternateHour
+                        ? 'bg-blue-50 hover:bg-blue-100'
+                        : 'hover:bg-gray-50';
+
+                      daySlots.push(
+                        <div
+                          key={`${dayIndex}-instructor-${slot}`}
+                          className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          style={{
+                            height: slotHeight,
+                            gridColumn: columnIndex + 2,
+                            gridRow: slotIndex + 1,
+                            background: unavailability
+                              ? unavailability.pattern === 'diagonal'
+                                ? `repeating-linear-gradient(
+                                    45deg,
+                                    rgba(156, 163, 175, 0.3),
+                                    rgba(156, 163, 175, 0.3) 4px,
+                                    transparent 4px,
+                                    transparent 8px
+                                  )`
+                                : 'rgba(156, 163, 175, 0.5)'
+                              : undefined,
+                          }}
+                          onClick={() =>
+                            !unavailability &&
+                            handleTimeSlotClick(
+                              slot,
+                              selectedInstructorId,
+                              'instructor',
+                              day
+                            )
+                          }
+                          onMouseDown={() =>
+                            !unavailability &&
+                            handleMouseDown(
+                              slot,
+                              selectedInstructorId,
+                              'instructor',
+                              day,
+                              dayIndex
+                            )
+                          }
+                          onMouseUp={() => handleMouseUp(day)}
+                          onMouseEnter={() =>
+                            handleMouseEnter(
+                              slot,
+                              selectedInstructorId,
+                              'instructor',
+                              dayIndex
+                            )
+                          }
+                        >
+                          {unavailability && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
+                                {unavailability.reason}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return daySlots;
+                  })}
+                  </React.Fragment>
+                );
+              })}
 
             {/* Render bookings as grid items */}
             {weekDays.map((day, dayIndex) => {
@@ -1091,6 +1179,12 @@ export const Calendar: React.FC<CalendarProps> = ({
 
                 aircraftBookings.forEach((booking) => {
                   const position = getBookingPosition(booking);
+                  const bookingStart = new Date(booking.startTime);
+                  const bookingEnd = new Date(booking.endTime);
+                  const startOffset = bookingStart.getMinutes() % 30;
+                  const endOffset = bookingEnd.getMinutes() % 30;
+                  const showHalfHourMarker =
+                    startOffset === 15 || endOffset === 15;
 
                   bookingElements.push(
                     <div
@@ -1099,7 +1193,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
-                      } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                      } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         draggedBooking?.id === booking.id ? 'opacity-75' : ''
                       }`}
                       style={{
@@ -1116,6 +1210,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }
                       }}
                     >
+                      {showHalfHourMarker && (
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                      )}
                       <div className="font-medium text-xs truncate">
                         Aircraft
                       </div>
@@ -1150,6 +1247,12 @@ export const Calendar: React.FC<CalendarProps> = ({
 
                 instructorBookings.forEach((booking) => {
                   const position = getBookingPosition(booking);
+                  const bookingStart = new Date(booking.startTime);
+                  const bookingEnd = new Date(booking.endTime);
+                  const startOffset = bookingStart.getMinutes() % 30;
+                  const endOffset = bookingEnd.getMinutes() % 30;
+                  const showHalfHourMarker =
+                    startOffset === 15 || endOffset === 15;
 
                   bookingElements.push(
                     <div
@@ -1158,7 +1261,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-green-500 border-green-600 hover:bg-green-600'
-                      } text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                      } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         draggedBooking?.id === booking.id ? 'opacity-75' : ''
                       }`}
                       style={{
@@ -1175,6 +1278,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }
                       }}
                     >
+                      {showHalfHourMarker && (
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                      )}
                       <div className="font-medium text-xs truncate">
                         Instructor
                       </div>

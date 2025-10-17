@@ -30,12 +30,12 @@ export const getCurrentTimeInMinutes = (): number => {
 };
 
 export const getTimeSlotFromMinutes = (minutes: number): number => {
-  // Convert minutes since midnight to time slot (30-minute intervals starting from 6:00 AM)
+  // Convert minutes since midnight to time slot (15-minute intervals starting from 6:00 AM)
   const startHour = 6; // 6:00 AM
   const startMinutes = startHour * 60;
-  
+
   if (minutes < startMinutes) return -1; // Before start time
-  
+
   const minutesFromStart = minutes - startMinutes;
-  return Math.floor(minutesFromStart / 30);
+  return Math.floor(minutesFromStart / 15);
 };
