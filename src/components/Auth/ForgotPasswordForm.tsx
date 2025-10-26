@@ -23,8 +23,12 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
     setIsLoading(true);
 
     try {
+      const redirectUrl = window.location.origin.includes('localhost')
+        ? 'http://localhost:5173/reset-password'
+        : `${window.location.origin}/reset-password`;
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`
+        redirectTo: redirectUrl
       });
 
       if (error) throw error;

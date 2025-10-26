@@ -8,6 +8,7 @@ import { Booking } from './types';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { LoginForm } from './components/Auth/LoginForm';
+import { ResetPasswordPage } from './components/Auth/ResetPasswordPage';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { Calendar } from './components/Calendar/Calendar';
 import BookingForm from './components/Bookings/BookingForm';
@@ -207,6 +208,7 @@ const handleNewBookingWithResource = (
 
   return (
     <Routes>
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/students/:studentId" element={
         <RouteGuard requiredAction="view-students">
           <div className="min-h-screen bg-gray-50">
@@ -214,7 +216,7 @@ const handleNewBookingWithResource = (
             <div className="flex lg:ml-0 ml-0">
               <Sidebar activeView="students" onViewChange={setActiveView} />
               <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
-                <StudentProfilePage 
+                <StudentProfilePage
                   onOpenTrainingRecord={(booking) => {
                     setSelectedBookingForRecord(booking);
                     setShowTrainingRecordForm(true);
