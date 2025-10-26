@@ -46,6 +46,29 @@ export const useUsers = () => {
     return users;
   };
 
+  const updateUser = async (userId: string, updates: Partial<User>) => {
+    try {
+      const updateData: any = {};
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.email !== undefined) updateData.email = updates.email;
+      if (updates.role !== undefined) updateData.role = updates.role;
+      if (updates.phone !== undefined) updateData.phone = updates.phone;
+      if (updates.avatar !== undefined) updateData.avatar_url = updates.avatar;
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      await fetchUsers();
+    } catch (err) {
+      console.error('Error updating user:', err);
+      throw err;
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -56,6 +79,7 @@ export const useUsers = () => {
     error,
     getInstructors,
     getPilots,
+    updateUser,
     refetch: fetchUsers
   };
 };

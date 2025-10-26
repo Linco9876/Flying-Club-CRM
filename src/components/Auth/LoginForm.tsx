@@ -2,23 +2,18 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Plane, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { SignUpForm } from './SignUpForm';
 
 export const LoginForm: React.FC = () => {
   const { login, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedDemo, setSelectedDemo] = useState('admin');
-
-  const demoAccounts = [
-    { role: 'admin', email: 'admin@flyingclub.com', label: 'Administrator' },
-    { role: 'instructor', email: 'instructor@flyingclub.com', label: 'Chief Flying Instructor' },
-    { role: 'student', email: 'student@flyingclub.com', label: 'Student Pilot' }
-  ];
+  const [showSignUp, setShowSignUp] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email || !password) {
       toast.error('Please enter both email and password');
       return;
@@ -26,14 +21,13 @@ export const LoginForm: React.FC = () => {
 
     const success = await login(email, password);
     if (!success) {
-      toast.error('Invalid credentials. Use demo123 as password.');
+      toast.error('Invalid email or password');
     }
   };
 
-  const handleDemoLogin = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('demo123');
-  };
+  if (showSignUp) {
+    return <SignUpForm onBackToLogin={() => setShowSignUp(false)} />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -102,33 +96,13 @@ export const LoginForm: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-8">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Demo Accounts</span>
-              </div>
-            </div>
-
-            <div className="mt-6 space-y-3">
-              {demoAccounts.map((account) => (
-                <button
-                  key={account.role}
-                  onClick={() => handleDemoLogin(account.email)}
-                  className="w-full text-left px-4 py-3 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{account.label}</p>
-                      <p className="text-xs text-gray-500">{account.email}</p>
-                    </div>
-                    <span className="text-xs text-gray-400">demo123</span>
-                  </div>
-                </button>
-              ))}
-            </div>
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setShowSignUp(true)}
+              className="text-sm text-blue-600 hover:text-blue-500 font-medium"
+            >
+              Don't have an account? Sign up
+            </button>
           </div>
         </div>
       </div>
