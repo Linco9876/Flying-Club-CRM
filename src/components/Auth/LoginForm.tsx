@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Plane, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { SignUpForm } from './SignUpForm';
+import { ForgotPasswordForm } from './ForgotPasswordForm';
 
 export const LoginForm: React.FC = () => {
   const { login, isLoading } = useAuth();
@@ -10,6 +11,7 @@ export const LoginForm: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUp, setShowSignUp] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +29,10 @@ export const LoginForm: React.FC = () => {
 
   if (showSignUp) {
     return <SignUpForm onBackToLogin={() => setShowSignUp(false)} />;
+  }
+
+  if (showForgotPassword) {
+    return <ForgotPasswordForm onBackToLogin={() => setShowForgotPassword(false)} />;
   }
 
   return (
@@ -85,6 +91,16 @@ export const LoginForm: React.FC = () => {
                   )}
                 </button>
               </div>
+            </div>
+
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(true)}
+                className="text-sm text-blue-600 hover:text-blue-500 font-medium"
+              >
+                Forgot password?
+              </button>
             </div>
 
             <button

@@ -62,9 +62,10 @@ const rolePermissions: Record<string, Permission[]> = {
     { action: 'edit-personal-settings', resource: 'own' }
   ],
   student: [
-    { action: 'view-dashboard', resource: 'own' },
-    { action: 'view-calendar', resource: 'own' },
+    { action: 'view-dashboard', resource: 'all' },
+    { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'own' },
+    { action: 'view-aircraft', resource: 'all' },
     { action: 'view-safety', resource: 'own' },
     { action: 'view-settings', resource: 'own' },
     { action: 'view-pilot-currency', resource: 'own' },
