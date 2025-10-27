@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
-import { Defect } from '../../types';
+import { Defect, DefectAttachment } from '../../types';
 import toast from 'react-hot-toast';
 
 interface DefectReportFormProps {
@@ -20,6 +20,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 }) => {
   const { user } = useAuth();
   const { aircraft, loading } = useAircraft();
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [formData, setFormData] = useState({
     aircraftId: preSelectedAircraftId || '',
     discoveredDateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm format
@@ -34,7 +35,22 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
     hobbsHours: ''
   });
 
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ file: File; preview: string }>>([]);
+
+  const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Unsupported file format'));
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -59,6 +75,12 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       return Number.isFinite(parsed) ? parsed : undefined;
     };
 
+    const attachments: DefectAttachment[] = uploadedFiles.map(item => ({
+      name: item.file.name,
+      url: item.preview,
+      type: item.file.type
+    }));
+
     const defectData: Omit<Defect, 'id'> = {
       aircraftId: formData.aircraftId,
       reportedBy: formData.reporter,
@@ -66,7 +88,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       summary: formData.defectSummary,
       description: formData.detailedDescription,
       status: 'open',
-      photos: uploadedFiles.map(file => file.name), // In real app, would upload files first
+      photos: attachments,
       melNotes: formData.melNotes || undefined,
       severity: formData.severity,
       location: formData.location.trim() || undefined,
@@ -107,10 +129,29 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
     setUploadedFiles([]);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setUploadedFiles(prev => [...prev, ...files]);
-    toast.success(`${files.length} file(s) uploaded`);
+    if (files.length === 0) return;
+
+    try {
+      setUploadingFiles(true);
+      const previews = await Promise.all(
+        files.map(async file => ({
+          file,
+          preview: await readFileAsDataUrl(file)
+        }))
+      );
+      setUploadedFiles(prev => [...prev, ...previews]);
+      toast.success(`${files.length} file(s) uploaded`);
+    } catch (error) {
+      console.error('Failed to read uploaded files', error);
+      toast.error('Unable to read one or more files');
+    } finally {
+      if (e.target) {
+        e.target.value = '';
+      }
+      setUploadingFiles(false);
+    }
   };
 
   const removeFile = (index: number) => {
@@ -363,18 +404,22 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                   multiple
                   accept=".jpg,.jpeg,.png,.pdf"
                   onChange={handleFileUpload}
+                  disabled={uploadingFiles}
                   className="hidden"
                 />
               </label>
             </div>
+            {uploadingFiles && (
+              <p className="mt-2 text-xs text-gray-500">Processing files...</p>
+            )}
 
             {/* Uploaded Files */}
             {uploadedFiles.length > 0 && (
               <div className="mt-4 space-y-2">
                 <h4 className="text-sm font-medium text-gray-700">Uploaded Files</h4>
-                {uploadedFiles.map((file, index) => (
+                {uploadedFiles.map((item, index) => (
                   <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                    <span className="text-sm text-gray-700">{file.name}</span>
+                    <span className="text-sm text-gray-700">{item.file.name}</span>
                     <button
                       type="button"
                       onClick={() => removeFile(index)}
@@ -399,7 +444,8 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
             </button>
             <button
               type="submit"
-              className="flex items-center space-x-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              className="flex items-center space-x-2 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={uploadingFiles}
             >
               <Save className="h-4 w-4" />
               <span>Report Defect</span>

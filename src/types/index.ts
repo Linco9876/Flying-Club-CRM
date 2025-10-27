@@ -146,6 +146,12 @@ export interface TrainingAuditEntry {
   changes: Record<string, any>;
 }
 
+export interface DefectAttachment {
+  name: string;
+  url: string;
+  type?: string;
+}
+
 export interface Defect {
   id: string;
   aircraftId: string;
@@ -154,7 +160,7 @@ export interface Defect {
   summary?: string;
   description: string;
   status: 'open' | 'mel' | 'fixed' | 'deferred';
-  photos?: string[];
+  photos?: DefectAttachment[];
   melNotes?: string;
   severity?: 'Minor' | 'Major' | 'Critical';
   location?: string;

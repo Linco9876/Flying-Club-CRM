@@ -1,7 +1,71 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Aircraft, Defect } from '../types';
+import { Aircraft, Defect, DefectAttachment } from '../types';
 import toast from 'react-hot-toast';
+
+const parseDefectPhotos = (photos?: string[] | null): DefectAttachment[] | undefined => {
+  if (!photos || photos.length === 0) return undefined;
+
+  const attachments: DefectAttachment[] = [];
+
+  photos.forEach(rawPhoto => {
+    if (!rawPhoto || typeof rawPhoto !== 'string') return;
+
+    const normaliseFromObject = () => {
+      try {
+        const parsed = JSON.parse(rawPhoto);
+        if (parsed && typeof parsed === 'object') {
+          const name = typeof parsed.name === 'string' && parsed.name.trim().length > 0
+            ? parsed.name
+            : 'Attachment';
+          const url = typeof parsed.url === 'string' && parsed.url
+            ? parsed.url
+            : typeof parsed.dataUrl === 'string'
+              ? parsed.dataUrl
+              : typeof parsed.href === 'string'
+                ? parsed.href
+                : '';
+          const type = typeof parsed.type === 'string' && parsed.type.trim().length > 0
+            ? parsed.type
+            : undefined;
+
+          if (url) {
+            attachments.push({ name, url, type });
+          } else {
+            attachments.push({ name, url: '', type });
+          }
+          return true;
+        }
+      } catch (error) {
+        // Ignore JSON parse errors and fall back to heuristic parsing
+      }
+      return false;
+    };
+
+    if (normaliseFromObject()) {
+      return;
+    }
+
+    if (/^data:/i.test(rawPhoto) || /^https?:\/\//i.test(rawPhoto)) {
+      attachments.push({
+        name: rawPhoto.startsWith('data:') ? 'Attachment' : rawPhoto.split('/').pop() || 'Attachment',
+        url: rawPhoto,
+        type: rawPhoto.startsWith('data:')
+          ? rawPhoto.substring(5, rawPhoto.indexOf(';') > -1 ? rawPhoto.indexOf(';') : undefined)
+          : undefined
+      });
+      return;
+    }
+
+    attachments.push({
+      name: rawPhoto,
+      url: '',
+      type: undefined
+    });
+  });
+
+  return attachments.length > 0 ? attachments : undefined;
+};
 
 export const useAircraft = () => {
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
@@ -41,7 +105,7 @@ export const useAircraft = () => {
           summary: d.summary || undefined,
           description: d.description,
           status: d.status,
-          photos: d.photos,
+          photos: parseDefectPhotos(d.photos),
           melNotes: d.mel_notes,
           severity: d.severity,
           location: d.location,
@@ -118,7 +182,7 @@ export const useAircraft = () => {
           summary: defectData.summary ?? null,
           description: defectData.description,
           status: defectData.status,
-          photos: defectData.photos ?? [],
+          photos: defectData.photos?.map(photo => JSON.stringify(photo)) ?? [],
           mel_notes: defectData.melNotes ?? null,
           severity: defectData.severity ?? null,
           location: defectData.location ?? null,

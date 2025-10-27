@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { DefectReportForm } from './DefectReportForm';
 import { useAircraft } from '../../hooks/useAircraft';
-import { Defect } from '../../types';
+import { Defect, DefectAttachment } from '../../types';
 
 type BoardDefect = Defect & { aircraftId: string };
 
@@ -44,14 +44,21 @@ const getStatusIcon = (status: StatusOption) => {
   }
 };
 
-const isImageFile = (path: string) => /\.(jpe?g|png|gif|bmp|webp)$/i.test(path);
+const isImageAttachment = (attachment: DefectAttachment) => {
+  if (attachment.type) {
+    return attachment.type.toLowerCase().startsWith('image/');
+  }
+
+  const source = attachment.url || attachment.name;
+  return /\.(jpe?g|png|gif|bmp|webp)$/i.test(source);
+};
 
 interface DefectDetailsModalProps {
   defect: BoardDefect;
   aircraftRegistration: string;
   aircraftDescription?: string;
   onClose: () => void;
-  onSelectPhoto: (photo: string) => void;
+  onSelectAttachment: (attachment: DefectAttachment) => void;
 }
 
 const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
@@ -59,7 +66,7 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
   aircraftRegistration,
   aircraftDescription,
   onClose,
-  onSelectPhoto
+  onSelectAttachment
 }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -162,32 +169,42 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
             </h3>
             {defect.photos && defect.photos.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {defect.photos.map((photo, index) => (
-                  <button
-                    key={`${photo}-${index}`}
-                    type="button"
-                    onClick={() => onSelectPhoto(photo)}
-                    className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg hover:border-blue-400 hover:shadow-sm transition"
-                  >
-                    {isImageFile(photo) ? (
-                      <div className="w-16 h-16 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
-                        <img
-                          src={photo}
-                          alt={`Defect attachment ${index + 1}`}
-                          className="object-cover w-full h-full"
-                        />
+                {defect.photos.map((attachment, index) => {
+                  const hasPreview = Boolean(attachment.url);
+                  return (
+                    <button
+                      key={`${attachment.name}-${index}`}
+                      type="button"
+                      onClick={() => hasPreview && onSelectAttachment(attachment)}
+                      disabled={!hasPreview}
+                      className={`flex items-center space-x-3 p-3 border rounded-lg transition ${
+                        hasPreview
+                          ? 'border-gray-200 hover:border-blue-400 hover:shadow-sm'
+                          : 'border-gray-200 opacity-60 cursor-not-allowed'
+                      }`}
+                    >
+                      {hasPreview && isImageAttachment(attachment) ? (
+                        <div className="w-16 h-16 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                          <img
+                            src={attachment.url}
+                            alt={attachment.name || `Defect attachment ${index + 1}`}
+                            className="object-cover w-full h-full"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-md bg-gray-100 flex items-center justify-center">
+                          <ImageIcon className="h-8 w-8 text-gray-400" />
+                        </div>
+                      )}
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-gray-900 truncate max-w-[180px]">{attachment.name}</p>
+                        <p className="text-xs text-blue-600">
+                          {hasPreview ? 'Click to view' : 'Preview unavailable'}
+                        </p>
                       </div>
-                    ) : (
-                      <div className="w-16 h-16 rounded-md bg-gray-100 flex items-center justify-center">
-                        <ImageIcon className="h-8 w-8 text-gray-400" />
-                      </div>
-                    )}
-                    <div className="text-left">
-                      <p className="text-sm font-medium text-gray-900 truncate max-w-[180px]">{photo}</p>
-                      <p className="text-xs text-blue-600">Click to view</p>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-gray-500">No attachments uploaded.</p>
@@ -305,39 +322,54 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, 
 };
 
 interface PhotoLightboxProps {
-  photo: string;
+  attachment: DefectAttachment;
   onClose: () => void;
 }
 
-const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60] p-4">
-    <div className="relative bg-white rounded-lg shadow-2xl max-w-4xl w-full p-4">
-      <button
-        onClick={onClose}
-        className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-white hover:bg-black/80"
-      >
-        <X className="h-5 w-5" />
-      </button>
-      {isImageFile(photo) ? (
-        <img src={photo} alt="Defect attachment" className="w-full h-[70vh] object-contain rounded" />
-      ) : (
-        <div className="flex flex-col items-center justify-center space-y-4 py-12">
-          <ImageIcon className="h-12 w-12 text-gray-400" />
-          <p className="text-sm text-gray-600">This attachment cannot be previewed. Use the link below to open it.</p>
-          <a
-            href={photo}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <ExternalLink className="h-4 w-4" />
-            <span>Open attachment</span>
-          </a>
-        </div>
-      )}
+const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ attachment, onClose }) => {
+  const hasPreview = Boolean(attachment.url);
+  const showImage = hasPreview && isImageAttachment(attachment);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60] p-4">
+      <div className="relative bg-white rounded-lg shadow-2xl max-w-4xl w-full p-4">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-white hover:bg-black/80"
+        >
+          <X className="h-5 w-5" />
+        </button>
+        {showImage ? (
+          <img
+            src={attachment.url}
+            alt={attachment.name || 'Defect attachment'}
+            className="w-full h-[70vh] object-contain rounded"
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center space-y-4 py-12">
+            <ImageIcon className="h-12 w-12 text-gray-400" />
+            <p className="text-sm text-gray-600 text-center">
+              {hasPreview
+                ? 'This attachment type cannot be previewed. Use the link below to open it.'
+                : 'This attachment was saved without a preview. Download it from the link below if available.'}
+            </p>
+            {hasPreview && (
+              <a
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span>Open attachment</span>
+              </a>
+            )}
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export const MaintenanceBoard: React.FC = () => {
   const { aircraft, loading, reportDefect, updateDefectStatus } = useAircraft();
@@ -345,7 +377,7 @@ export const MaintenanceBoard: React.FC = () => {
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [selectedDefect, setSelectedDefect] = useState<BoardDefect | null>(null);
   const [statusModalDefect, setStatusModalDefect] = useState<BoardDefect | null>(null);
-  const [activePhoto, setActivePhoto] = useState<string | null>(null);
+  const [activeAttachment, setActiveAttachment] = useState<DefectAttachment | null>(null);
 
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
@@ -471,7 +503,7 @@ export const MaintenanceBoard: React.FC = () => {
                   <button
                     className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
                     onClick={() => {
-                      setActivePhoto(null);
+                      setActiveAttachment(null);
                       setSelectedDefect(defect);
                     }}
                   >
@@ -522,15 +554,15 @@ export const MaintenanceBoard: React.FC = () => {
           aircraftRegistration={getAircraftRegistration(selectedDefect.aircraftId)}
           aircraftDescription={selectedAircraftInfo ? `${selectedAircraftInfo.make} ${selectedAircraftInfo.model}` : undefined}
           onClose={() => {
-            setActivePhoto(null);
+            setActiveAttachment(null);
             setSelectedDefect(null);
           }}
-          onSelectPhoto={setActivePhoto}
+          onSelectAttachment={setActiveAttachment}
         />
       )}
 
-      {activePhoto && (
-        <PhotoLightbox photo={activePhoto} onClose={() => setActivePhoto(null)} />
+      {activeAttachment && (
+        <PhotoLightbox attachment={activeAttachment} onClose={() => setActiveAttachment(null)} />
       )}
     </div>
   );
