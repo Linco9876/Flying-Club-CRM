@@ -1,4 +1,4 @@
-import { Aircraft, Booking, Student, TrainingRecord, Defect, Invoice, SyllabusSequence } from '../types';
+import { Aircraft, Booking, Student, TrainingRecord, Defect, Invoice, SyllabusSequence, TrainingModule } from '../types';
 
 export const mockAircraft: Aircraft[] = [
   {
@@ -391,4 +391,173 @@ export const mockSyllabusSequences: SyllabusSequence[] = [
   { id: 'ADV001', code: 'IF', title: 'Instrument Flying', group: 'Advanced', order: 13, active: true },
   { id: 'ADV002', code: 'NF', title: 'Night Flying', group: 'Advanced', order: 14, active: true },
   { id: 'ADV003', code: 'AER', title: 'Aerobatics', group: 'Advanced', order: 15, active: true }
+];
+
+export const mockTrainingModules: TrainingModule[] = [
+  {
+    id: 'module-pre-solo',
+    title: 'Pre-Solo Foundations',
+    description: 'Structured pathway covering inspections, circuit work and safety procedures leading to first solo.',
+    category: 'Recreational Pilot Certificate',
+    version: '1.2',
+    status: 'published',
+    estimatedDurationHours: 12,
+    prerequisites: ['Complete aviation medical', 'Passenger briefing competency'],
+    objectives: [
+      'Prepare students for first solo circuit by reinforcing threat and error management',
+      'Validate aircraft handling, radio procedures and emergency responses',
+      'Introduce independent decision making in the circuit environment'
+    ],
+    evaluationCriteria: [
+      'Demonstrate consistent circuit spacing and height management',
+      'Correctly execute go-around procedures when required',
+      'Verbalise and apply emergency actions without prompting'
+    ],
+    tags: ['pre-solo', 'circuit', 'safety'],
+    lessons: [
+      {
+        id: 'lesson-ps1',
+        sequenceId: 'PS001',
+        sequenceCode: 'PS',
+        sequenceTitle: 'Pre-flight Inspection',
+        stage: 'ground',
+        durationMinutes: 60,
+        minCompetency: 'Introduce',
+        keyExercises: [
+          'Conduct full RA-Aus daily inspection',
+          'Identify unserviceable items and escalate appropriately'
+        ],
+        studentPreparation: 'Review aircraft POH limitations and abnormal procedures.',
+        instructorNotes: 'Demonstrate propeller safety and highlight local airfield hazards.'
+      },
+      {
+        id: 'lesson-ps2',
+        sequenceId: 'PS002',
+        sequenceCode: 'TC',
+        sequenceTitle: 'Traffic Circuit',
+        stage: 'flight',
+        durationMinutes: 90,
+        minCompetency: 'Practice',
+        keyExercises: [
+          'Circuit planning and spacing in crosswind conditions',
+          'Stabilised final approach with go-around decision points'
+        ],
+        studentPreparation: 'Listen to CTAF recordings and practise readbacks.',
+        instructorNotes: 'Use touch drills to reinforce emergency actions before take-off.'
+      },
+      {
+        id: 'lesson-ps3',
+        sequenceId: 'PS005',
+        sequenceCode: 'FL',
+        sequenceTitle: 'Forced Landings',
+        stage: 'flight',
+        durationMinutes: 75,
+        minCompetency: 'Assess',
+        keyExercises: [
+          'Field selection under time pressure',
+          'MAYDAY call and passenger brief in simulated engine failure'
+        ],
+        studentPreparation: 'Create kneeboard notes for engine failure checks.',
+        instructorNotes: 'Introduce glide performance numbers for club aircraft types.'
+      }
+    ],
+    resources: [
+      {
+        id: 'resource-ps1',
+        type: 'checklist',
+        title: 'RA-Aus Daily Inspection Checklist',
+        notes: 'Laminated copy kept in briefing room.'
+      },
+      {
+        id: 'resource-ps2',
+        type: 'video',
+        title: 'Circuit Operations Briefing',
+        url: 'https://training.flyingclub.example/circuit-briefing'
+      }
+    ],
+    lastUpdated: new Date('2024-01-15')
+  },
+  {
+    id: 'module-navigation',
+    title: 'Navigation Essentials',
+    description: 'Advanced module guiding students through planning, navigation techniques and controlled airspace operations.',
+    category: 'Cross Country Endorsement',
+    version: '2.0',
+    status: 'draft',
+    estimatedDurationHours: 16,
+    prerequisites: ['Pre-solo foundations', 'Flight radio endorsement'],
+    objectives: [
+      'Develop repeatable navigation planning workflow incorporating fuel and weather checks',
+      'Improve situational awareness using pilotage, dead reckoning and radio navigation aids',
+      'Build confidence communicating with tower and centre frequencies'
+    ],
+    evaluationCriteria: [
+      'Accurately compute flight logs within ±3 minutes ETA',
+      'Manage diversions with in-flight replanning and fuel assessment',
+      'Maintain CTAF and controlled airspace radio phraseology without prompting'
+    ],
+    tags: ['navigation', 'cross-country', 'advanced'],
+    lessons: [
+      {
+        id: 'lesson-nav1',
+        sequenceId: 'NAV001',
+        sequenceCode: 'NAV',
+        sequenceTitle: 'Navigation Planning',
+        stage: 'ground',
+        durationMinutes: 120,
+        minCompetency: 'Practice',
+        keyExercises: [
+          'Prepare flight log with wind and fuel calculations',
+          'Create weather and NOTAM briefing pack'
+        ],
+        studentPreparation: 'Download latest area forecasts and NOTAMs.',
+        instructorNotes: 'Compare electronic and paper planning tools for redundancy.'
+      },
+      {
+        id: 'lesson-nav2',
+        sequenceId: 'NAV002',
+        sequenceCode: 'XC',
+        sequenceTitle: 'Cross Country Flight',
+        stage: 'flight',
+        durationMinutes: 180,
+        minCompetency: 'Practice',
+        keyExercises: [
+          'Waypoint to waypoint timing checks',
+          'Diversion planning and alternates'
+        ],
+        studentPreparation: 'Prepare 2 diversion legs including fuel burn estimates.',
+        instructorNotes: 'Introduce in-cockpit checklists for lost procedure execution.'
+      },
+      {
+        id: 'lesson-nav3',
+        sequenceId: 'RA002',
+        sequenceCode: 'CTR',
+        sequenceTitle: 'Controlled Airspace',
+        stage: 'simulator',
+        durationMinutes: 90,
+        minCompetency: 'Introduce',
+        keyExercises: [
+          'Tower clearance requests and readbacks',
+          'Transponder and CTAF changeover flows'
+        ],
+        studentPreparation: 'Practise CTAF and tower phraseology scripts.',
+        instructorNotes: 'Use scenario-based training with multiple frequency changes.'
+      }
+    ],
+    resources: [
+      {
+        id: 'resource-nav1',
+        type: 'document',
+        title: 'Flight Log Template',
+        url: 'https://training.flyingclub.example/flight-log-template.pdf'
+      },
+      {
+        id: 'resource-nav2',
+        type: 'link',
+        title: 'NAIPS Weather Briefing Portal',
+        url: 'https://www.airservicesaustralia.com/naips'
+      }
+    ],
+    lastUpdated: new Date('2024-02-05')
+  }
 ];

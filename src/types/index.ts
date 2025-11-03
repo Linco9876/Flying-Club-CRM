@@ -137,6 +137,44 @@ export interface SyllabusSequence {
   active: boolean;
 }
 
+export interface TrainingResource {
+  id: string;
+  type: 'document' | 'video' | 'link' | 'checklist';
+  title: string;
+  url?: string;
+  notes?: string;
+}
+
+export interface TrainingLesson {
+  id: string;
+  sequenceId: string;
+  sequenceCode: string;
+  sequenceTitle: string;
+  stage: 'ground' | 'flight' | 'simulator';
+  durationMinutes: number;
+  minCompetency: 'Introduce' | 'Practice' | 'Assess';
+  keyExercises: string[];
+  studentPreparation: string;
+  instructorNotes: string;
+}
+
+export interface TrainingModule {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  version: string;
+  status: 'draft' | 'published';
+  estimatedDurationHours: number;
+  prerequisites: string[];
+  objectives: string[];
+  evaluationCriteria: string[];
+  tags: string[];
+  lessons: TrainingLesson[];
+  resources: TrainingResource[];
+  lastUpdated: Date;
+}
+
 export interface TrainingAuditEntry {
   id: string;
   timestamp: Date;
