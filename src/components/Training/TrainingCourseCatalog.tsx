@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   BookOpenCheck,
@@ -10,9 +10,8 @@ import {
   Tag
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { mockTrainingModules } from '../../data/mockData';
 import { TrainingModule } from '../../types';
-import { cloneTrainingModule } from '../../utils/trainingModules';
+import { useTrainingModules } from '../../context/TrainingModulesContext';
 
 interface NewCourseState {
   title: string;
@@ -23,14 +22,10 @@ interface NewCourseState {
 }
 
 export const TrainingCourseCatalog: React.FC = () => {
-  const initialModules = useMemo(
-    () => mockTrainingModules.map((module) => cloneTrainingModule(module)),
-    []
-  );
-  const [modules, setModules] = useState<TrainingModule[]>(initialModules);
+  const { modules, addModule } = useTrainingModules();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(
-    initialModules[0]?.id ?? null
+    () => modules[0]?.id ?? null
   );
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newCourse, setNewCourse] = useState<NewCourseState>({
@@ -40,6 +35,17 @@ export const TrainingCourseCatalog: React.FC = () => {
     estimatedDurationHours: 6,
     tags: ''
   });
+
+  useEffect(() => {
+    if (modules.length === 0) {
+      setSelectedModuleId(null);
+      return;
+    }
+
+    if (!selectedModuleId || !modules.some((module) => module.id === selectedModuleId)) {
+      setSelectedModuleId(modules[0].id);
+    }
+  }, [modules, selectedModuleId]);
 
   const filteredModules = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -104,8 +110,8 @@ export const TrainingCourseCatalog: React.FC = () => {
       lastUpdated: new Date()
     };
 
-    setModules((prev) => [module, ...prev]);
-    setSelectedModuleId(module.id);
+    const createdModule = addModule(module);
+    setSelectedModuleId(createdModule.id);
     setShowCreateForm(false);
     setNewCourse({ title: '', category: '', description: '', estimatedDurationHours: 6, tags: '' });
     toast.success('New course created');

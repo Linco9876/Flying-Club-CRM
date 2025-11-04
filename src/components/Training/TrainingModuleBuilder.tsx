@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   BookOpenCheck,
@@ -12,17 +12,14 @@ import {
   Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import {
-  mockSyllabusSequences,
-  mockTrainingModules
-} from '../../data/mockData';
+import { mockSyllabusSequences } from '../../data/mockData';
 import {
   SyllabusSequence,
   TrainingLesson,
   TrainingModule,
   TrainingResource
 } from '../../types';
-import { cloneTrainingModule } from '../../utils/trainingModules';
+import { useTrainingModules } from '../../context/TrainingModulesContext';
 
 const createLessonFromSequence = (sequence: SyllabusSequence): TrainingLesson => ({
   id: `lesson-${sequence.id}-${Date.now()}`,
@@ -38,16 +35,31 @@ const createLessonFromSequence = (sequence: SyllabusSequence): TrainingLesson =>
 });
 
 export const TrainingModuleBuilder: React.FC = () => {
-  const [modules, setModules] = useState<TrainingModule[]>(() =>
-    mockTrainingModules.map((module) => cloneTrainingModule(module))
-  );
+  const {
+    modules,
+    createBlankModule,
+    duplicateModule: duplicateTrainingModule,
+    updateModule: updateTrainingModule,
+    deleteModule: deleteTrainingModule
+  } = useTrainingModules();
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(
-    () => mockTrainingModules[0]?.id ?? null
+    () => modules[0]?.id ?? null
   );
   const [sequenceSearch, setSequenceSearch] = useState('');
   const [newTag, setNewTag] = useState('');
 
   const selectedModule = modules.find((module) => module.id === selectedModuleId) ?? null;
+
+  useEffect(() => {
+    if (modules.length === 0) {
+      setSelectedModuleId(null);
+      return;
+    }
+
+    if (!selectedModuleId || !modules.some((module) => module.id === selectedModuleId)) {
+      setSelectedModuleId(modules[0].id);
+    }
+  }, [modules, selectedModuleId]);
 
   const sequencesByGroup = useMemo(() => {
     const groups: Record<string, SyllabusSequence[]> = {};
@@ -86,60 +98,32 @@ export const TrainingModuleBuilder: React.FC = () => {
   };
 
   const updateModule = (moduleId: string, updater: (module: TrainingModule) => TrainingModule) => {
-    setModules((prev) =>
-      prev.map((module) =>
-        module.id === moduleId ? updater({ ...module, lastUpdated: new Date() }) : module
-      )
-    );
+    updateTrainingModule(moduleId, updater);
   };
 
   const handleCreateModule = () => {
-    const timestamp = Date.now();
-    const newModule: TrainingModule = {
-      id: `module-${timestamp}`,
-      title: 'New Training Module',
-      description: 'Describe the learning outcomes, delivery methods and scope of this module.',
-      category: 'Custom',
-      version: '1.0',
-      status: 'draft',
-      estimatedDurationHours: 6,
-      prerequisites: ['Define prerequisites for enrolment'],
-      objectives: ['Document primary learning objectives'],
-      evaluationCriteria: ['List the assessment checkpoints'],
-      tags: ['draft'],
-      lessons: [],
-      resources: [],
-      lastUpdated: new Date()
-    };
-
-    setModules((prev) => [cloneTrainingModule(newModule), ...prev]);
-    setSelectedModuleId(newModule.id);
+    const module = createBlankModule();
+    setSelectedModuleId(module.id);
     toast.success('New module created');
   };
 
   const handleDuplicateModule = (module: TrainingModule) => {
-    const duplicate: TrainingModule = {
-      ...createModuleClone(module),
-      id: `${module.id}-copy-${Date.now()}`,
+    const duplicate = duplicateTrainingModule(module.id, {
       title: `${module.title} (Copy)`,
       status: 'draft',
-      version: `${module.version}-draft`,
-      lastUpdated: new Date()
-    };
+      version: `${module.version}-draft`
+    });
 
-    setModules((prev) => [duplicate, ...prev]);
-    setSelectedModuleId(duplicate.id);
-    toast.success('Module duplicated as draft');
+    if (duplicate) {
+      setSelectedModuleId(duplicate.id);
+      toast.success('Module duplicated as draft');
+    } else {
+      toast.error('Unable to duplicate module');
+    }
   };
 
   const handleDeleteModule = (moduleId: string) => {
-    setModules((prev) => {
-      const filtered = prev.filter((module) => module.id !== moduleId);
-      if (selectedModuleId === moduleId) {
-        setSelectedModuleId(filtered[0]?.id ?? null);
-      }
-      return filtered;
-    });
+    deleteTrainingModule(moduleId);
     toast.success('Module removed');
   };
 

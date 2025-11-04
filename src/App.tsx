@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { TrainingModulesProvider } from './context/TrainingModulesContext';
 import { useBookings } from './hooks/useBookings';
 import { Booking } from './types';
 import { Header } from './components/Layout/Header';
@@ -304,18 +305,20 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <AppContent />
-        <Toaster 
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: '#fff',
-              color: '#374151',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-            },
-          }}
-        />
+        <TrainingModulesProvider>
+          <AppContent />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              style: {
+                background: '#fff',
+                color: '#374151',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+              },
+            }}
+          />
+        </TrainingModulesProvider>
       </AuthProvider>
     </Router>
   );
