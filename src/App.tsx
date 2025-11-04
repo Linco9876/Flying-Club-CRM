@@ -22,6 +22,7 @@ import { BillingDashboard } from './components/Billing/BillingDashboard';
 import { ReportsDashboard } from './components/Reports/ReportsDashboard';
 import { SafetyDashboard } from './components/Safety/SafetyDashboard';
 import { TrainingRecordForm } from './components/Training/TrainingRecordForm';
+import { TrainingCourseCatalog } from './components/Training/TrainingCourseCatalog';
 import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuilder';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import toast from 'react-hot-toast';
@@ -196,6 +197,8 @@ const handleNewBookingWithResource = (
         return <ReportsDashboard />;
       case 'safety':
         return <SafetyDashboard />;
+      case 'training':
+        return <TrainingCourseCatalog />;
       case 'syllabus-management':
         return <TrainingModuleBuilder />;
       case 'profile':

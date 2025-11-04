@@ -22,20 +22,7 @@ import {
   TrainingModule,
   TrainingResource
 } from '../../types';
-
-const createModuleClone = (module: TrainingModule): TrainingModule => ({
-  ...module,
-  prerequisites: [...module.prerequisites],
-  objectives: [...module.objectives],
-  evaluationCriteria: [...module.evaluationCriteria],
-  tags: [...module.tags],
-  lessons: module.lessons.map((lesson) => ({
-    ...lesson,
-    keyExercises: [...lesson.keyExercises]
-  })),
-  resources: module.resources.map((resource) => ({ ...resource })),
-  lastUpdated: new Date(module.lastUpdated)
-});
+import { cloneTrainingModule } from '../../utils/trainingModules';
 
 const createLessonFromSequence = (sequence: SyllabusSequence): TrainingLesson => ({
   id: `lesson-${sequence.id}-${Date.now()}`,
@@ -52,7 +39,7 @@ const createLessonFromSequence = (sequence: SyllabusSequence): TrainingLesson =>
 
 export const TrainingModuleBuilder: React.FC = () => {
   const [modules, setModules] = useState<TrainingModule[]>(() =>
-    mockTrainingModules.map((module) => createModuleClone(module))
+    mockTrainingModules.map((module) => cloneTrainingModule(module))
   );
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(
     () => mockTrainingModules[0]?.id ?? null
@@ -125,7 +112,7 @@ export const TrainingModuleBuilder: React.FC = () => {
       lastUpdated: new Date()
     };
 
-    setModules((prev) => [createModuleClone(newModule), ...prev]);
+    setModules((prev) => [cloneTrainingModule(newModule), ...prev]);
     setSelectedModuleId(newModule.id);
     toast.success('New module created');
   };
