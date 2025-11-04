@@ -145,6 +145,15 @@ export interface TrainingResource {
   notes?: string;
 }
 
+export type LessonGradingSystem = 'NC/S/C/-' | 'Pass or Fail' | 'Out of 100';
+
+export interface LessonAssessmentCriterion {
+  id: string;
+  name: string;
+  gradingSystem: LessonGradingSystem;
+  passingGrade: string;
+}
+
 export interface TrainingLesson {
   id: string;
   sequenceId: string;
@@ -156,6 +165,11 @@ export interface TrainingLesson {
   keyExercises: string[];
   studentPreparation: string;
   instructorNotes: string;
+  name: string;
+  objective: string;
+  flightExercises: string;
+  theory: string;
+  assessmentCriteria: LessonAssessmentCriterion[];
 }
 
 export interface TrainingModule {

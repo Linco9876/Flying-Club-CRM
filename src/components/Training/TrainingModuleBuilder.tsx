@@ -31,7 +31,12 @@ const createLessonFromSequence = (sequence: SyllabusSequence): TrainingLesson =>
   minCompetency: 'Introduce',
   keyExercises: [`Introduce ${sequence.title.toLowerCase()}`],
   studentPreparation: 'Review relevant handbook sections and prepare briefing notes.',
-  instructorNotes: 'Capture any student risks or adaptations discussed during pre-brief.'
+  instructorNotes: 'Capture any student risks or adaptations discussed during pre-brief.',
+  name: sequence.title,
+  objective: `Outline objectives for ${sequence.title.toLowerCase()}.`,
+  flightExercises: 'Describe the flight exercises to be covered during delivery.',
+  theory: 'Summarise the theory topics or references for this lesson.',
+  assessmentCriteria: []
 });
 
 export const TrainingModuleBuilder: React.FC = () => {

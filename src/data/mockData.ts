@@ -428,7 +428,27 @@ export const mockTrainingModules: TrainingModule[] = [
           'Identify unserviceable items and escalate appropriately'
         ],
         studentPreparation: 'Review aircraft POH limitations and abnormal procedures.',
-        instructorNotes: 'Demonstrate propeller safety and highlight local airfield hazards.'
+        instructorNotes: 'Demonstrate propeller safety and highlight local airfield hazards.',
+        name: 'Pre-flight Inspection',
+        objective: 'Prepare students to conduct thorough RA-Aus daily inspections independently.',
+        flightExercises:
+          '• Conduct full RA-Aus daily inspection\n• Identify unserviceable items and escalate appropriately',
+        theory:
+          'Review aircraft POH limitations, abnormal procedures and local airfield hazards before dispatch.',
+        assessmentCriteria: [
+          {
+            id: 'criterion-ps1-1',
+            name: 'Inspection checklist completion',
+            gradingSystem: 'NC/S/C/-',
+            passingGrade: 'C'
+          },
+          {
+            id: 'criterion-ps1-2',
+            name: 'Hazard reporting accuracy',
+            gradingSystem: 'Pass or Fail',
+            passingGrade: 'Pass'
+          }
+        ]
       },
       {
         id: 'lesson-ps2',
@@ -443,7 +463,26 @@ export const mockTrainingModules: TrainingModule[] = [
           'Stabilised final approach with go-around decision points'
         ],
         studentPreparation: 'Listen to CTAF recordings and practise readbacks.',
-        instructorNotes: 'Use touch drills to reinforce emergency actions before take-off.'
+        instructorNotes: 'Use touch drills to reinforce emergency actions before take-off.',
+        name: 'Traffic Circuit',
+        objective: 'Reinforce consistent circuit profiles and confident radio procedures before first solo.',
+        flightExercises:
+          '• Circuit planning and spacing in crosswind conditions\n• Stabilised final approach with go-around decision points',
+        theory: 'Listen to CTAF recordings and practise readbacks to prepare for in-circuit workload.',
+        assessmentCriteria: [
+          {
+            id: 'criterion-ps2-1',
+            name: 'Circuit spacing',
+            gradingSystem: 'NC/S/C/-',
+            passingGrade: 'C'
+          },
+          {
+            id: 'criterion-ps2-2',
+            name: 'Go-around decision making',
+            gradingSystem: 'Pass or Fail',
+            passingGrade: 'Pass'
+          }
+        ]
       },
       {
         id: 'lesson-ps3',
@@ -458,7 +497,26 @@ export const mockTrainingModules: TrainingModule[] = [
           'MAYDAY call and passenger brief in simulated engine failure'
         ],
         studentPreparation: 'Create kneeboard notes for engine failure checks.',
-        instructorNotes: 'Introduce glide performance numbers for club aircraft types.'
+        instructorNotes: 'Introduce glide performance numbers for club aircraft types.',
+        name: 'Forced Landings',
+        objective: 'Build rapid decision making and adherence to forced landing procedures in the circuit area.',
+        flightExercises:
+          '• Field selection under time pressure\n• MAYDAY call and passenger brief in simulated engine failure',
+        theory: 'Create kneeboard notes for engine failure checks and recite passenger briefs.',
+        assessmentCriteria: [
+          {
+            id: 'criterion-ps3-1',
+            name: 'Field selection',
+            gradingSystem: 'NC/S/C/-',
+            passingGrade: 'C'
+          },
+          {
+            id: 'criterion-ps3-2',
+            name: 'Emergency communications',
+            gradingSystem: 'Pass or Fail',
+            passingGrade: 'Pass'
+          }
+        ]
       }
     ],
     resources: [
@@ -511,7 +569,26 @@ export const mockTrainingModules: TrainingModule[] = [
           'Create weather and NOTAM briefing pack'
         ],
         studentPreparation: 'Download latest area forecasts and NOTAMs.',
-        instructorNotes: 'Compare electronic and paper planning tools for redundancy.'
+        instructorNotes: 'Compare electronic and paper planning tools for redundancy.',
+        name: 'Navigation Planning',
+        objective: 'Build a consistent workflow for cross country planning and threat management.',
+        flightExercises:
+          '• Prepare flight log with wind and fuel calculations\n• Create weather and NOTAM briefing pack',
+        theory: 'Download latest area forecasts and NOTAMs and review alternate requirements.',
+        assessmentCriteria: [
+          {
+            id: 'criterion-nav1-1',
+            name: 'Flight log accuracy',
+            gradingSystem: 'Out of 100',
+            passingGrade: '85'
+          },
+          {
+            id: 'criterion-nav1-2',
+            name: 'Weather briefing completeness',
+            gradingSystem: 'NC/S/C/-',
+            passingGrade: 'S'
+          }
+        ]
       },
       {
         id: 'lesson-nav2',
@@ -526,7 +603,26 @@ export const mockTrainingModules: TrainingModule[] = [
           'Diversion planning and alternates'
         ],
         studentPreparation: 'Prepare 2 diversion legs including fuel burn estimates.',
-        instructorNotes: 'Introduce in-cockpit checklists for lost procedure execution.'
+        instructorNotes: 'Introduce in-cockpit checklists for lost procedure execution.',
+        name: 'Cross Country Flight',
+        objective: 'Execute flight plan while managing timing, navigation fixes and decision making in-flight.',
+        flightExercises:
+          '• Waypoint to waypoint timing checks\n• Diversion planning and alternates',
+        theory: 'Prepare two diversion legs including fuel burn estimates and review lost procedure checklists.',
+        assessmentCriteria: [
+          {
+            id: 'criterion-nav2-1',
+            name: 'Leg timing management',
+            gradingSystem: 'Out of 100',
+            passingGrade: '80'
+          },
+          {
+            id: 'criterion-nav2-2',
+            name: 'Diversion planning',
+            gradingSystem: 'NC/S/C/-',
+            passingGrade: 'S'
+          }
+        ]
       },
       {
         id: 'lesson-nav3',
@@ -541,7 +637,26 @@ export const mockTrainingModules: TrainingModule[] = [
           'Transponder and CTAF changeover flows'
         ],
         studentPreparation: 'Practise CTAF and tower phraseology scripts.',
-        instructorNotes: 'Use scenario-based training with multiple frequency changes.'
+        instructorNotes: 'Use scenario-based training with multiple frequency changes.',
+        name: 'Controlled Airspace',
+        objective: 'Introduce controlled airspace communication standards and workload management.',
+        flightExercises:
+          '• Tower clearance requests and readbacks\n• Transponder and CTAF changeover flows',
+        theory: 'Practise CTAF and tower phraseology scripts, focusing on readback standards.',
+        assessmentCriteria: [
+          {
+            id: 'criterion-nav3-1',
+            name: 'Clearance readbacks',
+            gradingSystem: 'NC/S/C/-',
+            passingGrade: 'S'
+          },
+          {
+            id: 'criterion-nav3-2',
+            name: 'Frequency management',
+            gradingSystem: 'Pass or Fail',
+            passingGrade: 'Pass'
+          }
+        ]
       }
     ],
     resources: [
