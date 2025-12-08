@@ -24,12 +24,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     const initAuth = async () => {
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
         if (sessionError) {
           console.error('Error getting session:', sessionError);
+          if (mounted) setIsLoading(false);
           return;
         }
 
@@ -43,10 +46,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (error) {
             console.error('Error fetching user data:', error);
             await supabase.auth.signOut();
+            if (mounted) setIsLoading(false);
             return;
           }
 
-          if (userData) {
+          if (userData && mounted) {
             setUser({
               id: userData.id,
               email: userData.email,
@@ -55,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               phone: userData.phone,
               avatar: userData.avatar_url
             });
-          } else {
+          } else if (!userData) {
             console.warn('User session exists but no user record found');
             await supabase.auth.signOut();
           }
@@ -63,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
 
@@ -93,30 +97,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      setIsLoading(true);
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (error) {
-        console.error('Login error:', error);
+        console.error('Login error:', error.message);
         return false;
       }
 
       if (data.user) {
-        const { data: userData } = await supabase
+        const { data: userData, error: userError } = await supabase
           .from('users')
           .select('*')
           .eq('id', data.user.id)
           .maybeSingle();
+
+        if (userError) {
+          console.error('Error fetching user profile:', userError);
+          await supabase.auth.signOut();
+          return false;
+        }
 
         if (userData) {
           setUser({
@@ -128,6 +137,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             avatar: userData.avatar_url
           });
           return true;
+        } else {
+          console.error('User profile not found');
+          await supabase.auth.signOut();
+          return false;
         }
       }
 
@@ -135,8 +148,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Login error:', error);
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
