@@ -26,7 +26,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          console.error('Error getting session:', sessionError);
+          return;
+        }
 
         if (session?.user) {
           const { data: userData, error } = await supabase
@@ -35,7 +40,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .eq('id', session.user.id)
             .maybeSingle();
 
-          if (!error && userData) {
+          if (error) {
+            console.error('Error fetching user data:', error);
+            await supabase.auth.signOut();
+            return;
+          }
+
+          if (userData) {
             setUser({
               id: userData.id,
               email: userData.email,
@@ -44,6 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               phone: userData.phone,
               avatar: userData.avatar_url
             });
+          } else {
+            console.warn('User session exists but no user record found');
+            await supabase.auth.signOut();
           }
         }
       } catch (error) {

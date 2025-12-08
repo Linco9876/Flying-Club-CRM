@@ -11,10 +11,20 @@ export const useBookings = () => {
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      const { data: bookingsData, error: bookingsError } = await supabase
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
+      );
+
+      const bookingsPromise = supabase
         .from('bookings')
         .select('*')
         .order('start_time', { ascending: false });
+
+      const { data: bookingsData, error: bookingsError } = await Promise.race([
+        bookingsPromise,
+        timeoutPromise
+      ]) as any;
 
       if (bookingsError) throw bookingsError;
 

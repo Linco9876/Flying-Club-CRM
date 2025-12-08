@@ -31,7 +31,6 @@ import { format } from 'date-fns';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const { bookings, loading: bookingsLoading, addBooking, updateBooking, deleteBooking } = useBookings();
   const [activeView, setActiveView] = useState('dashboard');
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [showTrainingRecordForm, setShowTrainingRecordForm] = useState(false);
@@ -43,7 +42,7 @@ const AppContent: React.FC = () => {
     endTime?: string;
   }>({});
 
-  if (isLoading || bookingsLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
@@ -57,40 +56,99 @@ const AppContent: React.FC = () => {
   if (!user) {
     return <LoginForm />;
   }
-const handleNewBookingWithTime = (
-  date: Date,
-  startTime: string,
-  endTime?: string
-) => {
-  setBookingFormData({
-    date: format(date, 'yyyy-MM-dd'),  // use local date
-    startTime,
-    endTime,
-  });
-  setShowBookingForm(true);
+
+  return <AuthenticatedApp
+    user={user}
+    activeView={activeView}
+    setActiveView={setActiveView}
+    showBookingForm={showBookingForm}
+    setShowBookingForm={setShowBookingForm}
+    showTrainingRecordForm={showTrainingRecordForm}
+    setShowTrainingRecordForm={setShowTrainingRecordForm}
+    editingBooking={editingBooking}
+    setEditingBooking={setEditingBooking}
+    selectedBookingForRecord={selectedBookingForRecord}
+    setSelectedBookingForRecord={setSelectedBookingForRecord}
+    bookingFormData={bookingFormData}
+    setBookingFormData={setBookingFormData}
+  />;
 };
 
-const handleNewBookingWithResource = (
-  date: Date,
-  startTime: string,
-  endTime?: string,
-  resourceId?: string,
-  resourceType?: 'aircraft' | 'instructor'
-) => {
-  const formData: any = {
-    date: format(date, 'yyyy-MM-dd'),  // use local date
-    startTime,
-    endTime,
-  };
-  if (resourceType === 'aircraft') {
-    formData.aircraftId = resourceId;
-  } else if (resourceType === 'instructor') {
-    formData.instructorId = resourceId;
+const AuthenticatedApp: React.FC<{
+  user: any;
+  activeView: string;
+  setActiveView: (view: string) => void;
+  showBookingForm: boolean;
+  setShowBookingForm: (show: boolean) => void;
+  showTrainingRecordForm: boolean;
+  setShowTrainingRecordForm: (show: boolean) => void;
+  editingBooking: Booking | null;
+  setEditingBooking: (booking: Booking | null) => void;
+  selectedBookingForRecord: Booking | null;
+  setSelectedBookingForRecord: (booking: Booking | null) => void;
+  bookingFormData: any;
+  setBookingFormData: (data: any) => void;
+}> = ({
+  activeView,
+  setActiveView,
+  showBookingForm,
+  setShowBookingForm,
+  showTrainingRecordForm,
+  setShowTrainingRecordForm,
+  editingBooking,
+  setEditingBooking,
+  selectedBookingForRecord,
+  setSelectedBookingForRecord,
+  bookingFormData,
+  setBookingFormData
+}) => {
+  const { bookings, loading: bookingsLoading, addBooking, updateBooking, deleteBooking } = useBookings();
+
+  if (bookingsLoading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
   }
-  setBookingFormData(formData);
-  setShowBookingForm(true);
-};
-  
+
+  const handleNewBookingWithTime = (
+    date: Date,
+    startTime: string,
+    endTime?: string
+  ) => {
+    setBookingFormData({
+      date: format(date, 'yyyy-MM-dd'),
+      startTime,
+      endTime,
+    });
+    setShowBookingForm(true);
+  };
+
+  const handleNewBookingWithResource = (
+    date: Date,
+    startTime: string,
+    endTime?: string,
+    resourceId?: string,
+    resourceType?: 'aircraft' | 'instructor'
+  ) => {
+    const formData: any = {
+      date: format(date, 'yyyy-MM-dd'),
+      startTime,
+      endTime,
+    };
+    if (resourceType === 'aircraft') {
+      formData.aircraftId = resourceId;
+    } else if (resourceType === 'instructor') {
+      formData.instructorId = resourceId;
+    }
+    setBookingFormData(formData);
+    setShowBookingForm(true);
+  };
+
   const handleBookingSubmit = async (bookingData: any) => {
     try {
       console.log('Form data received:', bookingData);
