@@ -13,8 +13,7 @@ export const useStudents = () => {
       setLoading(true);
       const { data: usersData, error: usersError } = await supabase
         .from('users')
-        .select('*')
-        .eq('role', 'student');
+        .select('*');
 
       if (usersError) throw usersError;
 
@@ -52,7 +51,7 @@ export const useStudents = () => {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: 'student' as const,
+          role: user.role as 'student' | 'instructor' | 'admin',
           phone: user.phone,
           avatar: user.avatar_url,
           raausId: studentData?.raaus_id,
