@@ -19,25 +19,43 @@ export const useAuth = () => {
   return context;
 };
 
-const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 1000): Promise<any> => {
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
+    )
+  ]);
+};
+
+const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): Promise<any> => {
   for (let i = 0; i < maxRetries; i++) {
-    const { data: userData, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    try {
+      const result = await withTimeout(
+        supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle(),
+        5000
+      );
 
-    if (error) {
-      console.error(`Error fetching user data (attempt ${i + 1}):`, error);
+      if (result.error) {
+        console.error(`Error fetching user data (attempt ${i + 1}):`, result.error);
+        if (i === maxRetries - 1) throw result.error;
+      }
+
+      if (result.data) {
+        return result.data;
+      }
+
+      if (i < maxRetries - 1) {
+        console.log(`User record not found, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    } catch (error) {
+      console.error(`Fetch attempt ${i + 1} failed:`, error);
       if (i === maxRetries - 1) throw error;
-    }
-
-    if (userData) {
-      return userData;
-    }
-
-    if (i < maxRetries - 1) {
-      console.log(`User record not found, retrying in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
@@ -50,16 +68,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
+    let initTimeout: NodeJS.Timeout;
 
     const initAuth = async () => {
       try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        const sessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          10000
+        );
 
-        if (sessionError) {
-          console.error('Error getting session:', sessionError);
+        if (sessionResult.error) {
+          console.error('Error getting session:', sessionResult.error);
           if (mounted) setIsLoading(false);
           return;
         }
+
+        const session = sessionResult.data.session;
 
         if (session?.user && mounted) {
           try {
@@ -85,12 +109,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
+        await supabase.auth.signOut();
       } finally {
         if (mounted) setIsLoading(false);
       }
     };
 
-    initAuth();
+    initTimeout = setTimeout(() => {
+      if (mounted) {
+        console.error('Auth initialization timed out, clearing session');
+        setIsLoading(false);
+        setUser(null);
+        supabase.auth.signOut();
+      }
+    }, 20000);
+
+    initAuth().finally(() => {
+      clearTimeout(initTimeout);
+    });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
@@ -118,11 +154,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setIsLoading(false);
+      } else if (event === 'TOKEN_REFRESHED') {
+        console.log('Token refreshed successfully');
       }
     });
 
     return () => {
       mounted = false;
+      clearTimeout(initTimeout);
       subscription.unsubscribe();
     };
   }, []);
