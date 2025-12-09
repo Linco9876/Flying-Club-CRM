@@ -13,7 +13,7 @@ export const useBookings = () => {
       setLoading(true);
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 10000)
+        setTimeout(() => reject(new Error('Request timeout')), 5000)
       );
 
       const bookingsPromise = supabase
@@ -26,13 +26,21 @@ export const useBookings = () => {
         timeoutPromise
       ]) as any;
 
-      if (bookingsError) throw bookingsError;
+      if (bookingsError) {
+        console.error('Bookings error:', bookingsError);
+        setBookings([]);
+        setError(null);
+        setLoading(false);
+        return;
+      }
 
       const { data: flightLogsData, error: flightLogsError } = await supabase
         .from('flight_logs')
         .select('*');
 
-      if (flightLogsError) throw flightLogsError;
+      if (flightLogsError) {
+        console.error('Flight logs error:', flightLogsError);
+      }
 
       const flightLogsMap = new Map(flightLogsData?.map(fl => [fl.booking_id, {
         id: fl.id,
@@ -66,7 +74,7 @@ export const useBookings = () => {
     } catch (err) {
       console.error('Error fetching bookings:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch bookings');
-      toast.error('Failed to load bookings');
+      setBookings([]);
     } finally {
       setLoading(false);
     }

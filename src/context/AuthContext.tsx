@@ -25,47 +25,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: NodeJS.Timeout;
 
     const initAuth = async () => {
       try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Auth initialization timeout')), 5000);
+        });
 
-        if (sessionError) {
-          console.error('Error getting session:', sessionError);
-          if (mounted) setIsLoading(false);
-          return;
-        }
+        const authPromise = (async () => {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-        if (session?.user) {
-          const { data: userData, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-
-          if (error) {
-            console.error('Error fetching user data:', error);
-            await supabase.auth.signOut();
-            if (mounted) setIsLoading(false);
+          if (sessionError) {
+            console.error('Error getting session:', sessionError);
             return;
           }
 
-          if (userData && mounted) {
-            setUser({
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              phone: userData.phone,
-              avatar: userData.avatar_url
-            });
-          } else if (!userData) {
-            console.warn('User session exists but no user record found');
-            await supabase.auth.signOut();
+          if (session?.user) {
+            const { data: userData, error } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            if (error) {
+              console.error('Error fetching user data:', error);
+              await supabase.auth.signOut();
+              return;
+            }
+
+            if (userData && mounted) {
+              setUser({
+                id: userData.id,
+                email: userData.email,
+                name: userData.name,
+                role: userData.role,
+                phone: userData.phone,
+                avatar: userData.avatar_url
+              });
+            } else if (!userData) {
+              console.warn('User session exists but no user record found');
+              await supabase.auth.signOut();
+            }
           }
-        }
+        })();
+
+        await Promise.race([authPromise, timeoutPromise]);
+        clearTimeout(timeoutId);
       } catch (error) {
         console.error('Error initializing auth:', error);
+        clearTimeout(timeoutId);
       } finally {
         if (mounted) setIsLoading(false);
       }
