@@ -19,6 +19,31 @@ export const useAuth = () => {
   return context;
 };
 
+const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 1000): Promise<any> => {
+  for (let i = 0; i < maxRetries; i++) {
+    const { data: userData, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Error fetching user data (attempt ${i + 1}):`, error);
+      if (i === maxRetries - 1) throw error;
+    }
+
+    if (userData) {
+      return userData;
+    }
+
+    if (i < maxRetries - 1) {
+      console.log(`User record not found, retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  return null;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,30 +62,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (session?.user && mounted) {
-          const { data: userData, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+          try {
+            const userData = await fetchUserWithRetry(session.user.id);
 
-          if (error) {
+            if (userData && mounted) {
+              setUser({
+                id: userData.id,
+                email: userData.email,
+                name: userData.name,
+                role: userData.role,
+                phone: userData.phone,
+                avatar: userData.avatar_url
+              });
+            } else {
+              console.warn('User session exists but no user record found after retries');
+              await supabase.auth.signOut();
+            }
+          } catch (error) {
             console.error('Error fetching user data:', error);
-            await supabase.auth.signOut();
-            if (mounted) setIsLoading(false);
-            return;
-          }
-
-          if (userData) {
-            setUser({
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              phone: userData.phone,
-              avatar: userData.avatar_url
-            });
-          } else {
-            console.warn('User session exists but no user record found');
             await supabase.auth.signOut();
           }
         }
@@ -78,30 +97,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (event === 'SIGNED_IN' && session?.user) {
         setIsLoading(true);
-        const { data: userData, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
+        try {
+          const userData = await fetchUserWithRetry(session.user.id);
 
-        if (error) {
+          if (userData && mounted) {
+            setUser({
+              id: userData.id,
+              email: userData.email,
+              name: userData.name,
+              role: userData.role,
+              phone: userData.phone,
+              avatar: userData.avatar_url
+            });
+          }
+        } catch (error) {
           console.error('Error fetching user in auth change:', error);
-          setIsLoading(false);
-          return;
-        }
-
-        if (userData) {
-          setUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            phone: userData.phone,
-            avatar: userData.avatar_url
-          });
-          setIsLoading(false);
-        } else {
-          setIsLoading(false);
+        } finally {
+          if (mounted) setIsLoading(false);
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
@@ -130,32 +142,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.user) {
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .maybeSingle();
+        try {
+          const userData = await fetchUserWithRetry(data.user.id);
 
-        if (userError) {
-          console.error('Error fetching user profile:', userError);
-          await supabase.auth.signOut();
-          setIsLoading(false);
-          return false;
-        }
-
-        if (userData) {
-          setUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            phone: userData.phone,
-            avatar: userData.avatar_url
-          });
-          setIsLoading(false);
-          return true;
-        } else {
-          console.error('User profile not found');
+          if (userData) {
+            setUser({
+              id: userData.id,
+              email: userData.email,
+              name: userData.name,
+              role: userData.role,
+              phone: userData.phone,
+              avatar: userData.avatar_url
+            });
+            setIsLoading(false);
+            return true;
+          } else {
+            console.error('User profile not found');
+            await supabase.auth.signOut();
+            setIsLoading(false);
+            return false;
+          }
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
           await supabase.auth.signOut();
           setIsLoading(false);
           return false;
