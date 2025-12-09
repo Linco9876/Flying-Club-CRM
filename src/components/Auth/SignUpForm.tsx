@@ -64,12 +64,11 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
         }
 
         if (authData.session) {
-          toast.success('Account created successfully! Signing you in...');
-          window.location.reload();
+          toast.success('Account created successfully!');
         } else {
           toast.success('Account created! Please check your email to confirm your account before signing in.');
-          onBackToLogin();
         }
+        onBackToLogin();
       }
     } catch (error: any) {
       console.error('Sign up error:', error);
