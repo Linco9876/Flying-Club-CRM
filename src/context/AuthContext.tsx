@@ -83,14 +83,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event, 'Has session:', !!session);
       if (event === 'SIGNED_IN' && session?.user) {
+        console.log('SIGNED_IN event, fetching user data from onAuthStateChange...');
         const { data: userData } = await supabase
           .from('users')
           .select('*')
           .eq('id', session.user.id)
           .maybeSingle();
 
+        console.log('onAuthStateChange user data:', !!userData);
+
         if (userData) {
+          console.log('Setting user from onAuthStateChange');
           setUser({
             id: userData.id,
             email: userData.email,
@@ -101,6 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
         }
       } else if (event === 'SIGNED_OUT') {
+        console.log('SIGNED_OUT event');
         setUser(null);
       }
     });
@@ -113,11 +119,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
+    console.log('Login started for:', email);
     try {
+      console.log('Calling signInWithPassword...');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
+
+      console.log('SignIn response:', { hasData: !!data, hasError: !!error, error: error?.message });
 
       if (error) {
         console.error('Login error:', error.message);
@@ -125,11 +135,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.user) {
+        console.log('User authenticated, fetching profile...');
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('*')
           .eq('id', data.user.id)
           .maybeSingle();
+
+        console.log('Profile fetch result:', { hasData: !!userData, hasError: !!userError, error: userError?.message });
 
         if (userError) {
           console.error('Error fetching user profile:', userError);
@@ -138,6 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (userData) {
+          console.log('Profile found, setting user state');
           setUser({
             id: userData.id,
             email: userData.email,
@@ -154,11 +168,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
+      console.log('No user data returned');
       return false;
     } catch (error) {
       console.error('Login error:', error);
       return false;
     } finally {
+      console.log('Login finished, setting isLoading to false');
       setIsLoading(false);
     }
   };
