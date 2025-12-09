@@ -84,21 +84,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
+        try {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('User data fetch timeout')), 3000)
+          );
 
-        if (userData) {
-          setUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            phone: userData.phone,
-            avatar: userData.avatar_url
-          });
+          const fetchPromise = supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          const { data: userData, error } = await Promise.race([
+            fetchPromise,
+            timeoutPromise
+          ]) as any;
+
+          if (error) {
+            console.error('Error fetching user in auth change:', error);
+            await supabase.auth.signOut();
+            return;
+          }
+
+          if (userData && mounted) {
+            setUser({
+              id: userData.id,
+              email: userData.email,
+              name: userData.name,
+              role: userData.role,
+              phone: userData.phone,
+              avatar: userData.avatar_url
+            });
+          } else if (!userData) {
+            console.warn('No user data found, signing out');
+            await supabase.auth.signOut();
+          }
+        } catch (error) {
+          console.error('Timeout or error fetching user data:', error);
+          await supabase.auth.signOut();
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
@@ -125,30 +148,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.user) {
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .maybeSingle();
+        try {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('User data fetch timeout')), 5000)
+          );
 
-        if (userError) {
-          console.error('Error fetching user profile:', userError);
-          await supabase.auth.signOut();
-          return false;
-        }
+          const fetchPromise = supabase
+            .from('users')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle();
 
-        if (userData) {
-          setUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            phone: userData.phone,
-            avatar: userData.avatar_url
-          });
-          return true;
-        } else {
-          console.error('User profile not found');
+          const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
+          const userData = result?.data;
+          const userError = result?.error;
+
+          if (userError) {
+            console.error('Error fetching user profile:', userError);
+            await supabase.auth.signOut();
+            return false;
+          }
+
+          if (userData) {
+            setUser({
+              id: userData.id,
+              email: userData.email,
+              name: userData.name,
+              role: userData.role,
+              phone: userData.phone,
+              avatar: userData.avatar_url
+            });
+            return true;
+          } else {
+            console.error('User profile not found');
+            await supabase.auth.signOut();
+            return false;
+          }
+        } catch (timeoutError) {
+          console.error('Timeout fetching user profile:', timeoutError);
           await supabase.auth.signOut();
           return false;
         }
