@@ -50,19 +50,6 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
       if (authError) throw authError;
 
       if (authData.user) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const { error: studentError } = await supabase
-          .from('students')
-          .insert({
-            id: authData.user.id,
-            prepaid_balance: 0
-          });
-
-        if (studentError) {
-          console.error('Student creation error:', studentError);
-        }
-
         if (authData.session) {
           toast.success('Account created successfully!');
         } else {
