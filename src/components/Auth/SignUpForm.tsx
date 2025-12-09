@@ -42,13 +42,16 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
             name: formData.name,
             phone: formData.phone || null,
             role: 'student'
-          }
+          },
+          emailRedirectTo: window.location.origin
         }
       });
 
       if (authError) throw authError;
 
       if (authData.user) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         const { error: studentError } = await supabase
           .from('students')
           .insert({
@@ -60,8 +63,13 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
           console.error('Student creation error:', studentError);
         }
 
-        toast.success('Account created successfully! Please sign in.');
-        onBackToLogin();
+        if (authData.session) {
+          toast.success('Account created successfully! Signing you in...');
+          window.location.reload();
+        } else {
+          toast.success('Account created! Please check your email to confirm your account before signing in.');
+          onBackToLogin();
+        }
       }
     } catch (error: any) {
       console.error('Sign up error:', error);
