@@ -25,88 +25,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
-    let timeoutId: NodeJS.Timeout;
 
     const initAuth = async () => {
       try {
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Auth initialization timeout')), 5000);
-        });
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-        const authPromise = (async () => {
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error('Error getting session:', sessionError);
+          if (mounted) setIsLoading(false);
+          return;
+        }
 
-          if (sessionError) {
-            console.error('Error getting session:', sessionError);
-            return;
-          }
-
-          if (session?.user) {
-            const { data: userData, error } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-
-            if (error) {
-              console.error('Error fetching user data:', error);
-              await supabase.auth.signOut();
-              return;
-            }
-
-            if (userData && mounted) {
-              setUser({
-                id: userData.id,
-                email: userData.email,
-                name: userData.name,
-                role: userData.role,
-                phone: userData.phone,
-                avatar: userData.avatar_url
-              });
-            } else if (!userData) {
-              console.warn('User session exists but no user record found');
-              await supabase.auth.signOut();
-            }
-          }
-        })();
-
-        await Promise.race([authPromise, timeoutPromise]);
-        clearTimeout(timeoutId);
-      } catch (error) {
-        console.error('Error initializing auth:', error);
-        clearTimeout(timeoutId);
-      } finally {
-        if (mounted) setIsLoading(false);
-      }
-    };
-
-    initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        try {
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('User data fetch timeout')), 3000)
-          );
-
-          const fetchPromise = supabase
+        if (session?.user && mounted) {
+          const { data: userData, error } = await supabase
             .from('users')
             .select('*')
             .eq('id', session.user.id)
             .maybeSingle();
 
-          const { data: userData, error } = await Promise.race([
-            fetchPromise,
-            timeoutPromise
-          ]) as any;
-
           if (error) {
-            console.error('Error fetching user in auth change:', error);
+            console.error('Error fetching user data:', error);
             await supabase.auth.signOut();
+            if (mounted) setIsLoading(false);
             return;
           }
 
-          if (userData && mounted) {
+          if (userData) {
             setUser({
               id: userData.id,
               email: userData.email,
@@ -115,13 +59,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               phone: userData.phone,
               avatar: userData.avatar_url
             });
-          } else if (!userData) {
-            console.warn('No user data found, signing out');
+          } else {
+            console.warn('User session exists but no user record found');
             await supabase.auth.signOut();
           }
-        } catch (error) {
-          console.error('Timeout or error fetching user data:', error);
-          await supabase.auth.signOut();
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        const { data: userData, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Error fetching user in auth change:', error);
+          return;
+        }
+
+        if (userData) {
+          setUser({
+            id: userData.id,
+            email: userData.email,
+            name: userData.name,
+            role: userData.role,
+            phone: userData.phone,
+            avatar: userData.avatar_url
+          });
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
@@ -144,59 +119,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('Login error:', error.message);
+        setIsLoading(false);
         return false;
       }
 
       if (data.user) {
-        try {
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('User data fetch timeout')), 5000)
-          );
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .maybeSingle();
 
-          const fetchPromise = supabase
-            .from('users')
-            .select('*')
-            .eq('id', data.user.id)
-            .maybeSingle();
-
-          const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
-          const userData = result?.data;
-          const userError = result?.error;
-
-          if (userError) {
-            console.error('Error fetching user profile:', userError);
-            await supabase.auth.signOut();
-            return false;
-          }
-
-          if (userData) {
-            setUser({
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              phone: userData.phone,
-              avatar: userData.avatar_url
-            });
-            return true;
-          } else {
-            console.error('User profile not found');
-            await supabase.auth.signOut();
-            return false;
-          }
-        } catch (timeoutError) {
-          console.error('Timeout fetching user profile:', timeoutError);
+        if (userError) {
+          console.error('Error fetching user profile:', userError);
           await supabase.auth.signOut();
+          setIsLoading(false);
+          return false;
+        }
+
+        if (userData) {
+          setUser({
+            id: userData.id,
+            email: userData.email,
+            name: userData.name,
+            role: userData.role,
+            phone: userData.phone,
+            avatar: userData.avatar_url
+          });
+          setIsLoading(false);
+          return true;
+        } else {
+          console.error('User profile not found');
+          await supabase.auth.signOut();
+          setIsLoading(false);
           return false;
         }
       }
 
+      setIsLoading(false);
       return false;
     } catch (error) {
       console.error('Login error:', error);
-      return false;
-    } finally {
       setIsLoading(false);
+      return false;
     }
   };
 
