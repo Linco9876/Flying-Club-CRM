@@ -21,9 +21,14 @@ export const LoginForm: React.FC = () => {
       return;
     }
 
-    const success = await login(email, password);
-    if (!success) {
-      toast.error('Invalid email or password');
+    try {
+      const success = await login(email, password);
+      if (!success) {
+        toast.error('Invalid email or password. Please check your credentials and try again.');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('An error occurred during login. Please try again.');
     }
   };
 
