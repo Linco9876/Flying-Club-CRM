@@ -102,18 +102,7 @@ const AuthenticatedApp: React.FC<{
   bookingFormData,
   setBookingFormData
 }) => {
-  const { bookings, loading: bookingsLoading, addBooking, updateBooking, deleteBooking } = useBookings();
-
-  if (bookingsLoading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  const { bookings, addBooking, updateBooking, deleteBooking } = useBookings();
 
   const handleNewBookingWithTime = (
     date: Date,
