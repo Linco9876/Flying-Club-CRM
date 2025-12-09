@@ -77,6 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!mounted) return;
 
       if (event === 'SIGNED_IN' && session?.user) {
+        setIsLoading(true);
         const { data: userData, error } = await supabase
           .from('users')
           .select('*')
@@ -85,6 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (error) {
           console.error('Error fetching user in auth change:', error);
+          setIsLoading(false);
           return;
         }
 
@@ -97,9 +99,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             phone: userData.phone,
             avatar: userData.avatar_url
           });
+          setIsLoading(false);
+        } else {
+          setIsLoading(false);
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        setIsLoading(false);
       }
     });
 

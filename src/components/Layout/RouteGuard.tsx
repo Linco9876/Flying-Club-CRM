@@ -1,7 +1,8 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { can, Action } from '../../utils/rbac';
-import { AlertTriangle, ArrowLeft, LogOut } from 'lucide-react';
+import { AlertTriangle, Home, LogOut } from 'lucide-react';
 
 interface RouteGuardProps {
   children: React.ReactNode;
@@ -10,13 +11,14 @@ interface RouteGuardProps {
   fallback?: React.ReactNode;
 }
 
-export const RouteGuard: React.FC<RouteGuardProps> = ({ 
-  children, 
-  requiredAction, 
+export const RouteGuard: React.FC<RouteGuardProps> = ({
+  children,
+  requiredAction,
   resource = 'all',
-  fallback 
+  fallback
 }) => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   if (!can(user, requiredAction, resource)) {
     if (fallback) {
@@ -34,15 +36,20 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
             <p className="text-gray-600">
               You don't have permission to access this page.
             </p>
+            {user && (
+              <p className="text-sm text-gray-500 mt-2">
+                Logged in as: {user.email} ({user.role})
+              </p>
+            )}
           </div>
-          
+
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() => window.history.back()}
+              onClick={() => navigate('/')}
               className="flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              <ArrowLeft className="h-4 w-4" />
-              <span>Return to Dashboard</span>
+              <Home className="h-4 w-4" />
+              <span>Go to Dashboard</span>
             </button>
             <button
               onClick={logout}

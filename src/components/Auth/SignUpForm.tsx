@@ -51,11 +51,11 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
 
       if (authData.user) {
         if (authData.session) {
-          toast.success('Account created successfully!');
+          toast.success('Account created successfully! Redirecting...');
         } else {
           toast.success('Account created! Please check your email to confirm your account before signing in.');
+          onBackToLogin();
         }
-        onBackToLogin();
       }
     } catch (error: any) {
       console.error('Sign up error:', error);
