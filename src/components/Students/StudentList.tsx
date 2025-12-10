@@ -4,15 +4,19 @@ import { useNavigate } from 'react-router-dom';
 import { mockTrainingRecords } from '../../data/mockData';
 import { StudentForm } from './StudentForm';
 import { StudentDetails } from './StudentDetails';
+import { InviteUserModal } from './InviteUserModal';
 import { Student } from '../../types';
-import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
+import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
+import { useInvitations } from '../../hooks/useInvitations';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
-  const { students, loading, addStudent, updateStudent } = useStudents();
+  const { students, loading, addStudent, updateStudent, refetch } = useStudents();
+  const { inviteUser } = useInvitations();
   const [showStudentForm, setShowStudentForm] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [showStudentDetails, setShowStudentDetails] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
@@ -61,6 +65,19 @@ export const StudentList: React.FC = () => {
     setViewingStudent(null);
   };
 
+  const handleInviteUser = async (data: {
+    email: string;
+    name: string;
+    phone?: string;
+    role?: 'student' | 'instructor' | 'admin';
+  }) => {
+    const password = await inviteUser(data);
+    if (password) {
+      await refetch();
+    }
+    return password;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -74,11 +91,11 @@ export const StudentList: React.FC = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Students/Pilots</h1>
         <button
-          onClick={() => setShowStudentForm(true)}
+          onClick={() => setShowInviteModal(true)}
           className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
         >
-          <User className="h-4 w-4" />
-          <span>Add User</span>
+          <UserPlus className="h-4 w-4" />
+          <span>Invite User</span>
         </button>
       </div>
 
@@ -218,6 +235,12 @@ export const StudentList: React.FC = () => {
           student={viewingStudent}
         />
       )}
+
+      <InviteUserModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        onInvite={handleInviteUser}
+      />
     </div>
   );
 };

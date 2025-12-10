@@ -32,6 +32,12 @@ import { format } from 'date-fns';
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const [activeView, setActiveView] = useState('dashboard');
+
+  React.useEffect(() => {
+    if (!user) {
+      setActiveView('dashboard');
+    }
+  }, [user]);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [showTrainingRecordForm, setShowTrainingRecordForm] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
