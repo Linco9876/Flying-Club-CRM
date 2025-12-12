@@ -14,6 +14,7 @@ interface Permission {
   description: string;
   admin: boolean;
   instructor: boolean;
+  pilot: boolean;
   student: boolean;
 }
 
@@ -26,6 +27,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can view bookings for all students',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -34,6 +36,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can create new bookings',
       admin: true,
       instructor: true,
+      pilot: true,
       student: true
     },
     {
@@ -42,6 +45,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can modify existing bookings',
       admin: true,
       instructor: true,
+      pilot: true,
       student: false
     },
     {
@@ -50,6 +54,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can delete bookings',
       admin: true,
       instructor: false,
+      pilot: false,
       student: false
     },
     {
@@ -58,6 +63,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can add, edit, and view student records',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -66,6 +72,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can add, edit, and manage aircraft',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -74,6 +81,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can create and submit training records',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -82,6 +90,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can access billing and financial data',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -90,6 +99,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can report defects and manage maintenance',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -98,6 +108,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can access statistical reports',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -106,6 +117,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can access safety reports and compliance',
       admin: true,
       instructor: true,
+      pilot: false,
       student: false
     },
     {
@@ -114,11 +126,12 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       description: 'Can modify system configuration',
       admin: true,
       instructor: false,
+      pilot: false,
       student: false
     }
   ]);
 
-  const handlePermissionChange = (permissionId: string, role: 'admin' | 'instructor' | 'student', value: boolean) => {
+  const handlePermissionChange = (permissionId: string, role: 'admin' | 'instructor' | 'pilot' | 'student', value: boolean) => {
     setPermissions(prev => prev.map(permission =>
       permission.id === permissionId ? { ...permission, [role]: value } : permission
     ));
@@ -295,6 +308,10 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                       <UserCheck className="h-4 w-4 inline mr-1" />
                       Instructor
                     </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-orange-500 uppercase tracking-wider">
+                      <UserCheck className="h-4 w-4 inline mr-1" />
+                      Pilot
+                    </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-green-500 uppercase tracking-wider">
                       <UserCheck className="h-4 w-4 inline mr-1" />
                       Student
@@ -326,6 +343,15 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                           onChange={(e) => handlePermissionChange(permission.id, 'instructor', e.target.checked)}
                           disabled={!canEdit}
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                        />
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={permission.pilot}
+                          onChange={(e) => handlePermissionChange(permission.id, 'pilot', e.target.checked)}
+                          disabled={!canEdit}
+                          className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded disabled:opacity-50"
                         />
                       </td>
                       <td className="px-6 py-4 text-center">
