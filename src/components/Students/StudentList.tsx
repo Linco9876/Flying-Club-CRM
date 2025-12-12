@@ -185,7 +185,7 @@ export const StudentList: React.FC = () => {
                         </div>
                         <div className={`flex items-center text-xs ${licenceNearExpiry ? 'text-yellow-600' : 'text-green-600'}`}>
                           {licenceNearExpiry ? <AlertTriangle className="h-3 w-3 mr-1" /> : <CheckCircle className="h-3 w-3 mr-1" />}
-                          Licence: {student.licenceExpiry?.toLocaleDateString()}
+                          Membership: {student.licenceExpiry?.toLocaleDateString()}
                         </div>
                         <div className="flex items-center text-xs text-blue-600">
                           <Award className="h-3 w-3 mr-1" />

@@ -198,7 +198,7 @@ export const StudentProfile: React.FC = () => {
 
           <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-green-900">RPL Licence</span>
+              <span className="text-sm font-medium text-green-900">Ra-Aus Membership</span>
               <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">Valid</span>
             </div>
             <p className="text-xs text-green-700 mt-1">

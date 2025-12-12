@@ -21,6 +21,7 @@ const buildFormData = (student?: Student) => ({
   medicalType: student?.medicalType || '',
   medicalExpiry: student?.medicalExpiry?.toISOString().split('T')[0] || '',
   membershipExpiry: student?.licenceExpiry?.toISOString().split('T')[0] || '',
+  lastFlightReview: student?.lastFlightReview?.toISOString().split('T')[0] || '',
   occupation: student?.occupation || '',
   alternatePhone: student?.alternatePhone || '',
   prepaidBalance: student?.prepaidBalance || 0,
@@ -99,6 +100,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       dateOfBirth: formData.dateOfBirth ? new Date(formData.dateOfBirth) : undefined,
       medicalExpiry: formData.medicalExpiry ? new Date(formData.medicalExpiry) : undefined,
       licenceExpiry: formData.membershipExpiry ? new Date(formData.membershipExpiry) : undefined,
+      lastFlightReview: formData.lastFlightReview ? new Date(formData.lastFlightReview) : undefined,
       occupation: formData.occupation || undefined,
       alternatePhone: formData.alternatePhone || undefined,
       emergencyContact: formData.emergencyContact.name ? formData.emergencyContact : undefined
@@ -302,7 +304,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Membership Expiry
+                  Ra-Aus Membership Expiry
                 </label>
                 <input
                   type="date"
@@ -353,6 +355,41 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, medicalExpiry: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Last Flight Review
+                </label>
+                <input
+                  type="date"
+                  value={formData.lastFlightReview}
+                  onChange={(e) => setFormData(prev => ({ ...prev, lastFlightReview: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {formData.lastFlightReview && (() => {
+                  const reviewDate = new Date(formData.lastFlightReview);
+                  const twoYearsLater = new Date(reviewDate);
+                  twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
+                  const now = new Date();
+                  const threeMonthsBefore = new Date(twoYearsLater);
+                  threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+                  if (now >= twoYearsLater) {
+                    return (
+                      <p className="mt-1 text-sm text-red-600">
+                        Flight review is overdue (due: {twoYearsLater.toLocaleDateString()})
+                      </p>
+                    );
+                  } else if (now >= threeMonthsBefore) {
+                    return (
+                      <p className="mt-1 text-sm text-yellow-600">
+                        Flight review due soon: {twoYearsLater.toLocaleDateString()}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </div>
           </div>

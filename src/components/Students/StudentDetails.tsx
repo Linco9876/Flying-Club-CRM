@@ -85,7 +85,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">{student.raausId || 'Not provided'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Licence Expiry</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ra-Aus Membership Expiry</label>
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
                   {student.licenceExpiry?.toLocaleDateString() || 'Not provided'}
                 </p>
@@ -102,6 +102,34 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
                 <label className="block text-sm font-medium text-gray-700 mb-1">Medical Certificate Expiry</label>
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
                   {student.medicalExpiry?.toLocaleDateString() || 'Not provided'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Last Flight Review</label>
+                <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                  {student.lastFlightReview ? (() => {
+                    const reviewDate = new Date(student.lastFlightReview);
+                    const twoYearsLater = new Date(reviewDate);
+                    twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
+                    const now = new Date();
+                    const threeMonthsBefore = new Date(twoYearsLater);
+                    threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+                    if (now >= twoYearsLater) {
+                      return (
+                        <span className="text-red-600">
+                          {reviewDate.toLocaleDateString()} (Overdue - due: {twoYearsLater.toLocaleDateString()})
+                        </span>
+                      );
+                    } else if (now >= threeMonthsBefore) {
+                      return (
+                        <span className="text-yellow-600">
+                          {reviewDate.toLocaleDateString()} (Due soon: {twoYearsLater.toLocaleDateString()})
+                        </span>
+                      );
+                    }
+                    return reviewDate.toLocaleDateString();
+                  })() : 'Not provided'}
                 </p>
               </div>
             </div>

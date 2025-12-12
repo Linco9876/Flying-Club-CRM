@@ -59,6 +59,7 @@ export const useStudents = () => {
           medicalType: studentData?.medical_type,
           medicalExpiry: studentData?.medical_expiry ? new Date(studentData.medical_expiry) : undefined,
           licenceExpiry: studentData?.licence_expiry ? new Date(studentData.licence_expiry) : undefined,
+          lastFlightReview: studentData?.last_flight_review ? new Date(studentData.last_flight_review) : undefined,
           occupation: studentData?.occupation,
           alternatePhone: studentData?.alternate_phone,
           emergencyContact: studentData?.emergency_contact_name ? {
@@ -143,6 +144,7 @@ export const useStudents = () => {
           medical_type: studentData.medicalType,
           medical_expiry: studentData.medicalExpiry,
           licence_expiry: studentData.licenceExpiry,
+          last_flight_review: studentData.lastFlightReview,
           occupation: studentData.occupation,
           alternate_phone: studentData.alternatePhone,
           date_of_birth: studentData.dateOfBirth,
@@ -205,6 +207,7 @@ export const useStudents = () => {
           medical_type: studentData.medicalType,
           medical_expiry: studentData.medicalExpiry,
           licence_expiry: studentData.licenceExpiry,
+          last_flight_review: studentData.lastFlightReview,
           occupation: studentData.occupation,
           alternate_phone: studentData.alternatePhone,
           date_of_birth: studentData.dateOfBirth,

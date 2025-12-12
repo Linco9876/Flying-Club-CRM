@@ -357,9 +357,44 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                 
                 {student.licenceExpiry && (
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Licence Expiry</label>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Ra-Aus Membership Expiry</label>
                     <p className={`text-sm ${isExpiryNear(student.licenceExpiry) ? 'text-yellow-600' : 'text-gray-900'}`}>
                       {student.licenceExpiry.toLocaleDateString()}
+                    </p>
+                  </div>
+                )}
+
+                {student.lastFlightReview && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Last Flight Review</label>
+                    <p className={`text-sm ${(() => {
+                      const reviewDate = new Date(student.lastFlightReview);
+                      const twoYearsLater = new Date(reviewDate);
+                      twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
+                      const now = new Date();
+                      const threeMonthsBefore = new Date(twoYearsLater);
+                      threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+                      if (now >= twoYearsLater) return 'text-red-600';
+                      if (now >= threeMonthsBefore) return 'text-yellow-600';
+                      return 'text-gray-900';
+                    })()}`}>
+                      {(() => {
+                        const reviewDate = new Date(student.lastFlightReview);
+                        const twoYearsLater = new Date(reviewDate);
+                        twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
+                        const now = new Date();
+                        const threeMonthsBefore = new Date(twoYearsLater);
+                        threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+                        if (now >= twoYearsLater) {
+                          return `${reviewDate.toLocaleDateString()} (Overdue)`;
+                        }
+                        if (now >= threeMonthsBefore) {
+                          return `${reviewDate.toLocaleDateString()} (Due ${twoYearsLater.toLocaleDateString()})`;
+                        }
+                        return reviewDate.toLocaleDateString();
+                      })()}
                     </p>
                   </div>
                 )}
