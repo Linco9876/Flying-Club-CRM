@@ -36,6 +36,9 @@ export interface BookingRulesSettings {
   allow_double_booking: boolean;
   require_instructor_approval: boolean;
   cancellation_notice_hours: number;
+  enforce_min_notice: boolean;
+  enforce_max_advance: boolean;
+  enforce_cancellation_notice: boolean;
 }
 
 export interface NotificationSettings {

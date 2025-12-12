@@ -14,7 +14,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
     maxBookingAdvanceDays: 30,
     allowDoubleBooking: false,
     requireInstructorApproval: false,
-    cancellationNoticeHours: 24
+    cancellationNoticeHours: 24,
+    enforceMinNotice: true,
+    enforceMaxAdvance: true,
+    enforceCancellationNotice: true
   });
 
   useEffect(() => {
@@ -24,7 +27,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         maxBookingAdvanceDays: settings.max_booking_advance_days,
         allowDoubleBooking: settings.allow_double_booking,
         requireInstructorApproval: settings.require_instructor_approval,
-        cancellationNoticeHours: settings.cancellation_notice_hours
+        cancellationNoticeHours: settings.cancellation_notice_hours,
+        enforceMinNotice: settings.enforce_min_notice,
+        enforceMaxAdvance: settings.enforce_max_advance,
+        enforceCancellationNotice: settings.enforce_cancellation_notice
       });
     }
   }, [settings]);
@@ -36,7 +42,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         max_booking_advance_days: formData.maxBookingAdvanceDays,
         allow_double_booking: formData.allowDoubleBooking,
         require_instructor_approval: formData.requireInstructorApproval,
-        cancellation_notice_hours: formData.cancellationNoticeHours
+        cancellation_notice_hours: formData.cancellationNoticeHours,
+        enforce_min_notice: formData.enforceMinNotice,
+        enforce_max_advance: formData.enforceMaxAdvance,
+        enforce_cancellation_notice: formData.enforceCancellationNotice
       });
     };
   }, [formData, updateSettings]);
@@ -67,47 +76,98 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
       <div className="space-y-6">
         <div>
           <h3 className="text-lg font-medium text-gray-900 mb-4">Booking Limits</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Max Advance Booking (days)</label>
-              <input
-                type="number"
-                min="1"
-                max="365"
-                value={formData.maxBookingAdvanceDays}
-                onChange={(e) => handleInputChange('maxBookingAdvanceDays', parseInt(e.target.value))}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-              <p className="text-xs text-gray-500 mt-1">How far in advance users can book</p>
+          <div className="space-y-6">
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="enforceMaxAdvance"
+                    checked={formData.enforceMaxAdvance}
+                    onChange={(e) => handleInputChange('enforceMaxAdvance', e.target.checked)}
+                    disabled={!canEdit}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                  />
+                  <label htmlFor="enforceMaxAdvance" className="text-sm font-medium text-gray-700">
+                    Enforce Maximum Advance Booking
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Max Advance Booking (days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={formData.maxBookingAdvanceDays}
+                  onChange={(e) => handleInputChange('maxBookingAdvanceDays', parseInt(e.target.value))}
+                  disabled={!canEdit || !formData.enforceMaxAdvance}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">How far in advance users can book</p>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Booking Notice (hours)</label>
-              <input
-                type="number"
-                min="0"
-                max="48"
-                value={formData.minBookingNoticeHours}
-                onChange={(e) => handleInputChange('minBookingNoticeHours', parseInt(e.target.value))}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-              <p className="text-xs text-gray-500 mt-1">Minimum notice required before flight</p>
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="enforceMinNotice"
+                    checked={formData.enforceMinNotice}
+                    onChange={(e) => handleInputChange('enforceMinNotice', e.target.checked)}
+                    disabled={!canEdit}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                  />
+                  <label htmlFor="enforceMinNotice" className="text-sm font-medium text-gray-700">
+                    Enforce Minimum Booking Notice
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Booking Notice (hours)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="48"
+                  value={formData.minBookingNoticeHours}
+                  onChange={(e) => handleInputChange('minBookingNoticeHours', parseInt(e.target.value))}
+                  disabled={!canEdit || !formData.enforceMinNotice}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Minimum notice required before flight</p>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cancellation Notice (hours)</label>
-              <input
-                type="number"
-                min="0"
-                max="72"
-                value={formData.cancellationNoticeHours}
-                onChange={(e) => handleInputChange('cancellationNoticeHours', parseInt(e.target.value))}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-              <p className="text-xs text-gray-500 mt-1">Required notice for cancellations</p>
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    id="enforceCancellationNotice"
+                    checked={formData.enforceCancellationNotice}
+                    onChange={(e) => handleInputChange('enforceCancellationNotice', e.target.checked)}
+                    disabled={!canEdit}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                  />
+                  <label htmlFor="enforceCancellationNotice" className="text-sm font-medium text-gray-700">
+                    Enforce Cancellation Notice
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cancellation Notice (hours)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="72"
+                  value={formData.cancellationNoticeHours}
+                  onChange={(e) => handleInputChange('cancellationNoticeHours', parseInt(e.target.value))}
+                  disabled={!canEdit || !formData.enforceCancellationNotice}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Required notice for cancellations</p>
+              </div>
             </div>
           </div>
         </div>
@@ -129,18 +189,25 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
               </label>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                id="requireInstructorApproval"
-                checked={formData.requireInstructorApproval}
-                onChange={(e) => handleInputChange('requireInstructorApproval', e.target.checked)}
-                disabled={!canEdit}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
-              />
-              <label htmlFor="requireInstructorApproval" className="text-sm text-gray-700">
-                Require instructor approval for solo flights
-              </label>
+            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+              <div className="flex items-start space-x-3">
+                <input
+                  type="checkbox"
+                  id="requireInstructorApproval"
+                  checked={formData.requireInstructorApproval}
+                  onChange={(e) => handleInputChange('requireInstructorApproval', e.target.checked)}
+                  disabled={!canEdit}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50 mt-0.5"
+                />
+                <div>
+                  <label htmlFor="requireInstructorApproval" className="text-sm font-medium text-gray-700 block">
+                    Require instructor approval for solo flights
+                  </label>
+                  <p className="text-xs text-gray-600 mt-1">
+                    When enabled, solo flight bookings will be set to pending status and all admins and instructors will receive a notification to approve the booking.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

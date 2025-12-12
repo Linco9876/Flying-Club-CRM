@@ -108,7 +108,7 @@ const AuthenticatedApp: React.FC<{
   bookingFormData,
   setBookingFormData
 }) => {
-  const { bookings, addBooking, updateBooking, deleteBooking } = useBookings();
+  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking } = useBookings();
 
   const handleNewBookingWithTime = (
     date: Date,
@@ -235,6 +235,20 @@ const AuthenticatedApp: React.FC<{
               await deleteBooking(bookingId);
             } catch (error) {
               console.error('Error deleting booking:', error);
+            }
+          }}
+          onApproveBooking={async (bookingId) => {
+            try {
+              await approveBooking(bookingId);
+            } catch (error) {
+              console.error('Error approving booking:', error);
+            }
+          }}
+          onRejectBooking={async (bookingId) => {
+            try {
+              await rejectBooking(bookingId);
+            } catch (error) {
+              console.error('Error rejecting booking:', error);
             }
           }}
           onOpenTrainingRecord={handleOpenTrainingRecord}

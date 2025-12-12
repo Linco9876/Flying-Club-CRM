@@ -92,6 +92,31 @@ export const useBookings = () => {
         throw new Error('Aircraft is required');
       }
 
+      // Validate against booking rules
+      const { data: ruleValidation, error: ruleError } = await supabase
+        .rpc('validate_booking_rules', {
+          p_start_time: bookingData.startTime.toISOString(),
+          p_end_time: bookingData.endTime.toISOString(),
+          p_instructor_id: bookingData.instructorId || null
+        });
+
+      if (ruleError) {
+        console.error('Error validating booking rules:', ruleError);
+      }
+
+      let needsApproval = false;
+      if (ruleValidation && Array.isArray(ruleValidation) && ruleValidation.length > 0) {
+        const errors = ruleValidation.filter((err: any) => !err.needs_approval);
+        const approvalRequired = ruleValidation.some((err: any) => err.needs_approval);
+
+        if (errors.length > 0) {
+          const errorMessages = errors.map((err: any) => err.message);
+          throw new Error(errorMessages.join('. '));
+        }
+
+        needsApproval = approvalRequired;
+      }
+
       // Check for conflicts before creating booking
       const { data: conflicts, error: conflictError } = await supabase
         .rpc('check_booking_conflicts', {
@@ -113,6 +138,8 @@ export const useBookings = () => {
         throw new Error(conflictMessages.join('. '));
       }
 
+      const bookingStatus = needsApproval ? 'pending_approval' : bookingData.status;
+
       const insertData = {
         student_id: bookingData.studentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
@@ -121,7 +148,7 @@ export const useBookings = () => {
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
         notes: bookingData.notes || null,
-        status: bookingData.status
+        status: bookingStatus
       };
 
       console.log('Insert data:', insertData);
@@ -146,8 +173,25 @@ export const useBookings = () => {
 
       console.log('Booking created:', data);
 
+      // Send approval notifications if needed
+      if (needsApproval && data && data.length > 0) {
+        const { error: notifyError } = await supabase
+          .rpc('notify_instructors_for_approval', {
+            booking_id: data[0].id
+          });
+
+        if (notifyError) {
+          console.error('Error sending approval notifications:', notifyError);
+        }
+      }
+
       await fetchBookings();
-      toast.success('Booking created successfully');
+
+      if (needsApproval) {
+        toast.success('Booking created and sent for instructor approval');
+      } else {
+        toast.success('Booking created successfully');
+      }
     } catch (err: any) {
       console.error('Error adding booking:', err);
       console.error('Error details:', {
@@ -250,6 +294,54 @@ export const useBookings = () => {
     }
   };
 
+  const approveBooking = async (bookingId: string) => {
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        throw new Error('User not authenticated');
+      }
+
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          status: 'confirmed',
+          approved_by: userData.user.id,
+          approved_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
+
+      if (error) throw error;
+
+      await fetchBookings();
+      toast.success('Booking approved successfully');
+    } catch (err) {
+      console.error('Error approving booking:', err);
+      toast.error('Failed to approve booking');
+      throw err;
+    }
+  };
+
+  const rejectBooking = async (bookingId: string, reason?: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          status: 'cancelled',
+          notes: reason ? `Rejected: ${reason}` : 'Rejected by instructor'
+        })
+        .eq('id', bookingId);
+
+      if (error) throw error;
+
+      await fetchBookings();
+      toast.success('Booking rejected');
+    } catch (err) {
+      console.error('Error rejecting booking:', err);
+      toast.error('Failed to reject booking');
+      throw err;
+    }
+  };
+
   useEffect(() => {
     fetchBookings();
   }, []);
@@ -262,6 +354,8 @@ export const useBookings = () => {
     updateBooking,
     deleteBooking,
     addFlightLog,
+    approveBooking,
+    rejectBooking,
     refetch: fetchBookings
   };
 };

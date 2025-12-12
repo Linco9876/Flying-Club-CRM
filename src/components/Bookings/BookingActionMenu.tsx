@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, CreditCard as Edit, Trash2, FileText, Eye, X } from 'lucide-react';
+import { MoreVertical, CreditCard as Edit, Trash2, FileText, Eye, X, CheckCircle, XCircle } from 'lucide-react';
 import { Booking } from '../../types';
 import { formatLocalDateTime } from '../../utils/timeUtils';
 
@@ -10,8 +10,11 @@ interface BookingActionMenuProps {
   onLogFlight: () => void;
   onViewDetails?: () => void;
   onViewTrainingRecord?: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
   hasTrainingRecord?: boolean;
   canDelete?: boolean;
+  canApprove?: boolean;
 }
 
 export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
@@ -21,8 +24,11 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   onLogFlight,
   onViewDetails,
   onViewTrainingRecord,
+  onApprove,
+  onReject,
   hasTrainingRecord = false,
-  canDelete = true
+  canDelete = true,
+  canApprove = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -97,6 +103,35 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
             </div>
 
             <div className="py-1">
+              {/* Approve/Reject Actions for Pending Approval */}
+              {booking.status === 'pending_approval' && canApprove && onApprove && onReject && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAction(onApprove);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50 flex items-center space-x-2 focus:outline-none focus:bg-green-50 font-medium"
+                    role="menuitem"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Approve Booking</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAction(onReject);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50 flex items-center space-x-2 focus:outline-none focus:bg-red-50 font-medium"
+                    role="menuitem"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    <span>Reject Booking</span>
+                  </button>
+                  <div className="border-t border-gray-100 my-1" />
+                </>
+              )}
+
               {/* Log Flight / View Training Record */}
               {hasTrainingRecord ? (
                 <button
@@ -123,7 +158,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
                   <span>Log Flight</span>
                 </button>
               )}
-              
+
               {/* Edit Booking */}
               <button
                 onClick={(e) => {
