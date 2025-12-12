@@ -483,56 +483,60 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Type</label>
-                    <div className="flex gap-1">
-                      <select
-                        value={newEndorsement.type}
-                        onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value }))}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select type</option>
-                        {allEndorsementTypes.map(type => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingNewType(true)}
-                        className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                        title="Add custom endorsement type"
-                      >
-                        +
-                      </button>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Type</label>
+                      <div className="flex gap-1">
+                        <select
+                          value={newEndorsement.type}
+                          onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value }))}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select type</option>
+                          {allEndorsementTypes.map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingNewType(true)}
+                          className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex-shrink-0"
+                          title="Add custom endorsement type"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Obtained</label>
+                      <input
+                        type="date"
+                        value={newEndorsement.dateObtained}
+                        onChange={(e) => setNewEndorsement(prev => ({ ...prev, dateObtained: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Obtained</label>
-                    <input
-                      type="date"
-                      value={newEndorsement.dateObtained}
-                      onChange={(e) => setNewEndorsement(prev => ({ ...prev, dateObtained: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Expiry (Optional)</label>
-                    <input
-                      type="date"
-                      value={newEndorsement.expiryDate}
-                      onChange={(e) => setNewEndorsement(prev => ({ ...prev, expiryDate: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="flex items-end">
-                    <button
-                      type="button"
-                      onClick={addEndorsement}
-                      className="w-full px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                    >
-                      Add
-                    </button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Expiry (Optional)</label>
+                      <input
+                        type="date"
+                        value={newEndorsement.expiryDate}
+                        onChange={(e) => setNewEndorsement(prev => ({ ...prev, expiryDate: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={addEndorsement}
+                        className="w-full px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -546,7 +550,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   <div key={endorsement.id} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div>
                       <span className="text-sm font-medium text-blue-900">
-                        {endorsementTypes.find(t => t.value === endorsement.type)?.label}
+                        {endorsement.type}
                       </span>
                       <span className="text-xs text-blue-700 ml-2">
                         Obtained: {endorsement.dateObtained.toLocaleDateString()}
