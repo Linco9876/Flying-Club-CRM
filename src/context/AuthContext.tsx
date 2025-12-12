@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { User } from '../types';
+import { User, UserRole } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -31,22 +31,39 @@ const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => 
 const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): Promise<any> => {
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const result = await withTimeout(
-        supabase
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .maybeSingle(),
-        5000
-      );
+      const [userResult, rolesResult] = await Promise.all([
+        withTimeout(
+          supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle(),
+          5000
+        ),
+        withTimeout(
+          supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', userId),
+          5000
+        )
+      ]);
 
-      if (result.error) {
-        console.error(`Error fetching user data (attempt ${i + 1}):`, result.error);
-        if (i === maxRetries - 1) throw result.error;
+      if (userResult.error) {
+        console.error(`Error fetching user data (attempt ${i + 1}):`, userResult.error);
+        if (i === maxRetries - 1) throw userResult.error;
       }
 
-      if (result.data) {
-        return result.data;
+      if (rolesResult.error) {
+        console.error(`Error fetching user roles (attempt ${i + 1}):`, rolesResult.error);
+      }
+
+      if (userResult.data) {
+        const roles = rolesResult.data?.map(r => r.role as UserRole) || [];
+        return {
+          ...userResult.data,
+          roles: roles.length > 0 ? roles : [userResult.data.role as UserRole]
+        };
       }
 
       if (i < maxRetries - 1) {
@@ -95,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 email: userData.email,
                 name: userData.name,
                 role: userData.role,
+                roles: userData.roles,
                 phone: userData.phone,
                 avatar: userData.avatar_url
               });
@@ -142,6 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: userData.email,
               name: userData.name,
               role: userData.role,
+              roles: userData.roles,
               phone: userData.phone,
               avatar: userData.avatar_url
             });
@@ -190,6 +209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: userData.email,
               name: userData.name,
               role: userData.role,
+              roles: userData.roles,
               phone: userData.phone,
               avatar: userData.avatar_url
             });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { UserRole } from '../types';
 import toast from 'react-hot-toast';
 
 export interface Invitation {
@@ -7,7 +8,7 @@ export interface Invitation {
   email: string;
   name: string;
   phone?: string;
-  role: 'student' | 'instructor' | 'admin';
+  role: UserRole;
   invitedBy: string;
   status: 'pending' | 'accepted' | 'expired';
   invitedAt: Date;
@@ -55,7 +56,7 @@ export const useInvitations = () => {
     email: string;
     name: string;
     phone?: string;
-    role?: 'student' | 'instructor' | 'admin';
+    roles?: UserRole[];
   }) => {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -84,6 +85,7 @@ export const useInvitations = () => {
         return;
       }
 
+      const roles = data.roles && data.roles.length > 0 ? data.roles : ['student'];
       const tempPassword = Math.random().toString(36).slice(-10) + 'A1!';
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -92,8 +94,7 @@ export const useInvitations = () => {
         options: {
           data: {
             name: data.name,
-            phone: data.phone,
-            role: data.role || 'student'
+            phone: data.phone
           }
         }
       });
@@ -109,13 +110,31 @@ export const useInvitations = () => {
         return;
       }
 
+      for (const role of roles) {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .insert({
+            user_id: authData.user.id,
+            role: role
+          });
+
+        if (roleError) {
+          console.error('Error assigning role:', roleError);
+        }
+      }
+
+      const primaryRole = roles.includes('admin') ? 'admin'
+        : roles.includes('instructor') ? 'instructor'
+        : roles.includes('pilot') ? 'pilot'
+        : 'student';
+
       const { error: inviteError } = await supabase
         .from('invitations')
         .insert({
           email: data.email,
           name: data.name,
           phone: data.phone,
-          role: data.role || 'student',
+          role: primaryRole,
           invited_by: currentUser.id,
           status: 'accepted',
           accepted_at: new Date().toISOString(),

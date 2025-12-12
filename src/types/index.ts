@@ -1,15 +1,17 @@
+export type UserRole = 'admin' | 'instructor' | 'pilot' | 'student';
+
 export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'instructor' | 'student';
+  role: UserRole;
+  roles?: UserRole[];
   phone?: string;
   avatar?: string;
   isAvailable?: boolean;
 }
 
 export interface Student extends User {
-  role: 'student';
   raausId?: string;
   casaId?: string;
   medicalType?: string;
@@ -59,7 +61,8 @@ export interface Aircraft {
 
 export interface Booking {
   id: string;
-  studentId: string;
+  pilotId: string;
+  studentId?: string;
   instructorId?: string;
   aircraftId: string;
   startTime: Date;

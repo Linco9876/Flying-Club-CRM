@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Mail, User, Phone, UserPlus, Copy, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { UserRole } from '../../types';
 
 interface InviteUserModalProps {
   isOpen: boolean;
@@ -9,7 +10,7 @@ interface InviteUserModalProps {
     email: string;
     name: string;
     phone?: string;
-    role?: 'student' | 'instructor' | 'admin';
+    roles?: UserRole[];
   }) => Promise<string | undefined>;
 }
 
@@ -22,7 +23,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
     email: '',
     name: '',
     phone: '',
-    role: 'student' as 'student' | 'instructor' | 'admin'
+    roles: ['student'] as UserRole[]
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -49,11 +50,24 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
       email: '',
       name: '',
       phone: '',
-      role: 'student'
+      roles: ['student']
     });
     setTempPassword(null);
     setCopied(false);
     onClose();
+  };
+
+  const toggleRole = (role: UserRole) => {
+    setFormData(prev => {
+      const newRoles = prev.roles.includes(role)
+        ? prev.roles.filter(r => r !== role)
+        : [...prev.roles, role];
+
+      return {
+        ...prev,
+        roles: newRoles.length > 0 ? newRoles : ['student']
+      };
+    });
   };
 
   const copyToClipboard = async () => {
@@ -184,19 +198,25 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
               </div>
 
               <div>
-                <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
-                  Role
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Roles (select one or more)
                 </label>
-                <select
-                  id="role"
-                  value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="student">Student</option>
-                  <option value="instructor">Instructor</option>
-                  <option value="admin">Admin</option>
-                </select>
+                <div className="space-y-2">
+                  {(['student', 'pilot', 'instructor', 'admin'] as UserRole[]).map((role) => (
+                    <label key={role} className="flex items-center space-x-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.roles.includes(role)}
+                        onChange={() => toggleRole(role)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm text-gray-700 capitalize">{role}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Users can have multiple roles. Students must have an instructor for bookings, pilots can book solo.
+                </p>
               </div>
             </div>
 
