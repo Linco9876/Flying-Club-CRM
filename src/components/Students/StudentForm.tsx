@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { X, User, Mail, Phone, Calendar, FileText, AlertTriangle, Save } from 'lucide-react';
+import { X, User, Mail, Phone, Calendar, FileText, AlertTriangle, Save, Loader2 } from 'lucide-react';
 import { Student, Endorsement } from '../../types';
 import toast from 'react-hot-toast';
 
 interface StudentFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (student: Omit<Student, 'id'>) => void;
+  onSubmit: (student: Omit<Student, 'id'>) => Promise<void>;
   student?: Student;
   isEdit?: boolean;
 }
@@ -64,16 +64,18 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     { value: 'navigation', label: 'Navigation' }
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validation
+
+    if (isSubmitting) return;
+
     if (!formData.name || !formData.email) {
       toast.error('Name and email are required');
       return;
     }
 
-    // Conditional validation for RAAus membership expiry
     if (formData.raausId && !formData.membershipExpiry) {
       toast.error('Membership expiry is required when RAAus ID is provided');
       return;
@@ -95,9 +97,15 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       emergencyContact: formData.emergencyContact.name ? formData.emergencyContact : undefined
     };
 
-    onSubmit(studentData);
-    toast.success(isEdit ? 'Student updated successfully!' : 'Student added successfully!');
-    onClose();
+    try {
+      setIsSubmitting(true);
+      await onSubmit(studentData);
+      onClose();
+    } catch (error) {
+      console.error('Error saving student:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const addEndorsement = () => {
@@ -494,10 +502,20 @@ export const StudentForm: React.FC<StudentFormProps> = ({
             </button>
             <button
               type="submit"
-              className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Save className="h-4 w-4" />
-              <span>{isEdit ? 'Update Student' : 'Add Student'}</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{isEdit ? 'Updating...' : 'Adding...'}</span>
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  <span>{isEdit ? 'Update Student' : 'Add Student'}</span>
+                </>
+              )}
             </button>
           </div>
         </form>
