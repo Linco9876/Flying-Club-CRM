@@ -18,7 +18,7 @@ interface Permission {
 }
 
 export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { users, loading, updateUser, refetch } = useUsers();
+  const { users, loading, addRole, removeRole, refetch } = useUsers();
   const [permissions, setPermissions] = useState<Permission[]>([
     {
       id: 'view-all-bookings',
@@ -138,18 +138,21 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
     switch (role) {
       case 'admin': return 'bg-red-100 text-red-800';
       case 'instructor': return 'bg-blue-100 text-blue-800';
+      case 'pilot': return 'bg-orange-100 text-orange-800';
       case 'student': return 'bg-green-100 text-green-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const handleRoleChange = async (userId: string, newRole: 'admin' | 'instructor' | 'student') => {
+  const handleRoleToggle = async (userId: string, role: 'admin' | 'instructor' | 'pilot' | 'student', isChecked: boolean) => {
     try {
-      await updateUser(userId, { role: newRole });
-      toast.success('User role updated successfully');
-      refetch();
+      if (isChecked) {
+        await addRole(userId, role);
+      } else {
+        await removeRole(userId, role);
+      }
     } catch (error) {
-      toast.error('Failed to update user role');
+      console.error('Error toggling role:', error);
     }
   };
 
@@ -190,10 +193,19 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                         Email
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Current Role
+                        Current Roles
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Change Role
+                      <th className="px-6 py-3 text-center text-xs font-medium text-red-500 uppercase tracking-wider">
+                        Admin
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-blue-500 uppercase tracking-wider">
+                        Instructor
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-orange-500 uppercase tracking-wider">
+                        Pilot
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-green-500 uppercase tracking-wider">
+                        Student
                       </th>
                     </tr>
                   </thead>
@@ -207,22 +219,50 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">{user.email}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(user.role)}`}>
-                            {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                          </span>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {(user.roles || [user.role]).map(role => (
+                              <span key={role} className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleBadgeColor(role)}`}>
+                                {role.charAt(0).toUpperCase() + role.slice(1)}
+                              </span>
+                            ))}
+                          </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <select
-                            value={user.role}
-                            onChange={(e) => handleRoleChange(user.id, e.target.value as 'admin' | 'instructor' | 'student')}
+                        <td className="px-6 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={(user.roles || [user.role]).includes('admin')}
+                            onChange={(e) => handleRoleToggle(user.id, 'admin', e.target.checked)}
                             disabled={!canEdit}
-                            className="text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <option value="student">Student</option>
-                            <option value="instructor">Instructor</option>
-                            <option value="admin">Admin</option>
-                          </select>
+                            className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded disabled:opacity-50"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={(user.roles || [user.role]).includes('instructor')}
+                            onChange={(e) => handleRoleToggle(user.id, 'instructor', e.target.checked)}
+                            disabled={!canEdit}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={(user.roles || [user.role]).includes('pilot')}
+                            onChange={(e) => handleRoleToggle(user.id, 'pilot', e.target.checked)}
+                            disabled={!canEdit}
+                            className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded disabled:opacity-50"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={(user.roles || [user.role]).includes('student')}
+                            onChange={(e) => handleRoleToggle(user.id, 'student', e.target.checked)}
+                            disabled={!canEdit}
+                            className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded disabled:opacity-50"
+                          />
                         </td>
                       </tr>
                     ))}
@@ -308,7 +348,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
         {/* Role Descriptions */}
         <div>
           <h3 className="text-lg font-medium text-gray-900 mb-4">Role Descriptions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
               <h4 className="text-sm font-medium text-red-900 mb-2">Administrator</h4>
               <p className="text-xs text-red-800">
@@ -320,6 +360,13 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
               <h4 className="text-sm font-medium text-blue-900 mb-2">Instructor</h4>
               <p className="text-xs text-blue-800">
                 Can manage students, aircraft, training records, and safety reports. Limited billing access.
+              </p>
+            </div>
+
+            <div className="bg-orange-50 border border-orange-200 p-4 rounded-lg">
+              <h4 className="text-sm font-medium text-orange-900 mb-2">Pilot</h4>
+              <p className="text-xs text-orange-800">
+                Can create and manage own bookings. Has access to flight operations without student restrictions.
               </p>
             </div>
 
