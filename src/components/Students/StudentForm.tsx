@@ -591,7 +591,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
               ) : (
                 <>
                   <Save className="h-4 w-4" />
-                  <span>{isEdit ? 'Update Student' : 'Add Student'}</span>
+                  <span>{isEdit ? 'Update User' : 'Add User'}</span>
                 </>
               )}
             </button>

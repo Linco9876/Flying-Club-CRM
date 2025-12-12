@@ -160,7 +160,7 @@ export const useStudents = () => {
           type: e.type,
           date_obtained: e.dateObtained,
           expiry_date: e.expiryDate,
-          instructor_id: e.instructorId,
+          instructor_id: e.instructorId || null,
           is_active: e.isActive
         }));
 
@@ -172,13 +172,13 @@ export const useStudents = () => {
       }
 
       await fetchStudents();
-      toast.success('Student added successfully');
+      toast.success('User added successfully');
     } catch (err) {
       console.error('Error adding student:', err);
       if (err instanceof Error && err.message.includes('already exists')) {
         return;
       }
-      toast.error('Failed to add student');
+      toast.error('Failed to add user');
       throw err;
     }
   };
@@ -230,7 +230,7 @@ export const useStudents = () => {
           type: e.type,
           date_obtained: e.dateObtained,
           expiry_date: e.expiryDate,
-          instructor_id: e.instructorId,
+          instructor_id: e.instructorId || null,
           is_active: e.isActive
         }));
 
@@ -242,10 +242,10 @@ export const useStudents = () => {
       }
 
       await fetchStudents();
-      toast.success('Student updated successfully');
+      toast.success('User updated successfully');
     } catch (err) {
       console.error('Error updating student:', err);
-      toast.error('Failed to update student');
+      toast.error('Failed to update user');
       throw err;
     }
   };

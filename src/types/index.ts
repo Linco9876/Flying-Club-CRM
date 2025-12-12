@@ -89,10 +89,10 @@ export interface FlightLog {
 
 export interface Endorsement {
   id: string;
-  type: 'PC' | 'passenger' | 'cross-country' | 'radio' | 'manual-pitch-prop' | 'retractable-gear' | 'navigation';
+  type: string;
   dateObtained: Date;
   expiryDate?: Date;
-  instructorId: string;
+  instructorId?: string | null;
   isActive: boolean;
 }
 
