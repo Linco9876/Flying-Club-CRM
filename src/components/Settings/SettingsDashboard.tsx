@@ -31,6 +31,7 @@ import { RolesPermissionsSettings } from './RolesPermissionsSettings';
 import { AuditDataSettings } from './AuditDataSettings';
 import { PersonalPreferencesSettings } from './PersonalPreferencesSettings';
 import { BookingFieldSettings } from './BookingFieldSettings';
+import { RosterAvailabilitySettings } from './RosterAvailabilitySettings';
 import toast from 'react-hot-toast';
 
 interface SettingsSection {
@@ -53,7 +54,7 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'calendar', label: 'Calendar', icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
     { id: 'booking-rules', label: 'Bookings & Rules', icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
     { id: 'booking-fields', label: 'Booking Form Fields', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BookingFieldSettings },
-    { id: 'roster', label: 'Roster & Availability', icon: <Users className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
+    { id: 'roster', label: 'Roster & Availability', icon: <Users className="h-4 w-4" />, roles: ['admin', 'instructor'], component: RosterAvailabilitySettings },
     { id: 'training', label: 'Training / Syllabus', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: DocumentsTemplatesSettings },
     { id: 'billing', label: 'Billing & Rates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
     { id: 'integrations', label: 'Integrations', icon: <Database className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
