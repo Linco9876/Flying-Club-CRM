@@ -19,6 +19,7 @@ import {
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
+import { useCalendarSettings } from '../../hooks/useSettings';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
@@ -68,6 +69,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { aircraft } = useAircraft();
   const { getInstructors } = useUsers();
   const instructors = getInstructors();
+  const { settings: calendarSettings } = useCalendarSettings();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
@@ -103,7 +105,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     dayIndex?: number;
   } | null>(null);
 
-  // Dynamic slot height based on viewport
+  // Dynamic slot height based on viewport and settings
   const [slotHeight, setSlotHeight] = useState<number>(60);
 
   useKeyboardNavigation({
@@ -117,20 +119,27 @@ export const Calendar: React.FC<CalendarProps> = ({
     enabled: true,
   });
 
+  useEffect(() => {
+    if (calendarSettings?.default_view) {
+      setViewMode(calendarSettings.default_view as ViewMode);
+    }
+  }, [calendarSettings?.default_view]);
+
   // Compute slot height on mount and resize
   useEffect(() => {
     const computeSlotHeight = () => {
-      // Adjust headerHeight to reflect your layout (controls + top padding)
       const headerHeight = 200;
       const availableHeight = window.innerHeight - headerHeight;
       const numSlots = getTimeSlots().length;
-      setSlotHeight(availableHeight / numSlots);
+      const baseHeight = availableHeight / numSlots;
+      const heightMultiplier = calendarSettings?.double_height_slots ? 2 : 1;
+      setSlotHeight(baseHeight * heightMultiplier);
     };
 
     computeSlotHeight();
     window.addEventListener('resize', computeSlotHeight);
     return () => window.removeEventListener('resize', computeSlotHeight);
-  }, []);
+  }, [calendarSettings?.double_height_slots]);
 
   const navigateDate = (direction: 'prev' | 'next') => {
     if (viewMode === 'day') {
@@ -145,7 +154,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const getWeekDays = () => {
-    const start = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday start
+    const weekStartsOn = calendarSettings?.week_starts_on === 'sunday' ? 0 : 1;
+    const start = startOfWeek(currentDate, { weekStartsOn });
     return Array.from({ length: 7 }, (_, i) => addDays(start, i));
   };
 
@@ -186,10 +196,14 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getAllResources = (): Resource[] => {
     const resources: Resource[] = [];
+    const displayOrder = calendarSettings?.resource_display_order || 'aircraft-first';
+
+    const aircraftResources: Resource[] = [];
+    const instructorResources: Resource[] = [];
 
     if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
       aircraft.forEach((a) => {
-        resources.push({
+        aircraftResources.push({
           id: a.id,
           name: a.registration,
           type: 'aircraft',
@@ -201,7 +215,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     if (resourceFilter === 'instructors' || resourceFilter === 'both') {
       instructors.forEach((instructor) => {
-        resources.push({
+        instructorResources.push({
           id: instructor.id,
           name: instructor.name,
           type: 'instructor',
@@ -210,24 +224,30 @@ export const Calendar: React.FC<CalendarProps> = ({
       });
     }
 
-    return resources;
+    if (displayOrder === 'instructors-first') {
+      return [...instructorResources, ...aircraftResources];
+    } else {
+      return [...aircraftResources, ...instructorResources];
+    }
   };
 
   const getTimeSlots = () => {
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
     const slots = [];
     for (let hour = 6; hour < 20; hour++) {
-      // 15-minute slots: 24, 25, 26, 27, etc.
-      slots.push(hour * 4);
-      slots.push(hour * 4 + 1);
-      slots.push(hour * 4 + 2);
-      slots.push(hour * 4 + 3);
+      for (let i = 0; i < slotsPerHour; i++) {
+        slots.push(hour * (60 / snapDuration) + i);
+      }
     }
     return slots;
   };
 
   const getTimeFromSlot = (slot: number) => {
-    const hour = Math.floor(slot / 4);
-    const minute = (slot % 4) * 15;
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
+    const hour = Math.floor(slot / slotsPerHour);
+    const minute = (slot % slotsPerHour) * snapDuration;
     return { hour, minute };
   };
 
@@ -298,18 +318,19 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const getBookingPosition = (booking: Booking) => {
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
     const startTime = new Date(booking.startTime);
     const endTime = new Date(booking.endTime);
     const startHour = startTime.getHours();
     const startMinute = startTime.getMinutes();
 
-    // Calculate position from 6:00 AM start
-    const startSlot = (startHour - 6) * 4 + Math.floor(startMinute / 15);
+    const startSlot = (startHour - 6) * slotsPerHour + Math.floor(startMinute / snapDuration);
     const durationMs = endTime.getTime() - startTime.getTime();
     const durationHours = durationMs / (1000 * 60 * 60);
-    const durationInSlots = Math.max(1, Math.ceil(durationHours * 4));
-    const remainderMinutes = startMinute % 15;
-    const minuteHeight = slotHeight / 15;
+    const durationInSlots = Math.max(1, Math.ceil(durationHours * slotsPerHour));
+    const remainderMinutes = startMinute % snapDuration;
+    const minuteHeight = slotHeight / snapDuration;
 
     return {
       gridRowStart: startSlot + 1,
@@ -373,8 +394,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     if (onNewBookingWithTime) {
+      const snapDuration = calendarSettings?.snap_duration || 15;
+      const slotsPerHour = 60 / snapDuration;
       const startTime = formatTimeSlot(slot);
-      const endTime = formatTimeSlot(slot + 4); // Default 1 hour booking
+      const endTime = formatTimeSlot(slot + slotsPerHour);
       onNewBookingWithTime(
         date,
         startTime,
@@ -590,12 +613,14 @@ export const Calendar: React.FC<CalendarProps> = ({
             }}
           >
             {/* Current Time Indicator */}
-            <CurrentTimeIndicator isVisible={isToday(currentDate)} />
+            <CurrentTimeIndicator isVisible={isToday(currentDate) && (calendarSettings?.show_current_time_indicator ?? true)} />
 
             {timeSlots.map((slot, slotIndex) => {
+              const snapDuration = calendarSettings?.snap_duration || 15;
+              const slotsPerHour = 60 / snapDuration;
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHourMarker = minute === 15;
+              const isHalfHourMarker = snapDuration <= 15 && minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
@@ -613,7 +638,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
                       style={{
                         gridColumn: 1,
-                        gridRow: `${slotIndex + 1} / span 4`,
+                        gridRow: `${slotIndex + 1} / span ${slotsPerHour}`,
                         paddingTop: 2,
                       }}
                     >
@@ -642,7 +667,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       resource.id,
                       resource.type
                     );
-                    const hourIndex = Math.floor(slot / 4);
+                    const hourIndex = Math.floor(slot / slotsPerHour);
                     const isAlternateHour = hourIndex % 2 === 1;
                     const cursorClass = unavailability
                       ? 'cursor-not-allowed'
@@ -936,13 +961,15 @@ export const Calendar: React.FC<CalendarProps> = ({
           >
             {/* Current Time Indicator - show on today only */}
             <CurrentTimeIndicator
-              isVisible={weekDays.some((day) => isToday(day))}
+              isVisible={weekDays.some((day) => isToday(day)) && (calendarSettings?.show_current_time_indicator ?? true)}
             />
 
             {timeSlots.map((slot, slotIndex) => {
+              const snapDuration = calendarSettings?.snap_duration || 15;
+              const slotsPerHour = 60 / snapDuration;
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHourMarker = minute === 15;
+              const isHalfHourMarker = snapDuration <= 15 && minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
@@ -960,7 +987,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
                       style={{
                         gridColumn: 1,
-                        gridRow: `${slotIndex + 1} / span 4`,
+                        gridRow: `${slotIndex + 1} / span ${slotsPerHour}`,
                         paddingTop: 2,
                       }}
                     >
@@ -980,7 +1007,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   {weekDays.map((day, dayIndex) => {
                     const daySlots = [];
                     let columnOffset = 0;
-                    const hourIndex = Math.floor(slot / 4);
+                    const hourIndex = Math.floor(slot / slotsPerHour);
                     const isAlternateHour = hourIndex % 2 === 1;
                     const borderClasses = resourceBorderClasses;
 
