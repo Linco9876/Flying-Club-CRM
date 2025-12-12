@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Eye, Clock, Users } from 'lucide-react';
+import { useCalendarSettings } from '../../hooks/useSettings';
 
 interface CalendarSettingsProps {
   canEdit: boolean;
@@ -7,6 +8,7 @@ interface CalendarSettingsProps {
 }
 
 export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onFormChange }) => {
+  const { settings, loading, updateSettings } = useCalendarSettings();
   const [formData, setFormData] = useState({
     defaultView: 'day',
     showCurrentTimeIndicator: true,
@@ -17,10 +19,46 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
     weekStartsOn: 'monday'
   });
 
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        defaultView: settings.default_view,
+        showCurrentTimeIndicator: settings.show_current_time_indicator,
+        snapDuration: settings.snap_duration,
+        doubleHeightSlots: settings.double_height_slots,
+        resourceDisplayOrder: settings.resource_display_order,
+        conflictRules: settings.conflict_rules,
+        weekStartsOn: settings.week_starts_on
+      });
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    (window as any).__calendarSettingsSave = async () => {
+      await updateSettings({
+        default_view: formData.defaultView,
+        show_current_time_indicator: formData.showCurrentTimeIndicator,
+        snap_duration: formData.snapDuration,
+        double_height_slots: formData.doubleHeightSlots,
+        resource_display_order: formData.resourceDisplayOrder,
+        conflict_rules: formData.conflictRules,
+        week_starts_on: formData.weekStartsOn
+      });
+    };
+  }, [formData, updateSettings]);
+
   const handleInputChange = (field: string, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     onFormChange();
   };
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-gray-500">Loading settings...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-8">

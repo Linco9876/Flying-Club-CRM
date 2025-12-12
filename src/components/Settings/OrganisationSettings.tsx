@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, Upload, Globe, Phone, Mail, MapPin } from 'lucide-react';
+import { useOrganisationSettings } from '../../hooks/useSettings';
 
 interface OrganisationSettingsProps {
   canEdit: boolean;
   onFormChange: () => void;
+  onSave?: () => Promise<void>;
 }
 
-export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canEdit, onFormChange }) => {
+export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canEdit, onFormChange, onSave }) => {
+  const { settings, loading, updateSettings } = useOrganisationSettings();
   const [formData, setFormData] = useState({
     clubName: 'AeroClub Pro',
     address: '123 Aviation Way, Airfield VIC 3000',
@@ -23,6 +26,44 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
 
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        clubName: settings.club_name,
+        address: settings.address,
+        timezone: settings.timezone,
+        currency: settings.currency,
+        contactEmail: settings.contact_email,
+        contactPhone: settings.contact_phone,
+        website: settings.website,
+        studentPortalUrl: settings.student_portal_url,
+        bookingDayStart: settings.booking_day_start,
+        bookingDayEnd: settings.booking_day_end,
+        defaultSlotLength: settings.default_slot_length
+      });
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    if (onSave) {
+      (window as any).__organisationSettingsSave = async () => {
+        await updateSettings({
+          club_name: formData.clubName,
+          address: formData.address,
+          timezone: formData.timezone,
+          currency: formData.currency,
+          contact_email: formData.contactEmail,
+          contact_phone: formData.contactPhone,
+          website: formData.website,
+          student_portal_url: formData.studentPortalUrl,
+          booking_day_start: formData.bookingDayStart,
+          booking_day_end: formData.bookingDayEnd,
+          default_slot_length: formData.defaultSlotLength
+        });
+      };
+    }
+  }, [formData, updateSettings, onSave]);
+
   const handleInputChange = (field: string, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     onFormChange();
@@ -35,6 +76,14 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       onFormChange();
     }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-gray-500">Loading settings...</div>
+      </div>
+    );
+  }
 
   const timezones = [
     'Australia/Melbourne',

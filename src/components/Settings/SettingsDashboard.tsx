@@ -81,7 +81,7 @@ export const SettingsDashboard: React.FC = () => {
 
   // Set default section based on user role (only on mount)
   useEffect(() => {
-    if (user?.role === 'student' || user?.role === 'instructor') {
+    if (user?.role === 'student' || user?.role === 'instructor' || user?.role === 'pilot') {
       setActiveSection('personal');
     } else {
       setActiveSection('organisation');
@@ -98,12 +98,13 @@ export const SettingsDashboard: React.FC = () => {
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      // Mock save operation
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const saveFunction = (window as any)[`__${activeSection.replace(/-/g, '')}SettingsSave`];
+      if (saveFunction) {
+        await saveFunction();
+      }
       setHasUnsavedChanges(false);
-      toast.success('Settings saved successfully!');
     } catch (error) {
-      toast.error('Failed to save settings');
+      console.error('Error saving settings:', error);
     } finally {
       setIsLoading(false);
     }
@@ -129,7 +130,7 @@ export const SettingsDashboard: React.FC = () => {
 
   const canEdit = (sectionId: string) => {
     if (user?.role === 'admin') return true;
-    if ((user?.role === 'instructor' || user?.role === 'student') && sectionId === 'personal') return true;
+    if ((user?.role === 'instructor' || user?.role === 'student' || user?.role === 'pilot') && sectionId === 'personal') return true;
     return false;
   };
 
