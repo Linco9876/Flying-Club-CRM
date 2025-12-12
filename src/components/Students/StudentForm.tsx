@@ -40,17 +40,33 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   isEdit = false
 }) => {
   const [formData, setFormData] = useState(buildFormData(student));
+  const [instructors, setInstructors] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     if (!isOpen) return;
     setFormData(buildFormData(student));
   }, [student, isOpen]);
 
+  useEffect(() => {
+    const fetchInstructors = async () => {
+      const { data } = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/users?role=in.(instructor,admin)&select=id,name`, {
+        headers: {
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        }
+      }).then(r => r.json()).catch(() => ({ data: [] }));
+      setInstructors(data || []);
+    };
+    if (isOpen) {
+      fetchInstructors();
+    }
+  }, [isOpen]);
+
   const [newEndorsement, setNewEndorsement] = useState({
     type: 'PC' as const,
     dateObtained: '',
     expiryDate: '',
-    instructorId: '2', // Default to CFI
+    instructorId: '',
     isActive: true
   });
 
@@ -114,6 +130,11 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       return;
     }
 
+    if (!newEndorsement.instructorId) {
+      toast.error('Please select an instructor');
+      return;
+    }
+
     const endorsement: Endorsement = {
       id: Date.now().toString(),
       ...newEndorsement,
@@ -130,7 +151,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       type: 'PC',
       dateObtained: '',
       expiryDate: '',
-      instructorId: '2',
+      instructorId: '',
       isActive: true
     });
 
@@ -421,7 +442,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
             {/* Add New Endorsement */}
             <div className="bg-gray-50 p-4 rounded-lg mb-4">
               <h4 className="text-sm font-medium text-gray-700 mb-3">Add Endorsement</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">Type</label>
                   <select
@@ -431,6 +452,19 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   >
                     {endorsementTypes.map(type => (
                       <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Instructor</label>
+                  <select
+                    value={newEndorsement.instructorId}
+                    onChange={(e) => setNewEndorsement(prev => ({ ...prev, instructorId: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select instructor</option>
+                    {instructors.map(instructor => (
+                      <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
                     ))}
                   </select>
                 </div>
