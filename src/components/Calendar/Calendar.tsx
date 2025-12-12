@@ -20,6 +20,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings } from '../../hooks/useSettings';
+import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
@@ -70,6 +71,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { getInstructors } = useUsers();
   const instructors = getInstructors();
   const { settings: calendarSettings } = useCalendarSettings();
+  const { weeklySchedules, absences, scheduleChanges } = useInstructorAvailability();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
@@ -217,7 +219,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       instructors.forEach((instructor) => {
         instructorResources.push({
           id: instructor.id,
-          name: instructor.name,
+          name: instructor.name || instructor.email,
           type: 'instructor',
           icon: <User className="h-4 w-4" />,
         });
@@ -263,36 +265,121 @@ export const Calendar: React.FC<CalendarProps> = ({
     return `${hour.toString().padStart(2, '0')}:00`;
   };
 
-  // Mock unavailability data
   const getUnavailabilityPeriods = (date: Date): UnavailabilityPeriod[] => {
-    return [
-      // Aircraft maintenance periods
-      {
-        resourceId: '1',
-        resourceType: 'aircraft',
-        startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
-        endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0),
-        reason: 'Maintenance',
-        pattern: 'diagonal',
-      },
-      {
-        resourceId: '3',
-        resourceType: 'aircraft',
-        startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 13, 0),
-        endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 19, 0),
-        reason: 'Unserviceable',
-        pattern: 'diagonal',
-      },
-      // Instructor unavailability
-      {
-        resourceId: '2',
-        resourceType: 'instructor',
-        startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 17, 0),
-        endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 19, 0),
-        reason: 'Not Available',
-        pattern: 'diagonal',
-      },
-    ];
+    const periods: UnavailabilityPeriod[] = [];
+    const dayOfWeek = date.getDay();
+    const dateStr = format(date, 'yyyy-MM-dd');
+
+    instructors.forEach((instructor) => {
+      // Check for absences
+      const absence = absences.find(
+        (a) =>
+          a.userId === instructor.id &&
+          dateStr >= a.startDate &&
+          dateStr <= a.endDate
+      );
+
+      if (absence) {
+        periods.push({
+          resourceId: instructor.id,
+          resourceType: 'instructor',
+          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+          reason: absence.reason || 'Absent',
+          pattern: 'solid',
+        });
+        return;
+      }
+
+      // Check for schedule changes effective on this date
+      const applicableChanges = scheduleChanges
+        .filter((c) => c.userId === instructor.id && c.dayOfWeek === dayOfWeek && c.effectiveFrom <= dateStr)
+        .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+
+      const scheduleChange = applicableChanges[0];
+
+      if (scheduleChange) {
+        if (!scheduleChange.isAvailable) {
+          periods.push({
+            resourceId: instructor.id,
+            resourceType: 'instructor',
+            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+            reason: 'Not Available',
+            pattern: 'diagonal',
+          });
+        } else {
+          const [startHour, startMinute] = scheduleChange.startTime.split(':').map(Number);
+          const [endHour, endMinute] = scheduleChange.endTime.split(':').map(Number);
+
+          if (startHour > 6) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+            });
+          }
+
+          if (endHour < 20) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+            });
+          }
+        }
+        return;
+      }
+
+      // Check weekly schedule
+      const weeklySchedule = weeklySchedules.find(
+        (s) => s.userId === instructor.id && s.dayOfWeek === dayOfWeek
+      );
+
+      if (!weeklySchedule || !weeklySchedule.isAvailable) {
+        periods.push({
+          resourceId: instructor.id,
+          resourceType: 'instructor',
+          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+          reason: 'Not Available',
+          pattern: 'diagonal',
+        });
+      } else {
+        const [startHour, startMinute] = weeklySchedule.startTime.split(':').map(Number);
+        const [endHour, endMinute] = weeklySchedule.endTime.split(':').map(Number);
+
+        if (startHour > 6) {
+          periods.push({
+            resourceId: instructor.id,
+            resourceType: 'instructor',
+            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+            reason: 'Not Available',
+            pattern: 'diagonal',
+          });
+        }
+
+        if (endHour < 20) {
+          periods.push({
+            resourceId: instructor.id,
+            resourceType: 'instructor',
+            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+            reason: 'Not Available',
+            pattern: 'diagonal',
+          });
+        }
+      }
+    });
+
+    return periods;
   };
 
   const getBookingsForResource = (

@@ -136,7 +136,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
             <option value="">Select an instructor...</option>
             {instructors.map(instructor => (
               <option key={instructor.id} value={instructor.id}>
-                {instructor.firstName} {instructor.lastName}
+                {instructor.name || instructor.email}
               </option>
             ))}
           </select>
