@@ -79,19 +79,21 @@ export const SettingsDashboard: React.FC = () => {
     return matchesSearch;
   });
 
-  // Set default section based on user role
+  // Set default section based on user role (only on mount)
   useEffect(() => {
     if (user?.role === 'student' || user?.role === 'instructor') {
       setActiveSection('personal');
     } else {
       setActiveSection('organisation');
     }
-    
-    // Ensure the active section is available to the user
+  }, [user?.role]);
+
+  // Ensure the active section is available to the user
+  useEffect(() => {
     if (filteredSections.length > 0 && !filteredSections.find(s => s.id === activeSection)) {
       setActiveSection(filteredSections[0].id);
     }
-  }, [user?.role, filteredSections, activeSection]);
+  }, [filteredSections]);
 
   const handleSave = async () => {
     setIsLoading(true);
