@@ -280,11 +280,21 @@ export const Calendar: React.FC<CalendarProps> = ({
       );
 
       if (absence) {
+        let startHour = 6;
+        let startMinute = 0;
+        let endHour = 20;
+        let endMinute = 0;
+
+        if (absence.startTime && absence.endTime) {
+          [startHour, startMinute] = absence.startTime.split(':').map(Number);
+          [endHour, endMinute] = absence.endTime.split(':').map(Number);
+        }
+
         periods.push({
           resourceId: instructor.id,
           resourceType: 'instructor',
-          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
-          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
           reason: absence.reason || 'Absent',
           pattern: 'solid',
         });
@@ -749,6 +759,21 @@ export const Calendar: React.FC<CalendarProps> = ({
                       slot,
                       currentDate
                     );
+
+                    const prevSlot = slot - 1;
+                    const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
+                      resource.id,
+                      resource.type,
+                      prevSlot,
+                      currentDate
+                    ) : null;
+
+                    const isFirstSlotOfPeriod = unavailability && (
+                      !prevUnavailability ||
+                      prevUnavailability.reason !== unavailability.reason ||
+                      prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
+                    );
+
                     const isInDragRange = isTimeSlotInDragRange(
                       slot,
                       resource.id,
@@ -815,7 +840,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           )
                         }
                       >
-                        {unavailability && (
+                        {unavailability && isFirstSlotOfPeriod && (
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
                               {unavailability.reason}
@@ -1106,6 +1131,21 @@ export const Calendar: React.FC<CalendarProps> = ({
                         slot,
                         day
                       );
+
+                      const prevSlot = slot - 1;
+                      const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
+                        selectedAircraftId,
+                        'aircraft',
+                        prevSlot,
+                        day
+                      ) : null;
+
+                      const isFirstSlotOfPeriod = unavailability && (
+                        !prevUnavailability ||
+                        prevUnavailability.reason !== unavailability.reason ||
+                        prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
+                      );
+
                       const isInDragRange = isTimeSlotInDragRange(
                         slot,
                         selectedAircraftId,
@@ -1173,7 +1213,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             )
                           }
                         >
-                          {unavailability && (
+                          {unavailability && isFirstSlotOfPeriod && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
                                 {unavailability.reason}
@@ -1193,6 +1233,21 @@ export const Calendar: React.FC<CalendarProps> = ({
                         slot,
                         day
                       );
+
+                      const prevSlot = slot - 1;
+                      const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
+                        selectedInstructorId,
+                        'instructor',
+                        prevSlot,
+                        day
+                      ) : null;
+
+                      const isFirstSlotOfPeriod = unavailability && (
+                        !prevUnavailability ||
+                        prevUnavailability.reason !== unavailability.reason ||
+                        prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
+                      );
+
                       const isInDragRange = isTimeSlotInDragRange(
                         slot,
                         selectedInstructorId,
@@ -1260,7 +1315,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             )
                           }
                         >
-                          {unavailability && (
+                          {unavailability && isFirstSlotOfPeriod && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
                                 {unavailability.reason}

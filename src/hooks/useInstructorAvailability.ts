@@ -16,6 +16,8 @@ export interface Absence {
   userId: string;
   startDate: string;
   endDate: string;
+  startTime?: string;
+  endTime?: string;
   reason?: string;
 }
 
@@ -80,6 +82,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
         userId: a.user_id,
         startDate: a.start_date,
         endDate: a.end_date,
+        startTime: a.start_time,
+        endTime: a.end_time,
         reason: a.reason
       }));
 
@@ -171,6 +175,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
           user_id: absence.userId,
           start_date: absence.startDate,
           end_date: absence.endDate,
+          start_time: absence.startTime || null,
+          end_time: absence.endTime || null,
           reason: absence.reason
         });
 
@@ -191,6 +197,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       if (absence.startDate) updateData.start_date = absence.startDate;
       if (absence.endDate) updateData.end_date = absence.endDate;
+      if (absence.startTime !== undefined) updateData.start_time = absence.startTime || null;
+      if (absence.endTime !== undefined) updateData.end_time = absence.endTime || null;
       if (absence.reason !== undefined) updateData.reason = absence.reason;
 
       const { error } = await supabase

@@ -74,10 +74,15 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     if (!canEdit || !selectedInstructorId) return;
 
     const formData = new FormData(e.currentTarget);
+    const startTime = formData.get('startTime') as string;
+    const endTime = formData.get('endTime') as string;
+
     await addAbsence({
       userId: selectedInstructorId,
       startDate: formData.get('startDate') as string,
       endDate: formData.get('endDate') as string,
+      startTime: startTime || undefined,
+      endTime: endTime || undefined,
       reason: formData.get('reason') as string || undefined
     });
 
@@ -241,6 +246,30 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Start Time (Optional)
+                    </label>
+                    <input
+                      type="time"
+                      name="startTime"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Leave blank for full day</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      End Time (Optional)
+                    </label>
+                    <input
+                      type="time"
+                      name="endTime"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Leave blank for full day</p>
+                  </div>
+                </div>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Reason (Optional)
@@ -282,9 +311,17 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     <div>
                       <div className="font-medium text-gray-900">
                         {new Date(absence.startDate).toLocaleDateString()} - {new Date(absence.endDate).toLocaleDateString()}
+                        {absence.startTime && absence.endTime && (
+                          <span className="ml-2 text-sm font-normal">
+                            ({absence.startTime} - {absence.endTime})
+                          </span>
+                        )}
                       </div>
                       {absence.reason && (
                         <div className="text-sm text-gray-600">{absence.reason}</div>
+                      )}
+                      {!absence.startTime && !absence.endTime && (
+                        <div className="text-xs text-gray-500 mt-1">Full day absence</div>
                       )}
                     </div>
                     {canEdit && (
