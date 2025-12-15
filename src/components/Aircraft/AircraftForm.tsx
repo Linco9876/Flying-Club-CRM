@@ -48,9 +48,10 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   });
 
   const { flightTypes, paymentMethods, loading: billingLoading } = useBillingSettings();
-  const { rates: existingRates } = useAircraftRates(aircraft?.id);
+  const { rates: existingRates, loading: ratesLoading } = useAircraftRates(aircraft?.id);
 
   const [aircraftRates, setAircraftRates] = useState<Partial<AircraftRate>[]>([]);
+  const [ratesInitialized, setRatesInitialized] = useState(false);
 
   const [costStructure, setCostStructure] = useState<{
     aircraft: CostStructure;
@@ -69,9 +70,36 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   });
 
   useEffect(() => {
-    if (flightTypes.length > 0 && existingRates.length > 0) {
-      setAircraftRates(existingRates);
-    } else if (flightTypes.length > 0 && aircraftRates.length === 0) {
+    if (!isOpen) {
+      setAircraftRates([]);
+      setRatesInitialized(false);
+      return;
+    }
+
+    if (ratesInitialized || billingLoading || flightTypes.length === 0) {
+      return;
+    }
+
+    if (isEdit && aircraft?.id) {
+      if (!ratesLoading) {
+        if (existingRates.length > 0) {
+          setAircraftRates(existingRates);
+        } else {
+          setAircraftRates(flightTypes.map(ft => ({
+            flightTypeId: ft.id,
+            flightTypeName: ft.name,
+            chargeType: 'not_used' as const,
+            soloRate: 0,
+            dualRate: 0,
+            flatSurcharge: 0,
+            weekendSurcharge: 0,
+            defaultPaymentMethodId: null,
+            includedTaxes: 0
+          })));
+        }
+        setRatesInitialized(true);
+      }
+    } else {
       setAircraftRates(flightTypes.map(ft => ({
         flightTypeId: ft.id,
         flightTypeName: ft.name,
@@ -83,8 +111,9 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         defaultPaymentMethodId: null,
         includedTaxes: 0
       })));
+      setRatesInitialized(true);
     }
-  }, [flightTypes, existingRates]);
+  }, [isOpen, isEdit, aircraft?.id, flightTypes, existingRates, billingLoading, ratesLoading, ratesInitialized]);
 
   const [maintenanceMilestones, setMaintenanceMilestones] = useState<MaintenanceMilestone[]>([]);
   const [newMilestone, setNewMilestone] = useState({

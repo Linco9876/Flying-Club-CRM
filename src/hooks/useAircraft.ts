@@ -163,6 +163,7 @@ export const useAircraft = () => {
   const addAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'> & {
     aircraftRates?: { prepaid: number; payg: number; account: number };
     instructorRates?: { prepaid: number; payg: number; account: number };
+    rates?: Array<any>;
     milestones?: Array<{ title: string; dueCondition: string; dueValue: string }>;
     documents?: Array<{ name: string; type: string; size: number }>;
   }) => {
@@ -189,25 +190,25 @@ export const useAircraft = () => {
 
       if (error) throw error;
 
-      if (newAircraft && aircraftData.aircraftRates) {
-        const { error: ratesError } = await supabase.from('aircraft_rates').insert([
-          { aircraft_id: newAircraft.id, rate_type: 'aircraft_prepaid', amount: aircraftData.aircraftRates.prepaid },
-          { aircraft_id: newAircraft.id, rate_type: 'aircraft_payg', amount: aircraftData.aircraftRates.payg },
-          { aircraft_id: newAircraft.id, rate_type: 'aircraft_account', amount: aircraftData.aircraftRates.account }
-        ]);
+      if (newAircraft && aircraftData.rates && aircraftData.rates.length > 0) {
+        const ratesToInsert = aircraftData.rates.map(rate => ({
+          aircraft_id: newAircraft.id,
+          flight_type_id: rate.flightTypeId,
+          charge_type: rate.chargeType,
+          solo_rate: rate.soloRate || 0,
+          dual_rate: rate.dualRate || 0,
+          flat_surcharge: rate.flatSurcharge || 0,
+          weekend_surcharge: rate.weekendSurcharge || 0,
+          default_payment_method_id: rate.defaultPaymentMethodId || null,
+          included_taxes: rate.includedTaxes || 0
+        }));
+
+        const { error: ratesError } = await supabase
+          .from('aircraft_rates')
+          .insert(ratesToInsert);
+
         if (ratesError) {
           console.error('Error saving aircraft rates:', ratesError);
-        }
-      }
-
-      if (newAircraft && aircraftData.instructorRates) {
-        const { error: instructorRatesError } = await supabase.from('aircraft_rates').insert([
-          { aircraft_id: newAircraft.id, rate_type: 'instructor_prepaid', amount: aircraftData.instructorRates.prepaid },
-          { aircraft_id: newAircraft.id, rate_type: 'instructor_payg', amount: aircraftData.instructorRates.payg },
-          { aircraft_id: newAircraft.id, rate_type: 'instructor_account', amount: aircraftData.instructorRates.account }
-        ]);
-        if (instructorRatesError) {
-          console.error('Error saving instructor rates:', instructorRatesError);
         }
       }
 
@@ -250,7 +251,9 @@ export const useAircraft = () => {
     }
   };
 
-  const updateAircraft = async (id: string, aircraftData: Partial<Omit<Aircraft, 'id' | 'defects'>>) => {
+  const updateAircraft = async (id: string, aircraftData: Partial<Omit<Aircraft, 'id' | 'defects'>> & {
+    rates?: Array<any>;
+  }) => {
     try {
       const updateData: any = {};
       if (aircraftData.registration !== undefined) updateData.registration = aircraftData.registration;
@@ -273,6 +276,39 @@ export const useAircraft = () => {
         .eq('id', id);
 
       if (error) throw error;
+
+      if (aircraftData.rates !== undefined) {
+        const { error: deleteError } = await supabase
+          .from('aircraft_rates')
+          .delete()
+          .eq('aircraft_id', id);
+
+        if (deleteError) {
+          console.error('Error deleting old rates:', deleteError);
+        }
+
+        if (aircraftData.rates.length > 0) {
+          const ratesToInsert = aircraftData.rates.map(rate => ({
+            aircraft_id: id,
+            flight_type_id: rate.flightTypeId,
+            charge_type: rate.chargeType,
+            solo_rate: rate.soloRate || 0,
+            dual_rate: rate.dualRate || 0,
+            flat_surcharge: rate.flatSurcharge || 0,
+            weekend_surcharge: rate.weekendSurcharge || 0,
+            default_payment_method_id: rate.defaultPaymentMethodId || null,
+            included_taxes: rate.includedTaxes || 0
+          }));
+
+          const { error: insertError } = await supabase
+            .from('aircraft_rates')
+            .insert(ratesToInsert);
+
+          if (insertError) {
+            console.error('Error inserting new rates:', insertError);
+          }
+        }
+      }
 
       await fetchAircraft();
       toast.success('Aircraft updated successfully');
