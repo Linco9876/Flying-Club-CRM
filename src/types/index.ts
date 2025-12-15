@@ -31,6 +31,21 @@ export interface Student extends User {
   endorsements: Endorsement[];
 }
 
+export interface AircraftRate {
+  id: string;
+  aircraftId: string;
+  flightTypeId: string;
+  flightTypeName?: string;
+  chargeType: 'tach' | 'flat' | 'per_pax' | 'free' | 'not_used';
+  soloRate: number;
+  dualRate: number;
+  flatSurcharge: number;
+  weekendSurcharge: number;
+  defaultPaymentMethodId: string | null;
+  defaultPaymentMethodName?: string;
+  includedTaxes: number;
+}
+
 export interface Aircraft {
   id: string;
   registration: string;
@@ -49,6 +64,7 @@ export interface Aircraft {
   tachStart?: number;
   isAvailable?: boolean;
   defects: Defect[];
+  rates?: AircraftRate[];
   aircraftRates?: {
     prepaid: number;
     payg: number;

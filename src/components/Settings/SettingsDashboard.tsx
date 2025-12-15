@@ -32,6 +32,7 @@ import { AuditDataSettings } from './AuditDataSettings';
 import { PersonalPreferencesSettings } from './PersonalPreferencesSettings';
 import { BookingFieldSettings } from './BookingFieldSettings';
 import { RosterAvailabilitySettings } from './RosterAvailabilitySettings';
+import { BillingRatesSettings } from './BillingRatesSettings';
 import toast from 'react-hot-toast';
 
 interface SettingsSection {
@@ -56,7 +57,7 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'booking-fields', label: 'Booking Form Fields', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BookingFieldSettings },
     { id: 'roster', label: 'Roster & Availability', icon: <Users className="h-4 w-4" />, roles: ['admin', 'instructor'], component: RosterAvailabilitySettings },
     { id: 'training', label: 'Training / Syllabus', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: DocumentsTemplatesSettings },
-    { id: 'billing', label: 'Billing & Rates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
+    { id: 'billing', label: 'Billing & Rates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BillingRatesSettings },
     { id: 'integrations', label: 'Integrations', icon: <Database className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
     { id: 'notifications', label: 'Notifications', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: NotificationsSettings },
     { id: 'safety', label: 'Safety & Compliance', icon: <Shield className="h-4 w-4" />, roles: ['admin', 'instructor'], component: SafetyComplianceSettings },

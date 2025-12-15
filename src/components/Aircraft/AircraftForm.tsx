@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plane, Save, Upload, Plus, Trash2 } from 'lucide-react';
-import { Aircraft } from '../../types';
+import { X, Plane, Save, Upload, Plus, Trash2, DollarSign } from 'lucide-react';
+import { Aircraft, AircraftRate } from '../../types';
+import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { useAircraftRates } from '../../hooks/useAircraftRates';
 import toast from 'react-hot-toast';
 
 interface AircraftFormProps {
@@ -45,6 +47,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     totalHours: aircraft?.totalHours || 0
   });
 
+  const { flightTypes, paymentMethods, loading: billingLoading } = useBillingSettings();
+  const { rates: existingRates } = useAircraftRates(aircraft?.id);
+
+  const [aircraftRates, setAircraftRates] = useState<Partial<AircraftRate>[]>([]);
+
   const [costStructure, setCostStructure] = useState<{
     aircraft: CostStructure;
     instructor: CostStructure;
@@ -60,6 +67,24 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       account: 85
     }
   });
+
+  useEffect(() => {
+    if (flightTypes.length > 0 && existingRates.length > 0) {
+      setAircraftRates(existingRates);
+    } else if (flightTypes.length > 0 && aircraftRates.length === 0) {
+      setAircraftRates(flightTypes.map(ft => ({
+        flightTypeId: ft.id,
+        flightTypeName: ft.name,
+        chargeType: 'not_used' as const,
+        soloRate: 0,
+        dualRate: 0,
+        flatSurcharge: 0,
+        weekendSurcharge: 0,
+        defaultPaymentMethodId: null,
+        includedTaxes: 0
+      })));
+    }
+  }, [flightTypes, existingRates]);
 
   const [maintenanceMilestones, setMaintenanceMilestones] = useState<MaintenanceMilestone[]>([]);
   const [newMilestone, setNewMilestone] = useState({
@@ -131,6 +156,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       tachStart: formData.tachStart,
       lastMaintenance: aircraft?.lastMaintenance,
       nextMaintenance: aircraft?.nextMaintenance,
+      rates: aircraftRates.filter(r => r.chargeType !== 'not_used'),
       aircraftRates: {
         prepaid: costStructure.aircraft.prepaid,
         payg: costStructure.aircraft.payg,
@@ -354,82 +380,174 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
             </div>
           </div>
 
-          {/* Cost Structure */}
+          {/* Cost Structure by Flight Type */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Cost Structure</h3>
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-md font-medium text-gray-800 mb-3">Aircraft Hourly Rates</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Prepaid ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.aircraft.prepaid}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        aircraft: { ...prev.aircraft, prepaid: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Pay As You Go ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.aircraft.payg}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        aircraft: { ...prev.aircraft, payg: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <DollarSign className="h-5 w-5 mr-2" />
+              Cost Structure by Flight Type
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Configure rates for each flight type. Flight types are managed in Settings &gt; Billing & Rates.
+            </p>
 
-              <div>
-                <h4 className="text-md font-medium text-gray-800 mb-3">Instructor Hourly Rates</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Prepaid ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.instructor.prepaid}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        instructor: { ...prev.instructor, prepaid: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Pay As You Go ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.instructor.payg}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        instructor: { ...prev.instructor, payg: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
+            {billingLoading ? (
+              <div className="text-center py-4 text-gray-500">Loading flight types...</div>
+            ) : aircraftRates.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">
+                No flight types configured. Go to Settings &gt; Billing & Rates to add flight types.
               </div>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                {aircraftRates.map((rate, index) => {
+                  const flightType = flightTypes.find(ft => ft.id === rate.flightTypeId);
+                  if (!flightType) return null;
+
+                  return (
+                    <div key={rate.flightTypeId || index} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                      <h4 className="text-md font-semibold text-gray-900 mb-3">{flightType.name}</h4>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Charge Type *
+                          </label>
+                          <select
+                            value={rate.chargeType}
+                            onChange={(e) => {
+                              const newRates = [...aircraftRates];
+                              newRates[index] = { ...newRates[index], chargeType: e.target.value as any };
+                              setAircraftRates(newRates);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="not_used">Not Used</option>
+                            <option value="tach">Tach Increment</option>
+                            <option value="flat">Flat Price</option>
+                            <option value="per_pax">Price Per Passenger</option>
+                            <option value="free">Free</option>
+                          </select>
+                        </div>
+
+                        {rate.chargeType !== 'not_used' && rate.chargeType !== 'free' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Solo Rate ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.soloRate}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], soloRate: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Dual Rate ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.dualRate}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], dualRate: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Flat Surcharge ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={rate.flatSurcharge}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], flatSurcharge: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Can be negative for discount"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">Positive = surcharge, Negative = discount</p>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Weekend/Holiday Surcharge ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.weekendSurcharge}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], weekendSurcharge: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Default Payment Method
+                              </label>
+                              <select
+                                value={rate.defaultPaymentMethodId || ''}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], defaultPaymentMethodId: e.target.value || null };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">None</option>
+                                {paymentMethods.map(pm => (
+                                  <option key={pm.id} value={pm.id}>{pm.name}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Included Taxes ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.includedTaxes}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], includedTaxes: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Maintenance Milestones */}
