@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Plus, Trash2, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
-import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
+import { useInstructorAvailability, WeeklySchedule } from '../../hooks/useInstructorAvailability';
 
 interface RosterAvailabilitySettingsProps {
   canEdit: boolean;
@@ -24,6 +25,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('');
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
   const [showScheduleChangeForm, setShowScheduleChangeForm] = useState(false);
+  const [newScheduleEffectiveDate, setNewScheduleEffectiveDate] = useState('');
+  const [newSchedule, setNewSchedule] = useState<{[key: number]: Omit<WeeklySchedule, 'id' | 'userId'>}>({});
 
   const {
     weeklySchedules,
@@ -62,6 +65,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
       dayOfWeek,
       startTime: existingSchedule?.startTime || '09:00',
       endTime: existingSchedule?.endTime || '17:00',
+      afternoonStartTime: existingSchedule?.afternoonStartTime,
+      afternoonEndTime: existingSchedule?.afternoonEndTime,
       isAvailable: existingSchedule?.isAvailable ?? true,
       [field]: value
     };
@@ -90,22 +95,61 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     e.currentTarget.reset();
   };
 
-  const handleAddScheduleChange = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!canEdit || !selectedInstructorId) return;
-
-    const formData = new FormData(e.currentTarget);
-    await addScheduleChange({
-      userId: selectedInstructorId,
-      effectiveFrom: formData.get('effectiveFrom') as string,
-      dayOfWeek: parseInt(formData.get('dayOfWeek') as string),
-      startTime: formData.get('startTime') as string,
-      endTime: formData.get('endTime') as string,
-      isAvailable: formData.get('isAvailable') === 'true'
+  const handleStartNewSchedule = () => {
+    const currentSchedule: {[key: number]: Omit<WeeklySchedule, 'id' | 'userId'>} = {};
+    DAYS_OF_WEEK.forEach(day => {
+      const existing = getScheduleForDay(day.value);
+      currentSchedule[day.value] = {
+        dayOfWeek: day.value,
+        startTime: existing?.startTime || '09:00',
+        endTime: existing?.endTime || '17:00',
+        afternoonStartTime: existing?.afternoonStartTime,
+        afternoonEndTime: existing?.afternoonEndTime,
+        isAvailable: existing?.isAvailable ?? true
+      };
     });
+    setNewSchedule(currentSchedule);
+    setNewScheduleEffectiveDate('');
+    setShowScheduleChangeForm(true);
+  };
 
-    setShowScheduleChangeForm(false);
-    e.currentTarget.reset();
+  const handleNewScheduleChange = (dayOfWeek: number, field: string, value: any) => {
+    setNewSchedule(prev => ({
+      ...prev,
+      [dayOfWeek]: {
+        ...prev[dayOfWeek],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSaveNewSchedule = async () => {
+    if (!canEdit || !selectedInstructorId || !newScheduleEffectiveDate) {
+      toast.error('Please select an effective date');
+      return;
+    }
+
+    try {
+      for (const dayOfWeek in newSchedule) {
+        const schedule = newSchedule[dayOfWeek];
+        await addScheduleChange({
+          userId: selectedInstructorId,
+          effectiveFrom: newScheduleEffectiveDate,
+          dayOfWeek: parseInt(dayOfWeek),
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          afternoonStartTime: schedule.afternoonStartTime,
+          afternoonEndTime: schedule.afternoonEndTime,
+          isAvailable: schedule.isAvailable
+        });
+      }
+      toast.success('Schedule change saved for all days');
+      setShowScheduleChangeForm(false);
+      setNewSchedule({});
+      setNewScheduleEffectiveDate('');
+    } catch (error) {
+      toast.error('Failed to save schedule changes');
+    }
   };
 
   if (loading) {
@@ -176,9 +220,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                         </div>
 
                         {schedule?.isAvailable && (
-                          <>
+                          <div className="flex flex-col space-y-2 flex-1">
                             <div className="flex items-center space-x-2">
                               <Clock className="h-4 w-4 text-gray-400" />
+                              <span className="text-xs text-gray-600 w-16">Morning:</span>
                               <input
                                 type="time"
                                 value={schedule.startTime}
@@ -195,7 +240,28 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                 className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                               />
                             </div>
-                          </>
+                            <div className="flex items-center space-x-2">
+                              <Clock className="h-4 w-4 text-gray-400" />
+                              <span className="text-xs text-gray-600 w-16">Afternoon:</span>
+                              <input
+                                type="time"
+                                value={schedule.afternoonStartTime || ''}
+                                onChange={(e) => handleWeeklyScheduleChange(day.value, 'afternoonStartTime', e.target.value)}
+                                disabled={!canEdit}
+                                placeholder="Optional"
+                                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                              />
+                              <span className="text-gray-500">to</span>
+                              <input
+                                type="time"
+                                value={schedule.afternoonEndTime || ''}
+                                onChange={(e) => handleWeeklyScheduleChange(day.value, 'afternoonEndTime', e.target.value)}
+                                disabled={!canEdit}
+                                placeholder="Optional"
+                                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                              />
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -343,103 +409,126 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-medium text-gray-900">Future Schedule Changes</h3>
-                <p className="text-sm text-gray-600">Set new working hours starting from a specific date</p>
+                <p className="text-sm text-gray-600">Set a complete new weekly schedule starting from a specific date</p>
               </div>
-              {canEdit && (
+              {canEdit && !showScheduleChangeForm && (
                 <button
-                  onClick={() => setShowScheduleChangeForm(!showScheduleChangeForm)}
+                  onClick={handleStartNewSchedule}
                   className="flex items-center space-x-2 px-3 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700"
                 >
                   <Plus className="h-4 w-4" />
-                  <span>Add Change</span>
+                  <span>New Schedule</span>
                 </button>
               )}
             </div>
 
             {showScheduleChangeForm && (
-              <form onSubmit={handleAddScheduleChange} className="bg-green-50 p-4 rounded-lg border border-green-200 mb-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Effective From
-                    </label>
-                    <input
-                      type="date"
-                      name="effectiveFrom"
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Day of Week
-                    </label>
-                    <select
-                      name="dayOfWeek"
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                    >
-                      {DAYS_OF_WEEK.map(day => (
-                        <option key={day.value} value={day.value}>{day.label}</option>
-                      ))}
-                    </select>
-                  </div>
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200 mb-4">
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Effective From Date
+                  </label>
+                  <input
+                    type="date"
+                    value={newScheduleEffectiveDate}
+                    onChange={(e) => setNewScheduleEffectiveDate(e.target.value)}
+                    required
+                    className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">This schedule will replace the weekly schedule starting from this date</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Start Time
-                    </label>
-                    <input
-                      type="time"
-                      name="startTime"
-                      defaultValue="09:00"
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      End Time
-                    </label>
-                    <input
-                      type="time"
-                      name="endTime"
-                      defaultValue="17:00"
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Available
-                    </label>
-                    <select
-                      name="isAvailable"
-                      defaultValue="true"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                    >
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </div>
+
+                <div className="space-y-3 mb-4">
+                  {DAYS_OF_WEEK.map(day => {
+                    const schedule = newSchedule[day.value];
+                    if (!schedule) return null;
+
+                    return (
+                      <div key={day.value} className="bg-white p-4 rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-4 flex-1">
+                            <div className="w-32">
+                              <span className="font-medium text-gray-900">{day.label}</span>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={schedule.isAvailable ?? false}
+                                onChange={(e) => handleNewScheduleChange(day.value, 'isAvailable', e.target.checked)}
+                                className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                              />
+                              <label className="text-sm text-gray-700">Available</label>
+                            </div>
+
+                            {schedule.isAvailable && (
+                              <div className="flex flex-col space-y-2 flex-1">
+                                <div className="flex items-center space-x-2">
+                                  <Clock className="h-4 w-4 text-gray-400" />
+                                  <span className="text-xs text-gray-600 w-16">Morning:</span>
+                                  <input
+                                    type="time"
+                                    value={schedule.startTime}
+                                    onChange={(e) => handleNewScheduleChange(day.value, 'startTime', e.target.value)}
+                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                  />
+                                  <span className="text-gray-500">to</span>
+                                  <input
+                                    type="time"
+                                    value={schedule.endTime}
+                                    onChange={(e) => handleNewScheduleChange(day.value, 'endTime', e.target.value)}
+                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                  />
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Clock className="h-4 w-4 text-gray-400" />
+                                  <span className="text-xs text-gray-600 w-16">Afternoon:</span>
+                                  <input
+                                    type="time"
+                                    value={schedule.afternoonStartTime || ''}
+                                    onChange={(e) => handleNewScheduleChange(day.value, 'afternoonStartTime', e.target.value)}
+                                    placeholder="Optional"
+                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                  />
+                                  <span className="text-gray-500">to</span>
+                                  <input
+                                    type="time"
+                                    value={schedule.afternoonEndTime || ''}
+                                    onChange={(e) => handleNewScheduleChange(day.value, 'afternoonEndTime', e.target.value)}
+                                    placeholder="Optional"
+                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+
                 <div className="flex space-x-2">
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={handleSaveNewSchedule}
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
                   >
-                    Add Schedule Change
+                    Save Schedule Change
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowScheduleChangeForm(false)}
+                    onClick={() => {
+                      setShowScheduleChangeForm(false);
+                      setNewSchedule({});
+                      setNewScheduleEffectiveDate('');
+                    }}
                     className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
                   >
                     Cancel
                   </button>
                 </div>
-              </form>
+              </div>
             )}
 
             {scheduleChanges.length === 0 ? (
@@ -448,34 +537,63 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                 <p>No future schedule changes</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {scheduleChanges.map(change => {
-                  const dayLabel = DAYS_OF_WEEK.find(d => d.value === change.dayOfWeek)?.label;
-                  return (
-                    <div key={change.id} className="bg-green-50 p-4 rounded-lg border border-green-200 flex items-center justify-between">
+              <div className="space-y-4">
+                {Object.entries(
+                  scheduleChanges.reduce((acc, change) => {
+                    if (!acc[change.effectiveFrom]) {
+                      acc[change.effectiveFrom] = [];
+                    }
+                    acc[change.effectiveFrom].push(change);
+                    return acc;
+                  }, {} as {[key: string]: typeof scheduleChanges})
+                ).map(([effectiveFrom, changes]) => (
+                  <div key={effectiveFrom} className="bg-green-50 p-4 rounded-lg border border-green-200">
+                    <div className="flex items-center justify-between mb-3">
                       <div>
-                        <div className="font-medium text-gray-900">
-                          Starting {new Date(change.effectiveFrom).toLocaleDateString()} - {dayLabel}s
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {change.isAvailable ? (
-                            <>{change.startTime} - {change.endTime}</>
-                          ) : (
-                            <span className="text-red-600">Not Available</span>
-                          )}
-                        </div>
+                        <h4 className="font-semibold text-gray-900">
+                          Starting {new Date(effectiveFrom).toLocaleDateString()}
+                        </h4>
+                        <p className="text-xs text-gray-600">Weekly schedule effective from this date</p>
                       </div>
                       {canEdit && (
                         <button
-                          onClick={() => deleteScheduleChange(change.id)}
+                          onClick={async () => {
+                            for (const change of changes) {
+                              await deleteScheduleChange(change.id);
+                            }
+                          }}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-md"
+                          title="Delete entire schedule"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}
                     </div>
-                  );
-                })}
+                    <div className="space-y-2">
+                      {DAYS_OF_WEEK.map(day => {
+                        const change = changes.find(c => c.dayOfWeek === day.value);
+                        if (!change) return null;
+                        return (
+                          <div key={day.value} className="bg-white p-2 rounded text-sm flex items-center justify-between">
+                            <span className="font-medium text-gray-700 w-24">{day.label}</span>
+                            {change.isAvailable ? (
+                              <div className="flex-1 text-gray-600">
+                                {change.startTime} - {change.endTime}
+                                {change.afternoonStartTime && change.afternoonEndTime && (
+                                  <span className="ml-2 text-gray-500">
+                                    | {change.afternoonStartTime} - {change.afternoonEndTime}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-red-600">Not Available</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

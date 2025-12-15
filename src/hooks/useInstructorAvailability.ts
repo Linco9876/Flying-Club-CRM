@@ -8,6 +8,8 @@ export interface WeeklySchedule {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
+  afternoonStartTime?: string;
+  afternoonEndTime?: string;
   isAvailable: boolean;
 }
 
@@ -28,6 +30,8 @@ export interface ScheduleChange {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
+  afternoonStartTime?: string;
+  afternoonEndTime?: string;
   isAvailable: boolean;
 }
 
@@ -55,6 +59,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
         dayOfWeek: s.day_of_week,
         startTime: s.start_time,
         endTime: s.end_time,
+        afternoonStartTime: s.afternoon_start_time,
+        afternoonEndTime: s.afternoon_end_time,
         isAvailable: s.is_available
       }));
 
@@ -113,6 +119,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
         dayOfWeek: c.day_of_week,
         startTime: c.start_time,
         endTime: c.end_time,
+        afternoonStartTime: c.afternoon_start_time,
+        afternoonEndTime: c.afternoon_end_time,
         isAvailable: c.is_available
       }));
 
@@ -132,6 +140,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
           day_of_week: schedule.dayOfWeek,
           start_time: schedule.startTime,
           end_time: schedule.endTime,
+          afternoon_start_time: schedule.afternoonStartTime || null,
+          afternoon_end_time: schedule.afternoonEndTime || null,
           is_available: schedule.isAvailable,
           updated_at: new Date().toISOString()
         }, {
@@ -245,6 +255,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
           day_of_week: change.dayOfWeek,
           start_time: change.startTime,
           end_time: change.endTime,
+          afternoon_start_time: change.afternoonStartTime || null,
+          afternoon_end_time: change.afternoonEndTime || null,
           is_available: change.isAvailable
         });
 

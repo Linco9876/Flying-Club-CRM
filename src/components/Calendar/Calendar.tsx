@@ -333,15 +333,40 @@ export const Calendar: React.FC<CalendarProps> = ({
             });
           }
 
-          if (endHour < 20) {
+          if (scheduleChange.afternoonStartTime && scheduleChange.afternoonEndTime) {
+            const [afternoonStartHour, afternoonStartMinute] = scheduleChange.afternoonStartTime.split(':').map(Number);
+            const [afternoonEndHour, afternoonEndMinute] = scheduleChange.afternoonEndTime.split(':').map(Number);
+
             periods.push({
               resourceId: instructor.id,
               resourceType: 'instructor',
               startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
-              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
-              reason: 'Not Available',
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
+              reason: 'Lunch Break',
               pattern: 'diagonal',
             });
+
+            if (afternoonEndHour < 20) {
+              periods.push({
+                resourceId: instructor.id,
+                resourceType: 'instructor',
+                startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonEndHour, afternoonEndMinute),
+                endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+                reason: 'Not Available',
+                pattern: 'diagonal',
+              });
+            }
+          } else {
+            if (endHour < 20) {
+              periods.push({
+                resourceId: instructor.id,
+                resourceType: 'instructor',
+                startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+                endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+                reason: 'Not Available',
+                pattern: 'diagonal',
+              });
+            }
           }
         }
         return;
@@ -376,15 +401,40 @@ export const Calendar: React.FC<CalendarProps> = ({
           });
         }
 
-        if (endHour < 20) {
+        if (weeklySchedule.afternoonStartTime && weeklySchedule.afternoonEndTime) {
+          const [afternoonStartHour, afternoonStartMinute] = weeklySchedule.afternoonStartTime.split(':').map(Number);
+          const [afternoonEndHour, afternoonEndMinute] = weeklySchedule.afternoonEndTime.split(':').map(Number);
+
           periods.push({
             resourceId: instructor.id,
             resourceType: 'instructor',
             startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
-            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
-            reason: 'Not Available',
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
+            reason: 'Lunch Break',
             pattern: 'diagonal',
           });
+
+          if (afternoonEndHour < 20) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonEndHour, afternoonEndMinute),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+            });
+          }
+        } else {
+          if (endHour < 20) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+            });
+          }
         }
       }
     });
