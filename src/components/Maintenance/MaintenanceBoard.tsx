@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertTriangle,
   Wrench,
@@ -20,6 +20,7 @@ import { DefectReportForm } from './DefectReportForm';
 import { MaintenanceCompleteModal } from './MaintenanceCompleteModal';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
+import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import { Defect } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 
@@ -347,18 +348,57 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
 export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
   const { aircraft, loading, reportDefect, updateDefectStatus } = useAircraft();
-  const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone } = useMaintenanceMilestones();
+  const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone } = useMaintenanceMilestones();
+  const { templates, loading: templatesLoading } = useMaintenanceSettings();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('all');
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [selectedDefect, setSelectedDefect] = useState<BoardDefect | null>(null);
   const [statusModalDefect, setStatusModalDefect] = useState<BoardDefect | null>(null);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [selectedMaintenance, setSelectedMaintenance] = useState<{ milestone: any; aircraftId: string } | null>(null);
-  const [selectedMilestoneFilter, setSelectedMilestoneFilter] = useState<string>('all');
+  const [selectedMilestoneFilters, setSelectedMilestoneFilters] = useState<string[]>([]);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
     : undefined;
+
+  useEffect(() => {
+    const initializeMilestones = async () => {
+      if (aircraft.length === 0 || templates.length === 0 || milestonesLoading || templatesLoading) return;
+
+      for (const ac of aircraft) {
+        for (const template of templates) {
+          const existingMilestone = milestones.find(
+            m => m.aircraftId === ac.id && m.title === template.name
+          );
+
+          if (!existingMilestone) {
+            try {
+              await createMilestone({
+                aircraftId: ac.id,
+                title: template.name,
+                type: template.type,
+                intervalHours: template.intervalHours,
+                intervalMonths: template.intervalMonths,
+                description: template.description,
+                nextDueHours: template.type === 'hours' || template.type === 'both'
+                  ? ac.totalHours + template.intervalHours
+                  : undefined,
+                nextDueDate: template.type === 'calendar' || template.type === 'both'
+                  ? new Date(Date.now() + template.intervalMonths * 30 * 24 * 60 * 60 * 1000)
+                  : undefined
+              });
+            } catch (error) {
+              console.error('Error creating milestone:', error);
+            }
+          }
+        }
+      }
+    };
+
+    initializeMilestones();
+  }, [aircraft.length, templates.length, milestonesLoading, templatesLoading]);
 
   const allDefects: BoardDefect[] = aircraft.flatMap(a =>
     a.defects.map(d => ({ ...d, aircraftId: a.id }))
@@ -515,10 +555,22 @@ export const MaintenanceBoard: React.FC = () => {
     });
   };
 
-  const uniqueMilestoneNames = Array.from(new Set(milestones.map(m => m.title))).sort();
-  const filteredMilestoneNames = selectedMilestoneFilter === 'all'
+  const uniqueMilestoneNames = templates.map(t => t.name).sort();
+  const filteredMilestoneNames = selectedMilestoneFilters.length === 0
     ? uniqueMilestoneNames
-    : uniqueMilestoneNames.filter(name => name === selectedMilestoneFilter);
+    : uniqueMilestoneNames.filter(name => selectedMilestoneFilters.includes(name));
+
+  const toggleMilestoneFilter = (name: string) => {
+    setSelectedMilestoneFilters(prev =>
+      prev.includes(name)
+        ? prev.filter(n => n !== name)
+        : [...prev, name]
+    );
+  };
+
+  const clearAllFilters = () => {
+    setSelectedMilestoneFilters([]);
+  };
 
   if (loading) {
     return (
@@ -589,23 +641,58 @@ export const MaintenanceBoard: React.FC = () => {
         </div>
       )}
 
-      {!milestonesLoading && milestones.length > 0 && (
+      {!templatesLoading && templates.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-900 flex items-center">
               <Calendar className="h-5 w-5 mr-2" />
               Upcoming Maintenance
             </h2>
-            <select
-              value={selectedMilestoneFilter}
-              onChange={(e) => setSelectedMilestoneFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Milestones</option>
-              {uniqueMilestoneNames.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <button
+                onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white hover:bg-gray-50 flex items-center space-x-2"
+              >
+                <span>
+                  {selectedMilestoneFilters.length === 0
+                    ? 'All Milestones'
+                    : `${selectedMilestoneFilters.length} Selected`}
+                </span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showFilterDropdown && (
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                  <div className="p-3 border-b border-gray-200 flex justify-between items-center">
+                    <span className="font-medium text-sm text-gray-700">Filter Milestones</span>
+                    <button
+                      onClick={clearAllFilters}
+                      className="text-xs text-blue-600 hover:text-blue-700"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  <div className="p-2 max-h-64 overflow-y-auto">
+                    {uniqueMilestoneNames.map(name => (
+                      <label
+                        key={name}
+                        className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedMilestoneFilters.length === 0 || selectedMilestoneFilters.includes(name)}
+                          onChange={() => toggleMilestoneFilter(name)}
+                          className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">{name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
