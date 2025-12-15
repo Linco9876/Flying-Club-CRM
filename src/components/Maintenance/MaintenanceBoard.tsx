@@ -12,11 +12,16 @@ import {
   MapPin,
   FileText,
   Image as ImageIcon,
-  ExternalLink
+  ExternalLink,
+  Calendar,
+  CheckSquare
 } from 'lucide-react';
 import { DefectReportForm } from './DefectReportForm';
+import { MaintenanceCompleteModal } from './MaintenanceCompleteModal';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
 import { Defect } from '../../types';
+import { useAuth } from '../../context/AuthContext';
 
 type BoardDefect = Defect & { aircraftId: string };
 
@@ -340,12 +345,15 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
 );
 
 export const MaintenanceBoard: React.FC = () => {
+  const { user } = useAuth();
   const { aircraft, loading, reportDefect, updateDefectStatus } = useAircraft();
+  const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone } = useMaintenanceMilestones();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('all');
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [selectedDefect, setSelectedDefect] = useState<BoardDefect | null>(null);
   const [statusModalDefect, setStatusModalDefect] = useState<BoardDefect | null>(null);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
+  const [selectedMaintenance, setSelectedMaintenance] = useState<{ milestone: any; aircraftId: string } | null>(null);
 
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
@@ -384,6 +392,63 @@ export const MaintenanceBoard: React.FC = () => {
     }
   };
 
+  const handleMaintenanceComplete = async (data: {
+    completedDate: Date;
+    completedTach: number;
+    nextDueHours?: number;
+    nextDueDate?: Date;
+    notes?: string;
+  }) => {
+    if (!selectedMaintenance) return;
+    await completeMaintenance({
+      milestoneId: selectedMaintenance.milestone.id,
+      aircraftId: selectedMaintenance.aircraftId,
+      completedDate: data.completedDate,
+      completedTach: data.completedTach,
+      completedBy: user?.id,
+      nextDueHours: data.nextDueHours,
+      nextDueDate: data.nextDueDate,
+      notes: data.notes
+    });
+  };
+
+  const handleMaintenanceCorrect = async (data: {
+    nextDueHours?: number;
+    nextDueDate?: Date;
+  }) => {
+    if (!selectedMaintenance) return;
+    await updateMilestone(selectedMaintenance.milestone.id, {
+      nextDueHours: data.nextDueHours,
+      nextDueDate: data.nextDueDate
+    });
+  };
+
+  const calculateDaysRemaining = (dueDate?: Date) => {
+    if (!dueDate) return null;
+    const today = new Date();
+    const due = new Date(dueDate);
+    const diffTime = due.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const calculateHoursRemaining = (nextDueHours?: number, currentHours?: number) => {
+    if (nextDueHours === undefined || currentHours === undefined) return null;
+    return Math.max(0, nextDueHours - currentHours);
+  };
+
+  const getMilestonesByType = () => {
+    const milestoneTypes = new Map<string, typeof milestones[0][]>();
+    milestones.forEach(m => {
+      const key = m.title;
+      if (!milestoneTypes.has(key)) {
+        milestoneTypes.set(key, []);
+      }
+      milestoneTypes.get(key)!.push(m);
+    });
+    return milestoneTypes;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -405,7 +470,108 @@ export const MaintenanceBoard: React.FC = () => {
         </button>
       </div>
 
+      {!milestonesLoading && milestones.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+              <Calendar className="h-5 w-5 mr-2" />
+              Upcoming Maintenance
+            </h2>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 sticky left-0 bg-gray-50">
+                    Aircraft
+                  </th>
+                  {Array.from(getMilestonesByType().keys()).map(milestoneTitle => (
+                    <th key={milestoneTitle} className="px-4 py-3 text-left text-sm font-semibold text-gray-700 min-w-[200px]">
+                      {milestoneTitle}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {aircraft.map(ac => (
+                  <tr key={ac.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900 sticky left-0 bg-white">
+                      {ac.registration}
+                    </td>
+                    {Array.from(getMilestonesByType().keys()).map(milestoneTitle => {
+                      const milestone = milestones.find(m => m.aircraftId === ac.id && m.title === milestoneTitle);
+
+                      if (!milestone) {
+                        return (
+                          <td key={`${ac.id}-${milestoneTitle}`} className="px-4 py-3 text-sm text-gray-400">
+                            -
+                          </td>
+                        );
+                      }
+
+                      const hoursRemaining = calculateHoursRemaining(milestone.nextDueHours, ac.totalHours);
+                      const daysRemaining = calculateDaysRemaining(milestone.nextDueDate);
+
+                      let statusColor = 'text-green-600';
+                      let bgColor = 'bg-green-50';
+                      if (hoursRemaining !== null && hoursRemaining < 10) {
+                        statusColor = 'text-red-600';
+                        bgColor = 'bg-red-50';
+                      } else if (hoursRemaining !== null && hoursRemaining < 25) {
+                        statusColor = 'text-yellow-600';
+                        bgColor = 'bg-yellow-50';
+                      } else if (daysRemaining !== null && daysRemaining < 7) {
+                        statusColor = 'text-red-600';
+                        bgColor = 'bg-red-50';
+                      } else if (daysRemaining !== null && daysRemaining < 30) {
+                        statusColor = 'text-yellow-600';
+                        bgColor = 'bg-yellow-50';
+                      }
+
+                      return (
+                        <td key={`${ac.id}-${milestoneTitle}`} className={`px-4 py-3 ${bgColor}`}>
+                          <div className="space-y-2">
+                            {milestone.nextDueHours !== undefined && (
+                              <div className={`text-sm ${statusColor}`}>
+                                <span className="font-medium">Due: {milestone.nextDueHours.toFixed(1)} hrs</span>
+                                {hoursRemaining !== null && (
+                                  <span className="block text-xs">({hoursRemaining.toFixed(1)} hrs remaining)</span>
+                                )}
+                              </div>
+                            )}
+                            {milestone.nextDueDate && (
+                              <div className={`text-sm ${statusColor}`}>
+                                <span className="font-medium">Due: {new Date(milestone.nextDueDate).toLocaleDateString()}</span>
+                                {daysRemaining !== null && (
+                                  <span className="block text-xs">({daysRemaining} days remaining)</span>
+                                )}
+                              </div>
+                            )}
+                            <button
+                              onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id })}
+                              className="flex items-center space-x-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
+                            >
+                              <CheckSquare className="h-3 w-3" />
+                              <span>Mark Complete</span>
+                            </button>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+          <AlertTriangle className="h-5 w-5 mr-2" />
+          Defect Reports
+        </h2>
         <div className="flex space-x-2 overflow-x-auto pb-1">
           {(['all', 'open', 'mel', 'fixed', 'deferred'] as const).map(status => (
             <button
@@ -531,6 +697,17 @@ export const MaintenanceBoard: React.FC = () => {
 
       {activePhoto && (
         <PhotoLightbox photo={activePhoto} onClose={() => setActivePhoto(null)} />
+      )}
+
+      {selectedMaintenance && (
+        <MaintenanceCompleteModal
+          milestone={selectedMaintenance.milestone}
+          aircraftRegistration={aircraft.find(a => a.id === selectedMaintenance.aircraftId)?.registration || 'Unknown'}
+          currentTach={aircraft.find(a => a.id === selectedMaintenance.aircraftId)?.totalHours || 0}
+          onClose={() => setSelectedMaintenance(null)}
+          onComplete={handleMaintenanceComplete}
+          onCorrect={handleMaintenanceCorrect}
+        />
       )}
     </div>
   );
