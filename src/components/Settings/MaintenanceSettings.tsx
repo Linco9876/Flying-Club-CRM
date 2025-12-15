@@ -32,13 +32,15 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
     onFormChange();
   };
 
-  const handleMilestoneChange = async (id: string, field: string, value: string | number) => {
+  const handleMilestoneBlur = async (id: string, field: string, value: string | number) => {
     try {
       await updateTemplate(id, { [field]: value } as any);
     } catch (error) {
       console.error('Error updating template:', error);
     }
   };
+
+  const [templateEditValues, setTemplateEditValues] = useState<Record<string, any>>({});
 
   const addMilestone = async () => {
     try {
@@ -181,8 +183,9 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                     <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
                     <input
                       type="text"
-                      value={template.name}
-                      onChange={(e) => handleMilestoneChange(template.id, 'name', e.target.value)}
+                      value={templateEditValues[`${template.id}-name`] ?? template.name}
+                      onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-name`]: e.target.value }))}
+                      onBlur={(e) => handleMilestoneBlur(template.id, 'name', e.target.value)}
                       disabled={!canEdit}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                     />
@@ -191,8 +194,11 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
                     <select
-                      value={template.type}
-                      onChange={(e) => handleMilestoneChange(template.id, 'type', e.target.value)}
+                      value={templateEditValues[`${template.id}-type`] ?? template.type}
+                      onChange={(e) => {
+                        setTemplateEditValues(prev => ({ ...prev, [`${template.id}-type`]: e.target.value }));
+                        handleMilestoneBlur(template.id, 'type', e.target.value);
+                      }}
                       disabled={!canEdit}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                     >
@@ -208,8 +214,9 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                       <input
                         type="number"
                         min="1"
-                        value={template.intervalHours}
-                        onChange={(e) => handleMilestoneChange(template.id, 'intervalHours', parseInt(e.target.value))}
+                        value={templateEditValues[`${template.id}-intervalHours`] ?? template.intervalHours}
+                        onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-intervalHours`]: e.target.value }))}
+                        onBlur={(e) => handleMilestoneBlur(template.id, 'intervalHours', parseInt(e.target.value))}
                         disabled={!canEdit}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                       />
@@ -222,8 +229,9 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                       <input
                         type="number"
                         min="1"
-                        value={template.intervalMonths}
-                        onChange={(e) => handleMilestoneChange(template.id, 'intervalMonths', parseInt(e.target.value))}
+                        value={templateEditValues[`${template.id}-intervalMonths`] ?? template.intervalMonths}
+                        onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-intervalMonths`]: e.target.value }))}
+                        onBlur={(e) => handleMilestoneBlur(template.id, 'intervalMonths', parseInt(e.target.value))}
                         disabled={!canEdit}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                       />
@@ -246,8 +254,9 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                   <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                   <input
                     type="text"
-                    value={template.description || ''}
-                    onChange={(e) => handleMilestoneChange(template.id, 'description', e.target.value)}
+                    value={templateEditValues[`${template.id}-description`] ?? (template.description || '')}
+                    onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-description`]: e.target.value }))}
+                    onBlur={(e) => handleMilestoneBlur(template.id, 'description', e.target.value)}
                     disabled={!canEdit}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                     placeholder="Brief description of maintenance task"

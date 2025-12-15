@@ -354,6 +354,7 @@ export const MaintenanceBoard: React.FC = () => {
   const [statusModalDefect, setStatusModalDefect] = useState<BoardDefect | null>(null);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [selectedMaintenance, setSelectedMaintenance] = useState<{ milestone: any; aircraftId: string } | null>(null);
+  const [selectedMilestoneFilter, setSelectedMilestoneFilter] = useState<string>('all');
 
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
@@ -449,6 +450,76 @@ export const MaintenanceBoard: React.FC = () => {
     return milestoneTypes;
   };
 
+  const getWarnings = () => {
+    const warnings: Array<{
+      aircraft: string;
+      milestone: string;
+      type: 'overdue' | 'urgent' | 'upcoming';
+      message: string;
+    }> = [];
+
+    aircraft.forEach(ac => {
+      milestones.filter(m => m.aircraftId === ac.id).forEach(milestone => {
+        const hoursRemaining = calculateHoursRemaining(milestone.nextDueHours, ac.totalHours);
+        const daysRemaining = calculateDaysRemaining(milestone.nextDueDate);
+
+        if (hoursRemaining !== null && hoursRemaining <= 0) {
+          warnings.push({
+            aircraft: ac.registration,
+            milestone: milestone.title,
+            type: 'overdue',
+            message: `${ac.registration} - ${milestone.title} is ${Math.abs(hoursRemaining).toFixed(1)} hours overdue`
+          });
+        } else if (daysRemaining !== null && daysRemaining <= 0) {
+          warnings.push({
+            aircraft: ac.registration,
+            milestone: milestone.title,
+            type: 'overdue',
+            message: `${ac.registration} - ${milestone.title} is ${Math.abs(daysRemaining)} days overdue`
+          });
+        } else if (hoursRemaining !== null && hoursRemaining < 10) {
+          warnings.push({
+            aircraft: ac.registration,
+            milestone: milestone.title,
+            type: 'urgent',
+            message: `${ac.registration} - ${milestone.title} due in ${hoursRemaining.toFixed(1)} hours`
+          });
+        } else if (daysRemaining !== null && daysRemaining < 7) {
+          warnings.push({
+            aircraft: ac.registration,
+            milestone: milestone.title,
+            type: 'urgent',
+            message: `${ac.registration} - ${milestone.title} due in ${daysRemaining} days`
+          });
+        } else if (hoursRemaining !== null && hoursRemaining < 25) {
+          warnings.push({
+            aircraft: ac.registration,
+            milestone: milestone.title,
+            type: 'upcoming',
+            message: `${ac.registration} - ${milestone.title} due in ${hoursRemaining.toFixed(1)} hours`
+          });
+        } else if (daysRemaining !== null && daysRemaining < 30) {
+          warnings.push({
+            aircraft: ac.registration,
+            milestone: milestone.title,
+            type: 'upcoming',
+            message: `${ac.registration} - ${milestone.title} due in ${daysRemaining} days`
+          });
+        }
+      });
+    });
+
+    return warnings.sort((a, b) => {
+      const typeOrder = { overdue: 0, urgent: 1, upcoming: 2 };
+      return typeOrder[a.type] - typeOrder[b.type];
+    });
+  };
+
+  const uniqueMilestoneNames = Array.from(new Set(milestones.map(m => m.title))).sort();
+  const filteredMilestoneNames = selectedMilestoneFilter === 'all'
+    ? uniqueMilestoneNames
+    : uniqueMilestoneNames.filter(name => name === selectedMilestoneFilter);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -470,6 +541,54 @@ export const MaintenanceBoard: React.FC = () => {
         </button>
       </div>
 
+      {!milestonesLoading && milestones.length > 0 && getWarnings().length > 0 && (
+        <div className="mb-6">
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+              <AlertTriangle className="h-5 w-5 mr-2 text-orange-600" />
+              Maintenance Alerts
+            </h2>
+            <div className="space-y-2">
+              {getWarnings().map((warning, idx) => (
+                <div
+                  key={idx}
+                  className={`flex items-start space-x-3 p-3 rounded-lg ${
+                    warning.type === 'overdue'
+                      ? 'bg-red-50 border border-red-200'
+                      : warning.type === 'urgent'
+                      ? 'bg-orange-50 border border-orange-200'
+                      : 'bg-yellow-50 border border-yellow-200'
+                  }`}
+                >
+                  <AlertTriangle
+                    className={`h-5 w-5 mt-0.5 ${
+                      warning.type === 'overdue'
+                        ? 'text-red-600'
+                        : warning.type === 'urgent'
+                        ? 'text-orange-600'
+                        : 'text-yellow-600'
+                    }`}
+                  />
+                  <div>
+                    <p
+                      className={`text-sm font-medium ${
+                        warning.type === 'overdue'
+                          ? 'text-red-900'
+                          : warning.type === 'urgent'
+                          ? 'text-orange-900'
+                          : 'text-yellow-900'
+                      }`}
+                    >
+                      {warning.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!milestonesLoading && milestones.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
@@ -477,6 +596,16 @@ export const MaintenanceBoard: React.FC = () => {
               <Calendar className="h-5 w-5 mr-2" />
               Upcoming Maintenance
             </h2>
+            <select
+              value={selectedMilestoneFilter}
+              onChange={(e) => setSelectedMilestoneFilter(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Milestones</option>
+              {uniqueMilestoneNames.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
@@ -486,7 +615,7 @@ export const MaintenanceBoard: React.FC = () => {
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 sticky left-0 bg-gray-50">
                     Aircraft
                   </th>
-                  {Array.from(getMilestonesByType().keys()).map(milestoneTitle => (
+                  {filteredMilestoneNames.map(milestoneTitle => (
                     <th key={milestoneTitle} className="px-4 py-3 text-left text-sm font-semibold text-gray-700 min-w-[200px]">
                       {milestoneTitle}
                     </th>
@@ -499,7 +628,7 @@ export const MaintenanceBoard: React.FC = () => {
                     <td className="px-4 py-3 text-sm font-medium text-gray-900 sticky left-0 bg-white">
                       {ac.registration}
                     </td>
-                    {Array.from(getMilestonesByType().keys()).map(milestoneTitle => {
+                    {filteredMilestoneNames.map(milestoneTitle => {
                       const milestone = milestones.find(m => m.aircraftId === ac.id && m.title === milestoneTitle);
 
                       if (!milestone) {
