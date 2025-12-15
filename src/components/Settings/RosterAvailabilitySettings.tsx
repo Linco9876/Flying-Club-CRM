@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
 import { useInstructorAvailability, WeeklySchedule } from '../../hooks/useInstructorAvailability';
+import { TimeSelect } from '../common/TimeSelect';
 
 interface RosterAvailabilitySettingsProps {
   canEdit: boolean;
@@ -224,41 +225,33 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                             <div className="flex items-center space-x-2">
                               <Clock className="h-4 w-4 text-gray-400" />
                               <span className="text-xs text-gray-600 w-16">Morning:</span>
-                              <input
-                                type="time"
+                              <TimeSelect
                                 value={schedule.startTime}
-                                onChange={(e) => handleWeeklyScheduleChange(day.value, 'startTime', e.target.value)}
+                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'startTime', value)}
                                 disabled={!canEdit}
-                                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                               />
                               <span className="text-gray-500">to</span>
-                              <input
-                                type="time"
+                              <TimeSelect
                                 value={schedule.endTime}
-                                onChange={(e) => handleWeeklyScheduleChange(day.value, 'endTime', e.target.value)}
+                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'endTime', value)}
                                 disabled={!canEdit}
-                                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                               />
                             </div>
                             <div className="flex items-center space-x-2">
                               <Clock className="h-4 w-4 text-gray-400" />
                               <span className="text-xs text-gray-600 w-16">Afternoon:</span>
-                              <input
-                                type="time"
+                              <TimeSelect
                                 value={schedule.afternoonStartTime || ''}
-                                onChange={(e) => handleWeeklyScheduleChange(day.value, 'afternoonStartTime', e.target.value)}
+                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'afternoonStartTime', value)}
                                 disabled={!canEdit}
                                 placeholder="Optional"
-                                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                               />
                               <span className="text-gray-500">to</span>
-                              <input
-                                type="time"
+                              <TimeSelect
                                 value={schedule.afternoonEndTime || ''}
-                                onChange={(e) => handleWeeklyScheduleChange(day.value, 'afternoonEndTime', e.target.value)}
+                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'afternoonEndTime', value)}
                                 disabled={!canEdit}
                                 placeholder="Optional"
-                                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                               />
                             </div>
                           </div>
@@ -317,10 +310,11 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Start Time (Optional)
                     </label>
-                    <input
-                      type="time"
-                      name="startTime"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <TimeSelect
+                      value=""
+                      onChange={() => {}}
+                      placeholder="Select time"
+                      className="w-full"
                     />
                     <p className="text-xs text-gray-500 mt-1">Leave blank for full day</p>
                   </div>
@@ -328,10 +322,11 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       End Time (Optional)
                     </label>
-                    <input
-                      type="time"
-                      name="endTime"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <TimeSelect
+                      value=""
+                      onChange={() => {}}
+                      placeholder="Select time"
+                      className="w-full"
                     />
                     <p className="text-xs text-gray-500 mt-1">Leave blank for full day</p>
                   </div>
@@ -466,37 +461,29 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                 <div className="flex items-center space-x-2">
                                   <Clock className="h-4 w-4 text-gray-400" />
                                   <span className="text-xs text-gray-600 w-16">Morning:</span>
-                                  <input
-                                    type="time"
+                                  <TimeSelect
                                     value={schedule.startTime}
-                                    onChange={(e) => handleNewScheduleChange(day.value, 'startTime', e.target.value)}
-                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    onChange={(value) => handleNewScheduleChange(day.value, 'startTime', value)}
                                   />
                                   <span className="text-gray-500">to</span>
-                                  <input
-                                    type="time"
+                                  <TimeSelect
                                     value={schedule.endTime}
-                                    onChange={(e) => handleNewScheduleChange(day.value, 'endTime', e.target.value)}
-                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    onChange={(value) => handleNewScheduleChange(day.value, 'endTime', value)}
                                   />
                                 </div>
                                 <div className="flex items-center space-x-2">
                                   <Clock className="h-4 w-4 text-gray-400" />
                                   <span className="text-xs text-gray-600 w-16">Afternoon:</span>
-                                  <input
-                                    type="time"
+                                  <TimeSelect
                                     value={schedule.afternoonStartTime || ''}
-                                    onChange={(e) => handleNewScheduleChange(day.value, 'afternoonStartTime', e.target.value)}
+                                    onChange={(value) => handleNewScheduleChange(day.value, 'afternoonStartTime', value)}
                                     placeholder="Optional"
-                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                                   />
                                   <span className="text-gray-500">to</span>
-                                  <input
-                                    type="time"
+                                  <TimeSelect
                                     value={schedule.afternoonEndTime || ''}
-                                    onChange={(e) => handleNewScheduleChange(day.value, 'afternoonEndTime', e.target.value)}
+                                    onChange={(value) => handleNewScheduleChange(day.value, 'afternoonEndTime', value)}
                                     placeholder="Optional"
-                                    className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                                   />
                                 </div>
                               </div>

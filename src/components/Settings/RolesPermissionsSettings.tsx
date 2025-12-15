@@ -19,7 +19,7 @@ interface Permission {
 }
 
 export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { users, loading, addRole, removeRole, refetch } = useUsers();
+  const { users, loading, addRole, removeRole, updateUser, refetch } = useUsers();
   const [permissions, setPermissions] = useState<Permission[]>([
     {
       id: 'view-all-bookings',
@@ -214,6 +214,9 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                       <th className="px-6 py-3 text-center text-xs font-medium text-blue-500 uppercase tracking-wider">
                         Instructor
                       </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-indigo-500 uppercase tracking-wider">
+                        Senior Instr.
+                      </th>
                       <th className="px-6 py-3 text-center text-xs font-medium text-orange-500 uppercase tracking-wider">
                         Pilot
                       </th>
@@ -257,6 +260,16 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                             onChange={(e) => handleRoleToggle(user.id, 'instructor', e.target.checked)}
                             disabled={!canEdit}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={user.isSeniorInstructor || false}
+                            onChange={(e) => updateUser(user.id, { isSeniorInstructor: e.target.checked })}
+                            disabled={!canEdit || !(user.roles || [user.role]).includes('instructor')}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50"
+                            title="Must have instructor role"
                           />
                         </td>
                         <td className="px-6 py-4 text-center">

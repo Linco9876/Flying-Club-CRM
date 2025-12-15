@@ -9,6 +9,7 @@ export interface User {
   phone?: string;
   avatar?: string;
   isAvailable?: boolean;
+  isSeniorInstructor?: boolean;
 }
 
 export interface Student extends User {

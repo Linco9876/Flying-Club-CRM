@@ -46,7 +46,8 @@ export const useUsers = () => {
           role: primaryRole as UserRole,
           roles: userRoles,
           phone: u.phone,
-          avatar: u.avatar_url
+          avatar: u.avatar_url,
+          isSeniorInstructor: u.is_senior_instructor || false
         };
       });
 
@@ -81,6 +82,7 @@ export const useUsers = () => {
       if (updates.email !== undefined) updateData.email = updates.email;
       if (updates.phone !== undefined) updateData.phone = updates.phone;
       if (updates.avatar !== undefined) updateData.avatar_url = updates.avatar;
+      if (updates.isSeniorInstructor !== undefined) updateData.is_senior_instructor = updates.isSeniorInstructor;
 
       const { error: updateError } = await supabase
         .from('users')
@@ -90,8 +92,10 @@ export const useUsers = () => {
       if (updateError) throw updateError;
 
       await fetchUsers();
+      toast.success('User updated successfully');
     } catch (err) {
       console.error('Error updating user:', err);
+      toast.error('Failed to update user');
       throw err;
     }
   };
