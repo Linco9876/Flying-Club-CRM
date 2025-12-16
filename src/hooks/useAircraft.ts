@@ -135,6 +135,124 @@ export const useAircraft = () => {
     }
   };
 
+  const updateDefect = async (
+    defectId: string,
+    updates: Partial<Defect>,
+    userId?: string
+  ) => {
+    try {
+      const { data: oldDefect } = await supabase
+        .from('defects')
+        .select('*')
+        .eq('id', defectId)
+        .single();
+
+      const dbUpdates: any = {};
+      if (updates.summary !== undefined) dbUpdates.summary = updates.summary;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.severity !== undefined) dbUpdates.severity = updates.severity;
+      if (updates.status !== undefined) dbUpdates.status = updates.status;
+      if (updates.location !== undefined) dbUpdates.location = updates.location;
+      if (updates.tachHours !== undefined) dbUpdates.tach_hours = updates.tachHours;
+      if (updates.hobbsHours !== undefined) dbUpdates.hobbs_hours = updates.hobbsHours;
+
+      dbUpdates.updated_at = new Date().toISOString();
+      dbUpdates.updated_by = userId;
+
+      const { error } = await supabase
+        .from('defects')
+        .update(dbUpdates)
+        .eq('id', defectId);
+
+      if (error) throw error;
+
+      if (oldDefect) {
+        const historyEntries = [];
+
+        if (updates.summary !== undefined && oldDefect.summary !== updates.summary) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'summary',
+            old_value: oldDefect.summary || '',
+            new_value: updates.summary || ''
+          });
+        }
+
+        if (updates.description !== undefined && oldDefect.description !== updates.description) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'description',
+            old_value: oldDefect.description || '',
+            new_value: updates.description || ''
+          });
+        }
+
+        if (updates.severity !== undefined && oldDefect.severity !== updates.severity) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'severity',
+            old_value: oldDefect.severity || '',
+            new_value: updates.severity || ''
+          });
+        }
+
+        if (updates.status !== undefined && oldDefect.status !== updates.status) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'status',
+            old_value: oldDefect.status || '',
+            new_value: updates.status || ''
+          });
+        }
+
+        if (updates.location !== undefined && oldDefect.location !== updates.location) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'location',
+            old_value: oldDefect.location || '',
+            new_value: updates.location || ''
+          });
+        }
+
+        if (updates.tachHours !== undefined && oldDefect.tach_hours !== updates.tachHours) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'tach_hours',
+            old_value: oldDefect.tach_hours?.toString() || '',
+            new_value: updates.tachHours?.toString() || ''
+          });
+        }
+
+        if (updates.hobbsHours !== undefined && oldDefect.hobbs_hours !== updates.hobbsHours) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'hobbs_hours',
+            old_value: oldDefect.hobbs_hours?.toString() || '',
+            new_value: updates.hobbsHours?.toString() || ''
+          });
+        }
+
+        if (historyEntries.length > 0) {
+          await supabase.from('defect_history').insert(historyEntries);
+        }
+      }
+
+      await fetchAircraft();
+      toast.success('Defect updated successfully');
+    } catch (err) {
+      console.error('Error updating defect:', err);
+      toast.error('Failed to update defect');
+      throw err;
+    }
+  };
+
   const updateDefectStatus = async (
     defectId: string,
     updates: { status: Defect['status']; melNotes?: string },
@@ -401,6 +519,7 @@ export const useAircraft = () => {
     loading,
     error,
     reportDefect,
+    updateDefect,
     updateDefectStatus,
     getDefectHistory,
     addAircraft,
