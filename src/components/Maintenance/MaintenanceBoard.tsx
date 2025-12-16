@@ -17,6 +17,7 @@ import {
   CheckSquare
 } from 'lucide-react';
 import { DefectReportForm } from './DefectReportForm';
+import { DefectEditForm } from './DefectEditForm';
 import { MaintenanceCompleteModal } from './MaintenanceCompleteModal';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
@@ -347,12 +348,13 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
 
 export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
-  const { aircraft, loading, reportDefect, updateDefectStatus, getDefectHistory } = useAircraft();
+  const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory } = useAircraft();
   const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone } = useMaintenanceMilestones();
   const { templates, loading: templatesLoading } = useMaintenanceSettings();
-  const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('all');
+  const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('open');
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [selectedDefect, setSelectedDefect] = useState<BoardDefect | null>(null);
+  const [editingDefect, setEditingDefect] = useState<BoardDefect | null>(null);
   const [statusModalDefect, setStatusModalDefect] = useState<BoardDefect | null>(null);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [selectedMaintenance, setSelectedMaintenance] = useState<{ milestone: any; aircraftId: string } | null>(null);
@@ -441,6 +443,11 @@ export const MaintenanceBoard: React.FC = () => {
     setDefectHistory(history);
     setSelectedDefect(defect);
     setShowHistoryModal(true);
+  };
+
+  const handleDefectUpdate = async (defectId: string, updates: Partial<Defect>) => {
+    await updateDefect(defectId, updates, user?.id);
+    setEditingDefect(null);
   };
 
   const handleMaintenanceComplete = async (data: {
@@ -878,7 +885,7 @@ export const MaintenanceBoard: React.FC = () => {
                   </button>
                   <button
                     className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                    onClick={() => setStatusModalDefect(defect)}
+                    onClick={() => setEditingDefect(defect)}
                   >
                     Edit
                   </button>
@@ -942,6 +949,14 @@ export const MaintenanceBoard: React.FC = () => {
           onCorrect={handleMaintenanceCorrect}
         />
       )}
+
+      <DefectEditForm
+        isOpen={!!editingDefect}
+        onClose={() => setEditingDefect(null)}
+        onSubmit={handleDefectUpdate}
+        defect={editingDefect}
+        aircraftRegistration={editingDefect ? aircraft.find(a => a.id === editingDefect.aircraftId)?.registration : undefined}
+      />
 
       {showHistoryModal && selectedDefect && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
