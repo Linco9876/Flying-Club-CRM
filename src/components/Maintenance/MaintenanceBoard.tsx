@@ -347,7 +347,7 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
 
 export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
-  const { aircraft, loading, reportDefect, updateDefectStatus } = useAircraft();
+  const { aircraft, loading, reportDefect, updateDefectStatus, getDefectHistory } = useAircraft();
   const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone } = useMaintenanceMilestones();
   const { templates, loading: templatesLoading } = useMaintenanceSettings();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('all');
@@ -358,6 +358,8 @@ export const MaintenanceBoard: React.FC = () => {
   const [selectedMaintenance, setSelectedMaintenance] = useState<{ milestone: any; aircraftId: string } | null>(null);
   const [selectedMilestoneFilters, setSelectedMilestoneFilters] = useState<string[]>([]);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [defectHistory, setDefectHistory] = useState<any[]>([]);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
@@ -426,11 +428,19 @@ export const MaintenanceBoard: React.FC = () => {
   const handleStatusSave = async (status: StatusOption, melNotes?: string) => {
     if (!statusModalDefect) return;
     try {
-      await updateDefectStatus(statusModalDefect.id, { status, melNotes });
+      await updateDefectStatus(statusModalDefect.id, { status, melNotes }, user?.id);
       setStatusModalDefect(null);
     } catch (error) {
       console.error('Failed to update defect status', error);
     }
+  };
+
+  const handleShowHistory = async (defect: BoardDefect) => {
+    if (!getDefectHistory) return;
+    const history = await getDefectHistory(defect.id);
+    setDefectHistory(history);
+    setSelectedDefect(defect);
+    setShowHistoryModal(true);
   };
 
   const handleMaintenanceComplete = async (data: {
@@ -855,15 +865,22 @@ export const MaintenanceBoard: React.FC = () => {
                     onClick={() => {
                       setActivePhoto(null);
                       setSelectedDefect(defect);
+                      setShowHistoryModal(false);
                     }}
                   >
                     View Details
                   </button>
                   <button
+                    className="px-3 py-1 text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
+                    onClick={() => handleShowHistory(defect)}
+                  >
+                    History
+                  </button>
+                  <button
                     className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
                     onClick={() => setStatusModalDefect(defect)}
                   >
-                    Update Status
+                    Edit
                   </button>
                 </div>
               </div>
@@ -924,6 +941,73 @@ export const MaintenanceBoard: React.FC = () => {
           onComplete={handleMaintenanceComplete}
           onCorrect={handleMaintenanceCorrect}
         />
+      )}
+
+      {showHistoryModal && selectedDefect && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Defect History</h2>
+                <p className="text-sm text-gray-600 mt-1">{selectedDefect.summary || selectedDefect.description}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  setSelectedDefect(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {defectHistory.length > 0 ? (
+                <div className="space-y-4">
+                  {defectHistory.map((entry: any, index: number) => (
+                    <div key={entry.id} className="border-l-4 border-blue-500 pl-4 py-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-gray-900 capitalize">{entry.field_name.replace('_', ' ')}</span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(entry.changed_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-gray-600">Changed by: </span>
+                        <span className="font-medium">{entry.changed_by_user?.name || 'Unknown'}</span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                        <div className="bg-red-50 p-2 rounded">
+                          <span className="text-gray-600">Old: </span>
+                          <span className="text-red-800">{entry.old_value || 'None'}</span>
+                        </div>
+                        <div className="bg-green-50 p-2 rounded">
+                          <span className="text-gray-600">New: </span>
+                          <span className="text-green-800">{entry.new_value || 'None'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">No history available for this defect.</p>
+              )}
+            </div>
+
+            <div className="flex justify-end p-6 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  setSelectedDefect(null);
+                }}
+                className="px-6 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

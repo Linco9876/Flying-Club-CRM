@@ -137,19 +137,55 @@ export const useAircraft = () => {
 
   const updateDefectStatus = async (
     defectId: string,
-    updates: { status: Defect['status']; melNotes?: string }
+    updates: { status: Defect['status']; melNotes?: string },
+    userId?: string
   ) => {
     try {
+      // Get old values for history
+      const { data: oldDefect } = await supabase
+        .from('defects')
+        .select('status, mel_notes')
+        .eq('id', defectId)
+        .single();
+
       const { error } = await supabase
         .from('defects')
         .update({
           status: updates.status,
           mel_notes: updates.melNotes ?? null,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          updated_by: userId
         })
         .eq('id', defectId);
 
       if (error) throw error;
+
+      // Track history
+      if (oldDefect) {
+        const historyEntries = [];
+        if (oldDefect.status !== updates.status) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'status',
+            old_value: oldDefect.status,
+            new_value: updates.status
+          });
+        }
+        if (updates.melNotes !== undefined && oldDefect.mel_notes !== updates.melNotes) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'mel_notes',
+            old_value: oldDefect.mel_notes || '',
+            new_value: updates.melNotes || ''
+          });
+        }
+
+        if (historyEntries.length > 0) {
+          await supabase.from('defect_history').insert(historyEntries);
+        }
+      }
 
       await fetchAircraft();
       toast.success('Defect status updated');
@@ -157,6 +193,25 @@ export const useAircraft = () => {
       console.error('Error updating defect status:', err);
       toast.error('Failed to update defect status');
       throw err;
+    }
+  };
+
+  const getDefectHistory = async (defectId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('defect_history')
+        .select(`
+          *,
+          changed_by_user:changed_by(name, email)
+        `)
+        .eq('defect_id', defectId)
+        .order('changed_at', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.error('Error fetching defect history:', err);
+      return [];
     }
   };
 
@@ -347,6 +402,7 @@ export const useAircraft = () => {
     error,
     reportDefect,
     updateDefectStatus,
+    getDefectHistory,
     addAircraft,
     updateAircraft,
     deleteAircraft,

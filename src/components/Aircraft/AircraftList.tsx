@@ -3,12 +3,14 @@ import { useState } from 'react';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft, Defect } from '../../types';
-import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye } from 'lucide-react';
+import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
 
 export const AircraftList: React.FC = () => {
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
+  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -92,6 +94,46 @@ export const AircraftList: React.FC = () => {
     }
   };
 
+  const getNextMilestone = (aircraftId: string) => {
+    const aircraftMilestones = milestones.filter(m => m.aircraftId === aircraftId);
+    if (aircraftMilestones.length === 0) return null;
+
+    const ac = aircraft.find(a => a.id === aircraftId);
+    if (!ac) return null;
+
+    let soonest: any = null;
+    let soonestDiff = Infinity;
+
+    aircraftMilestones.forEach(milestone => {
+      if (milestone.nextDueHours !== undefined) {
+        const hoursRemaining = milestone.nextDueHours - ac.totalHours;
+        if (hoursRemaining < soonestDiff) {
+          soonestDiff = hoursRemaining;
+          soonest = {
+            title: milestone.title,
+            type: 'hours',
+            value: milestone.nextDueHours,
+            remaining: hoursRemaining
+          };
+        }
+      }
+      if (milestone.nextDueDate) {
+        const daysRemaining = Math.ceil((new Date(milestone.nextDueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (daysRemaining < soonestDiff) {
+          soonestDiff = daysRemaining;
+          soonest = {
+            title: milestone.title,
+            type: 'days',
+            value: new Date(milestone.nextDueDate).toLocaleDateString(),
+            remaining: daysRemaining
+          };
+        }
+      }
+    });
+
+    return soonest;
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -130,12 +172,23 @@ export const AircraftList: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-gray-500">Hourly Rate</p>
-                  <p className="font-semibold text-gray-900">${aircraftItem.hourlyRate}</p>
-                </div>
-                <div>
                   <p className="text-gray-500">Total Hours</p>
                   <p className="font-semibold text-gray-900">{aircraftItem.totalHours}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Next Milestone</p>
+                  {!milestonesLoading && getNextMilestone(aircraftItem.id) ? (
+                    <p className="font-semibold text-gray-900 text-xs">
+                      {getNextMilestone(aircraftItem.id)!.title}
+                      <span className={`block ${getNextMilestone(aircraftItem.id)!.remaining < 10 ? 'text-red-600' : 'text-gray-600'}`}>
+                        {getNextMilestone(aircraftItem.id)!.type === 'hours'
+                          ? `${getNextMilestone(aircraftItem.id)!.remaining.toFixed(1)} hrs`
+                          : `${getNextMilestone(aircraftItem.id)!.remaining} days`}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="font-semibold text-gray-500">-</p>
+                  )}
                 </div>
               </div>
 

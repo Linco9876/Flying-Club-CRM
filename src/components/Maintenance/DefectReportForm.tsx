@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { Defect } from '../../types';
 import toast from 'react-hot-toast';
 
@@ -20,6 +21,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 }) => {
   const { user } = useAuth();
   const { aircraft, loading } = useAircraft();
+  const { settings: safetySettings } = useSafetySettings();
   const [formData, setFormData] = useState({
     aircraftId: preSelectedAircraftId || '',
     discoveredDateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm format
@@ -28,7 +30,6 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
     defectSummary: '',
     detailedDescription: '',
     severity: 'Minor' as 'Minor' | 'Major' | 'Critical',
-    melNotes: '',
     groundAircraft: false,
     tachHours: '',
     hobbsHours: ''
@@ -43,6 +44,16 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       aircraftId: preSelectedAircraftId || ''
     }));
   }, [preSelectedAircraftId, isOpen]);
+
+  useEffect(() => {
+    const shouldAutoGround =
+      safetySettings?.autoGroundOnMajorDefect &&
+      (formData.severity === 'Critical' || formData.severity === 'Major');
+
+    if (shouldAutoGround) {
+      setFormData(prev => ({ ...prev, groundAircraft: true }));
+    }
+  }, [formData.severity, safetySettings]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,7 +78,6 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       description: formData.detailedDescription,
       status: 'open',
       photos: uploadedFiles.map(file => file.name), // In real app, would upload files first
-      melNotes: formData.melNotes || undefined,
       severity: formData.severity,
       location: formData.location.trim() || undefined,
       tachHours: parseOptionalNumber(formData.tachHours),
@@ -99,7 +109,6 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       defectSummary: '',
       detailedDescription: '',
       severity: 'Minor',
-      melNotes: '',
       groundAircraft: false,
       tachHours: '',
       hobbsHours: ''
@@ -328,20 +337,6 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 placeholder="0.0"
               />
             </div>
-          </div>
-
-          {/* MEL Notes */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              MEL/Notes (Optional)
-            </label>
-            <textarea
-              value={formData.melNotes}
-              onChange={(e) => setFormData(prev => ({ ...prev, melNotes: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              rows={3}
-              placeholder="Minimum Equipment List notes or additional information"
-            />
           </div>
 
           {/* File Upload */}
