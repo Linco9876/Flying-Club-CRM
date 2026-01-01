@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Test User</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #555;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      width: 100%;
+      margin-top: 10px;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 4px;
+      display: none;
+    }
+    .success {
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      color: #166534;
+    }
+    .error {
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+    }
+    .info {
+      background: #dbeafe;
+      border: 1px solid #93c5fd;
+      color: #1e40af;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Create Test User</h1>
+
+    <div class="info">
+      <strong>Note:</strong> This will create a test user account. If email confirmation is enabled in Supabase, you'll need to check your email for a confirmation link.
+    </div>
+
+    <form id="signupForm">
+      <div class="form-group">
+        <label for="name">Full Name</label>
+        <input type="text" id="name" value="Test User" required>
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" value="test@example.com" required>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" value="test123456" required>
+      </div>
+
+      <button type="submit" id="submitBtn">Create Test User</button>
+    </form>
+
+    <div id="result" class="result"></div>
+
+    <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+
+    <h2>Or Check Existing Users</h2>
+    <button onclick="checkUsers()" id="checkBtn">Check Users in Database</button>
+    <div id="userList" class="result"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://hvcjxiyyrtjpvelrgaep.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh2Y2p4aXl5cnRqcHZlbHJnYWVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5OTk3NTMsImV4cCI6MjA3MzU3NTc1M30.hcyTk4sl84xa1qA2LrmjU6sERiKcfk2uuF3OsG_OUaE';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const submitBtn = document.getElementById('submitBtn');
+      const resultDiv = document.getElementById('result');
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating...';
+      resultDiv.style.display = 'none';
+
+      const name = document.getElementById('name').value;
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email: email,
+          password: password,
+          options: {
+            data: {
+              name: name,
+              phone: null,
+              role: 'admin'
+            }
+          }
+        });
+
+        if (error) throw error;
+
+        resultDiv.className = 'result success';
+        resultDiv.style.display = 'block';
+
+        if (data.session) {
+          resultDiv.innerHTML = `
+            <strong>Success!</strong><br>
+            User created and logged in automatically.<br>
+            Email: ${email}<br>
+            Password: ${password}<br>
+            Role: admin<br><br>
+            <strong>You can now log in to the app with these credentials.</strong>
+          `;
+        } else {
+          resultDiv.innerHTML = `
+            <strong>Account Created!</strong><br>
+            Email: ${email}<br>
+            Password: ${password}<br><br>
+            <strong style="color: #d97706;">⚠️ Email confirmation is ENABLED.</strong><br>
+            Please check the email inbox for <strong>${email}</strong> and click the confirmation link before logging in.<br><br>
+            <em>If using a test email that doesn't exist, you'll need to:</em><br>
+            1. Use a real email address, OR<br>
+            2. Disable email confirmation in Supabase Dashboard → Authentication → Settings → Email Auth → Disable "Confirm email"
+          `;
+        }
+      } catch (error) {
+        resultDiv.className = 'result error';
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `<strong>Error:</strong><br>${error.message}`;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Test User';
+      }
+    });
+
+    async function checkUsers() {
+      const checkBtn = document.getElementById('checkBtn');
+      const userList = document.getElementById('userList');
+
+      checkBtn.disabled = true;
+      checkBtn.textContent = 'Checking...';
+      userList.style.display = 'none';
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, email, name, role')
+          .limit(10);
+
+        if (error) throw error;
+
+        userList.className = 'result info';
+        userList.style.display = 'block';
+
+        if (data && data.length > 0) {
+          let html = '<strong>Users found in database:</strong><br><br>';
+          data.forEach(user => {
+            html += `📧 ${user.email} - ${user.name} (${user.role})<br>`;
+          });
+          userList.innerHTML = html;
+        } else {
+          userList.innerHTML = '<strong>No users found in database.</strong><br>Create a new user above to get started.';
+        }
+      } catch (error) {
+        userList.className = 'result error';
+        userList.style.display = 'block';
+        userList.innerHTML = `<strong>Error:</strong><br>${error.message}`;
+      } finally {
+        checkBtn.disabled = false;
+        checkBtn.textContent = 'Check Users in Database';
+      }
+    }
+  </script>
+</body>
+</html>
