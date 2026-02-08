@@ -229,6 +229,7 @@ export interface Defect {
   status: 'open' | 'mel' | 'fixed' | 'deferred';
   photos?: string[];
   melNotes?: string;
+  fixNotes?: string;
   severity?: 'Minor' | 'Major' | 'Critical';
   location?: string;
   tachHours?: number;

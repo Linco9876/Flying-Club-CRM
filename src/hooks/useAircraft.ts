@@ -43,6 +43,7 @@ export const useAircraft = () => {
           status: d.status,
           photos: d.photos,
           melNotes: d.mel_notes,
+          fixNotes: d.fix_notes,
           severity: d.severity,
           location: d.location,
           tachHours: d.tach_hours,
@@ -255,14 +256,14 @@ export const useAircraft = () => {
 
   const updateDefectStatus = async (
     defectId: string,
-    updates: { status: Defect['status']; melNotes?: string },
+    updates: { status: Defect['status']; melNotes?: string; fixNotes?: string },
     userId?: string
   ) => {
     try {
       // Get old values for history
       const { data: oldDefect } = await supabase
         .from('defects')
-        .select('status, mel_notes')
+        .select('status, mel_notes, fix_notes')
         .eq('id', defectId)
         .single();
 
@@ -271,6 +272,7 @@ export const useAircraft = () => {
         .update({
           status: updates.status,
           mel_notes: updates.melNotes ?? null,
+          fix_notes: updates.fixNotes ?? null,
           updated_at: new Date().toISOString(),
           updated_by: userId
         })
@@ -297,6 +299,15 @@ export const useAircraft = () => {
             field_name: 'mel_notes',
             old_value: oldDefect.mel_notes || '',
             new_value: updates.melNotes || ''
+          });
+        }
+        if (updates.fixNotes !== undefined && oldDefect.fix_notes !== updates.fixNotes) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'fix_notes',
+            old_value: oldDefect.fix_notes || '',
+            new_value: updates.fixNotes || ''
           });
         }
 
@@ -510,6 +521,24 @@ export const useAircraft = () => {
     }
   };
 
+  const deleteDefect = async (defectId: string) => {
+    try {
+      const { error } = await supabase
+        .from('defects')
+        .delete()
+        .eq('id', defectId);
+
+      if (error) throw error;
+
+      await fetchAircraft();
+      toast.success('Defect deleted successfully');
+    } catch (err) {
+      console.error('Error deleting defect:', err);
+      toast.error('Failed to delete defect');
+      throw err;
+    }
+  };
+
   useEffect(() => {
     fetchAircraft();
   }, []);
@@ -525,6 +554,7 @@ export const useAircraft = () => {
     addAircraft,
     updateAircraft,
     deleteAircraft,
+    deleteDefect,
     refetch: fetchAircraft
   };
 };

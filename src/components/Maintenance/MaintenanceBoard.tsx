@@ -155,6 +155,13 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
             <p className="text-sm text-gray-700 leading-relaxed">{defect.description}</p>
           </div>
 
+          {defect.fixNotes && (
+            <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+              <h3 className="text-sm font-semibold text-green-900 mb-1">Fix Notes</h3>
+              <p className="text-sm text-green-800">{defect.fixNotes}</p>
+            </div>
+          )}
+
           {defect.melNotes && (
             <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
               <h3 className="text-sm font-semibold text-yellow-900 mb-1">MEL / Notes</h3>
@@ -218,19 +225,29 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
 interface StatusUpdateModalProps {
   defect: BoardDefect;
   onClose: () => void;
-  onSave: (status: StatusOption, melNotes?: string) => Promise<void>;
+  onSave: (status: StatusOption, melNotes?: string, fixNotes?: string) => Promise<void>;
 }
 
 const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, onSave }) => {
   const [status, setStatus] = useState<StatusOption>(defect.status);
   const [melNotes, setMelNotes] = useState(defect.melNotes ?? '');
+  const [fixNotes, setFixNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (status === 'fixed' && !fixNotes.trim()) {
+      return;
+    }
+
     setSaving(true);
     try {
-      await onSave(status, melNotes.trim() ? melNotes : undefined);
+      await onSave(
+        status,
+        melNotes.trim() ? melNotes : undefined,
+        status === 'fixed' && fixNotes.trim() ? fixNotes : undefined
+      );
     } finally {
       setSaving(false);
     }
@@ -274,9 +291,28 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, 
             </select>
           </div>
 
+          {status === 'fixed' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Fix Notes <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={fixNotes}
+                onChange={(event) => setFixNotes(event.target.value)}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Describe the fix that was applied"
+                required
+              />
+              {!fixNotes.trim() && (
+                <p className="text-xs text-red-600 mt-1">Fix notes are required when marking as fixed</p>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              MEL / Notes
+              MEL / Additional Notes
             </label>
             <textarea
               value={melNotes}
@@ -348,7 +384,7 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
 
 export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
-  const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory } = useAircraft();
+  const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory, deleteDefect } = useAircraft();
   const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone } = useMaintenanceMilestones();
   const { templates, loading: templatesLoading } = useMaintenanceSettings();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('open');
@@ -427,13 +463,24 @@ export const MaintenanceBoard: React.FC = () => {
     }
   };
 
-  const handleStatusSave = async (status: StatusOption, melNotes?: string) => {
+  const handleStatusSave = async (status: StatusOption, melNotes?: string, fixNotes?: string) => {
     if (!statusModalDefect) return;
     try {
-      await updateDefectStatus(statusModalDefect.id, { status, melNotes }, user?.id);
+      await updateDefectStatus(statusModalDefect.id, { status, melNotes, fixNotes }, user?.id);
       setStatusModalDefect(null);
     } catch (error) {
       console.error('Failed to update defect status', error);
+    }
+  };
+
+  const handleDeleteDefect = async (defectId: string) => {
+    if (!confirm('Are you sure you want to delete this defect report? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      await deleteDefect(defectId);
+    } catch (error) {
+      console.error('Failed to delete defect', error);
     }
   };
 
@@ -888,6 +935,18 @@ export const MaintenanceBoard: React.FC = () => {
                     onClick={() => setEditingDefect(defect)}
                   >
                     Edit
+                  </button>
+                  <button
+                    className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                    onClick={() => setStatusModalDefect(defect)}
+                  >
+                    Change Status
+                  </button>
+                  <button
+                    className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                    onClick={() => handleDeleteDefect(defect.id)}
+                  >
+                    Delete
                   </button>
                 </div>
               </div>
