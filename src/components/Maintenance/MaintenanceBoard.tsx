@@ -14,7 +14,11 @@ import {
   Image as ImageIcon,
   ExternalLink,
   Calendar,
-  CheckSquare
+  CheckSquare,
+  MoreVertical,
+  Edit as EditIcon,
+  History as HistoryIcon,
+  Trash2
 } from 'lucide-react';
 import { DefectReportForm } from './DefectReportForm';
 import { DefectEditForm } from './DefectEditForm';
@@ -59,6 +63,10 @@ interface DefectDetailsModalProps {
   aircraftDescription?: string;
   onClose: () => void;
   onSelectPhoto: (photo: string) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onShowHistory: () => void;
+  onChangeStatus: () => void;
 }
 
 const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
@@ -66,7 +74,11 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
   aircraftRegistration,
   aircraftDescription,
   onClose,
-  onSelectPhoto
+  onSelectPhoto,
+  onEdit,
+  onDelete,
+  onShowHistory,
+  onChangeStatus
 }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -209,7 +221,37 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+        <div className="flex justify-between items-center p-6 border-t border-gray-200">
+          <div className="flex space-x-2">
+            <button
+              onClick={onShowHistory}
+              className="flex items-center space-x-2 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              <HistoryIcon className="h-4 w-4" />
+              <span>History</span>
+            </button>
+            <button
+              onClick={onEdit}
+              className="flex items-center space-x-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            >
+              <EditIcon className="h-4 w-4" />
+              <span>Edit</span>
+            </button>
+            <button
+              onClick={onChangeStatus}
+              className="flex items-center space-x-2 px-4 py-2 text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              <span>Change Status</span>
+            </button>
+            <button
+              onClick={onDelete}
+              className="flex items-center space-x-2 px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Delete</span>
+            </button>
+          </div>
           <button
             onClick={onClose}
             className="px-6 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
@@ -913,42 +955,16 @@ export const MaintenanceBoard: React.FC = () => {
                     {defect.photos?.length || 0} photos
                   </span>
                 </div>
-                <div className="flex space-x-2">
-                  <button
-                    className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-                    onClick={() => {
-                      setActivePhoto(null);
-                      setSelectedDefect(defect);
-                      setShowHistoryModal(false);
-                    }}
-                  >
-                    View Details
-                  </button>
-                  <button
-                    className="px-3 py-1 text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
-                    onClick={() => handleShowHistory(defect)}
-                  >
-                    History
-                  </button>
-                  <button
-                    className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                    onClick={() => setEditingDefect(defect)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
-                    onClick={() => setStatusModalDefect(defect)}
-                  >
-                    Change Status
-                  </button>
-                  <button
-                    className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                    onClick={() => handleDeleteDefect(defect.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
+                <button
+                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  onClick={() => {
+                    setActivePhoto(null);
+                    setSelectedDefect(defect);
+                    setShowHistoryModal(false);
+                  }}
+                >
+                  View Details
+                </button>
               </div>
             </div>
           );
@@ -991,6 +1007,21 @@ export const MaintenanceBoard: React.FC = () => {
             setSelectedDefect(null);
           }}
           onSelectPhoto={setActivePhoto}
+          onEdit={() => {
+            setEditingDefect(selectedDefect);
+            setSelectedDefect(null);
+          }}
+          onDelete={() => {
+            setSelectedDefect(null);
+            handleDeleteDefect(selectedDefect.id);
+          }}
+          onShowHistory={() => {
+            handleShowHistory(selectedDefect);
+          }}
+          onChangeStatus={() => {
+            setStatusModalDefect(selectedDefect);
+            setSelectedDefect(null);
+          }}
         />
       )}
 
