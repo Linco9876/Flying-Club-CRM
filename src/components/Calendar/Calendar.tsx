@@ -1135,13 +1135,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                         return;
                       }
 
-                      if (hasBookingStarted(booking) && !isPastBooking(booking)) {
+                      if (hasBookingStarted(booking)) {
                         setActionMenuBooking(booking);
                         setActionMenuPosition({ x: e.clientX, y: e.clientY });
-                      } else if (!isPastBooking(booking) && onEditBooking && !draggedBooking) {
+                      } else if (onEditBooking && !draggedBooking) {
                         onEditBooking(booking);
-                      } else if (isPastBooking(booking)) {
-                        toast('This booking has ended and cannot be modified');
                       }
                     }}
                   >
@@ -1686,13 +1684,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        if (hasBookingStarted(booking) && !isPastBooking(booking)) {
+                        if (hasBookingStarted(booking)) {
                           setActionMenuBooking(booking);
                           setActionMenuPosition({ x: e.clientX, y: e.clientY });
-                        } else if (!isPastBooking(booking) && onEditBooking && !draggedBooking) {
+                        } else if (onEditBooking && !draggedBooking) {
                           onEditBooking(booking);
-                        } else if (isPastBooking(booking)) {
-                          toast('This booking has ended and cannot be modified');
                         }
                       }}
                     >
@@ -1790,13 +1786,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        if (hasBookingStarted(booking) && !isPastBooking(booking)) {
+                        if (hasBookingStarted(booking)) {
                           setActionMenuBooking(booking);
                           setActionMenuPosition({ x: e.clientX, y: e.clientY });
-                        } else if (!isPastBooking(booking) && onEditBooking && !draggedBooking) {
+                        } else if (onEditBooking && !draggedBooking) {
                           onEditBooking(booking);
-                        } else if (isPastBooking(booking)) {
-                          toast('This booking has ended and cannot be modified');
                         }
                       }}
                     >
