@@ -1156,7 +1156,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                     } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                       isBeingDragged
-                        ? 'opacity-30'
+                        ? 'opacity-30 pointer-events-none'
                         : ''
                     } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                     style={{
@@ -1176,6 +1176,22 @@ export const Calendar: React.FC<CalendarProps> = ({
                     onMouseLeave={cancelDragDelay}
                     onClick={(e) => {
                       e.stopPropagation();
+
+                      // Cancel any drag state
+                      if (dragDelayTimer) {
+                        clearTimeout(dragDelayTimer);
+                        setDragDelayTimer(null);
+                      }
+                      setIsDragDelayActive(false);
+
+                      // If drag already started, cancel it
+                      if (draggedBooking) {
+                        setDraggedBooking(null);
+                        setDraggedBookingOriginal(null);
+                        setDragPreview(null);
+                        return;
+                      }
+
                       if (wasResizing) {
                         return;
                       }
@@ -1183,7 +1199,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       if (hasBookingStarted(booking)) {
                         setActionMenuBooking(booking);
                         setActionMenuPosition({ x: e.clientX, y: e.clientY });
-                      } else if (onEditBooking && !draggedBooking) {
+                      } else if (onEditBooking) {
                         onEditBooking(booking);
                       }
                     }}
@@ -1711,7 +1727,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           ? 'bg-green-500 border-green-600 hover:bg-green-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                        isBeingDragged ? 'opacity-30' : ''
+                        isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
                         gridColumn: columnIndex + 2,
@@ -1821,7 +1837,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           ? 'bg-green-500 border-green-600 hover:bg-green-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                        isBeingDragged ? 'opacity-30' : ''
+                        isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
                         gridColumn: columnIndex + 2,
