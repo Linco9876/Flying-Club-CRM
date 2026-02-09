@@ -216,15 +216,22 @@ const AuthenticatedApp: React.FC<{
       case 'dashboard':
         return <Dashboard />;
       case 'calendar':
-        return <Calendar 
+        return <Calendar
           bookings={bookings}
-          onNewBooking={() => setShowBookingForm(true)} 
+          onNewBooking={() => setShowBookingForm(true)}
           onNewBookingWithTime={handleNewBookingWithResource}
           onEditBooking={(booking) => {
             setEditingBooking(booking);
             setShowBookingForm(true);
           }}
           onUpdateBooking={handleUpdateBooking}
+          onDeleteBooking={async (bookingId) => {
+            try {
+              await deleteBooking(bookingId);
+            } catch (error) {
+              console.error('Error deleting booking:', error);
+            }
+          }}
         />;
       case 'bookings':
         return <BookingsList

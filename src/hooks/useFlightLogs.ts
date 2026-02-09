@@ -1,0 +1,151 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+
+export interface FlightLog {
+  id: string;
+  booking_id?: string;
+  aircraft_id: string;
+  student_id: string;
+  instructor_id?: string;
+  start_time: string;
+  end_time: string;
+  start_tach: number;
+  end_tach: number;
+  flight_duration: number;
+  landings?: number;
+  payment_type?: string;
+  observations?: string;
+  oil_added?: number;
+  fuel_added?: number;
+  passengers?: number;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface CreateFlightLogData {
+  booking_id?: string;
+  aircraft_id: string;
+  student_id: string;
+  instructor_id?: string;
+  start_time: string;
+  end_time: string;
+  start_tach: number;
+  end_tach: number;
+  flight_duration: number;
+  landings?: number;
+  payment_type?: string;
+  observations?: string;
+  oil_added?: number;
+  fuel_added?: number;
+  passengers?: number;
+}
+
+export function useFlightLogs() {
+  const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchFlightLogs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data, error: fetchError } = await supabase
+        .from('flight_logs')
+        .select('*')
+        .order('start_time', { ascending: false });
+
+      if (fetchError) throw fetchError;
+      setFlightLogs(data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch flight logs');
+      console.error('Error fetching flight logs:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFlightLogs();
+  }, []);
+
+  const createFlightLog = async (logData: CreateFlightLogData) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data, error: insertError } = await supabase
+        .from('flight_logs')
+        .insert({
+          ...logData,
+          created_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      if (logData.booking_id) {
+        const { error: updateError } = await supabase
+          .from('bookings')
+          .update({ flight_logged: true })
+          .eq('id', logData.booking_id);
+
+        if (updateError) console.error('Error updating booking:', updateError);
+      }
+
+      await fetchFlightLogs();
+      return { data, error: null };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create flight log';
+      console.error('Error creating flight log:', err);
+      return { data: null, error: errorMessage };
+    }
+  };
+
+  const updateFlightLog = async (id: string, updates: Partial<CreateFlightLogData>) => {
+    try {
+      const { error: updateError } = await supabase
+        .from('flight_logs')
+        .update(updates)
+        .eq('id', id);
+
+      if (updateError) throw updateError;
+
+      await fetchFlightLogs();
+      return { error: null };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update flight log';
+      console.error('Error updating flight log:', err);
+      return { error: errorMessage };
+    }
+  };
+
+  const deleteFlightLog = async (id: string) => {
+    try {
+      const { error: deleteError } = await supabase
+        .from('flight_logs')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) throw deleteError;
+
+      await fetchFlightLogs();
+      return { error: null };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete flight log';
+      console.error('Error deleting flight log:', err);
+      return { error: errorMessage };
+    }
+  };
+
+  return {
+    flightLogs,
+    loading,
+    error,
+    createFlightLog,
+    updateFlightLog,
+    deleteFlightLog,
+    refetch: fetchFlightLogs,
+  };
+}

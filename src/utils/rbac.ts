@@ -186,6 +186,7 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'roster', label: 'Roster & Availability', roles: ['admin'] as UserRole[] },
     { id: 'training', label: 'Training / Syllabus', roles: ['admin'] as UserRole[] },
     { id: 'billing', label: 'Billing & Rates', roles: ['admin'] as UserRole[] },
+    { id: 'flight-log', label: 'Flight Log Form', roles: ['admin'] as UserRole[] },
     { id: 'integrations', label: 'Integrations', roles: ['admin'] as UserRole[] },
     { id: 'notifications', label: 'Notifications', roles: ['admin'] as UserRole[] },
     { id: 'safety', label: 'Safety & Compliance', roles: ['admin'] as UserRole[] },

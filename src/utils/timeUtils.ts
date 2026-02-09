@@ -14,6 +14,15 @@ export const isPastBooking = (booking: { startTime: Date | string; endTime: Date
   return isBefore(endTime, now);
 };
 
+export const hasBookingStarted = (booking: { startTime: Date | string }): boolean => {
+  const now = getCurrentTime();
+  const startTime = typeof booking.startTime === 'string'
+    ? parseISO(booking.startTime)
+    : booking.startTime;
+
+  return isBefore(startTime, now);
+};
+
 export const formatLocalTime = (date: Date | string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
   return format(dateObj, 'h:mm a');

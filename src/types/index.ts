@@ -90,6 +90,7 @@ export interface Booking {
   status: 'confirmed' | 'cancelled' | 'completed' | 'no-show';
   hasConflict?: boolean;
   flightLog?: FlightLog;
+  flight_logged?: boolean;
 }
 
 export interface FlightLog {

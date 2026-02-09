@@ -19,6 +19,7 @@ export const useBookings = () => {
       const bookingsPromise = supabase
         .from('bookings')
         .select('*')
+        .is('deleted_at', null)
         .order('start_time', { ascending: false });
 
       const { data: bookingsData, error: bookingsError } = await Promise.race([
@@ -66,7 +67,8 @@ export const useBookings = () => {
         notes: b.notes,
         status: b.status,
         hasConflict: b.has_conflict || false,
-        flightLog: flightLogsMap.get(b.id)
+        flightLog: flightLogsMap.get(b.id),
+        flight_logged: b.flight_logged || false
       }));
 
       setBookings(combinedBookings);
@@ -253,7 +255,7 @@ export const useBookings = () => {
     try {
       const { error } = await supabase
         .from('bookings')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', id);
 
       if (error) throw error;

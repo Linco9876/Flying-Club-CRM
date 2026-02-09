@@ -24,7 +24,9 @@ import { useInstructorAvailability } from '../../hooks/useInstructorAvailability
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
-import { isPastBooking } from '../../utils/timeUtils';
+import { isPastBooking, hasBookingStarted } from '../../utils/timeUtils';
+import { BookingActionMenu } from '../Bookings/BookingActionMenu';
+import { FlightLogModal } from '../Bookings/FlightLogModal';
 import toast from 'react-hot-toast';
 
 interface CalendarProps {
@@ -39,6 +41,7 @@ interface CalendarProps {
   ) => void;
   onEditBooking?: (booking: Booking) => void;
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>) => void;
+  onDeleteBooking?: (bookingId: string) => void;
 }
 
 interface Resource {
@@ -66,6 +69,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   onNewBookingWithTime,
   onEditBooking,
   onUpdateBooking,
+  onDeleteBooking,
 }) => {
   const { aircraft } = useAircraft();
   const { getInstructors } = useUsers();
@@ -117,6 +121,13 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   // Dynamic slot height based on viewport and settings
   const [slotHeight, setSlotHeight] = useState<number>(60);
+
+  // Action menu and flight log states
+  const [actionMenuBooking, setActionMenuBooking] = useState<Booking | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [showFlightLogModal, setShowFlightLogModal] = useState(false);
+  const [flightLogBooking, setFlightLogBooking] = useState<Booking | null>(null);
+  const [highlightUnlogged, setHighlightUnlogged] = useState(false);
 
   useKeyboardNavigation({
     onArrowLeft: () => navigateDate('prev'),
@@ -1090,12 +1101,15 @@ export const Calendar: React.FC<CalendarProps> = ({
                 const showHalfHourMarker = startOffset === 15 || endOffset === 15;
                 const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                 const isBeingResized = resizingBooking?.booking.id === booking.id;
+                const shouldFlash = highlightUnlogged && isPastBooking(booking) && !booking.flight_logged;
 
                 return (
                   <div
                     key={`${booking.id}-${resource.id}`}
                     className={`${
-                      booking.hasConflict
+                      shouldFlash
+                        ? 'flash-unlogged'
+                        : booking.hasConflict
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                     } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
@@ -1120,16 +1134,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                       if (wasResizing) {
                         return;
                       }
-                      if (
-                        onEditBooking &&
-                        !draggedBooking &&
-                        !isPastBooking(booking)
-                      ) {
+
+                      if (hasBookingStarted(booking) && !isPastBooking(booking)) {
+                        setActionMenuBooking(booking);
+                        setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                      } else if (!isPastBooking(booking) && onEditBooking && !draggedBooking) {
                         onEditBooking(booking);
                       } else if (isPastBooking(booking)) {
-                        toast(
-                          'Use the action menu to manage past bookings'
-                        );
+                        toast('This booking has ended and cannot be modified');
                       }
                     }}
                   >
@@ -1642,12 +1654,15 @@ export const Calendar: React.FC<CalendarProps> = ({
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
+                  const shouldFlash = highlightUnlogged && isPastBooking(booking) && !booking.flight_logged;
 
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-aircraft`}
                       className={`${
-                        booking.hasConflict
+                        shouldFlash
+                          ? 'flash-unlogged'
+                          : booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
@@ -1670,8 +1685,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                         if (wasResizing) {
                           return;
                         }
-                        if (onEditBooking && !draggedBooking && !isPastBooking(booking)) {
+
+                        if (hasBookingStarted(booking) && !isPastBooking(booking)) {
+                          setActionMenuBooking(booking);
+                          setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                        } else if (!isPastBooking(booking) && onEditBooking && !draggedBooking) {
                           onEditBooking(booking);
+                        } else if (isPastBooking(booking)) {
+                          toast('This booking has ended and cannot be modified');
                         }
                       }}
                     >
@@ -1768,8 +1789,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                         if (wasResizing) {
                           return;
                         }
-                        if (onEditBooking && !draggedBooking && !isPastBooking(booking)) {
+
+                        if (hasBookingStarted(booking) && !isPastBooking(booking)) {
+                          setActionMenuBooking(booking);
+                          setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                        } else if (!isPastBooking(booking) && onEditBooking && !draggedBooking) {
                           onEditBooking(booking);
+                        } else if (isPastBooking(booking)) {
+                          toast('This booking has ended and cannot be modified');
                         }
                       }}
                     >
@@ -1865,6 +1892,16 @@ export const Calendar: React.FC<CalendarProps> = ({
           <div className="flex items-center space-x-3 flex-wrap">
             {renderViewModeButtons()}
 
+            <label className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={highlightUnlogged}
+                onChange={(e) => setHighlightUnlogged(e.target.checked)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">Highlight Unlogged</span>
+            </label>
+
             <button
               onClick={onNewBooking}
               className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -1919,6 +1956,42 @@ export const Calendar: React.FC<CalendarProps> = ({
           onDayClick={(date) => {
             setCurrentDate(date);
             setViewMode('day');
+          }}
+        />
+      )}
+
+      {actionMenuBooking && (
+        <BookingActionMenu
+          booking={actionMenuBooking}
+          position={actionMenuPosition}
+          onEdit={() => {
+            if (onEditBooking) {
+              onEditBooking(actionMenuBooking);
+            }
+          }}
+          onLogFlight={() => {
+            setFlightLogBooking(actionMenuBooking);
+            setShowFlightLogModal(true);
+          }}
+          onDelete={() => {
+            if (onDeleteBooking) {
+              onDeleteBooking(actionMenuBooking.id);
+            }
+          }}
+          onClose={() => setActionMenuBooking(null)}
+        />
+      )}
+
+      {showFlightLogModal && flightLogBooking && (
+        <FlightLogModal
+          booking={flightLogBooking}
+          onClose={() => {
+            setShowFlightLogModal(false);
+            setFlightLogBooking(null);
+          }}
+          onSuccess={() => {
+            setShowFlightLogModal(false);
+            setFlightLogBooking(null);
           }}
         />
       )}
