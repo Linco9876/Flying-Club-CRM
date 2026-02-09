@@ -140,6 +140,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   }, [calendarSettings?.default_view]);
 
+
   // Compute slot height on mount and resize
   useEffect(() => {
     const computeSlotHeight = () => {
@@ -1088,6 +1089,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 const endOffset = bookingEnd.getMinutes() % 30;
                 const showHalfHourMarker = startOffset === 15 || endOffset === 15;
                 const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
+                const isBeingResized = resizingBooking?.booking.id === booking.id;
 
                 return (
                   <div
@@ -1100,7 +1102,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       isBeingDragged
                         ? 'opacity-30'
                         : ''
-                    } group`}
+                    } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                     style={{
                       gridColumn: resourceIndex + 2,
                       gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
@@ -1134,7 +1136,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     {!isPastBooking(booking) && (
                       <>
                         <div
-                          className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20"
+                          className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleResizeStart(e, booking, 'top', resource.type);
@@ -1142,7 +1144,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           title="Drag to change start time"
                         />
                         <div
-                          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20"
+                          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleResizeStart(e, booking, 'bottom', resource.type);
@@ -1639,6 +1641,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   const showHalfHourMarker =
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
+                  const isBeingResized = resizingBooking?.booking.id === booking.id;
 
                   bookingElements.push(
                     <div
@@ -1649,7 +1652,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30' : ''
-                      } group`}
+                      } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
                         gridColumn: columnIndex + 2,
                         gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
@@ -1675,7 +1678,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       {!isPastBooking(booking) && (
                         <>
                           <div
-                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20"
+                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'top', 'aircraft');
@@ -1683,7 +1686,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             title="Drag to change start time"
                           />
                           <div
-                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20"
+                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'bottom', 'aircraft');
@@ -1736,6 +1739,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   const showHalfHourMarker =
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
+                  const isBeingResized = resizingBooking?.booking.id === booking.id;
 
                   bookingElements.push(
                     <div
@@ -1746,7 +1750,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           : 'bg-green-500 border-green-600 hover:bg-green-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30' : ''
-                      } group`}
+                      } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
                         gridColumn: columnIndex + 2,
                         gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
@@ -1772,7 +1776,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       {!isPastBooking(booking) && (
                         <>
                           <div
-                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20"
+                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'top', 'instructor');
@@ -1780,7 +1784,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             title="Drag to change start time"
                           />
                           <div
-                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20"
+                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'bottom', 'instructor');
