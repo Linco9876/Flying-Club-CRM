@@ -129,10 +129,19 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [flightLogBooking, setFlightLogBooking] = useState<Booking | null>(null);
   const [highlightUnlogged, setHighlightUnlogged] = useState(false);
 
+  // Drag delay state
+  const [dragDelayTimer, setDragDelayTimer] = useState<NodeJS.Timeout | null>(null);
+  const [isDragDelayActive, setIsDragDelayActive] = useState(false);
+
   useKeyboardNavigation({
     onArrowLeft: () => navigateDate('prev'),
     onArrowRight: () => navigateDate('next'),
     onEscape: () => {
+      if (dragDelayTimer) {
+        clearTimeout(dragDelayTimer);
+        setDragDelayTimer(null);
+      }
+      setIsDragDelayActive(false);
       setIsDragging(false);
       setDragStart(null);
       setDragEnd(null);
@@ -144,6 +153,15 @@ export const Calendar: React.FC<CalendarProps> = ({
     },
     enabled: true,
   });
+
+  // Cleanup drag delay timer on unmount
+  useEffect(() => {
+    return () => {
+      if (dragDelayTimer) {
+        clearTimeout(dragDelayTimer);
+      }
+    };
+  }, [dragDelayTimer]);
 
   useEffect(() => {
     if (calendarSettings?.default_view) {
@@ -580,8 +598,31 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
+  const cancelDragDelay = () => {
+    if (dragDelayTimer) {
+      clearTimeout(dragDelayTimer);
+      setDragDelayTimer(null);
+    }
+    setIsDragDelayActive(false);
+  };
+
+  const startDragDelayTimer = (
+    booking: Booking,
+    resourceType: 'aircraft' | 'instructor'
+  ) => {
+    if (isPastBooking(booking)) {
+      return;
+    }
+
+    setIsDragDelayActive(true);
+    const timer = setTimeout(() => {
+      handleBookingDragStart(booking, resourceType);
+      setIsDragDelayActive(false);
+    }, 300);
+    setDragDelayTimer(timer);
+  };
+
   const handleBookingDragStart = (
-    e: React.MouseEvent,
     booking: Booking,
     resourceType: 'aircraft' | 'instructor'
   ) => {
@@ -590,7 +631,6 @@ export const Calendar: React.FC<CalendarProps> = ({
       return;
     }
 
-    e.stopPropagation();
     setDraggedBooking(booking);
     setDraggedBookingOriginal(booking);
     setDragPreview({
@@ -1111,6 +1151,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                         ? 'flash-unlogged'
                         : booking.hasConflict
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                        : booking.flight_logged
+                        ? 'bg-green-500 border-green-600 hover:bg-green-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                     } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                       isBeingDragged
@@ -1125,10 +1167,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                     }}
                     title={`${booking.notes || 'Booking'}`}
                     onMouseDown={(e) => {
+                      e.stopPropagation();
                       if (!isPastBooking(booking)) {
-                        handleBookingDragStart(e, booking, resource.type);
+                        startDragDelayTimer(booking, resource.type);
                       }
                     }}
+                    onMouseUp={cancelDragDelay}
+                    onMouseLeave={cancelDragDelay}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (wasResizing) {
@@ -1662,6 +1707,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                           ? 'flash-unlogged'
                           : booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                          : booking.flight_logged
+                          ? 'bg-green-500 border-green-600 hover:bg-green-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30' : ''
@@ -1674,10 +1721,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                       }}
                       title={`${booking.notes || 'Booking'}`}
                       onMouseDown={(e) => {
+                        e.stopPropagation();
                         if (!isPastBooking(booking)) {
-                          handleBookingDragStart(e, booking, 'aircraft');
+                          startDragDelayTimer(booking, 'aircraft');
                         }
                       }}
+                      onMouseUp={cancelDragDelay}
+                      onMouseLeave={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (wasResizing) {
@@ -1757,14 +1807,19 @@ export const Calendar: React.FC<CalendarProps> = ({
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
+                  const shouldFlash = highlightUnlogged && isPastBooking(booking) && !booking.flight_logged;
 
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-instructor`}
                       className={`${
-                        booking.hasConflict
+                        shouldFlash
+                          ? 'flash-unlogged'
+                          : booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
-                          : 'bg-green-500 border-green-600 hover:bg-green-600'
+                          : booking.flight_logged
+                          ? 'bg-green-500 border-green-600 hover:bg-green-600'
+                          : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
@@ -1776,10 +1831,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                       }}
                       title={`${booking.notes || 'Booking'}`}
                       onMouseDown={(e) => {
+                        e.stopPropagation();
                         if (!isPastBooking(booking)) {
-                          handleBookingDragStart(e, booking, 'instructor');
+                          startDragDelayTimer(booking, 'instructor');
                         }
                       }}
+                      onMouseUp={cancelDragDelay}
+                      onMouseLeave={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (wasResizing) {

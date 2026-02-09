@@ -8,9 +8,9 @@ import toast from 'react-hot-toast';
 
 interface Booking {
   id: string;
-  student_id: string;
-  instructor_id?: string;
-  aircraft_id: string;
+  studentId: string;
+  instructorId?: string;
+  aircraftId: string;
   startTime: Date | string;
   endTime: Date | string;
   notes?: string;
@@ -32,7 +32,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
 
-  const aircraft = aircraftList.find((a) => a.id === booking.aircraft_id);
+  const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
   const currentTach = aircraft?.hours || 0;
 
   const startTime = booking.startTime instanceof Date ? booking.startTime : new Date(booking.startTime);
@@ -126,9 +126,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
       const logData = {
         booking_id: booking.id,
-        aircraft_id: booking.aircraft_id,
-        student_id: booking.student_id,
-        instructor_id: booking.instructor_id,
+        aircraft_id: booking.aircraftId,
+        student_id: booking.studentId,
+        instructor_id: booking.instructorId,
         start_time: formData.start_time,
         end_time: formData.end_time,
         start_tach: formData.start_tach,
@@ -159,8 +159,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     }
   };
 
-  const student = users.find((u) => u.id === booking.student_id);
-  const instructor = booking.instructor_id ? users.find((u) => u.id === booking.instructor_id) : null;
+  const student = users.find((u) => u.id === booking.studentId);
+  const instructor = booking.instructorId ? users.find((u) => u.id === booking.instructorId) : null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
