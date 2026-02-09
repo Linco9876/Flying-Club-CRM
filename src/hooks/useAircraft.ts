@@ -523,18 +523,49 @@ export const useAircraft = () => {
 
   const deleteDefect = async (defectId: string) => {
     try {
+      const { data: defect, error: fetchError } = await supabase
+        .from('defects')
+        .select('photos')
+        .eq('id', defectId)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Error fetching defect:', fetchError);
+        throw fetchError;
+      }
+
+      if (defect?.photos && Array.isArray(defect.photos)) {
+        for (const photoPath of defect.photos) {
+          try {
+            const { error: storageError } = await supabase.storage
+              .from('defect-attachments')
+              .remove([photoPath]);
+
+            if (storageError) {
+              console.warn('Error deleting photo from storage:', storageError);
+            }
+          } catch (photoErr) {
+            console.warn('Failed to delete photo:', photoErr);
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('defects')
         .delete()
         .eq('id', defectId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error deleting defect from database:', error);
+        throw error;
+      }
 
       await fetchAircraft();
       toast.success('Defect deleted successfully');
     } catch (err) {
       console.error('Error deleting defect:', err);
-      toast.error('Failed to delete defect');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete defect';
+      toast.error(errorMessage);
       throw err;
     }
   };
