@@ -83,6 +83,13 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   // Drag and drop states
   const [draggedBooking, setDraggedBooking] = useState<Booking | null>(null);
+  const [draggedBookingOriginal, setDraggedBookingOriginal] = useState<Booking | null>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    startTime: Date;
+    endTime: Date;
+    resourceId: string;
+    resourceType: 'aircraft' | 'instructor';
+  } | null>(null);
   const [resizingBooking, setResizingBooking] = useState<{
     booking: Booking;
     handle: 'top' | 'bottom';
@@ -117,6 +124,9 @@ export const Calendar: React.FC<CalendarProps> = ({
       setIsDragging(false);
       setDragStart(null);
       setDragEnd(null);
+      setDraggedBooking(null);
+      setDraggedBookingOriginal(null);
+      setDragPreview(null);
     },
     enabled: true,
   });
@@ -555,6 +565,91 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
+  const handleBookingDragStart = (
+    e: React.MouseEvent,
+    booking: Booking,
+    resourceType: 'aircraft' | 'instructor'
+  ) => {
+    if (isPastBooking(booking)) {
+      toast.error('Cannot move past bookings');
+      return;
+    }
+
+    e.stopPropagation();
+    setDraggedBooking(booking);
+    setDraggedBookingOriginal(booking);
+    setDragPreview({
+      startTime: new Date(booking.startTime),
+      endTime: new Date(booking.endTime),
+      resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
+      resourceType
+    });
+  };
+
+  const handleBookingDragOver = (
+    e: React.MouseEvent,
+    slot: number,
+    resourceId: string,
+    resourceType: 'aircraft' | 'instructor',
+    date: Date
+  ) => {
+    if (!draggedBooking) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
+
+    const originalStart = new Date(draggedBookingOriginal!.startTime);
+    const originalEnd = new Date(draggedBookingOriginal!.endTime);
+    const duration = originalEnd.getTime() - originalStart.getTime();
+
+    const { hour, minute } = getTimeFromSlot(slot);
+    const newStartTime = new Date(date);
+    newStartTime.setHours(hour, minute, 0, 0);
+
+    const newEndTime = new Date(newStartTime.getTime() + duration);
+
+    setDragPreview({
+      startTime: newStartTime,
+      endTime: newEndTime,
+      resourceId,
+      resourceType
+    });
+  };
+
+  const handleBookingDrop = async () => {
+    if (!draggedBooking || !dragPreview || !onUpdateBooking) {
+      setDraggedBooking(null);
+      setDraggedBookingOriginal(null);
+      setDragPreview(null);
+      return;
+    }
+
+    try {
+      const updates: Partial<Booking> = {
+        startTime: dragPreview.startTime,
+        endTime: dragPreview.endTime
+      };
+
+      if (dragPreview.resourceType === 'aircraft' && dragPreview.resourceId !== draggedBooking.aircraftId) {
+        updates.aircraftId = dragPreview.resourceId;
+      } else if (dragPreview.resourceType === 'instructor' && dragPreview.resourceId !== draggedBooking.instructorId) {
+        updates.instructorId = dragPreview.resourceId;
+      }
+
+      await onUpdateBooking(draggedBooking.id, updates);
+      toast.success('Booking moved successfully');
+    } catch (error) {
+      console.error('Error moving booking:', error);
+      toast.error('Failed to move booking');
+    } finally {
+      setDraggedBooking(null);
+      setDraggedBookingOriginal(null);
+      setDragPreview(null);
+    }
+  };
+
   const handleMouseDown = (
     slot: number,
     resourceId: string,
@@ -872,8 +967,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                             currentDate
                           )
                         }
-                        onMouseDown={() =>
-                          !unavailability &&
+                        onMouseDown={(e) =>
+                          !unavailability && !draggedBooking &&
                           handleMouseDown(
                             slot,
                             resource.id,
@@ -881,14 +976,24 @@ export const Calendar: React.FC<CalendarProps> = ({
                             currentDate
                           )
                         }
-                        onMouseUp={() => handleMouseUp(currentDate)}
-                        onMouseEnter={() =>
-                          handleMouseEnter(
-                            slot,
-                            resource.id,
-                            resource.type
-                          )
-                        }
+                        onMouseUp={() => {
+                          if (draggedBooking) {
+                            handleBookingDrop();
+                          } else {
+                            handleMouseUp(currentDate);
+                          }
+                        }}
+                        onMouseEnter={(e) => {
+                          if (draggedBooking) {
+                            handleBookingDragOver(e, slot, resource.id, resource.type, currentDate);
+                          } else {
+                            handleMouseEnter(
+                              slot,
+                              resource.id,
+                              resource.type
+                            );
+                          }
+                        }}
                       >
                         {unavailability && isFirstSlotOfPeriod && (
                           <div className="absolute inset-0 flex items-center justify-center">
@@ -917,6 +1022,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 const startOffset = bookingStart.getMinutes() % 30;
                 const endOffset = bookingEnd.getMinutes() % 30;
                 const showHalfHourMarker = startOffset === 15 || endOffset === 15;
+                const isBeingDragged = draggedBooking?.id === booking.id;
 
                 return (
                   <div
@@ -926,8 +1032,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                     } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                      draggedBooking?.id === booking.id
-                        ? 'opacity-75'
+                      isBeingDragged
+                        ? 'opacity-30'
                         : ''
                     }`}
                     style={{
@@ -937,6 +1043,11 @@ export const Calendar: React.FC<CalendarProps> = ({
                       minHeight: slotHeight,
                     }}
                     title={`${booking.notes || 'Booking'}`}
+                    onMouseDown={(e) => {
+                      if (!isPastBooking(booking)) {
+                        handleBookingDragStart(e, booking, resource.type);
+                      }
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (
@@ -946,8 +1057,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                       ) {
                         onEditBooking(booking);
                       } else if (isPastBooking(booking)) {
-                        // For past bookings, could show action menu here too
-                        // For now, just prevent editing
                         toast(
                           'Use the action menu to manage past bookings'
                         );
@@ -982,6 +1091,42 @@ export const Calendar: React.FC<CalendarProps> = ({
                 );
               })
             )}
+
+            {/* Render drag preview */}
+            {dragPreview && draggedBooking && resources.map((resource, resourceIndex) => {
+              if (resource.id !== dragPreview.resourceId || resource.type !== dragPreview.resourceType) {
+                return null;
+              }
+
+              const previewPosition = getBookingPosition({
+                ...draggedBooking,
+                startTime: dragPreview.startTime,
+                endTime: dragPreview.endTime
+              });
+
+              return (
+                <div
+                  key={`preview-${resource.id}`}
+                  className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                  style={{
+                    gridColumn: resourceIndex + 2,
+                    gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
+                    marginTop: previewPosition.marginTop,
+                    minHeight: slotHeight,
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <div className="font-medium text-xs truncate">
+                    {resource.type === 'aircraft'
+                      ? resource.name
+                      : 'Lesson'}
+                  </div>
+                  <div className="text-xs opacity-75 truncate">
+                    {format(dragPreview.startTime, 'HH:mm')} - {format(dragPreview.endTime, 'HH:mm')}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1404,6 +1549,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   const endOffset = bookingEnd.getMinutes() % 30;
                   const showHalfHourMarker =
                     startOffset === 15 || endOffset === 15;
+                  const isBeingDragged = draggedBooking?.id === booking.id;
 
                   bookingElements.push(
                     <div
@@ -1413,7 +1559,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                        draggedBooking?.id === booking.id ? 'opacity-75' : ''
+                        isBeingDragged ? 'opacity-30' : ''
                       }`}
                       style={{
                         gridColumn: columnIndex + 2,
@@ -1422,9 +1568,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                         minHeight: slotHeight,
                       }}
                       title={`${booking.notes || 'Booking'}`}
+                      onMouseDown={(e) => {
+                        if (!isPastBooking(booking)) {
+                          handleBookingDragStart(e, booking, 'aircraft');
+                        }
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (onEditBooking && !draggedBooking) {
+                        if (onEditBooking && !draggedBooking && !isPastBooking(booking)) {
                           onEditBooking(booking);
                         }
                       }}
@@ -1472,6 +1623,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   const endOffset = bookingEnd.getMinutes() % 30;
                   const showHalfHourMarker =
                     startOffset === 15 || endOffset === 15;
+                  const isBeingDragged = draggedBooking?.id === booking.id;
 
                   bookingElements.push(
                     <div
@@ -1481,7 +1633,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-green-500 border-green-600 hover:bg-green-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                        draggedBooking?.id === booking.id ? 'opacity-75' : ''
+                        isBeingDragged ? 'opacity-30' : ''
                       }`}
                       style={{
                         gridColumn: columnIndex + 2,
@@ -1490,9 +1642,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                         minHeight: slotHeight,
                       }}
                       title={`${booking.notes || 'Booking'}`}
+                      onMouseDown={(e) => {
+                        if (!isPastBooking(booking)) {
+                          handleBookingDragStart(e, booking, 'instructor');
+                        }
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (onEditBooking && !draggedBooking) {
+                        if (onEditBooking && !draggedBooking && !isPastBooking(booking)) {
                           onEditBooking(booking);
                         }
                       }}
