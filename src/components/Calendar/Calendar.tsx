@@ -94,6 +94,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     booking: Booking;
     handle: 'top' | 'bottom';
   } | null>(null);
+  const [wasResizing, setWasResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0,
@@ -128,6 +129,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       setDraggedBookingOriginal(null);
       setDragPreview(null);
       setResizingBooking(null);
+      setWasResizing(false);
     },
     enabled: true,
   });
@@ -599,6 +601,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     e.stopPropagation();
+    e.preventDefault();
+    setWasResizing(true);
     setResizingBooking({ booking, handle });
     setDraggedBookingOriginal(booking);
     setDragPreview({
@@ -643,10 +647,8 @@ export const Calendar: React.FC<CalendarProps> = ({
           });
         }
       } else {
-        const newEndSlot = slot + 1;
-        const { hour: endHour, minute: endMinute } = getTimeFromSlot(newEndSlot);
-        const newEndTime = new Date(date);
-        newEndTime.setHours(endHour, endMinute, 0, 0);
+        const newEndTime = new Date(slotTime);
+        newEndTime.setMinutes(newEndTime.getMinutes() + snapDuration);
 
         if (newEndTime.getTime() >= originalStart.getTime() + minDuration) {
           setDragPreview({
@@ -681,6 +683,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       setDraggedBookingOriginal(null);
       setDragPreview(null);
       setResizingBooking(null);
+      setTimeout(() => setWasResizing(false), 100);
       return;
     }
 
@@ -708,6 +711,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       setDraggedBookingOriginal(null);
       setDragPreview(null);
       setResizingBooking(null);
+      setTimeout(() => setWasResizing(false), 100);
     }
   };
 
@@ -1111,6 +1115,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (wasResizing) {
+                        return;
+                      }
                       if (
                         onEditBooking &&
                         !draggedBooking &&
@@ -1657,6 +1664,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (wasResizing) {
+                          return;
+                        }
                         if (onEditBooking && !draggedBooking && !isPastBooking(booking)) {
                           onEditBooking(booking);
                         }
@@ -1751,6 +1761,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (wasResizing) {
+                          return;
+                        }
                         if (onEditBooking && !draggedBooking && !isPastBooking(booking)) {
                           onEditBooking(booking);
                         }
