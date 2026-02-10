@@ -60,12 +60,14 @@ export const AircraftFlightLogs: React.FC = () => {
             .filter((id): id is string => id !== null) || []
         )];
 
-        const { data: studentsData } = await supabase
-          .from('students')
-          .select('id, name')
-          .in('id', [...studentIds, ...instructorIds]);
+        const allUserIds = [...new Set([...studentIds, ...instructorIds])];
 
-        const studentsMap = new Map(studentsData?.map(s => [s.id, s.name]) || []);
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, name')
+          .in('id', allUserIds);
+
+        const usersMap = new Map(usersData?.map(u => [u.id, u.name]) || []);
 
         const { data: ratesData } = await supabase
           .from('aircraft_rates')
@@ -93,8 +95,8 @@ export const AircraftFlightLogs: React.FC = () => {
             payment_type: log.payment_type,
             observations: log.observations,
             created_at: log.created_at,
-            student_name: studentsMap.get(log.student_id) || 'Unknown',
-            instructor_name: log.instructor_id ? studentsMap.get(log.instructor_id) || null : null,
+            student_name: usersMap.get(log.student_id) || 'Unknown',
+            instructor_name: log.instructor_id ? usersMap.get(log.instructor_id) || 'Unknown' : null,
             total_cost: calculatedCost
           };
         });
@@ -234,12 +236,14 @@ export const AircraftFlightLogs: React.FC = () => {
                       </td>
                       <td className="py-2 px-2 align-top">
                         <div className="flex items-center space-x-1">
-                          <span className="inline-block w-3 h-3 bg-gray-400 rounded-full"></span>
+                          <span className="inline-block w-3 h-3 bg-blue-500 rounded-full"></span>
+                          <span className="text-gray-600 text-xs">Pilot:</span>
                           <span className="text-blue-600">{log.student_name}</span>
                         </div>
                         {log.instructor_name && (
-                          <div className="flex items-center space-x-1">
-                            <span className="inline-block w-3 h-3 bg-gray-400 rounded-full"></span>
+                          <div className="flex items-center space-x-1 mt-1">
+                            <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+                            <span className="text-gray-600 text-xs">Instructor:</span>
                             <span className="text-blue-600">{log.instructor_name}</span>
                           </div>
                         )}
