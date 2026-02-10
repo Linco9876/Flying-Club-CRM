@@ -260,23 +260,23 @@ export const AircraftFlightLogs: React.FC = () => {
                         )}
                       </td>
                       <td className="py-2 px-2 align-top">
+                        <div className="text-center mb-3">
+                          <div className="flex items-center justify-center space-x-1">
+                            {log.start_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
+                              <span key={`start-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px]">{digit}</span>
+                            ))}
+                            <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px]">{log.start_tach.toFixed(1).split('.')[1]}</span>
+                          </div>
+                          <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
+                        </div>
                         <div className="text-center">
                           <div className="flex items-center justify-center space-x-1">
-                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[1]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.end_tach.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.end_tach.toFixed(1).split('.')[1]}</span>
+                            {log.end_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
+                              <span key={`end-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px]">{digit}</span>
+                            ))}
+                            <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px]">{log.end_tach.toFixed(1).split('.')[1]}</span>
                           </div>
-                          <div className="text-gray-500 mt-1">hours/hundredths</div>
-                        </div>
-                        <div className="text-center mt-1">
-                          <div className="flex items-center justify-center space-x-1">
-                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[1]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.end_tach.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.end_tach.toFixed(1).split('.')[1]}</span>
-                          </div>
-                          <div className="text-gray-500 mt-1">hours/hundredths</div>
+                          <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
                         </div>
                       </td>
                       <td className="py-2 px-2 text-right align-top">
