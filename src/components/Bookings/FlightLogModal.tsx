@@ -33,7 +33,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const { users } = useUsers();
 
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
-  const currentTach = aircraft?.hours || 0;
+  const currentTach = aircraft?.totalHours || 0;
 
   const startTime = booking.startTime instanceof Date ? booking.startTime : new Date(booking.startTime);
   const endTime = booking.endTime instanceof Date ? booking.endTime : new Date(booking.endTime);

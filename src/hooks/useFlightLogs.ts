@@ -94,6 +94,15 @@ export function useFlightLogs() {
         if (updateError) console.error('Error updating booking:', updateError);
       }
 
+      const { error: aircraftUpdateError } = await supabase
+        .from('aircraft')
+        .update({ total_hours: logData.end_tach })
+        .eq('id', logData.aircraft_id);
+
+      if (aircraftUpdateError) {
+        console.error('Error updating aircraft hours:', aircraftUpdateError);
+      }
+
       await fetchFlightLogs();
       return { data, error: null };
     } catch (err) {
