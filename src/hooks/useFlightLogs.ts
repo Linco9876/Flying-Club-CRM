@@ -148,6 +148,36 @@ export function useFlightLogs() {
     }
   };
 
+  const checkTachOverlap = async (aircraftId: string, startTach: number, endTach: number, excludeLogId?: string) => {
+    try {
+      let query = supabase
+        .from('flight_logs')
+        .select('id, start_tach, end_tach, start_time, end_time')
+        .eq('aircraft_id', aircraftId)
+        .or(`and(start_tach.lte.${endTach},end_tach.gte.${startTach})`);
+
+      if (excludeLogId) {
+        query = query.neq('id', excludeLogId);
+      }
+
+      const { data, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+
+      const overlappingLogs = data?.filter(log => {
+        const overlapStart = Math.max(log.start_tach, startTach);
+        const overlapEnd = Math.min(log.end_tach, endTach);
+        return overlapEnd > overlapStart;
+      }) || [];
+
+      return { overlaps: overlappingLogs, error: null };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to check tach overlap';
+      console.error('Error checking tach overlap:', err);
+      return { overlaps: [], error: errorMessage };
+    }
+  };
+
   return {
     flightLogs,
     loading,
@@ -155,6 +185,7 @@ export function useFlightLogs() {
     createFlightLog,
     updateFlightLog,
     deleteFlightLog,
+    checkTachOverlap,
     refetch: fetchFlightLogs,
   };
 }

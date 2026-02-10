@@ -18,6 +18,7 @@ import { StudentProfile } from './components/Students/StudentProfile';
 import { StudentList } from './components/Students/StudentList';
 import { StudentProfilePage } from './components/Students/StudentProfilePage';
 import { AircraftList } from './components/Aircraft/AircraftList';
+import { AircraftFlightLogs } from './components/Aircraft/AircraftFlightLogs';
 import { MaintenanceBoard } from './components/Maintenance/MaintenanceBoard';
 import { BillingDashboard } from './components/Billing/BillingDashboard';
 import { ReportsDashboard } from './components/Reports/ReportsDashboard';
@@ -301,6 +302,19 @@ const AuthenticatedApp: React.FC<{
                     setShowTrainingRecordForm(true);
                   }}
                 />
+              </main>
+            </div>
+          </div>
+        </RouteGuard>
+      } />
+      <Route path="/aircraft/:aircraftId/logs" element={
+        <RouteGuard requiredAction="view-aircraft">
+          <div className="min-h-screen bg-gray-50">
+            <Header />
+            <div className="flex lg:ml-0 ml-0">
+              <Sidebar activeView="aircraft" onViewChange={setActiveView} />
+              <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0 p-6">
+                <AircraftFlightLogs />
               </main>
             </div>
           </div>

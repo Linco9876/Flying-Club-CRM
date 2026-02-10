@@ -346,6 +346,41 @@ export const useBookings = () => {
 
   useEffect(() => {
     fetchBookings();
+
+    const bookingsSubscription = supabase
+      .channel('bookings_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bookings'
+        },
+        () => {
+          fetchBookings();
+        }
+      )
+      .subscribe();
+
+    const flightLogsSubscription = supabase
+      .channel('flight_logs_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'flight_logs'
+        },
+        () => {
+          fetchBookings();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      bookingsSubscription.unsubscribe();
+      flightLogsSubscription.unsubscribe();
+    };
   }, []);
 
   return {

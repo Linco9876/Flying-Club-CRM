@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { mockAircraft, mockStudents } from '../../data/mockData';
 import { Booking, FlightLog } from '../../types';
 import toast from 'react-hot-toast';
+import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { TachOverlapWarningModal } from './TachOverlapWarningModal';
 
 interface FlightLogFormProps {
   isOpen: boolean;
@@ -19,12 +21,13 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
   booking
 }) => {
   const { user } = useAuth();
-  
+  const { checkTachOverlap } = useFlightLogs();
+
   // Get booking details
   const aircraft = mockAircraft.find(a => a.id === booking.aircraftId);
   const student = mockStudents.find(s => s.id === booking.studentId);
   const instructor = mockStudents.find(s => s.id === booking.instructorId);
-  
+
   const [formData, setFormData] = useState({
     date: booking.startTime.toISOString().split('T')[0],
     dualTime: booking.instructorId ? 0.0 : 0.0,
@@ -34,6 +37,10 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
     landings: 0,
     notes: ''
   });
+
+  const [showOverlapWarning, setShowOverlapWarning] = useState(false);
+  const [overlappingLogs, setOverlappingLogs] = useState<any[]>([]);
+  const [pendingFlightLogData, setPendingFlightLogData] = useState<Omit<FlightLog, 'id'> | null>(null);
 
   const calculateDuration = () => {
     return Math.max(0, formData.tachEnd - formData.tachStart);
@@ -46,9 +53,9 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
     return aircraftCost + instructorCost;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validation
     if (formData.tachEnd <= formData.tachStart) {
       toast.error('End tach must be greater than start tach');
@@ -73,9 +80,39 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
       notes: formData.notes
     };
 
+    const { overlaps } = await checkTachOverlap(
+      booking.aircraftId,
+      formData.tachStart,
+      formData.tachEnd
+    );
+
+    if (overlaps && overlaps.length > 0) {
+      setOverlappingLogs(overlaps);
+      setPendingFlightLogData(flightLogData);
+      setShowOverlapWarning(true);
+      return;
+    }
+
     onSubmit(flightLogData);
     toast.success(`Flight logged! $${totalCost.toFixed(2)} deducted from student account`);
     onClose();
+  };
+
+  const handleConfirmOverlap = () => {
+    if (pendingFlightLogData) {
+      onSubmit(pendingFlightLogData);
+      toast.success(`Flight logged! $${pendingFlightLogData.totalCost.toFixed(2)} deducted from student account`);
+      setShowOverlapWarning(false);
+      setPendingFlightLogData(null);
+      setOverlappingLogs([]);
+      onClose();
+    }
+  };
+
+  const handleCancelOverlap = () => {
+    setShowOverlapWarning(false);
+    setPendingFlightLogData(null);
+    setOverlappingLogs([]);
   };
 
   if (!isOpen) return null;
@@ -325,6 +362,15 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
           </div>
         </form>
       </div>
+
+      <TachOverlapWarningModal
+        isOpen={showOverlapWarning}
+        onClose={handleCancelOverlap}
+        onConfirm={handleConfirmOverlap}
+        overlappingLogs={overlappingLogs}
+        tachStart={formData.tachStart}
+        tachEnd={formData.tachEnd}
+      />
     </div>
   );
 };

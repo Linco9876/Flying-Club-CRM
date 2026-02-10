@@ -1,14 +1,16 @@
 import React from 'react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft, Defect } from '../../types';
-import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, Calendar } from 'lucide-react';
+import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, Calendar, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
 
 export const AircraftList: React.FC = () => {
+  const navigate = useNavigate();
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
@@ -217,6 +219,13 @@ export const AircraftList: React.FC = () => {
                 >
                   <Eye className="h-3 w-3" />
                   <span>View</span>
+                </button>
+                <button
+                  onClick={() => navigate(`/aircraft/${aircraftItem.id}/logs`)}
+                  className="flex items-center space-x-1 px-3 py-1 text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
+                >
+                  <FileText className="h-3 w-3" />
+                  <span>Logs</span>
                 </button>
                 <button
                   onClick={() => openEditForm(aircraftItem)}
