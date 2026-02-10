@@ -6,22 +6,22 @@ import { useAircraft } from '../../hooks/useAircraft';
 
 interface FlightLog {
   id: string;
-  booking_id: string;
-  tach_start: number;
-  tach_end: number;
-  duration: number;
+  booking_id: string | null;
+  aircraft_id: string;
+  student_id: string;
+  instructor_id: string | null;
+  start_time: string;
+  end_time: string;
+  start_tach: number;
+  end_tach: number;
+  flight_duration: number;
   landings: number;
-  total_cost: number;
-  notes: string;
+  payment_type: string | null;
+  observations: string | null;
   created_at: string;
-  booking: {
-    start_time: string;
-    end_time: string;
-    student_id: string;
-    instructor_id: string | null;
-    student_name: string;
-    instructor_name: string | null;
-  };
+  student_name: string;
+  instructor_name: string | null;
+  total_cost: number;
 }
 
 export const AircraftFlightLogs: React.FC = () => {
@@ -47,34 +47,16 @@ export const AircraftFlightLogs: React.FC = () => {
 
         const { data: logsData, error: logsError } = await supabase
           .from('flight_logs')
-          .select(`
-            id,
-            booking_id,
-            tach_start,
-            tach_end,
-            duration,
-            landings,
-            total_cost,
-            notes,
-            created_at,
-            bookings!inner (
-              id,
-              start_time,
-              end_time,
-              aircraft_id,
-              student_id,
-              instructor_id
-            )
-          `)
-          .eq('bookings.aircraft_id', aircraftId)
+          .select('*')
+          .eq('aircraft_id', aircraftId)
           .order('created_at', { ascending: false });
 
         if (logsError) throw logsError;
 
-        const studentIds = [...new Set(logsData?.map((log: any) => log.bookings.student_id) || [])];
+        const studentIds = [...new Set(logsData?.map((log: any) => log.student_id) || [])];
         const instructorIds = [...new Set(
           logsData
-            ?.map((log: any) => log.bookings.instructor_id)
+            ?.map((log: any) => log.instructor_id)
             .filter((id): id is string => id !== null) || []
         )];
 
@@ -85,25 +67,37 @@ export const AircraftFlightLogs: React.FC = () => {
 
         const studentsMap = new Map(studentsData?.map(s => [s.id, s.name]) || []);
 
-        const combinedLogs: FlightLog[] = (logsData || []).map((log: any) => ({
-          id: log.id,
-          booking_id: log.booking_id,
-          tach_start: parseFloat(log.tach_start),
-          tach_end: parseFloat(log.tach_end),
-          duration: parseFloat(log.duration),
-          landings: log.landings || 0,
-          total_cost: parseFloat(log.total_cost),
-          notes: log.notes || '',
-          created_at: log.created_at,
-          booking: {
-            start_time: log.bookings.start_time,
-            end_time: log.bookings.end_time,
-            student_id: log.bookings.student_id,
-            instructor_id: log.bookings.instructor_id,
-            student_name: studentsMap.get(log.bookings.student_id) || 'Unknown',
-            instructor_name: log.bookings.instructor_id ? studentsMap.get(log.bookings.instructor_id) || 'Unknown' : null
-          }
-        }));
+        const { data: ratesData } = await supabase
+          .from('aircraft_rates')
+          .select('*')
+          .eq('aircraft_id', aircraftId);
+
+        const tachRate = ratesData?.find(r => r.rate_type === 'tach')?.amount || 0;
+
+        const combinedLogs: FlightLog[] = (logsData || []).map((log: any) => {
+          const tachTime = parseFloat(log.end_tach) - parseFloat(log.start_tach);
+          const calculatedCost = tachTime * parseFloat(tachRate);
+
+          return {
+            id: log.id,
+            booking_id: log.booking_id,
+            aircraft_id: log.aircraft_id,
+            student_id: log.student_id,
+            instructor_id: log.instructor_id,
+            start_time: log.start_time,
+            end_time: log.end_time,
+            start_tach: parseFloat(log.start_tach),
+            end_tach: parseFloat(log.end_tach),
+            flight_duration: parseFloat(log.flight_duration),
+            landings: log.landings || 0,
+            payment_type: log.payment_type,
+            observations: log.observations,
+            created_at: log.created_at,
+            student_name: studentsMap.get(log.student_id) || 'Unknown',
+            instructor_name: log.instructor_id ? studentsMap.get(log.instructor_id) || null : null,
+            total_cost: calculatedCost
+          };
+        });
 
         setFlightLogs(combinedLogs);
       } catch (err) {
@@ -142,18 +136,18 @@ export const AircraftFlightLogs: React.FC = () => {
   }
 
   const filteredLogs = flightLogs.filter(log => {
-    const logDate = new Date(log.booking.start_time);
+    const logDate = new Date(log.start_time);
     const logMonth = logDate.toISOString().slice(0, 7);
     return logMonth === selectedMonth;
   });
 
-  const totalFlightHours = filteredLogs.reduce((sum, log) => sum + log.duration, 0);
+  const totalFlightHours = filteredLogs.reduce((sum, log) => sum + log.flight_duration, 0);
   const totalLandings = filteredLogs.reduce((sum, log) => sum + log.landings, 0);
   const totalRevenue = filteredLogs.reduce((sum, log) => sum + log.total_cost, 0);
 
   const availableMonths = Array.from(
     new Set(
-      flightLogs.map(log => new Date(log.booking.start_time).toISOString().slice(0, 7))
+      flightLogs.map(log => new Date(log.start_time).toISOString().slice(0, 7))
     )
   ).sort().reverse();
 
@@ -222,8 +216,8 @@ export const AircraftFlightLogs: React.FC = () => {
               </thead>
               <tbody>
                 {filteredLogs.map((log, index) => {
-                  const startDate = new Date(log.booking.start_time);
-                  const endDate = new Date(log.booking.end_time);
+                  const startDate = new Date(log.start_time);
+                  const endDate = new Date(log.end_time);
                   const isAlternateRow = index % 2 === 1;
 
                   return (
@@ -241,46 +235,46 @@ export const AircraftFlightLogs: React.FC = () => {
                       <td className="py-2 px-2 align-top">
                         <div className="flex items-center space-x-1">
                           <span className="inline-block w-3 h-3 bg-gray-400 rounded-full"></span>
-                          <span className="text-blue-600">{log.booking.student_name}</span>
+                          <span className="text-blue-600">{log.student_name}</span>
                         </div>
-                        {log.booking.instructor_name && (
+                        {log.instructor_name && (
                           <div className="flex items-center space-x-1">
                             <span className="inline-block w-3 h-3 bg-gray-400 rounded-full"></span>
-                            <span className="text-blue-600">{log.booking.instructor_name}</span>
+                            <span className="text-blue-600">{log.instructor_name}</span>
                           </div>
                         )}
                       </td>
                       <td className="py-2 px-2 text-center align-top">
-                        <div>{log.duration.toFixed(2)}</div>
+                        <div>{log.flight_duration.toFixed(2)}</div>
                         <div className="text-gray-500">hours</div>
                       </td>
                       <td className="py-2 px-2 text-center align-top">
-                        <div>Pre-Paid</div>
+                        <div>{log.payment_type || 'Pre-Paid'}</div>
                       </td>
                       <td className="py-2 px-2 text-center align-top">
                         <div>{log.landings}</div>
                       </td>
                       <td className="py-2 px-2 align-top">
-                        {log.notes && (
-                          <div className="text-gray-700">{log.notes}</div>
+                        {log.observations && (
+                          <div className="text-gray-700">{log.observations}</div>
                         )}
                       </td>
                       <td className="py-2 px-2 align-top">
                         <div className="text-center">
                           <div className="flex items-center justify-center space-x-1">
-                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[1]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.tach_end.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.tach_end.toFixed(1).split('.')[1]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[1]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.end_tach.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.end_tach.toFixed(1).split('.')[1]}</span>
                           </div>
                           <div className="text-gray-500 mt-1">hours/hundredths</div>
                         </div>
                         <div className="text-center mt-1">
                           <div className="flex items-center justify-center space-x-1">
-                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[1]}</span>
-                            <span className="inline-block border border-gray-400 px-1">{log.tach_end.toFixed(1).split('.')[0]}</span>
-                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.tach_end.toFixed(1).split('.')[1]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.start_tach.toFixed(1).split('.')[1]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.end_tach.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.end_tach.toFixed(1).split('.')[1]}</span>
                           </div>
                           <div className="text-gray-500 mt-1">hours/hundredths</div>
                         </div>
