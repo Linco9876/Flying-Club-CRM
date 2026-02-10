@@ -20,7 +20,8 @@ export const useAircraft = () => {
 
       const { data: defectsData, error: defectsError } = await supabase
         .from('defects')
-        .select('*');
+        .select('*')
+        .eq('status', 'open');
 
       if (defectsError) throw defectsError;
 
