@@ -4,6 +4,7 @@ import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
+import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface Booking {
@@ -54,6 +55,64 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tachAutoFilled, setTachAutoFilled] = useState(false);
+
+  useEffect(() => {
+    const calculateStartTach = async () => {
+      if (!booking.aircraftId) {
+        console.log('Skipping tach calculation - no aircraft ID');
+        return;
+      }
+
+      console.log('Calculating start tach for aircraft:', booking.aircraftId);
+
+      try {
+        const { data: logs, error } = await supabase
+          .from('flight_logs')
+          .select('start_time, end_time, start_tach, end_tach')
+          .eq('aircraft_id', booking.aircraftId)
+          .order('end_time', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching flight logs:', error);
+          return;
+        }
+
+        console.log('Found flight logs:', logs?.length || 0);
+
+        if (!logs || logs.length === 0) {
+          console.log('No previous logs found');
+          return;
+        }
+
+        const bookingStartTime = startTime;
+        console.log('Booking start time:', bookingStartTime);
+
+        const previousLog = logs.find(log => new Date(log.end_time) <= bookingStartTime);
+
+        if (!previousLog) {
+          console.log('No logs before this booking time');
+          return;
+        }
+
+        console.log('Found previous log ending at:', previousLog.end_time, 'with end tach:', previousLog.end_tach);
+
+        const startTach = parseFloat(previousLog.end_tach);
+        console.log('Setting start tach to:', startTach);
+
+        setFormData(prev => ({
+          ...prev,
+          start_tach: startTach,
+          end_tach: startTach + defaultDuration,
+        }));
+        setTachAutoFilled(true);
+      } catch (err) {
+        console.error('Error calculating start tach:', err);
+      }
+    };
+
+    calculateStartTach();
+  }, [booking.aircraftId, startTime, defaultDuration]);
 
   const handleTachChange = (field: 'start_tach' | 'end_tach', value: string) => {
     const numValue = parseFloat(value) || 0;
@@ -259,6 +318,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
+              {tachAutoFilled && (
+                <p className="text-xs text-green-600 mt-1">
+                  Auto-filled from previous flight log
+                </p>
+              )}
             </div>
 
             <div>
