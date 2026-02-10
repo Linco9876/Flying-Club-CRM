@@ -1551,7 +1551,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             )
                           }
                           onMouseDown={() =>
-                            !unavailability &&
+                            !unavailability && !draggedBooking &&
                             handleMouseDown(
                               slot,
                               selectedAircraftId,
@@ -1560,15 +1560,25 @@ export const Calendar: React.FC<CalendarProps> = ({
                               dayIndex
                             )
                           }
-                          onMouseUp={() => handleMouseUp(day)}
-                          onMouseEnter={() =>
-                            handleMouseEnter(
-                              slot,
-                              selectedAircraftId,
-                              'aircraft',
-                              dayIndex
-                            )
-                          }
+                          onMouseUp={() => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDrop();
+                            } else {
+                              handleMouseUp(day);
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDragOver(e, slot, selectedAircraftId, 'aircraft', day);
+                            } else {
+                              handleMouseEnter(
+                                slot,
+                                selectedAircraftId,
+                                'aircraft',
+                                dayIndex
+                              );
+                            }
+                          }}
                         >
                           {unavailability && isFirstSlotOfPeriod && (
                             <div className="absolute inset-0 flex items-center justify-center">
@@ -1653,7 +1663,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             )
                           }
                           onMouseDown={() =>
-                            !unavailability &&
+                            !unavailability && !draggedBooking &&
                             handleMouseDown(
                               slot,
                               selectedInstructorId,
@@ -1662,15 +1672,25 @@ export const Calendar: React.FC<CalendarProps> = ({
                               dayIndex
                             )
                           }
-                          onMouseUp={() => handleMouseUp(day)}
-                          onMouseEnter={() =>
-                            handleMouseEnter(
-                              slot,
-                              selectedInstructorId,
-                              'instructor',
-                              dayIndex
-                            )
-                          }
+                          onMouseUp={() => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDrop();
+                            } else {
+                              handleMouseUp(day);
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDragOver(e, slot, selectedInstructorId, 'instructor', day);
+                            } else {
+                              handleMouseEnter(
+                                slot,
+                                selectedInstructorId,
+                                'instructor',
+                                dayIndex
+                              );
+                            }
+                          }}
                         >
                           {unavailability && isFirstSlotOfPeriod && (
                             <div className="absolute inset-0 flex items-center justify-center">
@@ -1914,6 +1934,79 @@ export const Calendar: React.FC<CalendarProps> = ({
               }
 
               return bookingElements;
+            })}
+
+            {/* Render drag preview */}
+            {dragPreview && (draggedBooking || resizingBooking) && weekDays.map((day, dayIndex) => {
+              const previewElements = [];
+              let columnOffset = 0;
+              const booking = draggedBooking || resizingBooking?.booking;
+
+              // Check if preview is on this day
+              if (!isSameDay(dragPreview.startTime, day)) {
+                return null;
+              }
+
+              // Add aircraft preview if selected and matches
+              if (hasAircraft && dragPreview.resourceType === 'aircraft' && dragPreview.resourceId === selectedAircraftId) {
+                const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                const previewPosition = getBookingPosition({
+                  ...booking!,
+                  startTime: dragPreview.startTime,
+                  endTime: dragPreview.endTime
+                });
+
+                previewElements.push(
+                  <div
+                    key={`preview-${dayIndex}-aircraft`}
+                    className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                    style={{
+                      gridColumn: columnIndex + 2,
+                      gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
+                      marginTop: previewPosition.marginTop,
+                      minHeight: slotHeight,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    <div className="font-medium text-xs truncate">Aircraft</div>
+                    <div className="text-xs opacity-75 truncate">
+                      {format(dragPreview.startTime, 'HH:mm')} - {format(dragPreview.endTime, 'HH:mm')}
+                    </div>
+                  </div>
+                );
+              }
+              columnOffset = hasAircraft ? 1 : 0;
+
+              // Add instructor preview if selected and matches
+              if (hasInstructor && dragPreview.resourceType === 'instructor' && dragPreview.resourceId === selectedInstructorId) {
+                const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                const previewPosition = getBookingPosition({
+                  ...booking!,
+                  startTime: dragPreview.startTime,
+                  endTime: dragPreview.endTime
+                });
+
+                previewElements.push(
+                  <div
+                    key={`preview-${dayIndex}-instructor`}
+                    className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                    style={{
+                      gridColumn: columnIndex + 2,
+                      gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
+                      marginTop: previewPosition.marginTop,
+                      minHeight: slotHeight,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    <div className="font-medium text-xs truncate">Instructor</div>
+                    <div className="text-xs opacity-75 truncate">
+                      {format(dragPreview.startTime, 'HH:mm')} - {format(dragPreview.endTime, 'HH:mm')}
+                    </div>
+                  </div>
+                );
+              }
+
+              return previewElements;
             })}
           </div>
         </div>
