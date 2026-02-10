@@ -203,17 +203,17 @@ export const AircraftFlightLogs: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-300">
-                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Date</th>
-                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Crew</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Date</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Crew</th>
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Duration</th>
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Flight type</th>
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Landings</th>
-                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Observation</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Observation</th>
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Tach</th>
-                  <th className="text-right py-2 px-2 font-semibold text-gray-700">Price</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Price</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,68 +224,76 @@ export const AircraftFlightLogs: React.FC = () => {
 
                   return (
                     <tr key={log.id} className={`border-b border-gray-200 ${isAlternateRow ? 'bg-blue-50' : 'bg-white'}`}>
-                      <td className="py-2 px-2 align-top">
-                        <div className="flex items-center space-x-1">
-                          <Calendar className="h-3 w-3 text-gray-400" />
-                          <span>{startDate.toLocaleDateString('en-GB')}</span>
-                        </div>
-                        <div className="flex items-center space-x-1 text-gray-500">
-                          <Calendar className="h-3 w-3 text-gray-400" />
-                          <span>{endDate.toLocaleDateString('en-GB')}</span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-2 align-top">
-                        <div className="flex items-center space-x-1">
-                          <span className="inline-block w-3 h-3 bg-blue-500 rounded-full"></span>
-                          <span className="text-gray-600 text-xs">Pilot:</span>
-                          <span className="text-blue-600">{log.student_name}</span>
-                        </div>
-                        {log.instructor_name && (
-                          <div className="flex items-center space-x-1 mt-1">
-                            <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
-                            <span className="text-gray-600 text-xs">Instructor:</span>
-                            <span className="text-blue-600">{log.instructor_name}</span>
+                      <td className="py-3 px-2 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center space-y-1">
+                          <div className="flex items-center space-x-1">
+                            <Calendar className="h-3 w-3 text-gray-400" />
+                            <span>{startDate.toLocaleDateString('en-GB')}</span>
                           </div>
-                        )}
+                          <div className="flex items-center space-x-1 text-gray-500">
+                            <Calendar className="h-3 w-3 text-gray-400" />
+                            <span>{endDate.toLocaleDateString('en-GB')}</span>
+                          </div>
+                        </div>
                       </td>
-                      <td className="py-2 px-2 text-center align-top">
+                      <td className="py-3 px-2 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center space-y-1">
+                          <div className="flex items-center space-x-1">
+                            <span className="inline-block w-3 h-3 bg-blue-500 rounded-full"></span>
+                            <span className="text-gray-600">Pilot:</span>
+                            <span className="text-blue-600">{log.student_name}</span>
+                          </div>
+                          {log.instructor_name && (
+                            <div className="flex items-center space-x-1">
+                              <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+                              <span className="text-gray-600">Instructor:</span>
+                              <span className="text-blue-600">{log.instructor_name}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-center align-middle">
                         <div>{log.flight_duration.toFixed(2)}</div>
-                        <div className="text-gray-500">hours</div>
+                        <div className="text-gray-500 text-xs">hours</div>
                       </td>
-                      <td className="py-2 px-2 text-center align-top">
+                      <td className="py-3 px-2 text-center align-middle">
                         <div>{log.payment_type || 'Pre-Paid'}</div>
                       </td>
-                      <td className="py-2 px-2 text-center align-top">
+                      <td className="py-3 px-2 text-center align-middle">
                         <div>{log.landings}</div>
                       </td>
-                      <td className="py-2 px-2 align-top">
+                      <td className="py-3 px-2 text-center align-middle">
                         {log.observations && (
                           <div className="text-gray-700">{log.observations}</div>
                         )}
                       </td>
-                      <td className="py-2 px-2 align-top">
-                        <div className="text-center mb-3">
-                          <div className="flex items-center justify-center space-x-1">
-                            {log.start_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
-                              <span key={`start-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px]">{digit}</span>
-                            ))}
-                            <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px]">{log.start_tach.toFixed(1).split('.')[1]}</span>
+                      <td className="py-3 px-2 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center space-y-3">
+                          <div className="text-center">
+                            <div className="flex items-center justify-center space-x-1">
+                              {log.start_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
+                                <span key={`start-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px] text-center">{digit}</span>
+                              ))}
+                              <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px] text-center">{log.start_tach.toFixed(1).split('.')[1]}</span>
+                            </div>
+                            <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
                           </div>
-                          <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="flex items-center justify-center space-x-1">
-                            {log.end_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
-                              <span key={`end-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px]">{digit}</span>
-                            ))}
-                            <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px]">{log.end_tach.toFixed(1).split('.')[1]}</span>
+                          <div className="text-center">
+                            <div className="flex items-center justify-center space-x-1">
+                              {log.end_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
+                                <span key={`end-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px] text-center">{digit}</span>
+                              ))}
+                              <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px] text-center">{log.end_tach.toFixed(1).split('.')[1]}</span>
+                            </div>
+                            <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
                           </div>
-                          <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
                         </div>
                       </td>
-                      <td className="py-2 px-2 text-right align-top">
-                        <div className="font-medium">AUD{log.total_cost.toFixed(2)}</div>
-                        <div className="text-gray-500">Paid AUD{log.total_cost.toFixed(2)}</div>
+                      <td className="py-3 px-2 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center space-y-1">
+                          <div className="font-medium">AUD{log.total_cost.toFixed(2)}</div>
+                          <div className="text-gray-500 text-xs">Paid AUD{log.total_cost.toFixed(2)}</div>
+                        </div>
                       </td>
                     </tr>
                   );
