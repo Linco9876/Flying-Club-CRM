@@ -46,56 +46,51 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
   // Automatically calculate start tach based on previous flight logs
   useEffect(() => {
     const calculateStartTach = async () => {
-      if (!booking.aircraftId || !isOpen) return;
+      if (!booking.aircraftId || !isOpen) {
+        console.log('Skipping tach calculation - no aircraft ID or modal closed');
+        return;
+      }
+
+      console.log('Calculating start tach for aircraft:', booking.aircraftId);
 
       try {
-        // Fetch all flight logs for this aircraft, ordered by end time
+        // Fetch all flight logs for this aircraft, ordered by end time descending
         const { data: logs, error } = await supabase
           .from('flight_logs')
           .select('start_time, end_time, start_tach, end_tach')
           .eq('aircraft_id', booking.aircraftId)
-          .order('end_time', { ascending: true });
+          .order('end_time', { ascending: false });
 
         if (error) {
           console.error('Error fetching flight logs:', error);
           return;
         }
 
+        console.log('Found flight logs:', logs?.length || 0);
+
         if (!logs || logs.length === 0) {
-          // No previous logs, leave tach at 0
+          console.log('No previous logs found');
           return;
         }
 
         const bookingStartTime = new Date(booking.startTime);
+        console.log('Booking start time:', bookingStartTime);
 
-        // Find the log immediately before the booking time
-        const logsBefore = logs.filter(log => new Date(log.end_time) <= bookingStartTime);
+        // Find the most recent log that ended before this booking started
+        const previousLog = logs.find(log => new Date(log.end_time) <= bookingStartTime);
 
-        // Find the log immediately after the booking time
-        const logsAfter = logs.filter(log => new Date(log.start_time) >= bookingStartTime);
-
-        if (logsBefore.length === 0) {
-          // No logs before this booking, use 0 or the first log's start tach
+        if (!previousLog) {
+          console.log('No logs before this booking time');
           return;
         }
 
-        // Get the most recent log before the booking
-        const previousLog = logsBefore[logsBefore.length - 1];
+        console.log('Found previous log ending at:', previousLog.end_time, 'with end tach:', previousLog.end_tach);
 
-        if (logsAfter.length === 0) {
-          // No logs after this booking, use the end tach from the previous log
-          setFormData(prev => ({ ...prev, tachStart: parseFloat(previousLog.end_tach) }));
-          return;
-        }
+        // Set the start tach to the end tach of the previous flight
+        const startTach = parseFloat(previousLog.end_tach);
+        console.log('Setting start tach to:', startTach);
 
-        // There are logs both before and after
-        // Check if there's a gap between the previous log and the next log
-        const nextLog = logsAfter[0];
-        const previousEndTach = parseFloat(previousLog.end_tach);
-        const nextStartTach = parseFloat(nextLog.start_tach);
-
-        // If the booking is between logs, use the previous log's end tach
-        setFormData(prev => ({ ...prev, tachStart: previousEndTach }));
+        setFormData(prev => ({ ...prev, tachStart: startTach }));
       } catch (err) {
         console.error('Error calculating start tach:', err);
       }
