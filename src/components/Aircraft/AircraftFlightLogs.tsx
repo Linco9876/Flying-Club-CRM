@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plane, ArrowLeft, Calendar, Clock, User, FileText } from 'lucide-react';
+import { Plane, ArrowLeft, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
 
@@ -17,14 +17,10 @@ interface FlightLog {
   booking: {
     start_time: string;
     end_time: string;
-    student: {
-      id: string;
-      name: string;
-    };
-    instructor: {
-      id: string;
-      name: string;
-    } | null;
+    student_id: string;
+    instructor_id: string | null;
+    student_name: string;
+    instructor_name: string | null;
   };
 }
 
@@ -35,6 +31,9 @@ export const AircraftFlightLogs: React.FC = () => {
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>(
+    new Date().toISOString().slice(0, 7)
+  );
 
   const aircraft = allAircraft.find(a => a.id === aircraftId);
 
@@ -46,66 +45,65 @@ export const AircraftFlightLogs: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        const { data: bookingsData, error: bookingsError } = await supabase
-          .from('bookings')
-          .select('id, start_time, end_time, aircraft_id, student_id, instructor_id')
-          .eq('aircraft_id', aircraftId)
-          .not('flight_logged', 'is', null);
-
-        if (bookingsError) throw bookingsError;
-
-        const bookingIds = bookingsData?.map(b => b.id) || [];
-
-        if (bookingIds.length === 0) {
-          setFlightLogs([]);
-          setLoading(false);
-          return;
-        }
-
         const { data: logsData, error: logsError } = await supabase
           .from('flight_logs')
-          .select('*')
-          .in('booking_id', bookingIds)
+          .select(`
+            id,
+            booking_id,
+            tach_start,
+            tach_end,
+            duration,
+            landings,
+            total_cost,
+            notes,
+            created_at,
+            bookings!inner (
+              id,
+              start_time,
+              end_time,
+              aircraft_id,
+              student_id,
+              instructor_id
+            )
+          `)
+          .eq('bookings.aircraft_id', aircraftId)
           .order('created_at', { ascending: false });
 
         if (logsError) throw logsError;
 
-        const studentIds = [...new Set(bookingsData?.map(b => b.student_id) || [])];
-        const instructorIds = [...new Set(bookingsData?.map(b => b.instructor_id).filter(Boolean) || [])];
+        const studentIds = [...new Set(logsData?.map((log: any) => log.bookings.student_id) || [])];
+        const instructorIds = [...new Set(
+          logsData
+            ?.map((log: any) => log.bookings.instructor_id)
+            .filter((id): id is string => id !== null) || []
+        )];
 
         const { data: studentsData } = await supabase
           .from('students')
           .select('id, name')
-          .in('id', studentIds);
+          .in('id', [...studentIds, ...instructorIds]);
 
-        const { data: instructorsData } = await supabase
-          .from('students')
-          .select('id, name')
-          .in('id', instructorIds);
+        const studentsMap = new Map(studentsData?.map(s => [s.id, s.name]) || []);
 
-        const studentsMap = new Map(studentsData?.map(s => [s.id, s]) || []);
-        const instructorsMap = new Map(instructorsData?.map(i => [i.id, i]) || []);
-
-        const combinedLogs: FlightLog[] = (logsData || []).map(log => {
-          const booking = bookingsData?.find(b => b.id === log.booking_id);
-          return {
-            id: log.id,
-            booking_id: log.booking_id,
-            tach_start: parseFloat(log.tach_start),
-            tach_end: parseFloat(log.tach_end),
-            duration: parseFloat(log.duration),
-            landings: log.landings,
-            total_cost: parseFloat(log.total_cost),
-            notes: log.notes,
-            created_at: log.created_at,
-            booking: {
-              start_time: booking?.start_time || '',
-              end_time: booking?.end_time || '',
-              student: studentsMap.get(booking?.student_id || '') || { id: '', name: 'Unknown' },
-              instructor: booking?.instructor_id ? instructorsMap.get(booking.instructor_id) || null : null
-            }
-          };
-        });
+        const combinedLogs: FlightLog[] = (logsData || []).map((log: any) => ({
+          id: log.id,
+          booking_id: log.booking_id,
+          tach_start: parseFloat(log.tach_start),
+          tach_end: parseFloat(log.tach_end),
+          duration: parseFloat(log.duration),
+          landings: log.landings || 0,
+          total_cost: parseFloat(log.total_cost),
+          notes: log.notes || '',
+          created_at: log.created_at,
+          booking: {
+            start_time: log.bookings.start_time,
+            end_time: log.bookings.end_time,
+            student_id: log.bookings.student_id,
+            instructor_id: log.bookings.instructor_id,
+            student_name: studentsMap.get(log.bookings.student_id) || 'Unknown',
+            instructor_name: log.bookings.instructor_id ? studentsMap.get(log.bookings.instructor_id) || 'Unknown' : null
+          }
+        }));
 
         setFlightLogs(combinedLogs);
       } catch (err) {
@@ -143,14 +141,26 @@ export const AircraftFlightLogs: React.FC = () => {
     );
   }
 
-  const totalFlightHours = flightLogs.reduce((sum, log) => sum + log.duration, 0);
-  const totalLandings = flightLogs.reduce((sum, log) => sum + log.landings, 0);
-  const totalRevenue = flightLogs.reduce((sum, log) => sum + log.total_cost, 0);
+  const filteredLogs = flightLogs.filter(log => {
+    const logDate = new Date(log.booking.start_time);
+    const logMonth = logDate.toISOString().slice(0, 7);
+    return logMonth === selectedMonth;
+  });
+
+  const totalFlightHours = filteredLogs.reduce((sum, log) => sum + log.duration, 0);
+  const totalLandings = filteredLogs.reduce((sum, log) => sum + log.landings, 0);
+  const totalRevenue = filteredLogs.reduce((sum, log) => sum + log.total_cost, 0);
+
+  const availableMonths = Array.from(
+    new Set(
+      flightLogs.map(log => new Date(log.booking.start_time).toISOString().slice(0, 7))
+    )
+  ).sort().reverse();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           <button
             onClick={() => navigate('/aircraft')}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -158,131 +168,151 @@ export const AircraftFlightLogs: React.FC = () => {
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-              <Plane className="h-6 w-6 mr-2 text-blue-600" />
-              {aircraft.registration} Flight Logs
+            <h1 className="text-xl font-bold text-gray-900 flex items-center">
+              <Plane className="h-5 w-5 mr-2 text-blue-600" />
+              Aircraft flight log for {aircraft.registration}
             </h1>
-            <p className="text-sm text-gray-600 mt-1">
-              {aircraft.make} {aircraft.model}
-            </p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Flight Hours</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{totalFlightHours.toFixed(1)}</p>
-            </div>
-            <Clock className="h-8 w-8 text-blue-600" />
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm text-gray-600">
+            Below, the logs for
+          </div>
+          <div className="flex items-center space-x-2">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="text-sm border border-gray-300 rounded px-2 py-1"
+            >
+              {availableMonths.map(month => {
+                const [year, monthNum] = month.split('-');
+                const date = new Date(parseInt(year), parseInt(monthNum) - 1);
+                const monthName = date.toLocaleDateString('en-US', { month: 'long' });
+                return (
+                  <option key={month} value={month}>
+                    {monthName} {year}
+                  </option>
+                );
+              })}
+            </select>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Landings</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{totalLandings}</p>
-            </div>
-            <Plane className="h-8 w-8 text-green-600" />
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">${totalRevenue.toFixed(2)}</p>
-            </div>
-            <FileText className="h-8 w-8 text-yellow-600" />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Flight History</h2>
-          <p className="text-sm text-gray-600 mt-1">{flightLogs.length} total flights</p>
-        </div>
-
-        {flightLogs.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            No flight logs found for this aircraft
+        {filteredLogs.length === 0 ? (
+          <div className="py-8 text-center text-gray-500 text-sm">
+            No flight logs found for this period
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
-            {flightLogs.map((log) => (
-              <div key={log.id} className="p-6 hover:bg-gray-50 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-4 mb-3">
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Calendar className="h-4 w-4 mr-1" />
-                        {new Date(log.booking.start_time).toLocaleDateString()}
-                      </div>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Clock className="h-4 w-4 mr-1" />
-                        {new Date(log.booking.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} -
-                        {new Date(log.booking.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-300">
+                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Date</th>
+                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Crew</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Duration</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Flight type</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Landings</th>
+                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Observation</th>
+                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Tach</th>
+                  <th className="text-right py-2 px-2 font-semibold text-gray-700">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLogs.map((log, index) => {
+                  const startDate = new Date(log.booking.start_time);
+                  const endDate = new Date(log.booking.end_time);
+                  const isAlternateRow = index % 2 === 1;
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                      <div>
-                        <p className="text-xs text-gray-500">Student</p>
-                        <div className="flex items-center mt-1">
-                          <User className="h-3 w-3 mr-1 text-gray-400" />
-                          <p className="text-sm font-medium text-gray-900">{log.booking.student.name}</p>
+                  return (
+                    <tr key={log.id} className={`border-b border-gray-200 ${isAlternateRow ? 'bg-blue-50' : 'bg-white'}`}>
+                      <td className="py-2 px-2 align-top">
+                        <div className="flex items-center space-x-1">
+                          <Calendar className="h-3 w-3 text-gray-400" />
+                          <span>{startDate.toLocaleDateString('en-GB')}</span>
                         </div>
-                      </div>
-
-                      {log.booking.instructor && (
-                        <div>
-                          <p className="text-xs text-gray-500">Instructor</p>
-                          <div className="flex items-center mt-1">
-                            <User className="h-3 w-3 mr-1 text-gray-400" />
-                            <p className="text-sm font-medium text-gray-900">{log.booking.instructor.name}</p>
+                        <div className="flex items-center space-x-1 text-gray-500">
+                          <Calendar className="h-3 w-3 text-gray-400" />
+                          <span>{endDate.toLocaleDateString('en-GB')}</span>
+                        </div>
+                      </td>
+                      <td className="py-2 px-2 align-top">
+                        <div className="flex items-center space-x-1">
+                          <span className="inline-block w-3 h-3 bg-gray-400 rounded-full"></span>
+                          <span className="text-blue-600">{log.booking.student_name}</span>
+                        </div>
+                        {log.booking.instructor_name && (
+                          <div className="flex items-center space-x-1">
+                            <span className="inline-block w-3 h-3 bg-gray-400 rounded-full"></span>
+                            <span className="text-blue-600">{log.booking.instructor_name}</span>
                           </div>
+                        )}
+                      </td>
+                      <td className="py-2 px-2 text-center align-top">
+                        <div>{log.duration.toFixed(2)}</div>
+                        <div className="text-gray-500">hours</div>
+                      </td>
+                      <td className="py-2 px-2 text-center align-top">
+                        <div>Pre-Paid</div>
+                      </td>
+                      <td className="py-2 px-2 text-center align-top">
+                        <div>{log.landings}</div>
+                      </td>
+                      <td className="py-2 px-2 align-top">
+                        {log.notes && (
+                          <div className="text-gray-700">{log.notes}</div>
+                        )}
+                      </td>
+                      <td className="py-2 px-2 align-top">
+                        <div className="text-center">
+                          <div className="flex items-center justify-center space-x-1">
+                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[1]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.tach_end.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.tach_end.toFixed(1).split('.')[1]}</span>
+                          </div>
+                          <div className="text-gray-500 mt-1">hours/hundredths</div>
                         </div>
-                      )}
-
-                      <div>
-                        <p className="text-xs text-gray-500">Tach Time</p>
-                        <p className="text-sm font-medium text-gray-900 mt-1">
-                          {log.tach_start.toFixed(1)} - {log.tach_end.toFixed(1)}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-gray-500">Duration</p>
-                        <p className="text-sm font-medium text-gray-900 mt-1">{log.duration.toFixed(1)} hrs</p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-gray-500">Landings</p>
-                        <p className="text-sm font-medium text-gray-900 mt-1">{log.landings}</p>
-                      </div>
-
-                      <div>
-                        <p className="text-xs text-gray-500">Cost</p>
-                        <p className="text-sm font-medium text-gray-900 mt-1">${log.total_cost.toFixed(2)}</p>
-                      </div>
-                    </div>
-
-                    {log.notes && (
-                      <div className="mt-3">
-                        <p className="text-xs text-gray-500">Notes</p>
-                        <p className="text-sm text-gray-700 mt-1">{log.notes}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+                        <div className="text-center mt-1">
+                          <div className="flex items-center justify-center space-x-1">
+                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.tach_start.toFixed(1).split('.')[1]}</span>
+                            <span className="inline-block border border-gray-400 px-1">{log.tach_end.toFixed(1).split('.')[0]}</span>
+                            <span className="inline-block border border-red-400 bg-red-100 px-1">{log.tach_end.toFixed(1).split('.')[1]}</span>
+                          </div>
+                          <div className="text-gray-500 mt-1">hours/hundredths</div>
+                        </div>
+                      </td>
+                      <td className="py-2 px-2 text-right align-top">
+                        <div className="font-medium">AUD{log.total_cost.toFixed(2)}</div>
+                        <div className="text-gray-500">Paid AUD{log.total_cost.toFixed(2)}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <p className="text-gray-600">Total Flight Hours</p>
+            <p className="text-lg font-bold text-gray-900">{totalFlightHours.toFixed(2)}</p>
+          </div>
+          <div>
+            <p className="text-gray-600">Total Landings</p>
+            <p className="text-lg font-bold text-gray-900">{totalLandings}</p>
+          </div>
+          <div>
+            <p className="text-gray-600">Total Revenue</p>
+            <p className="text-lg font-bold text-gray-900">AUD{totalRevenue.toFixed(2)}</p>
+          </div>
+        </div>
       </div>
     </div>
   );
