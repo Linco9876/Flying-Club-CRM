@@ -1,93 +1,82 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Edit, FileText, Trash2 } from 'lucide-react';
-
-interface Booking {
-  id: string;
-  student_id: string;
-  instructor_id?: string;
-  aircraft_id: string;
-  startTime: Date | string;
-  endTime: Date | string;
-  notes?: string;
-}
+import React from 'react';
+import { Edit, FileText, Trash2, MoreVertical, Check, X as XIcon } from 'lucide-react';
+import { Booking } from '../../types';
 
 interface BookingActionMenuProps {
   booking: Booking;
-  position: { x: number; y: number };
   onEdit: () => void;
   onLogFlight: () => void;
   onDelete: () => void;
-  onClose: () => void;
+  onViewTrainingRecord?: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
+  hasTrainingRecord?: boolean;
+  canDelete?: boolean;
+  canApprove?: boolean;
+  position?: { x: number; y: number };
+  onClose?: () => void;
 }
 
 export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   booking,
-  position,
   onEdit,
   onLogFlight,
   onDelete,
+  onViewTrainingRecord,
+  onApprove,
+  onReject,
+  hasTrainingRecord,
+  canDelete = true,
+  canApprove = false,
+  position,
   onClose,
 }) => {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [adjustedPosition, setAdjustedPosition] = useState(position);
+  const [isOpen, setIsOpen] = React.useState(position ? true : false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
+        if (position && onClose) {
+          onClose();
+        } else {
+          setIsOpen(false);
+        }
       }
     };
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose();
+        if (position && onClose) {
+          onClose();
+        } else {
+          setIsOpen(false);
+        }
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
+    if (isOpen || position) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!menuRef.current) return;
-
-    const menuRect = menuRef.current.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    let adjustedX = position.x;
-    let adjustedY = position.y;
-
-    if (position.x + menuRect.width > viewportWidth) {
-      adjustedX = viewportWidth - menuRect.width - 10;
-    }
-
-    if (position.y + menuRect.height > viewportHeight) {
-      adjustedY = viewportHeight - menuRect.height - 10;
-    }
-
-    setAdjustedPosition({ x: adjustedX, y: adjustedY });
-  }, [position]);
+  }, [isOpen, position, onClose]);
 
   const handleAction = (action: () => void) => {
     action();
-    onClose();
+    if (position && onClose) {
+      onClose();
+    } else {
+      setIsOpen(false);
+    }
   };
 
-  return (
-    <div
-      ref={menuRef}
-      className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 min-w-[180px]"
-      style={{
-        left: `${adjustedPosition.x}px`,
-        top: `${adjustedPosition.y}px`,
-      }}
-    >
+  const menuContent = (
+    <>
       <button
         onClick={() => handleAction(onEdit)}
         className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
@@ -104,15 +93,88 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
         <span>Log Flight</span>
       </button>
 
-      <div className="border-t border-gray-200 my-1"></div>
+      {hasTrainingRecord && onViewTrainingRecord && (
+        <button
+          onClick={() => handleAction(onViewTrainingRecord)}
+          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+        >
+          <FileText className="h-4 w-4" />
+          <span>View Training Record</span>
+        </button>
+      )}
 
-      <button
-        onClick={() => handleAction(onDelete)}
-        className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 transition-colors"
+      {canApprove && booking.status === 'pending_approval' && (
+        <>
+          <div className="border-t border-gray-200 my-1"></div>
+          {onApprove && (
+            <button
+              onClick={() => handleAction(onApprove)}
+              className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center space-x-2 transition-colors"
+            >
+              <Check className="h-4 w-4" />
+              <span>Approve Booking</span>
+            </button>
+          )}
+          {onReject && (
+            <button
+              onClick={() => handleAction(onReject)}
+              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 transition-colors"
+            >
+              <XIcon className="h-4 w-4" />
+              <span>Reject Booking</span>
+            </button>
+          )}
+        </>
+      )}
+
+      {canDelete && (
+        <>
+          <div className="border-t border-gray-200 my-1"></div>
+          <button
+            onClick={() => handleAction(onDelete)}
+            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>Delete Booking</span>
+          </button>
+        </>
+      )}
+    </>
+  );
+
+  if (position) {
+    return (
+      <div
+        ref={menuRef}
+        className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 min-w-[200px]"
+        style={{
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+        }}
       >
-        <Trash2 className="h-4 w-4" />
-        <span>Delete Booking</span>
+        {menuContent}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen(!isOpen);
+        }}
+        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        title="More actions"
+      >
+        <MoreVertical className="h-5 w-5 text-gray-600" />
       </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+          {menuContent}
+        </div>
+      )}
     </div>
   );
 };
