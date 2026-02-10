@@ -772,21 +772,9 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceId: string,
     resourceType: 'aircraft' | 'instructor',
     date: Date,
-    dayIndex?: number,
-    event?: React.MouseEvent
+    dayIndex?: number
   ) => {
     if (isResourceUnavailable(resourceId, resourceType, slot, date)) return;
-
-    if (event) {
-      let target = event.target as HTMLElement;
-      while (target) {
-        if (target.hasAttribute('data-booking-element')) {
-          return;
-        }
-        if (target === event.currentTarget) break;
-        target = target.parentElement as HTMLElement;
-      }
-    }
 
     setIsDragging(true);
     setDragStart({ hour: slot, resourceId, resourceType, dayIndex });
@@ -1102,9 +1090,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             slot,
                             resource.id,
                             resource.type,
-                            currentDate,
-                            undefined,
-                            e
+                            currentDate
                           )
                         }
                         onMouseUp={() => {
@@ -1572,8 +1558,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               selectedAircraftId,
                               'aircraft',
                               day,
-                              dayIndex,
-                              e
+                              dayIndex
                             )
                           }
                           onMouseUp={() => {
@@ -1685,8 +1670,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               selectedInstructorId,
                               'instructor',
                               day,
-                              dayIndex,
-                              e
+                              dayIndex
                             )
                           }
                           onMouseUp={() => {
