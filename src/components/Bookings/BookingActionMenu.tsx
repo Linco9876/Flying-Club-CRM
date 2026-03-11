@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit, FileText, Trash2, MoreVertical, Check, X as XIcon } from 'lucide-react';
+import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon } from 'lucide-react';
 import { Booking } from '../../types';
 
 interface BookingActionMenuProps {
