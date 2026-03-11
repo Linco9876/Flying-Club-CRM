@@ -775,6 +775,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     date: Date,
     dayIndex?: number
   ) => {
+    if (actionMenuBooking) return;
     if (isResourceUnavailable(resourceId, resourceType, slot, date)) return;
 
     setIsDragging(true);
