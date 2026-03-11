@@ -12,7 +12,11 @@ export interface FlightLog {
   start_tach: number;
   end_tach: number;
   flight_duration: number;
+  dual_time: number;
+  solo_time: number;
+  takeoffs?: number;
   landings?: number;
+  comments?: string;
   payment_type?: string;
   observations?: string;
   oil_added?: number;
@@ -32,7 +36,11 @@ export interface CreateFlightLogData {
   start_tach: number;
   end_tach: number;
   flight_duration: number;
+  dual_time: number;
+  solo_time: number;
+  takeoffs?: number;
   landings?: number;
+  comments?: string;
   payment_type?: string;
   observations?: string;
   oil_added?: number;
@@ -40,7 +48,7 @@ export interface CreateFlightLogData {
   passengers?: number;
 }
 
-export function useFlightLogs() {
+export function useFlightLogs(userId?: string) {
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,10 +58,16 @@ export function useFlightLogs() {
       setLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
+      let query = supabase
         .from('flight_logs')
         .select('*')
         .order('start_time', { ascending: false });
+
+      if (userId) {
+        query = query.or(`student_id.eq.${userId},instructor_id.eq.${userId}`);
+      }
+
+      const { data, error: fetchError } = await query;
 
       if (fetchError) throw fetchError;
       setFlightLogs(data || []);
@@ -67,7 +81,7 @@ export function useFlightLogs() {
 
   useEffect(() => {
     fetchFlightLogs();
-  }, []);
+  }, [userId]);
 
   const createFlightLog = async (logData: CreateFlightLogData) => {
     try {

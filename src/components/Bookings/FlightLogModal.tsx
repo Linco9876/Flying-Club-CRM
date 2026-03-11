@@ -39,6 +39,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const startTime = booking.startTime instanceof Date ? booking.startTime : new Date(booking.startTime);
   const endTime = booking.endTime instanceof Date ? booking.endTime : new Date(booking.endTime);
   const defaultDuration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+  const isDualFlight = !!booking.instructorId;
 
   const [formData, setFormData] = useState({
     start_time: startTime.toISOString(),
@@ -46,7 +47,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     start_tach: currentTach,
     end_tach: currentTach + defaultDuration,
     flight_duration: defaultDuration,
+    dual_time: isDualFlight ? defaultDuration : 0,
+    solo_time: isDualFlight ? 0 : defaultDuration,
+    takeoffs: undefined as number | undefined,
     landings: undefined as number | undefined,
+    comments: '',
     payment_type: '',
     observations: '',
     oil_added: undefined as number | undefined,
@@ -59,12 +64,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   useEffect(() => {
     const calculateStartTach = async () => {
-      if (!booking.aircraftId) {
-        console.log('Skipping tach calculation - no aircraft ID');
-        return;
-      }
-
-      console.log('Calculating start tach for aircraft:', booking.aircraftId);
+      if (!booking.aircraftId) return;
 
       try {
         const { data: logs, error } = await supabase
@@ -73,37 +73,18 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
           .eq('aircraft_id', booking.aircraftId)
           .order('end_time', { ascending: false });
 
-        if (error) {
-          console.error('Error fetching flight logs:', error);
-          return;
-        }
+        if (error || !logs || logs.length === 0) return;
 
-        console.log('Found flight logs:', logs?.length || 0);
-
-        if (!logs || logs.length === 0) {
-          console.log('No previous logs found');
-          return;
-        }
-
-        const bookingStartTime = startTime;
-        console.log('Booking start time:', bookingStartTime);
-
-        const previousLog = logs.find(log => new Date(log.end_time) <= bookingStartTime);
-
-        if (!previousLog) {
-          console.log('No logs before this booking time');
-          return;
-        }
-
-        console.log('Found previous log ending at:', previousLog.end_time, 'with end tach:', previousLog.end_tach);
+        const previousLog = logs.find(log => log.end_time && new Date(log.end_time) <= startTime);
+        if (!previousLog) return;
 
         const startTach = parseFloat(previousLog.end_tach);
-        console.log('Setting start tach to:', startTach);
+        const duration = defaultDuration;
 
         setFormData(prev => ({
           ...prev,
           start_tach: startTach,
-          end_tach: startTach + defaultDuration,
+          end_tach: startTach + duration,
         }));
         setTachAutoFilled(true);
       } catch (err) {
@@ -112,16 +93,22 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     };
 
     calculateStartTach();
-  }, [booking.aircraftId, startTime, defaultDuration]);
+  }, [booking.aircraftId]);
 
   const handleTachChange = (field: 'start_tach' | 'end_tach', value: string) => {
     const numValue = parseFloat(value) || 0;
     const newData = { ...formData, [field]: numValue };
 
     if (field === 'start_tach') {
-      newData.flight_duration = Math.max(0, formData.end_tach - numValue);
+      const duration = Math.max(0, formData.end_tach - numValue);
+      newData.flight_duration = duration;
+      newData.dual_time = isDualFlight ? duration : 0;
+      newData.solo_time = isDualFlight ? 0 : duration;
     } else {
-      newData.flight_duration = Math.max(0, numValue - formData.start_tach);
+      const duration = Math.max(0, numValue - formData.start_tach);
+      newData.flight_duration = duration;
+      newData.dual_time = isDualFlight ? duration : 0;
+      newData.solo_time = isDualFlight ? 0 : duration;
     }
 
     setFormData(newData);
@@ -133,6 +120,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       ...formData,
       flight_duration: duration,
       end_tach: formData.start_tach + duration,
+      dual_time: isDualFlight ? duration : 0,
+      solo_time: isDualFlight ? 0 : duration,
     });
   };
 
@@ -154,20 +143,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (formData.start_tach >= formData.end_tach) {
       return 'End tach must be greater than start tach';
     }
-
     if (formData.flight_duration <= 0) {
       return 'Flight duration must be positive';
     }
-
-    settings.forEach((setting) => {
-      if (setting.is_mandatory && setting.is_enabled) {
-        const value = formData[setting.field_name as keyof typeof formData];
-        if (value === undefined || value === '' || value === null) {
-          throw new Error(`${setting.field_name} is required`);
-        }
-      }
-    });
-
     return null;
   };
 
@@ -193,6 +171,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         start_tach: formData.start_tach,
         end_tach: formData.end_tach,
         flight_duration: formData.flight_duration,
+        dual_time: formData.dual_time,
+        solo_time: formData.solo_time,
+        takeoffs: formData.takeoffs,
+        comments: formData.comments || undefined,
         ...(isFieldEnabled('landings') && { landings: formData.landings }),
         ...(isFieldEnabled('payment_type') && { payment_type: formData.payment_type }),
         ...(isFieldEnabled('observations') && { observations: formData.observations }),
@@ -220,6 +202,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   const student = users.find((u) => u.id === booking.studentId);
   const instructor = booking.instructorId ? users.find((u) => u.id === booking.instructorId) : null;
+  const pilotInCommand = instructor ? instructor.name : (student?.name || 'Unknown');
+  const otherPilot = instructor ? student?.name || 'Unknown' : (isDualFlight ? student?.name || 'Unknown' : 'Self');
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -235,45 +219,32 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Flight Summary */}
+          <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">Aircraft</span>
+              <p className="font-medium text-gray-900">
+                {aircraft ? `${aircraft.registration} – ${aircraft.make} ${aircraft.model}` : 'Unknown'}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">Pilot in Command</span>
+              <p className="font-medium text-gray-900">{pilotInCommand}</p>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">
+                {instructor ? 'Student' : 'Other Crew'}
+              </span>
+              <p className="font-medium text-gray-900">{otherPilot}</p>
+            </div>
+            <div>
+              <span className="text-xs font-medium text-gray-500 uppercase">Flight Type</span>
+              <p className="font-medium text-gray-900">{isDualFlight ? 'Dual (with Instructor)' : 'Solo'}</p>
+            </div>
+          </div>
+
+          {/* Times */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Aircraft
-              </label>
-              <input
-                type="text"
-                value={aircraft ? `${aircraft.registration} - ${aircraft.make} ${aircraft.model}` : 'Unknown'}
-                disabled
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Pilot
-              </label>
-              <input
-                type="text"
-                value={student?.name || 'Unknown'}
-                disabled
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600"
-              />
-            </div>
-
-            {instructor && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Instructor
-                </label>
-                <input
-                  type="text"
-                  value={instructor.name || 'Unknown'}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600"
-                />
-              </div>
-            )}
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Start Time
@@ -305,6 +276,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
           </div>
 
+          {/* Tach / Duration */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -319,9 +291,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 required
               />
               {tachAutoFilled && (
-                <p className="text-xs text-green-600 mt-1">
-                  Auto-filled from previous flight log
-                </p>
+                <p className="text-xs text-green-600 mt-1">Auto-filled from previous log</p>
               )}
             </div>
 
@@ -354,22 +324,102 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
           </div>
 
-          {isFieldEnabled('landings') && (
+          {/* Dual / Solo / Takeoffs / Landings */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Landings {isFieldMandatory('landings') && <span className="text-red-500">*</span>}
+                Dual Time (hrs)
               </label>
               <input
                 type="number"
-                value={formData.landings || ''}
+                step="0.1"
+                min="0"
+                value={formData.dual_time.toFixed(1)}
                 onChange={(e) =>
-                  setFormData({ ...formData, landings: e.target.value ? parseInt(e.target.value) : undefined })
+                  setFormData({ ...formData, dual_time: parseFloat(e.target.value) || 0 })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldMandatory('landings')}
               />
             </div>
-          )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Solo Time (hrs)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                value={formData.solo_time.toFixed(1)}
+                onChange={(e) =>
+                  setFormData({ ...formData, solo_time: parseFloat(e.target.value) || 0 })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Takeoffs
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={formData.takeoffs ?? ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, takeoffs: e.target.value ? parseInt(e.target.value) : undefined })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {isFieldEnabled('landings') ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Landings {isFieldMandatory('landings') && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.landings ?? ''}
+                  onChange={(e) =>
+                    setFormData({ ...formData, landings: e.target.value ? parseInt(e.target.value) : undefined })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required={isFieldMandatory('landings')}
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Landings
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.landings ?? ''}
+                  onChange={(e) =>
+                    setFormData({ ...formData, landings: e.target.value ? parseInt(e.target.value) : undefined })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Comments */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Comments
+            </label>
+            <textarea
+              value={formData.comments}
+              onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
+              rows={3}
+              placeholder="Flight notes, debrief summary, areas to work on..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
 
           {isFieldEnabled('payment_type') && (
             <div>
@@ -450,7 +500,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
           {isFieldEnabled('observations') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Observations/Comments {isFieldMandatory('observations') && <span className="text-red-500">*</span>}
+                Observations {isFieldMandatory('observations') && <span className="text-red-500">*</span>}
               </label>
               <textarea
                 value={formData.observations}

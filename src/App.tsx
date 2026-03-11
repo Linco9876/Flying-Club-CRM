@@ -17,6 +17,7 @@ import { BookingsList } from './components/Bookings/BookingsList';
 import { StudentProfile } from './components/Students/StudentProfile';
 import { StudentList } from './components/Students/StudentList';
 import { StudentProfilePage } from './components/Students/StudentProfilePage';
+import { MyLogbookPage } from './components/Students/MyLogbookPage';
 import { AircraftList } from './components/Aircraft/AircraftList';
 import { AircraftFlightLogs } from './components/Aircraft/AircraftFlightLogs';
 import { MaintenanceBoard } from './components/Maintenance/MaintenanceBoard';
@@ -279,6 +280,8 @@ const AuthenticatedApp: React.FC<{
         return <TrainingModuleBuilder />;
       case 'profile':
         return <StudentProfile />;
+      case 'mylogbook':
+        return <MyLogbookPage />;
       case 'settings':
         return <SettingsDashboard />;
       default:
@@ -375,6 +378,7 @@ const getRequiredActionForView = (view: string) => {
     'reports': 'view-reports',
     'safety': 'view-safety',
     'profile': 'view-students',
+    'mylogbook': 'view-logbook',
     'settings': 'view-settings'
   };
   return actionMap[view] || 'view-dashboard';
@@ -384,6 +388,7 @@ const getRequiredResourceForView = (view: string) => {
   const resourceMap: Record<string, 'all' | 'own'> = {
     'bookings': 'own',
     'profile': 'own',
+    'mylogbook': 'own',
     'settings': 'own'
   };
   return resourceMap[view] || 'all';

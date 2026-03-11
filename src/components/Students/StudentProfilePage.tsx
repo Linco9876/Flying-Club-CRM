@@ -4,10 +4,10 @@ import { useAuth } from '../../context/AuthContext';
 import { TrainingRecord } from '../../types';
 import {
   ArrowLeft,
-  User, 
-  Phone, 
-  Mail, 
-  Calendar, 
+  User,
+  Phone,
+  Mail,
+  Calendar,
   Award,
   Clock,
   FileText,
@@ -16,13 +16,15 @@ import {
   Edit,
   CheckCircle,
   AlertTriangle,
-  Filter
+  Filter,
+  BookOpen
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
+import { LogbookTab } from './LogbookTab';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -217,6 +219,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     ? new Date(Math.max(...studentTrainingRecords.map(r => r.date.getTime())))
     : null;
 
+  const flightStatsNote = 'From training records';
+
   const isExpiryNear = (date?: Date) => {
     if (!date) return false;
     const daysUntilExpiry = Math.ceil((date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
@@ -225,6 +229,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: <User className="h-4 w-4" /> },
+    { id: 'logbook', label: 'Logbook', icon: <BookOpen className="h-4 w-4" /> },
     { id: 'training', label: 'Training Records', icon: <FileText className="h-4 w-4" /> }
   ];
 
@@ -531,6 +536,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'logbook' && student && (
+        <LogbookTab
+          userId={student.id}
+          userName={student.name}
+          isInstructor={false}
+        />
       )}
 
       {activeTab === 'training' && (

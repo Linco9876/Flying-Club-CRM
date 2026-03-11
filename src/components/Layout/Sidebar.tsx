@@ -37,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     { id: 'training', label: 'Training Records', icon: BookOpen, roles: ['admin', 'instructor'] },
     { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },
     { id: 'profile', label: 'My Profile', icon: Users, roles: ['student'] },
+    { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin'] },
     { id: 'billing', label: 'Billing', icon: CreditCard, roles: ['admin', 'instructor'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['admin', 'instructor'] },
     { id: 'safety', label: 'Safety', icon: Shield, roles: ['admin', 'instructor', 'student'] },
