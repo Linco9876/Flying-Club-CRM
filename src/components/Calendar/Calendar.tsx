@@ -577,6 +577,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     date: Date
   ) => {
     if (draggedBooking || resizingBooking || isDragging) return;
+    if (actionMenuBooking) { setActionMenuBooking(null); return; }
 
     if (isResourceUnavailable(resourceId, resourceType, slot, date)) {
       toast.error('Cannot book during unavailable time');
