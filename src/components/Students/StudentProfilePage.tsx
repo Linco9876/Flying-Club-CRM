@@ -2,23 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TrainingRecord } from '../../types';
-import {
-  ArrowLeft,
-  User,
-  Phone,
-  Mail,
-  Calendar,
-  Award,
-  Clock,
-  FileText,
-  Plus,
-  Eye,
-  Edit,
-  CheckCircle,
-  AlertTriangle,
-  Filter,
-  BookOpen
-} from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, Eye, CreditCard as Edit, CheckCircle, AlertTriangle, Filter, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
