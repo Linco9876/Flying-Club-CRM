@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft, Defect } from '../../types';
-import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, Calendar, FileText } from 'lucide-react';
+import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText, MoreVertical, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
@@ -19,6 +19,18 @@ export const AircraftList: React.FC = () => {
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
   const [viewingAircraft, setViewingAircraft] = useState<Aircraft | null>(null);
   const [selectedAircraftForDefect, setSelectedAircraftForDefect] = useState<string>('');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleAddAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'>) => {
     await addAircraft(aircraftData);
@@ -212,34 +224,49 @@ export const AircraftList: React.FC = () => {
                 </div>
               )}
 
-              <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  onClick={() => openViewModal(aircraftItem)}
-                  className="flex items-center space-x-1 px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
-                >
-                  <Eye className="h-3 w-3" />
-                  <span>View</span>
-                </button>
-                <button
-                  onClick={() => navigate(`/aircraft/${aircraftItem.id}/logs`)}
-                  className="flex items-center space-x-1 px-3 py-1 text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded transition-colors"
-                >
-                  <FileText className="h-3 w-3" />
-                  <span>Logs</span>
-                </button>
-                <button
-                  onClick={() => openEditForm(aircraftItem)}
-                  className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleReportDefect(aircraftItem.id)}
-                  className="flex items-center space-x-1 px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
-                >
-                  <Flag className="h-3 w-3" />
-                  <span>Report Defect</span>
-                </button>
+              <div className="flex justify-end pt-2" ref={openMenuId === aircraftItem.id ? menuRef : undefined}>
+                <div className="relative">
+                  <button
+                    onClick={() => setOpenMenuId(openMenuId === aircraftItem.id ? null : aircraftItem.id)}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+                    aria-label="Actions"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
+                  {openMenuId === aircraftItem.id && (
+                    <div className="absolute right-0 bottom-full mb-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                      <button
+                        onClick={() => { openViewModal(aircraftItem); setOpenMenuId(null); }}
+                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Eye className="h-4 w-4 mr-2 text-gray-400" />
+                        View Details
+                      </button>
+                      <button
+                        onClick={() => { navigate(`/aircraft/${aircraftItem.id}/logs`); setOpenMenuId(null); }}
+                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <FileText className="h-4 w-4 mr-2 text-gray-400" />
+                        Flight Logs
+                      </button>
+                      <button
+                        onClick={() => { openEditForm(aircraftItem); setOpenMenuId(null); }}
+                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Pencil className="h-4 w-4 mr-2 text-gray-400" />
+                        Edit
+                      </button>
+                      <div className="border-t border-gray-100 my-1" />
+                      <button
+                        onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
+                        className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <Flag className="h-4 w-4 mr-2" />
+                        Report Defect
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
