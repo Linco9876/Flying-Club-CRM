@@ -37,11 +37,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        if (position && onClose) {
-          onClose();
-        } else {
-          setIsOpen(false);
-        }
+        setIsOpen(false);
       }
     };
 
@@ -55,8 +51,10 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       }
     };
 
-    if (isOpen || position) {
+    if (isOpen && !position) {
       document.addEventListener('mousedown', handleClickOutside);
+    }
+    if (isOpen || position) {
       document.addEventListener('keydown', handleEscape);
     }
 

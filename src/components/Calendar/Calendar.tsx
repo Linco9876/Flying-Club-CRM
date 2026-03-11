@@ -2127,6 +2127,14 @@ export const Calendar: React.FC<CalendarProps> = ({
       )}
 
       {actionMenuBooking && (
+        <div
+          className="fixed inset-0 z-40"
+          onMouseDown={(e) => { e.stopPropagation(); setActionMenuBooking(null); }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
+
+      {actionMenuBooking && (
         <BookingActionMenu
           booking={actionMenuBooking}
           position={actionMenuPosition}
