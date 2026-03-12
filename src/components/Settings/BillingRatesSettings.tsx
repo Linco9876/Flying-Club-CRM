@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DollarSign, CreditCard, Plus, Trash2, Users } from 'lucide-react';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { UserRole } from '../../types';
@@ -24,6 +24,20 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   const [newFlightTypeName, setNewFlightTypeName] = useState('');
   const [newFlightTypeRoles, setNewFlightTypeRoles] = useState<UserRole[]>(['student', 'pilot', 'instructor', 'admin']);
   const [newPaymentMethodName, setNewPaymentMethodName] = useState('');
+  const [localFlightTypeNames, setLocalFlightTypeNames] = useState<Record<string, string>>({});
+  const [localPaymentMethodNames, setLocalPaymentMethodNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const names: Record<string, string> = {};
+    flightTypes.forEach(ft => { names[ft.id] = ft.name; });
+    setLocalFlightTypeNames(names);
+  }, [flightTypes]);
+
+  useEffect(() => {
+    const names: Record<string, string> = {};
+    paymentMethods.forEach(pm => { names[pm.id] = pm.name; });
+    setLocalPaymentMethodNames(names);
+  }, [paymentMethods]);
 
   const allRoles: UserRole[] = ['admin', 'instructor', 'pilot', 'student'];
 
@@ -42,7 +56,9 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
-  const handleFlightTypeNameChange = (id: string, name: string) => {
+  const handleFlightTypeNameBlur = (id: string) => {
+    const name = localFlightTypeNames[id] ?? '';
+    if (!name.trim()) return;
     updateFlightType(id, { name });
     onFormChange();
   };
@@ -52,7 +68,9 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
-  const handlePaymentMethodNameChange = (id: string, name: string) => {
+  const handlePaymentMethodNameBlur = (id: string) => {
+    const name = localPaymentMethodNames[id] ?? '';
+    if (!name.trim()) return;
     updatePaymentMethod(id, { name });
     onFormChange();
   };
@@ -104,8 +122,9 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
               <div key={flightType.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
                 <input
                   type="text"
-                  value={flightType.name}
-                  onChange={(e) => handleFlightTypeNameChange(flightType.id, e.target.value)}
+                  value={localFlightTypeNames[flightType.id] ?? flightType.name}
+                  onChange={(e) => setLocalFlightTypeNames(prev => ({ ...prev, [flightType.id]: e.target.value }))}
+                  onBlur={() => handleFlightTypeNameBlur(flightType.id)}
                   disabled={!canEdit}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                   placeholder="Flight type name"
@@ -193,8 +212,9 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
               <div key={method.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
                 <input
                   type="text"
-                  value={method.name}
-                  onChange={(e) => handlePaymentMethodNameChange(method.id, e.target.value)}
+                  value={localPaymentMethodNames[method.id] ?? method.name}
+                  onChange={(e) => setLocalPaymentMethodNames(prev => ({ ...prev, [method.id]: e.target.value }))}
+                  onBlur={() => handlePaymentMethodNameBlur(method.id)}
                   disabled={!canEdit}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                   placeholder="Payment method name"
