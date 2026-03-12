@@ -139,7 +139,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex justify-between items-center px-4 py-3 border-b border-gray-200 bg-gray-50">
           <h2 className="text-base font-semibold text-gray-900">
             {isEdit ? 'Edit Booking' : 'New Booking'}
@@ -183,70 +183,74 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('startDate', userRole) && (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Start Date {isFieldRequired('startDate', userRole) && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="date"
-                value={formData.date}
-                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('startDate', userRole)}
-              />
-            </div>
+          <div className="w-1/2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Start Date {isFieldRequired('startDate', userRole) && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required={isFieldRequired('startDate', userRole)}
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                <Clock className="h-3.5 w-3.5 inline mr-1" />
-                Start Time {isFieldRequired('startTime', userRole) && <span className="text-red-500">*</span>}
-              </label>
-              <select
-                value={formData.startTime}
-                onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('startTime', userRole)}
-              >
-                <option value="">Select time</option>
-                {timeOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  <Clock className="h-3.5 w-3.5 inline mr-1" />
+                  Start Time {isFieldRequired('startTime', userRole) && <span className="text-red-500">*</span>}
+                </label>
+                <select
+                  value={formData.startTime}
+                  onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required={isFieldRequired('startTime', userRole)}
+                >
+                  <option value="">Select time</option>
+                  {timeOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           )}
 
           {!isLoading && isFieldVisible('endDate', userRole) && (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                End Date {isFieldRequired('endDate', userRole) && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="date"
-                value={formData.endDate}
-                onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('endDate', userRole)}
-              />
-            </div>
+          <div className="w-1/2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  End Date {isFieldRequired('endDate', userRole) && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="date"
+                  value={formData.endDate}
+                  onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required={isFieldRequired('endDate', userRole)}
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                End Time {isFieldRequired('endTime', userRole) && <span className="text-red-500">*</span>}
-              </label>
-              <select
-                value={formData.endTime}
-                onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('endTime', userRole)}
-              >
-                <option value="">Select time</option>
-                {timeOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  End Time {isFieldRequired('endTime', userRole) && <span className="text-red-500">*</span>}
+                </label>
+                <select
+                  value={formData.endTime}
+                  onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required={isFieldRequired('endTime', userRole)}
+                >
+                  <option value="">Select time</option>
+                  {timeOptions.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           )}
@@ -297,7 +301,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('paymentType', userRole) && (
-          <div>
+          <div className="w-1/2">
             <label className="block text-xs font-medium text-gray-600 mb-1">
               <CreditCard className="h-3.5 w-3.5 inline mr-1" />
               Payment Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
@@ -316,14 +320,18 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('notes', userRole) && (
-          <div>
+          <div className="w-1/2">
             <label className="block text-xs font-medium text-gray-600 mb-1">
               Notes {isFieldRequired('notes', userRole) && <span className="text-red-500">*</span>}
             </label>
             <textarea
               value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              onChange={(e) => {
+                setFormData(prev => ({ ...prev, notes: e.target.value }));
+                e.target.style.height = 'auto';
+                e.target.style.height = e.target.scrollHeight + 'px';
+              }}
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
               rows={2}
               placeholder="Lesson details, special requirements, etc."
               required={isFieldRequired('notes', userRole)}
