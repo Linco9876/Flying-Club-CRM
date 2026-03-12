@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, CreditCard, Plus, Trash2, Users } from 'lucide-react';
+import { DollarSign, CreditCard, Plus, Trash2, Users, Lock } from 'lucide-react';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { UserRole } from '../../types';
 
@@ -68,6 +68,11 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
+  const handleForcedPaymentMethodChange = (id: string, value: string) => {
+    updateFlightType(id, { forcedPaymentMethodId: value === '' ? null : value });
+    onFormChange();
+  };
+
   const handlePaymentMethodNameBlur = (id: string) => {
     const name = localPaymentMethodNames[id] ?? '';
     if (!name.trim()) return;
@@ -104,92 +109,126 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       {/* Flight Types */}
       <div className="space-y-4">
         <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <h3 className="text-lg font-medium text-gray-900 mb-1 flex items-center">
             <Users className="h-5 w-5 mr-2" />
             Flight Types
           </h3>
           <p className="text-sm text-gray-600 mb-4">
-            Define flight types and which user roles can use them. These will be used when setting up aircraft rates.
+            Define flight types, which roles can use them, and optionally force a specific payment method when that type is selected.
           </p>
 
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3 px-3 pb-2">
-              <div className="text-sm font-medium text-gray-600">Flight Type Name</div>
-              <div className="text-sm font-medium text-gray-600 col-span-2">Allowed Roles</div>
-            </div>
-
             {flightTypes.map(flightType => (
-              <div key={flightType.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                <input
-                  type="text"
-                  value={localFlightTypeNames[flightType.id] ?? flightType.name}
-                  onChange={(e) => setLocalFlightTypeNames(prev => ({ ...prev, [flightType.id]: e.target.value }))}
-                  onBlur={() => handleFlightTypeNameBlur(flightType.id)}
-                  disabled={!canEdit}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                  placeholder="Flight type name"
-                />
-                <div className="flex-[2] flex flex-wrap gap-2">
-                  {allRoles.map(role => (
-                    <label key={role} className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50">
-                      <input
-                        type="checkbox"
-                        checked={flightType.allowedRoles.includes(role)}
-                        onChange={() => handleFlightTypeRolesChange(
-                          flightType.id,
-                          toggleRole(flightType.allowedRoles, role)
-                        )}
-                        disabled={!canEdit}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 capitalize">{role}</span>
-                    </label>
-                  ))}
+              <div key={flightType.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={localFlightTypeNames[flightType.id] ?? flightType.name}
+                    onChange={(e) => setLocalFlightTypeNames(prev => ({ ...prev, [flightType.id]: e.target.value }))}
+                    onBlur={() => handleFlightTypeNameBlur(flightType.id)}
+                    disabled={!canEdit}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    placeholder="Flight type name"
+                  />
+                  {canEdit && (
+                    <button
+                      onClick={() => {
+                        deleteFlightType(flightType.id);
+                        onFormChange();
+                      }}
+                      className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
-                {canEdit && (
-                  <button
-                    onClick={() => {
-                      deleteFlightType(flightType.id);
-                      onFormChange();
-                    }}
-                    className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Allowed Roles</p>
+                    <div className="flex flex-wrap gap-2">
+                      {allRoles.map(role => (
+                        <label key={role} className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={flightType.allowedRoles.includes(role)}
+                            onChange={() => handleFlightTypeRolesChange(
+                              flightType.id,
+                              toggleRole(flightType.allowedRoles, role)
+                            )}
+                            disabled={!canEdit}
+                            className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-xs text-gray-700 capitalize">{role}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide flex items-center gap-1">
+                      <Lock className="h-3 w-3" />
+                      Force Payment Method
+                    </p>
+                    <select
+                      value={flightType.forcedPaymentMethodId ?? ''}
+                      onChange={(e) => handleForcedPaymentMethodChange(flightType.id, e.target.value)}
+                      disabled={!canEdit || paymentMethods.length === 0}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed bg-white"
+                    >
+                      <option value="">No forced method</option>
+                      {paymentMethods.map(pm => (
+                        <option key={pm.id} value={pm.id}>{pm.name}</option>
+                      ))}
+                    </select>
+                    {flightType.forcedPaymentMethodId && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        Bookings with this flight type must use "{paymentMethods.find(p => p.id === flightType.forcedPaymentMethodId)?.name ?? '—'}".
+                      </p>
+                    )}
+                    {paymentMethods.length === 0 && (
+                      <p className="text-xs text-gray-400 mt-1">Add payment methods below to enable this option.</p>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
 
             {canEdit && (
-              <div className="flex items-start space-x-3 p-3 border-2 border-dashed border-gray-300 rounded-lg">
-                <input
-                  type="text"
-                  value={newFlightTypeName}
-                  onChange={(e) => setNewFlightTypeName(e.target.value)}
-                  placeholder="New flight type name"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddFlightType()}
-                />
-                <div className="flex-[2] flex flex-wrap gap-2">
-                  {allRoles.map(role => (
-                    <label key={role} className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50">
-                      <input
-                        type="checkbox"
-                        checked={newFlightTypeRoles.includes(role)}
-                        onChange={() => setNewFlightTypeRoles(toggleRole(newFlightTypeRoles, role))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 capitalize">{role}</span>
-                    </label>
-                  ))}
+              <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg space-y-3">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={newFlightTypeName}
+                    onChange={(e) => setNewFlightTypeName(e.target.value)}
+                    placeholder="New flight type name"
+                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddFlightType()}
+                  />
+                  <button
+                    onClick={handleAddFlightType}
+                    disabled={!newFlightTypeName.trim()}
+                    className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
                 </div>
-                <button
-                  onClick={handleAddFlightType}
-                  disabled={!newFlightTypeName.trim()}
-                  className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Allowed Roles</p>
+                  <div className="flex flex-wrap gap-2">
+                    {allRoles.map(role => (
+                      <label key={role} className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={newFlightTypeRoles.includes(role)}
+                          onChange={() => setNewFlightTypeRoles(toggleRole(newFlightTypeRoles, role))}
+                          className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <span className="text-xs text-gray-700 capitalize">{role}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -199,17 +238,17 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       {/* Payment Methods */}
       <div className="space-y-4">
         <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+          <h3 className="text-lg font-medium text-gray-900 mb-1 flex items-center">
             <CreditCard className="h-5 w-5 mr-2" />
             Payment Methods
           </h3>
           <p className="text-sm text-gray-600 mb-4">
-            Define available payment methods that can be selected as default for each aircraft.
+            Define available payment methods that can be selected as default for each aircraft, or forced for specific flight types.
           </p>
 
           <div className="space-y-3">
             {paymentMethods.map(method => (
-              <div key={method.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+              <div key={method.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
                 <input
                   type="text"
                   value={localPaymentMethodNames[method.id] ?? method.name}
@@ -225,7 +264,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                       deletePaymentMethod(method.id);
                       onFormChange();
                     }}
-                    className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                    className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -246,7 +285,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                 <button
                   onClick={handleAddPaymentMethod}
                   disabled={!newPaymentMethodName.trim()}
-                  className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus className="h-5 w-5" />
                 </button>

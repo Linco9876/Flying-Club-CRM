@@ -8,6 +8,7 @@ export interface FlightType {
   name: string;
   allowedRoles: UserRole[];
   displayOrder: number;
+  forcedPaymentMethodId: string | null;
 }
 
 export interface PaymentMethod {
@@ -53,7 +54,8 @@ export const useBillingSettings = () => {
           id: ft.id,
           name: ft.name,
           allowedRoles: ft.allowed_roles || [],
-          displayOrder: ft.display_order
+          displayOrder: ft.display_order,
+          forcedPaymentMethodId: ft.forced_payment_method_id ?? null
         })));
       }
     } catch (error) {
@@ -105,7 +107,8 @@ export const useBillingSettings = () => {
           id: data.id,
           name: data.name,
           allowedRoles: data.allowed_roles || [],
-          displayOrder: data.display_order
+          displayOrder: data.display_order,
+          forcedPaymentMethodId: data.forced_payment_method_id ?? null
         }]);
         toast.success('Flight type added');
       }
@@ -121,6 +124,7 @@ export const useBillingSettings = () => {
       if (updates.name !== undefined) dbUpdates.name = updates.name;
       if (updates.allowedRoles !== undefined) dbUpdates.allowed_roles = updates.allowedRoles;
       if (updates.displayOrder !== undefined) dbUpdates.display_order = updates.displayOrder;
+      if ('forcedPaymentMethodId' in updates) dbUpdates.forced_payment_method_id = updates.forcedPaymentMethodId ?? null;
 
       const { error } = await supabase
         .from('flight_types')
