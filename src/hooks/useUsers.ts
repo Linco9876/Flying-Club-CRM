@@ -63,12 +63,7 @@ export const useUsers = () => {
   };
 
   const getInstructors = () => {
-    return users.filter(u =>
-      u.roles?.includes('instructor') ||
-      u.roles?.includes('admin') ||
-      u.role === 'instructor' ||
-      u.role === 'admin'
-    );
+    return users.filter(u => u.roles?.includes('instructor'));
   };
 
   const getPilots = () => {

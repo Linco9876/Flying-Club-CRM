@@ -29,6 +29,16 @@ export const useStudents = () => {
 
       if (endorsementsError) throw endorsementsError;
 
+      const { data: rolesData } = await supabase
+        .from('user_roles')
+        .select('user_id, role');
+
+      const rolesMap = new Map<string, string[]>();
+      (rolesData || []).forEach((r: any) => {
+        if (!rolesMap.has(r.user_id)) rolesMap.set(r.user_id, []);
+        rolesMap.get(r.user_id)!.push(r.role);
+      });
+
       const studentsMap = new Map(studentsData?.map(s => [s.id, s]) || []);
       const endorsementsMap = new Map<string, Endorsement[]>();
 
@@ -47,11 +57,17 @@ export const useStudents = () => {
 
       const combinedStudents: Student[] = (usersData || []).map(user => {
         const studentData = studentsMap.get(user.id);
+        const userRoles = rolesMap.get(user.id) || [user.role || 'student'];
+        const primaryRole = userRoles.includes('admin') ? 'admin'
+                          : userRoles.includes('instructor') ? 'instructor'
+                          : userRoles.includes('pilot') ? 'pilot'
+                          : 'student';
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role as 'student' | 'instructor' | 'admin',
+          role: primaryRole as 'student' | 'instructor' | 'admin' | 'pilot',
+          roles: userRoles,
           phone: user.phone,
           avatar: user.avatar_url,
           raausId: studentData?.raaus_id,
