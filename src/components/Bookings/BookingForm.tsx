@@ -28,7 +28,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { users, getInstructors, loading: usersLoading } = useUsers();
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const [formData, setFormData] = useState({
-    studentId: booking?.studentId || (user?.role === 'student' ? user.id : ''),
+    studentId: booking?.studentId || user?.id || '',
     date: booking
       ? format(new Date(booking.startTime), 'yyyy-MM-dd')
       : prefilledData?.date || format(new Date(), 'yyyy-MM-dd'),
@@ -70,10 +70,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         ...prev,
         date: prefilledData.date || prev.date,
         endDate: prefilledData.date || prev.endDate,
-        startTime:
-          normalizeToQuarterHour(prefilledData.startTime) || prev.startTime,
-        endTime:
-          normalizeToQuarterHour(prefilledData.endTime) || prev.endTime
+        startTime: normalizeToQuarterHour(prefilledData.startTime) || prev.startTime,
+        endTime: normalizeToQuarterHour(prefilledData.endTime) || prev.endTime,
+        aircraftId: prefilledData.aircraftId || prev.aircraftId,
+        instructorId: prefilledData.instructorId || prev.instructorId,
       }));
     }
   }, [prefilledData, booking]);
@@ -139,37 +139,37 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-xl font-semibold text-gray-900">
+      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex justify-between items-center px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <h2 className="text-base font-semibold text-gray-900">
             {isEdit ? 'Edit Booking' : 'New Booking'}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-gray-200 rounded-md transition-colors"
           >
-            <X className="h-5 w-5 text-gray-600" />
+            <X className="h-4 w-4 text-gray-600" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1">
-          <div className="p-6 space-y-5">
+          <div className="p-4 space-y-3">
           {isLoading && (
-            <div className="flex items-center justify-center py-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div className="flex items-center justify-center py-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
             </div>
           )}
 
           {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor') && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <User className="h-4 w-4 inline mr-2" />
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                <User className="h-3.5 w-3.5 inline mr-1" />
                 Pilot {isFieldRequired('pilot', userRole) && <span className="text-red-500">*</span>}
               </label>
               <select
                 value={formData.studentId}
                 onChange={(e) => setFormData(prev => ({ ...prev, studentId: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required={isFieldRequired('pilot', userRole)}
               >
                 <option value="">Select a pilot</option>
@@ -183,36 +183,34 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('startDate', userRole) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
                 Start Date {isFieldRequired('startDate', userRole) && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required={isFieldRequired('startDate', userRole)}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Clock className="h-4 w-4 inline mr-2" />
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                <Clock className="h-3.5 w-3.5 inline mr-1" />
                 Start Time {isFieldRequired('startTime', userRole) && <span className="text-red-500">*</span>}
               </label>
               <select
                 value={formData.startTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required={isFieldRequired('startTime', userRole)}
               >
-                <option value="">Select a start time</option>
+                <option value="">Select time</option>
                 {timeOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
+                  <option key={option} value={option}>{option}</option>
                 ))}
               </select>
             </div>
@@ -220,35 +218,33 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('endDate', userRole) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
                 End Date {isFieldRequired('endDate', userRole) && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="date"
                 value={formData.endDate}
                 onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required={isFieldRequired('endDate', userRole)}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
                 End Time {isFieldRequired('endTime', userRole) && <span className="text-red-500">*</span>}
               </label>
               <select
                 value={formData.endTime}
                 onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required={isFieldRequired('endTime', userRole)}
               >
-                <option value="">Select an end time</option>
+                <option value="">Select time</option>
                 {timeOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
+                  <option key={option} value={option}>{option}</option>
                 ))}
               </select>
             </div>
@@ -256,36 +252,36 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('aircraft', userRole) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Plane className="h-4 w-4 inline mr-2" />
-              Aircraft {isFieldRequired('aircraft', userRole) && <span className="text-red-500">*</span>}
-            </label>
-            <select
-              value={formData.aircraftId}
-              onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required={isFieldRequired('aircraft', userRole)}
-            >
-              <option value="">Select an aircraft</option>
-              {availableAircraft.map(a => (
-                <option key={a.id} value={a.id}>
-                  {a.registration} - {a.make} {a.model} (${a.hourlyRate}/hr)
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                <Plane className="h-3.5 w-3.5 inline mr-1" />
+                Aircraft {isFieldRequired('aircraft', userRole) && <span className="text-red-500">*</span>}
+              </label>
+              <select
+                value={formData.aircraftId}
+                onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required={isFieldRequired('aircraft', userRole)}
+              >
+                <option value="">Select aircraft</option>
+                {availableAircraft.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.registration} — {a.make} {a.model}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             {isFieldVisible('instructor', userRole) && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Instructor {isFieldRequired('instructor', userRole) ? <span className="text-red-500">*</span> : '(Optional)'}
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Instructor {isFieldRequired('instructor', userRole) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
               </label>
               <select
                 value={formData.instructorId}
                 onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required={isFieldRequired('instructor', userRole)}
               >
                 <option value="">Solo flight</option>
@@ -302,14 +298,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
           {!isLoading && isFieldVisible('paymentType', userRole) && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <CreditCard className="h-4 w-4 inline mr-2" />
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              <CreditCard className="h-3.5 w-3.5 inline mr-1" />
               Payment Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
             </label>
             <select
               value={formData.paymentType}
               onChange={(e) => setFormData(prev => ({ ...prev, paymentType: e.target.value as any }))}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required={isFieldRequired('paymentType', userRole)}
             >
               <option value="prepaid">Prepaid Account</option>
@@ -321,14 +317,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
           {!isLoading && isFieldVisible('notes', userRole) && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
               Notes {isFieldRequired('notes', userRole) && <span className="text-red-500">*</span>}
             </label>
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              rows={4}
+              className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              rows={2}
               placeholder="Lesson details, special requirements, etc."
               required={isFieldRequired('notes', userRole)}
             />
@@ -336,17 +332,17 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
           </div>
 
-          <div className="flex justify-end space-x-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <div className="flex justify-end space-x-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 text-gray-700 bg-white border border-gray-300 hover:bg-gray-100 rounded-lg transition-colors font-medium"
+              className="px-4 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 hover:bg-gray-100 rounded-md transition-colors font-medium"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+              className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm"
             >
               {isEdit ? 'Update Booking' : 'Create Booking'}
             </button>
