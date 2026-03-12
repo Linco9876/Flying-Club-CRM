@@ -161,7 +161,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor') && (
-            <div>
+            <div className="w-1/2">
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 <User className="h-3.5 w-3.5 inline mr-1" />
                 Pilot {isFieldRequired('pilot', userRole) && <span className="text-red-500">*</span>}
@@ -175,7 +175,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 <option value="">Select a pilot</option>
                 {users.map(u => (
                   <option key={u.id} value={u.id}>
-                    {u.name} - {u.email}
+                    {u.name}
                   </option>
                 ))}
               </select>
@@ -252,7 +252,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           )}
 
           {!isLoading && isFieldVisible('aircraft', userRole) && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-2 w-1/2">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 <Plane className="h-3.5 w-3.5 inline mr-1" />
