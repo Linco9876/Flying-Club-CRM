@@ -122,12 +122,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           } catch (error) {
             console.error('Error fetching user data:', error);
-            await supabase.auth.signOut();
           }
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
-        await supabase.auth.signOut();
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -135,10 +133,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initTimeout = setTimeout(() => {
       if (mounted) {
-        console.error('Auth initialization timed out, clearing session');
+        console.error('Auth initialization timed out');
         setIsLoading(false);
-        setUser(null);
-        supabase.auth.signOut();
       }
     }, 20000);
 
@@ -146,35 +142,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearTimeout(initTimeout);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
-      if (event === 'SIGNED_IN' && session?.user) {
-        setIsLoading(true);
-        try {
-          const userData = await fetchUserWithRetry(session.user.id);
-
-          if (userData && mounted) {
-            setUser({
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              roles: userData.roles,
-              phone: userData.phone,
-              avatar: userData.avatar_url
-            });
-          }
-        } catch (error) {
-          console.error('Error fetching user in auth change:', error);
-        } finally {
-          if (mounted) setIsLoading(false);
-        }
-      } else if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT') {
         setUser(null);
         setIsLoading(false);
-      } else if (event === 'TOKEN_REFRESHED') {
-        console.log('Token refreshed successfully');
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED') {
+        return;
+      }
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        (async () => {
+          setIsLoading(true);
+          try {
+            const userData = await fetchUserWithRetry(session.user.id);
+            if (userData && mounted) {
+              setUser({
+                id: userData.id,
+                email: userData.email,
+                name: userData.name,
+                role: userData.role,
+                roles: userData.roles,
+                phone: userData.phone,
+                avatar: userData.avatar_url
+              });
+            }
+          } catch (error) {
+            console.error('Error fetching user in auth change:', error);
+          } finally {
+            if (mounted) setIsLoading(false);
+          }
+        })();
       }
     });
 
