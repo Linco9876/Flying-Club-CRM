@@ -59,96 +59,36 @@ export const useInvitations = () => {
     roles?: UserRole[];
   }) => {
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) throw new Error('Not authenticated');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
 
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('email')
-        .eq('email', data.email)
-        .maybeSingle();
-
-      if (existingUser) {
-        toast.error('A user with this email already exists');
-        return;
-      }
-
-      const { data: existingInvite } = await supabase
-        .from('invitations')
-        .select('email')
-        .eq('email', data.email)
-        .eq('status', 'pending')
-        .maybeSingle();
-
-      if (existingInvite) {
-        toast.error('An invitation for this email is already pending');
-        return;
-      }
-
-      const roles = data.roles && data.roles.length > 0 ? data.roles : ['student'];
-      const tempPassword = Math.random().toString(36).slice(-10) + 'A1!';
-
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email,
-        password: tempPassword,
-        options: {
-          data: {
-            name: data.name,
-            phone: data.phone
-          }
-        }
-      });
-
-      if (authError) {
-        console.error('Auth error:', authError);
-        toast.error('Failed to create user account');
-        return;
-      }
-
-      if (!authData.user) {
-        toast.error('Failed to create user account');
-        return;
-      }
-
-      for (const role of roles) {
-        const { error: roleError } = await supabase
-          .from('user_roles')
-          .insert({
-            user_id: authData.user.id,
-            role: role
-          });
-
-        if (roleError) {
-          console.error('Error assigning role:', roleError);
-        }
-      }
-
-      const primaryRole = roles.includes('admin') ? 'admin'
-        : roles.includes('instructor') ? 'instructor'
-        : roles.includes('pilot') ? 'pilot'
-        : 'student';
-
-      const { error: inviteError } = await supabase
-        .from('invitations')
-        .insert({
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/invite-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
           email: data.email,
           name: data.name,
           phone: data.phone,
-          role: primaryRole,
-          invited_by: currentUser.id,
-          status: 'accepted',
-          accepted_at: new Date().toISOString(),
-          user_id: authData.user.id
-        });
+          roles: data.roles && data.roles.length > 0 ? data.roles : ['student'],
+        }),
+      });
 
-      if (inviteError) {
-        console.error('Invitation error:', inviteError);
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast.error(result.error || 'Failed to invite user');
+        return;
       }
 
       await fetchInvitations();
-      toast.success(`User invited successfully. Temporary password: ${tempPassword}`);
+      toast.success('User invited successfully');
 
-      return tempPassword;
+      return result.tempPassword as string;
     } catch (err) {
       console.error('Error inviting user:', err);
       toast.error('Failed to invite user');
