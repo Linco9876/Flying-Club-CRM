@@ -186,9 +186,9 @@ const AuthenticatedApp: React.FC<{
     }
   };
 
-  const handleUpdateBooking = async (bookingId: string, updates: Partial<Booking>) => {
+  const handleUpdateBooking = async (bookingId: string, updates: Partial<Booking>, silent?: boolean) => {
     try {
-      await updateBooking(bookingId, updates);
+      await updateBooking(bookingId, updates, silent);
     } catch (error) {
       console.error('Error updating booking:', error);
     }
