@@ -33,13 +33,7 @@ import { format } from 'date-fns';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const navigate = useNavigate();
   const [activeView, setActiveView] = useState('dashboard');
-
-  const handleViewChange = (view: string) => {
-    setActiveView(view);
-    navigate('/');
-  };
 
   React.useEffect(() => {
     if (!user) {
@@ -116,7 +110,13 @@ const AuthenticatedApp: React.FC<{
   bookingFormData,
   setBookingFormData
 }) => {
+  const navigate = useNavigate();
   const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking } = useBookings();
+
+  const handleViewChange = (view: string) => {
+    setActiveView(view);
+    navigate('/');
+  };
 
   const handleNewBookingWithTime = (
     date: Date,
