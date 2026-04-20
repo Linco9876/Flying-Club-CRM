@@ -137,6 +137,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
         .from('instructor_weekly_schedules')
         .upsert({
           user_id: schedule.userId,
+          instructor_id: schedule.userId,
           day_of_week: schedule.dayOfWeek,
           start_time: schedule.startTime,
           end_time: schedule.endTime,
@@ -145,7 +146,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
           is_available: schedule.isAvailable,
           updated_at: new Date().toISOString()
         }, {
-          onConflict: 'user_id,day_of_week'
+          onConflict: 'instructor_id,day_of_week'
         });
 
       if (error) throw error;
