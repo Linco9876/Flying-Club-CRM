@@ -211,7 +211,7 @@ export const useBookings = () => {
     }
   };
 
-  const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>) => {
+  const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>, silent = false) => {
     try {
       const updateData: any = {};
       if (bookingData.studentId !== undefined) {
@@ -243,7 +243,7 @@ export const useBookings = () => {
       if (error) throw error;
 
       await fetchBookings();
-      toast.success('Booking updated successfully');
+      if (!silent) toast.success('Booking updated successfully');
     } catch (err) {
       console.error('Error updating booking:', err);
       toast.error('Failed to update booking');

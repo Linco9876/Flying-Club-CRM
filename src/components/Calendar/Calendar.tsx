@@ -40,7 +40,7 @@ interface CalendarProps {
     resourceType?: 'aircraft' | 'instructor'
   ) => void;
   onEditBooking?: (booking: Booking) => void;
-  onUpdateBooking?: (bookingId: string, updates: Partial<Booking>) => void;
+  onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => void;
   onDeleteBooking?: (bookingId: string) => void;
 }
 
@@ -754,7 +754,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         }
       }
 
-      await onUpdateBooking(booking.id, updates);
+      await onUpdateBooking(booking.id, updates, true);
       toast.success(resizingBooking ? 'Booking resized successfully' : 'Booking moved successfully');
     } catch (error) {
       console.error('Error updating booking:', error);
