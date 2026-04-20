@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -33,7 +33,13 @@ import { format } from 'date-fns';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
+  const navigate = useNavigate();
   const [activeView, setActiveView] = useState('dashboard');
+
+  const handleViewChange = (view: string) => {
+    setActiveView(view);
+    navigate('/');
+  };
 
   React.useEffect(() => {
     if (!user) {
@@ -297,7 +303,7 @@ const AuthenticatedApp: React.FC<{
           <div className="min-h-screen bg-gray-50">
             <Header />
             <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView="students" onViewChange={setActiveView} />
+              <Sidebar activeView="students" onViewChange={handleViewChange} />
               <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
                 <StudentProfilePage
                   onOpenTrainingRecord={(booking) => {
@@ -315,7 +321,7 @@ const AuthenticatedApp: React.FC<{
           <div className="min-h-screen bg-gray-50">
             <Header />
             <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView="aircraft" onViewChange={setActiveView} />
+              <Sidebar activeView="aircraft" onViewChange={handleViewChange} />
               <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0 p-6">
                 <AircraftFlightLogs />
               </main>
