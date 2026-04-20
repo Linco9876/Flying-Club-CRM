@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, Plus, Trash2, AlertCircle, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
@@ -20,6 +20,8 @@ const DAYS_OF_WEEK = [
   { value: 6, label: 'Saturday' }
 ];
 
+type DayDraft = Omit<WeeklySchedule, 'id' | 'userId'>;
+
 export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProps> = ({ canEdit }) => {
   const { user } = useAuth();
   const { users } = useUsers();
@@ -28,6 +30,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   const [showScheduleChangeForm, setShowScheduleChangeForm] = useState(false);
   const [newScheduleEffectiveDate, setNewScheduleEffectiveDate] = useState('');
   const [newSchedule, setNewSchedule] = useState<{[key: number]: Omit<WeeklySchedule, 'id' | 'userId'>}>({});
+
+  // Local draft state for weekly schedule — keyed by day of week
+  const [drafts, setDrafts] = useState<{[day: number]: DayDraft}>({});
+  const [savingDay, setSavingDay] = useState<number | null>(null);
 
   const {
     weeklySchedules,
@@ -53,26 +59,57 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     }
   }, [user, instructors, selectedInstructorId]);
 
+  // Reset drafts when the loaded schedules change (e.g. instructor switch or after save)
+  useEffect(() => {
+    setDrafts({});
+  }, [weeklySchedules, selectedInstructorId]);
+
   const getScheduleForDay = (dayOfWeek: number) => {
     return weeklySchedules.find(s => s.dayOfWeek === dayOfWeek);
   };
 
-  const handleWeeklyScheduleChange = async (dayOfWeek: number, field: string, value: any) => {
-    if (!canEdit || !selectedInstructorId) return;
-
-    const existingSchedule = getScheduleForDay(dayOfWeek);
-    const scheduleData = {
-      userId: selectedInstructorId,
+  // Returns the draft for a day if one exists, otherwise the saved schedule values
+  const getDraftForDay = (dayOfWeek: number): DayDraft => {
+    if (drafts[dayOfWeek]) return drafts[dayOfWeek];
+    const saved = getScheduleForDay(dayOfWeek);
+    return {
       dayOfWeek,
-      startTime: existingSchedule?.startTime || '09:00',
-      endTime: existingSchedule?.endTime || '17:00',
-      afternoonStartTime: existingSchedule?.afternoonStartTime,
-      afternoonEndTime: existingSchedule?.afternoonEndTime,
-      isAvailable: existingSchedule?.isAvailable ?? true,
-      [field]: value
+      startTime: saved?.startTime || '09:00',
+      endTime: saved?.endTime || '17:00',
+      afternoonStartTime: saved?.afternoonStartTime,
+      afternoonEndTime: saved?.afternoonEndTime,
+      isAvailable: saved?.isAvailable ?? false,
     };
+  };
 
-    await upsertWeeklySchedule(scheduleData);
+  const isDirty = (dayOfWeek: number): boolean => {
+    return !!drafts[dayOfWeek];
+  };
+
+  const handleDraftChange = (dayOfWeek: number, field: string, value: any) => {
+    if (!canEdit || !selectedInstructorId) return;
+    const current = getDraftForDay(dayOfWeek);
+    setDrafts(prev => ({
+      ...prev,
+      [dayOfWeek]: { ...current, [field]: value }
+    }));
+  };
+
+  const handleSaveDay = async (dayOfWeek: number) => {
+    if (!canEdit || !selectedInstructorId) return;
+    const draft = getDraftForDay(dayOfWeek);
+    setSavingDay(dayOfWeek);
+    try {
+      await upsertWeeklySchedule({ userId: selectedInstructorId, ...draft });
+      // Clear draft for this day — the effect on weeklySchedules will reset it
+      setDrafts(prev => {
+        const next = { ...prev };
+        delete next[dayOfWeek];
+        return next;
+      });
+    } finally {
+      setSavingDay(null);
+    }
   };
 
   const handleAddAbsence = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -200,56 +237,64 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
             <h3 className="text-lg font-medium text-gray-900 mb-4">Weekly Schedule</h3>
             <div className="space-y-3">
               {DAYS_OF_WEEK.map(day => {
-                const schedule = getScheduleForDay(day.value);
+                const draft = getDraftForDay(day.value);
+                const dirty = isDirty(day.value);
+                const saving = savingDay === day.value;
+
                 return (
-                  <div key={day.value} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4 flex-1">
-                        <div className="w-32">
+                  <div
+                    key={day.value}
+                    className={`p-4 rounded-lg border transition-colors ${
+                      dirty ? 'bg-blue-50 border-blue-300' : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 flex-1 flex-wrap">
+                        <div className="w-28 shrink-0">
                           <span className="font-medium text-gray-900">{day.label}</span>
                         </div>
 
                         <div className="flex items-center space-x-2">
                           <input
                             type="checkbox"
-                            checked={schedule?.isAvailable ?? false}
-                            onChange={(e) => handleWeeklyScheduleChange(day.value, 'isAvailable', e.target.checked)}
+                            checked={draft.isAvailable}
+                            onChange={(e) => handleDraftChange(day.value, 'isAvailable', e.target.checked)}
                             disabled={!canEdit}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
                           />
                           <label className="text-sm text-gray-700">Available</label>
                         </div>
 
-                        {schedule?.isAvailable && (
-                          <div className="flex flex-col space-y-2 flex-1">
+                        {draft.isAvailable && (
+                          <div className="flex flex-col space-y-2 flex-1 min-w-0">
                             <div className="flex items-center space-x-2">
-                              <Clock className="h-4 w-4 text-gray-400" />
-                              <span className="text-xs text-gray-600 w-16">Morning:</span>
+                              <Clock className="h-4 w-4 text-gray-400 shrink-0" />
+                              <span className="text-xs text-gray-600 w-16 shrink-0">Morning:</span>
                               <TimeSelect
-                                value={schedule.startTime}
-                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'startTime', value)}
+                                value={draft.startTime}
+                                onChange={(value) => handleDraftChange(day.value, 'startTime', value)}
                                 disabled={!canEdit}
                               />
                               <span className="text-gray-500">to</span>
                               <TimeSelect
-                                value={schedule.endTime}
-                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'endTime', value)}
+                                value={draft.endTime}
+                                onChange={(value) => handleDraftChange(day.value, 'endTime', value)}
                                 disabled={!canEdit}
                               />
                             </div>
                             <div className="flex items-center space-x-2">
-                              <Clock className="h-4 w-4 text-gray-400" />
-                              <span className="text-xs text-gray-600 w-16">Afternoon:</span>
+                              <Clock className="h-4 w-4 text-gray-400 shrink-0" />
+                              <span className="text-xs text-gray-600 w-16 shrink-0">Afternoon:</span>
                               <TimeSelect
-                                value={schedule.afternoonStartTime || ''}
-                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'afternoonStartTime', value)}
+                                value={draft.afternoonStartTime || ''}
+                                onChange={(value) => handleDraftChange(day.value, 'afternoonStartTime', value)}
                                 disabled={!canEdit}
                                 placeholder="Optional"
                               />
                               <span className="text-gray-500">to</span>
                               <TimeSelect
-                                value={schedule.afternoonEndTime || ''}
-                                onChange={(value) => handleWeeklyScheduleChange(day.value, 'afternoonEndTime', value)}
+                                value={draft.afternoonEndTime || ''}
+                                onChange={(value) => handleDraftChange(day.value, 'afternoonEndTime', value)}
                                 disabled={!canEdit}
                                 placeholder="Optional"
                               />
@@ -257,6 +302,17 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                           </div>
                         )}
                       </div>
+
+                      {canEdit && dirty && (
+                        <button
+                          onClick={() => handleSaveDay(day.value)}
+                          disabled={saving}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-60 shrink-0"
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                          {saving ? 'Saving...' : 'Update'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
