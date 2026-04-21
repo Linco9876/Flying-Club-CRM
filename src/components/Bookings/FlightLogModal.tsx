@@ -329,87 +329,24 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
           </div>
 
-          {/* Dual / Solo / Takeoffs / Landings */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Takeoffs & Landings */}
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Dual Time (hrs)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={formData.dual_time.toFixed(1)}
-                onChange={(e) =>
-                  setFormData({ ...formData, dual_time: parseFloat(e.target.value) || 0 })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Solo Time (hrs)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                value={formData.solo_time.toFixed(1)}
-                onChange={(e) =>
-                  setFormData({ ...formData, solo_time: parseFloat(e.target.value) || 0 })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Takeoffs
+                Takeoffs &amp; Landings {isFieldMandatory('landings') && <span className="text-red-500">*</span>}
               </label>
               <input
                 type="number"
                 min="0"
                 value={formData.takeoffs ?? ''}
-                onChange={(e) =>
-                  setFormData({ ...formData, takeoffs: e.target.value ? parseInt(e.target.value) : undefined })
-                }
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value) : undefined;
+                  setFormData({ ...formData, takeoffs: val, landings: val });
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required={isFieldMandatory('landings')}
               />
             </div>
-
-            {isFieldEnabled('landings') ? (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Landings {isFieldMandatory('landings') && <span className="text-red-500">*</span>}
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.landings ?? ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, landings: e.target.value ? parseInt(e.target.value) : undefined })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required={isFieldMandatory('landings')}
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Landings
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.landings ?? ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, landings: e.target.value ? parseInt(e.target.value) : undefined })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            )}
           </div>
 
           {/* Comments */}
