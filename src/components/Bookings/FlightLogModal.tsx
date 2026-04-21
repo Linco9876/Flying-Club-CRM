@@ -40,7 +40,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   const startTime = booking.startTime instanceof Date ? booking.startTime : new Date(booking.startTime);
   const endTime = booking.endTime instanceof Date ? booking.endTime : new Date(booking.endTime);
-  const defaultDuration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+  const defaultDuration = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60) * 10) / 10;
   const isDualFlight = !!booking.instructorId;
 
   const [formData, setFormData] = useState({
@@ -81,12 +81,15 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         if (!previousLog) return;
 
         const startTach = parseFloat(previousLog.end_tach);
-        const duration = defaultDuration;
+        const endTach = Math.round((startTach + defaultDuration) * 100) / 100;
 
         setFormData(prev => ({
           ...prev,
           start_tach: startTach,
-          end_tach: startTach + duration,
+          end_tach: endTach,
+          flight_duration: defaultDuration,
+          dual_time: isDualFlight ? defaultDuration : 0,
+          solo_time: isDualFlight ? 0 : defaultDuration,
         }));
         setTachAutoFilled(true);
       } catch (err) {
@@ -318,7 +321,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               <input
                 type="number"
                 step="0.1"
-                value={formData.flight_duration.toFixed(1)}
+                value={formData.flight_duration}
                 onChange={(e) => handleDurationChange(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
