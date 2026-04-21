@@ -4,6 +4,7 @@ import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
+import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -32,6 +33,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const { settings } = useFlightLogSettings();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
+  const { paymentMethods } = useBillingSettings();
 
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
   const currentTach = aircraft?.totalHours || 0;
@@ -433,11 +435,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 required={isFieldMandatory('payment_type')}
               >
                 <option value="">Select payment type</option>
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="account">Account</option>
-                <option value="voucher">Voucher</option>
+                {paymentMethods.map(pm => (
+                  <option key={pm.id} value={pm.name}>{pm.name}</option>
+                ))}
               </select>
             </div>
           )}

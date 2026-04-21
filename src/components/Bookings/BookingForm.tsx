@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
+import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { Booking } from '../../types';
 import toast from 'react-hot-toast';
 
@@ -27,6 +28,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { aircraft, loading: aircraftLoading } = useAircraft();
   const { users, getInstructors, loading: usersLoading } = useUsers();
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
+  const { paymentMethods } = useBillingSettings();
   const [formData, setFormData] = useState({
     studentId: booking?.studentId || user?.id || '',
     date: booking
@@ -43,7 +45,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       : normalizeToQuarterHour(prefilledData?.endTime) || '11:00',
     aircraftId: booking?.aircraftId || prefilledData?.aircraftId || '',
     instructorId: booking?.instructorId || prefilledData?.instructorId || '',
-    paymentType: booking?.paymentType || 'prepaid' as const,
+    paymentType: booking?.paymentType || '',
     notes: booking?.notes || ''
   });
 
@@ -308,9 +310,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required={isFieldRequired('paymentType', userRole)}
             >
-              <option value="prepaid">Prepaid Account</option>
-              <option value="payg">Pay As You Go</option>
-              <option value="account">Monthly Account</option>
+              <option value="">Select payment type</option>
+              {paymentMethods.map(pm => (
+                <option key={pm.id} value={pm.name}>{pm.name}</option>
+              ))}
             </select>
           </div>
           )}
