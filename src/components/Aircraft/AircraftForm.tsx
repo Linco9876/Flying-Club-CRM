@@ -48,7 +48,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   });
 
   const { flightTypes, paymentMethods, loading: billingLoading } = useBillingSettings();
-  const { rates: existingRates, loading: ratesLoading } = useAircraftRates(aircraft?.id);
+  const { rates: existingRates, loading: ratesLoading, refetch: refetchRates } = useAircraftRates(aircraft?.id);
 
   const [aircraftRates, setAircraftRates] = useState<Partial<AircraftRate>[]>([]);
   const [ratesInitialized, setRatesInitialized] = useState(false);
@@ -68,6 +68,12 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       account: 85
     }
   });
+
+  useEffect(() => {
+    if (isOpen && aircraft?.id) {
+      refetchRates();
+    }
+  }, [isOpen, aircraft?.id]);
 
   useEffect(() => {
     if (!isOpen) {
