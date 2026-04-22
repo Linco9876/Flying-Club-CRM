@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Lock } from 'lucide-react';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -33,7 +33,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const { settings } = useFlightLogSettings();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
-  const { paymentMethods } = useBillingSettings();
+  const { flightTypes, paymentMethods } = useBillingSettings();
 
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
   const currentTach = aircraft?.totalHours || 0;
@@ -54,6 +54,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     takeoffs: undefined as number | undefined,
     landings: undefined as number | undefined,
     comments: '',
+    flight_type_id: '',
     payment_type: '',
     observations: '',
     oil_added: undefined as number | undefined,
@@ -64,10 +65,23 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tachAutoFilled, setTachAutoFilled] = useState(false);
 
+  const selectedFlightType = flightTypes.find(ft => ft.id === formData.flight_type_id) ?? null;
+  const isPaymentForced = !!selectedFlightType?.forcedPaymentMethodId;
+
+  // Auto-set payment type when flight type forces one
+  useEffect(() => {
+    if (!selectedFlightType) return;
+    if (selectedFlightType.forcedPaymentMethodId) {
+      const forced = paymentMethods.find(pm => pm.id === selectedFlightType.forcedPaymentMethodId);
+      if (forced) setFormData(prev => ({ ...prev, payment_type: forced.name }));
+    } else {
+      setFormData(prev => ({ ...prev, payment_type: '' }));
+    }
+  }, [formData.flight_type_id]);
+
   useEffect(() => {
     const calculateStartTach = async () => {
       if (!booking.aircraftId) return;
-
       try {
         const { data: logs, error } = await supabase
           .from('flight_logs')
@@ -96,14 +110,12 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         console.error('Error calculating start tach:', err);
       }
     };
-
     calculateStartTach();
   }, [booking.aircraftId]);
 
   const handleTachChange = (field: 'start_tach' | 'end_tach', value: string) => {
     const numValue = parseFloat(value) || 0;
     const newData = { ...formData, [field]: numValue };
-
     if (field === 'start_tach') {
       const duration = Math.max(0, formData.end_tach - numValue);
       newData.flight_duration = duration;
@@ -115,7 +127,6 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       newData.dual_time = isDualFlight ? duration : 0;
       newData.solo_time = isDualFlight ? 0 : duration;
     }
-
     setFormData(newData);
   };
 
@@ -130,40 +141,26 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     });
   };
 
-  const getFieldSetting = (fieldName: string) => {
-    return settings.find((s) => s.field_name === fieldName);
-  };
-
-  const isFieldEnabled = (fieldName: string) => {
-    const setting = getFieldSetting(fieldName);
-    return setting?.is_enabled || false;
-  };
-
-  const isFieldMandatory = (fieldName: string) => {
-    const setting = getFieldSetting(fieldName);
-    return setting?.is_mandatory || false;
-  };
+  const getFieldSetting = (fieldName: string) => settings.find((s) => s.field_name === fieldName);
+  const isFieldEnabled = (fieldName: string) => getFieldSetting(fieldName)?.is_enabled || false;
+  const isFieldMandatory = (fieldName: string) => getFieldSetting(fieldName)?.is_mandatory || false;
 
   const validateForm = (): string | null => {
-    if (formData.start_tach >= formData.end_tach) {
-      return 'End tach must be greater than start tach';
-    }
-    if (formData.flight_duration <= 0) {
-      return 'Flight duration must be positive';
-    }
+    if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
+    if (formData.flight_duration <= 0) return 'Flight duration must be positive';
+    if (!formData.flight_type_id) return 'Please select a flight type';
+    if (!formData.payment_type) return 'Please select a payment type';
     return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     try {
       const validationError = validateForm();
       if (validationError) {
         toast.error(validationError);
         return;
       }
-
       setIsSubmitting(true);
 
       const logData = {
@@ -180,8 +177,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         solo_time: formData.solo_time,
         takeoffs: formData.takeoffs,
         comments: formData.comments || undefined,
+        flight_type_id: formData.flight_type_id || undefined,
+        payment_type: formData.payment_type || undefined,
         ...(isFieldEnabled('landings') && { landings: formData.landings }),
-        ...(isFieldEnabled('payment_type') && { payment_type: formData.payment_type }),
         ...(isFieldEnabled('observations') && { observations: formData.observations }),
         ...(isFieldEnabled('oil_added') && { oil_added: formData.oil_added }),
         ...(isFieldEnabled('fuel_added') && { fuel_added: formData.fuel_added }),
@@ -189,7 +187,6 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       };
 
       const { error } = await createFlightLog(logData);
-
       if (error) {
         toast.error(error);
         return;
@@ -215,10 +212,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
           <h2 className="text-xl font-semibold text-gray-900">Log Flight</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -251,30 +245,21 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
           {/* Times */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Start Time
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
               <input
                 type="datetime-local"
                 value={new Date(formData.start_time).toISOString().slice(0, 16)}
-                onChange={(e) =>
-                  setFormData({ ...formData, start_time: new Date(e.target.value).toISOString() })
-                }
+                onChange={(e) => setFormData({ ...formData, start_time: new Date(e.target.value).toISOString() })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                End Time
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
               <input
                 type="datetime-local"
                 value={new Date(formData.end_time).toISOString().slice(0, 16)}
-                onChange={(e) =>
-                  setFormData({ ...formData, end_time: new Date(e.target.value).toISOString() })
-                }
+                onChange={(e) => setFormData({ ...formData, end_time: new Date(e.target.value).toISOString() })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
@@ -295,11 +280,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
-              {tachAutoFilled && (
-                <p className="text-xs text-green-600 mt-1">Auto-filled from previous log</p>
-              )}
+              {tachAutoFilled && <p className="text-xs text-green-600 mt-1">Auto-filled from previous log</p>}
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 End Tach <span className="text-red-500">*</span>
@@ -313,7 +295,6 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 required
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Flight Duration (hrs) <span className="text-red-500">*</span>
@@ -349,11 +330,61 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
           </div>
 
+          {/* Flight Type + Payment Type */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Flight Type <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.flight_type_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, flight_type_id: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              >
+                <option value="">Select flight type</option>
+                {flightTypes.map(ft => (
+                  <option key={ft.id} value={ft.id}>{ft.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                <span className="flex items-center gap-1.5">
+                  Payment Type <span className="text-red-500">*</span>
+                  {isPaymentForced && (
+                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                      <Lock className="h-3 w-3" />
+                      Required by flight type
+                    </span>
+                  )}
+                </span>
+              </label>
+              <select
+                value={formData.payment_type}
+                onChange={(e) => {
+                  if (!isPaymentForced) setFormData(prev => ({ ...prev, payment_type: e.target.value }));
+                }}
+                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  isPaymentForced
+                    ? 'border-amber-300 bg-amber-50 text-amber-900 cursor-not-allowed'
+                    : 'border-gray-300'
+                }`}
+                required
+                disabled={isPaymentForced}
+              >
+                <option value="">Select payment type</option>
+                {paymentMethods.map(pm => (
+                  <option key={pm.id} value={pm.name}>{pm.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {/* Comments */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Comments
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
             <textarea
               value={formData.comments}
               onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
@@ -363,25 +394,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             />
           </div>
 
-          {isFieldEnabled('payment_type') && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Payment Type {isFieldMandatory('payment_type') && <span className="text-red-500">*</span>}
-              </label>
-              <select
-                value={formData.payment_type}
-                onChange={(e) => setFormData({ ...formData, payment_type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldMandatory('payment_type')}
-              >
-                <option value="">Select payment type</option>
-                {paymentMethods.map(pm => (
-                  <option key={pm.id} value={pm.name}>{pm.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
+          {/* Optional settings-controlled fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {isFieldEnabled('oil_added') && (
               <div>
@@ -392,15 +405,12 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   type="number"
                   step="0.1"
                   value={formData.oil_added || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, oil_added: e.target.value ? parseFloat(e.target.value) : undefined })
-                  }
+                  onChange={(e) => setFormData({ ...formData, oil_added: e.target.value ? parseFloat(e.target.value) : undefined })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required={isFieldMandatory('oil_added')}
                 />
               </div>
             )}
-
             {isFieldEnabled('fuel_added') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -410,15 +420,12 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   type="number"
                   step="0.1"
                   value={formData.fuel_added || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, fuel_added: e.target.value ? parseFloat(e.target.value) : undefined })
-                  }
+                  onChange={(e) => setFormData({ ...formData, fuel_added: e.target.value ? parseFloat(e.target.value) : undefined })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required={isFieldMandatory('fuel_added')}
                 />
               </div>
             )}
-
             {isFieldEnabled('passengers') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -427,9 +434,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 <input
                   type="number"
                   value={formData.passengers || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, passengers: e.target.value ? parseInt(e.target.value) : undefined })
-                  }
+                  onChange={(e) => setFormData({ ...formData, passengers: e.target.value ? parseInt(e.target.value) : undefined })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required={isFieldMandatory('passengers')}
                 />
