@@ -5,6 +5,7 @@ import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { useAircraftRates } from '../../hooks/useAircraftRates';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -34,6 +35,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
   const { flightTypes, paymentMethods } = useBillingSettings();
+  const { rates: aircraftRates } = useAircraftRates(booking.aircraftId);
 
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
   const currentTach = aircraft?.totalHours || 0;
@@ -66,18 +68,24 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const [tachAutoFilled, setTachAutoFilled] = useState(false);
 
   const selectedFlightType = flightTypes.find(ft => ft.id === formData.flight_type_id) ?? null;
-  const isPaymentForced = !!selectedFlightType?.forcedPaymentMethodId;
+  const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
+  const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
+  const isPaymentForced = !isFree && !!selectedFlightType?.forcedPaymentMethodId;
 
-  // Auto-set payment type when flight type forces one
+  // Auto-set or clear payment type when flight type changes
   useEffect(() => {
     if (!selectedFlightType) return;
+    if (isFree) {
+      setFormData(prev => ({ ...prev, payment_type: '' }));
+      return;
+    }
     if (selectedFlightType.forcedPaymentMethodId) {
       const forced = paymentMethods.find(pm => pm.id === selectedFlightType.forcedPaymentMethodId);
       if (forced) setFormData(prev => ({ ...prev, payment_type: forced.name }));
     } else {
       setFormData(prev => ({ ...prev, payment_type: '' }));
     }
-  }, [formData.flight_type_id]);
+  }, [formData.flight_type_id, isFree]);
 
   useEffect(() => {
     const calculateStartTach = async () => {
@@ -149,7 +157,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
     if (!formData.flight_type_id) return 'Please select a flight type';
-    if (!formData.payment_type) return 'Please select a payment type';
+    if (!isFree && !formData.payment_type) return 'Please select a payment type';
     return null;
   };
 
@@ -347,39 +355,46 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   <option key={ft.id} value={ft.id}>{ft.name}</option>
                 ))}
               </select>
+              {isFree && formData.flight_type_id && (
+                <p className="mt-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-0.5 inline-block">
+                  No charge — payment not required
+                </p>
+              )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <span className="flex items-center gap-1.5">
-                  Payment Type <span className="text-red-500">*</span>
-                  {isPaymentForced && (
-                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                      <Lock className="h-3 w-3" />
-                      Required by flight type
-                    </span>
-                  )}
-                </span>
-              </label>
-              <select
-                value={formData.payment_type}
-                onChange={(e) => {
-                  if (!isPaymentForced) setFormData(prev => ({ ...prev, payment_type: e.target.value }));
-                }}
-                className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  isPaymentForced
-                    ? 'border-amber-300 bg-amber-50 text-amber-900 cursor-not-allowed'
-                    : 'border-gray-300'
-                }`}
-                required
-                disabled={isPaymentForced}
-              >
-                <option value="">Select payment type</option>
-                {paymentMethods.map(pm => (
-                  <option key={pm.id} value={pm.name}>{pm.name}</option>
-                ))}
-              </select>
-            </div>
+            {!isFree && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="flex items-center gap-1.5">
+                    Payment Type <span className="text-red-500">*</span>
+                    {isPaymentForced && (
+                      <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                        <Lock className="h-3 w-3" />
+                        Required by flight type
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <select
+                  value={formData.payment_type}
+                  onChange={(e) => {
+                    if (!isPaymentForced) setFormData(prev => ({ ...prev, payment_type: e.target.value }));
+                  }}
+                  className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    isPaymentForced
+                      ? 'border-amber-300 bg-amber-50 text-amber-900 cursor-not-allowed'
+                      : 'border-gray-300'
+                  }`}
+                  required
+                  disabled={isPaymentForced}
+                >
+                  <option value="">Select payment type</option>
+                  {paymentMethods.map(pm => (
+                    <option key={pm.id} value={pm.name}>{pm.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Comments */}
