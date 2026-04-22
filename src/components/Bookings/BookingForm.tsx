@@ -28,7 +28,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { aircraft, loading: aircraftLoading } = useAircraft();
   const { users, getInstructors, loading: usersLoading } = useUsers();
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
-  const { paymentMethods } = useBillingSettings();
+  const { flightTypes } = useBillingSettings();
   const [formData, setFormData] = useState({
     studentId: booking?.studentId || user?.id || '',
     date: booking
@@ -302,7 +302,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               <CreditCard className="h-3.5 w-3.5 inline mr-1" />
-              Payment Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
+              Flight Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
             </label>
             <select
               value={formData.paymentType}
@@ -310,9 +310,9 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required={isFieldRequired('paymentType', userRole)}
             >
-              <option value="">Select payment type</option>
-              {paymentMethods.map(pm => (
-                <option key={pm.id} value={pm.name}>{pm.name}</option>
+              <option value="">Select flight type</option>
+              {flightTypes.map(ft => (
+                <option key={ft.id} value={ft.name}>{ft.name}</option>
               ))}
             </select>
           </div>

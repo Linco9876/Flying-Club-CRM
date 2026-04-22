@@ -82,12 +82,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
 
     if (isEdit && aircraft?.id) {
       if (!ratesLoading) {
-        if (existingRates.length > 0) {
-          setAircraftRates(existingRates);
-        } else {
-          setAircraftRates(flightTypes.map(ft => ({
+        // Merge saved rates with ALL flight types so every row is visible
+        setAircraftRates(flightTypes.map(ft => {
+          const saved = existingRates.find(r => r.flightTypeId === ft.id);
+          return saved ? saved : {
             flightTypeId: ft.id,
-            flightTypeName: ft.name,
             chargeType: 'not_used' as const,
             soloRate: 0,
             dualRate: 0,
@@ -95,14 +94,13 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
             weekendSurcharge: 0,
             defaultPaymentMethodId: null,
             includedTaxes: 0
-          })));
-        }
+          };
+        }));
         setRatesInitialized(true);
       }
     } else {
       setAircraftRates(flightTypes.map(ft => ({
         flightTypeId: ft.id,
-        flightTypeName: ft.name,
         chargeType: 'not_used' as const,
         soloRate: 0,
         dualRate: 0,
@@ -209,7 +207,6 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     };
 
     onSubmit(aircraftData);
-    toast.success(isEdit ? 'Aircraft updated successfully!' : 'Aircraft added successfully!');
     onClose();
   };
 
