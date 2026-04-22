@@ -145,36 +145,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
+      // Token refresh and initial session restore — do nothing, initAuth handles startup
+      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        return;
+      }
+
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setIsLoading(false);
         return;
       }
 
-      if (event === 'TOKEN_REFRESHED') {
-        return;
-      }
-
+      // Only respond to a genuine new sign-in (e.g. from the login form)
+      // If initAuth already set the user for this session, skip to avoid a double-load flash
       if (event === 'SIGNED_IN' && session?.user) {
         (async () => {
-          setIsLoading(true);
+          // Use a ref-free check: if user state is null it means initAuth hasn't finished
+          // or this is a fresh login. Either way, fetch without flashing isLoading.
           try {
             const userData = await fetchUserWithRetry(session.user.id);
             if (userData && mounted) {
-              setUser({
-                id: userData.id,
-                email: userData.email,
-                name: userData.name,
-                role: userData.role,
-                roles: userData.roles,
-                phone: userData.phone,
-                avatar: userData.avatar_url
+              setUser(prev => {
+                // Only update if we don't have this user already
+                if (prev?.id === userData.id) return prev;
+                return {
+                  id: userData.id,
+                  email: userData.email,
+                  name: userData.name,
+                  role: userData.role,
+                  roles: userData.roles,
+                  phone: userData.phone,
+                  avatar: userData.avatar_url
+                };
               });
             }
           } catch (error) {
             console.error('Error fetching user in auth change:', error);
-          } finally {
-            if (mounted) setIsLoading(false);
           }
         })();
       }
