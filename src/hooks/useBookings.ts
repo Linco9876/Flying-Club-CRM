@@ -347,37 +347,76 @@ export const useBookings = () => {
   useEffect(() => {
     fetchBookings();
 
+    // Debounce rapid back-to-back realtime events (e.g. insert + update on same row)
+    let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefetch = () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(() => {
+        fetchBookings();
+        refetchTimer = null;
+      }, 300);
+    };
+
     const bookingsSubscription = supabase
-      .channel('bookings_changes')
+      .channel('bookings_realtime')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'bookings'
-        },
-        () => {
-          fetchBookings();
+        { event: '*', schema: 'public', table: 'bookings' },
+        (payload) => {
+          // Apply optimistic update immediately so the colour changes right away,
+          // then schedule a full refetch to reconcile.
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const updated = payload.new as any;
+            setBookings(prev =>
+              prev.map(b =>
+                b.id === updated.id
+                  ? {
+                      ...b,
+                      status: updated.status ?? b.status,
+                      flight_logged: updated.flight_logged ?? b.flight_logged,
+                      startTime: updated.start_time ? new Date(updated.start_time) : b.startTime,
+                      endTime: updated.end_time ? new Date(updated.end_time) : b.endTime,
+                    }
+                  : b
+              )
+            );
+          } else if (payload.eventType === 'INSERT' && payload.new) {
+            // New booking from another user — schedule refetch to get full joined data
+            scheduleRefetch();
+            return;
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            const deleted = payload.old as any;
+            setBookings(prev => prev.filter(b => b.id !== deleted.id));
+          }
+          scheduleRefetch();
         }
       )
       .subscribe();
 
     const flightLogsSubscription = supabase
-      .channel('flight_logs_changes')
+      .channel('flight_logs_realtime')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'flight_logs'
-        },
-        () => {
-          fetchBookings();
+        { event: 'INSERT', schema: 'public', table: 'flight_logs' },
+        (payload) => {
+          // When a flight log is inserted, immediately mark the linked booking as logged
+          const newLog = payload.new as any;
+          if (newLog?.booking_id) {
+            setBookings(prev =>
+              prev.map(b =>
+                b.id === newLog.booking_id
+                  ? { ...b, flight_logged: true }
+                  : b
+              )
+            );
+          }
+          scheduleRefetch();
         }
       )
       .subscribe();
 
     return () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
       bookingsSubscription.unsubscribe();
       flightLogsSubscription.unsubscribe();
     };
