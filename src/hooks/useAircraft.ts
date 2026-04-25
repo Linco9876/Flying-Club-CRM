@@ -438,6 +438,7 @@ export const useAircraft = () => {
 
   const updateAircraft = async (id: string, aircraftData: Partial<Omit<Aircraft, 'id' | 'defects'>> & {
     rates?: Array<any>;
+    milestones?: Array<{ title: string; dueCondition: string; dueValue: string }>;
   }) => {
     try {
       const updateData: any = {};
@@ -493,6 +494,19 @@ export const useAircraft = () => {
             console.error('Error inserting new rates:', insertError);
           }
         }
+      }
+
+      // Insert any newly-added milestones
+      if (aircraftData.milestones && aircraftData.milestones.length > 0) {
+        const { error: milestonesError } = await supabase.from('maintenance_milestones').insert(
+          aircraftData.milestones.map(m => ({
+            aircraft_id: id,
+            title: m.title,
+            due_condition: m.dueCondition,
+            due_value: m.dueValue,
+          }))
+        );
+        if (milestonesError) console.error('Error saving milestones:', milestonesError);
       }
 
       await fetchAircraft();

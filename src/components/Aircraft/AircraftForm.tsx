@@ -3,6 +3,7 @@ import { X, Plane, Save, Upload, Plus, Trash2, DollarSign } from 'lucide-react';
 import { Aircraft, AircraftRate } from '../../types';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useAircraftRates } from '../../hooks/useAircraftRates';
+import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface AircraftFormProps {
@@ -51,7 +52,6 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   const { rates: existingRates, loading: ratesLoading, refetch: refetchRates } = useAircraftRates(aircraft?.id);
 
   const [aircraftRates, setAircraftRates] = useState<Partial<AircraftRate>[]>([]);
-  const [ratesInitialized, setRatesInitialized] = useState(false);
 
   const [costStructure, setCostStructure] = useState<{
     aircraft: CostStructure;
@@ -69,55 +69,37 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     }
   });
 
+  // Re-fetch rates whenever the form opens for an aircraft
   useEffect(() => {
     if (isOpen && aircraft?.id) {
       refetchRates();
     }
   }, [isOpen, aircraft?.id]);
 
+  // Build the rates grid once both flightTypes and existingRates are ready
   useEffect(() => {
-    if (!isOpen) {
-      setAircraftRates([]);
-      setRatesInitialized(false);
-      return;
-    }
+    if (!isOpen || billingLoading || flightTypes.length === 0) return;
+    // For edit mode wait until rates have finished loading
+    if (isEdit && aircraft?.id && ratesLoading) return;
 
-    if (ratesInitialized || billingLoading || flightTypes.length === 0) {
-      return;
-    }
-
-    if (isEdit && aircraft?.id) {
-      if (!ratesLoading) {
-        // Merge saved rates with ALL flight types so every row is visible
-        setAircraftRates(flightTypes.map(ft => {
-          const saved = existingRates.find(r => r.flightTypeId === ft.id);
-          return saved ? saved : {
-            flightTypeId: ft.id,
-            chargeType: 'not_used' as const,
-            soloRate: 0,
-            dualRate: 0,
-            flatSurcharge: 0,
-            weekendSurcharge: 0,
-            defaultPaymentMethodId: null,
-            includedTaxes: 0
-          };
-        }));
-        setRatesInitialized(true);
-      }
-    } else {
-      setAircraftRates(flightTypes.map(ft => ({
-        flightTypeId: ft.id,
-        chargeType: 'not_used' as const,
-        soloRate: 0,
-        dualRate: 0,
-        flatSurcharge: 0,
-        weekendSurcharge: 0,
-        defaultPaymentMethodId: null,
-        includedTaxes: 0
-      })));
-      setRatesInitialized(true);
-    }
-  }, [isOpen, isEdit, aircraft?.id, flightTypes, existingRates, billingLoading, ratesLoading, ratesInitialized]);
+    setAircraftRates(
+      flightTypes.map(ft => {
+        const saved = existingRates.find(r => r.flightTypeId === ft.id);
+        return saved ?? {
+          flightTypeId: ft.id,
+          chargeType: 'not_used' as const,
+          soloRate: 0,
+          dualRate: 0,
+          flatSurcharge: 0,
+          weekendSurcharge: 0,
+          defaultPaymentMethodId: null,
+          includedTaxes: 0,
+        };
+      })
+    );
+  // Deliberately depend on existingRates so we repopulate after the fetch completes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isEdit, aircraft?.id, flightTypes, existingRates, billingLoading, ratesLoading]);
 
   const [maintenanceMilestones, setMaintenanceMilestones] = useState<MaintenanceMilestone[]>([]);
   const [newMilestone, setNewMilestone] = useState({
@@ -125,6 +107,28 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     dueCondition: 'hours' as const,
     dueValue: ''
   });
+
+  // Load existing milestones when editing
+  useEffect(() => {
+    if (!isOpen || !isEdit || !aircraft?.id) {
+      if (!isOpen) setMaintenanceMilestones([]);
+      return;
+    }
+    supabase
+      .from('maintenance_milestones')
+      .select('id, title, due_condition, due_value')
+      .eq('aircraft_id', aircraft.id)
+      .then(({ data }) => {
+        if (data) {
+          setMaintenanceMilestones(data.map(m => ({
+            id: m.id,
+            title: m.title,
+            dueCondition: (m.due_condition as 'hours' | 'date') || 'hours',
+            dueValue: m.due_value || '',
+          })));
+        }
+      });
+  }, [isOpen, isEdit, aircraft?.id]);
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
@@ -189,6 +193,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       tachStart: formData.tachStart,
       lastMaintenance: aircraft?.lastMaintenance,
       nextMaintenance: aircraft?.nextMaintenance,
+      // Send ALL rates (not_used included) — hook will delete+reinsert non-not_used
       rates: aircraftRates.filter(r => r.chargeType !== 'not_used'),
       aircraftRates: {
         prepaid: costStructure.aircraft.prepaid,
@@ -200,11 +205,14 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         payg: costStructure.instructor.payg,
         account: costStructure.instructor.account
       },
-      milestones: maintenanceMilestones.map(m => ({
-        title: m.title,
-        dueCondition: m.dueCondition,
-        dueValue: m.dueValue
-      })),
+      // Only pass newly-added milestones (temp IDs = numeric strings from Date.now())
+      milestones: maintenanceMilestones
+        .filter(m => m.id.match(/^\d+$/))
+        .map(m => ({
+          title: m.title,
+          dueCondition: m.dueCondition,
+          dueValue: m.dueValue
+        })),
       documents: uploadedFiles.map(f => ({
         name: f.name,
         type: f.type,
@@ -232,7 +240,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     toast.success('Maintenance milestone added');
   };
 
-  const removeMilestone = (milestoneId: string) => {
+  const removeMilestone = async (milestoneId: string) => {
+    // If it's a real DB record (uuid format), delete from DB
+    if (isEdit && aircraft?.id && !milestoneId.match(/^\d+$/)) {
+      await supabase.from('maintenance_milestones').delete().eq('id', milestoneId);
+    }
     setMaintenanceMilestones(prev => prev.filter(m => m.id !== milestoneId));
     toast.success('Maintenance milestone removed');
   };
