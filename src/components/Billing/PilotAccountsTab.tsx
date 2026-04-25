@@ -1,239 +1,306 @@
 import React, { useState } from 'react';
-import { mockStudents } from '../../data/mockData';
-import { User, ArrowUpDown, Eye } from 'lucide-react';
+import { User, ArrowUpDown, Eye, Plus, AlertCircle, CheckCircle } from 'lucide-react';
+import { useBillingAccounts } from '../../hooks/useBillingAccounts';
+import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { AccountHistoryModal } from './AccountHistoryModal';
 
-interface PilotAccount {
-  id: string;
-  name: string;
-  email: string;
-  balance: number;
-  lastTransactionDate: Date;
-  totalTransactions: number;
+interface TopUpModalProps {
+  userId: string;
+  userName: string;
+  onClose: () => void;
+  onConfirm: (amount: number, description: string, paymentMethodId?: string) => Promise<void>;
+  paymentMethods: { id: string; name: string }[];
 }
 
-export const PilotAccountsTab: React.FC = () => {
-  const [sortField, setSortField] = useState<'name' | 'balance' | 'lastTransactionDate'>('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [selectedAccount, setSelectedAccount] = useState<PilotAccount | null>(null);
-  const [showAccountHistory, setShowAccountHistory] = useState(false);
+const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onConfirm, paymentMethods }) => {
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('Account top-up');
+  const [paymentMethodId, setPaymentMethodId] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  // Mock pilot accounts data
-  const pilotAccounts: PilotAccount[] = mockStudents.map(student => ({
-    id: student.id,
-    name: student.name,
-    email: student.email,
-    balance: student.prepaidBalance,
-    lastTransactionDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000), // Random date within last 30 days
-    totalTransactions: Math.floor(Math.random() * 20) + 5 // Random number of transactions
-  }));
-
-  const handleSort = (field: 'name' | 'balance' | 'lastTransactionDate') => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(amount);
+    if (!parsed || parsed <= 0) return;
+    setSaving(true);
+    try {
+      await onConfirm(parsed, description, paymentMethodId || undefined);
+      onClose();
+    } finally {
+      setSaving(false);
     }
-  };
-
-  const sortedAccounts = [...pilotAccounts].sort((a, b) => {
-    let aValue: any = a[sortField];
-    let bValue: any = b[sortField];
-
-    if (sortField === 'name') {
-      aValue = aValue.toLowerCase();
-      bValue = bValue.toLowerCase();
-    }
-
-    if (sortField === 'lastTransactionDate') {
-      aValue = aValue.getTime();
-      bValue = bValue.getTime();
-    }
-
-    if (sortDirection === 'asc') {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-    }
-  });
-
-  const handleViewAccount = (account: PilotAccount) => {
-    setSelectedAccount(account);
-    setShowAccountHistory(true);
-  };
-
-  const getBalanceColor = (balance: number) => {
-    if (balance > 500) return 'text-green-600';
-    if (balance > 100) return 'text-blue-600';
-    if (balance > 0) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  const getSortIcon = (field: string) => {
-    if (sortField !== field) return <ArrowUpDown className="h-4 w-4 text-gray-400" />;
-    return (
-      <ArrowUpDown 
-        className={`h-4 w-4 ${sortDirection === 'asc' ? 'text-blue-600 rotate-180' : 'text-blue-600'}`} 
-      />
-    );
   };
 
   return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900">Add Top-up</h3>
+          <p className="text-sm text-gray-500 mt-0.5">{userName}</p>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="0.00"
+              required
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input
+              type="text"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+            <select
+              value={paymentMethodId}
+              onChange={e => setPaymentMethodId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Select —</option>
+              {paymentMethods.map(pm => (
+                <option key={pm.id} value={pm.id}>{pm.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+            >
+              {saving ? 'Adding...' : 'Add Top-up'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export const PilotAccountsTab: React.FC = () => {
+  const { pilotAccounts, loading, addTopUp, refetch } = useBillingAccounts();
+  const { paymentMethods } = useBillingSettings();
+  const [sortField, setSortField] = useState<'name' | 'balance' | 'unpaidFlightCount'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [topUpUserId, setTopUpUserId] = useState<string | null>(null);
+
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const sorted = [...pilotAccounts].sort((a, b) => {
+    let av: any = a[sortField];
+    let bv: any = b[sortField];
+    if (sortField === 'name') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const totalBalance = pilotAccounts.reduce((s, a) => s + a.balance, 0);
+  const lowBalanceCount = pilotAccounts.filter(a => a.balance < 100 && a.balance >= 0).length;
+  const negativeCount = pilotAccounts.filter(a => a.balance < 0).length;
+  const totalUnpaidFlights = pilotAccounts.reduce((s, a) => s + a.unpaidFlightCount, 0);
+
+  const SortIcon = ({ field }: { field: typeof sortField }) => (
+    <ArrowUpDown className={`h-3.5 w-3.5 ml-1 ${sortField === field ? 'text-blue-500' : 'text-gray-300'}`} />
+  );
+
+  const topUpAccount = pilotAccounts.find(a => a.userId === topUpUserId);
+  const selectedAccount = pilotAccounts.find(a => a.userId === selectedUserId);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <User className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Pilots</p>
-              <p className="text-2xl font-bold text-gray-900">{pilotAccounts.length}</p>
-            </div>
-          </div>
+      {/* Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Pilots</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{pilotAccounts.length}</p>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <User className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Balance</p>
-              <p className="text-2xl font-bold text-gray-900">
-                ${pilotAccounts.reduce((sum, account) => sum + account.balance, 0).toFixed(2)}
-              </p>
-            </div>
-          </div>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Funds Held</p>
+          <p className={`text-2xl font-bold mt-1 ${totalBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+            ${totalBalance.toFixed(2)}
+          </p>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <User className="h-6 w-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Low Balance</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {pilotAccounts.filter(account => account.balance < 100).length}
-              </p>
-            </div>
-          </div>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Low / Negative</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">
+            <span className="text-amber-500">{lowBalanceCount}</span>
+            <span className="text-gray-300 mx-1">/</span>
+            <span className="text-red-500">{negativeCount}</span>
+          </p>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <User className="h-6 w-6 text-purple-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Avg Balance</p>
-              <p className="text-2xl font-bold text-gray-900">
-                ${(pilotAccounts.reduce((sum, account) => sum + account.balance, 0) / pilotAccounts.length).toFixed(2)}
-              </p>
-            </div>
-          </div>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Unpaid Flights</p>
+          <p className={`text-2xl font-bold mt-1 ${totalUnpaidFlights > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+            {totalUnpaidFlights}
+          </p>
         </div>
       </div>
 
-      {/* Accounts Table */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+          <table className="min-w-full divide-y divide-gray-100">
+            <thead>
+              <tr className="bg-gray-50">
+                <th
+                  className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                   onClick={() => handleSort('name')}
                 >
-                  <div className="flex items-center space-x-1">
-                    <span>Student Name</span>
-                    {getSortIcon('name')}
-                  </div>
+                  <span className="flex items-center">Student <SortIcon field="name" /></span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                <th
+                  className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                   onClick={() => handleSort('balance')}
                 >
-                  <div className="flex items-center space-x-1">
-                    <span>Account Balance</span>
-                    {getSortIcon('balance')}
-                  </div>
+                  <span className="flex items-center">Balance <SortIcon field="balance" /></span>
                 </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                  onClick={() => handleSort('lastTransactionDate')}
+                <th
+                  className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
+                  onClick={() => handleSort('unpaidFlightCount')}
                 >
-                  <div className="flex items-center space-x-1">
-                    <span>Last Transaction</span>
-                    {getSortIcon('lastTransactionDate')}
-                  </div>
+                  <span className="flex items-center">Unpaid Flights <SortIcon field="unpaidFlightCount" /></span>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total Transactions
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Transactions</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {sortedAccounts.map(account => (
-                <tr key={account.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center">
-                        <User className="h-4 w-4 text-white" />
-                      </div>
-                      <div className="ml-3">
-                        <div className="text-sm font-medium text-gray-900">{account.name}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {account.email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <span className={getBalanceColor(account.balance)}>
-                      ${account.balance.toFixed(2)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {account.lastTransactionDate.toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {account.totalTransactions}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleViewAccount(account)}
-                      className="flex items-center space-x-1 text-blue-600 hover:text-blue-900"
-                    >
-                      <Eye className="h-4 w-4" />
-                      <span>View History</span>
-                    </button>
-                  </td>
+            <tbody className="divide-y divide-gray-100">
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">No pilots found</td>
                 </tr>
-              ))}
+              ) : (
+                sorted.map(account => (
+                  <tr key={account.userId} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                          <User className="h-4 w-4 text-blue-600" />
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">{account.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-500">{account.email}</td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <span className={`text-sm font-semibold ${
+                        account.balance < 0 ? 'text-red-600' :
+                        account.balance < 100 ? 'text-amber-600' :
+                        'text-green-600'
+                      }`}>
+                        ${account.balance.toFixed(2)}
+                      </span>
+                      {account.balance < 0 && (
+                        <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-red-500">
+                          <AlertCircle className="h-3 w-3" /> Overdrawn
+                        </span>
+                      )}
+                      {account.balance >= 0 && account.balance < 100 && (
+                        <span className="ml-2 text-xs text-amber-500">Low</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      {account.unpaidFlightCount > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                          <AlertCircle className="h-3 w-3" />
+                          {account.unpaidFlightCount} unpaid
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                          <CheckCircle className="h-3 w-3" /> All clear
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                      {account.totalTransactions}
+                      {account.lastTransactionDate && (
+                        <div className="text-xs text-gray-400">
+                          Last: {new Date(account.lastTransactionDate).toLocaleDateString()}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setTopUpUserId(account.userId)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Top-up
+                        </button>
+                        <button
+                          onClick={() => setSelectedUserId(account.userId)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          History
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Account History Modal */}
-      {selectedAccount && (
+      {/* Top-up modal */}
+      {topUpUserId && topUpAccount && (
+        <TopUpModal
+          userId={topUpUserId}
+          userName={topUpAccount.name}
+          paymentMethods={paymentMethods}
+          onClose={() => setTopUpUserId(null)}
+          onConfirm={(amount, description, pmId) => addTopUp(topUpUserId, amount, description, pmId)}
+        />
+      )}
+
+      {/* Account history modal */}
+      {selectedUserId && selectedAccount && (
         <AccountHistoryModal
-          isOpen={showAccountHistory}
-          onClose={() => {
-            setShowAccountHistory(false);
-            setSelectedAccount(null);
-          }}
-          account={selectedAccount}
+          isOpen
+          userId={selectedUserId}
+          userName={selectedAccount.name}
+          userEmail={selectedAccount.email}
+          currentBalance={selectedAccount.balance}
+          onClose={() => setSelectedUserId(null)}
         />
       )}
     </div>
