@@ -371,11 +371,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
 // Helper function for date formatting
 function format(date: Date | number, formatStr: string): string {
-  // Simple format implementation for demo
   const d = new Date(date);
-  
+
   if (formatStr === 'yyyy-MM-dd') {
-    return d.toISOString().split('T')[0];
+    // Use local date parts to avoid UTC date-shift in non-UTC timezones
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
   if (formatStr === 'HH:mm') {
     return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });

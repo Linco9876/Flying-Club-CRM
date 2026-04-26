@@ -154,12 +154,9 @@ const AuthenticatedApp: React.FC<{
 
   const handleBookingSubmit = async (bookingData: any) => {
     try {
-      console.log('Form data received:', bookingData);
-
-      const startTime = new Date(`${bookingData.date}T${bookingData.startTime}`);
-      const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}`);
-
-      console.log('Parsed times:', { startTime, endTime });
+      // Parse as local time by appending seconds — avoids UTC date-shift
+      const startTime = new Date(`${bookingData.date}T${bookingData.startTime}:00`);
+      const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
 
       if (editingBooking) {
         await updateBooking(editingBooking.id, {
@@ -170,10 +167,11 @@ const AuthenticatedApp: React.FC<{
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
-          status: editingBooking.status
+          status: editingBooking.status,
+          flightTypeId: bookingData.flightTypeId || undefined,
         });
       } else {
-        const newBookingData = {
+        await addBooking({
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
           aircraftId: bookingData.aircraftId,
@@ -181,11 +179,9 @@ const AuthenticatedApp: React.FC<{
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
-          status: 'confirmed' as const
-        };
-
-        console.log('Creating new booking:', newBookingData);
-        await addBooking(newBookingData);
+          status: 'confirmed' as const,
+          flightTypeId: bookingData.flightTypeId || undefined,
+        });
       }
     } catch (error) {
       console.error('Error saving booking:', error);
