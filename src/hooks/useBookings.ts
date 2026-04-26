@@ -68,7 +68,8 @@ export const useBookings = () => {
         status: b.status,
         hasConflict: b.has_conflict || false,
         flightLog: flightLogsMap.get(b.id),
-        flight_logged: b.flight_logged || false
+        flight_logged: b.flight_logged || false,
+        flightTypeId: b.flight_type_id || undefined,
       }));
 
       setBookings(combinedBookings);
@@ -150,7 +151,8 @@ export const useBookings = () => {
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
         notes: bookingData.notes || null,
-        status: bookingStatus
+        status: bookingStatus,
+        flight_type_id: bookingData.flightTypeId || null,
       };
 
       console.log('Insert data:', insertData);
@@ -234,6 +236,7 @@ export const useBookings = () => {
       if (bookingData.paymentType !== undefined) updateData.payment_type = bookingData.paymentType;
       if (bookingData.notes !== undefined) updateData.notes = bookingData.notes || null;
       if (bookingData.status !== undefined) updateData.status = bookingData.status;
+      if (bookingData.flightTypeId !== undefined) updateData.flight_type_id = bookingData.flightTypeId || null;
 
       const { error } = await supabase
         .from('bookings')

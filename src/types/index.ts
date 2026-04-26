@@ -91,6 +91,7 @@ export interface Booking {
   hasConflict?: boolean;
   flightLog?: FlightLog;
   flight_logged?: boolean;
+  flightTypeId?: string;
 }
 
 export interface FlightLog {

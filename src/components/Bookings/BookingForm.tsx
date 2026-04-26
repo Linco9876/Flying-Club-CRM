@@ -46,6 +46,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     aircraftId: booking?.aircraftId || prefilledData?.aircraftId || '',
     instructorId: booking?.instructorId || prefilledData?.instructorId || '',
     paymentType: booking?.paymentType || '',
+    flightTypeId: booking?.flightTypeId || '',
     notes: booking?.notes || ''
   });
 
@@ -65,6 +66,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         aircraftId: booking.aircraftId,
         instructorId: booking.instructorId || '',
         paymentType: booking.paymentType,
+        flightTypeId: booking.flightTypeId || '',
         notes: booking.notes || ''
       });
     } else if (prefilledData) {
@@ -305,14 +307,21 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               Flight Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
             </label>
             <select
-              value={formData.paymentType}
-              onChange={(e) => setFormData(prev => ({ ...prev, paymentType: e.target.value as any }))}
+              value={formData.flightTypeId}
+              onChange={(e) => {
+                const selected = flightTypes.find(ft => ft.id === e.target.value);
+                setFormData(prev => ({
+                  ...prev,
+                  flightTypeId: e.target.value,
+                  paymentType: selected?.name as any || '',
+                }));
+              }}
               className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required={isFieldRequired('paymentType', userRole)}
             >
               <option value="">Select flight type</option>
               {flightTypes.map(ft => (
-                <option key={ft.id} value={ft.name}>{ft.name}</option>
+                <option key={ft.id} value={ft.id}>{ft.name}</option>
               ))}
             </select>
           </div>

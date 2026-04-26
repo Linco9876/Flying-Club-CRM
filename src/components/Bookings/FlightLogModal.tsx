@@ -17,6 +17,7 @@ interface Booking {
   startTime: Date | string;
   endTime: Date | string;
   notes?: string;
+  flightTypeId?: string;
 }
 
 interface FlightLogModalProps {
@@ -56,7 +57,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     takeoffs: undefined as number | undefined,
     landings: undefined as number | undefined,
     comments: '',
-    flight_type_id: '',
+    flight_type_id: booking.flightTypeId || '',
     payment_type: '',
     observations: '',
     oil_added: undefined as number | undefined,
