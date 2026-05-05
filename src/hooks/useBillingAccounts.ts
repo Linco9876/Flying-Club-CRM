@@ -223,7 +223,7 @@ export const useBillingAccounts = () => {
         .from('account_transactions')
         .insert({
           user_id: userId,
-          type: 'credit',
+          type: 'topup',
           amount,
           description: description || 'Account top-up',
           payment_method_id: paymentMethodId ?? null,
