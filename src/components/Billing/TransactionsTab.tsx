@@ -1,22 +1,99 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock } from 'lucide-react';
+import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
+import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 
+const MarkPaidModal: React.FC<{
+  flightId: string;
+  description: string;
+  amount: number | null;
+  paymentMethods: { id: string; name: string }[];
+  onClose: () => void;
+  onConfirm: (flightLogId: string, paymentType: string) => Promise<void>;
+}> = ({ flightId, description, amount, paymentMethods, onClose, onConfirm }) => {
+  const [paymentMethodId, setPaymentMethodId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentMethodId) return;
+    const selected = paymentMethods.find(pm => pm.id === paymentMethodId);
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await onConfirm(flightId, selected.name);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900">Mark as Paid</h3>
+          <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{description}</p>
+          {amount != null && (
+            <p className="text-sm font-semibold text-gray-800 mt-1">${Math.abs(amount).toFixed(2)}</p>
+          )}
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method <span className="text-red-500">*</span></label>
+            <select
+              value={paymentMethodId}
+              onChange={e => setPaymentMethodId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+              autoFocus
+            >
+              <option value="">— Select —</option>
+              {paymentMethods.map(pm => (
+                <option key={pm.id} value={pm.id}>{pm.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !paymentMethodId}
+              className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+            >
+              {saving ? 'Saving...' : 'Confirm Payment'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export const TransactionsTab: React.FC = () => {
-  const { transactions, unpaidFlights, loading } = useBillingAccounts();
+  const { transactions, unpaidFlights, loading, markFlightPaid } = useBillingAccounts();
+  const { paymentMethods } = useBillingSettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unpaid'>('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const [markingPaid, setMarkingPaid] = useState<{ flightId: string; description: string; amount: number | null } | null>(null);
   const itemsPerPage = 25;
 
   // Merge account transactions + unpaid flights into a unified list
   const allRows = useMemo(() => {
     const rows: Array<{
       id: string;
+      flightLogId: string | null;
       date: string;
       userName: string;
       userEmail: string;
@@ -28,6 +105,7 @@ export const TransactionsTab: React.FC = () => {
     }> = [
       ...transactions.map(t => ({
         id: t.id,
+        flightLogId: null,
         date: t.createdAt,
         userName: t.userName,
         userEmail: t.userEmail,
@@ -39,6 +117,7 @@ export const TransactionsTab: React.FC = () => {
       })),
       ...unpaidFlights.map(f => ({
         id: `unpaid-${f.id}`,
+        flightLogId: f.id,
         date: f.flightDate,
         userName: f.userName,
         userEmail: f.userEmail,
@@ -214,12 +293,13 @@ export const TransactionsTab: React.FC = () => {
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Method</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Balance After</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">
+                  <td colSpan={8} className="px-5 py-12 text-center text-sm text-gray-400">
                     No transactions found
                   </td>
                 </tr>
@@ -268,6 +348,17 @@ export const TransactionsTab: React.FC = () => {
                         {rowLabel(row.rowType)}
                       </span>
                     </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      {row.rowType === 'unpaid' && row.flightLogId && (
+                        <button
+                          onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount })}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Mark Paid
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
@@ -297,6 +388,17 @@ export const TransactionsTab: React.FC = () => {
           </div>
         )}
       </div>
+
+      {markingPaid && (
+        <MarkPaidModal
+          flightId={markingPaid.flightId}
+          description={markingPaid.description}
+          amount={markingPaid.amount}
+          paymentMethods={paymentMethods}
+          onClose={() => setMarkingPaid(null)}
+          onConfirm={markFlightPaid}
+        />
+      )}
     </div>
   );
 };
