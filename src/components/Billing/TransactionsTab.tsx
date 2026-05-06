@@ -9,11 +9,13 @@ const MarkPaidModal: React.FC<{
   flightId: string;
   description: string;
   amount: number | null;
+  preselectedPaymentType: string | null;
   paymentMethods: { id: string; name: string }[];
   onClose: () => void;
   onConfirm: (flightLogId: string, paymentType: string) => Promise<void>;
-}> = ({ flightId, description, amount, paymentMethods, onClose, onConfirm }) => {
-  const [paymentMethodId, setPaymentMethodId] = useState('');
+}> = ({ flightId, description, amount, preselectedPaymentType, paymentMethods, onClose, onConfirm }) => {
+  const preselected = paymentMethods.find(pm => pm.name === preselectedPaymentType);
+  const [paymentMethodId, setPaymentMethodId] = useState(preselected?.id ?? '');
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,7 +88,7 @@ export const TransactionsTab: React.FC = () => {
   const [dateEnd, setDateEnd] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unpaid'>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [markingPaid, setMarkingPaid] = useState<{ flightId: string; description: string; amount: number | null } | null>(null);
+  const [markingPaid, setMarkingPaid] = useState<{ flightId: string; description: string; amount: number | null; paymentType: string | null } | null>(null);
   const itemsPerPage = 25;
 
   // Merge account transactions + unpaid flights into a unified list
@@ -102,6 +104,7 @@ export const TransactionsTab: React.FC = () => {
       paymentMethod: string | null;
       balanceAfter: number | null;
       rowType: 'credit' | 'debit' | 'unpaid';
+      paymentType: string | null;
     }> = [
       ...transactions.map(t => ({
         id: t.id,
@@ -110,10 +113,11 @@ export const TransactionsTab: React.FC = () => {
         userName: t.userName,
         userEmail: t.userEmail,
         description: t.description,
-        amount: t.type === 'credit' ? t.amount : -t.amount,
+        amount: t.type === 'topup' || t.type === 'refund' ? t.amount : -t.amount,
         paymentMethod: t.paymentMethodName,
         balanceAfter: t.balanceAfter,
-        rowType: t.type as 'credit' | 'debit',
+        rowType: (t.type === 'topup' || t.type === 'refund' ? 'credit' : 'debit') as 'credit' | 'debit',
+        paymentType: null,
       })),
       ...unpaidFlights.map(f => ({
         id: `unpaid-${f.id}`,
@@ -126,6 +130,7 @@ export const TransactionsTab: React.FC = () => {
         paymentMethod: null,
         balanceAfter: null,
         rowType: 'unpaid' as const,
+        paymentType: f.paymentType,
       })),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -351,7 +356,7 @@ export const TransactionsTab: React.FC = () => {
                     <td className="px-5 py-3.5 whitespace-nowrap">
                       {row.rowType === 'unpaid' && row.flightLogId && (
                         <button
-                          onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount })}
+                          onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}
                           className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                         >
                           <CheckCircle className="h-3.5 w-3.5" />
@@ -394,6 +399,7 @@ export const TransactionsTab: React.FC = () => {
           flightId={markingPaid.flightId}
           description={markingPaid.description}
           amount={markingPaid.amount}
+          preselectedPaymentType={markingPaid.paymentType}
           paymentMethods={paymentMethods}
           onClose={() => setMarkingPaid(null)}
           onConfirm={markFlightPaid}

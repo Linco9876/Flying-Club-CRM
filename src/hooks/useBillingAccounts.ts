@@ -7,7 +7,7 @@ export interface AccountTransaction {
   userId: string;
   userName: string;
   userEmail: string;
-  type: 'credit' | 'debit';
+  type: 'topup' | 'flight_charge' | 'refund' | 'adjustment';
   amount: number;
   description: string;
   flightLogId: string | null;
@@ -28,6 +28,7 @@ export interface UnpaidFlight {
   calculatedCost: number | null;
   flightTypeId: string | null;
   flightTypeName: string | null;
+  paymentType: string | null;
 }
 
 export interface PilotAccount {
@@ -110,6 +111,7 @@ export const useBillingAccounts = () => {
           calculated_cost,
           flight_type_id,
           payment_status,
+          payment_type,
           aircraft!flight_logs_aircraft_id_fkey(registration),
           users!flight_logs_student_id_fkey(name, email),
           flight_types(name)
@@ -132,6 +134,7 @@ export const useBillingAccounts = () => {
           calculatedCost: row.calculated_cost != null ? parseFloat(row.calculated_cost) : null,
           flightTypeId: row.flight_type_id ?? null,
           flightTypeName: row.flight_types?.name ?? null,
+          paymentType: row.payment_type ?? null,
         }))
       );
     } catch (err) {

@@ -26,6 +26,7 @@ interface HistoryRow {
   rowType: 'credit' | 'debit' | 'unpaid';
   aircraftRegistration?: string;
   flightDuration?: number;
+  paymentType?: string | null;
 }
 
 export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
@@ -40,7 +41,7 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
   const { paymentMethods } = useBillingSettings();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [markingPaid, setMarkingPaid] = useState<{ flightLogId: string; amount: number } | null>(null);
+  const [markingPaid, setMarkingPaid] = useState<{ flightLogId: string; amount: number; paymentType: string | null } | null>(null);
   const [markPaymentMethodId, setMarkPaymentMethodId] = useState('');
   const [markSaving, setMarkSaving] = useState(false);
 
@@ -60,7 +61,7 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
           .order('created_at', { ascending: false }),
         supabase
           .from('flight_logs')
-          .select('id, start_time, flight_duration, calculated_cost, payment_status, payment_type, aircraft!flight_logs_aircraft_id_fkey(registration), flight_types(name)')
+          .select('id, start_time, flight_duration, calculated_cost, payment_status, payment_type, aircraft!flight_logs_aircraft_id_fkey(registration), users!flight_logs_student_id_fkey(name, email), flight_types(name)')
           .eq('student_id', userId)
           .or('payment_status.is.null,payment_status.eq.unpaid')
           .not('payment_type', 'is', null)
@@ -72,10 +73,10 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
         flightLogId: null,
         date: t.created_at,
         description: t.description ?? '',
-        amount: t.type === 'credit' ? parseFloat(t.amount) : -parseFloat(t.amount),
+        amount: (t.type === 'topup' || t.type === 'refund') ? parseFloat(t.amount) : -parseFloat(t.amount),
         paymentMethod: t.payment_methods?.name ?? null,
         balanceAfter: t.balance_after != null ? parseFloat(t.balance_after) : null,
-        rowType: t.type as 'credit' | 'debit',
+        rowType: (t.type === 'topup' || t.type === 'refund' ? 'credit' : 'debit') as 'credit' | 'debit',
       }));
 
       const unpaidRows: HistoryRow[] = (flightResult.data || []).map((f: any) => ({
@@ -89,6 +90,7 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
         rowType: 'unpaid' as const,
         aircraftRegistration: f.aircraft?.registration,
         flightDuration: parseFloat(f.flight_duration ?? 0),
+        paymentType: f.payment_type ?? null,
       }));
 
       const merged = [...txRows, ...unpaidRows].sort(
@@ -287,7 +289,11 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
                           </div>
                         ) : (
                           <button
-                            onClick={() => { setMarkingPaid({ flightLogId: row.flightLogId!, amount: Math.abs(row.amount) }); setMarkPaymentMethodId(''); }}
+                            onClick={() => {
+                              const preselected = paymentMethods.find(pm => pm.name === row.paymentType);
+                              setMarkingPaid({ flightLogId: row.flightLogId!, amount: Math.abs(row.amount), paymentType: row.paymentType ?? null });
+                              setMarkPaymentMethodId(preselected?.id ?? '');
+                            }}
                             className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                           >
                             <CheckCircle className="h-3 w-3" />
