@@ -15,6 +15,8 @@ export interface AccountTransaction {
   paymentMethodName: string | null;
   balanceAfter: number | null;
   createdAt: string;
+  verifiedStatus: 'pending' | 'verified' | 'rejected';
+  rejectionNotes: string | null;
 }
 
 export interface UnpaidFlight {
@@ -71,6 +73,8 @@ export const useBillingAccounts = () => {
           payment_method_id,
           balance_after,
           created_at,
+          verified_status,
+          rejection_notes,
           users!account_transactions_user_id_fkey(name, email),
           payment_methods(name)
         `)
@@ -92,6 +96,8 @@ export const useBillingAccounts = () => {
           paymentMethodName: row.payment_methods?.name ?? null,
           balanceAfter: row.balance_after != null ? parseFloat(row.balance_after) : null,
           createdAt: row.created_at,
+          verifiedStatus: row.verified_status ?? 'pending',
+          rejectionNotes: row.rejection_notes ?? null,
         }))
       );
     } catch (err) {
@@ -269,6 +275,69 @@ export const useBillingAccounts = () => {
     }
   };
 
+  const verifyTransaction = async (transactionId: string) => {
+    try {
+      const { error } = await supabase
+        .from('account_transactions')
+        .update({ verified_status: 'verified' })
+        .eq('id', transactionId);
+
+      if (error) throw error;
+
+      toast.success('Payment verified');
+      await fetchAll();
+    } catch (err) {
+      console.error('Error verifying transaction:', err);
+      toast.error('Failed to verify payment');
+      throw err;
+    }
+  };
+
+  const rejectTransaction = async (transactionId: string, notes: string) => {
+    try {
+      // Reverse the balance: find the transaction to get amount and user_id
+      const { data: tx, error: fetchError } = await supabase
+        .from('account_transactions')
+        .select('amount, user_id')
+        .eq('id', transactionId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+      if (!tx) throw new Error('Transaction not found');
+
+      // Reverse balance on student record
+      const { data: student } = await supabase
+        .from('students')
+        .select('prepaid_balance')
+        .eq('id', tx.user_id)
+        .maybeSingle();
+
+      const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
+      const reversedBalance = currentBalance - parseFloat(tx.amount);
+
+      const { error: rejectError } = await supabase
+        .from('account_transactions')
+        .update({ verified_status: 'rejected', rejection_notes: notes })
+        .eq('id', transactionId);
+
+      if (rejectError) throw rejectError;
+
+      const { error: balanceError } = await supabase
+        .from('students')
+        .update({ prepaid_balance: reversedBalance })
+        .eq('id', tx.user_id);
+
+      if (balanceError) throw balanceError;
+
+      toast.success('Payment rejected and balance reversed');
+      await fetchAll();
+    } catch (err) {
+      console.error('Error rejecting transaction:', err);
+      toast.error('Failed to reject payment');
+      throw err;
+    }
+  };
+
   return {
     transactions,
     unpaidFlights,
@@ -276,6 +345,8 @@ export const useBillingAccounts = () => {
     loading,
     addTopUp,
     markFlightPaid,
+    verifyTransaction,
+    rejectTransaction,
     refetch: fetchAll,
   };
 };

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle } from 'lucide-react';
+import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { format, parseISO } from 'date-fns';
@@ -59,18 +59,10 @@ const MarkPaidModal: React.FC<{
             </select>
           </div>
           <div className="flex gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={saving || !paymentMethodId}
-              className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
-            >
+            <button type="submit" disabled={saving || !paymentMethodId} className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors">
               {saving ? 'Saving...' : 'Confirm Payment'}
             </button>
           </div>
@@ -80,8 +72,80 @@ const MarkPaidModal: React.FC<{
   );
 };
 
+const RejectModal: React.FC<{
+  transactionId: string;
+  userName: string;
+  amount: number;
+  description: string;
+  onClose: () => void;
+  onConfirm: (transactionId: string, notes: string) => Promise<void>;
+}> = ({ transactionId, userName, amount, description, onClose, onConfirm }) => {
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notes.trim()) return;
+    setSaving(true);
+    try {
+      await onConfirm(transactionId, notes.trim());
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <XCircle className="h-5 w-5 text-red-600" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">Reject Payment</h3>
+              <p className="text-sm text-gray-500 mt-0.5">{userName} · ${amount.toFixed(2)}</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-500 mt-3 bg-gray-50 rounded-lg px-3 py-2">{description}</p>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reason for rejection <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={3}
+              placeholder="e.g. Bank transfer reference not found, incorrect amount received..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              required
+              autoFocus
+            />
+            <p className="text-xs text-gray-400 mt-1">This note will be visible to the pilot.</p>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !notes.trim()}
+              className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 transition-colors"
+            >
+              {saving ? 'Rejecting...' : 'Reject & Reverse Balance'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export const TransactionsTab: React.FC = () => {
-  const { transactions, unpaidFlights, loading, markFlightPaid } = useBillingAccounts();
+  const { transactions, unpaidFlights, loading, markFlightPaid, verifyTransaction, rejectTransaction } = useBillingAccounts();
   const { paymentMethods } = useBillingSettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
@@ -89,9 +153,10 @@ export const TransactionsTab: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unpaid'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [markingPaid, setMarkingPaid] = useState<{ flightId: string; description: string; amount: number | null; paymentType: string | null } | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const itemsPerPage = 25;
 
-  // Merge account transactions + unpaid flights into a unified list
   const allRows = useMemo(() => {
     const rows: Array<{
       id: string;
@@ -105,6 +170,9 @@ export const TransactionsTab: React.FC = () => {
       balanceAfter: number | null;
       rowType: 'credit' | 'debit' | 'unpaid';
       paymentType: string | null;
+      isTopup: boolean;
+      verifiedStatus: 'pending' | 'verified' | 'rejected' | null;
+      rejectionNotes: string | null;
     }> = [
       ...transactions.map(t => ({
         id: t.id,
@@ -118,6 +186,9 @@ export const TransactionsTab: React.FC = () => {
         balanceAfter: t.balanceAfter,
         rowType: (t.type === 'topup' || t.type === 'refund' ? 'credit' : 'debit') as 'credit' | 'debit',
         paymentType: null,
+        isTopup: t.type === 'topup',
+        verifiedStatus: t.verifiedStatus,
+        rejectionNotes: t.rejectionNotes,
       })),
       ...unpaidFlights.map(f => ({
         id: `unpaid-${f.id}`,
@@ -131,6 +202,9 @@ export const TransactionsTab: React.FC = () => {
         balanceAfter: null,
         rowType: 'unpaid' as const,
         paymentType: f.paymentType,
+        isTopup: false,
+        verifiedStatus: null,
+        rejectionNotes: null,
       })),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -154,9 +228,14 @@ export const TransactionsTab: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
   const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const totalCredits = transactions.reduce((s, t) => t.type === 'credit' ? s + t.amount : s, 0);
-  const totalDebits = transactions.reduce((s, t) => t.type === 'debit' ? s + t.amount : s, 0);
+  const totalCredits = transactions
+    .filter(t => t.type === 'topup' || t.type === 'refund')
+    .reduce((s, t) => s + t.amount, 0);
+  const totalDebits = transactions
+    .filter(t => t.type === 'flight_charge' || t.type === 'adjustment')
+    .reduce((s, t) => s + t.amount, 0);
   const totalUnpaidValue = unpaidFlights.reduce((s, f) => s + (f.calculatedCost ?? 0), 0);
+  const pendingCount = transactions.filter(t => t.type === 'topup' && t.verifiedStatus === 'pending').length;
 
   const handleExport = () => {
     const rows = [
@@ -168,7 +247,9 @@ export const TransactionsTab: React.FC = () => {
         r.amount != null ? r.amount.toFixed(2) : '',
         r.paymentMethod ?? '',
         r.balanceAfter != null ? r.balanceAfter.toFixed(2) : '',
-        r.rowType === 'unpaid' ? 'Unpaid' : r.rowType === 'credit' ? 'Top-up' : 'Payment',
+        r.rowType === 'unpaid' ? 'Unpaid' :
+        r.isTopup ? (r.verifiedStatus === 'verified' ? 'Verified' : r.verifiedStatus === 'rejected' ? 'Rejected' : 'Pending') :
+        'Payment',
       ]),
     ];
     const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
@@ -182,16 +263,56 @@ export const TransactionsTab: React.FC = () => {
     toast.success('Exported to CSV');
   };
 
-  const rowBadge = (type: 'credit' | 'debit' | 'unpaid') => {
-    if (type === 'credit') return 'bg-green-100 text-green-800';
-    if (type === 'debit') return 'bg-blue-100 text-blue-800';
-    return 'bg-amber-100 text-amber-800';
+  const handleVerify = async (id: string) => {
+    setVerifyingId(id);
+    try {
+      await verifyTransaction(id);
+    } finally {
+      setVerifyingId(null);
+    }
   };
 
-  const rowLabel = (type: 'credit' | 'debit' | 'unpaid') => {
-    if (type === 'credit') return 'Top-up';
-    if (type === 'debit') return 'Payment';
-    return 'Unpaid';
+  const rejectingRow = rejectingId ? allRows.find(r => r.id === rejectingId) : null;
+
+  const statusBadge = (row: typeof allRows[0]) => {
+    if (row.rowType === 'unpaid') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+          <AlertCircle className="h-3 w-3" /> Unpaid
+        </span>
+      );
+    }
+    if (row.isTopup) {
+      if (row.verifiedStatus === 'verified') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <ShieldCheck className="h-3 w-3" /> Verified
+          </span>
+        );
+      }
+      if (row.verifiedStatus === 'rejected') {
+        return (
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+              <ShieldX className="h-3 w-3" /> Rejected
+            </span>
+            {row.rejectionNotes && (
+              <p className="text-xs text-red-600 max-w-[180px] leading-tight">{row.rejectionNotes}</p>
+            )}
+          </div>
+        );
+      }
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+          <ShieldAlert className="h-3 w-3" /> Unverified
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+        Payment
+      </span>
+    );
   };
 
   if (loading) {
@@ -205,7 +326,7 @@ export const TransactionsTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
           <div className="p-2.5 bg-green-100 rounded-lg">
             <TrendingUp className="h-5 w-5 text-green-600" />
@@ -233,6 +354,15 @@ export const TransactionsTab: React.FC = () => {
               Outstanding ({unpaidFlights.length} flights)
             </p>
             <p className="text-xl font-bold text-gray-900">${totalUnpaidValue.toFixed(2)}</p>
+          </div>
+        </div>
+        <div className={`rounded-xl border shadow-sm p-5 flex items-center gap-4 ${pendingCount > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+          <div className={`p-2.5 rounded-lg ${pendingCount > 0 ? 'bg-amber-100' : 'bg-gray-100'}`}>
+            <ShieldAlert className={`h-5 w-5 ${pendingCount > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Awaiting Verification</p>
+            <p className={`text-xl font-bold mt-0.5 ${pendingCount > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{pendingCount}</p>
           </div>
         </div>
       </div>
@@ -298,7 +428,7 @@ export const TransactionsTab: React.FC = () => {
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Method</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Balance After</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                <th className="px-5 py-3" />
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -310,7 +440,15 @@ export const TransactionsTab: React.FC = () => {
                 </tr>
               ) : (
                 paginated.map(row => (
-                  <tr key={row.id} className={`hover:bg-gray-50 transition-colors ${row.rowType === 'unpaid' ? 'bg-amber-50/40' : ''}`}>
+                  <tr
+                    key={row.id}
+                    className={`hover:bg-gray-50/80 transition-colors ${
+                      row.rowType === 'unpaid' ? 'bg-amber-50/40' :
+                      row.isTopup && row.verifiedStatus === 'pending' ? 'bg-amber-50/20' :
+                      row.isTopup && row.verifiedStatus === 'rejected' ? 'bg-red-50/20' :
+                      ''
+                    }`}
+                  >
                     <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
                       {format(parseISO(row.date), 'dd MMM yyyy')}
                       <div className="text-xs text-gray-400">{format(parseISO(row.date), 'HH:mm')}</div>
@@ -321,15 +459,18 @@ export const TransactionsTab: React.FC = () => {
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-700 max-w-xs">
                       <div className="flex items-start gap-1.5">
-                        {row.rowType === 'unpaid' && (
-                          <AlertCircle className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
-                        )}
+                        {row.rowType === 'unpaid' && <AlertCircle className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />}
                         {row.description}
                       </div>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-sm font-semibold">
                       {row.amount != null ? (
-                        <span className={row.amount >= 0 ? 'text-green-600' : row.rowType === 'unpaid' ? 'text-amber-600' : 'text-gray-800'}>
+                        <span className={
+                          row.isTopup && row.verifiedStatus === 'rejected' ? 'text-red-400 line-through' :
+                          row.amount >= 0 ? 'text-green-600' :
+                          row.rowType === 'unpaid' ? 'text-amber-600' :
+                          'text-gray-800'
+                        }>
                           {row.amount >= 0 ? '+' : ''}${Math.abs(row.amount).toFixed(2)}
                         </span>
                       ) : (
@@ -349,9 +490,7 @@ export const TransactionsTab: React.FC = () => {
                       )}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${rowBadge(row.rowType)}`}>
-                        {rowLabel(row.rowType)}
-                      </span>
+                      {statusBadge(row)}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
                       {row.rowType === 'unpaid' && row.flightLogId && (
@@ -362,6 +501,25 @@ export const TransactionsTab: React.FC = () => {
                           <CheckCircle className="h-3.5 w-3.5" />
                           Mark Paid
                         </button>
+                      )}
+                      {row.isTopup && row.verifiedStatus === 'pending' && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleVerify(row.id)}
+                            disabled={verifyingId === row.id}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            {verifyingId === row.id ? '...' : 'Confirm'}
+                          </button>
+                          <button
+                            onClick={() => setRejectingId(row.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Reject
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -403,6 +561,17 @@ export const TransactionsTab: React.FC = () => {
           paymentMethods={paymentMethods}
           onClose={() => setMarkingPaid(null)}
           onConfirm={markFlightPaid}
+        />
+      )}
+
+      {rejectingId && rejectingRow && (
+        <RejectModal
+          transactionId={rejectingId}
+          userName={rejectingRow.userName}
+          amount={Math.abs(rejectingRow.amount ?? 0)}
+          description={rejectingRow.description}
+          onClose={() => setRejectingId(null)}
+          onConfirm={rejectTransaction}
         />
       )}
     </div>
