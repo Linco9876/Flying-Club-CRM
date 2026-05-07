@@ -96,27 +96,45 @@ export const useOrganisationSettings = () => {
     fetchSettings();
   }, []);
 
-  const updateSettings = async (updates: Partial<OrganisationSettings>) => {
+  const uploadLogo = async (file: File): Promise<string | null> => {
+    const ext = file.name.split('.').pop();
+    const path = `logo.${ext}`;
+    const { error } = await supabase.storage
+      .from('org-logos')
+      .upload(path, file, { upsert: true, contentType: file.type });
+    if (error) throw error;
+    const { data } = supabase.storage.from('org-logos').getPublicUrl(path);
+    // Bust the browser cache by appending a timestamp
+    return `${data.publicUrl}?t=${Date.now()}`;
+  };
+
+  const updateSettings = async (updates: Partial<OrganisationSettings>, logoFile?: File | null) => {
     if (!settings) return;
 
     try {
       const { data: userData } = await supabase.auth.getUser();
 
+      let logoUrl = updates.logo_url;
+      if (logoFile) {
+        logoUrl = await uploadLogo(logoFile) ?? undefined;
+      }
+
       const { error } = await supabase
         .from('organisation_settings')
         .update({
           ...updates,
+          ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
           updated_at: new Date().toISOString(),
-          updated_by: userData.user?.id
+          updated_by: userData.user?.id,
         })
         .eq('id', settings.id);
 
       if (error) throw error;
 
       await fetchSettings();
-      toast.success('Organisation settings updated successfully');
+      toast.success('Organisation settings saved');
     } catch (err: any) {
-      toast.error('Failed to update organisation settings');
+      toast.error('Failed to save organisation settings');
       throw err;
     }
   };
