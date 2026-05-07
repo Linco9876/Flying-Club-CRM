@@ -4,6 +4,8 @@ import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { AccountHistoryModal } from './AccountHistoryModal';
 
+type BillingHook = ReturnType<typeof useBillingAccounts>;
+
 interface TopUpModalProps {
   userId: string;
   userName: string;
@@ -97,8 +99,8 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
   );
 };
 
-export const PilotAccountsTab: React.FC = () => {
-  const { pilotAccounts, loading, addTopUp, refetch } = useBillingAccounts();
+export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
+  const { pilotAccounts, loading, addTopUp } = billing;
   const { paymentMethods } = useBillingSettings();
   const [sortField, setSortField] = useState<'name' | 'balance' | 'unpaidFlightCount'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');

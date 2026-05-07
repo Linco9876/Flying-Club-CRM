@@ -5,6 +5,8 @@ import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 
+type BillingHook = ReturnType<typeof useBillingAccounts>;
+
 const MarkPaidModal: React.FC<{
   flightId: string;
   description: string;
@@ -144,8 +146,8 @@ const RejectModal: React.FC<{
   );
 };
 
-export const TransactionsTab: React.FC = () => {
-  const { transactions, unpaidFlights, loading, markFlightPaid, verifyTransaction, rejectTransaction } = useBillingAccounts();
+export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
+  const { transactions, unpaidFlights, loading, markFlightPaid, verifyTransaction, rejectTransaction } = billing;
   const { paymentMethods } = useBillingSettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');

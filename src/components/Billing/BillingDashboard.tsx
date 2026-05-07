@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { TransactionsTab } from './TransactionsTab';
 import { PilotAccountsTab } from './PilotAccountsTab';
+import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { CreditCard, Users } from 'lucide-react';
 
 export const BillingDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('transactions');
+  const billing = useBillingAccounts();
 
   const tabs = [
     { id: 'transactions', label: 'Transactions', icon: <CreditCard className="h-4 w-4" /> },
@@ -40,8 +42,8 @@ export const BillingDashboard: React.FC = () => {
 
       {/* Tab Content */}
       <div>
-        {activeTab === 'transactions' && <TransactionsTab />}
-        {activeTab === 'accounts' && <PilotAccountsTab />}
+        {activeTab === 'transactions' && <TransactionsTab billing={billing} />}
+        {activeTab === 'accounts' && <PilotAccountsTab billing={billing} />}
       </div>
     </div>
   );
