@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Globe, Phone, Mail, MapPin, Upload, Save, X, Loader, Image as ImageIcon } from 'lucide-react';
+import { Building2, Globe, Phone, Mail, MapPin, X, Image as ImageIcon } from 'lucide-react';
 import { useOrganisationSettings } from '../../hooks/useSettings';
 
 interface OrganisationSettingsProps {
@@ -26,8 +26,6 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -53,7 +51,6 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
 
   const handleChange = (field: string, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    setIsDirty(true);
     onFormChange();
   };
 
@@ -66,21 +63,19 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
     }
     setLogoFile(file);
     setLogoPreview(URL.createObjectURL(file));
-    setIsDirty(true);
     onFormChange();
   };
 
   const handleRemoveLogo = () => {
     setLogoFile(null);
     setLogoPreview(null);
-    setIsDirty(true);
     onFormChange();
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
+  // Register save/discard handlers for the dashboard's global Save/Cancel bar
+  useEffect(() => {
+    (window as any).__organisationSettingsSave = async () => {
       await updateSettings(
         {
           club_name: formData.clubName,
@@ -94,40 +89,14 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
           booking_day_start: formData.bookingDayStart,
           booking_day_end: formData.bookingDayEnd,
           default_slot_length: formData.defaultSlotLength,
-          // If logo was removed and there's no new file, clear it
           ...(logoFile === null && logoPreview === null ? { logo_url: null } : {}),
         },
         logoFile
       );
-      setIsDirty(false);
       setLogoFile(null);
-    } catch {
-      // error toast handled in hook
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDiscard = () => {
-    if (!settings) return;
-    setFormData({
-      clubName: settings.club_name ?? '',
-      address: settings.address ?? '',
-      timezone: settings.timezone ?? 'Australia/Melbourne',
-      currency: settings.currency ?? 'AUD',
-      contactEmail: settings.contact_email ?? '',
-      contactPhone: settings.contact_phone ?? '',
-      website: settings.website ?? '',
-      studentPortalUrl: settings.student_portal_url ?? '',
-      bookingDayStart: settings.booking_day_start ?? '06:00',
-      bookingDayEnd: settings.booking_day_end ?? '22:00',
-      defaultSlotLength: settings.default_slot_length ?? 30,
-    });
-    setLogoFile(null);
-    setLogoPreview(settings.logo_url ?? null);
-    setIsDirty(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
+    };
+    return () => { delete (window as any).__organisationSettingsSave; };
+  }, [formData, logoFile, logoPreview, updateSettings]);
 
   if (loading) {
     return (
@@ -393,32 +362,6 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
           </div>
         </section>
       </div>
-
-      {/* Sticky Save Bar */}
-      {canEdit && isDirty && (
-        <div className="border-t border-gray-200 bg-gray-50 px-6 py-4 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-600">You have unsaved changes</p>
-            <div className="flex gap-3">
-              <button
-                onClick={handleDiscard}
-                disabled={saving}
-                className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Discard
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                {saving ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
