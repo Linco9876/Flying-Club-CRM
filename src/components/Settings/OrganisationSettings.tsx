@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Globe, Phone, Mail, MapPin, X, Image as ImageIcon } from 'lucide-react';
+import { Building2, Globe, Phone, Mail, MapPin, X, Loader, Image as ImageIcon } from 'lucide-react';
 import { useOrganisationSettings } from '../../hooks/useSettings';
 
 interface OrganisationSettingsProps {
