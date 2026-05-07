@@ -10,10 +10,13 @@ interface InstructorStats {
   completedFlights: number;
   cancelledFlights: number;
   totalHoursInstructed: number;
-  uniqueStudents: number;
+  activeStudents: number;
 }
 
 type SortField = keyof Omit<InstructorStats, 'id' | 'email'>;
+
+const ONE_MONTH_AGO = new Date();
+ONE_MONTH_AGO.setMonth(ONE_MONTH_AGO.getMonth() - 1);
 
 export const InstructorStatisticsTab: React.FC = () => {
   const { flightLogs, bookings, users, aircraft, loading, error } = useReportsData();
@@ -40,7 +43,7 @@ export const InstructorStatisticsTab: React.FC = () => {
         completedFlights: 0,
         cancelledFlights: 0,
         totalHoursInstructed: 0,
-        uniqueStudents: 0,
+        activeStudents: 0,
         studentSet: new Set(),
       });
     });
@@ -74,12 +77,15 @@ export const InstructorStatisticsTab: React.FC = () => {
       const dual = parseFloat(log.dual_time as any) || 0;
       const total = parseFloat(log.flight_duration as any) || dual;
       s.totalHoursInstructed += total;
-      s.studentSet.add(log.student_id);
+      // Track active students: flown together in the past 30 days
+      if (start >= ONE_MONTH_AGO) {
+        s.studentSet.add(log.student_id);
+      }
     });
 
     return Array.from(map.values()).map(({ studentSet, ...rest }) => ({
       ...rest,
-      uniqueStudents: studentSet.size,
+      activeStudents: studentSet.size,
     }));
   }, [instructors, bookings, flightLogs, dateRange, aircraftFilter, studentFilter]);
 
@@ -103,10 +109,10 @@ export const InstructorStatisticsTab: React.FC = () => {
   };
 
   const exportCsv = () => {
-    const headers = ['Name', 'Email', 'Total Bookings', 'Completed', 'Cancelled', 'Hours Instructed', 'Students Taught'];
+    const headers = ['Name', 'Email', 'Total Bookings', 'Completed', 'Cancelled', 'Hours Instructed', 'Active Students (30d)'];
     const rows = sorted.map(s => [
       s.name, s.email, s.totalBookings, s.completedFlights, s.cancelledFlights,
-      s.totalHoursInstructed.toFixed(1), s.uniqueStudents
+      s.totalHoursInstructed.toFixed(1), s.activeStudents
     ]);
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -239,7 +245,7 @@ export const InstructorStatisticsTab: React.FC = () => {
           { label: 'Total Instructors', value: sorted.length, color: 'bg-blue-50 text-blue-700 border-blue-100' },
           { label: 'Total Bookings', value: sorted.reduce((s, i) => s + i.totalBookings, 0), color: 'bg-sky-50 text-sky-700 border-sky-100' },
           { label: 'Hours Instructed', value: sorted.reduce((s, i) => s + i.totalHoursInstructed, 0).toFixed(1), color: 'bg-green-50 text-green-700 border-green-100' },
-          { label: 'Students Taught', value: sorted.reduce((s, i) => s + i.uniqueStudents, 0), color: 'bg-teal-50 text-teal-700 border-teal-100' },
+          { label: 'Active Students (30d)', value: sorted.reduce((s, i) => s + i.activeStudents, 0), color: 'bg-teal-50 text-teal-700 border-teal-100' },
         ].map(card => (
           <div key={card.label} className={`rounded-xl border p-4 ${card.color}`}>
             <p className="text-xs font-semibold uppercase tracking-wide opacity-70">{card.label}</p>
@@ -258,7 +264,7 @@ export const InstructorStatisticsTab: React.FC = () => {
                 <Th field="totalBookings" label="Bookings" />
                 <Th field="completedFlights" label="Completed" />
                 <Th field="totalHoursInstructed" label="Hours Instructed" />
-                <Th field="uniqueStudents" label="Students Taught" />
+                <Th field="activeStudents" label="Active Students (30d)" />
                 <Th field="cancelledFlights" label="Cancelled" />
               </tr>
             </thead>
@@ -273,8 +279,8 @@ export const InstructorStatisticsTab: React.FC = () => {
                   <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-700">{s.completedFlights}</td>
                   <td className="px-5 py-3.5 whitespace-nowrap text-sm font-semibold text-gray-900">{s.totalHoursInstructed.toFixed(1)}</td>
                   <td className="px-5 py-3.5 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                      {s.uniqueStudents} students
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 text-teal-700">
+                      {s.activeStudents} active
                     </span>
                   </td>
                   <td className="px-5 py-3.5 whitespace-nowrap">
