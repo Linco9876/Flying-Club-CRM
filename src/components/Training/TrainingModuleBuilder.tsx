@@ -42,6 +42,7 @@ const createLessonFromSequence = (sequence: SyllabusSequence): TrainingLesson =>
 export const TrainingModuleBuilder: React.FC = () => {
   const {
     modules,
+    loading: modulesLoading,
     createBlankModule,
     duplicateModule: duplicateTrainingModule,
     updateModule: updateTrainingModule,
@@ -103,33 +104,45 @@ export const TrainingModuleBuilder: React.FC = () => {
   };
 
   const updateModule = (moduleId: string, updater: (module: TrainingModule) => TrainingModule) => {
-    updateTrainingModule(moduleId, updater);
+    updateTrainingModule(moduleId, updater).catch(() => {});
   };
 
-  const handleCreateModule = () => {
-    const module = createBlankModule();
-    setSelectedModuleId(module.id);
-    toast.success('New module created');
-  };
-
-  const handleDuplicateModule = (module: TrainingModule) => {
-    const duplicate = duplicateTrainingModule(module.id, {
-      title: `${module.title} (Copy)`,
-      status: 'draft',
-      version: `${module.version}-draft`
-    });
-
-    if (duplicate) {
-      setSelectedModuleId(duplicate.id);
-      toast.success('Module duplicated as draft');
-    } else {
-      toast.error('Unable to duplicate module');
+  const handleCreateModule = async () => {
+    try {
+      const module = await createBlankModule();
+      setSelectedModuleId(module.id);
+      toast.success('New module created');
+    } catch {
+      // error toast handled in context
     }
   };
 
-  const handleDeleteModule = (moduleId: string) => {
-    deleteTrainingModule(moduleId);
-    toast.success('Module removed');
+  const handleDuplicateModule = async (module: TrainingModule) => {
+    try {
+      const duplicate = await duplicateTrainingModule(module.id, {
+        title: `${module.title} (Copy)`,
+        status: 'draft',
+        version: `${module.version}-draft`
+      });
+
+      if (duplicate) {
+        setSelectedModuleId(duplicate.id);
+        toast.success('Module duplicated as draft');
+      } else {
+        toast.error('Unable to duplicate module');
+      }
+    } catch {
+      // error toast handled in context
+    }
+  };
+
+  const handleDeleteModule = async (moduleId: string) => {
+    try {
+      await deleteTrainingModule(moduleId);
+      toast.success('Module removed');
+    } catch {
+      // error toast handled in context
+    }
   };
 
   const handleStatusToggle = (module: TrainingModule) => {
@@ -329,6 +342,15 @@ export const TrainingModuleBuilder: React.FC = () => {
     }));
     toast.success(`${sequence.title} added to module`);
   };
+
+  if (modulesLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent mr-2" />
+        <span className="text-gray-500 text-sm">Loading modules...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">

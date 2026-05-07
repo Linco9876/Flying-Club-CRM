@@ -165,9 +165,9 @@ interface RichTextEditorProps {
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange, placeholder }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const isFocused = useRef(false);
-  // Stable ref so callbacks never go stale
+  // Assign synchronously so callbacks are never stale
   const onChangeRef = useRef(onChange);
-  useEffect(() => { onChangeRef.current = onChange; });
+  onChangeRef.current = onChange;
 
   // Only push value into DOM when the editor is not focused (i.e. on initial load
   // or when the parent resets the value externally)
@@ -319,7 +319,7 @@ const normaliseKeyExercises = (content: string) =>
     .filter(Boolean);
 
 export const TrainingCourseCatalog: React.FC = () => {
-  const { modules, addModule, updateModule } = useTrainingModules();
+  const { modules, loading: modulesLoading, addModule, updateModule } = useTrainingModules();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -440,7 +440,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       ? selectedModule.lessons.every((lesson) => expandedLessons[lesson.id])
       : false;
 
-  const handleCreateCourse = () => {
+  const handleCreateCourse = async () => {
     const title = newCourse.title.trim();
     const description = newCourse.description.trim();
     const category = newCourse.category.trim();
@@ -461,7 +461,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       .filter(Boolean);
 
     const module: TrainingModule = {
-      id: `module-${Date.now()}`,
+      id: '',
       title,
       description: description || 'Add a course overview for instructors and students.',
       category: category || 'Custom',
@@ -477,11 +477,15 @@ export const TrainingCourseCatalog: React.FC = () => {
       lastUpdated: new Date()
     };
 
-    const createdModule = addModule(module);
-    setSelectedModuleId(createdModule.id);
-    setShowCreateForm(false);
-    setNewCourse({ title: '', category: '', description: '', estimatedDurationHours: 6, tags: '' });
-    toast.success('New course created');
+    try {
+      const createdModule = await addModule(module);
+      setSelectedModuleId(createdModule.id);
+      setShowCreateForm(false);
+      setNewCourse({ title: '', category: '', description: '', estimatedDurationHours: 6, tags: '' });
+      toast.success('New course created');
+    } catch {
+      // error toast handled in context
+    }
   };
 
   const handleCancelCreate = () => {
@@ -549,7 +553,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     });
   };
 
-  const handleCreateLesson = () => {
+  const handleCreateLesson = async () => {
     if (!selectedModule) {
       toast.error('Please select a course first');
       return;
@@ -644,19 +648,22 @@ export const TrainingCourseCatalog: React.FC = () => {
       assessmentCriteria: criteria
     };
 
-    updateModule(selectedModule.id, (current) => ({
-      ...current,
-      lessons: [...current.lessons, lesson],
-      lastUpdated: new Date()
-    }));
-
-    toast.success('Lesson added to course');
-    setShowLessonForm(false);
-    resetLessonForm();
-    setExpandedLessons((prev) => ({ ...prev, [lesson.id]: true }));
+    try {
+      await updateModule(selectedModule.id, (current) => ({
+        ...current,
+        lessons: [...current.lessons, lesson],
+        lastUpdated: new Date()
+      }));
+      toast.success('Lesson added to course');
+      setShowLessonForm(false);
+      resetLessonForm();
+      setExpandedLessons((prev) => ({ ...prev, [lesson.id]: true }));
+    } catch {
+      // error toast handled in context
+    }
   };
 
-  const handlePublishCourse = () => {
+  const handlePublishCourse = async () => {
     if (!selectedModule) {
       toast.error('Select a course to publish');
       return;
@@ -667,13 +674,26 @@ export const TrainingCourseCatalog: React.FC = () => {
       return;
     }
 
-    updateModule(selectedModule.id, (current) => ({
-      ...current,
-      status: 'published',
-      lastUpdated: new Date()
-    }));
-    toast.success('Course published');
+    try {
+      await updateModule(selectedModule.id, (current) => ({
+        ...current,
+        status: 'published',
+        lastUpdated: new Date()
+      }));
+      toast.success('Course published');
+    } catch {
+      // error toast handled in context
+    }
   };
+
+  if (modulesLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent mr-2" />
+        <span className="text-gray-500 text-sm">Loading courses...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
