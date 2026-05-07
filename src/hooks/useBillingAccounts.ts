@@ -174,16 +174,15 @@ export const useBillingAccounts = () => {
         const uid = tx.user_id;
         if (!txByUser[uid]) txByUser[uid] = { count: 0, last: tx.created_at };
         txByUser[uid].count += 1;
+      });
 
-        // Only verified topups/refunds add to balance; flight charges always deduct
-        const amt = parseFloat(tx.amount ?? 0);
-        if (tx.type === 'topup' || tx.type === 'refund') {
-          if (tx.verified_status === 'verified') {
-            balanceMap[uid] = (balanceMap[uid] ?? 0) + amt;
-          }
-        } else if (tx.type === 'flight_charge' || tx.type === 'adjustment') {
-          balanceMap[uid] = (balanceMap[uid] ?? 0) - amt;
-        }
+      // Read authoritative balance from students table
+      const { data: students } = await supabase
+        .from('students')
+        .select('id, prepaid_balance');
+
+      (students || []).forEach((s: any) => {
+        balanceMap[s.id] = parseFloat(s.prepaid_balance ?? 0);
       });
 
       // Get unpaid flight counts per user
