@@ -1,25 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { mockStudents, mockTrainingRecords } from '../../data/mockData';
-import { 
-  User, 
-  Phone, 
-  Mail, 
-  Calendar, 
-  Award,
-  Clock,
-  FileText,
-  Edit,
-  Save,
-  X
-} from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { User, Phone, Mail, Calendar, Award, CreditCard as Edit, Save, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export const StudentProfile: React.FC = () => {
   const { user } = useAuth();
   const [editMode, setEditMode] = useState(false);
-  
+  const [accountBalance, setAccountBalance] = useState<number | null>(null);
+
   const student = mockStudents.find(s => s.id === user?.id);
   const trainingRecords = mockTrainingRecords.filter(r => r.studentId === user?.id);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('account_transactions')
+      .select('type, amount, verified_status')
+      .eq('user_id', user.id)
+      .then(({ data }) => {
+        if (!data) return;
+        const balance = data.reduce((sum, tx) => {
+          const amt = parseFloat(tx.amount ?? 0);
+          if (tx.type === 'topup' || tx.type === 'refund') {
+            return tx.verified_status === 'verified' ? sum + amt : sum;
+          }
+          return sum - amt;
+        }, 0);
+        setAccountBalance(balance);
+      });
+  }, [user?.id]);
 
   if (!student) {
     return <div className="p-6">Student profile not found</div>;
@@ -171,10 +182,12 @@ export const StudentProfile: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-purple-50 p-4 rounded-lg">
+            <div className={`p-4 rounded-lg ${accountBalance !== null && accountBalance < 0 ? 'bg-red-50' : 'bg-green-50'}`}>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-purple-900">Prepaid Balance</span>
-                <span className="text-lg font-bold text-purple-600">${student.prepaidBalance.toFixed(2)}</span>
+                <span className={`text-sm font-medium ${accountBalance !== null && accountBalance < 0 ? 'text-red-900' : 'text-green-900'}`}>Account Balance</span>
+                <span className={`text-lg font-bold ${accountBalance !== null && accountBalance < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {accountBalance !== null ? `$${accountBalance.toFixed(2)}` : '—'}
+                </span>
               </div>
             </div>
           </div>

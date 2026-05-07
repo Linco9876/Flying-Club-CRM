@@ -150,7 +150,7 @@ export const useBillingAccounts = () => {
 
   const fetchPilotAccounts = async () => {
     try {
-      // Get all users with pilot/student role
+      // Get all users
       const { data: users, error: usersError } = await supabase
         .from('users')
         .select('id, name, email')
@@ -158,32 +158,32 @@ export const useBillingAccounts = () => {
 
       if (usersError) throw usersError;
 
-      // Get student balances
-      const { data: students, error: studentsError } = await supabase
-        .from('students')
-        .select('id, prepaid_balance');
-
-      if (studentsError) throw studentsError;
-
-      const balanceMap: Record<string, number> = {};
-      (students || []).forEach((s: any) => {
-        balanceMap[s.id] = parseFloat(s.prepaid_balance ?? 0);
-      });
-
-      // Get transaction counts and last date per user
-      const { data: txSummary, error: txError } = await supabase
+      // Compute balance from verified transactions:
+      // verified topups/refunds add, flight_charges/adjustments subtract
+      const { data: txAll, error: txError } = await supabase
         .from('account_transactions')
-        .select('user_id, created_at')
+        .select('user_id, type, amount, verified_status, created_at')
         .order('created_at', { ascending: false });
 
       if (txError) throw txError;
 
+      const balanceMap: Record<string, number> = {};
       const txByUser: Record<string, { count: number; last: string }> = {};
-      (txSummary || []).forEach((tx: any) => {
-        if (!txByUser[tx.user_id]) {
-          txByUser[tx.user_id] = { count: 0, last: tx.created_at };
+
+      (txAll || []).forEach((tx: any) => {
+        const uid = tx.user_id;
+        if (!txByUser[uid]) txByUser[uid] = { count: 0, last: tx.created_at };
+        txByUser[uid].count += 1;
+
+        // Only verified topups/refunds add to balance; flight charges always deduct
+        const amt = parseFloat(tx.amount ?? 0);
+        if (tx.type === 'topup' || tx.type === 'refund') {
+          if (tx.verified_status === 'verified') {
+            balanceMap[uid] = (balanceMap[uid] ?? 0) + amt;
+          }
+        } else if (tx.type === 'flight_charge' || tx.type === 'adjustment') {
+          balanceMap[uid] = (balanceMap[uid] ?? 0) - amt;
         }
-        txByUser[tx.user_id].count += 1;
       });
 
       // Get unpaid flight counts per user
@@ -291,8 +291,7 @@ export const useBillingAccounts = () => {
 
       const { error: balanceError } = await supabase
         .from('students')
-        .update({ prepaid_balance: newBalance })
-        .eq('id', tx.user_id);
+        .upsert({ id: tx.user_id, prepaid_balance: newBalance }, { onConflict: 'id' });
 
       if (balanceError) throw balanceError;
 
