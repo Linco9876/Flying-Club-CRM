@@ -164,45 +164,46 @@ interface RichTextEditorProps {
 
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange, placeholder }) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  const isFocused = useRef(false);
+  // Stable ref so callbacks never go stale
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { onChangeRef.current = onChange; });
 
+  // Only push value into DOM when the editor is not focused (i.e. on initial load
+  // or when the parent resets the value externally)
   useEffect(() => {
+    if (isFocused.current || !editorRef.current) return;
+    const next = value ? sanitizeRichText(value) : '';
+    if (editorRef.current.innerHTML !== next) {
+      editorRef.current.innerHTML = next;
+    }
+  }, [value]);
+
+  const flushToParent = useCallback(() => {
     if (!editorRef.current) return;
-
-    const sanitisedValue = value ? sanitizeRichText(value) : '';
-    if (sanitisedValue !== value) {
-      onChange(sanitisedValue);
-      return;
-    }
-
-    if (editorRef.current.innerHTML !== sanitisedValue) {
-      editorRef.current.innerHTML = sanitisedValue;
-    }
-  }, [value, onChange]);
+    const sanitised = sanitizeRichText(editorRef.current.innerHTML);
+    onChangeRef.current(sanitised);
+  }, []);
 
   const handleInput = useCallback(() => {
-    if (!editorRef.current) return;
-    const sanitised = sanitizeRichText(editorRef.current.innerHTML);
-    if (sanitised !== value) {
-      onChange(sanitised);
-    }
-  }, [value, onChange]);
+    flushToParent();
+  }, [flushToParent]);
+
+  const handleFocus = useCallback(() => {
+    isFocused.current = true;
+  }, []);
 
   const handleBlur = useCallback(() => {
-    if (!editorRef.current) return;
-    const sanitised = sanitizeRichText(editorRef.current.innerHTML);
-    if (sanitised !== value) {
-      onChange(sanitised);
-    }
-  }, [value, onChange]);
+    isFocused.current = false;
+    flushToParent();
+  }, [flushToParent]);
 
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
     event.preventDefault();
     const text = event.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
-    requestAnimationFrame(() => {
-      handleInput();
-    });
-  }, [handleInput]);
+    requestAnimationFrame(flushToParent);
+  }, [flushToParent]);
 
   const handleCommand = useCallback(
     (command: 'bold' | 'italic' | 'underline' | 'unorderedList' | 'orderedList') => {
@@ -213,14 +214,12 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
         italic: 'italic',
         underline: 'underline',
         unorderedList: 'insertUnorderedList',
-        orderedList: 'insertOrderedList'
+        orderedList: 'insertOrderedList',
       };
       document.execCommand(commandMap[command], false);
-      requestAnimationFrame(() => {
-        handleInput();
-      });
+      requestAnimationFrame(flushToParent);
     },
-    [handleInput]
+    [flushToParent]
   );
 
   const showPlaceholder = !value || value.trim().length === 0;
@@ -232,10 +231,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
         <div className="flex items-center gap-1 border-b border-blue-100 bg-blue-50 px-2 py-1">
           <button
             type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              handleCommand('bold');
-            }}
+            onMouseDown={(event) => { event.preventDefault(); handleCommand('bold'); }}
             className="rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
             aria-label="Bold"
           >
@@ -243,10 +239,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
           </button>
           <button
             type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              handleCommand('italic');
-            }}
+            onMouseDown={(event) => { event.preventDefault(); handleCommand('italic'); }}
             className="rounded px-2 py-1 text-xs font-semibold italic text-blue-700 hover:bg-blue-100"
             aria-label="Italic"
           >
@@ -254,10 +247,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
           </button>
           <button
             type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              handleCommand('underline');
-            }}
+            onMouseDown={(event) => { event.preventDefault(); handleCommand('underline'); }}
             className="rounded px-2 py-1 text-xs font-semibold underline text-blue-700 hover:bg-blue-100"
             aria-label="Underline"
           >
@@ -265,10 +255,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
           </button>
           <button
             type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              handleCommand('unorderedList');
-            }}
+            onMouseDown={(event) => { event.preventDefault(); handleCommand('unorderedList'); }}
             className="rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
             aria-label="Bulleted list"
           >
@@ -276,10 +263,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
           </button>
           <button
             type="button"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              handleCommand('orderedList');
-            }}
+            onMouseDown={(event) => { event.preventDefault(); handleCommand('orderedList'); }}
             className="rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
             aria-label="Numbered list"
           >
@@ -295,6 +279,8 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
           <div
             ref={editorRef}
             contentEditable
+            suppressContentEditableWarning
+            onFocus={handleFocus}
             onInput={handleInput}
             onBlur={handleBlur}
             onPaste={handlePaste}
