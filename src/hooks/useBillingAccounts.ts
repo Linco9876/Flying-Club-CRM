@@ -218,16 +218,7 @@ export const useBillingAccounts = () => {
 
   const addTopUp = async (userId: string, amount: number, description: string, paymentMethodId?: string) => {
     try {
-      // Get current balance
-      const { data: student } = await supabase
-        .from('students')
-        .select('prepaid_balance')
-        .eq('id', userId)
-        .maybeSingle();
-
-      const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
-      const newBalance = currentBalance + amount;
-
+      // Insert as pending — balance is NOT applied until an admin verifies the payment
       const { error: txError } = await supabase
         .from('account_transactions')
         .insert({
@@ -236,19 +227,13 @@ export const useBillingAccounts = () => {
           amount,
           description: description || 'Account top-up',
           payment_method_id: paymentMethodId ?? null,
-          balance_after: newBalance,
+          balance_after: null, // set when verified
+          verified_status: 'pending',
         });
 
       if (txError) throw txError;
 
-      const { error: balanceError } = await supabase
-        .from('students')
-        .update({ prepaid_balance: newBalance })
-        .eq('id', userId);
-
-      if (balanceError) throw balanceError;
-
-      toast.success('Top-up added successfully');
+      toast.success('Top-up recorded — awaiting verification');
       await fetchAll();
     } catch (err) {
       console.error('Error adding top-up:', err);
@@ -277,14 +262,41 @@ export const useBillingAccounts = () => {
 
   const verifyTransaction = async (transactionId: string) => {
     try {
-      const { error } = await supabase
+      // Fetch transaction to get amount and user
+      const { data: tx, error: fetchError } = await supabase
         .from('account_transactions')
-        .update({ verified_status: 'verified' })
+        .select('amount, user_id')
+        .eq('id', transactionId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+      if (!tx) throw new Error('Transaction not found');
+
+      // Apply amount to student balance
+      const { data: student } = await supabase
+        .from('students')
+        .select('prepaid_balance')
+        .eq('id', tx.user_id)
+        .maybeSingle();
+
+      const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
+      const newBalance = currentBalance + parseFloat(tx.amount);
+
+      const { error: verifyError } = await supabase
+        .from('account_transactions')
+        .update({ verified_status: 'verified', balance_after: newBalance })
         .eq('id', transactionId);
 
-      if (error) throw error;
+      if (verifyError) throw verifyError;
 
-      toast.success('Payment verified');
+      const { error: balanceError } = await supabase
+        .from('students')
+        .update({ prepaid_balance: newBalance })
+        .eq('id', tx.user_id);
+
+      if (balanceError) throw balanceError;
+
+      toast.success('Payment verified — balance updated');
       await fetchAll();
     } catch (err) {
       console.error('Error verifying transaction:', err);
