@@ -30,6 +30,8 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     objectives: (row.objectives as string[]) ?? [],
     evaluationCriteria: (row.evaluation_criteria as string[]) ?? [],
     tags: (row.tags as string[]) ?? [],
+    assessmentCriteria: (row.assessment_criteria as TrainingModule['assessmentCriteria']) ?? [],
+    createdBy: (row.created_by as string) ?? undefined,
     lessons,
     resources: [],
     lastUpdated: row.last_updated ? new Date(row.last_updated as string) : new Date(),
@@ -53,6 +55,7 @@ function dbLessonToLesson(row: Record<string, unknown>): TrainingLesson {
     flightExercises: (row.flight_exercises as string) ?? '',
     theory: (row.theory as string) ?? '',
     assessmentCriteria: (row.assessment_criteria as TrainingLesson['assessmentCriteria']) ?? [],
+    passMarks: (row.pass_marks as Record<string, string>) ?? {},
   };
 }
 
@@ -68,6 +71,7 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     objectives: module.objectives,
     evaluation_criteria: module.evaluationCriteria,
     tags: module.tags,
+    assessment_criteria: module.assessmentCriteria,
     last_updated: module.lastUpdated.toISOString(),
   };
 }
@@ -90,6 +94,7 @@ function lessonToDbRow(lesson: TrainingLesson, courseId: string, sortOrder: numb
     student_preparation: lesson.studentPreparation,
     instructor_notes: lesson.instructorNotes,
     assessment_criteria: lesson.assessmentCriteria,
+    pass_marks: lesson.passMarks ?? {},
   };
 }
 
@@ -139,9 +144,12 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
   }, [fetchModules]);
 
   const addModule = useCallback(async (module: TrainingModule): Promise<TrainingModule> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const row = { ...moduleToDbCourse(module), created_by: user?.id ?? null };
+
     const { data, error } = await supabase
       .from('training_courses')
-      .insert(moduleToDbCourse(module))
+      .insert(row)
       .select()
       .single();
 
@@ -168,6 +176,7 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       objectives: [],
       evaluationCriteria: [],
       tags: ['draft'],
+      assessmentCriteria: [],
       lessons: [],
       resources: [],
       lastUpdated: new Date(),

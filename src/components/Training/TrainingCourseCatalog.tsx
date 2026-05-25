@@ -32,6 +32,7 @@ import {
   TrainingModule
 } from '../../types';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface NewCourseState {
   title: string;
@@ -47,6 +48,8 @@ interface NewLessonState {
   flightExercises: string;
   theory: string;
 }
+
+type CourseFormState = NewCourseState;
 
 type EditableCriterion = {
   id: string;
@@ -481,18 +484,35 @@ const normaliseKeyExercises = (content: string) =>
     .map((line) => line.replace(/^[-*•]\s*/, '').trim())
     .filter(Boolean);
 
+const emptyCourseForm = (): CourseFormState => ({
+  title: '',
+  category: '',
+  description: '',
+  estimatedDurationHours: 6,
+  tags: '',
+});
+
 export const TrainingCourseCatalog: React.FC = () => {
-  const { modules, loading: modulesLoading, addModule, updateModule } = useTrainingModules();
+  const { modules, loading: modulesLoading, addModule, updateModule, deleteModule } = useTrainingModules();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
+
+  // Create course form
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newCourse, setNewCourse] = useState<NewCourseState>({
-    title: '',
-    category: '',
-    description: '',
-    estimatedDurationHours: 6,
-    tags: ''
-  });
+  const [newCourse, setNewCourse] = useState<CourseFormState>(emptyCourseForm);
+  // Course-level criteria (shared across all lessons)
+  const [courseCriteria, setCourseCriteria] = useState<EditableCriterion[]>([]);
+
+  // Edit course form
+  const [showEditCourseForm, setShowEditCourseForm] = useState(false);
+  const [editCourse, setEditCourse] = useState<CourseFormState>(emptyCourseForm);
+  const [editCourseCriteria, setEditCourseCriteria] = useState<EditableCriterion[]>([]);
+
+  // Delete course confirm
+  const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
+
+  // Lesson form
   const [showLessonForm, setShowLessonForm] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [newLesson, setNewLesson] = useState<NewLessonState>({
@@ -501,7 +521,8 @@ export const TrainingCourseCatalog: React.FC = () => {
     flightExercises: '',
     theory: ''
   });
-  const [lessonCriteria, setLessonCriteria] = useState<EditableCriterion[]>([createEmptyCriterion()]);
+  // Per-lesson pass marks: criterionId → passingGrade
+  const [lessonPassMarks, setLessonPassMarks] = useState<Record<string, string>>({});
   const [expandedLessons, setExpandedLessons] = useState<Record<string, boolean>>({});
   const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
 
@@ -575,15 +596,77 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   const resetLessonForm = () => {
     setNewLesson({ name: '', objective: '', flightExercises: '', theory: '' });
-    setLessonCriteria([createEmptyCriterion()]);
+    setLessonPassMarks({});
     setEditingLessonId(null);
   };
 
   const handleModuleSelect = (moduleId: string) => {
     setSelectedModuleId(moduleId);
     setShowLessonForm(false);
+    setShowEditCourseForm(false);
+    setShowDeleteCourseConfirm(false);
     setDeletingLessonId(null);
     resetLessonForm();
+  };
+
+  // Permission: can the current user edit/delete this course?
+  const canManageCourse = (module: TrainingModule) => {
+    if (!user) return false;
+    return user.role === 'admin' || module.createdBy === user.id;
+  };
+
+  const handleOpenEditCourse = () => {
+    if (!selectedModule) return;
+    setEditCourse({
+      title: selectedModule.title,
+      category: selectedModule.category,
+      description: selectedModule.description,
+      estimatedDurationHours: selectedModule.estimatedDurationHours,
+      tags: selectedModule.tags.join(', '),
+    });
+    setEditCourseCriteria(selectedModule.assessmentCriteria.map((c) => ({ ...c })));
+    setShowEditCourseForm(true);
+    setShowLessonForm(false);
+  };
+
+  const handleSaveEditCourse = async () => {
+    if (!selectedModule) return;
+    const title = editCourse.title.trim();
+    const category = editCourse.category.trim();
+    if (!title) { toast.error('Course title is required'); return; }
+    if (!category) { toast.error('Category is required'); return; }
+
+    // Validate criteria
+    const criteria: LessonAssessmentCriterion[] = [];
+    for (const c of editCourseCriteria) {
+      if (!c.name.trim()) { toast.error('Each criterion needs a name'); return; }
+      criteria.push({ id: c.id, name: c.name.trim(), gradingSystem: c.gradingSystem, passingGrade: c.passingGrade });
+    }
+
+    const tags = editCourse.tags.split(',').map((t) => t.trim()).filter(Boolean);
+    try {
+      await updateModule(selectedModule.id, (cur) => ({
+        ...cur,
+        title,
+        category,
+        description: editCourse.description.trim() || cur.description,
+        estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
+        tags: tags.length > 0 ? tags : cur.tags,
+        assessmentCriteria: criteria,
+        lastUpdated: new Date(),
+      }));
+      toast.success('Course updated');
+      setShowEditCourseForm(false);
+    } catch { /* handled in context */ }
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!selectedModule) return;
+    try {
+      await deleteModule(selectedModule.id);
+      setShowDeleteCourseConfirm(false);
+      toast.success('Course deleted');
+    } catch { /* handled in context */ }
   };
 
   const handleEditLesson = (lesson: TrainingLesson) => {
@@ -593,13 +676,11 @@ export const TrainingCourseCatalog: React.FC = () => {
       flightExercises: lesson.flightExercises,
       theory: lesson.theory,
     });
-    setLessonCriteria(
-      lesson.assessmentCriteria.length > 0
-        ? lesson.assessmentCriteria.map((c) => ({ ...c }))
-        : [createEmptyCriterion()]
-    );
+    // Populate pass marks from existing lesson data
+    setLessonPassMarks(lesson.passMarks ?? {});
     setEditingLessonId(lesson.id);
     setShowLessonForm(true);
+    setShowEditCourseForm(false);
     setExpandedLessons((prev) => ({ ...prev, [lesson.id]: false }));
   };
 
@@ -659,6 +740,13 @@ export const TrainingCourseCatalog: React.FC = () => {
       .map((tag) => tag.trim())
       .filter(Boolean);
 
+    // Validate course criteria
+    const builtCriteria: LessonAssessmentCriterion[] = [];
+    for (const c of courseCriteria) {
+      if (!c.name.trim()) { toast.error('Each criterion needs a name'); return; }
+      builtCriteria.push({ id: c.id, name: c.name.trim(), gradingSystem: c.gradingSystem, passingGrade: c.passingGrade });
+    }
+
     const module: TrainingModule = {
       id: '',
       title,
@@ -671,6 +759,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       objectives: [],
       evaluationCriteria: [],
       tags: tags.length > 0 ? tags : ['draft'],
+      assessmentCriteria: builtCriteria,
       lessons: [],
       resources: [],
       lastUpdated: new Date()
@@ -680,7 +769,8 @@ export const TrainingCourseCatalog: React.FC = () => {
       const createdModule = await addModule(module);
       setSelectedModuleId(createdModule.id);
       setShowCreateForm(false);
-      setNewCourse({ title: '', category: '', description: '', estimatedDurationHours: 6, tags: '' });
+      setNewCourse(emptyCourseForm());
+      setCourseCriteria([]);
       toast.success('New course created');
     } catch {
       // error toast handled in context
@@ -689,7 +779,8 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   const handleCancelCreate = () => {
     setShowCreateForm(false);
-    setNewCourse({ title: '', category: '', description: '', estimatedDurationHours: 6, tags: '' });
+    setNewCourse(emptyCourseForm());
+    setCourseCriteria([]);
   };
 
   const handleOpenLessonForm = () => {
@@ -699,57 +790,12 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
     resetLessonForm();
     setShowLessonForm(true);
+    setShowEditCourseForm(false);
   };
 
   const handleCancelLesson = () => {
     setShowLessonForm(false);
     resetLessonForm();
-  };
-
-  const handleCriterionChange = <K extends keyof EditableCriterion>(
-    criterionId: string,
-    field: K,
-    value: EditableCriterion[K]
-  ) => {
-    setLessonCriteria((prev) =>
-      prev.map((criterion) => {
-        if (criterion.id !== criterionId) {
-          return criterion;
-        }
-
-        if (field === 'gradingSystem') {
-          const gradingSystem = value as LessonGradingSystem;
-          return {
-            ...criterion,
-            gradingSystem,
-            passingGrade: getDefaultPassingGrade(gradingSystem)
-          };
-        }
-
-        if (field === 'passingGrade' && criterion.gradingSystem !== 'Out of 100') {
-          return {
-            ...criterion,
-            passingGrade: value as string
-          };
-        }
-
-        return { ...criterion, [field]: value };
-      })
-    );
-  };
-
-  const handleAddCriterion = () => {
-    setLessonCriteria((prev) => {
-      const lastSystem = prev[prev.length - 1]?.gradingSystem ?? 'NC/S/C/-';
-      return [...prev, createEmptyCriterion(lastSystem)];
-    });
-  };
-
-  const handleRemoveCriterion = (criterionId: string) => {
-    setLessonCriteria((prev) => {
-      const remaining = prev.filter((criterion) => criterion.id !== criterionId);
-      return remaining.length > 0 ? remaining : [createEmptyCriterion()];
-    });
   };
 
   const handleCreateLesson = async () => {
@@ -765,82 +811,45 @@ export const TrainingCourseCatalog: React.FC = () => {
     const flightExercisesPlain = richTextToPlainText(flightExercisesHtml);
     const theoryPlain = richTextToPlainText(theoryHtml);
 
-    if (!name) {
-      toast.error('Please provide a lesson name');
-      return;
-    }
+    if (!name) { toast.error('Please provide a lesson name'); return; }
+    if (!objective) { toast.error('Please provide a lesson objective'); return; }
+    if (!flightExercisesPlain) { toast.error('Please outline the flight exercises for this lesson'); return; }
+    if (!theoryPlain) { toast.error('Please describe the supporting theory content'); return; }
 
-    if (!objective) {
-      toast.error('Please provide a lesson objective');
-      return;
-    }
-
-    if (!flightExercisesPlain) {
-      toast.error('Please outline the flight exercises for this lesson');
-      return;
-    }
-
-    if (!theoryPlain) {
-      toast.error('Please describe the supporting theory content');
-      return;
-    }
-
-    const criteria: LessonAssessmentCriterion[] = [];
-    for (const criterion of lessonCriteria) {
-      const trimmedName = criterion.name.trim();
-      const trimmedGrade = criterion.passingGrade.trim();
-
-      if (!trimmedName && !trimmedGrade) {
-        continue;
-      }
-
-      if (!trimmedName) {
-        toast.error('Please provide a name for each assessment criterion or remove it.');
-        return;
-      }
-
-      let passingGrade = trimmedGrade || getDefaultPassingGrade(criterion.gradingSystem);
-
+    // Validate pass marks for course criteria
+    const passMarks: Record<string, string> = {};
+    for (const criterion of selectedModule.assessmentCriteria) {
+      const grade = lessonPassMarks[criterion.id]?.trim() || getDefaultPassingGrade(criterion.gradingSystem);
       if (criterion.gradingSystem === 'Out of 100') {
-        const numericGrade = Number(passingGrade);
-        if (Number.isNaN(numericGrade) || numericGrade < 0 || numericGrade > 100) {
-          toast.error('Numeric criteria require a passing grade between 0 and 100.');
+        const num = Number(grade);
+        if (Number.isNaN(num) || num < 0 || num > 100) {
+          toast.error(`Pass mark for "${criterion.name}" must be 0–100`);
           return;
         }
-        passingGrade = String(Math.round(Number(passingGrade)));
+        passMarks[criterion.id] = String(Math.round(num));
       } else {
-        const allowedGrades = getPassingGradeOptions(criterion.gradingSystem);
-        if (!allowedGrades.includes(passingGrade)) {
-          toast.error('Please choose a passing grade that matches the grading system.');
-          return;
-        }
+        const allowed = getPassingGradeOptions(criterion.gradingSystem);
+        const validated = allowed.includes(grade) ? grade : getDefaultPassingGrade(criterion.gradingSystem);
+        passMarks[criterion.id] = validated;
       }
-
-      criteria.push({
-        id: criterion.id,
-        name: trimmedName,
-        gradingSystem: criterion.gradingSystem,
-        passingGrade
-      });
     }
+
+    const lessonBase = {
+      name,
+      objective,
+      flightExercises: flightExercisesHtml,
+      theory: theoryHtml,
+      keyExercises: normaliseKeyExercises(flightExercisesHtml || flightExercisesPlain),
+      studentPreparation: theoryPlain,
+      instructorNotes: flightExercisesPlain,
+      assessmentCriteria: [] as LessonAssessmentCriterion[],
+      passMarks,
+    };
 
     if (editingLessonId) {
-      // Edit mode — preserve the original lesson's id and sequence info
       const existing = selectedModule.lessons.find((l) => l.id === editingLessonId);
       if (!existing) return;
-
-      const updatedLesson: TrainingLesson = {
-        ...existing,
-        name,
-        objective,
-        flightExercises: flightExercisesHtml,
-        theory: theoryHtml,
-        keyExercises: normaliseKeyExercises(flightExercisesHtml || flightExercisesPlain),
-        studentPreparation: theoryPlain,
-        instructorNotes: flightExercisesPlain,
-        assessmentCriteria: criteria,
-      };
-
+      const updatedLesson: TrainingLesson = { ...existing, ...lessonBase };
       try {
         await updateModule(selectedModule.id, (current) => ({
           ...current,
@@ -851,13 +860,10 @@ export const TrainingCourseCatalog: React.FC = () => {
         setShowLessonForm(false);
         resetLessonForm();
         setExpandedLessons((prev) => ({ ...prev, [editingLessonId]: true }));
-      } catch {
-        // error toast handled in context
-      }
+      } catch { /* handled in context */ }
       return;
     }
 
-    // Create mode
     const timestamp = Date.now();
     const lesson: TrainingLesson = {
       id: `lesson-${timestamp}`,
@@ -867,14 +873,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       stage: 'flight',
       durationMinutes: 60,
       minCompetency: 'Introduce',
-      keyExercises: normaliseKeyExercises(flightExercisesHtml || flightExercisesPlain),
-      studentPreparation: theoryPlain,
-      instructorNotes: flightExercisesPlain,
-      name,
-      objective,
-      flightExercises: flightExercisesHtml,
-      theory: theoryHtml,
-      assessmentCriteria: criteria
+      ...lessonBase,
     };
 
     try {
@@ -887,9 +886,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setShowLessonForm(false);
       resetLessonForm();
       setExpandedLessons((prev) => ({ ...prev, [lesson.id]: true }));
-    } catch {
-      // error toast handled in context
-    }
+    } catch { /* handled in context */ }
   };
 
   const handlePublishCourse = async () => {
@@ -1022,19 +1019,38 @@ export const TrainingCourseCatalog: React.FC = () => {
               />
             </label>
           </div>
+          {/* Assessment criteria for new course */}
+          <div className="mt-6 rounded-lg border border-blue-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2 text-blue-900">
+                <ClipboardList className="h-4 w-4" />
+                <h4 className="text-sm font-semibold">Assessment criteria</h4>
+              </div>
+              <button type="button" onClick={() => setCourseCriteria((p) => [...p, createEmptyCriterion()])} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">
+                <Plus className="h-3.5 w-3.5" />Add criterion
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">Define what will be assessed across all lessons in this course. You can set a pass mark per lesson later.</p>
+            <div className="space-y-3">
+              {courseCriteria.map((criterion) => (
+                <div key={criterion.id} className="flex flex-wrap items-center gap-3 rounded-md border border-blue-100 px-3 py-2.5">
+                  <input type="text" placeholder="e.g. Airmanship" value={criterion.name}
+                    onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, name: e.target.value } : c))}
+                    className="flex-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
+                  <select value={criterion.gradingSystem}
+                    onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, gradingSystem: e.target.value as LessonGradingSystem, passingGrade: getDefaultPassingGrade(e.target.value as LessonGradingSystem) } : c))}
+                    className="rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none">
+                    {gradingOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setCourseCriteria((p) => p.filter((c) => c.id !== criterion.id))} className="text-red-500 hover:text-red-700"><X className="h-4 w-4" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="mt-6 flex justify-end gap-3">
-            <button
-              onClick={handleCancelCreate}
-              className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-100"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleCreateCourse}
-              className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Create course
+            <button onClick={handleCancelCreate} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-100">Cancel</button>
+            <button onClick={handleCreateCourse} className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">
+              <Plus className="mr-2 h-4 w-4" />Create course
             </button>
           </div>
         </div>
@@ -1114,6 +1130,17 @@ export const TrainingCourseCatalog: React.FC = () => {
           {selectedModule ? (
             <>
               <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                {/* Delete course confirmation */}
+                {showDeleteCourseConfirm && (
+                  <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                    <p className="text-sm text-red-700">Permanently delete this course and all its lessons? Student completion records are not affected.</p>
+                    <div className="flex shrink-0 gap-2">
+                      <button type="button" onClick={() => setShowDeleteCourseConfirm(false)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                      <button type="button" onClick={handleDeleteCourse} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">Delete</button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2">
@@ -1123,29 +1150,29 @@ export const TrainingCourseCatalog: React.FC = () => {
                     <p className="mt-2 text-sm text-gray-600">{selectedModule.description}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        selectedModule.status === 'published'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-amber-50 text-amber-700'
-                      }`}
-                    >
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedModule.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                       {selectedModule.status === 'published' ? 'Published' : 'Draft'}
                     </span>
                     <div className="flex flex-wrap justify-end gap-2">
                       {selectedModule.status !== 'published' && (
-                        <button
-                          onClick={handlePublishCourse}
-                          className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                        >
+                        <button onClick={handlePublishCourse} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
                           <CheckCircle2 className="h-4 w-4" />
-                          Publish course
+                          Publish
                         </button>
                       )}
-                      <button
-                        onClick={handleOpenLessonForm}
-                        className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
-                      >
+                      {canManageCourse(selectedModule) && (
+                        <>
+                          <button onClick={handleOpenEditCourse} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
+                            <Pencil className="h-4 w-4" />
+                            Edit course
+                          </button>
+                          <button onClick={() => setShowDeleteCourseConfirm(true)} className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 transition hover:bg-red-50">
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </button>
+                        </>
+                      )}
+                      <button onClick={handleOpenLessonForm} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100">
                         <FilePlus className="h-4 w-4" />
                         New lesson
                       </button>
@@ -1158,10 +1185,6 @@ export const TrainingCourseCatalog: React.FC = () => {
                     <dd className="mt-1 text-sm text-gray-700">{selectedModule.category}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Version</dt>
-                    <dd className="mt-1 text-sm text-gray-700">{selectedModule.version}</dd>
-                  </div>
-                  <div>
                     <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Estimated duration</dt>
                     <dd className="mt-1 inline-flex items-center gap-1 text-sm text-gray-700">
                       <Clock3 className="h-4 w-4 text-gray-400" />
@@ -1172,10 +1195,28 @@ export const TrainingCourseCatalog: React.FC = () => {
                     <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Lessons</dt>
                     <dd className="mt-1 text-sm text-gray-700">{selectedModule.lessons.length}</dd>
                   </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Assessment criteria</dt>
+                    <dd className="mt-1 text-sm text-gray-700">{selectedModule.assessmentCriteria.length} defined</dd>
+                  </div>
                 </dl>
-                <p className="mt-4 text-xs text-gray-500">
-                  Last updated {formatDistanceToNow(selectedModule.lastUpdated, { addSuffix: true })}
-                </p>
+                <p className="mt-4 text-xs text-gray-500">Last updated {formatDistanceToNow(selectedModule.lastUpdated, { addSuffix: true })}</p>
+                {/* Course-level criteria display */}
+                {selectedModule.assessmentCriteria.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Course criteria</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedModule.assessmentCriteria.map((c) => (
+                        <span key={c.id} className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
+                          <ClipboardList className="h-3 w-3" />
+                          {c.name}
+                          <span className="text-blue-500">·</span>
+                          <span className="text-blue-600">{c.gradingSystem}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {selectedModule.tags.length > 0 && (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {selectedModule.tags.map((tag) => (
@@ -1216,6 +1257,77 @@ export const TrainingCourseCatalog: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* ── Edit course form ── */}
+              {showEditCourseForm && selectedModule && (
+                <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-center justify-between gap-3 mb-5">
+                    <div className="flex items-center gap-2 text-gray-900">
+                      <Pencil className="h-5 w-5 text-blue-600" />
+                      <h3 className="text-lg font-semibold">Edit course</h3>
+                    </div>
+                    <button onClick={() => setShowEditCourseForm(false)} className="text-sm text-gray-500 underline-offset-2 hover:underline">Cancel</button>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Course title
+                      <input type="text" value={editCourse.title} onChange={(e) => setEditCourse((p) => ({ ...p, title: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Category
+                      <input type="text" value={editCourse.category} onChange={(e) => setEditCourse((p) => ({ ...p, category: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700 md:col-span-2">
+                      Description
+                      <textarea rows={2} value={editCourse.description} onChange={(e) => setEditCourse((p) => ({ ...p, description: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Estimated duration (hours)
+                      <input type="number" min={1} value={editCourse.estimatedDurationHours} onChange={(e) => setEditCourse((p) => ({ ...p, estimatedDurationHours: Number(e.target.value) }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Tags (comma separated)
+                      <input type="text" value={editCourse.tags} onChange={(e) => setEditCourse((p) => ({ ...p, tags: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                  </div>
+                  {/* Assessment criteria editor */}
+                  <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2 text-gray-700">
+                        <ClipboardList className="h-4 w-4" />
+                        <h4 className="text-sm font-semibold">Assessment criteria</h4>
+                      </div>
+                      <button type="button" onClick={() => setEditCourseCriteria((p) => [...p, createEmptyCriterion()])} className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100">
+                        <Plus className="h-3.5 w-3.5" />Add criterion
+                      </button>
+                    </div>
+                    {editCourseCriteria.length === 0 && <p className="text-xs text-gray-500">No criteria yet. Add at least one to track student progress against this course.</p>}
+                    <div className="space-y-3">
+                      {editCourseCriteria.map((criterion) => (
+                        <div key={criterion.id} className="flex flex-wrap items-center gap-3 rounded-md border border-gray-200 bg-white px-4 py-3">
+                          <input type="text" placeholder="Criterion name" value={criterion.name}
+                            onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, name: e.target.value } : c))}
+                            className="flex-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
+                          <select value={criterion.gradingSystem}
+                            onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, gradingSystem: e.target.value as LessonGradingSystem, passingGrade: getDefaultPassingGrade(e.target.value as LessonGradingSystem) } : c))}
+                            className="rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none">
+                            {gradingOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                          <button type="button" onClick={() => setEditCourseCriteria((p) => p.filter((c) => c.id !== criterion.id))} className="text-red-500 hover:text-red-700">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-5 flex justify-end gap-3">
+                    <button onClick={() => setShowEditCourseForm(false)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button onClick={handleSaveEditCourse} className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                      <Pencil className="mr-2 h-4 w-4" />Save changes
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {showLessonForm && (
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-6 shadow-inner">
@@ -1267,100 +1379,42 @@ export const TrainingCourseCatalog: React.FC = () => {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2 text-blue-900">
                         <ClipboardList className="h-5 w-5" />
-                        <h4 className="text-sm font-semibold">Assessment criteria</h4>
+                        <h4 className="text-sm font-semibold">Pass mark per criterion</h4>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleAddCriterion}
-                        className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add criterion
-                      </button>
                     </div>
-                    <div className="mt-4 space-y-4">
-                      {lessonCriteria.map((criterion) => (
-                        <div
-                          key={criterion.id}
-                          className="rounded-lg border border-blue-100 bg-blue-50 p-4 shadow-sm"
-                        >
-                          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_200px_160px]">
-                            <label className="flex flex-col text-xs font-semibold text-blue-900">
-                              Criterion name
-                              <input
-                                type="text"
-                                value={criterion.name}
-                                onChange={(event) =>
-                                  handleCriterionChange(criterion.id, 'name', event.target.value)
-                                }
-                                className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                              />
-                            </label>
-                            <label className="flex flex-col text-xs font-semibold text-blue-900">
-                              Grading system
-                              <select
-                                value={criterion.gradingSystem}
-                                onChange={(event) =>
-                                  handleCriterionChange(
-                                    criterion.id,
-                                    'gradingSystem',
-                                    event.target.value as LessonGradingSystem
-                                  )
-                                }
-                                className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                              >
-                                {gradingOptions.map((option) => (
-                                  <option key={option} value={option}>
-                                    {option}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="flex flex-col text-xs font-semibold text-blue-900">
-                              Passing grade
+                    {selectedModule.assessmentCriteria.length === 0 ? (
+                      <p className="mt-3 text-xs text-gray-500">No assessment criteria defined for this course yet. Add them via "Edit course".</p>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {selectedModule.assessmentCriteria.map((criterion) => {
+                          const currentMark = lessonPassMarks[criterion.id] ?? getDefaultPassingGrade(criterion.gradingSystem);
+                          return (
+                            <div key={criterion.id} className="flex items-center gap-4 rounded-lg border border-blue-100 bg-white px-4 py-3">
+                              <div className="flex-1 text-sm font-medium text-blue-900">{criterion.name}</div>
+                              <span className="text-xs text-gray-400">{criterion.gradingSystem}</span>
                               {criterion.gradingSystem === 'Out of 100' ? (
                                 <input
-                                  type="number"
-                                  min={0}
-                                  max={100}
-                                  step={1}
-                                  value={criterion.passingGrade}
-                                  onChange={(event) =>
-                                    handleCriterionChange(criterion.id, 'passingGrade', event.target.value)
-                                  }
-                                  className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                  type="number" min={0} max={100} step={1}
+                                  value={currentMark}
+                                  onChange={(e) => setLessonPassMarks((prev) => ({ ...prev, [criterion.id]: e.target.value }))}
+                                  className="w-20 rounded-md border border-blue-200 px-2 py-1.5 text-sm text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
                                 />
                               ) : (
                                 <select
-                                  value={criterion.passingGrade}
-                                  onChange={(event) =>
-                                    handleCriterionChange(criterion.id, 'passingGrade', event.target.value)
-                                  }
-                                  className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                  value={currentMark}
+                                  onChange={(e) => setLessonPassMarks((prev) => ({ ...prev, [criterion.id]: e.target.value }))}
+                                  className="rounded-md border border-blue-200 px-2 py-1.5 text-sm text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
                                 >
-                                  {getPassingGradeOptions(criterion.gradingSystem).map((option) => (
-                                    <option key={`${criterion.id}-${option}`} value={option}>
-                                      {option}
-                                    </option>
+                                  {getPassingGradeOptions(criterion.gradingSystem).map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
                                   ))}
                                 </select>
                               )}
-                            </label>
-                          </div>
-                          {lessonCriteria.length > 1 && (
-                            <div className="mt-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveCriterion(criterion.id)}
-                                className="text-xs font-medium text-red-600 underline-offset-2 hover:underline"
-                              >
-                                Remove criterion
-                              </button>
                             </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   <div className="mt-6 flex justify-end gap-3">
                     <button

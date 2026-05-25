@@ -174,6 +174,7 @@ export interface LessonAssessmentCriterion {
   id: string;
   name: string;
   gradingSystem: LessonGradingSystem;
+  /** Highest possible grade for this criterion (used for course-level display) */
   passingGrade: string;
 }
 
@@ -192,7 +193,10 @@ export interface TrainingLesson {
   objective: string;
   flightExercises: string;
   theory: string;
+  /** Legacy per-lesson criteria — kept for backwards compat, prefer course.assessmentCriteria */
   assessmentCriteria: LessonAssessmentCriterion[];
+  /** Map of course criterion id → passing grade for this specific lesson */
+  passMarks: Record<string, string>;
 }
 
 export interface TrainingModule {
@@ -207,9 +211,12 @@ export interface TrainingModule {
   objectives: string[];
   evaluationCriteria: string[];
   tags: string[];
+  /** Course-level criteria shared across all lessons */
+  assessmentCriteria: LessonAssessmentCriterion[];
   lessons: TrainingLesson[];
   resources: TrainingResource[];
   lastUpdated: Date;
+  createdBy?: string;
 }
 
 export interface TrainingAuditEntry {

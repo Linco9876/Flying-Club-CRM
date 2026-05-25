@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { TrainingRecord } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, Eye, CreditCard as Edit, CheckCircle, AlertTriangle, Filter, BookOpen } from 'lucide-react';
+import { TrainingRecord, TrainingModule, LessonGradingSystem } from '../../types';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, Eye, CreditCard as Edit, CheckCircle, AlertTriangle, Filter, BookOpen, GraduationCap, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { LogbookTab } from './LogbookTab';
+import { useTrainingModules } from '../../context/TrainingModulesContext';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -28,6 +29,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
+  const { modules: trainingCourses } = useTrainingModules();
 
   const student = useMemo(() => {
     if (!studentId) {
@@ -214,7 +216,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const tabs = [
     { id: 'profile', label: 'Profile', icon: <User className="h-4 w-4" /> },
     { id: 'logbook', label: 'Logbook', icon: <BookOpen className="h-4 w-4" /> },
-    { id: 'training', label: 'Training Records', icon: <FileText className="h-4 w-4" /> }
+    { id: 'training', label: 'Training Records', icon: <FileText className="h-4 w-4" /> },
+    { id: 'courses', label: 'Courses', icon: <GraduationCap className="h-4 w-4" /> },
   ];
 
   return (
@@ -527,6 +530,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
           userId={student.id}
           userName={student.name}
           isInstructor={false}
+        />
+      )}
+
+      {activeTab === 'courses' && (
+        <CourseProgressTab
+          studentId={studentId!}
+          trainingRecords={studentTrainingRecords}
+          courses={trainingCourses}
         />
       )}
 
@@ -846,6 +857,289 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// ---------- CourseProgressTab ----------
+
+const GRADE_ORDER: Record<LessonGradingSystem, string[]> = {
+  'NC/S/C/-': ['-', 'NC', 'S', 'C'],
+  'Pass or Fail': ['Fail', 'Pass'],
+  'Out of 100': [],
+};
+
+function gradeScore(grade: string, system: LessonGradingSystem): number {
+  if (!grade || grade === '-') return 0;
+  if (system === 'Out of 100') {
+    const n = parseFloat(grade);
+    return isNaN(n) ? 0 : n / 100;
+  }
+  const order = GRADE_ORDER[system];
+  const idx = order.indexOf(grade);
+  if (idx < 0) return 0;
+  return idx / (order.length - 1);
+}
+
+function isTopGrade(grade: string, system: LessonGradingSystem): boolean {
+  if (!grade || grade === '-') return false;
+  if (system === 'Out of 100') {
+    return parseFloat(grade) >= 100;
+  }
+  const order = GRADE_ORDER[system];
+  return grade === order[order.length - 1];
+}
+
+interface CourseProgressTabProps {
+  studentId: string;
+  trainingRecords: TrainingRecord[];
+  courses: TrainingModule[];
+}
+
+const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ trainingRecords, courses }) => {
+  const courseProgress = useMemo(() => {
+    // Build best result per lesson id from training records
+    // Training records don't directly reference lesson ids from courses,
+    // so we match via lessonCodes (sequenceCode) stored in training record sequences
+    const bestByLessonId: Record<string, Record<string, string>> = {};
+
+    // For each training record, collect the sequence results and look for
+    // lessons in courses that match
+    for (const record of trainingRecords) {
+      for (const seq of record.sequences) {
+        const key = seq.sequenceId || seq.sequenceCode;
+        if (!key) continue;
+        // Track best grade per criterion per lesson sequence
+        if (!bestByLessonId[key]) bestByLessonId[key] = {};
+        // We don't have per-criterion info in sequences (sequences only have competence)
+        // Store the raw competence as a special marker
+        const prev = bestByLessonId[key].__competence__;
+        const prevScore = prev ? gradeScore(prev, 'NC/S/C/-') : 0;
+        const newScore = gradeScore(seq.competence, 'NC/S/C/-');
+        if (newScore > prevScore) {
+          bestByLessonId[key].__competence__ = seq.competence;
+        }
+      }
+    }
+
+    return courses.map((course) => {
+      const criteria = course.assessmentCriteria;
+      const lessons = course.lessons;
+
+      if (lessons.length === 0) return null;
+
+      // For each criterion, compute the best mark achieved across all lessons
+      const criteriaProgress = criteria.map((criterion) => {
+        let bestScore = 0;
+        let bestGrade = '';
+        let isComplete = false;
+
+        for (const lesson of lessons) {
+          const passMarkForLesson = lesson.passMarks?.[criterion.id];
+          if (!passMarkForLesson) continue;
+
+          // Check if this lesson has been graded for this student
+          // We use sequenceId/sequenceCode to match lesson to training record sequences
+          const lessonKey = lesson.sequenceId || lesson.sequenceCode;
+          const lessonResult = lessonKey ? bestByLessonId[lessonKey] : undefined;
+          if (!lessonResult) continue;
+
+          const rawCompetence = lessonResult.__competence__;
+          if (!rawCompetence || rawCompetence === '-') continue;
+
+          // Map NC/S/C competence to pass mark grade system
+          const system = criterion.gradingSystem;
+          const topGrade = criterion.passingGrade;
+
+          // Use the pass mark defined for this lesson as the actual grade achieved
+          // if the student's competence is C (top), otherwise partial
+          let achievedGrade = '';
+          if (rawCompetence === 'C') {
+            achievedGrade = passMarkForLesson;
+          } else if (rawCompetence === 'S') {
+            // Partial: one level below pass mark in grading system
+            const order = GRADE_ORDER[system];
+            if (order.length > 0) {
+              const pmIdx = order.indexOf(passMarkForLesson);
+              achievedGrade = pmIdx > 0 ? order[Math.max(0, pmIdx - 1)] : passMarkForLesson;
+            } else if (system === 'Out of 100') {
+              const pm = parseFloat(passMarkForLesson);
+              achievedGrade = isNaN(pm) ? passMarkForLesson : String(Math.round(pm * 0.7));
+            } else {
+              achievedGrade = passMarkForLesson;
+            }
+          } else if (rawCompetence === 'NC') {
+            // Below pass mark
+            const order = GRADE_ORDER[system];
+            if (order.length > 0) {
+              achievedGrade = order[1] || order[0]; // second lowest
+            } else if (system === 'Out of 100') {
+              achievedGrade = '30';
+            }
+          }
+
+          const score = gradeScore(achievedGrade, system);
+          if (score > bestScore) {
+            bestScore = score;
+            bestGrade = achievedGrade;
+            isComplete = isTopGrade(achievedGrade, system) && achievedGrade === topGrade;
+          }
+        }
+
+        return { criterion, bestGrade, bestScore, isComplete };
+      });
+
+      // Overall course percentage
+      // top mark = 1 full point, partial = score * 0.5 points, none = 0
+      let totalPoints = 0;
+      let earnedPoints = 0;
+
+      for (const cp of criteriaProgress) {
+        totalPoints += 1;
+        if (cp.isComplete) {
+          earnedPoints += 1;
+        } else if (cp.bestScore > 0) {
+          earnedPoints += cp.bestScore * 0.5;
+        }
+      }
+
+      // Also factor in lesson completion (lessons touched / total)
+      const touchedLessons = new Set<string>();
+      for (const lesson of lessons) {
+        const key = lesson.sequenceId || lesson.sequenceCode;
+        if (key && bestByLessonId[key]) touchedLessons.add(key);
+      }
+      const completedLessons = touchedLessons.size;
+
+      const percentage = totalPoints > 0
+        ? Math.min(100, Math.round((earnedPoints / totalPoints) * 100))
+        : completedLessons > 0 ? Math.min(100, Math.round((completedLessons / lessons.length) * 100))
+        : 0;
+
+      const isComplete = totalPoints > 0
+        ? criteriaProgress.every((cp) => cp.isComplete)
+        : completedLessons === lessons.length && lessons.length > 0;
+
+      return {
+        course,
+        percentage,
+        isComplete,
+        completedLessons,
+        totalLessons: lessons.length,
+        criteriaProgress,
+        hasCriteria: criteria.length > 0,
+      };
+    }).filter(Boolean) as NonNullable<ReturnType<typeof courses['map']>[number]>[];
+  }, [courses, trainingRecords]);
+
+  const enrolledCourses = courseProgress.filter((cp) => {
+    if (!cp) return false;
+    return (cp as any).completedLessons > 0 || (cp as any).percentage > 0;
+  }) as Array<{
+    course: TrainingModule;
+    percentage: number;
+    isComplete: boolean;
+    completedLessons: number;
+    totalLessons: number;
+    criteriaProgress: Array<{ criterion: any; bestGrade: string; bestScore: number; isComplete: boolean }>;
+    hasCriteria: boolean;
+  }>;
+
+  if (enrolledCourses.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-12 text-center">
+        <GraduationCap className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No course progress yet</h3>
+        <p className="text-gray-500 text-sm">
+          Course progress will appear here once training records with graded lessons are added.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Courses In Progress</p>
+          <p className="text-3xl font-bold text-blue-600 mt-1">{enrolledCourses.filter(c => !c.isComplete).length}</p>
+        </div>
+        <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Courses Completed</p>
+          <p className="text-3xl font-bold text-emerald-600 mt-1">{enrolledCourses.filter(c => c.isComplete).length}</p>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Enrolled</p>
+          <p className="text-3xl font-bold text-gray-700 mt-1">{enrolledCourses.length}</p>
+        </div>
+      </div>
+
+      {enrolledCourses.map(({ course, percentage, isComplete, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => (
+        <div key={course.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center space-x-2 mb-1">
+                  <h3 className="text-lg font-semibold text-gray-900 truncate">{course.title}</h3>
+                  {isComplete && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Completed
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">{course.category} &middot; v{course.version}</p>
+              </div>
+              <div className="text-right ml-4 shrink-0">
+                <span className={`text-3xl font-bold ${isComplete ? 'text-emerald-600' : percentage >= 50 ? 'text-blue-600' : 'text-gray-700'}`}>
+                  {percentage}%
+                </span>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                <span>{completedLessons} of {totalLessons} lessons attempted</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  className={`h-2.5 rounded-full transition-all duration-500 ${isComplete ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                  style={{ width: `${percentage}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Criteria breakdown */}
+            {hasCriteria && criteriaProgress.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Assessment Criteria</p>
+                <div className="flex flex-wrap gap-2">
+                  {criteriaProgress.map(({ criterion, bestGrade, bestScore, isComplete: critComplete }) => {
+                    let chipClass = 'bg-gray-100 text-gray-600 border-gray-200';
+                    if (critComplete) chipClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                    else if (bestScore > 0) chipClass = 'bg-amber-100 text-amber-800 border-amber-200';
+
+                    return (
+                      <div
+                        key={criterion.id}
+                        title={`Best grade: ${bestGrade || 'None'}`}
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${chipClass}`}
+                      >
+                        {critComplete && <CheckCircle className="h-3 w-3 mr-1" />}
+                        {criterion.name}
+                        {bestGrade && bestGrade !== '-' && (
+                          <span className="ml-1 opacity-70">({bestGrade})</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 };
