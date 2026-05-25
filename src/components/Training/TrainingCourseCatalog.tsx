@@ -16,9 +16,11 @@ import {
   Maximize2,
   Minimize2,
   Layers,
+  Pencil,
   Plus,
   Search,
   Tag,
+  Trash2,
   Underline,
   X
 } from 'lucide-react';
@@ -492,6 +494,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     tags: ''
   });
   const [showLessonForm, setShowLessonForm] = useState(false);
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [newLesson, setNewLesson] = useState<NewLessonState>({
     name: '',
     objective: '',
@@ -500,6 +503,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   });
   const [lessonCriteria, setLessonCriteria] = useState<EditableCriterion[]>([createEmptyCriterion()]);
   const [expandedLessons, setExpandedLessons] = useState<Record<string, boolean>>({});
+  const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
 
   useEffect(() => {
     if (modules.length === 0) {
@@ -572,12 +576,46 @@ export const TrainingCourseCatalog: React.FC = () => {
   const resetLessonForm = () => {
     setNewLesson({ name: '', objective: '', flightExercises: '', theory: '' });
     setLessonCriteria([createEmptyCriterion()]);
+    setEditingLessonId(null);
   };
 
   const handleModuleSelect = (moduleId: string) => {
     setSelectedModuleId(moduleId);
     setShowLessonForm(false);
+    setDeletingLessonId(null);
     resetLessonForm();
+  };
+
+  const handleEditLesson = (lesson: TrainingLesson) => {
+    setNewLesson({
+      name: lesson.name,
+      objective: lesson.objective,
+      flightExercises: lesson.flightExercises,
+      theory: lesson.theory,
+    });
+    setLessonCriteria(
+      lesson.assessmentCriteria.length > 0
+        ? lesson.assessmentCriteria.map((c) => ({ ...c }))
+        : [createEmptyCriterion()]
+    );
+    setEditingLessonId(lesson.id);
+    setShowLessonForm(true);
+    setExpandedLessons((prev) => ({ ...prev, [lesson.id]: false }));
+  };
+
+  const handleDeleteLesson = async (lessonId: string) => {
+    if (!selectedModule) return;
+    try {
+      await updateModule(selectedModule.id, (current) => ({
+        ...current,
+        lessons: current.lessons.filter((l) => l.id !== lessonId),
+        lastUpdated: new Date(),
+      }));
+      setDeletingLessonId(null);
+      toast.success('Lesson removed from course');
+    } catch {
+      // error toast handled in context
+    }
   };
 
   const handleToggleLessonExpansion = (lessonId: string) => {
@@ -786,15 +824,45 @@ export const TrainingCourseCatalog: React.FC = () => {
       });
     }
 
-    const timestamp = Date.now();
-    const sequenceIndex = selectedModule.lessons.length + 1;
-    const sequenceId = `custom-${timestamp}`;
-    const sequenceCode = `CUST-${sequenceIndex.toString().padStart(2, '0')}`;
+    if (editingLessonId) {
+      // Edit mode — preserve the original lesson's id and sequence info
+      const existing = selectedModule.lessons.find((l) => l.id === editingLessonId);
+      if (!existing) return;
 
+      const updatedLesson: TrainingLesson = {
+        ...existing,
+        name,
+        objective,
+        flightExercises: flightExercisesHtml,
+        theory: theoryHtml,
+        keyExercises: normaliseKeyExercises(flightExercisesHtml || flightExercisesPlain),
+        studentPreparation: theoryPlain,
+        instructorNotes: flightExercisesPlain,
+        assessmentCriteria: criteria,
+      };
+
+      try {
+        await updateModule(selectedModule.id, (current) => ({
+          ...current,
+          lessons: current.lessons.map((l) => l.id === editingLessonId ? updatedLesson : l),
+          lastUpdated: new Date(),
+        }));
+        toast.success('Lesson updated');
+        setShowLessonForm(false);
+        resetLessonForm();
+        setExpandedLessons((prev) => ({ ...prev, [editingLessonId]: true }));
+      } catch {
+        // error toast handled in context
+      }
+      return;
+    }
+
+    // Create mode
+    const timestamp = Date.now();
     const lesson: TrainingLesson = {
       id: `lesson-${timestamp}`,
-      sequenceId,
-      sequenceCode,
+      sequenceId: `custom-${timestamp}`,
+      sequenceCode: '',
       sequenceTitle: name,
       stage: 'flight',
       durationMinutes: 60,
@@ -1153,8 +1221,8 @@ export const TrainingCourseCatalog: React.FC = () => {
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-6 shadow-inner">
                   <div className="flex flex-wrap items-center justify-between gap-3 text-blue-900">
                     <div className="flex items-center gap-2">
-                      <FilePlus className="h-5 w-5" />
-                      <h3 className="text-lg font-semibold">Create new lesson</h3>
+                      {editingLessonId ? <Pencil className="h-5 w-5" /> : <FilePlus className="h-5 w-5" />}
+                      <h3 className="text-lg font-semibold">{editingLessonId ? 'Edit lesson' : 'Create new lesson'}</h3>
                     </div>
                     <button
                       onClick={handleCancelLesson}
@@ -1305,8 +1373,8 @@ export const TrainingCourseCatalog: React.FC = () => {
                       onClick={handleCreateLesson}
                       className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
                     >
-                      <FilePlus className="mr-2 h-4 w-4" />
-                      Save lesson
+                      {editingLessonId ? <Pencil className="mr-2 h-4 w-4" /> : <FilePlus className="mr-2 h-4 w-4" />}
+                      {editingLessonId ? 'Save changes' : 'Save lesson'}
                     </button>
                   </div>
                 </div>
@@ -1344,6 +1412,29 @@ export const TrainingCourseCatalog: React.FC = () => {
                           key={lesson.id}
                           className="rounded-lg border border-gray-200 bg-gray-50 p-5 shadow-sm"
                         >
+                          {/* Delete confirmation banner */}
+                          {deletingLessonId === lesson.id && (
+                            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                              <p className="text-sm text-red-700">Remove this lesson from the course? Students who have already completed it will not be affected.</p>
+                              <div className="flex shrink-0 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingLessonId(null)}
+                                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteLesson(lesson.id)}
+                                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div className="flex items-start gap-2">
                               <button
@@ -1363,21 +1454,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                 </p>
                               </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                              <span className="inline-flex items-center gap-1">
-                                <Layers className="h-3.5 w-3.5" />
-                                {lesson.sequenceCode}
-                              </span>
-                              <span className="inline-flex items-center gap-1">
-                                <Clock3 className="h-3.5 w-3.5" />
-                                {lesson.durationMinutes} min
-                              </span>
-                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 capitalize">
-                                {lesson.stage}
-                              </span>
-                              <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">
-                                Min competency: {lesson.minCompetency}
-                              </span>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                               <button
                                 type="button"
                                 onClick={() => handleToggleLessonExpansion(lesson.id)}
@@ -1385,6 +1462,22 @@ export const TrainingCourseCatalog: React.FC = () => {
                               >
                                 {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
                                 {isExpanded ? 'Collapse' : 'Expand'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditLesson(lesson)}
+                                className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingLessonId(deletingLessonId === lesson.id ? null : lesson.id)}
+                                className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Delete
                               </button>
                             </div>
                           </div>
@@ -1410,7 +1503,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                   <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                                     Theory focus
                                   </h5>
-                                  <div className="mt-2 rounded-md border border-indigo-100 bg-white p-3">
+                                  <div className="mt-2 rounded-md border border-blue-100 bg-white p-3">
                                     {theoryContent ? (
                                       <div
                                         className="text-sm text-gray-700 [&_li]:mb-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5"
