@@ -9,6 +9,7 @@ export type Action =
   | 'view-aircraft'
   | 'view-maintenance'
   | 'view-training'
+  | 'view-outstanding-records'
   | 'view-billing'
   | 'view-reports'
   | 'view-safety'
@@ -37,6 +38,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
     { action: 'view-training', resource: 'all' },
+    { action: 'view-outstanding-records', resource: 'own' },
     { action: 'view-billing', resource: 'all' },
     { action: 'view-reports', resource: 'all' },
     { action: 'view-safety', resource: 'all' },
@@ -57,6 +59,7 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
     { action: 'view-training', resource: 'all' },
+    { action: 'view-outstanding-records', resource: 'own' },
     { action: 'view-safety', resource: 'all' },
     { action: 'view-settings', resource: 'own' },
     { action: 'view-logbook', resource: 'own' },
@@ -152,6 +155,7 @@ export const getAuthorizedMenuItems = (user: User | null) => {
     { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' as Action },
     { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' as Action },
     { id: 'training', label: 'Training Records', action: 'view-training' as Action },
+    { id: 'outstanding-records', label: 'Outstanding Records', action: 'view-outstanding-records' as Action },
     { id: 'profile', label: 'My Profile', action: 'view-students' as Action, roles: ['student', 'pilot'] as UserRole[] },
     { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook' as Action },
     { id: 'billing', label: 'Billing', action: 'view-billing' as Action },

@@ -120,6 +120,9 @@ export interface TrainingRecord {
   id: string;
   studentId: string;
   bookingId?: string;
+  flightLogId?: string;
+  courseId?: string;
+  lessonId?: string;
   date: Date;
   aircraftId: string;
   aircraftType: string;
@@ -128,7 +131,9 @@ export interface TrainingRecord {
   dualTimeMin: number;
   soloTimeMin: number;
   comments: string;
+  briefingComments: string;
   formalBriefing: boolean;
+  criteriaGrades: Record<string, string>;
   lessonCodes: string[];
   nextLesson?: string;
   status: 'draft' | 'submitted' | 'locked';

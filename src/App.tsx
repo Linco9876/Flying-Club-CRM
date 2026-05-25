@@ -27,6 +27,7 @@ import { SafetyDashboard } from './components/Safety/SafetyDashboard';
 import { TrainingRecordForm } from './components/Training/TrainingRecordForm';
 import { TrainingCourseCatalog } from './components/Training/TrainingCourseCatalog';
 import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuilder';
+import { OutstandingRecordsTab } from './components/Training/OutstandingRecordsTab';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -278,6 +279,16 @@ const AuthenticatedApp: React.FC<{
         return <SafetyDashboard />;
       case 'training':
         return <TrainingCourseCatalog />;
+      case 'outstanding-records':
+        return (
+          <div className="p-0">
+            <div className="px-6 pt-6 pb-2">
+              <h1 className="text-2xl font-bold text-gray-900">Outstanding Records</h1>
+              <p className="text-gray-600 mt-1 text-sm">Flights awaiting a training record entry</p>
+            </div>
+            <OutstandingRecordsTab />
+          </div>
+        );
       case 'syllabus-management':
         return <TrainingModuleBuilder />;
       case 'profile':
@@ -375,6 +386,7 @@ const getRequiredActionForView = (view: string) => {
     'aircraft': 'view-aircraft',
     'maintenance': 'view-maintenance',
     'training': 'view-training',
+    'outstanding-records': 'view-outstanding-records',
     'syllabus-management': 'view-training',
     'billing': 'view-billing',
     'reports': 'view-reports',

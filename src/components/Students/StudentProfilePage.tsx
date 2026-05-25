@@ -26,7 +26,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const [instructorFilter, setInstructorFilter] = useState('');
 
   const { students, loading: studentsLoading } = useStudents();
-  const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
+  const { trainingRecords, loading: trainingRecordsLoading, updateTrainingRecord } = useTrainingRecords();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
   const { modules: trainingCourses } = useTrainingModules();
@@ -135,6 +135,26 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const canEditRecord = (record: TrainingRecord) => {
     return (user?.role === 'instructor' || user?.role === 'admin') && record.status === 'draft';
   };
+
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
+
+  const handleAcknowledge = useCallback(async (recordId: string) => {
+    if (!student) return;
+    setAcknowledgingId(recordId);
+    try {
+      await updateTrainingRecord(recordId, {
+        studentAck: true,
+        studentAckName: student.name,
+        studentAckTimestamp: new Date(),
+        status: 'locked',
+      });
+      toast.success('Record acknowledged');
+    } catch {
+      // error already toasted
+    } finally {
+      setAcknowledgingId(null);
+    }
+  }, [student, updateTrainingRecord]);
 
   // Apply filters to training records
   const filteredRecords = studentTrainingRecords.filter(record => {
@@ -543,6 +563,25 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
 
       {activeTab === 'training' && (
         <div className="space-y-6">
+          {/* Pending sign-off banner — shown to the student whose profile this is */}
+          {user?.id === studentId && (() => {
+            const pendingAck = studentTrainingRecords.filter(r => r.status === 'submitted' && !r.studentAck);
+            if (pendingAck.length === 0) return null;
+            return (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">
+                    {pendingAck.length} record{pendingAck.length > 1 ? 's require' : ' requires'} your acknowledgement
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Review your instructor's comments below and sign off that you have read and agree.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Training Records Header */}
           <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -809,27 +848,88 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                           </div>
                         </div>
 
-                        {/* Status and Actions */}
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-                          <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
-                            {record.status}
-                          </span>
-                          
-                          <div className="flex items-center space-x-2">
-                            {record.status === 'submitted' ? (
-                              <button className="text-blue-600 hover:text-blue-900 flex items-center space-x-1">
-                                <Eye className="h-4 w-4" />
-                                <span>View PDF</span>
-                              </button>
-                            ) : canEditRecord(record) ? (
-                              <button className="text-gray-600 hover:text-gray-900 flex items-center space-x-1">
-                                <Edit className="h-4 w-4" />
-                                <span>Edit</span>
-                              </button>
-                            ) : (
-                              <span className="text-gray-400">–</span>
-                            )}
+                        {/* Briefing Comments (if any) */}
+                        {record.briefingComments && (
+                          <div className="mb-4">
+                            <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Briefing Comments</label>
+                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                              <p className="text-sm text-blue-900">{record.briefingComments}</p>
+                            </div>
                           </div>
+                        )}
+
+                        {/* Criteria Grades (if any) */}
+                        {record.criteriaGrades && Object.keys(record.criteriaGrades).length > 0 && (() => {
+                          const course = trainingCourses.find(c => c.id === record.courseId);
+                          if (!course) return null;
+                          return (
+                            <div className="mb-4">
+                              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Assessment</label>
+                              <div className="flex flex-wrap gap-2">
+                                {course.assessmentCriteria.map(crit => {
+                                  const grade = record.criteriaGrades[crit.id];
+                                  if (!grade || grade === '-') return null;
+                                  const isPass = grade === 'C' || grade === 'Pass' || (parseFloat(grade) >= 50);
+                                  return (
+                                    <span
+                                      key={crit.id}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                                        isPass ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
+                                      }`}
+                                    >
+                                      {crit.name}: {grade}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Status and Actions */}
+                        <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
+                              {record.status}
+                            </span>
+
+                            <div className="flex items-center space-x-2">
+                              {canEditRecord(record) && (
+                                <button className="text-gray-600 hover:text-gray-900 flex items-center space-x-1">
+                                  <Edit className="h-4 w-4" />
+                                  <span>Edit</span>
+                                </button>
+                              )}
+                              {record.status === 'locked' && record.studentAck && (
+                                <span className="flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                                  <CheckCircle className="h-4 w-4" />
+                                  Acknowledged {record.studentAckTimestamp ? `by ${record.studentAckName}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Student sign-off prompt */}
+                          {record.status === 'submitted' && !record.studentAck && user?.id === studentId && (
+                            <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                              <p className="text-sm font-semibold text-amber-900 mb-1">Your acknowledgement is required</p>
+                              <p className="text-xs text-amber-700 mb-3">
+                                By acknowledging, you confirm you have read and agree with the lesson comments and assessment above.
+                              </p>
+                              <button
+                                onClick={() => handleAcknowledge(record.id)}
+                                disabled={acknowledgingId === record.id}
+                                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              >
+                                {acknowledgingId === record.id ? (
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <CheckCircle className="h-4 w-4" />
+                                )}
+                                I have read and agree
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

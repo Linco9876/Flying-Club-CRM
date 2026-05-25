@@ -2,18 +2,19 @@ import React from 'react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getAuthorizedMenuItems } from '../../utils/rbac';
-import { 
-  Calendar, 
-  Users, 
-  Plane, 
-  FileText, 
-  Settings, 
-  BarChart3, 
+import {
+  Calendar,
+  Users,
+  Plane,
+  FileText,
+  Settings,
+  BarChart3,
   Wrench,
   CreditCard,
   BookOpen,
   Shield,
   ClipboardList,
+  AlertCircle,
   Menu,
   X
 } from 'lucide-react';
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor'] },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },
     { id: 'training', label: 'Training Records', icon: BookOpen, roles: ['admin', 'instructor'] },
+    { id: 'outstanding-records', label: 'Outstanding Records', icon: AlertCircle, roles: ['admin', 'instructor'] },
     { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },
     { id: 'profile', label: 'My Profile', icon: Users, roles: ['student'] },
     { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin'] },
