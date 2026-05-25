@@ -16,29 +16,35 @@ export interface OutstandingFlightLog {
   // joined fields
   student_name?: string;
   student_email?: string;
+  instructor_name?: string;
   aircraft_registration?: string;
   aircraft_type?: string;
 }
 
-export function useOutstandingRecords(instructorId?: string) {
+export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean) {
   const [outstandingLogs, setOutstandingLogs] = useState<OutstandingFlightLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetch = useCallback(async () => {
-    if (!instructorId) {
+    if (!instructorId && !fetchAll) {
       setLoading(false);
       return;
     }
     try {
       setLoading(true);
 
-      // Fetch flight logs for this instructor that are still pending
-      const { data: logs, error } = await supabase
+      let query = supabase
         .from('flight_logs')
         .select('id, booking_id, aircraft_id, student_id, instructor_id, start_time, end_time, dual_time, solo_time, training_record_status')
-        .eq('instructor_id', instructorId)
         .eq('training_record_status', 'pending')
+        .not('instructor_id', 'is', null)
         .order('start_time', { ascending: false });
+
+      if (!fetchAll && instructorId) {
+        query = query.eq('instructor_id', instructorId);
+      }
+
+      const { data: logs, error } = await query;
 
       if (error) throw error;
 
@@ -47,12 +53,13 @@ export function useOutstandingRecords(instructorId?: string) {
         return;
       }
 
-      // Fetch related student and aircraft info
       const studentIds = [...new Set(logs.map(l => l.student_id).filter(Boolean))];
+      const instructorIds = [...new Set(logs.map(l => l.instructor_id).filter(Boolean))];
       const aircraftIds = [...new Set(logs.map(l => l.aircraft_id).filter(Boolean))];
+      const allUserIds = [...new Set([...studentIds, ...instructorIds])];
 
       const [{ data: usersData }, { data: aircraftData }] = await Promise.all([
-        supabase.from('users').select('id, name, email').in('id', studentIds),
+        supabase.from('users').select('id, name, email').in('id', allUserIds),
         supabase.from('aircraft').select('id, registration, type').in('id', aircraftIds),
       ]);
 
@@ -64,6 +71,7 @@ export function useOutstandingRecords(instructorId?: string) {
         training_record_status: log.training_record_status as OutstandingFlightLog['training_record_status'],
         student_name: userMap.get(log.student_id)?.name,
         student_email: userMap.get(log.student_id)?.email,
+        instructor_name: userMap.get(log.instructor_id)?.name,
         aircraft_registration: aircraftMap.get(log.aircraft_id)?.registration,
         aircraft_type: aircraftMap.get(log.aircraft_id)?.type,
       }));
@@ -74,7 +82,7 @@ export function useOutstandingRecords(instructorId?: string) {
     } finally {
       setLoading(false);
     }
-  }, [instructorId]);
+  }, [instructorId, fetchAll]);
 
   useEffect(() => {
     fetch();

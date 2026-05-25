@@ -41,7 +41,11 @@ const GRADE_OPTIONS: Record<string, string[]> = {
 
 export const OutstandingRecordsTab: React.FC = () => {
   const { user } = useAuth();
-  const { outstandingLogs, loading, dismissRecord, markRecorded, refetch } = useOutstandingRecords(user?.id);
+  const isAdmin = user?.role === 'admin';
+  const { outstandingLogs, loading, dismissRecord, markRecorded, refetch } = useOutstandingRecords(
+    isAdmin ? undefined : user?.id,
+    isAdmin
+  );
   const { addTrainingRecord } = useTrainingRecords();
   const { modules: courses } = useTrainingModules();
   const { aircraft: aircraftList } = useAircraft();
@@ -159,6 +163,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         title: 'Lesson record requires your sign-off',
         message: `${user.name} has submitted a training record for your flight on ${format(new Date(activeLog.start_time), 'd MMM yyyy')}. Please review and acknowledge it.`,
         is_read: false,
+        metadata: { student_id: activeLog.student_id },
       });
 
       toast.success(`Training record submitted — ${student?.name ?? 'student'} has been notified`);
@@ -190,7 +195,9 @@ export const OutstandingRecordsTab: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Outstanding Records</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Flights awaiting a training record</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {isAdmin ? 'All instructors — flights awaiting a training record' : 'Flights awaiting a training record'}
+            </p>
           </div>
           {outstandingLogs.length > 0 && (
             <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-800 text-sm font-bold border border-amber-200">
@@ -243,6 +250,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                             <Clock className="h-3 w-3" />
                             {durationH}h
                           </span>
+                          {isAdmin && log.instructor_name && (
+                            <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-medium">
+                              {log.instructor_name}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

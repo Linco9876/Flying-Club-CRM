@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Bell, X, AlertCircle, Info, Calendar } from 'lucide-react';
+import { Bell, X, AlertCircle, Info, Calendar, ClipboardList } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
+import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 
 export const NotificationBell: React.FC = () => {
   const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -13,13 +15,19 @@ export const NotificationBell: React.FC = () => {
         return <AlertCircle className="h-5 w-5 text-red-500" />;
       case 'reminder':
         return <Calendar className="h-5 w-5 text-blue-500" />;
+      case 'training_record':
+        return <ClipboardList className="h-5 w-5 text-amber-500" />;
       default:
         return <Info className="h-5 w-5 text-gray-500" />;
     }
   };
 
-  const handleNotificationClick = (notificationId: string) => {
-    markAsRead(notificationId);
+  const handleNotificationClick = (notification: { id: string; type: string; metadata?: Record<string, string> }) => {
+    markAsRead(notification.id);
+    setIsOpen(false);
+    if (notification.type === 'training_record' && notification.metadata?.student_id) {
+      navigate(`/students/${notification.metadata.student_id}?tab=training`);
+    }
   };
 
   return (
@@ -77,7 +85,7 @@ export const NotificationBell: React.FC = () => {
                       className={`p-4 hover:bg-gray-50 transition-colors cursor-pointer ${
                         !notification.isRead ? 'bg-blue-50' : ''
                       }`}
-                      onClick={() => handleNotificationClick(notification.id)}
+                      onClick={() => handleNotificationClick(notification)}
                     >
                       <div className="flex items-start space-x-3">
                         <div className="flex-shrink-0 mt-1">

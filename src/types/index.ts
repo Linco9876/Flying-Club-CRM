@@ -269,10 +269,11 @@ export interface InvoiceItem {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'conflict' | 'cancellation' | 'reminder' | 'system';
+  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record';
   title: string;
   message: string;
   bookingId?: string;
+  metadata?: Record<string, string>;
   isRead: boolean;
   createdAt: Date;
 }

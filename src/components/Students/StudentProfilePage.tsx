@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TrainingRecord, TrainingModule, LessonGradingSystem } from '../../types';
 import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, Eye, CreditCard as Edit, CheckCircle, AlertTriangle, Filter, BookOpen, GraduationCap, ClipboardList } from 'lucide-react';
@@ -18,8 +18,9 @@ interface StudentProfilePageProps {
 export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTrainingRecord }) => {
   const { studentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
   const [showMatrixView, setShowMatrixView] = useState(true);
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
