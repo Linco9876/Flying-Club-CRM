@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, User, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useOutstandingRecords, OutstandingFlightLog } from '../../hooks/useOutstandingRecords';
@@ -7,7 +7,8 @@ import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
-import { TrainingModule, TrainingLesson, LessonAssessmentCriterion } from '../../types';
+import { LessonAssessmentCriterion } from '../../types';
+import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
@@ -150,7 +151,17 @@ export const OutstandingRecordsTab: React.FC = () => {
       });
 
       await markRecorded(activeLog.id);
-      toast.success(`Record submitted for ${student?.name ?? 'student'}`);
+
+      // Notify the student they have a lesson record to sign off
+      await supabase.from('notifications').insert({
+        user_id: activeLog.student_id,
+        type: 'training_record',
+        title: 'Lesson record requires your sign-off',
+        message: `${user.name} has submitted a training record for your flight on ${format(new Date(activeLog.start_time), 'd MMM yyyy')}. Please review and acknowledge it.`,
+        is_read: false,
+      });
+
+      toast.success(`Training record submitted — ${student?.name ?? 'student'} has been notified`);
       closePanel();
     } catch {
       // error already toasted

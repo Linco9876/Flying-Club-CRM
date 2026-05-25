@@ -124,7 +124,6 @@ export const useTrainingRecords = () => {
       if (error) throw error;
 
       await fetchTrainingRecords();
-      toast.success('Training record created successfully');
       return data;
     } catch (err) {
       console.error('Error adding training record:', err);

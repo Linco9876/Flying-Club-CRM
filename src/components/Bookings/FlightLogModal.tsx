@@ -46,6 +46,24 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const defaultDuration = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60) * 10) / 10;
   const isDualFlight = !!booking.instructorId;
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tachAutoFilled, setTachAutoFilled] = useState(false);
+
+  // Derive payment type from the pre-filled flight type (respects forced payment and free types)
+  const derivePaymentType = (flightTypeId: string) => {
+    if (!flightTypeId) return '';
+    const ft = flightTypes.find(f => f.id === flightTypeId);
+    if (!ft) return '';
+    const rate = aircraftRates.find(r => r.flightTypeId === flightTypeId);
+    const free = rate?.chargeType === 'free' || rate?.chargeType === 'not_used';
+    if (free) return '';
+    if (ft.forcedPaymentMethodId) {
+      const pm = paymentMethods.find(p => p.id === ft.forcedPaymentMethodId);
+      return pm?.name ?? '';
+    }
+    return '';
+  };
+
   const [formData, setFormData] = useState({
     start_time: startTime.toISOString(),
     end_time: endTime.toISOString(),
@@ -58,35 +76,24 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     landings: undefined as number | undefined,
     comments: '',
     flight_type_id: booking.flightTypeId || '',
-    payment_type: '',
+    payment_type: derivePaymentType(booking.flightTypeId || ''),
     observations: '',
     oil_added: undefined as number | undefined,
     fuel_added: undefined as number | undefined,
     passengers: undefined as number | undefined,
   });
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [tachAutoFilled, setTachAutoFilled] = useState(false);
-
   const selectedFlightType = flightTypes.find(ft => ft.id === formData.flight_type_id) ?? null;
   const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
   const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
   const isPaymentForced = !isFree && !!selectedFlightType?.forcedPaymentMethodId;
 
-  // Auto-set or clear payment type when flight type changes
+  // Re-derive payment type when billing data loads (paymentMethods/flightTypes async) or flight type changes
   useEffect(() => {
-    if (!selectedFlightType) return;
-    if (isFree) {
-      setFormData(prev => ({ ...prev, payment_type: '' }));
-      return;
-    }
-    if (selectedFlightType.forcedPaymentMethodId) {
-      const forced = paymentMethods.find(pm => pm.id === selectedFlightType.forcedPaymentMethodId);
-      if (forced) setFormData(prev => ({ ...prev, payment_type: forced.name }));
-    } else {
-      setFormData(prev => ({ ...prev, payment_type: '' }));
-    }
-  }, [formData.flight_type_id, isFree]);
+    if (!formData.flight_type_id || !flightTypes.length) return;
+    const derived = derivePaymentType(formData.flight_type_id);
+    setFormData(prev => ({ ...prev, payment_type: derived }));
+  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length]);
 
   useEffect(() => {
     const calculateStartTach = async () => {
