@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
+  Bold,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -8,12 +9,18 @@ import {
   ClipboardList,
   Clock3,
   FilePlus,
+  Italic,
+  Link,
+  List,
+  ListOrdered,
   Maximize2,
   Minimize2,
   Layers,
   Plus,
   Search,
-  Tag
+  Tag,
+  Underline,
+  X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -46,8 +53,6 @@ type EditableCriterion = {
   passingGrade: string;
 };
 
-const allowedRichTextTags = new Set(['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li']);
-
 const escapeHtml = (value: string) =>
   value
     .replace(/&/g, '&amp;')
@@ -57,44 +62,61 @@ const escapeHtml = (value: string) =>
     .replace(/'/g, '&#39;');
 
 const sanitizeRichText = (html: string): string => {
-  if (!html) {
-    return '';
-  }
+  if (!html) return '';
 
-  let working = html
-    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<div[^>]*>/gi, '<p>')
-    .replace(/<\/div>/gi, '</p>')
-    .replace(/<span[^>]*>/gi, '')
-    .replace(/<\/span>/gi, '')
-    .replace(/<font[^>]*>/gi, '')
-    .replace(/<\/font>/gi, '')
-    .replace(/<p>(\s|&nbsp;)*<\/p>/gi, '');
+  // Use a real DOM parser so we walk the actual tree — much more reliable than regex
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  const allowed = new Set(['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'a']);
 
-  working = working.replace(/<(\/)?([a-z0-9]+)([^>]*)>/gi, (match, slash, tag) => {
-    const lower = tag.toLowerCase();
-    const normalised = lower === 'b' ? 'strong' : lower === 'i' ? 'em' : lower;
+  const walk = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return escapeHtml(node.textContent ?? '');
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
 
-    if (!allowedRichTextTags.has(normalised)) {
-      return '';
+    const el = node as Element;
+    const tag = el.tagName.toLowerCase();
+
+    // Normalize legacy tags
+    const norm = tag === 'b' ? 'strong' : tag === 'i' ? 'em' : tag;
+
+    // Replace block-level wrappers with p
+    const blockTags = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'nav', 'aside', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+    if (blockTags.has(norm)) {
+      const inner = Array.from(el.childNodes).map(walk).join('');
+      return `<p>${inner}</p>`;
     }
 
-    if (normalised === 'br') {
-      return '<br />';
+    // Strip span/font/other inline wrappers but keep children
+    const stripWrappers = new Set(['span', 'font', 'code', 'pre', 'mark', 'small', 'sub', 'sup']);
+    if (stripWrappers.has(norm)) {
+      return Array.from(el.childNodes).map(walk).join('');
     }
 
-    return `<${slash ?? ''}${normalised}>`;
-  });
+    if (!allowed.has(norm)) {
+      return Array.from(el.childNodes).map(walk).join('');
+    }
 
-  working = working
-    .replace(/\s+<br \/>/g, '<br />')
-    .replace(/<ul>\s*<\/ul>/gi, '')
-    .replace(/<ol>\s*<\/ol>/gi, '')
-    .replace(/\u00a0/gi, ' ')
-    .trim();
+    if (norm === 'br') return '<br />';
 
-  return working;
+    const inner = Array.from(el.childNodes).map(walk).join('');
+
+    if (norm === 'a') {
+      const href = el.getAttribute('href') ?? '';
+      // Only allow safe URLs
+      const safe = /^https?:\/\//i.test(href) ? href : '';
+      if (!safe) return inner;
+      return `<a href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+    }
+
+    // Drop empty block tags
+    if ((norm === 'p' || norm === 'li') && !inner.trim()) return '';
+
+    return `<${norm}>${inner}</${norm}>`;
+  };
+
+  const result = Array.from(doc.body.childNodes).map(walk).join('').replace(/\u00a0/g, ' ').trim();
+  return result;
 };
 
 const decodeHtmlEntities = (text: string) =>
@@ -164,13 +186,19 @@ interface RichTextEditorProps {
 
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange, placeholder }) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  // Track whether this editor is the active one
   const isFocused = useRef(false);
-  // Assign synchronously so callbacks are never stale
+  // Keep onChange stable without stale closures
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  // Saved selection range for restoring after toolbar clicks
+  const savedRange = useRef<Range | null>(null);
+  // Link popover state
+  const [showLinkPopover, setShowLinkPopover] = useState(false);
+  const [linkUrl, setLinkUrl] = useState('');
+  const linkInputRef = useRef<HTMLInputElement>(null);
 
-  // Only push value into DOM when the editor is not focused (i.e. on initial load
-  // or when the parent resets the value externally)
+  // Initialise / reset: only write to DOM when not focused
   useEffect(() => {
     if (isFocused.current || !editorRef.current) return;
     const next = value ? sanitizeRichText(value) : '';
@@ -179,97 +207,229 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
     }
   }, [value]);
 
+  // Focus link input when popover opens
+  useEffect(() => {
+    if (showLinkPopover) {
+      setTimeout(() => linkInputRef.current?.focus(), 0);
+    }
+  }, [showLinkPopover]);
+
   const flushToParent = useCallback(() => {
     if (!editorRef.current) return;
     const sanitised = sanitizeRichText(editorRef.current.innerHTML);
     onChangeRef.current(sanitised);
   }, []);
 
-  const handleInput = useCallback(() => {
-    flushToParent();
-  }, [flushToParent]);
+  const saveSelection = useCallback(() => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+  }, []);
+
+  const restoreSelection = useCallback(() => {
+    if (!savedRange.current || !editorRef.current) return;
+    editorRef.current.focus();
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(savedRange.current);
+    }
+  }, []);
 
   const handleFocus = useCallback(() => {
     isFocused.current = true;
   }, []);
 
   const handleBlur = useCallback(() => {
+    // Save selection just before focus leaves the editor
+    saveSelection();
     isFocused.current = false;
     flushToParent();
+  }, [flushToParent, saveSelection]);
+
+  const handleInput = useCallback(() => {
+    flushToParent();
+  }, [flushToParent]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Ctrl/Cmd + B/I/U keyboard shortcuts
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'b') { e.preventDefault(); document.execCommand('bold', false); flushToParent(); }
+      if (e.key === 'i') { e.preventDefault(); document.execCommand('italic', false); flushToParent(); }
+      if (e.key === 'u') { e.preventDefault(); document.execCommand('underline', false); flushToParent(); }
+    }
   }, [flushToParent]);
 
   const handlePaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
     event.preventDefault();
     const text = event.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
-    requestAnimationFrame(flushToParent);
+    flushToParent();
   }, [flushToParent]);
 
-  const handleCommand = useCallback(
-    (command: 'bold' | 'italic' | 'underline' | 'unorderedList' | 'orderedList') => {
-      if (!editorRef.current) return;
-      editorRef.current.focus();
-      const commandMap: Record<typeof command, string> = {
-        bold: 'bold',
-        italic: 'italic',
-        underline: 'underline',
-        unorderedList: 'insertUnorderedList',
-        orderedList: 'insertOrderedList',
-      };
-      document.execCommand(commandMap[command], false);
-      requestAnimationFrame(flushToParent);
-    },
-    [flushToParent]
-  );
+  const execFormat = useCallback((command: string, value?: string) => {
+    restoreSelection();
+    document.execCommand(command, false, value);
+    flushToParent();
+    // Re-save updated selection
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      savedRange.current = sel.getRangeAt(0).cloneRange();
+    }
+  }, [restoreSelection, flushToParent]);
+
+  const handleToolbarMouseDown = useCallback((
+    e: React.MouseEvent,
+    command: string,
+    value?: string
+  ) => {
+    e.preventDefault(); // don't steal focus from editor
+    // If editor has focus, selection is live — execute immediately
+    if (isFocused.current) {
+      document.execCommand(command, false, value);
+      flushToParent();
+    } else {
+      // Restore saved selection then execute
+      execFormat(command, value);
+    }
+  }, [execFormat, flushToParent]);
+
+  const openLinkPopover = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    saveSelection();
+    // Pre-fill URL if selection is already a link
+    const sel = window.getSelection();
+    let existingUrl = '';
+    if (sel && sel.rangeCount > 0) {
+      const anchor = sel.anchorNode?.parentElement?.closest('a');
+      if (anchor) existingUrl = anchor.getAttribute('href') ?? '';
+    }
+    setLinkUrl(existingUrl);
+    setShowLinkPopover(true);
+  }, [saveSelection]);
+
+  const insertLink = useCallback(() => {
+    const url = linkUrl.trim();
+    if (!url) return;
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    restoreSelection();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      // If no text selected, insert the URL as link text
+      const selectedText = range.toString() || href;
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.textContent = selectedText;
+      range.deleteContents();
+      range.insertNode(anchor);
+      // Move cursor after the link
+      range.setStartAfter(anchor);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    flushToParent();
+    setShowLinkPopover(false);
+    setLinkUrl('');
+  }, [linkUrl, restoreSelection, flushToParent]);
 
   const showPlaceholder = !value || value.trim().length === 0;
 
   return (
-    <label className="flex flex-col text-sm font-medium text-blue-900 md:col-span-2">
-      {label}
+    <div className="flex flex-col text-sm font-medium text-blue-900 md:col-span-2">
+      <span>{label}</span>
       <div className="mt-1 rounded-md border border-blue-200 bg-white shadow-sm">
-        <div className="flex items-center gap-1 border-b border-blue-100 bg-blue-50 px-2 py-1">
+        {/* Toolbar */}
+        <div className="flex items-center gap-0.5 border-b border-blue-100 bg-blue-50 px-2 py-1">
           <button
             type="button"
-            onMouseDown={(event) => { event.preventDefault(); handleCommand('bold'); }}
-            className="rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-            aria-label="Bold"
+            onMouseDown={(e) => handleToolbarMouseDown(e, 'bold')}
+            className="rounded p-1.5 text-blue-700 hover:bg-blue-100 active:bg-blue-200"
+            title="Bold (Ctrl+B)"
           >
-            B
+            <Bold className="h-3.5 w-3.5 stroke-[2.5]" />
           </button>
           <button
             type="button"
-            onMouseDown={(event) => { event.preventDefault(); handleCommand('italic'); }}
-            className="rounded px-2 py-1 text-xs font-semibold italic text-blue-700 hover:bg-blue-100"
-            aria-label="Italic"
+            onMouseDown={(e) => handleToolbarMouseDown(e, 'italic')}
+            className="rounded p-1.5 text-blue-700 hover:bg-blue-100 active:bg-blue-200"
+            title="Italic (Ctrl+I)"
           >
-            I
+            <Italic className="h-3.5 w-3.5 stroke-[2.5]" />
           </button>
           <button
             type="button"
-            onMouseDown={(event) => { event.preventDefault(); handleCommand('underline'); }}
-            className="rounded px-2 py-1 text-xs font-semibold underline text-blue-700 hover:bg-blue-100"
-            aria-label="Underline"
+            onMouseDown={(e) => handleToolbarMouseDown(e, 'underline')}
+            className="rounded p-1.5 text-blue-700 hover:bg-blue-100 active:bg-blue-200"
+            title="Underline (Ctrl+U)"
           >
-            U
+            <Underline className="h-3.5 w-3.5 stroke-[2.5]" />
+          </button>
+          <div className="mx-1 h-4 w-px bg-blue-200" />
+          <button
+            type="button"
+            onMouseDown={(e) => handleToolbarMouseDown(e, 'insertUnorderedList')}
+            className="rounded p-1.5 text-blue-700 hover:bg-blue-100 active:bg-blue-200"
+            title="Bullet list"
+          >
+            <List className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
-            onMouseDown={(event) => { event.preventDefault(); handleCommand('unorderedList'); }}
-            className="rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-            aria-label="Bulleted list"
+            onMouseDown={(e) => handleToolbarMouseDown(e, 'insertOrderedList')}
+            className="rounded p-1.5 text-blue-700 hover:bg-blue-100 active:bg-blue-200"
+            title="Numbered list"
           >
-            •
+            <ListOrdered className="h-3.5 w-3.5" />
           </button>
-          <button
-            type="button"
-            onMouseDown={(event) => { event.preventDefault(); handleCommand('orderedList'); }}
-            className="rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-            aria-label="Numbered list"
-          >
-            1.
-          </button>
+          <div className="mx-1 h-4 w-px bg-blue-200" />
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={openLinkPopover}
+              className="rounded p-1.5 text-blue-700 hover:bg-blue-100 active:bg-blue-200"
+              title="Insert link"
+            >
+              <Link className="h-3.5 w-3.5" />
+            </button>
+            {showLinkPopover && (
+              <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-blue-200 bg-white p-3 shadow-lg">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-blue-900">Insert link</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkPopover(false)}
+                    className="rounded p-0.5 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <input
+                  ref={linkInputRef}
+                  type="url"
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); insertLink(); } if (e.key === 'Escape') setShowLinkPopover(false); }}
+                  placeholder="https://example.com"
+                  className="w-full rounded-md border border-blue-200 px-2 py-1.5 text-xs text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                />
+                <button
+                  type="button"
+                  onClick={insertLink}
+                  className="mt-2 w-full rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                >
+                  Insert
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Editable area */}
         <div className="relative">
           {showPlaceholder && placeholder && (
             <div className="pointer-events-none absolute inset-0 select-none px-3 py-2 text-sm text-gray-400">
@@ -281,14 +441,15 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
             contentEditable
             suppressContentEditableWarning
             onFocus={handleFocus}
-            onInput={handleInput}
             onBlur={handleBlur}
+            onInput={handleInput}
+            onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            className="min-h-[120px] whitespace-pre-wrap px-3 py-2 text-sm text-gray-900 focus:outline-none"
+            className="min-h-[120px] px-3 py-2 text-sm text-gray-900 focus:outline-none [&_a]:text-blue-600 [&_a]:underline [&_a]:cursor-pointer [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
           />
         </div>
       </div>
-    </label>
+    </div>
   );
 };
 
