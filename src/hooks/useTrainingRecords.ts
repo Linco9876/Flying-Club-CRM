@@ -164,7 +164,6 @@ export const useTrainingRecords = () => {
       if (error) throw error;
 
       await fetchTrainingRecords();
-      toast.success('Training record updated successfully');
     } catch (err) {
       console.error('Error updating training record:', err);
       toast.error('Failed to update training record');

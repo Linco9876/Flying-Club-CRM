@@ -53,31 +53,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const loading = studentsLoading;
   const recordsLoading = trainingRecordsLoading;
 
-  // Syllabus sequences for competency matrix
-  const syllabusSequences = [
-    { code: 'HF', label: 'Human Factors' },
-    { code: 'FP', label: 'Flight Prep' },
-    { code: 'EC', label: 'Effects of Controls' },
-    { code: 'SL', label: 'Straight & Level' },
-    { code: 'CL', label: 'Climb' },
-    { code: 'DS', label: 'Descend' },
-    { code: 'BT', label: 'Basic Turning' },
-    { code: 'SF', label: 'Slow Flight & Stalls' },
-    { code: 'TO', label: 'Take-off' },
-    { code: 'LA', label: 'Landing' },
-    { code: 'CT', label: 'Circuits' },
-    { code: 'EF', label: 'EFIC/EFATO' },
-    { code: 'AT', label: 'Advanced Turning' },
-    { code: 'ST', label: 'Scenario Stalling' },
-    { code: 'FR', label: 'Avionics/Comms/Systems' },
-    { code: 'FL', label: 'Forced Landings' },
-    { code: 'TA', label: 'Training Area Ops' },
-    { code: 'US', label: 'Unexpected/Undesired States' },
-    { code: 'CN', label: 'Consolidation' },
-    { code: 'PT', label: 'Practice Flight Test / Flight Test' }
-  ];
-
-  const handleAddTrainingRecord = () => {
+const handleAddTrainingRecord = () => {
     if (onOpenTrainingRecord && student) {
       // Create a mock booking for the training record form
       const mockBooking = {
@@ -107,21 +83,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     }
   };
 
-  const getCompetenceForSequence = (record: TrainingRecord, sequenceCode: string) => {
-    const sequence = record.sequences.find(s => s.sequenceCode === sequenceCode);
-    return sequence?.competence || '–';
-  };
-
-  const getCompetenceColor = (competence: string) => {
-    switch (competence) {
-      case 'C': return 'text-green-600 font-bold';
-      case 'S': return 'text-yellow-600 font-bold';
-      case 'NC': return 'text-red-600 font-bold';
-      default: return 'text-gray-400';
-    }
-  };
-
-  const formatTime = (minutes: number) => {
+const formatTime = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hours}:${mins.toString().padStart(2, '0')}`;
@@ -684,100 +646,104 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
           ) : sortedRecords.length > 0 ? (
             <>
               {/* Overview Matrix */}
-              {showMatrixView && (
-                <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                  <div className="p-4 border-b border-gray-200">
-                    <h3 className="text-lg font-medium text-gray-900">Competency Overview Matrix</h3>
-                    <div className="flex items-center space-x-4 mt-2 text-xs">
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-green-500 rounded"></span>
-                        <span>C = Competent</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-yellow-500 rounded"></span>
-                        <span>S = Satisfactory</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-red-500 rounded"></span>
-                        <span>NC = Not Competent</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-gray-300 rounded"></span>
-                        <span>– = Not Assessed</span>
+              {showMatrixView && (() => {
+                // Build the set of criteria from all courses used in these records
+                const criteriaMap = new Map<string, { id: string; name: string; shortName: string }>();
+                sortedRecords.forEach(record => {
+                  const course = trainingCourses.find(c => c.id === record.courseId);
+                  if (!course) return;
+                  course.assessmentCriteria.forEach(crit => {
+                    if (!criteriaMap.has(crit.id)) {
+                      criteriaMap.set(crit.id, {
+                        id: crit.id,
+                        name: crit.name,
+                        shortName: crit.name.length > 8 ? crit.name.slice(0, 8) : crit.name,
+                      });
+                    }
+                  });
+                });
+                const matrixCriteria = Array.from(criteriaMap.values());
+
+                const getGrade = (record: TrainingRecord, critId: string) => {
+                  const g = record.criteriaGrades?.[critId];
+                  return g && g !== '-' ? g : '–';
+                };
+
+                const gradeColor = (g: string) => {
+                  if (g === 'C' || g === 'Pass') return 'bg-green-500 text-white';
+                  if (g === 'S') return 'bg-yellow-400 text-white';
+                  if (g === 'NC' || g === 'Fail') return 'bg-red-500 text-white';
+                  return 'bg-gray-100 text-gray-400';
+                };
+
+                return (
+                  <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                    <div className="p-4 border-b border-gray-200">
+                      <h3 className="text-lg font-medium text-gray-900">Competency Overview Matrix</h3>
+                      <div className="flex flex-wrap items-center gap-4 mt-2 text-xs">
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span><span>C / Pass = Competent</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-400 rounded"></span><span>S = Satisfactory</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span><span>NC / Fail = Not Competent</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-gray-100 border border-gray-300 rounded"></span><span>– = Not Assessed</span></div>
                       </div>
                     </div>
-                  </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          {/* Sticky columns */}
-                          <th className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                            Date
-                          </th>
-                          <th className="sticky left-20 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                            Instructor
-                          </th>
-                          <th className="sticky left-40 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                            Aircraft
-                          </th>
-                          
-                          {/* Competency columns */}
-                          {syllabusSequences.map(sequence => (
-                            <th 
-                              key={sequence.code}
-                              className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[36px]"
-                              style={{ 
-                                writingMode: 'vertical-rl', 
-                                transform: 'rotate(180deg)',
-                                height: '120px'
-                              }}
-                              title={sequence.label}
-                            >
-                              {sequence.code}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {sortedRecords.map(record => {
-                          const instructor = users.find(u => u.id === record.instructorId);
-                          return (
-                            <tr key={record.id} className="hover:bg-gray-50">
-                              {/* Sticky columns */}
-                              <td className="sticky left-0 z-10 bg-white px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
-                                {record.date.toLocaleDateString()}
-                              </td>
-                              <td className="sticky left-20 z-10 bg-white px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
-                                {instructor?.name || 'Unknown'}
-                              </td>
-                              <td className="sticky left-40 z-10 bg-white px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
-                                {record.aircraftType}
-                              </td>
-                              
-                              {/* Competency cells */}
-                              {syllabusSequences.map(sequence => {
-                                const competence = getCompetenceForSequence(record, sequence.code);
-                                return (
-                                  <td 
-                                    key={sequence.code}
-                                    className="px-2 py-3 text-center text-sm border-r border-gray-200 min-w-[36px]"
-                                  >
-                                    <span className={getCompetenceColor(competence)}>
-                                      {competence}
-                                    </span>
-                                  </td>
-                                );
-                              })}
+
+                    {matrixCriteria.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-gray-500">No graded criteria found in these records.</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border-collapse">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r border-b border-gray-200 min-w-[80px]">Date</th>
+                              <th className="sticky left-20 z-10 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r border-b border-gray-200 min-w-[110px]">Instructor</th>
+                              <th className="sticky left-[186px] z-10 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r border-b border-gray-200 min-w-[80px]">Aircraft</th>
+                              {matrixCriteria.map(crit => (
+                                <th
+                                  key={crit.id}
+                                  title={crit.name}
+                                  className="px-1 py-2 text-center text-xs font-medium text-gray-600 border-r border-b border-gray-200 min-w-[40px]"
+                                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', height: '110px' }}
+                                >
+                                  {crit.name}
+                                </th>
+                              ))}
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-100">
+                            {sortedRecords.map(record => {
+                              const instructor = users.find(u => u.id === record.instructorId);
+                              return (
+                                <tr key={record.id} className="hover:bg-gray-50">
+                                  <td className="sticky left-0 z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap">
+                                    {record.date.toLocaleDateString()}
+                                  </td>
+                                  <td className="sticky left-20 z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap max-w-[110px] truncate">
+                                    {instructor?.name || 'Unknown'}
+                                  </td>
+                                  <td className="sticky left-[186px] z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap">
+                                    {record.registration || record.aircraftType}
+                                  </td>
+                                  {matrixCriteria.map(crit => {
+                                    const grade = getGrade(record, crit.id);
+                                    return (
+                                      <td key={crit.id} className="px-1 py-2 text-center border-r border-gray-100">
+                                        <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${gradeColor(grade)}`}>
+                                          {grade}
+                                        </span>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Lesson Cards */}
               {!showMatrixView && (
