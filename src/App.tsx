@@ -391,7 +391,7 @@ const getRequiredActionForView = (view: string) => {
     'billing': 'view-billing',
     'reports': 'view-reports',
     'safety': 'view-safety',
-    'profile': 'view-students',
+    'profile': 'edit-personal-settings',
     'mylogbook': 'view-logbook',
     'settings': 'view-settings'
   };
