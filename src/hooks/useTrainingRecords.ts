@@ -62,6 +62,7 @@ export const useTrainingRecords = () => {
         instructorSignatureUrl: r.instructor_signature_url,
         studentAck: r.student_ack,
         studentAckName: r.student_ack_name,
+        studentComments: r.student_comments || '',
         instructorSignTimestamp: r.instructor_sign_timestamp ? new Date(r.instructor_sign_timestamp) : undefined,
         studentAckTimestamp: r.student_ack_timestamp ? new Date(r.student_ack_timestamp) : undefined,
         attachments: r.attachments || [],
@@ -152,6 +153,7 @@ export const useTrainingRecords = () => {
       if (recordData.instructorSignatureUrl !== undefined) updateData.instructor_signature_url = recordData.instructorSignatureUrl;
       if (recordData.studentAck !== undefined) updateData.student_ack = recordData.studentAck;
       if (recordData.studentAckName !== undefined) updateData.student_ack_name = recordData.studentAckName;
+      if (recordData.studentComments !== undefined) updateData.student_comments = recordData.studentComments;
       if (recordData.instructorSignTimestamp !== undefined) updateData.instructor_sign_timestamp = recordData.instructorSignTimestamp?.toISOString();
       if (recordData.studentAckTimestamp !== undefined) updateData.student_ack_timestamp = recordData.studentAckTimestamp?.toISOString();
       if (recordData.attachments !== undefined) updateData.attachments = recordData.attachments;

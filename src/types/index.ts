@@ -140,6 +140,7 @@ export interface TrainingRecord {
   instructorSignatureUrl?: string;
   studentAck: boolean;
   studentAckName?: string;
+  studentComments: string;
   instructorSignTimestamp?: Date;
   studentAckTimestamp?: Date;
   attachments: string[];

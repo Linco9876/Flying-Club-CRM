@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { User, Phone, Mail, Calendar, Award, CreditCard as Edit, Save, X, AlertCircle } from 'lucide-react';
+import { User, Phone, Mail, Calendar, Award, CreditCard as Edit, Save, X, AlertCircle, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { StudentTrainingRecords } from './StudentTrainingRecords';
 
 interface ProfileData {
   name: string;
@@ -36,8 +37,11 @@ const empty: ProfileData = {
   medicalType: '', medicalExpiry: '', licenceExpiry: '',
 };
 
+type Tab = 'profile' | 'training';
+
 export const StudentProfile: React.FC = () => {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -189,40 +193,75 @@ export const StudentProfile: React.FC = () => {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-start">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
           <p className="text-sm text-gray-500 mt-0.5">{profile.email}</p>
         </div>
-        {editMode ? (
-          <div className="flex items-center gap-2">
+        {activeTab === 'profile' && (
+          editMode ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleCancel}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <X className="h-4 w-4" />
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+              >
+                <Save className="h-4 w-4" />
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={handleCancel}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              onClick={() => setEditMode(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              <X className="h-4 w-4" />
-              Cancel
+              <Edit className="h-4 w-4" />
+              Edit Profile
             </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
-            >
-              <Save className="h-4 w-4" />
-              {saving ? 'Saving…' : 'Save Changes'}
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setEditMode(true)}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Edit className="h-4 w-4" />
-            Edit Profile
-          </button>
+          )
         )}
       </div>
 
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-6">
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`flex items-center gap-2 pb-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'profile'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <User className="h-4 w-4" />
+            Personal Info
+          </button>
+          <button
+            onClick={() => setActiveTab('training')}
+            className={`flex items-center gap-2 pb-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'training'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <BookOpen className="h-4 w-4" />
+            Lesson Records
+          </button>
+        </nav>
+      </div>
+
+      {activeTab === 'training' && (
+        <StudentTrainingRecords />
+      )}
+
+      {activeTab === 'profile' && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Personal Info */}
         <div className="lg:col-span-2 space-y-6">
@@ -314,6 +353,7 @@ export const StudentProfile: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
