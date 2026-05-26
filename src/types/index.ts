@@ -87,7 +87,7 @@ export interface Booking {
   endTime: Date;
   paymentType: 'prepaid' | 'payg' | 'account';
   notes?: string;
-  status: 'confirmed' | 'cancelled' | 'completed' | 'no-show';
+  status: 'confirmed' | 'cancelled' | 'completed' | 'no-show' | 'pending_approval';
   hasConflict?: boolean;
   flightLog?: FlightLog;
   flight_logged?: boolean;
@@ -269,7 +269,7 @@ export interface InvoiceItem {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record';
+  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record' | 'booking_approval';
   title: string;
   message: string;
   bookingId?: string;

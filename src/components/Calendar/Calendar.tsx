@@ -1162,6 +1162,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                         ? 'flash-unlogged'
                         : booking.hasConflict
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                        : booking.status === 'pending_approval'
+                        ? 'bg-yellow-400 border-yellow-500 hover:bg-yellow-500 text-gray-900'
                         : booking.flight_logged
                         ? 'bg-green-500 border-green-600 hover:bg-green-600'
                         : isPastUnlogged

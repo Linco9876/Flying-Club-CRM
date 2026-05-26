@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, FlightLog, BookingConflict } from '../types';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 export const useBookings = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const fetchBookings = async () => {
     try {
@@ -107,7 +109,9 @@ export const useBookings = () => {
         console.error('Error validating booking rules:', ruleError);
       }
 
-      let needsApproval = false;
+      // Students always need approval; admins/instructors book directly
+      let needsApproval = user?.role === 'student' || user?.role === 'pilot';
+
       if (ruleValidation && Array.isArray(ruleValidation) && ruleValidation.length > 0) {
         const errors = ruleValidation.filter((err: any) => !err.needs_approval);
         const approvalRequired = ruleValidation.some((err: any) => err.needs_approval);
@@ -117,7 +121,7 @@ export const useBookings = () => {
           throw new Error(errorMessages.join('. '));
         }
 
-        needsApproval = approvalRequired;
+        if (approvalRequired) needsApproval = true;
       }
 
       // Check for conflicts before creating booking
@@ -180,7 +184,7 @@ export const useBookings = () => {
       // Send approval notifications if needed
       if (needsApproval && data && data.length > 0) {
         const { error: notifyError } = await supabase
-          .rpc('notify_instructors_for_approval', {
+          .rpc('notify_instructor_booking_request', {
             booking_id: data[0].id
           });
 
@@ -192,7 +196,7 @@ export const useBookings = () => {
       await fetchBookings();
 
       if (needsApproval) {
-        toast.success('Booking created and sent for instructor approval');
+        toast.success('Booking request submitted — awaiting approval');
       } else {
         toast.success('Booking created successfully');
       }
