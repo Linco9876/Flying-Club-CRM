@@ -8,9 +8,12 @@ import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
+import { useAuth } from '../../context/AuthContext';
 
 export const AircraftList: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManage = user?.role === 'admin' || user?.role === 'instructor';
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
@@ -152,13 +155,15 @@ export const AircraftList: React.FC = () => {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Aircraft Fleet</h1>
-        <button 
-          onClick={() => setShowAircraftForm(true)}
-          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plane className="h-4 w-4" />
-          <span>Add Aircraft</span>
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowAircraftForm(true)}
+            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plane className="h-4 w-4" />
+            <span>Add Aircraft</span>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -249,21 +254,25 @@ export const AircraftList: React.FC = () => {
                         <FileText className="h-4 w-4 mr-2 text-gray-400" />
                         Flight Logs
                       </button>
-                      <button
-                        onClick={() => { openEditForm(aircraftItem); setOpenMenuId(null); }}
-                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <Pencil className="h-4 w-4 mr-2 text-gray-400" />
-                        Edit
-                      </button>
-                      <div className="border-t border-gray-100 my-1" />
-                      <button
-                        onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
-                        className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                      >
-                        <Flag className="h-4 w-4 mr-2" />
-                        Report Defect
-                      </button>
+                      {canManage && (
+                        <>
+                          <button
+                            onClick={() => { openEditForm(aircraftItem); setOpenMenuId(null); }}
+                            className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <Pencil className="h-4 w-4 mr-2 text-gray-400" />
+                            Edit
+                          </button>
+                          <div className="border-t border-gray-100 my-1" />
+                          <button
+                            onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
+                            className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Flag className="h-4 w-4 mr-2" />
+                            Report Defect
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
