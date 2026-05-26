@@ -27,6 +27,8 @@ export interface CalendarSettings {
   resource_display_order: string;
   conflict_rules: string;
   week_starts_on: string;
+  hidden_resources: string[];
+  resource_order: { id: string; type: 'aircraft' | 'instructor' }[];
 }
 
 export interface BookingRulesSettings {
@@ -193,7 +195,30 @@ export const useCalendarSettings = () => {
     }
   };
 
-  return { settings, loading, error, updateSettings, refetch: fetchSettings };
+  const updateSettingsSilent = async (updates: Partial<CalendarSettings>) => {
+    if (!settings) return;
+
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+
+      const { error } = await supabase
+        .from('calendar_settings')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+          updated_by: userData.user?.id
+        })
+        .eq('id', settings.id);
+
+      if (error) throw error;
+
+      setSettings(prev => prev ? { ...prev, ...updates } : prev);
+    } catch (err: any) {
+      // silent
+    }
+  };
+
+  return { settings, loading, error, updateSettings, updateSettingsSilent, refetch: fetchSettings };
 };
 
 export const useBookingRulesSettings = () => {

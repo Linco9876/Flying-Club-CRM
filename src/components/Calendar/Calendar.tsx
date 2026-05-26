@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   format,
   addDays,
@@ -21,6 +21,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings } from '../../hooks/useSettings';
 import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
+import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
@@ -74,8 +75,12 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { aircraft } = useAircraft();
   const { getInstructors } = useUsers();
   const instructors = getInstructors();
-  const { settings: calendarSettings } = useCalendarSettings();
+  const { settings: calendarSettings, updateSettingsSilent } = useCalendarSettings();
   const { weeklySchedules, absences, scheduleChanges } = useInstructorAvailability();
+
+  // Per-resource visibility & ordering (loaded from/synced to DB)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
@@ -176,6 +181,32 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   }, [calendarSettings?.default_view]);
 
+  // Seed hidden/order from persisted settings once data is ready
+  useEffect(() => {
+    if (!calendarSettings) return;
+    setHiddenIds(new Set(calendarSettings.hidden_resources ?? []));
+    const savedOrder = calendarSettings.resource_order ?? [];
+    if (savedOrder.length > 0) {
+      setOrderedIds(savedOrder.map((r: { id: string }) => r.id));
+    }
+  // Only run when settings first loads (id changes)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarSettings?.id]);
+
+  // When aircraft/instructors load, ensure orderedIds includes all current resources
+  useEffect(() => {
+    const allIds = [
+      ...aircraft.map(a => a.id),
+      ...instructors.map(i => i.id),
+    ];
+    setOrderedIds(prev => {
+      const existing = new Set(prev);
+      const newIds = allIds.filter(id => !existing.has(id));
+      return [...prev, ...newIds];
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aircraft.length, instructors.length]);
+
 
   // Compute slot height on mount and resize
   useEffect(() => {
@@ -246,16 +277,43 @@ export const Calendar: React.FC<CalendarProps> = ({
     return resources;
   };
 
-  const getAllResources = (): Resource[] => {
-    const resources: Resource[] = [];
-    const displayOrder = calendarSettings?.resource_display_order || 'aircraft-first';
+  const handleHideResource = useCallback((id: string) => {
+    setHiddenIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      updateSettingsSilent({ hidden_resources: Array.from(next) });
+      return next;
+    });
+  }, [updateSettingsSilent]);
 
-    const aircraftResources: Resource[] = [];
-    const instructorResources: Resource[] = [];
+  const handleShowResource = useCallback((id: string) => {
+    setHiddenIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      updateSettingsSilent({ hidden_resources: Array.from(next) });
+      return next;
+    });
+  }, [updateSettingsSilent]);
+
+  const handleReorderResources = useCallback((newOrderIds: string[]) => {
+    setOrderedIds(newOrderIds);
+    const allResources = [
+      ...aircraft.map(a => ({ id: a.id, type: 'aircraft' as const })),
+      ...instructors.map(i => ({ id: i.id, type: 'instructor' as const })),
+    ];
+    const resourceMap = new Map(allResources.map(r => [r.id, r]));
+    const resourceOrder = newOrderIds
+      .map(id => resourceMap.get(id))
+      .filter((r): r is { id: string; type: 'aircraft' | 'instructor' } => !!r);
+    updateSettingsSilent({ resource_order: resourceOrder });
+  }, [aircraft, instructors, updateSettingsSilent]);
+
+  const getAllResources = (): Resource[] => {
+    const resourceMap = new Map<string, Resource>();
 
     if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
       aircraft.forEach((a) => {
-        aircraftResources.push({
+        resourceMap.set(a.id, {
           id: a.id,
           name: a.registration,
           type: 'aircraft',
@@ -267,7 +325,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     if (resourceFilter === 'instructors' || resourceFilter === 'both') {
       instructors.forEach((instructor) => {
-        instructorResources.push({
+        resourceMap.set(instructor.id, {
           id: instructor.id,
           name: instructor.name || instructor.email,
           type: 'instructor',
@@ -276,11 +334,24 @@ export const Calendar: React.FC<CalendarProps> = ({
       });
     }
 
-    if (displayOrder === 'instructors-first') {
-      return [...instructorResources, ...aircraftResources];
-    } else {
-      return [...aircraftResources, ...instructorResources];
-    }
+    // Apply custom order, then append any not yet in order list
+    const ordered: Resource[] = [];
+    const seen = new Set<string>();
+
+    orderedIds.forEach(id => {
+      if (!hiddenIds.has(id) && resourceMap.has(id)) {
+        ordered.push(resourceMap.get(id)!);
+        seen.add(id);
+      }
+    });
+
+    resourceMap.forEach((r, id) => {
+      if (!seen.has(id) && !hiddenIds.has(id)) {
+        ordered.push(r);
+      }
+    });
+
+    return ordered;
   };
 
   const getTimeSlots = () => {
@@ -903,6 +974,19 @@ export const Calendar: React.FC<CalendarProps> = ({
     </div>
   );
 
+  const getManagedResources = (): ManagedResource[] => {
+    const result: ManagedResource[] = [];
+
+    if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
+      aircraft.forEach(a => result.push({ id: a.id, name: a.registration, type: 'aircraft', status: a.status }));
+    }
+    if (resourceFilter === 'instructors' || resourceFilter === 'both') {
+      instructors.forEach(i => result.push({ id: i.id, name: i.name || i.email, type: 'instructor' }));
+    }
+
+    return result;
+  };
+
   const renderFilterControls = () => (
     <div className="flex items-center space-x-3 flex-wrap">
       <select
@@ -916,6 +1000,15 @@ export const Calendar: React.FC<CalendarProps> = ({
         <option value="aircraft">Aircraft Only</option>
         <option value="instructors">Instructors Only</option>
       </select>
+
+      <ResourceManagerPanel
+        resources={getManagedResources()}
+        hiddenIds={hiddenIds}
+        orderedIds={orderedIds}
+        onHide={handleHideResource}
+        onShow={handleShowResource}
+        onReorder={handleReorderResources}
+      />
     </div>
   );
 
