@@ -1326,8 +1326,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                       </>
                     )}
                     {showHalfHourMarker && (
-                      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                     )}
+                    <div className="relative z-10">
                     <div className="font-medium text-xs truncate">
                       {resource.type === 'aircraft'
                         ? resource.name
@@ -1348,6 +1349,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         new Date(booking.endTime),
                         'HH:mm'
                       )}
+                    </div>
                     </div>
                   </div>
                 );
@@ -1899,8 +1901,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                         </>
                       )}
                       {showHalfHourMarker && (
-                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                       )}
+                      <div className="relative z-10">
                       <div className="font-medium text-xs truncate">
                         Aircraft
                       </div>
@@ -1917,6 +1920,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           new Date(booking.endTime),
                           'HH:mm'
                         )}
+                      </div>
                       </div>
                     </div>
                   );
@@ -2008,8 +2012,9 @@ export const Calendar: React.FC<CalendarProps> = ({
                         </>
                       )}
                       {showHalfHourMarker && (
-                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                       )}
+                      <div className="relative z-10">
                       <div className="font-medium text-xs truncate">
                         Instructor
                       </div>
@@ -2026,6 +2031,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           new Date(booking.endTime),
                           'HH:mm'
                         )}
+                      </div>
                       </div>
                     </div>
                   );
