@@ -10,6 +10,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { LogbookTab } from './LogbookTab';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { StudentProfile } from './StudentProfile';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -242,7 +243,11 @@ const formatTime = (minutes: number) => {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'profile' && (
+      {activeTab === 'profile' && user?.id === studentId && (
+        <StudentProfile />
+      )}
+
+      {activeTab === 'profile' && user?.id !== studentId && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Student Summary */}
           <div className="lg:col-span-1 space-y-6">
