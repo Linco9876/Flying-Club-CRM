@@ -59,7 +59,7 @@ const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): 
       }
 
       if (userResult.data) {
-        const roles = rolesResult.data?.map(r => r.role as UserRole) || [];
+        const roles = (rolesResult.data?.map(r => r.role as UserRole) || []).filter(Boolean);
         return {
           ...userResult.data,
           roles: roles.length > 0 ? roles : [userResult.data.role as UserRole]
