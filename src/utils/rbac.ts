@@ -147,27 +147,27 @@ export const can = (user: User | null, action: Action, resource: Resource = 'all
 export const getAuthorizedMenuItems = (user: User | null) => {
   if (!user) return [];
 
-  const allMenuItems = [
-    { id: 'dashboard', label: 'Dashboard', action: 'view-dashboard' as Action },
-    { id: 'calendar', label: 'Calendar', action: 'view-calendar' as Action },
-    { id: 'bookings', label: 'My Bookings', action: 'view-bookings' as Action, roles: ['student', 'pilot'] as UserRole[] },
-    { id: 'students', label: 'Students', action: 'view-students' as Action },
-    { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' as Action },
-    { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' as Action },
-    { id: 'training', label: 'Training Records', action: 'view-training' as Action },
-    { id: 'outstanding-records', label: 'Outstanding Records', action: 'view-outstanding-records' as Action },
-    { id: 'profile', label: 'My Profile', action: 'edit-personal-settings' as Action, roles: ['student', 'pilot'] as UserRole[] },
-    { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook' as Action },
-    { id: 'billing', label: 'Billing', action: 'view-billing' as Action },
-    { id: 'reports', label: 'Reports', action: 'view-reports' as Action },
-    { id: 'safety', label: 'Safety', action: 'view-safety' as Action },
-    { id: 'settings', label: 'Settings', action: 'view-settings' as Action }
+  const allMenuItems: { id: string; label: string; action: Action; resource?: Resource; roles?: UserRole[] }[] = [
+    { id: 'dashboard', label: 'Dashboard', action: 'view-dashboard' },
+    { id: 'calendar', label: 'Calendar', action: 'view-calendar' },
+    { id: 'bookings', label: 'My Bookings', action: 'view-bookings', resource: 'own', roles: ['student', 'pilot'] },
+    { id: 'students', label: 'Students', action: 'view-students' },
+    { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' },
+    { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' },
+    { id: 'training', label: 'Training Records', action: 'view-training' },
+    { id: 'outstanding-records', label: 'Outstanding Records', action: 'view-outstanding-records' },
+    { id: 'profile', label: 'My Profile', action: 'edit-personal-settings', resource: 'own', roles: ['student', 'pilot'] },
+    { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook' },
+    { id: 'billing', label: 'Billing', action: 'view-billing' },
+    { id: 'reports', label: 'Reports', action: 'view-reports' },
+    { id: 'safety', label: 'Safety', action: 'view-safety' },
+    { id: 'settings', label: 'Settings', action: 'view-settings' }
   ];
 
   return allMenuItems.filter(item => {
     if (item.roles && !hasAnyRole(user, item.roles)) return false;
 
-    return can(user, item.action);
+    return can(user, item.action, item.resource ?? 'all');
   });
 };
 
