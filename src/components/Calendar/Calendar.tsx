@@ -1150,24 +1150,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                 const showHalfHourMarker = startOffset === 15 || endOffset === 15;
                 const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                 const isBeingResized = resizingBooking?.booking.id === booking.id;
-                const isPastUnlogged = isPastBooking(booking) && !booking.flight_logged;
-                const shouldFlash = highlightUnlogged && isPastUnlogged;
-
                 return (
                   <div
                     key={`${booking.id}-${resource.id}`}
                     data-booking-element
                     className={`${
-                      shouldFlash
-                        ? 'flash-unlogged'
-                        : booking.hasConflict
+                      booking.hasConflict
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
                         : booking.status === 'pending_approval'
                         ? 'bg-yellow-400 border-yellow-500 hover:bg-yellow-500 text-gray-900'
                         : booking.flight_logged
                         ? 'bg-green-500 border-green-600 hover:bg-green-600'
-                        : isPastUnlogged
-                        ? 'bg-red-500 border-red-600 hover:bg-red-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                     } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                       isBeingDragged
@@ -1748,22 +1741,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
-                  const isPastUnloggedAircraft = isPastBooking(booking) && !booking.flight_logged;
-                  const shouldFlash = highlightUnlogged && isPastUnloggedAircraft;
-
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-aircraft`}
                       data-booking-element
                       className={`${
-                        shouldFlash
-                          ? 'flash-unlogged'
-                          : booking.hasConflict
+                        booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                          : booking.status === 'pending_approval'
+                          ? 'bg-yellow-400 border-yellow-500 hover:bg-yellow-500 text-gray-900'
                           : booking.flight_logged
                           ? 'bg-green-500 border-green-600 hover:bg-green-600'
-                          : isPastUnloggedAircraft
-                          ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
@@ -1862,22 +1850,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
-                  const isPastUnloggedInstructor = isPastBooking(booking) && !booking.flight_logged;
-                  const shouldFlash = highlightUnlogged && isPastUnloggedInstructor;
-
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-instructor`}
                       data-booking-element
                       className={`${
-                        shouldFlash
-                          ? 'flash-unlogged'
-                          : booking.hasConflict
+                        booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                          : booking.status === 'pending_approval'
+                          ? 'bg-yellow-400 border-yellow-500 hover:bg-yellow-500 text-gray-900'
                           : booking.flight_logged
                           ? 'bg-green-500 border-green-600 hover:bg-green-600'
-                          : isPastUnloggedInstructor
-                          ? 'bg-red-500 border-red-600 hover:bg-red-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
