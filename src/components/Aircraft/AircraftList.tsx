@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft, Defect } from '../../types';
-import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText, MoreVertical, Pencil } from 'lucide-react';
+import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText, MoreVertical, Pencil, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
@@ -20,6 +20,7 @@ export const AircraftList: React.FC = () => {
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
+  const [duplicatingAircraft, setDuplicatingAircraft] = useState<Aircraft | null>(null);
   const [viewingAircraft, setViewingAircraft] = useState<Aircraft | null>(null);
   const [selectedAircraftForDefect, setSelectedAircraftForDefect] = useState<string>('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -49,13 +50,21 @@ export const AircraftList: React.FC = () => {
   };
 
   const openEditForm = (aircraft: Aircraft) => {
+    setDuplicatingAircraft(null);
     setEditingAircraft(aircraft);
+    setShowAircraftForm(true);
+  };
+
+  const openDuplicateForm = (aircraft: Aircraft) => {
+    setEditingAircraft(null);
+    setDuplicatingAircraft(aircraft);
     setShowAircraftForm(true);
   };
 
   const closeAircraftForm = () => {
     setShowAircraftForm(false);
     setEditingAircraft(null);
+    setDuplicatingAircraft(null);
   };
 
   if (loading) {
@@ -157,7 +166,7 @@ export const AircraftList: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-900">Aircraft Fleet</h1>
         {canManage && (
           <button
-            onClick={() => setShowAircraftForm(true)}
+            onClick={() => { setEditingAircraft(null); setDuplicatingAircraft(null); setShowAircraftForm(true); }}
             className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plane className="h-4 w-4" />
@@ -263,6 +272,13 @@ export const AircraftList: React.FC = () => {
                             <Pencil className="h-4 w-4 mr-2 text-gray-400" />
                             Edit
                           </button>
+                          <button
+                            onClick={() => { openDuplicateForm(aircraftItem); setOpenMenuId(null); }}
+                            className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <Copy className="h-4 w-4 mr-2 text-gray-400" />
+                            Duplicate
+                          </button>
                           <div className="border-t border-gray-100 my-1" />
                           <button
                             onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
@@ -286,8 +302,9 @@ export const AircraftList: React.FC = () => {
         isOpen={showAircraftForm}
         onClose={closeAircraftForm}
         onSubmit={editingAircraft ? handleEditAircraft : handleAddAircraft}
-        aircraft={editingAircraft || undefined}
+        aircraft={editingAircraft || duplicatingAircraft || undefined}
         isEdit={!!editingAircraft}
+        isDuplicate={!!duplicatingAircraft}
       />
 
       <DefectReportForm

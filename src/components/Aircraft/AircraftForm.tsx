@@ -12,6 +12,7 @@ interface AircraftFormProps {
   onSubmit: (aircraft: any) => void;
   aircraft?: Aircraft;
   isEdit?: boolean;
+  isDuplicate?: boolean;
 }
 
 interface MaintenanceMilestone {
@@ -27,25 +28,26 @@ interface CostStructure {
   account: number;
 }
 
-export const AircraftForm: React.FC<AircraftFormProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSubmit, 
-  aircraft, 
-  isEdit = false 
+export const AircraftForm: React.FC<AircraftFormProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  aircraft,
+  isEdit = false,
+  isDuplicate = false
 }) => {
   const [formData, setFormData] = useState({
-    registration: aircraft?.registration || '',
+    registration: (isEdit && aircraft?.registration) ? aircraft.registration : '',
     make: aircraft?.make || '',
     model: aircraft?.model || '',
     type: aircraft?.type || 'single-engine' as const,
-    tachStart: aircraft?.totalHours || 0,
-    fuelCapacity: 0,
-    emptyWeight: 0,
-    maxWeight: 0,
-    seatCapacity: 2,
+    tachStart: isEdit ? (aircraft?.totalHours || 0) : 0,
+    fuelCapacity: aircraft?.fuelCapacity || 0,
+    emptyWeight: aircraft?.emptyWeight || 0,
+    maxWeight: aircraft?.maxWeight || 0,
+    seatCapacity: aircraft?.seatCapacity || 2,
     status: aircraft?.status || 'serviceable' as const,
-    totalHours: aircraft?.totalHours || 0
+    totalHours: isEdit ? (aircraft?.totalHours || 0) : 0
   });
 
   const { flightTypes, paymentMethods, loading: billingLoading } = useBillingSettings();
@@ -133,19 +135,19 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   useEffect(() => {
-    if (aircraft && isEdit) {
+    if (aircraft && (isEdit || isDuplicate)) {
       setFormData({
-        registration: aircraft.registration,
+        registration: isEdit ? aircraft.registration : '',
         make: aircraft.make,
         model: aircraft.model,
         type: aircraft.type,
-        tachStart: aircraft.tachStart || aircraft.totalHours || 0,
+        tachStart: isEdit ? (aircraft.tachStart || aircraft.totalHours || 0) : 0,
         fuelCapacity: aircraft.fuelCapacity || 0,
         emptyWeight: aircraft.emptyWeight || 0,
         maxWeight: aircraft.maxWeight || 0,
         seatCapacity: aircraft.seatCapacity || 2,
         status: aircraft.status,
-        totalHours: aircraft.totalHours || 0
+        totalHours: isEdit ? (aircraft.totalHours || 0) : 0
       });
       setCostStructure({
         aircraft: {
@@ -159,8 +161,26 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           account: aircraft.instructorRates?.account || 85
         }
       });
+    } else if (!aircraft && !isEdit && !isDuplicate) {
+      setFormData({
+        registration: '',
+        make: '',
+        model: '',
+        type: 'single-engine',
+        tachStart: 0,
+        fuelCapacity: 0,
+        emptyWeight: 0,
+        maxWeight: 0,
+        seatCapacity: 2,
+        status: 'serviceable',
+        totalHours: 0
+      });
+      setCostStructure({
+        aircraft: { prepaid: 0, payg: 0, account: 0 },
+        instructor: { prepaid: 85, payg: 95, account: 85 }
+      });
     }
-  }, [aircraft, isEdit]);
+  }, [aircraft, isEdit, isDuplicate]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,7 +286,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
-            {isEdit ? 'Edit Aircraft' : 'Add New Aircraft'}
+            {isEdit ? 'Edit Aircraft' : isDuplicate ? 'Duplicate Aircraft' : 'Add New Aircraft'}
           </h2>
           <button
             onClick={onClose}
@@ -727,7 +747,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
               className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Save className="h-4 w-4" />
-              <span>{isEdit ? 'Update Aircraft' : 'Add Aircraft'}</span>
+              <span>{isEdit ? 'Update Aircraft' : isDuplicate ? 'Add Duplicate' : 'Add Aircraft'}</span>
             </button>
           </div>
         </form>
