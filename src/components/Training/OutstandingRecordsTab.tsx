@@ -272,13 +272,6 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {expanded && (
                     <div className="mt-4 pt-4 border-t border-gray-100 flex gap-3">
                       <button
-                        onClick={() => handleDismiss(log)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <XCircle className="h-4 w-4 text-gray-400" />
-                        No Record Needed
-                      </button>
-                      <button
                         onClick={() => openLog(log)}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
                       >
@@ -355,19 +348,6 @@ export const OutstandingRecordsTab: React.FC = () => {
                       </div>
                     </div>
                     <ChevronRight className="h-5 w-5 text-blue-400" />
-                  </button>
-                  <button
-                    onClick={() => handleDismiss(activeLog)}
-                    className="w-full flex items-center justify-between px-5 py-4 rounded-xl border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <XCircle className="h-5 w-5 text-gray-400" />
-                      <div>
-                        <p className="font-semibold text-gray-700 text-sm">No Record Needed</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Dismiss this flight without a training record</p>
-                      </div>
-                    </div>
-                    <ChevronRight className="h-5 w-5 text-gray-300" />
                   </button>
                 </div>
               )}
