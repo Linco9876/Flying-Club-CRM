@@ -321,6 +321,13 @@ export const useBookings = () => {
 
       if (error) throw error;
 
+      // Remove any pending booking_approval notifications for this booking
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('booking_id', bookingId)
+        .eq('type', 'booking_approval');
+
       await fetchBookings();
       toast.success('Booking approved successfully');
     } catch (err) {
@@ -341,6 +348,13 @@ export const useBookings = () => {
         .eq('id', bookingId);
 
       if (error) throw error;
+
+      // Remove any pending booking_approval notifications for this booking
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('booking_id', bookingId)
+        .eq('type', 'booking_approval');
 
       await fetchBookings();
       toast.success('Booking rejected');
