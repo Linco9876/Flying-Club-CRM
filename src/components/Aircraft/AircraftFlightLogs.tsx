@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plane, ArrowLeft, Calendar } from 'lucide-react';
+import { Plane, ArrowLeft, Calendar, Pencil, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
+import toast from 'react-hot-toast';
 
 interface FlightLog {
   id: string;
@@ -24,6 +25,17 @@ interface FlightLog {
   total_cost: number;
 }
 
+interface EditLogForm {
+  start_time: string;
+  end_time: string;
+  start_tach: string;
+  end_tach: string;
+  flight_duration: string;
+  landings: string;
+  payment_type: string;
+  observations: string;
+}
+
 export const AircraftFlightLogs: React.FC = () => {
   const { aircraftId } = useParams<{ aircraftId: string }>();
   const navigate = useNavigate();
@@ -34,84 +46,182 @@ export const AircraftFlightLogs: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     new Date().toISOString().slice(0, 7)
   );
+  const [actionLog, setActionLog] = useState<FlightLog | null>(null);
+  const [editingLog, setEditingLog] = useState<FlightLog | null>(null);
+  const [editForm, setEditForm] = useState<EditLogForm | null>(null);
+  const [savingLog, setSavingLog] = useState(false);
 
   const aircraft = allAircraft.find(a => a.id === aircraftId);
 
-  useEffect(() => {
+  const fetchFlightLogs = async () => {
     if (!aircraftId) return;
 
-    const fetchFlightLogs = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    try {
+      setLoading(true);
+      setError(null);
 
-        const { data: logsData, error: logsError } = await supabase
-          .from('flight_logs')
-          .select('*')
-          .eq('aircraft_id', aircraftId)
-          .order('created_at', { ascending: false });
+      const { data: logsData, error: logsError } = await supabase
+        .from('flight_logs')
+        .select('*')
+        .eq('aircraft_id', aircraftId)
+        .order('created_at', { ascending: false });
 
-        if (logsError) throw logsError;
+      if (logsError) throw logsError;
 
-        const studentIds = [...new Set(logsData?.map((log: any) => log.student_id) || [])];
-        const instructorIds = [...new Set(
-          logsData
-            ?.map((log: any) => log.instructor_id)
-            .filter((id): id is string => id !== null) || []
-        )];
+      const studentIds = [...new Set(logsData?.map((log: any) => log.student_id) || [])];
+      const instructorIds = [...new Set(
+        logsData
+          ?.map((log: any) => log.instructor_id)
+          .filter((id): id is string => id !== null) || []
+      )];
 
-        const allUserIds = [...new Set([...studentIds, ...instructorIds])];
+      const allUserIds = [...new Set([...studentIds, ...instructorIds])];
 
-        const { data: usersData } = await supabase
+      const { data: usersData } = allUserIds.length > 0
+        ? await supabase
           .from('users')
           .select('id, name')
-          .in('id', allUserIds);
+          .in('id', allUserIds)
+        : { data: [] };
 
-        const usersMap = new Map(usersData?.map(u => [u.id, u.name]) || []);
+      const usersMap = new Map(usersData?.map(u => [u.id, u.name]) || []);
 
-        const { data: ratesData } = await supabase
-          .from('aircraft_rates')
-          .select('*')
-          .eq('aircraft_id', aircraftId);
+      const { data: ratesData } = await supabase
+        .from('aircraft_rates')
+        .select('*')
+        .eq('aircraft_id', aircraftId);
 
-        const tachRate = ratesData?.find(r => r.rate_type === 'tach')?.amount || 0;
+      const tachRate = ratesData?.find(r => r.rate_type === 'tach')?.amount || 0;
 
-        const combinedLogs: FlightLog[] = (logsData || []).map((log: any) => {
-          const tachTime = parseFloat(log.end_tach) - parseFloat(log.start_tach);
-          const calculatedCost = tachTime * parseFloat(tachRate);
+      const combinedLogs: FlightLog[] = (logsData || []).map((log: any) => {
+        const tachTime = parseFloat(log.end_tach) - parseFloat(log.start_tach);
+        const calculatedCost = tachTime * parseFloat(tachRate);
 
-          return {
-            id: log.id,
-            booking_id: log.booking_id,
-            aircraft_id: log.aircraft_id,
-            student_id: log.student_id,
-            instructor_id: log.instructor_id,
-            start_time: log.start_time,
-            end_time: log.end_time,
-            start_tach: parseFloat(log.start_tach),
-            end_tach: parseFloat(log.end_tach),
-            flight_duration: parseFloat(log.flight_duration),
-            landings: log.landings || 0,
-            payment_type: log.payment_type,
-            observations: log.observations,
-            created_at: log.created_at,
-            student_name: usersMap.get(log.student_id) || 'Unknown',
-            instructor_name: log.instructor_id ? usersMap.get(log.instructor_id) || 'Unknown' : null,
-            total_cost: calculatedCost
-          };
-        });
+        return {
+          id: log.id,
+          booking_id: log.booking_id,
+          aircraft_id: log.aircraft_id,
+          student_id: log.student_id,
+          instructor_id: log.instructor_id,
+          start_time: log.start_time,
+          end_time: log.end_time,
+          start_tach: parseFloat(log.start_tach),
+          end_tach: parseFloat(log.end_tach),
+          flight_duration: parseFloat(log.flight_duration),
+          landings: log.landings || 0,
+          payment_type: log.payment_type,
+          observations: log.observations,
+          created_at: log.created_at,
+          student_name: usersMap.get(log.student_id) || 'Unknown',
+          instructor_name: log.instructor_id ? usersMap.get(log.instructor_id) || 'Unknown' : null,
+          total_cost: calculatedCost
+        };
+      });
 
-        setFlightLogs(combinedLogs);
-      } catch (err) {
-        console.error('Error fetching flight logs:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch flight logs');
-      } finally {
-        setLoading(false);
-      }
-    };
+      setFlightLogs(combinedLogs);
+    } catch (err) {
+      console.error('Error fetching flight logs:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch flight logs');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchFlightLogs();
   }, [aircraftId]);
+
+  const toDateTimeLocal = (value: string) => {
+    const date = new Date(value);
+    const offsetMs = date.getTimezoneOffset() * 60_000;
+    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+  };
+
+  const openEditLog = (log: FlightLog) => {
+    setActionLog(null);
+    setEditingLog(log);
+    setEditForm({
+      start_time: toDateTimeLocal(log.start_time),
+      end_time: toDateTimeLocal(log.end_time),
+      start_tach: log.start_tach.toFixed(1),
+      end_tach: log.end_tach.toFixed(1),
+      flight_duration: log.flight_duration.toFixed(2),
+      landings: String(log.landings || 0),
+      payment_type: log.payment_type || '',
+      observations: log.observations || '',
+    });
+  };
+
+  const handleDeleteLog = async (log: FlightLog) => {
+    if (!window.confirm('Delete this flight log?')) return;
+
+    const { error: deleteError } = await supabase
+      .from('flight_logs')
+      .delete()
+      .eq('id', log.id);
+
+    if (deleteError) {
+      toast.error('Failed to delete flight log');
+      return;
+    }
+
+    if (log.booking_id) {
+      await supabase
+        .from('bookings')
+        .update({ flight_logged: false })
+        .eq('id', log.booking_id);
+    }
+
+    setActionLog(null);
+    await fetchFlightLogs();
+    toast.success('Flight log deleted');
+  };
+
+  const handleSaveLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLog || !editForm) return;
+
+    const startTach = parseFloat(editForm.start_tach);
+    const endTach = parseFloat(editForm.end_tach);
+    const duration = parseFloat(editForm.flight_duration);
+
+    if (Number.isNaN(startTach) || Number.isNaN(endTach) || endTach <= startTach) {
+      toast.error('End tach must be greater than start tach');
+      return;
+    }
+
+    if (Number.isNaN(duration) || duration <= 0) {
+      toast.error('Flight duration must be positive');
+      return;
+    }
+
+    setSavingLog(true);
+    const { error: updateError } = await supabase
+      .from('flight_logs')
+      .update({
+        start_time: new Date(editForm.start_time).toISOString(),
+        end_time: new Date(editForm.end_time).toISOString(),
+        start_tach: startTach,
+        end_tach: endTach,
+        flight_duration: duration,
+        landings: parseInt(editForm.landings, 10) || 0,
+        payment_type: editForm.payment_type || null,
+        observations: editForm.observations || null,
+      })
+      .eq('id', editingLog.id);
+
+    setSavingLog(false);
+
+    if (updateError) {
+      toast.error('Failed to update flight log');
+      return;
+    }
+
+    setEditingLog(null);
+    setEditForm(null);
+    await fetchFlightLogs();
+    toast.success('Flight log updated');
+  };
 
   if (loading) {
     return (
@@ -207,7 +317,7 @@ export const AircraftFlightLogs: React.FC = () => {
               <thead>
                 <tr className="border-b border-gray-300">
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Date</th>
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Crew</th>
+                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Crew</th>
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Duration</th>
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Flight type</th>
                   <th className="text-center py-2 px-2 font-semibold text-gray-700">Landings</th>
@@ -223,7 +333,12 @@ export const AircraftFlightLogs: React.FC = () => {
                   const isAlternateRow = index % 2 === 1;
 
                   return (
-                    <tr key={log.id} className={`border-b border-gray-200 ${isAlternateRow ? 'bg-blue-50' : 'bg-white'}`}>
+                    <tr
+                      key={log.id}
+                      className={`group border-b border-gray-200 cursor-pointer transition-colors hover:bg-blue-100 ${isAlternateRow ? 'bg-blue-50' : 'bg-white'}`}
+                      onClick={() => setActionLog(log)}
+                      title="Click to edit or delete this log"
+                    >
                       <td className="py-3 px-2 text-center align-middle">
                         <div className="flex flex-col items-center justify-center space-y-1">
                           <div className="flex items-center space-x-1">
@@ -236,20 +351,23 @@ export const AircraftFlightLogs: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-2 text-center align-middle">
-                        <div className="flex flex-col items-center justify-center space-y-1">
-                          <div className="flex items-center space-x-1">
+                      <td className="py-3 px-2 text-left align-middle">
+                        <div className="flex flex-col items-start justify-center space-y-1">
+                          <div className="flex items-center justify-start space-x-1">
                             <span className="inline-block w-3 h-3 bg-blue-500 rounded-full"></span>
                             <span className="text-gray-600">Pilot:</span>
                             <span className="text-blue-600">{log.student_name}</span>
                           </div>
                           {log.instructor_name && (
-                            <div className="flex items-center space-x-1">
+                            <div className="flex items-center justify-start space-x-1">
                               <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
                               <span className="text-gray-600">Instructor:</span>
                               <span className="text-blue-600">{log.instructor_name}</span>
                             </div>
                           )}
+                          <div className="pt-1 text-xs text-gray-400 opacity-0 transition-opacity group-hover:opacity-100">
+                            Click for actions
+                          </div>
                         </div>
                       </td>
                       <td className="py-3 px-2 text-center align-middle">
@@ -320,6 +438,173 @@ export const AircraftFlightLogs: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {actionLog && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setActionLog(null)}
+        >
+          <div
+            className="w-full max-w-xs rounded-lg border border-gray-200 bg-white p-2 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 border-b border-gray-100">
+              <p className="text-sm font-semibold text-gray-900">
+                {new Date(actionLog.start_time).toLocaleDateString('en-GB')} flight log
+              </p>
+              <p className="text-xs text-gray-500">
+                {actionLog.student_name}{actionLog.instructor_name ? ` / ${actionLog.instructor_name}` : ''}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => openEditLog(actionLog)}
+              className="mt-1 flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Pencil className="mr-2 h-4 w-4 text-gray-400" />
+              Edit log
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDeleteLog(actionLog)}
+              className="flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete log
+            </button>
+          </div>
+        </div>
+      )}
+
+      {editingLog && editForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form
+            onSubmit={handleSaveLog}
+            className="w-full max-w-2xl rounded-lg border border-gray-200 bg-white shadow-xl"
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Edit Flight Log</h2>
+                <p className="text-sm text-gray-500">{aircraft.registration} · {editingLog.student_name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingLog(null);
+                  setEditForm(null);
+                }}
+                className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2">
+              <label className="text-sm font-medium text-gray-700">
+                Start time
+                <input
+                  type="datetime-local"
+                  value={editForm.start_time}
+                  onChange={(e) => setEditForm({ ...editForm, start_time: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                End time
+                <input
+                  type="datetime-local"
+                  value={editForm.end_time}
+                  onChange={(e) => setEditForm({ ...editForm, end_time: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Start tach
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editForm.start_tach}
+                  onChange={(e) => setEditForm({ ...editForm, start_tach: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                End tach
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editForm.end_tach}
+                  onChange={(e) => setEditForm({ ...editForm, end_tach: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Duration
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editForm.flight_duration}
+                  onChange={(e) => setEditForm({ ...editForm, flight_duration: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Landings
+                <input
+                  type="number"
+                  min="0"
+                  value={editForm.landings}
+                  onChange={(e) => setEditForm({ ...editForm, landings: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700">
+                Payment type
+                <input
+                  type="text"
+                  value={editForm.payment_type}
+                  onChange={(e) => setEditForm({ ...editForm, payment_type: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+              <label className="text-sm font-medium text-gray-700 md:col-span-2">
+                Observation
+                <textarea
+                  value={editForm.observations}
+                  onChange={(e) => setEditForm({ ...editForm, observations: e.target.value })}
+                  rows={3}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingLog(null);
+                  setEditForm(null);
+                }}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingLog}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingLog ? 'Saving...' : 'Save changes'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };
