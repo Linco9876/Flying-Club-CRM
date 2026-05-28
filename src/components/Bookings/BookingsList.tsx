@@ -15,7 +15,7 @@ interface BookingsListProps {
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>) => void;
   onDeleteBooking?: (bookingId: string) => void;
   onOpenTrainingRecord?: (booking: Booking) => void;
-  onApproveBooking?: (bookingId: string) => void;
+  onApproveBooking?: (bookingId: string) => Promise<void> | void;
   onRejectBooking?: (bookingId: string) => void;
 }
 
@@ -42,8 +42,12 @@ export const BookingsList: React.FC<BookingsListProps> = ({
     return aircraft.find(a => a.id === aircraftId);
   };
 
-  const handleFlightLog = (flightLogData: any) => {
+  const handleFlightLog = async (flightLogData: any) => {
     if (selectedBooking && onUpdateBooking) {
+      if (selectedBooking.status === 'pending_approval' && onApproveBooking) {
+        await onApproveBooking(selectedBooking.id);
+      }
+
       const student = students.find(s => s.id === selectedBooking.studentId);
       if (student) {
         student.prepaidBalance -= flightLogData.totalCost;

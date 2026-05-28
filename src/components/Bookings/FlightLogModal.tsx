@@ -18,18 +18,21 @@ interface Booking {
   endTime: Date | string;
   notes?: string;
   flightTypeId?: string;
+  status?: string;
 }
 
 interface FlightLogModalProps {
   booking: Booking;
   onClose: () => void;
   onSuccess: () => void;
+  onApproveBooking?: (bookingId: string) => Promise<void> | void;
 }
 
 export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   booking,
   onClose,
   onSuccess,
+  onApproveBooking,
 }) => {
   const { createFlightLog } = useFlightLogs();
   const { settings } = useFlightLogSettings();
@@ -178,6 +181,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         return;
       }
       setIsSubmitting(true);
+
+      if (booking.status === 'pending_approval' && onApproveBooking) {
+        await onApproveBooking(booking.id);
+      }
 
       const logData = {
         booking_id: booking.id,

@@ -212,6 +212,14 @@ const AuthenticatedApp: React.FC<{
               console.error('Error deleting booking:', error);
             }
           }}
+          onApproveBooking={async (bookingId) => {
+            try {
+              await approveBooking(bookingId);
+            } catch (error) {
+              console.error('Error approving booking:', error);
+              throw error;
+            }
+          }}
         />;
       case 'bookings':
         return <BookingsList

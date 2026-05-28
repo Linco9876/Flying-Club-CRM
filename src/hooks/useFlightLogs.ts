@@ -106,6 +106,18 @@ export function useFlightLogs(userId?: string) {
           .eq('id', logData.booking_id);
 
         if (updateError) console.error('Error updating booking:', updateError);
+
+        const { error: approvalError } = await supabase
+          .from('bookings')
+          .update({
+            status: 'confirmed',
+            approved_by: user.id,
+            approved_at: new Date().toISOString(),
+          })
+          .eq('id', logData.booking_id)
+          .eq('status', 'pending_approval');
+
+        if (approvalError) console.error('Error approving logged booking:', approvalError);
       }
 
       const { error: aircraftUpdateError } = await supabase

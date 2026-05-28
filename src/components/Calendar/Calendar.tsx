@@ -45,6 +45,7 @@ interface CalendarProps {
   onEditBooking?: (booking: Booking) => void;
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => void;
   onDeleteBooking?: (bookingId: string) => void;
+  onApproveBooking?: (bookingId: string) => Promise<void> | void;
 }
 
 interface Resource {
@@ -77,6 +78,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   onEditBooking,
   onUpdateBooking,
   onDeleteBooking,
+  onApproveBooking,
 }) => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
@@ -536,6 +538,16 @@ export const Calendar: React.FC<CalendarProps> = ({
     user?.role === 'admin' ||
     user?.role === 'instructor' ||
     user?.roles?.some(role => role === 'admin' || role === 'instructor');
+
+  const canApproveCalendarBooking = (booking: Booking) => {
+    const isAdmin =
+      user?.role === 'admin' ||
+      user?.roles?.some(role => role === 'admin');
+    const isAssignedInstructor =
+      Boolean(user?.id && booking.instructorId && user.id === booking.instructorId);
+
+    return booking.status === 'pending_approval' && (isAdmin || isAssignedInstructor);
+  };
 
   const openBookingFormForSelection = (
     date: Date,
@@ -2403,6 +2415,12 @@ export const Calendar: React.FC<CalendarProps> = ({
               onDeleteBooking(actionMenuBooking.id);
             }
           }}
+          onApprove={
+            onApproveBooking && canApproveCalendarBooking(actionMenuBooking)
+              ? () => onApproveBooking(actionMenuBooking.id)
+              : undefined
+          }
+          canApprove={canApproveCalendarBooking(actionMenuBooking)}
           onClose={() => setActionMenuBooking(null)}
         />
       )}
@@ -2410,6 +2428,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       {showFlightLogModal && flightLogBooking && (
         <FlightLogModal
           booking={flightLogBooking}
+          onApproveBooking={onApproveBooking}
           onClose={() => {
             setShowFlightLogModal(false);
             setFlightLogBooking(null);
