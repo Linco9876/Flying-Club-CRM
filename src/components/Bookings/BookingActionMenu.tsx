@@ -32,6 +32,10 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   onClose,
 }) => {
   const [isOpen, setIsOpen] = React.useState(position ? true : false);
+  const [fixedMenuStyle, setFixedMenuStyle] = React.useState<React.CSSProperties>(() => ({
+    left: position?.x ?? 0,
+    top: position?.y ?? 0,
+  }));
   const menuRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -72,6 +76,21 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       setIsOpen(false);
     }
   };
+
+  React.useLayoutEffect(() => {
+    if (!position || !menuRef.current) return;
+
+    const menu = menuRef.current;
+    const margin = 8;
+    const { width, height } = menu.getBoundingClientRect();
+    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - height - margin);
+
+    setFixedMenuStyle({
+      left: Math.min(Math.max(position.x, margin), maxLeft),
+      top: Math.min(Math.max(position.y, margin), maxTop),
+    });
+  }, [position, isOpen, canDelete, canApprove, hasTrainingRecord, booking.status]);
 
   const menuContent = (
     <>
@@ -145,10 +164,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       <div
         ref={menuRef}
         className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 min-w-[200px]"
-        style={{
-          left: `${position.x}px`,
-          top: `${position.y}px`,
-        }}
+        style={fixedMenuStyle}
       >
         {menuContent}
       </div>
