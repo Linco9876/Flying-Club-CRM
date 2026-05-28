@@ -42,6 +42,8 @@ interface NewCourseState {
   description: string;
   estimatedDurationHours: number;
   tags: string;
+  objectives: string;
+  evaluationFocus: string;
 }
 
 interface NewLessonState {
@@ -492,7 +494,15 @@ const emptyCourseForm = (): CourseFormState => ({
   description: '',
   estimatedDurationHours: 6,
   tags: '',
+  objectives: '',
+  evaluationFocus: '',
 });
+
+const parseListLines = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*]\s*/, '').trim())
+    .filter(Boolean);
 
 export const TrainingCourseCatalog: React.FC = () => {
   const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
@@ -625,6 +635,8 @@ export const TrainingCourseCatalog: React.FC = () => {
       description: selectedModule.description,
       estimatedDurationHours: selectedModule.estimatedDurationHours,
       tags: selectedModule.tags.join(', '),
+      objectives: selectedModule.objectives.join('\n'),
+      evaluationFocus: selectedModule.evaluationCriteria.join('\n'),
     });
     setEditCourseCriteria(selectedModule.assessmentCriteria.map((c) => ({ ...c })));
     setShowEditCourseForm(true);
@@ -646,6 +658,8 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
 
     const tags = editCourse.tags.split(',').map((t) => t.trim()).filter(Boolean);
+    const objectives = parseListLines(editCourse.objectives);
+    const evaluationCriteria = parseListLines(editCourse.evaluationFocus);
     try {
       await updateModule(selectedModule.id, (cur) => ({
         ...cur,
@@ -654,6 +668,8 @@ export const TrainingCourseCatalog: React.FC = () => {
         description: editCourse.description.trim() || cur.description,
         estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
         tags: tags.length > 0 ? tags : cur.tags,
+        objectives,
+        evaluationCriteria,
         assessmentCriteria: criteria,
         lastUpdated: new Date(),
       }));
@@ -761,6 +777,8 @@ export const TrainingCourseCatalog: React.FC = () => {
       .split(',')
       .map((tag) => tag.trim())
       .filter(Boolean);
+    const objectives = parseListLines(newCourse.objectives);
+    const evaluationCriteria = parseListLines(newCourse.evaluationFocus);
 
     // Validate course criteria
     const builtCriteria: LessonAssessmentCriterion[] = [];
@@ -778,8 +796,8 @@ export const TrainingCourseCatalog: React.FC = () => {
       status: 'draft',
       estimatedDurationHours: Math.max(1, Number(newCourse.estimatedDurationHours) || 1),
       prerequisites: [],
-      objectives: [],
-      evaluationCriteria: [],
+      objectives,
+      evaluationCriteria,
       tags: tags.length > 0 ? tags : ['draft'],
       assessmentCriteria: builtCriteria,
       lessons: [],
@@ -1015,6 +1033,26 @@ export const TrainingCourseCatalog: React.FC = () => {
                 value={newCourse.description}
                 onChange={(event) => setNewCourse((prev) => ({ ...prev, description: event.target.value }))}
                 rows={3}
+                className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+            <label className="flex flex-col text-sm font-medium text-blue-900">
+              Objectives
+              <textarea
+                value={newCourse.objectives}
+                onChange={(event) => setNewCourse((prev) => ({ ...prev, objectives: event.target.value }))}
+                rows={4}
+                placeholder="One objective per line"
+                className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+            <label className="flex flex-col text-sm font-medium text-blue-900">
+              Evaluation focus
+              <textarea
+                value={newCourse.evaluationFocus}
+                onChange={(event) => setNewCourse((prev) => ({ ...prev, evaluationFocus: event.target.value }))}
+                rows={4}
+                placeholder="One focus item per line"
                 className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
@@ -1304,6 +1342,26 @@ export const TrainingCourseCatalog: React.FC = () => {
                       <textarea rows={2} value={editCourse.description} onChange={(e) => setEditCourse((p) => ({ ...p, description: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
                     </label>
                     <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Objectives
+                      <textarea
+                        rows={5}
+                        value={editCourse.objectives}
+                        onChange={(e) => setEditCourse((p) => ({ ...p, objectives: e.target.value }))}
+                        placeholder="One objective per line"
+                        className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Evaluation focus
+                      <textarea
+                        rows={5}
+                        value={editCourse.evaluationFocus}
+                        onChange={(e) => setEditCourse((p) => ({ ...p, evaluationFocus: e.target.value }))}
+                        placeholder="One focus item per line"
+                        className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
                       Estimated duration (hours)
                       <input type="number" min={1} value={editCourse.estimatedDurationHours} onChange={(e) => setEditCourse((p) => ({ ...p, estimatedDurationHours: Number(e.target.value) }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
                     </label>
@@ -1513,8 +1571,8 @@ export const TrainingCourseCatalog: React.FC = () => {
                             </div>
                           )}
 
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="flex items-start gap-2">
+                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                            <div className="flex min-w-0 items-start gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleToggleLessonExpansion(lesson.id)}
@@ -1523,12 +1581,12 @@ export const TrainingCourseCatalog: React.FC = () => {
                               >
                                 {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                               </button>
-                              <div>
+                              <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md bg-blue-100 px-2 text-xs font-semibold text-blue-700">
                                     {lessonIndex + 1}
                                   </span>
-                                  <h4 className="text-base font-semibold text-gray-900">
+                                  <h4 className="min-w-0 flex-1 text-base font-semibold text-gray-900">
                                     {lesson.name || lesson.sequenceTitle}
                                   </h4>
                                 </div>
@@ -1537,7 +1595,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                 </p>
                               </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 lg:justify-end">
                               <div className="inline-flex rounded-md border border-gray-200 bg-white">
                                 <button
                                   type="button"
