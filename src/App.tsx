@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -8,13 +8,13 @@ import { useBookings } from './hooks/useBookings';
 import { Booking } from './types';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
+import { AppErrorBoundary } from './components/Layout/AppErrorBoundary';
 import { LoginForm } from './components/Auth/LoginForm';
 import { ResetPasswordPage } from './components/Auth/ResetPasswordPage';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { Calendar } from './components/Calendar/Calendar';
 import BookingForm from './components/Bookings/BookingForm';
 import { BookingsList } from './components/Bookings/BookingsList';
-import { StudentProfile } from './components/Students/StudentProfile';
 import { StudentList } from './components/Students/StudentList';
 import { StudentProfilePage } from './components/Students/StudentProfilePage';
 import { MyLogbookPage } from './components/Students/MyLogbookPage';
@@ -29,18 +29,10 @@ import { TrainingCourseCatalog } from './components/Training/TrainingCourseCatal
 import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuilder';
 import { OutstandingRecordsTab } from './components/Training/OutstandingRecordsTab';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
-import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const [activeView, setActiveView] = useState('dashboard');
-
-  React.useEffect(() => {
-    if (!user) {
-      setActiveView('dashboard');
-    }
-  }, [user]);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [showTrainingRecordForm, setShowTrainingRecordForm] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
@@ -68,8 +60,6 @@ const AppContent: React.FC = () => {
 
   return <AuthenticatedApp
     user={user}
-    activeView={activeView}
-    setActiveView={setActiveView}
     showBookingForm={showBookingForm}
     setShowBookingForm={setShowBookingForm}
     showTrainingRecordForm={showTrainingRecordForm}
@@ -85,8 +75,6 @@ const AppContent: React.FC = () => {
 
 const AuthenticatedApp: React.FC<{
   user: any;
-  activeView: string;
-  setActiveView: (view: string) => void;
   showBookingForm: boolean;
   setShowBookingForm: (show: boolean) => void;
   showTrainingRecordForm: boolean;
@@ -98,8 +86,6 @@ const AuthenticatedApp: React.FC<{
   bookingFormData: any;
   setBookingFormData: (data: any) => void;
 }> = ({
-  activeView,
-  setActiveView,
   showBookingForm,
   setShowBookingForm,
   showTrainingRecordForm,
@@ -112,24 +98,11 @@ const AuthenticatedApp: React.FC<{
   setBookingFormData
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking } = useBookings();
 
   const handleViewChange = (view: string) => {
-    setActiveView(view);
-    navigate('/');
-  };
-
-  const handleNewBookingWithTime = (
-    date: Date,
-    startTime: string,
-    endTime?: string
-  ) => {
-    setBookingFormData({
-      date: format(date, 'yyyy-MM-dd'),
-      startTime,
-      endTime,
-    });
-    setShowBookingForm(true);
+    navigate(getPathForView(view));
   };
 
   const handleNewBookingWithResource = (
@@ -216,8 +189,10 @@ const AuthenticatedApp: React.FC<{
     setSelectedBookingForRecord(booking);
     setShowTrainingRecordForm(true);
   };
-  const renderActiveView = () => {
-    switch (activeView) {
+  const activeView = getViewForPath(location.pathname);
+
+  const renderActiveView = (view: string) => {
+    switch (view) {
       case 'dashboard':
         return <Dashboard />;
       case 'calendar':
@@ -292,7 +267,12 @@ const AuthenticatedApp: React.FC<{
       case 'syllabus-management':
         return <TrainingModuleBuilder />;
       case 'profile':
-        return <StudentProfile />;
+        return <StudentProfilePage
+          onOpenTrainingRecord={(booking) => {
+            setSelectedBookingForRecord(booking);
+            setShowTrainingRecordForm(true);
+          }}
+        />;
       case 'mylogbook':
         return <MyLogbookPage />;
       case 'settings':
@@ -341,9 +321,11 @@ const AuthenticatedApp: React.FC<{
           <div className="min-h-screen bg-gray-50">
             <Header />
             <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView={activeView} onViewChange={setActiveView} />
+              <Sidebar activeView={activeView} onViewChange={handleViewChange} />
               <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
-                {renderActiveView()}
+                <AppErrorBoundary key={activeView}>
+                  {renderActiveView(activeView)}
+                </AppErrorBoundary>
               </main>
             </div>
             
@@ -376,6 +358,41 @@ const AuthenticatedApp: React.FC<{
   );
 };
 
+const viewPathMap: Record<string, string> = {
+  dashboard: '/',
+  calendar: '/calendar',
+  bookings: '/bookings',
+  students: '/students',
+  aircraft: '/aircraft',
+  maintenance: '/maintenance',
+  training: '/training',
+  'outstanding-records': '/training/outstanding-records',
+  'syllabus-management': '/training/syllabus',
+  billing: '/billing',
+  reports: '/reports',
+  safety: '/safety',
+  profile: '/profile',
+  mylogbook: '/my-logbook',
+  settings: '/settings'
+};
+
+const pathViewMap: Record<string, string> = Object.entries(viewPathMap).reduce(
+  (acc, [view, path]) => ({ ...acc, [path]: view }),
+  {} as Record<string, string>
+);
+
+const getPathForView = (view: string) => viewPathMap[view] || '/';
+
+const getViewForPath = (pathname: string) => {
+  if (pathViewMap[pathname]) return pathViewMap[pathname];
+  if (pathname.startsWith('/students')) return 'students';
+  if (pathname.startsWith('/aircraft')) return 'aircraft';
+  if (pathname.startsWith('/training/outstanding-records')) return 'outstanding-records';
+  if (pathname.startsWith('/training/syllabus')) return 'syllabus-management';
+  if (pathname.startsWith('/training')) return 'training';
+  return 'dashboard';
+};
+
 // Helper functions for route guards
 const getRequiredActionForView = (view: string) => {
   const actionMap: Record<string, any> = {
@@ -403,6 +420,7 @@ const getRequiredResourceForView = (view: string) => {
     'bookings': 'own',
     'profile': 'own',
     'mylogbook': 'own',
+    'safety': 'own',
     'settings': 'own'
   };
   return resourceMap[view] || 'all';

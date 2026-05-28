@@ -7,7 +7,10 @@ interface SafetyReport {
   id: string;
   date: Date;
   type: 'Incident' | 'Hazard' | 'Risk Assessment';
+  reporterId?: string;
   reporter: string;
+  involvedUserIds?: string[];
+  involvedPeople?: string[];
   title: string;
   description: string;
   status: 'Open' | 'Under Review' | 'Closed';
@@ -28,7 +31,9 @@ export const SafetyReportsTab: React.FC = () => {
       id: 'SR-001',
       date: new Date('2024-01-20'),
       type: 'Incident',
+      reporterId: '2e382e43-b049-480a-b81b-4b8c79093637',
       reporter: 'John Pilot',
+      involvedPeople: ['Student 1'],
       title: 'Hard landing during training',
       description: 'Student pilot made hard landing during circuit training. No damage to aircraft.',
       status: 'Under Review',
@@ -61,9 +66,13 @@ export const SafetyReportsTab: React.FC = () => {
   const filteredReports = safetyReports.filter(report => {
     // If user is a student, only show reports they're involved in
     if (user?.role === 'student') {
-      const isInvolved = report.reporter === user.name || 
-                        report.title.toLowerCase().includes(user.name.toLowerCase()) ||
-                        report.description.toLowerCase().includes(user.name.toLowerCase());
+      const userName = user.name.toLowerCase();
+      const isInvolved = report.reporterId === user.id ||
+                        report.reporter.toLowerCase() === userName ||
+                        report.involvedUserIds?.includes(user.id) ||
+                        report.involvedPeople?.some(person => person.toLowerCase() === userName) ||
+                        report.title.toLowerCase().includes(userName) ||
+                        report.description.toLowerCase().includes(userName);
       if (!isInvolved) return false;
     }
     
@@ -93,6 +102,7 @@ export const SafetyReportsTab: React.FC = () => {
       id: `SR-${String(safetyReports.length + 1).padStart(3, '0')}`,
       date: new Date(),
       type: reportData.type,
+      reporterId: user?.id,
       reporter: reportData.reporter,
       title: reportData.title,
       description: reportData.description,
@@ -136,7 +146,7 @@ export const SafetyReportsTab: React.FC = () => {
             }
           </p>
         </div>
-        {(user?.role === 'admin' || user?.role === 'instructor') && (
+        {(user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'student') && (
           <button
             onClick={handleAddReport}
             className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -348,6 +358,7 @@ export const SafetyReportsTab: React.FC = () => {
                     type="text"
                     name="reporter"
                     required
+                    defaultValue={user?.name || ''}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Your name"
                   />

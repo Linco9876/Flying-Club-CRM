@@ -4,7 +4,6 @@ import { getAuthorizedSettingsSections } from '../../utils/rbac';
 import { 
   Search, 
   Save, 
-  X, 
   Building2, 
   Calendar, 
   Clock, 
@@ -34,11 +33,15 @@ import { BookingFieldSettings } from './BookingFieldSettings';
 import { RosterAvailabilitySettings } from './RosterAvailabilitySettings';
 import { BillingRatesSettings } from './BillingRatesSettings';
 import FlightLogSettings from './FlightLogSettings';
+import { IntegrationsSettings } from './IntegrationsSettings';
+import { TrainingSyllabusSettings } from './TrainingSyllabusSettings';
 import toast from 'react-hot-toast';
 
 interface SettingsSection {
   id: string;
   label: string;
+  category: 'Club Setup' | 'Operations' | 'Training & Billing' | 'System';
+  keywords: string[];
   icon: React.ReactNode;
   roles: string[];
   component: React.ComponentType;
@@ -52,24 +55,24 @@ export const SettingsDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const allSections: SettingsSection[] = [
-    { id: 'organisation', label: 'Organisation', icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
-    { id: 'calendar', label: 'Calendar', icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
-    { id: 'booking-rules', label: 'Bookings & Rules', icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
-    { id: 'booking-fields', label: 'Booking Form Fields', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BookingFieldSettings },
-    { id: 'roster', label: 'Roster & Availability', icon: <Users className="h-4 w-4" />, roles: ['admin', 'instructor'], component: RosterAvailabilitySettings },
-    { id: 'training', label: 'Training / Syllabus', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: DocumentsTemplatesSettings },
-    { id: 'billing', label: 'Billing & Rates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BillingRatesSettings },
-    { id: 'flight-log', label: 'Flight Log Form', icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: FlightLogSettings },
-    { id: 'integrations', label: 'Integrations', icon: <Database className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
-    { id: 'notifications', label: 'Notifications', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: NotificationsSettings },
-    { id: 'safety', label: 'Safety & Compliance', icon: <Shield className="h-4 w-4" />, roles: ['admin', 'instructor'], component: SafetyComplianceSettings },
-    { id: 'maintenance', label: 'Maintenance', icon: <Wrench className="h-4 w-4" />, roles: ['admin', 'instructor'], component: MaintenanceSettings },
-    { id: 'resources', label: 'Resources (Aircraft & Rooms)', icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
-    { id: 'documents', label: 'Documents & Templates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
-    { id: 'portal', label: 'Portal & UX', icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
-    { id: 'roles', label: 'Roles & Permissions', icon: <UserCheck className="h-4 w-4" />, roles: ['admin'], component: RolesPermissionsSettings },
-    { id: 'audit', label: 'Audit & Data', icon: <Database className="h-4 w-4" />, roles: ['admin'], component: AuditDataSettings },
-    { id: 'personal', label: 'Personal Preferences', icon: <SettingsIcon className="h-4 w-4" />, roles: ['admin', 'instructor', 'student'], component: PersonalPreferencesSettings }
+    { id: 'organisation', label: 'Organisation', category: 'Club Setup', keywords: ['business', 'logo', 'currency', 'timezone', 'operating hours'], icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
+    { id: 'portal', label: 'Portal & UX', category: 'Club Setup', keywords: ['theme', 'student portal', 'date format', 'time format'], icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
+    { id: 'resources', label: 'Resources (Aircraft & Rooms)', category: 'Club Setup', keywords: ['aircraft fields', 'rooms', 'documents', 'instructor roster'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
+    { id: 'calendar', label: 'Calendar', category: 'Operations', keywords: ['default view', 'week starts', 'resource order', 'snap duration', 'conflicts'], icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
+    { id: 'booking-rules', label: 'Bookings & Rules', category: 'Operations', keywords: ['advance booking', 'notice', 'cancellation', 'solo approval', 'double booking'], icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
+    { id: 'booking-fields', label: 'Booking Form Fields', category: 'Operations', keywords: ['custom fields', 'booking form', 'required fields'], icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BookingFieldSettings },
+    { id: 'roster', label: 'Roster & Availability', category: 'Operations', keywords: ['instructor availability', 'absence', 'weekly schedule', 'duty hours'], icon: <Users className="h-4 w-4" />, roles: ['admin', 'instructor'], component: RosterAvailabilitySettings },
+    { id: 'maintenance', label: 'Maintenance', category: 'Operations', keywords: ['defects', 'grounding', 'maintenance reminders', 'milestones'], icon: <Wrench className="h-4 w-4" />, roles: ['admin', 'instructor'], component: MaintenanceSettings },
+    { id: 'safety', label: 'Safety & Compliance', category: 'Operations', keywords: ['incidents', 'currency', 'medical', 'checklists', 'compliance'], icon: <Shield className="h-4 w-4" />, roles: ['admin', 'instructor'], component: SafetyComplianceSettings },
+    { id: 'training', label: 'Training / Syllabus', category: 'Training & Billing', keywords: ['lesson records', 'syllabus', 'student acknowledgement', 'grading'], icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: TrainingSyllabusSettings },
+    { id: 'billing', label: 'Billing & Rates', category: 'Training & Billing', keywords: ['flight types', 'rates', 'payment methods', 'prepaid', 'charges'], icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BillingRatesSettings },
+    { id: 'flight-log', label: 'Flight Log Form', category: 'Training & Billing', keywords: ['tach', 'landings', 'oil', 'fuel', 'passengers'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: FlightLogSettings },
+    { id: 'documents', label: 'Documents & Templates', category: 'Training & Billing', keywords: ['pdf', 'invoice template', 'certificate', 'branding'], icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
+    { id: 'integrations', label: 'Integrations', category: 'System', keywords: ['xero', 'accounting', 'sync', 'api'], icon: <Database className="h-4 w-4" />, roles: ['admin'], component: IntegrationsSettings },
+    { id: 'notifications', label: 'Notifications', category: 'System', keywords: ['email', 'sms', 'reminders', 'alerts'], icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: NotificationsSettings },
+    { id: 'roles', label: 'Roles & Permissions', category: 'System', keywords: ['access', 'permissions', 'admin', 'instructor', 'student'], icon: <UserCheck className="h-4 w-4" />, roles: ['admin'], component: RolesPermissionsSettings },
+    { id: 'audit', label: 'Audit & Data', category: 'System', keywords: ['export', 'audit log', 'data', 'backup'], icon: <Database className="h-4 w-4" />, roles: ['admin'], component: AuditDataSettings },
+    { id: 'personal', label: 'Personal Preferences', category: 'System', keywords: ['my settings', 'notifications', 'display', 'calendar view'], icon: <SettingsIcon className="h-4 w-4" />, roles: ['admin', 'instructor', 'student'], component: PersonalPreferencesSettings }
   ];
 
   // Get authorized sections using RBAC
@@ -79,9 +82,18 @@ export const SettingsDashboard: React.FC = () => {
   );
 
   const filteredSections = sections.filter(section => {
-    const matchesSearch = section.label.toLowerCase().includes(searchTerm.toLowerCase());
+    const query = searchTerm.toLowerCase();
+    const matchesSearch = section.label.toLowerCase().includes(query)
+      || section.category.toLowerCase().includes(query)
+      || section.keywords.some(keyword => keyword.includes(query));
     return matchesSearch;
   });
+
+  const groupedSections = filteredSections.reduce<Record<string, SettingsSection[]>>((groups, section) => {
+    groups[section.category] = groups[section.category] || [];
+    groups[section.category].push(section);
+    return groups;
+  }, {});
 
   // Set default section based on user role (only on mount)
   useEffect(() => {
@@ -164,27 +176,36 @@ export const SettingsDashboard: React.FC = () => {
 
           {/* Sections List */}
           <div className="flex-1 overflow-y-auto p-2">
-            <nav className="space-y-1">
-              {filteredSections.map(section => (
-                <button
-                  key={section.id}
-                  onClick={() => handleSectionChange(section.id)}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors text-left ${
-                    activeSection === section.id
-                      ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <span className={activeSection === section.id ? 'text-blue-600' : 'text-gray-400'}>
-                    {section.icon}
-                  </span>
-                  <span className="flex-1">{section.label}</span>
-                  {!canEdit(section.id) && (
-                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-                      Read-only
-                    </span>
-                  )}
-                </button>
+            <nav className="space-y-5">
+              {Object.entries(groupedSections).map(([category, group]) => (
+                <div key={category}>
+                  <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    {category}
+                  </p>
+                  <div className="space-y-1">
+                    {group.map(section => (
+                      <button
+                        key={section.id}
+                        onClick={() => handleSectionChange(section.id)}
+                        className={`w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors text-left ${
+                          activeSection === section.id
+                            ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        }`}
+                      >
+                        <span className={activeSection === section.id ? 'text-blue-600' : 'text-gray-400'}>
+                          {section.icon}
+                        </span>
+                        <span className="flex-1">{section.label}</span>
+                        {!canEdit(section.id) && (
+                          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+                            Read-only
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </nav>
           </div>

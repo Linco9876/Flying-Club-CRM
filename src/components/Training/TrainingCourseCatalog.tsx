@@ -531,7 +531,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setSelectedModuleId(null);
       setShowLessonForm(false);
       setNewLesson({ name: '', objective: '', flightExercises: '', theory: '' });
-      setLessonCriteria([createEmptyCriterion()]);
+      setLessonPassMarks({});
       return;
     }
 
@@ -539,7 +539,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setSelectedModuleId(modules[0].id);
       setShowLessonForm(false);
       setNewLesson({ name: '', objective: '', flightExercises: '', theory: '' });
-      setLessonCriteria([createEmptyCriterion()]);
+      setLessonPassMarks({});
     }
   }, [modules, selectedModuleId]);
 

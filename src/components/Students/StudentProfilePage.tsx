@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TrainingRecord, TrainingModule, LessonGradingSystem } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, Eye, CreditCard as Edit, CheckCircle, AlertTriangle, Filter, BookOpen, GraduationCap, ClipboardList } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -10,17 +10,17 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { LogbookTab } from './LogbookTab';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
-import { StudentProfile } from './StudentProfile';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
 }
 
 export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTrainingRecord }) => {
-  const { studentId } = useParams<{ studentId: string }>();
+  const { studentId: routeStudentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const studentId = routeStudentId || user?.id;
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
   const [showMatrixView, setShowMatrixView] = useState(true);
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
@@ -46,11 +46,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   );
 
   useEffect(() => {
-    if (!studentsLoading && studentId && !student) {
+    if (!studentsLoading && routeStudentId && !student) {
       toast.error('Student not found');
       navigate('/students');
     }
-  }, [studentsLoading, studentId, student, navigate]);
+  }, [studentsLoading, routeStudentId, student, navigate]);
 
   const loading = studentsLoading;
   const recordsLoading = trainingRecordsLoading;
@@ -83,12 +83,6 @@ const handleAddTrainingRecord = () => {
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
     }
-  };
-
-const formatTime = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}:${mins.toString().padStart(2, '0')}`;
   };
 
   const formatDecimalTime = (minutes: number) => {
@@ -189,19 +183,28 @@ const formatTime = (minutes: number) => {
     ? new Date(Math.max(...studentTrainingRecords.map(r => r.date.getTime())))
     : null;
 
-  const flightStatsNote = 'From training records';
-
   const isExpiryNear = (date?: Date) => {
     if (!date) return false;
     const daysUntilExpiry = Math.ceil((date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
     return daysUntilExpiry <= 60;
   };
 
+  const complianceItems = [
+    { label: 'RAAus membership', value: student.licenceExpiry?.toLocaleDateString() || 'Not recorded', warn: isExpiryNear(student.licenceExpiry) },
+    { label: 'Medical', value: student.medicalExpiry?.toLocaleDateString() || 'Not recorded', warn: isExpiryNear(student.medicalExpiry) },
+    { label: 'Flight review', value: student.lastFlightReview ? new Date(student.lastFlightReview).toLocaleDateString() : 'Not recorded', warn: false },
+    { label: 'Endorsements', value: `${student.endorsements.filter(e => e.isActive).length} active`, warn: false },
+  ];
+
   const tabs = [
-    { id: 'profile', label: 'Profile', icon: <User className="h-4 w-4" /> },
+    { id: 'profile', label: 'Overview', icon: <User className="h-4 w-4" /> },
+    { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" /> },
     { id: 'logbook', label: 'Logbook', icon: <BookOpen className="h-4 w-4" /> },
     { id: 'training', label: 'Training Records', icon: <FileText className="h-4 w-4" /> },
     { id: 'courses', label: 'Courses', icon: <GraduationCap className="h-4 w-4" /> },
+    { id: 'billing', label: 'Billing', icon: <Wallet className="h-4 w-4" /> },
+    { id: 'safety', label: 'Safety', icon: <Shield className="h-4 w-4" /> },
+    { id: 'timeline', label: 'Timeline', icon: <History className="h-4 w-4" /> },
   ];
 
   return (
@@ -217,7 +220,7 @@ const formatTime = (minutes: number) => {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{student.name}</h1>
-            <p className="text-gray-600">Student Profile</p>
+            <p className="text-gray-600">Student File</p>
           </div>
         </div>
       </div>
@@ -243,11 +246,7 @@ const formatTime = (minutes: number) => {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'profile' && user?.id === studentId && (
-        <StudentProfile />
-      )}
-
-      {activeTab === 'profile' && user?.id !== studentId && (
+      {activeTab === 'profile' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Student Summary */}
           <div className="lg:col-span-1 space-y-6">
@@ -418,6 +417,23 @@ const formatTime = (minutes: number) => {
               )}
             </div>
 
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <Shield className="h-5 w-5 mr-2" />
+                Compliance Snapshot
+              </h2>
+              <div className="space-y-3">
+                {complianceItems.map(item => (
+                  <div key={item.label} className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-gray-600">{item.label}</span>
+                    <span className={`text-sm font-medium ${item.warn ? 'text-amber-700' : 'text-gray-900'}`}>
+                      {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Endorsements */}
             {student.endorsements.filter(e => e.isActive).length > 0 && (
               <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
@@ -513,6 +529,39 @@ const formatTime = (minutes: number) => {
         </div>
       )}
 
+      {activeTab === 'documents' && (
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                <FileText className="h-5 w-5 mr-2" />
+                Documents & Credentials
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">Licence, medical, membership, ID and club paperwork for this student file.</p>
+            </div>
+            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <Plus className="h-4 w-4" />
+              Add Document
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              ['RAAus Membership', student.licenceExpiry?.toLocaleDateString() || 'Expiry not recorded'],
+              ['Medical Certificate', student.medicalExpiry?.toLocaleDateString() || 'Expiry not recorded'],
+              ['CASA / RAAus ID', student.casaId || student.raausId || 'ID not recorded'],
+              ['Emergency Contact Form', student.emergencyContact ? 'Recorded' : 'Missing'],
+            ].map(([title, detail]) => (
+              <div key={title} className="border border-gray-200 rounded-lg p-4">
+                <p className="text-sm font-semibold text-gray-900">{title}</p>
+                <p className="text-sm text-gray-500 mt-1">{detail}</p>
+                <p className="text-xs text-gray-400 mt-3">File upload and verification workflow pending</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {activeTab === 'logbook' && student && (
         <LogbookTab
           userId={student.id}
@@ -527,6 +576,76 @@ const formatTime = (minutes: number) => {
           trainingRecords={studentTrainingRecords}
           courses={trainingCourses}
         />
+      )}
+
+      {activeTab === 'billing' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Account Balance</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">${student.prepaidBalance.toFixed(2)}</p>
+            <p className="text-sm text-gray-500 mt-1">Pre-paid account balance</p>
+          </div>
+          <div className="lg:col-span-2 bg-white rounded-lg shadow-md border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+              <Wallet className="h-5 w-5 mr-2" />
+              Billing File
+            </h2>
+            <p className="text-sm text-gray-600">
+              This area should become the student-specific ledger: top-ups, flight charges, invoices, receipts and future Xero sync status.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'safety' && (
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+            <Shield className="h-5 w-5 mr-2" />
+            Safety & Incident Links
+          </h2>
+          <p className="text-sm text-gray-600 mb-6">
+            Safety reports involving this pilot or student should appear here, including hazards, incidents, accidents and corrective actions.
+          </p>
+          <div className="text-center py-10 border border-dashed border-gray-300 rounded-lg">
+            <AlertTriangle className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-sm font-medium text-gray-900">No linked safety reports</p>
+            <p className="text-xs text-gray-500 mt-1">Incident linking will be connected when the safety workflow is expanded.</p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'timeline' && (
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-6 flex items-center">
+            <History className="h-5 w-5 mr-2" />
+            Student File Timeline
+          </h2>
+          <div className="space-y-5">
+            <div className="flex gap-4">
+              <div className="w-2 h-2 rounded-full bg-blue-600 mt-2" />
+              <div>
+                <p className="text-sm font-medium text-gray-900">Student file opened</p>
+                <p className="text-xs text-gray-500">{student.email}</p>
+              </div>
+            </div>
+            {lastFlightDate && (
+              <div className="flex gap-4">
+                <div className="w-2 h-2 rounded-full bg-emerald-600 mt-2" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Last recorded flight</p>
+                  <p className="text-xs text-gray-500">{lastFlightDate.toLocaleDateString()} · {formatDecimalTime(totalFlightTime)} total hours in training records</p>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-4">
+              <div className="w-2 h-2 rounded-full bg-gray-300 mt-2" />
+              <div>
+                <p className="text-sm font-medium text-gray-900">Audit events pending</p>
+                <p className="text-xs text-gray-500">Profile edits, document uploads, billing changes and safety links should be logged here.</p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeTab === 'training' && (

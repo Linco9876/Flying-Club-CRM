@@ -160,8 +160,8 @@ export const getAuthorizedMenuItems = (user: User | null) => {
     { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook' },
     { id: 'billing', label: 'Billing', action: 'view-billing' },
     { id: 'reports', label: 'Reports', action: 'view-reports' },
-    { id: 'safety', label: 'Safety', action: 'view-safety' },
-    { id: 'settings', label: 'Settings', action: 'view-settings' }
+    { id: 'safety', label: 'Safety', action: 'view-safety', resource: hasAnyRole(user, ['student', 'pilot']) ? 'own' : 'all' },
+    { id: 'settings', label: 'Settings', action: 'view-settings', resource: hasRole(user, 'admin') ? 'all' : 'own' }
   ];
 
   return allMenuItems.filter(item => {
@@ -173,15 +173,22 @@ export const getAuthorizedMenuItems = (user: User | null) => {
 
 export const getAuthorizedSafetyTabs = (user: User | null) => {
   if (!user) return [];
-  
+
   const allTabs = [
     { id: 'pilot-currency', label: 'Pilot Currency', action: 'view-pilot-currency' as Action },
     { id: 'instructor-approvals', label: 'Instructor Approvals', action: 'view-instructor-approvals' as Action },
     { id: 'safety-reports', label: 'Safety Reports', action: 'view-safety-reports' as Action },
     { id: 'checklists-docs', label: 'Checklists / Docs', action: 'view-checklists-docs' as Action }
   ];
-  
-  return allTabs.filter(tab => can(user, tab.action));
+
+  if (hasAnyRole(user, ['student', 'pilot'])) {
+    return allTabs.filter(tab =>
+      ['pilot-currency', 'safety-reports', 'checklists-docs'].includes(tab.id)
+    );
+  }
+
+  const resource = hasAnyRole(user, ['student', 'pilot']) ? 'own' : 'all';
+  return allTabs.filter(tab => can(user, tab.action, resource));
 };
 
 export const getAuthorizedSettingsSections = (user: User | null) => {
@@ -191,6 +198,7 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'organisation', label: 'Organisation', roles: ['admin'] as UserRole[] },
     { id: 'calendar', label: 'Calendar', roles: ['admin'] as UserRole[] },
     { id: 'booking-rules', label: 'Bookings & Rules', roles: ['admin'] as UserRole[] },
+    { id: 'booking-fields', label: 'Booking Form Fields', roles: ['admin'] as UserRole[] },
     { id: 'roster', label: 'Roster & Availability', roles: ['admin'] as UserRole[] },
     { id: 'training', label: 'Training / Syllabus', roles: ['admin'] as UserRole[] },
     { id: 'billing', label: 'Billing & Rates', roles: ['admin'] as UserRole[] },

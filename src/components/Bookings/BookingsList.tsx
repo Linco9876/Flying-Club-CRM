@@ -102,6 +102,18 @@ export const BookingsList: React.FC<BookingsListProps> = ({
     }
   };
 
+  const formatPaymentType = (paymentType?: string) => {
+    const normalised = (paymentType || '').trim().toLowerCase().replace(/[_-]/g, ' ');
+    if (!normalised) return 'Not set';
+    if (normalised === 'prepaid' || normalised === 'pre paid' || normalised === 'pre paid account') return 'Pre-paid Account';
+    if (normalised === 'payg' || normalised === 'pay as you go') return 'Pay as You Go';
+    if (normalised === 'account') return 'Account';
+    if (normalised === 'bank transfer') return 'Bank Transfer';
+    if (normalised === 'card') return 'Card';
+    if (normalised === 'cash') return 'Cash';
+    return normalised.replace(/\b\w/g, char => char.toUpperCase());
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -187,7 +199,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
               <div className="mt-4 flex justify-between items-center">
                 <div className="text-sm">
                   <span className="text-gray-500">Payment: </span>
-                  <span className="font-medium text-gray-900 capitalize">{booking.paymentType}</span>
+                  <span className="font-medium text-gray-900">{formatPaymentType(booking.paymentType)}</span>
                   {aircraft && (
                     <>
                       <span className="text-gray-500 ml-4">Est. Cost: </span>

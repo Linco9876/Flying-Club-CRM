@@ -10,6 +10,7 @@ import { Users, UserCheck, AlertTriangle, FileText } from 'lucide-react';
 export const SafetyDashboard: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('pilot-currency');
+  const isStudentOrPilot = user?.role === 'student' || user?.role === 'pilot' || user?.roles?.some(role => role === 'student' || role === 'pilot');
 
   const allTabs = [
     { id: 'pilot-currency', label: 'Pilot Currency', icon: <Users className="h-4 w-4" /> },
@@ -35,7 +36,11 @@ export const SafetyDashboard: React.FC = () => {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Safety</h1>
-        <p className="text-gray-600">Manage pilot currency, instructor approvals, and safety documentation</p>
+        <p className="text-gray-600">
+          {isStudentOrPilot
+            ? 'Review your currency, safety reports involving you, and club safety documents'
+            : 'Manage pilot currency, instructor approvals, and safety documentation'}
+        </p>
       </div>
 
       {/* Tab Navigation */}
