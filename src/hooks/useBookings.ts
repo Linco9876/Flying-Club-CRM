@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Booking, FlightLog, BookingConflict } from '../types';
+import { Booking, FlightLog } from '../types';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -85,6 +85,75 @@ export const useBookings = () => {
     }
   };
 
+  const timeRangesOverlap = (
+    aStart: Date | string,
+    aEnd: Date | string,
+    bStart: Date | string,
+    bEnd: Date | string
+  ) => new Date(aStart) < new Date(bEnd) && new Date(aEnd) > new Date(bStart);
+
+  const findConfirmedConflicts = (
+    bookingData: Pick<Booking, 'aircraftId' | 'instructorId' | 'startTime' | 'endTime'>,
+    excludingBookingId?: string
+  ) => bookings.filter(existing =>
+    existing.id !== excludingBookingId &&
+    !existing.hasConflict &&
+    existing.status === 'confirmed' &&
+    timeRangesOverlap(bookingData.startTime, bookingData.endTime, existing.startTime, existing.endTime) &&
+    (
+      existing.aircraftId === bookingData.aircraftId ||
+      Boolean(bookingData.instructorId && existing.instructorId === bookingData.instructorId)
+    )
+  );
+
+  const promoteAvailableWaitlistedBookings = async () => {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .is('deleted_at', null)
+      .order('start_time', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error || !data) {
+      if (error) console.error('Error checking waitlisted bookings:', error);
+      return;
+    }
+
+    const activeConfirmed = data.filter((booking: any) =>
+      booking.status === 'confirmed' && !booking.has_conflict
+    );
+    const waitlisted = data.filter((booking: any) =>
+      booking.status === 'confirmed' && booking.has_conflict
+    );
+    const promoteIds: string[] = [];
+
+    for (const candidate of waitlisted) {
+      const hasConflict = activeConfirmed.some((existing: any) =>
+        timeRangesOverlap(candidate.start_time, candidate.end_time, existing.start_time, existing.end_time) &&
+        (
+          existing.aircraft_id === candidate.aircraft_id ||
+          Boolean(candidate.instructor_id && existing.instructor_id === candidate.instructor_id)
+        )
+      );
+
+      if (!hasConflict) {
+        promoteIds.push(candidate.id);
+        activeConfirmed.push({ ...candidate, has_conflict: false });
+      }
+    }
+
+    if (promoteIds.length > 0) {
+      const { error: promoteError } = await supabase
+        .from('bookings')
+        .update({ has_conflict: false })
+        .in('id', promoteIds);
+
+      if (promoteError) {
+        console.error('Error promoting waitlisted bookings:', promoteError);
+      }
+    }
+  };
+
   const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>) => {
     try {
       console.log('Creating booking with data:', bookingData);
@@ -124,26 +193,8 @@ export const useBookings = () => {
         if (approvalRequired) needsApproval = true;
       }
 
-      // Check for conflicts before creating booking
-      const { data: conflicts, error: conflictError } = await supabase
-        .rpc('check_booking_conflicts', {
-          p_booking_id: null,
-          p_aircraft_id: bookingData.aircraftId,
-          p_instructor_id: bookingData.instructorId || null,
-          p_start_time: bookingData.startTime.toISOString(),
-          p_end_time: bookingData.endTime.toISOString()
-        });
-
-      if (conflictError) {
-        console.error('Error checking conflicts:', conflictError);
-      }
-
-      if (conflicts && conflicts.length > 0) {
-        const conflictMessages = conflicts.map((c: BookingConflict) =>
-          `${c.conflictType === 'aircraft' ? 'Aircraft' : 'Instructor'} is already booked during this time`
-        );
-        throw new Error(conflictMessages.join('. '));
-      }
+      const conflicts = findConfirmedConflicts(bookingData);
+      const isWaitlisted = conflicts.length > 0;
 
       const bookingStatus = needsApproval ? 'pending_approval' : bookingData.status;
 
@@ -156,6 +207,7 @@ export const useBookings = () => {
         payment_type: bookingData.paymentType,
         notes: bookingData.notes || null,
         status: bookingStatus,
+        has_conflict: isWaitlisted,
         flight_type_id: bookingData.flightTypeId || null,
       };
 
@@ -195,8 +247,10 @@ export const useBookings = () => {
 
       await fetchBookings();
 
-      if (needsApproval) {
-        toast.success('Booking request submitted — awaiting approval');
+      if (isWaitlisted) {
+        toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
+      } else if (needsApproval) {
+        toast.success('Booking request submitted - awaiting approval');
       } else {
         toast.success('Booking created successfully');
       }
@@ -242,6 +296,22 @@ export const useBookings = () => {
       if (bookingData.status !== undefined) updateData.status = bookingData.status;
       if (bookingData.flightTypeId !== undefined) updateData.flight_type_id = bookingData.flightTypeId || null;
 
+      const currentBooking = bookings.find(b => b.id === id);
+      const candidateBooking = currentBooking
+        ? { ...currentBooking, ...bookingData }
+        : null;
+      const conflicts = candidateBooking ? findConfirmedConflicts(candidateBooking, id) : [];
+      const isWaitlisted = conflicts.length > 0;
+
+      if (
+        bookingData.aircraftId !== undefined ||
+        bookingData.instructorId !== undefined ||
+        bookingData.startTime !== undefined ||
+        bookingData.endTime !== undefined
+      ) {
+        updateData.has_conflict = isWaitlisted;
+      }
+
       const { error } = await supabase
         .from('bookings')
         .update(updateData)
@@ -249,8 +319,16 @@ export const useBookings = () => {
 
       if (error) throw error;
 
+      if (!isWaitlisted) {
+        await promoteAvailableWaitlistedBookings();
+      }
+
       await fetchBookings();
-      if (!silent) toast.success('Booking updated successfully');
+      if (isWaitlisted) {
+        toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
+      } else if (!silent) {
+        toast.success('Booking updated successfully');
+      }
     } catch (err) {
       console.error('Error updating booking:', err);
       toast.error('Failed to update booking');
@@ -267,6 +345,7 @@ export const useBookings = () => {
 
       if (error) throw error;
 
+      await promoteAvailableWaitlistedBookings();
       await fetchBookings();
       toast.success('Booking deleted successfully');
     } catch (err) {
@@ -394,6 +473,7 @@ export const useBookings = () => {
                   ? {
                       ...b,
                       status: updated.status ?? b.status,
+                      hasConflict: updated.has_conflict ?? b.hasConflict,
                       flight_logged: updated.flight_logged ?? b.flight_logged,
                       startTime: updated.start_time ? new Date(updated.start_time) : b.startTime,
                       endTime: updated.end_time ? new Date(updated.end_time) : b.endTime,
