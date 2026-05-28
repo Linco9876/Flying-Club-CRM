@@ -680,10 +680,10 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                                   competence === 'C' ? 'text-green-600' :
                                   'text-gray-600'
                                 }`}>
-                                  {competence === 'NC' ? 'Not Competent' :
-                                   competence === 'S' ? 'Satisfactory' :
-                                   competence === 'C' ? 'Competent' :
-                                   'Not Assessed'}
+                                  {competence === 'NC' ? 'Not competent' :
+                                   competence === 'S' ? 'Solo Ready' :
+                                   competence === 'C' ? 'Pilot Ready' :
+                                   'Not assessed'}
                                 </span>
                               </label>
                             ))}

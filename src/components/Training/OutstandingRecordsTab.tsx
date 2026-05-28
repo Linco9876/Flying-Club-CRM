@@ -39,6 +39,37 @@ const GRADE_OPTIONS: Record<string, string[]> = {
   'Out of 100': [],
 };
 
+const GRADE_LABELS: Record<string, string> = {
+  '-': 'Not assessed',
+  NC: 'Not competent',
+  S: 'Solo Ready',
+  C: 'Pilot Ready',
+  Fail: 'Fail',
+  Pass: 'Pass',
+};
+
+const ORDERED_GRADES = ['-', 'NC', 'S', 'C'];
+
+function gradeRank(grade?: string) {
+  if (!grade) return 0;
+  if (grade === 'Fail') return 0;
+  if (grade === 'Pass') return 1;
+  const numeric = Number(grade);
+  if (!Number.isNaN(numeric)) return numeric;
+  const index = ORDERED_GRADES.indexOf(grade);
+  return index === -1 ? 0 : index;
+}
+
+function isGradeAtLeast(grade: string | undefined, passMark: string | undefined) {
+  if (!passMark || passMark === '-') return true;
+  if (!grade) return false;
+  return gradeRank(grade) >= gradeRank(passMark);
+}
+
+function bestGrade(current: string | undefined, next: string | undefined) {
+  return gradeRank(next) > gradeRank(current) ? next : current;
+}
+
 export const OutstandingRecordsTab: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -46,7 +77,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     isAdmin ? undefined : user?.id,
     isAdmin
   );
-  const { addTrainingRecord } = useTrainingRecords();
+  const { trainingRecords, addTrainingRecord } = useTrainingRecords();
   const { modules: courses } = useTrainingModules();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
@@ -69,6 +100,45 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   // Criteria come from the course level, pass marks from the lesson
   const activeCriteria: LessonAssessmentCriterion[] = selectedCourse?.assessmentCriteria ?? [];
+
+  const selectedLessonIndex = useMemo(
+    () => selectedCourse?.lessons.findIndex(l => l.id === form.lessonId) ?? -1,
+    [selectedCourse, form.lessonId]
+  );
+
+  const nextLessonAfterSelected = useMemo(() => {
+    if (!selectedCourse || selectedLessonIndex < 0) return null;
+    return selectedCourse.lessons[selectedLessonIndex + 1] ?? null;
+  }, [selectedCourse, selectedLessonIndex]);
+
+  const highestGradesToDate = useMemo(() => {
+    if (!activeLog || !selectedCourse) return {};
+
+    return trainingRecords
+      .filter(record => record.studentId === activeLog.student_id && record.courseId === selectedCourse.id)
+      .reduce<Record<string, string>>((acc, record) => {
+        Object.entries(record.criteriaGrades ?? {}).forEach(([criterionId, grade]) => {
+          acc[criterionId] = bestGrade(acc[criterionId], grade) ?? '-';
+        });
+        return acc;
+      }, {});
+  }, [activeLog, selectedCourse, trainingRecords]);
+
+  const lessonPassed = useMemo(() => {
+    if (!selectedLesson || activeCriteria.length === 0) return false;
+
+    return activeCriteria.every(criterion => {
+      const passMark = selectedLesson.passMarks?.[criterion.id] ?? '-';
+      const grade = form.criteriaGrades[criterion.id] ?? '-';
+      return isGradeAtLeast(grade, passMark);
+    });
+  }, [activeCriteria, form.criteriaGrades, selectedLesson]);
+
+  const nextLessonForRecord = lessonPassed
+    ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
+    : selectedLesson
+      ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
+      : '';
 
   function openLog(log: OutstandingFlightLog) {
     setActiveLog(log);
@@ -108,11 +178,22 @@ export const OutstandingRecordsTab: React.FC = () => {
   function handleSelectLesson(lessonId: string) {
     const course = courses.find(c => c.id === form.courseId);
     const lesson = course?.lessons.find(l => l.id === lessonId);
-    // Pre-populate grades with pass mark defaults
+    const studentPreviousRecords = activeLog && course
+      ? trainingRecords.filter(record => record.studentId === activeLog.student_id && record.courseId === course.id)
+      : [];
+
+    const highestByCriterion = studentPreviousRecords.reduce<Record<string, string>>((acc, record) => {
+      Object.entries(record.criteriaGrades ?? {}).forEach(([criterionId, grade]) => {
+        acc[criterionId] = bestGrade(acc[criterionId], grade) ?? '-';
+      });
+      return acc;
+    }, {});
+
+    // Pre-populate with the student's highest grade achieved to date, or "-" if never assessed.
     const defaults: Record<string, string> = {};
     if (course && lesson) {
       for (const crit of course.assessmentCriteria) {
-        defaults[crit.id] = lesson.passMarks?.[crit.id] ?? '-';
+        defaults[crit.id] = highestByCriterion[crit.id] ?? '-';
       }
     }
     setForm(f => ({ ...f, lessonId, criteriaGrades: defaults }));
@@ -149,6 +230,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         formalBriefing: form.formalBriefing,
         criteriaGrades: form.criteriaGrades,
         lessonCodes: selectedLesson ? [selectedLesson.sequenceCode].filter(Boolean) : [],
+        nextLesson: nextLessonForRecord,
         status: 'submitted',
         studentAck: false,
         attachments: [],
@@ -495,6 +577,12 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {activeCriteria.length > 0 && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-800 mb-3">Competency Assessment</label>
+                      <div className="mb-3 grid gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 sm:grid-cols-2">
+                        <div><span className="font-semibold text-gray-800">-</span> = Not assessed</div>
+                        <div><span className="font-semibold text-red-700">NC</span> = Not competent</div>
+                        <div><span className="font-semibold text-amber-700">S</span> = Solo Ready</div>
+                        <div><span className="font-semibold text-emerald-700">C</span> = Pilot Ready</div>
+                      </div>
                       <div className="space-y-3">
                         {activeCriteria.map(criterion => {
                           const passMarkForLesson = selectedLesson.passMarks?.[criterion.id];
@@ -502,16 +590,28 @@ export const OutstandingRecordsTab: React.FC = () => {
                             ? null
                             : GRADE_OPTIONS[criterion.gradingSystem] ?? GRADE_OPTIONS['NC/S/C/-'];
                           const currentGrade = form.criteriaGrades[criterion.id] ?? '-';
+                          const highestGrade = highestGradesToDate[criterion.id] ?? '-';
+                          const hasPassedCriterion = isGradeAtLeast(currentGrade, passMarkForLesson ?? '-');
 
                           return (
                             <div key={criterion.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                              <div className="flex items-center justify-between mb-2">
+                              <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
                                 <p className="text-sm font-medium text-gray-800">{criterion.name}</p>
-                                {passMarkForLesson && (
-                                  <span className="text-xs text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
-                                    {passMarkForLesson === '-' ? 'Not assessed' : `Pass: ${passMarkForLesson}`}
+                                <div className="flex flex-wrap justify-end gap-2">
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    hasPassedCriterion ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {hasPassedCriterion ? 'Pass' : 'Below pass'}
                                   </span>
-                                )}
+                                  {passMarkForLesson && (
+                                    <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                                      Pass mark: {passMarkForLesson} {GRADE_LABELS[passMarkForLesson] ? `(${GRADE_LABELS[passMarkForLesson]})` : ''}
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                                    Best to date: {highestGrade} {GRADE_LABELS[highestGrade] ? `(${GRADE_LABELS[highestGrade]})` : ''}
+                                  </span>
+                                </div>
                               </div>
 
                               {gradeOptions ? (
@@ -536,6 +636,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                                       }`}
                                     >
                                       {grade}
+                                      {GRADE_LABELS[grade] && (
+                                        <span className="ml-1 text-xs font-medium opacity-80">
+                                          {GRADE_LABELS[grade]}
+                                        </span>
+                                      )}
                                     </button>
                                   ))}
                                 </div>
@@ -559,6 +664,17 @@ export const OutstandingRecordsTab: React.FC = () => {
                       </div>
                     </div>
                   )}
+
+                  <div className={`rounded-lg border px-4 py-3 text-sm ${
+                    lessonPassed ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'
+                  }`}>
+                    <p className={`font-semibold ${lessonPassed ? 'text-emerald-800' : 'text-amber-800'}`}>
+                      {lessonPassed ? 'Lesson pass achieved' : 'Lesson not passed yet'}
+                    </p>
+                    <p className={`mt-1 text-xs ${lessonPassed ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      Next lesson on record: {nextLessonForRecord || 'Not set'}
+                    </p>
+                  </div>
 
                   {/* Submit */}
                   <div className="pt-2 border-t border-gray-100">

@@ -806,9 +806,9 @@ const handleAddTrainingRecord = () => {
                     <div className="p-4 border-b border-gray-200">
                       <h3 className="text-lg font-medium text-gray-900">Competency Overview Matrix</h3>
                       <div className="flex flex-wrap items-center gap-4 mt-2 text-xs">
-                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span><span>C / Pass = Competent</span></div>
-                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-400 rounded"></span><span>S = Satisfactory</span></div>
-                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span><span>NC / Fail = Not Competent</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span><span>C / Pass = Pilot Ready</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-400 rounded"></span><span>S = Solo Ready</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span><span>NC / Fail = Not competent</span></div>
                         <div className="flex items-center gap-1"><span className="w-3 h-3 bg-gray-100 border border-gray-300 rounded"></span><span>– = Not Assessed</span></div>
                       </div>
                     </div>
