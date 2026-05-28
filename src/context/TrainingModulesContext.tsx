@@ -10,6 +10,7 @@ type TrainingModulesContextValue = {
   createBlankModule: () => Promise<TrainingModule>;
   duplicateModule: (moduleId: string, overrides?: Partial<TrainingModule>) => Promise<TrainingModule | null>;
   updateModule: (moduleId: string, updater: (module: TrainingModule) => TrainingModule) => Promise<void>;
+  reorderLessons: (moduleId: string, lessonIds: string[]) => Promise<void>;
   deleteModule: (moduleId: string) => Promise<void>;
 };
 
@@ -272,6 +273,55 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
     );
   }, [modules]);
 
+  const reorderLessons = useCallback(async (moduleId: string, lessonIds: string[]): Promise<void> => {
+    const current = modules.find((m) => m.id === moduleId);
+    if (!current) return;
+
+    const lessonById = new Map(current.lessons.map((lesson) => [lesson.id, lesson]));
+    if (
+      lessonIds.length !== current.lessons.length ||
+      lessonIds.some((lessonId) => !lessonById.has(lessonId))
+    ) {
+      toast.error('Lesson order is out of date. Refresh and try again.');
+      return;
+    }
+
+    const lastUpdated = new Date();
+    const { error: courseErr } = await supabase
+      .from('training_courses')
+      .update({ last_updated: lastUpdated.toISOString() })
+      .eq('id', moduleId);
+
+    if (courseErr) {
+      toast.error('Failed to save lesson order');
+      throw courseErr;
+    }
+
+    const updates = lessonIds.map((lessonId, sortOrder) =>
+      supabase
+        .from('training_lessons')
+        .update({ sort_order: sortOrder })
+        .eq('id', lessonId)
+        .eq('course_id', moduleId)
+    );
+
+    const results = await Promise.all(updates);
+    const lessonErr = results.find((result) => result.error)?.error;
+    if (lessonErr) {
+      toast.error('Failed to save lesson order');
+      throw lessonErr;
+    }
+
+    const reorderedLessons = lessonIds.map((lessonId) => lessonById.get(lessonId)!);
+    setModules((prev) =>
+      prev.map((module) =>
+        module.id === moduleId
+          ? { ...module, lessons: reorderedLessons, lastUpdated }
+          : module
+      )
+    );
+  }, [modules]);
+
   const deleteModule = useCallback(async (moduleId: string): Promise<void> => {
     const { error } = await supabase
       .from('training_courses')
@@ -287,8 +337,8 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
   }, []);
 
   const value = useMemo(
-    () => ({ modules, loading, addModule, createBlankModule, duplicateModule, updateModule, deleteModule }),
-    [modules, loading, addModule, createBlankModule, duplicateModule, updateModule, deleteModule]
+    () => ({ modules, loading, addModule, createBlankModule, duplicateModule, updateModule, reorderLessons, deleteModule }),
+    [modules, loading, addModule, createBlankModule, duplicateModule, updateModule, reorderLessons, deleteModule]
   );
 
   return <TrainingModulesContext.Provider value={value}>{children}</TrainingModulesContext.Provider>;

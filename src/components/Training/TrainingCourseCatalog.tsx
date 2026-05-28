@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
+  ArrowDown,
+  ArrowUp,
   Bold,
   CheckCircle2,
   ChevronDown,
@@ -493,7 +495,7 @@ const emptyCourseForm = (): CourseFormState => ({
 });
 
 export const TrainingCourseCatalog: React.FC = () => {
-  const { modules, loading: modulesLoading, addModule, updateModule, deleteModule } = useTrainingModules();
+  const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
@@ -694,6 +696,26 @@ export const TrainingCourseCatalog: React.FC = () => {
       }));
       setDeletingLessonId(null);
       toast.success('Lesson removed from course');
+    } catch {
+      // error toast handled in context
+    }
+  };
+
+  const handleMoveLesson = async (lessonId: string, direction: 'up' | 'down') => {
+    if (!selectedModule) return;
+
+    const currentIndex = selectedModule.lessons.findIndex((lesson) => lesson.id === lessonId);
+    if (currentIndex === -1) return;
+
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= selectedModule.lessons.length) return;
+
+    const nextLessons = [...selectedModule.lessons];
+    [nextLessons[currentIndex], nextLessons[nextIndex]] = [nextLessons[nextIndex], nextLessons[currentIndex]];
+
+    try {
+      await reorderLessons(selectedModule.id, nextLessons.map((lesson) => lesson.id));
+      toast.success('Lesson order updated');
     } catch {
       // error toast handled in context
     }
@@ -1456,10 +1478,12 @@ export const TrainingCourseCatalog: React.FC = () => {
                   </div>
                 ) : (
                   <div className="mt-6 space-y-4">
-                    {selectedModule.lessons.map((lesson) => {
+                    {selectedModule.lessons.map((lesson, lessonIndex) => {
                       const isExpanded = expandedLessons[lesson.id] ?? false;
                       const flightExercisesContent = formatRichTextContent(lesson.flightExercises);
                       const theoryContent = formatRichTextContent(lesson.theory);
+                      const isFirstLesson = lessonIndex === 0;
+                      const isLastLesson = lessonIndex === selectedModule.lessons.length - 1;
 
                       return (
                         <article
@@ -1500,15 +1524,42 @@ export const TrainingCourseCatalog: React.FC = () => {
                                 {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                               </button>
                               <div>
-                                <h4 className="text-base font-semibold text-gray-900">
-                                  {lesson.name || lesson.sequenceTitle}
-                                </h4>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md bg-blue-100 px-2 text-xs font-semibold text-blue-700">
+                                    {lessonIndex + 1}
+                                  </span>
+                                  <h4 className="text-base font-semibold text-gray-900">
+                                    {lesson.name || lesson.sequenceTitle}
+                                  </h4>
+                                </div>
                                 <p className="mt-1 text-sm text-gray-600">
                                   {lesson.objective || 'Document the lesson objective for instructors.'}
                                 </p>
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                              <div className="inline-flex rounded-md border border-gray-200 bg-white">
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveLesson(lesson.id, 'up')}
+                                  disabled={isFirstLesson}
+                                  className="inline-flex h-7 w-8 items-center justify-center rounded-l-md text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-white"
+                                  title="Move lesson up"
+                                  aria-label="Move lesson up"
+                                >
+                                  <ArrowUp className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveLesson(lesson.id, 'down')}
+                                  disabled={isLastLesson}
+                                  className="inline-flex h-7 w-8 items-center justify-center rounded-r-md border-l border-gray-200 text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-white"
+                                  title="Move lesson down"
+                                  aria-label="Move lesson down"
+                                >
+                                  <ArrowDown className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => handleToggleLessonExpansion(lesson.id)}
