@@ -73,7 +73,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   onDeleteBooking,
 }) => {
   const { aircraft } = useAircraft();
-  const { getInstructors } = useUsers();
+  const { users, getInstructors } = useUsers();
   const instructors = getInstructors();
   const { settings: calendarSettings, updateSettingsSilent } = useCalendarSettings();
   const { weeklySchedules, absences, scheduleChanges } = useInstructorAvailability();
@@ -275,6 +275,79 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     return resources;
+  };
+
+  const getHirerName = (booking: Booking) => {
+    const hirerId = booking.studentId || booking.pilotId;
+    return users.find((u) => u.id === hirerId)?.name || 'Unknown Hirer';
+  };
+
+  const getInstructorName = (booking: Booking) => {
+    if (!booking.instructorId) return '';
+    return users.find((u) => u.id === booking.instructorId)?.name || 'Unknown Instructor';
+  };
+
+  const getAircraftName = (booking: Booking) => {
+    const bookedAircraft = aircraft.find((a) => a.id === booking.aircraftId);
+    if (!bookedAircraft) return 'Unknown Aircraft';
+    return `${bookedAircraft.registration} ${bookedAircraft.make || ''} ${bookedAircraft.model || ''}`.trim();
+  };
+
+  const formatBookingTimeRange = (booking: Booking) =>
+    `${format(new Date(booking.startTime), 'HH:mm')} - ${format(new Date(booking.endTime), 'HH:mm')}`;
+
+  const truncateNotes = (notes?: string, maxLength = 84) => {
+    const normalized = notes?.trim().replace(/\s+/g, ' ');
+    if (!normalized) return '';
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength).trimEnd()}...` : normalized;
+  };
+
+  const renderBookingContent = (booking: Booking, resourceType: 'aircraft' | 'instructor') => {
+    const notes = truncateNotes(booking.notes);
+
+    if (resourceType === 'aircraft') {
+      const instructorName = getInstructorName(booking);
+
+      return (
+        <div className="relative z-10 flex h-full min-h-0 flex-col gap-0.5">
+          <div className="text-[11px] font-semibold leading-tight opacity-95 truncate">
+            {formatBookingTimeRange(booking)}
+          </div>
+          <div className="text-sm font-bold leading-tight truncate">
+            {getHirerName(booking)}
+          </div>
+          {instructorName && (
+            <div className="text-[11px] leading-tight opacity-90 truncate">
+              {instructorName}
+            </div>
+          )}
+          {notes && (
+            <div className="mt-auto text-[10px] leading-tight opacity-90">
+              {notes}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative z-10 flex h-full min-h-0 flex-col gap-0.5">
+        <div className="text-[11px] font-semibold leading-tight opacity-95 truncate">
+          {formatBookingTimeRange(booking)}
+        </div>
+        <div className="text-xs font-bold leading-tight truncate">
+          {getHirerName(booking)}
+        </div>
+        <div className="text-[11px] leading-tight opacity-90 truncate">
+          {getAircraftName(booking)}
+        </div>
+        {notes && (
+          <div className="mt-auto text-[10px] leading-tight opacity-90">
+            {notes}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const handleHideResource = useCallback((id: string) => {
@@ -1328,29 +1401,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     {showHalfHourMarker && (
                       <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                     )}
-                    <div className="relative z-10">
-                    <div className="font-medium text-xs truncate">
-                      {resource.type === 'aircraft'
-                        ? resource.name
-                        : 'Lesson'}
-                    </div>
-                    <div className="text-xs truncate">
-                      {resource.type === 'instructor'
-                        ? resource.name
-                        : 'Solo'}
-                    </div>
-                    <div className="text-xs opacity-75 truncate">
-                      {format(
-                        new Date(booking.startTime),
-                        'HH:mm'
-                      )}{' '}
-                      -{' '}
-                      {format(
-                        new Date(booking.endTime),
-                        'HH:mm'
-                      )}
-                    </div>
-                    </div>
+                    {renderBookingContent(booking, resource.type)}
                   </div>
                 );
               })
@@ -1903,25 +1954,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       {showHalfHourMarker && (
                         <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                       )}
-                      <div className="relative z-10">
-                      <div className="font-medium text-xs truncate">
-                        Aircraft
-                      </div>
-                      <div className="text-xs truncate">
-                        {booking.instructorId ? 'With Instructor' : 'Solo'}
-                      </div>
-                      <div className="text-xs opacity-75 truncate">
-                        {format(
-                          new Date(booking.startTime),
-                          'HH:mm'
-                        )}{' '}
-                        -{' '}
-                        {format(
-                          new Date(booking.endTime),
-                          'HH:mm'
-                        )}
-                      </div>
-                      </div>
+                      {renderBookingContent(booking, 'aircraft')}
                     </div>
                   );
                 });
@@ -2014,25 +2047,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       {showHalfHourMarker && (
                         <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                       )}
-                      <div className="relative z-10">
-                      <div className="font-medium text-xs truncate">
-                        Instructor
-                      </div>
-                      <div className="text-xs truncate">
-                        Lesson
-                      </div>
-                      <div className="text-xs opacity-75 truncate">
-                        {format(
-                          new Date(booking.startTime),
-                          'HH:mm'
-                        )}{' '}
-                        -{' '}
-                        {format(
-                          new Date(booking.endTime),
-                          'HH:mm'
-                        )}
-                      </div>
-                      </div>
+                      {renderBookingContent(booking, 'instructor')}
                     </div>
                   );
                 });
