@@ -1573,9 +1573,17 @@ export const TrainingCourseCatalog: React.FC = () => {
                                 <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                                   Assessment criteria
                                 </h5>
-                                {lesson.assessmentCriteria.length > 0 ? (
+                                {(() => {
+                                  const relevantCriteria =
+                                    selectedModule.assessmentCriteria.length > 0
+                                      ? selectedModule.assessmentCriteria.filter(
+                                          (criterion) => lesson.passMarks?.[criterion.id]
+                                        )
+                                      : lesson.assessmentCriteria;
+
+                                  return relevantCriteria.length > 0 ? (
                                   <div className="mt-2 space-y-2">
-                                    {lesson.assessmentCriteria.map((criterion) => (
+                                    {relevantCriteria.map((criterion) => (
                                       <div
                                         key={criterion.id}
                                         className="rounded-md border border-gray-200 bg-white p-3 text-sm"
@@ -1586,16 +1594,19 @@ export const TrainingCourseCatalog: React.FC = () => {
                                         </div>
                                         <p className="mt-1 text-xs text-gray-500">
                                           Passing grade{' '}
-                                          <span className="font-medium text-gray-700">{criterion.passingGrade}</span>
+                                          <span className="font-medium text-gray-700">
+                                            {lesson.passMarks?.[criterion.id] ?? criterion.passingGrade}
+                                          </span>
                                         </p>
                                       </div>
                                     ))}
                                   </div>
-                                ) : (
+                                  ) : (
                                   <p className="mt-2 text-sm text-gray-500">
                                     No assessment criteria recorded for this lesson yet.
                                   </p>
-                                )}
+                                  );
+                                })()}
                               </div>
                             </>
                           )}
