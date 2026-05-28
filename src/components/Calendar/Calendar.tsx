@@ -64,6 +64,7 @@ interface UnavailabilityPeriod {
 
 type ViewMode = 'day' | 'week' | 'month';
 type BookingCardDensity = 'full' | 'compact' | 'name-only';
+const BOOKING_DRAG_START_DELAY_MS = 75;
 
 export const Calendar: React.FC<CalendarProps> = ({
   bookings,
@@ -806,8 +807,25 @@ export const Calendar: React.FC<CalendarProps> = ({
     const timer = setTimeout(() => {
       handleBookingDragStart(booking, resourceType);
       setIsDragDelayActive(false);
-    }, 300);
+      setDragDelayTimer(null);
+    }, BOOKING_DRAG_START_DELAY_MS);
     setDragDelayTimer(timer);
+  };
+
+  const updateDragPreview = (nextPreview: NonNullable<typeof dragPreview>) => {
+    setDragPreview((current) => {
+      if (
+        current &&
+        current.resourceId === nextPreview.resourceId &&
+        current.resourceType === nextPreview.resourceType &&
+        current.startTime.getTime() === nextPreview.startTime.getTime() &&
+        current.endTime.getTime() === nextPreview.endTime.getTime()
+      ) {
+        return current;
+      }
+
+      return nextPreview;
+    });
   };
 
   const handleBookingDragStart = (
@@ -821,7 +839,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     setDraggedBooking(booking);
     setDraggedBookingOriginal(booking);
-    setDragPreview({
+    updateDragPreview({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
       resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
@@ -845,7 +863,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     setWasResizing(true);
     setResizingBooking({ booking, handle });
     setDraggedBookingOriginal(booking);
-    setDragPreview({
+    updateDragPreview({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
       resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
@@ -879,7 +897,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       if (resizingBooking.handle === 'top') {
         const newStartTime = slotTime;
         if (newStartTime.getTime() + minDuration <= originalEnd.getTime()) {
-          setDragPreview({
+          updateDragPreview({
             startTime: newStartTime,
             endTime: originalEnd,
             resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId : resizingBooking.booking.instructorId || '',
@@ -891,7 +909,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         newEndTime.setMinutes(newEndTime.getMinutes() + snapDuration);
 
         if (newEndTime.getTime() >= originalStart.getTime() + minDuration) {
-          setDragPreview({
+          updateDragPreview({
             startTime: originalStart,
             endTime: newEndTime,
             resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId : resizingBooking.booking.instructorId || '',
@@ -907,7 +925,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       const newStartTime = slotTime;
       const newEndTime = new Date(newStartTime.getTime() + duration);
 
-      setDragPreview({
+      updateDragPreview({
         startTime: newStartTime,
         endTime: newEndTime,
         resourceId,
@@ -1379,7 +1397,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                       }
                     }}
                     onMouseUp={cancelDragDelay}
-                    onMouseLeave={cancelDragDelay}
                     onClick={(e) => {
                       e.stopPropagation();
 
@@ -1936,7 +1953,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }
                       }}
                       onMouseUp={cancelDragDelay}
-                      onMouseLeave={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (wasResizing) {
@@ -2017,7 +2033,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }
                       }}
                       onMouseUp={cancelDragDelay}
-                      onMouseLeave={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (wasResizing) {
