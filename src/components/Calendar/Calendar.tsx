@@ -14,6 +14,7 @@ import {
   Plus,
   Filter,
   Plane,
+  Trash2,
   User,
 } from 'lucide-react';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -55,12 +56,14 @@ interface Resource {
 }
 
 interface UnavailabilityPeriod {
+  id?: string;
   resourceId: string;
   resourceType: 'aircraft' | 'instructor';
   startTime: Date;
   endTime: Date;
   reason: string;
   pattern: 'diagonal' | 'solid';
+  source?: 'absence' | 'schedule';
 }
 
 type ViewMode = 'day' | 'week' | 'month';
@@ -80,7 +83,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { users, getInstructors } = useUsers();
   const instructors = getInstructors();
   const { settings: calendarSettings, updateSettingsSilent } = useCalendarSettings();
-  const { weeklySchedules, absences, scheduleChanges, addAbsence } = useInstructorAvailability();
+  const { weeklySchedules, absences, scheduleChanges, addAbsence, deleteAbsence } = useInstructorAvailability();
 
   // Per-resource visibility & ordering (loaded from/synced to DB)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
@@ -573,21 +576,25 @@ export const Calendar: React.FC<CalendarProps> = ({
     setDowntimeChoice(null);
   };
 
+  const handleDeleteInstructorDowntime = async (absenceId: string) => {
+    await deleteAbsence(absenceId);
+  };
+
   const getUnavailabilityPeriods = (date: Date): UnavailabilityPeriod[] => {
     const periods: UnavailabilityPeriod[] = [];
     const dayOfWeek = date.getDay();
     const dateStr = format(date, 'yyyy-MM-dd');
 
     instructors.forEach((instructor) => {
-      // Check for absences
-      const absence = absences.find(
+      // One-off absences layer over the permanent weekly schedule.
+      const instructorAbsences = absences.filter(
         (a) =>
           a.userId === instructor.id &&
           dateStr >= a.startDate &&
           dateStr <= a.endDate
       );
 
-      if (absence) {
+      instructorAbsences.forEach((absence) => {
         let startHour = 6;
         let startMinute = 0;
         let endHour = 20;
@@ -599,15 +606,16 @@ export const Calendar: React.FC<CalendarProps> = ({
         }
 
         periods.push({
+          id: absence.id,
           resourceId: instructor.id,
           resourceType: 'instructor',
           startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
           endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
           reason: absence.reason || 'Absent',
           pattern: 'solid',
+          source: 'absence',
         });
-        return;
-      }
+      });
 
       // Check for schedule changes effective on this date
       const applicableChanges = scheduleChanges
@@ -625,6 +633,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
             reason: 'Not Available',
             pattern: 'diagonal',
+            source: 'schedule',
           });
         } else {
           const [startHour, startMinute] = scheduleChange.startTime.split(':').map(Number);
@@ -638,6 +647,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
               reason: 'Not Available',
               pattern: 'diagonal',
+              source: 'schedule',
             });
           }
 
@@ -652,6 +662,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
               reason: 'Lunch Break',
               pattern: 'diagonal',
+              source: 'schedule',
             });
 
             if (afternoonEndHour < 20) {
@@ -662,6 +673,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
                 reason: 'Not Available',
                 pattern: 'diagonal',
+                source: 'schedule',
               });
             }
           } else {
@@ -673,6 +685,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
                 reason: 'Not Available',
                 pattern: 'diagonal',
+                source: 'schedule',
               });
             }
           }
@@ -693,6 +706,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
           reason: 'Not Available',
           pattern: 'diagonal',
+          source: 'schedule',
         });
       } else {
         const [startHour, startMinute] = weeklySchedule.startTime.split(':').map(Number);
@@ -706,6 +720,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
             reason: 'Not Available',
             pattern: 'diagonal',
+            source: 'schedule',
           });
         }
 
@@ -720,6 +735,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
             reason: 'Lunch Break',
             pattern: 'diagonal',
+            source: 'schedule',
           });
 
           if (afternoonEndHour < 20) {
@@ -730,6 +746,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
               reason: 'Not Available',
               pattern: 'diagonal',
+              source: 'schedule',
             });
           }
         } else {
@@ -741,6 +758,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
               reason: 'Not Available',
               pattern: 'diagonal',
+              source: 'schedule',
             });
           }
         }
@@ -837,6 +855,35 @@ export const Calendar: React.FC<CalendarProps> = ({
         period.resourceType === resourceType &&
         slotTime >= period.startTime &&
         slotTime < period.endTime
+    );
+  };
+
+  const renderUnavailabilityLabel = (unavailability: UnavailabilityPeriod) => {
+    const canRemoveDowntime =
+      canCreateInstructorDowntime &&
+      unavailability.source === 'absence' &&
+      Boolean(unavailability.id);
+
+    return (
+      <div className="absolute inset-0 flex items-center justify-center px-1">
+        <span className="inline-flex max-w-full items-center gap-1 rounded bg-white bg-opacity-85 px-1.5 py-0.5 text-xs font-medium text-gray-700 shadow-sm">
+          <span className="truncate">{unavailability.reason}</span>
+          {canRemoveDowntime && (
+            <button
+              type="button"
+              className="rounded p-0.5 text-red-600 hover:bg-red-50 focus:outline-none focus:ring-1 focus:ring-red-400"
+              title="Remove temporary off period"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteInstructorDowntime(unavailability.id!);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </span>
+      </div>
     );
   };
 
@@ -1446,11 +1493,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         }}
                       >
                         {unavailability && isFirstSlotOfPeriod && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                              {unavailability.reason}
-                            </span>
-                          </div>
+                          renderUnavailabilityLabel(unavailability)
                         )}
                       </div>
                     );
@@ -1874,11 +1917,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           }}
                         >
                           {unavailability && isFirstSlotOfPeriod && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                                {unavailability.reason}
-                              </span>
-                            </div>
+                            renderUnavailabilityLabel(unavailability)
                           )}
                         </div>
                       );
@@ -1986,11 +2025,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           }}
                         >
                           {unavailability && isFirstSlotOfPeriod && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
-                                {unavailability.reason}
-                              </span>
-                            </div>
+                            renderUnavailabilityLabel(unavailability)
                           )}
                         </div>
                       );
