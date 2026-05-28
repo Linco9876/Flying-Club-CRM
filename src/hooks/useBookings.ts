@@ -227,8 +227,10 @@ export const useBookings = () => {
           full: error
         });
         const errorMsg = error.message || error.details || 'Unknown database error';
+        const createError = new Error(errorMsg) as Error & { alreadyToasted?: boolean };
+        createError.alreadyToasted = true;
         toast.error(`Failed to create booking: ${errorMsg}`);
-        throw new Error(errorMsg);
+        throw createError;
       }
 
       console.log('Booking created:', data);
@@ -264,7 +266,7 @@ export const useBookings = () => {
       });
 
       const errorMessage = err?.message || err?.details || 'Unknown error occurred';
-      if (!err?.message?.includes('Failed to create booking')) {
+      if (!err?.alreadyToasted) {
         toast.error(`Failed to create booking: ${errorMessage}`);
       }
       throw err;
