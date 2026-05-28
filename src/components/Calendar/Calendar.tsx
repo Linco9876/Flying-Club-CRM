@@ -101,6 +101,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceId: string;
     resourceType: 'aircraft' | 'instructor';
   } | null>(null);
+  const [optimisticBookingUpdates, setOptimisticBookingUpdates] = useState<Record<string, Partial<Booking>>>({});
   const [resizingBooking, setResizingBooking] = useState<{
     booking: Booking;
     handle: 'top' | 'bottom';
@@ -678,7 +679,12 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceType: 'aircraft' | 'instructor',
     date: Date
   ): Booking[] => {
-    let filteredBookings = bookings.filter((booking) =>
+    const visibleBookings = bookings.map((booking) => ({
+      ...booking,
+      ...optimisticBookingUpdates[booking.id],
+    }));
+
+    let filteredBookings = visibleBookings.filter((booking) =>
       isSameDay(new Date(booking.startTime), date)
     );
 
@@ -934,7 +940,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
-  const handleBookingDrop = async () => {
+  const handleBookingDrop = () => {
     const booking = draggedBooking || resizingBooking?.booking;
     if (!booking || !dragPreview || !onUpdateBooking) {
       setDraggedBooking(null);
@@ -945,32 +951,54 @@ export const Calendar: React.FC<CalendarProps> = ({
       return;
     }
 
-    try {
-      const updates: Partial<Booking> = {
-        startTime: dragPreview.startTime,
-        endTime: dragPreview.endTime
-      };
+    const wasResizingBooking = Boolean(resizingBooking);
+    const updates: Partial<Booking> = {
+      startTime: dragPreview.startTime,
+      endTime: dragPreview.endTime
+    };
 
-      if (draggedBooking) {
-        if (dragPreview.resourceType === 'aircraft' && dragPreview.resourceId !== booking.aircraftId) {
-          updates.aircraftId = dragPreview.resourceId;
-        } else if (dragPreview.resourceType === 'instructor' && dragPreview.resourceId !== booking.instructorId) {
-          updates.instructorId = dragPreview.resourceId;
-        }
+    if (draggedBooking) {
+      if (dragPreview.resourceType === 'aircraft' && dragPreview.resourceId !== booking.aircraftId) {
+        updates.aircraftId = dragPreview.resourceId;
+      } else if (dragPreview.resourceType === 'instructor' && dragPreview.resourceId !== booking.instructorId) {
+        updates.instructorId = dragPreview.resourceId;
       }
-
-      await onUpdateBooking(booking.id, updates, true);
-      toast.success(resizingBooking ? 'Booking resized successfully' : 'Booking moved successfully');
-    } catch (error) {
-      console.error('Error updating booking:', error);
-      toast.error('Failed to update booking');
-    } finally {
-      setDraggedBooking(null);
-      setDraggedBookingOriginal(null);
-      setDragPreview(null);
-      setResizingBooking(null);
-      setTimeout(() => setWasResizing(false), 100);
     }
+
+    setOptimisticBookingUpdates((current) => ({
+      ...current,
+      [booking.id]: {
+        ...current[booking.id],
+        ...updates,
+      },
+    }));
+    setDraggedBooking(null);
+    setDraggedBookingOriginal(null);
+    setDragPreview(null);
+    setResizingBooking(null);
+    setTimeout(() => setWasResizing(false), 100);
+
+    void onUpdateBooking(booking.id, updates, true)
+      .then(() => {
+        toast.success(wasResizingBooking ? 'Booking resized successfully' : 'Booking moved successfully');
+      })
+      .catch((error) => {
+        console.error('Error updating booking:', error);
+        setOptimisticBookingUpdates((current) => {
+          const next = { ...current };
+          delete next[booking.id];
+          return next;
+        });
+        toast.error('Failed to update booking');
+      })
+      .finally(() => {
+        setOptimisticBookingUpdates((current) => {
+          const next = { ...current };
+          delete next[booking.id];
+          return next;
+        });
+        setTimeout(() => setWasResizing(false), 100);
+      });
   };
 
   const handleMouseDown = (
