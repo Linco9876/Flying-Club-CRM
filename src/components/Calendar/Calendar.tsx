@@ -21,6 +21,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings } from '../../hooks/useSettings';
 import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
+import { useAuth } from '../../context/AuthContext';
 import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
@@ -74,11 +75,12 @@ export const Calendar: React.FC<CalendarProps> = ({
   onUpdateBooking,
   onDeleteBooking,
 }) => {
+  const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { users, getInstructors } = useUsers();
   const instructors = getInstructors();
   const { settings: calendarSettings, updateSettingsSilent } = useCalendarSettings();
-  const { weeklySchedules, absences, scheduleChanges } = useInstructorAvailability();
+  const { weeklySchedules, absences, scheduleChanges, addAbsence } = useInstructorAvailability();
 
   // Per-resource visibility & ordering (loaded from/synced to DB)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
@@ -91,6 +93,13 @@ export const Calendar: React.FC<CalendarProps> = ({
     'all' | 'aircraft' | 'instructors' | 'both'
   >('both');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [downtimeChoice, setDowntimeChoice] = useState<{
+    date: Date;
+    startTime: string;
+    endTime: string;
+    instructorId: string;
+  } | null>(null);
+  const [downtimeReason, setDowntimeReason] = useState('Temporary off period');
 
   // Drag and drop states
   const [draggedBooking, setDraggedBooking] = useState<Booking | null>(null);
@@ -518,6 +527,52 @@ export const Calendar: React.FC<CalendarProps> = ({
     return `${hour.toString().padStart(2, '0')}:00`;
   };
 
+  const canCreateInstructorDowntime =
+    user?.role === 'admin' ||
+    user?.role === 'instructor' ||
+    user?.roles?.some(role => role === 'admin' || role === 'instructor');
+
+  const openBookingFormForSelection = (
+    date: Date,
+    startTime: string,
+    endTime: string,
+    resourceId: string,
+    resourceType: 'aircraft' | 'instructor'
+  ) => {
+    onNewBookingWithTime?.(date, startTime, endTime, resourceId, resourceType);
+  };
+
+  const handleNewTimeAllocation = (
+    date: Date,
+    startTime: string,
+    endTime: string,
+    resourceId: string,
+    resourceType: 'aircraft' | 'instructor'
+  ) => {
+    if (resourceType === 'instructor' && canCreateInstructorDowntime) {
+      setDowntimeChoice({ date, startTime, endTime, instructorId: resourceId });
+      setDowntimeReason('Temporary off period');
+      return;
+    }
+
+    openBookingFormForSelection(date, startTime, endTime, resourceId, resourceType);
+  };
+
+  const handleCreateInstructorDowntime = async () => {
+    if (!downtimeChoice) return;
+
+    await addAbsence({
+      userId: downtimeChoice.instructorId,
+      startDate: format(downtimeChoice.date, 'yyyy-MM-dd'),
+      endDate: format(downtimeChoice.date, 'yyyy-MM-dd'),
+      startTime: downtimeChoice.startTime,
+      endTime: downtimeChoice.endTime,
+      reason: downtimeReason.trim() || 'Temporary off period',
+    });
+
+    setDowntimeChoice(null);
+  };
+
   const getUnavailabilityPeriods = (date: Date): UnavailabilityPeriod[] => {
     const periods: UnavailabilityPeriod[] = [];
     const dayOfWeek = date.getDay();
@@ -804,7 +859,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       const slotsPerHour = 60 / snapDuration;
       const startTime = formatTimeSlot(slot);
       const endTime = formatTimeSlot(slot + slotsPerHour);
-      onNewBookingWithTime(
+      handleNewTimeAllocation(
         date,
         startTime,
         endTime,
@@ -1060,7 +1115,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       const endSlot = Math.max(dragStart.hour, dragEnd.hour) + 1;
       const startTime = formatTimeSlot(startSlot);
       const endTime = formatTimeSlot(endSlot);
-      onNewBookingWithTime(
+      handleNewTimeAllocation(
         date,
         startTime,
         endTime,
@@ -2327,6 +2382,69 @@ export const Calendar: React.FC<CalendarProps> = ({
             setFlightLogBooking(null);
           }}
         />
+      )}
+
+      {downtimeChoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white shadow-xl border border-gray-200">
+            <div className="px-4 py-3 border-b border-gray-200">
+              <h3 className="text-base font-semibold text-gray-900">Instructor Time Slot</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                {format(downtimeChoice.date, 'MMM d, yyyy')} · {downtimeChoice.startTime} - {downtimeChoice.endTime}
+              </p>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <button
+                type="button"
+                onClick={() => {
+                  openBookingFormForSelection(
+                    downtimeChoice.date,
+                    downtimeChoice.startTime,
+                    downtimeChoice.endTime,
+                    downtimeChoice.instructorId,
+                    'instructor'
+                  );
+                  setDowntimeChoice(null);
+                }}
+                className="w-full rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-left hover:bg-blue-100 transition-colors"
+              >
+                <span className="block text-sm font-semibold text-blue-900">Create booking</span>
+                <span className="block text-xs text-blue-700 mt-1">Book a student or pilot with this instructor.</span>
+              </button>
+
+              <div className="rounded-md border border-gray-200 p-3">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Downtime reason
+                </label>
+                <input
+                  type="text"
+                  value={downtimeReason}
+                  onChange={(event) => setDowntimeReason(event.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Temporary off period"
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateInstructorDowntime}
+                  className="mt-3 w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 transition-colors"
+                >
+                  Block as downtime
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end px-4 py-3 border-t border-gray-200 bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setDowntimeChoice(null)}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
