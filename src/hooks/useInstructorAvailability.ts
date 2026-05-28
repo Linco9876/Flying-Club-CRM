@@ -85,7 +85,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       const absencesList = (data || []).map(a => ({
         id: a.id,
-        userId: a.user_id,
+        userId: a.user_id || a.instructor_id,
         startDate: a.start_date,
         endDate: a.end_date,
         startTime: a.start_time,
@@ -184,6 +184,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
         .from('instructor_absences')
         .insert({
           user_id: absence.userId,
+          instructor_id: absence.userId,
           start_date: absence.startDate,
           end_date: absence.endDate,
           start_time: absence.startTime || null,
