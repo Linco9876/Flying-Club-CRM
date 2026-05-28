@@ -509,7 +509,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                                 <p className="text-sm font-medium text-gray-800">{criterion.name}</p>
                                 {passMarkForLesson && (
                                   <span className="text-xs text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
-                                    Pass: {passMarkForLesson}
+                                    {passMarkForLesson === '-' ? 'Not assessed' : `Pass: ${passMarkForLesson}`}
                                   </span>
                                 )}
                               </div>

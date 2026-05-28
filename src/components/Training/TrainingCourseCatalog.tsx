@@ -1593,7 +1593,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                           <span className="text-xs text-gray-500">{criterion.gradingSystem}</span>
                                         </div>
                                         <p className="mt-1 text-xs text-gray-500">
-                                          Passing grade{' '}
+                                          {lesson.passMarks?.[criterion.id] === '-' ? 'Not assessed' : 'Passing grade'}{' '}
                                           <span className="font-medium text-gray-700">
                                             {lesson.passMarks?.[criterion.id] ?? criterion.passingGrade}
                                           </span>
