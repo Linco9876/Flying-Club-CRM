@@ -326,8 +326,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     const renderedSlots = Math.max(1, Math.ceil(durationMinutes / snapDuration));
     const estimatedHeight = renderedSlots * slotHeight;
 
-    if (estimatedHeight < 34) return 'name-only';
-    if (estimatedHeight < 78) return 'compact';
+    if (estimatedHeight < 48) return 'name-only';
+    if (estimatedHeight < 96) return 'compact';
     return 'full';
   };
 
@@ -387,7 +387,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           <div className="text-sm font-bold leading-tight truncate">
             {hirerName}
           </div>
-          {instructorName && (
+          {density === 'full' && instructorName && (
             <div className="text-[11px] leading-tight opacity-90 truncate">
               {instructorName}
             </div>
@@ -409,9 +409,11 @@ export const Calendar: React.FC<CalendarProps> = ({
         <div className="text-xs font-bold leading-tight truncate">
           {hirerName}
         </div>
-        <div className="text-[11px] leading-tight opacity-90 truncate">
-          {getAircraftName(booking)}
-        </div>
+        {density === 'full' && (
+          <div className="text-[11px] leading-tight opacity-90 truncate">
+            {getAircraftName(booking)}
+          </div>
+        )}
         {notes && (
           <div className="mt-auto text-[10px] leading-tight opacity-90">
             {notes}
