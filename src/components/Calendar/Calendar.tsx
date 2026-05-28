@@ -63,6 +63,7 @@ interface UnavailabilityPeriod {
 }
 
 type ViewMode = 'day' | 'week' | 'month';
+type BookingCardDensity = 'full' | 'compact' | 'name-only';
 
 export const Calendar: React.FC<CalendarProps> = ({
   bookings,
@@ -302,8 +303,43 @@ export const Calendar: React.FC<CalendarProps> = ({
     return normalized.length > maxLength ? `${normalized.slice(0, maxLength).trimEnd()}...` : normalized;
   };
 
-  const renderBookingContent = (booking: Booking, resourceType: 'aircraft' | 'instructor') => {
-    const notes = truncateNotes(booking.notes);
+  const getBookingCardDensity = (booking: Booking): BookingCardDensity => {
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const durationMinutes = Math.max(
+      1,
+      (new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / (1000 * 60)
+    );
+    const renderedSlots = Math.max(1, Math.ceil(durationMinutes / snapDuration));
+    const estimatedHeight = renderedSlots * slotHeight;
+
+    if (estimatedHeight < 34) return 'name-only';
+    if (estimatedHeight < 78) return 'compact';
+    return 'full';
+  };
+
+  const getBookingCardPadding = (density: BookingCardDensity) => {
+    if (density === 'name-only') return 'px-1 py-0';
+    if (density === 'compact') return 'p-1';
+    return 'p-2';
+  };
+
+  const renderBookingContent = (
+    booking: Booking,
+    resourceType: 'aircraft' | 'instructor',
+    density: BookingCardDensity
+  ) => {
+    const notes = density === 'full' ? truncateNotes(booking.notes) : '';
+    const hirerName = getHirerName(booking);
+
+    if (density === 'name-only') {
+      return (
+        <div className="relative z-10 flex h-full min-h-0 items-center">
+          <div className="text-[11px] font-bold leading-none truncate">
+            {hirerName}
+          </div>
+        </div>
+      );
+    }
 
     if (resourceType === 'aircraft') {
       const instructorName = getInstructorName(booking);
@@ -314,7 +350,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             {formatBookingTimeRange(booking)}
           </div>
           <div className="text-sm font-bold leading-tight truncate">
-            {getHirerName(booking)}
+            {hirerName}
           </div>
           {instructorName && (
             <div className="text-[11px] leading-tight opacity-90 truncate">
@@ -336,7 +372,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           {formatBookingTimeRange(booking)}
         </div>
         <div className="text-xs font-bold leading-tight truncate">
-          {getHirerName(booking)}
+          {hirerName}
         </div>
         <div className="text-[11px] leading-tight opacity-90 truncate">
           {getAircraftName(booking)}
@@ -1316,6 +1352,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 const showHalfHourMarker = startOffset === 15 || endOffset === 15;
                 const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                 const isBeingResized = resizingBooking?.booking.id === booking.id;
+                const bookingCardDensity = getBookingCardDensity(booking);
                 return (
                   <div
                     key={`${booking.id}-${resource.id}`}
@@ -1328,7 +1365,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         : booking.flight_logged
                         ? 'bg-green-500 border-green-600 hover:bg-green-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
-                    } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                    } relative text-white text-xs ${getBookingCardPadding(bookingCardDensity)} rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                       isBeingDragged
                         ? 'opacity-30 pointer-events-none'
                         : ''
@@ -1401,7 +1438,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     {showHalfHourMarker && (
                       <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                     )}
-                    {renderBookingContent(booking, resource.type)}
+                    {renderBookingContent(booking, resource.type, bookingCardDensity)}
                   </div>
                 );
               })
@@ -1887,6 +1924,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
+                  const bookingCardDensity = getBookingCardDensity(booking);
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-aircraft`}
@@ -1899,7 +1937,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           : booking.flight_logged
                           ? 'bg-green-500 border-green-600 hover:bg-green-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
-                      } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                      } relative text-white text-xs ${getBookingCardPadding(bookingCardDensity)} rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
@@ -1954,7 +1992,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       {showHalfHourMarker && (
                         <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                       )}
-                      {renderBookingContent(booking, 'aircraft')}
+                      {renderBookingContent(booking, 'aircraft', bookingCardDensity)}
                     </div>
                   );
                 });
@@ -1980,6 +2018,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
+                  const bookingCardDensity = getBookingCardDensity(booking);
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-instructor`}
@@ -1992,7 +2031,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           : booking.flight_logged
                           ? 'bg-green-500 border-green-600 hover:bg-green-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
-                      } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
+                      } relative text-white text-xs ${getBookingCardPadding(bookingCardDensity)} rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
@@ -2047,7 +2086,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       {showHalfHourMarker && (
                         <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                       )}
-                      {renderBookingContent(booking, 'instructor')}
+                      {renderBookingContent(booking, 'instructor', bookingCardDensity)}
                     </div>
                   );
                 });
