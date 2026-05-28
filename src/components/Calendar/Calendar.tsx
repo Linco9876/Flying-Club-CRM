@@ -25,7 +25,7 @@ import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
-import { isPastBooking, hasBookingStarted } from '../../utils/timeUtils';
+import { isPastBooking } from '../../utils/timeUtils';
 import { BookingActionMenu } from '../Bookings/BookingActionMenu';
 import { FlightLogModal } from '../Bookings/FlightLogModal';
 import toast from 'react-hot-toast';
@@ -1345,11 +1345,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                 currentDate
               ).map((booking) => {
                 const position = getBookingPosition(booking);
-                const bookingStart = new Date(booking.startTime);
-                const bookingEnd = new Date(booking.endTime);
-                const startOffset = bookingStart.getMinutes() % 30;
-                const endOffset = bookingEnd.getMinutes() % 30;
-                const showHalfHourMarker = startOffset === 15 || endOffset === 15;
                 const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                 const isBeingResized = resizingBooking?.booking.id === booking.id;
                 const bookingCardDensity = getBookingCardDensity(booking);
@@ -1407,12 +1402,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                         return;
                       }
 
-                      if (hasBookingStarted(booking)) {
-                        setActionMenuBooking(booking);
-                        setActionMenuPosition({ x: e.clientX, y: e.clientY });
-                      } else if (onEditBooking) {
-                        onEditBooking(booking);
-                      }
+                      setActionMenuBooking(booking);
+                      setActionMenuPosition({ x: e.clientX, y: e.clientY });
                     }}
                   >
                     {!isPastBooking(booking) && (
@@ -1434,9 +1425,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                           title="Drag to change end time"
                         />
                       </>
-                    )}
-                    {showHalfHourMarker && (
-                      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                     )}
                     {renderBookingContent(booking, resource.type, bookingCardDensity)}
                   </div>
@@ -1916,12 +1904,6 @@ export const Calendar: React.FC<CalendarProps> = ({
 
                 aircraftBookings.forEach((booking) => {
                   const position = getBookingPosition(booking);
-                  const bookingStart = new Date(booking.startTime);
-                  const bookingEnd = new Date(booking.endTime);
-                  const startOffset = bookingStart.getMinutes() % 30;
-                  const endOffset = bookingEnd.getMinutes() % 30;
-                  const showHalfHourMarker =
-                    startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
                   const bookingCardDensity = getBookingCardDensity(booking);
@@ -1961,12 +1943,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        if (hasBookingStarted(booking)) {
-                          setActionMenuBooking(booking);
-                          setActionMenuPosition({ x: e.clientX, y: e.clientY });
-                        } else if (onEditBooking && !draggedBooking) {
-                          onEditBooking(booking);
-                        }
+                        setActionMenuBooking(booking);
+                        setActionMenuPosition({ x: e.clientX, y: e.clientY });
                       }}
                     >
                       {!isPastBooking(booking) && (
@@ -1989,9 +1967,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                           />
                         </>
                       )}
-                      {showHalfHourMarker && (
-                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
-                      )}
                       {renderBookingContent(booking, 'aircraft', bookingCardDensity)}
                     </div>
                   );
@@ -2010,12 +1985,6 @@ export const Calendar: React.FC<CalendarProps> = ({
 
                 instructorBookings.forEach((booking) => {
                   const position = getBookingPosition(booking);
-                  const bookingStart = new Date(booking.startTime);
-                  const bookingEnd = new Date(booking.endTime);
-                  const startOffset = bookingStart.getMinutes() % 30;
-                  const endOffset = bookingEnd.getMinutes() % 30;
-                  const showHalfHourMarker =
-                    startOffset === 15 || endOffset === 15;
                   const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
                   const isBeingResized = resizingBooking?.booking.id === booking.id;
                   const bookingCardDensity = getBookingCardDensity(booking);
@@ -2055,12 +2024,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        if (hasBookingStarted(booking)) {
-                          setActionMenuBooking(booking);
-                          setActionMenuPosition({ x: e.clientX, y: e.clientY });
-                        } else if (onEditBooking && !draggedBooking) {
-                          onEditBooking(booking);
-                        }
+                        setActionMenuBooking(booking);
+                        setActionMenuPosition({ x: e.clientX, y: e.clientY });
                       }}
                     >
                       {!isPastBooking(booking) && (
@@ -2082,9 +2047,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                             title="Drag to change end time"
                           />
                         </>
-                      )}
-                      {showHalfHourMarker && (
-                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
                       )}
                       {renderBookingContent(booking, 'instructor', bookingCardDensity)}
                     </div>
