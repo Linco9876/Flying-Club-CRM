@@ -72,6 +72,96 @@ export interface UserPreferences {
   compact_view: boolean;
 }
 
+export interface PortalUxSettings {
+  id: string;
+  theme: 'light' | 'dark' | 'auto';
+  date_format: string;
+  time_format: '24h' | '12h';
+  flight_time_decimals: number;
+  currency_decimals: number;
+  show_invoices_in_portal: boolean;
+  show_study_tasks_in_portal: boolean;
+  show_progress_tracking: boolean;
+  allow_self_booking: boolean;
+  allow_booking_cancellation: boolean;
+  max_advance_booking_days: number;
+}
+
+export const defaultPortalUxSettings: Omit<PortalUxSettings, 'id'> = {
+  theme: 'light',
+  date_format: 'dd/MM/yyyy',
+  time_format: '24h',
+  flight_time_decimals: 1,
+  currency_decimals: 2,
+  show_invoices_in_portal: true,
+  show_study_tasks_in_portal: true,
+  show_progress_tracking: true,
+  allow_self_booking: true,
+  allow_booking_cancellation: true,
+  max_advance_booking_days: 30,
+};
+
+export const usePortalUxSettings = () => {
+  const [settings, setSettings] = useState<PortalUxSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('portal_ux_settings')
+        .select('*')
+        .maybeSingle();
+
+      if (error) throw error;
+      setSettings(data);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+    const handleUpdated = () => fetchSettings();
+    window.addEventListener('portal-ux-settings-updated', handleUpdated);
+    return () => window.removeEventListener('portal-ux-settings-updated', handleUpdated);
+  }, []);
+
+  const updateSettings = async (updates: Partial<PortalUxSettings>) => {
+    if (!settings) return;
+
+    const { data: userData } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from('portal_ux_settings')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString(),
+        updated_by: userData.user?.id,
+      })
+      .eq('id', settings.id);
+
+    if (error) {
+      toast.error('Failed to save Portal & UX settings');
+      throw error;
+    }
+
+    await fetchSettings();
+    window.dispatchEvent(new Event('portal-ux-settings-updated'));
+    toast.success('Portal & UX settings saved');
+  };
+
+  return {
+    settings: settings ?? ({ id: '', ...defaultPortalUxSettings } as PortalUxSettings),
+    loading,
+    error,
+    updateSettings,
+    refetch: fetchSettings,
+  };
+};
+
 export const useOrganisationSettings = () => {
   const [settings, setSettings] = useState<OrganisationSettings | null>(null);
   const [loading, setLoading] = useState(true);

@@ -2,6 +2,7 @@ import React from 'react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getAuthorizedMenuItems } from '../../utils/rbac';
+import { usePortalUxSettings } from '../../hooks/useSettings';
 import {
   Calendar,
   Users,
@@ -26,6 +27,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
   const { user } = useAuth();
+  const { settings: portalSettings } = usePortalUxSettings();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const allMenuItems = [
@@ -40,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },
     { id: 'profile', label: 'My Profile', icon: Users, roles: ['student'] },
     { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin'] },
-    { id: 'billing', label: 'Billing', icon: CreditCard, roles: ['admin', 'instructor'] },
+    { id: 'billing', label: 'Billing', icon: CreditCard, roles: ['admin', 'instructor', 'student'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['admin', 'instructor'] },
     { id: 'safety', label: 'Safety', icon: Shield, roles: ['admin', 'instructor', 'student'] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin'] }
@@ -48,9 +50,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
 
   // Get authorized menu items using RBAC
   const authorizedItems = getAuthorizedMenuItems(user);
-  const filteredMenuItems = allMenuItems.filter(item => 
-    authorizedItems.some(authItem => authItem.id === item.id)
-  );
+  const filteredMenuItems = allMenuItems.filter(item => {
+    if (
+      item.id === 'billing' &&
+      (user?.role === 'student' || user?.role === 'pilot') &&
+      !portalSettings.show_invoices_in_portal
+    ) {
+      return false;
+    }
+    return authorizedItems.some(authItem => authItem.id === item.id);
+  });
 
   const handleMenuItemClick = (itemId: string) => {
     onViewChange(itemId);

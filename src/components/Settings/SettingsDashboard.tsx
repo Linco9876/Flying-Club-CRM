@@ -127,9 +127,12 @@ export const SettingsDashboard: React.FC = () => {
   };
 
   const handleCancel = () => {
+    const cancelFunction = (window as any)[`__${activeSection.replace(/-/g, '')}SettingsCancel`];
+    if (cancelFunction) {
+      cancelFunction();
+    }
     setHasUnsavedChanges(false);
     toast.info('Changes discarded');
-    // In real app, would reset form data
   };
 
   const handleSectionChange = (sectionId: string) => {

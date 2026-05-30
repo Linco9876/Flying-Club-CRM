@@ -5,6 +5,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { usePortalUxSettings } from '../../hooks/useSettings';
 import { Booking } from '../../types';
 import toast from 'react-hot-toast';
 
@@ -29,6 +30,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { users, getInstructors, loading: usersLoading } = useUsers();
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes } = useBillingSettings();
+  const { settings: portalSettings } = usePortalUxSettings();
   const [formData, setFormData] = useState({
     studentId: booking?.studentId || user?.id || '',
     date: booking
@@ -126,6 +128,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
     if (endDateTime <= startDateTime) {
       toast.error('End time must be after start time');
+      return;
+    }
+
+    if (
+      !isEdit &&
+      (user?.role === 'student' || user?.role === 'pilot') &&
+      startDateTime.getTime() > Date.now() + portalSettings.max_advance_booking_days * 24 * 60 * 60 * 1000
+    ) {
+      toast.error(`Bookings can only be made up to ${portalSettings.max_advance_booking_days} days in advance`);
       return;
     }
 

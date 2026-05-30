@@ -16,3 +16,42 @@
 .flash-unlogged {
   animation: flash-red 1.5s ease-in-out infinite;
 }
+
+html[data-portal-theme='dark'] {
+  color-scheme: dark;
+}
+
+html[data-portal-theme='dark'] body,
+html[data-portal-theme='dark'] .bg-gray-50,
+html[data-portal-theme='dark'] .bg-gray-100 {
+  background-color: rgb(17 24 39);
+}
+
+html[data-portal-theme='dark'] .bg-white {
+  background-color: rgb(31 41 55);
+}
+
+html[data-portal-theme='dark'] .text-gray-900,
+html[data-portal-theme='dark'] .text-gray-800,
+html[data-portal-theme='dark'] .text-gray-700 {
+  color: rgb(243 244 246);
+}
+
+html[data-portal-theme='dark'] .text-gray-600,
+html[data-portal-theme='dark'] .text-gray-500,
+html[data-portal-theme='dark'] .text-gray-400 {
+  color: rgb(209 213 219);
+}
+
+html[data-portal-theme='dark'] .border-gray-100,
+html[data-portal-theme='dark'] .border-gray-200,
+html[data-portal-theme='dark'] .border-gray-300 {
+  border-color: rgb(75 85 99);
+}
+
+html[data-portal-theme='dark'] input,
+html[data-portal-theme='dark'] select,
+html[data-portal-theme='dark'] textarea {
+  background-color: rgb(17 24 39);
+  color: rgb(243 244 246);
+}

@@ -10,6 +10,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { LogbookTab } from './LogbookTab';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { usePortalUxSettings } from '../../hooks/useSettings';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -32,6 +33,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
   const { modules: trainingCourses } = useTrainingModules();
+  const { settings: portalSettings } = usePortalUxSettings();
+  const isOwnStudentPortal = (user?.role === 'student' || user?.role === 'pilot') && studentId === user.id;
 
   const student = useMemo(() => {
     if (!studentId) {
@@ -205,7 +208,18 @@ const handleAddTrainingRecord = () => {
     { id: 'billing', label: 'Billing', icon: <Wallet className="h-4 w-4" /> },
     { id: 'safety', label: 'Safety', icon: <Shield className="h-4 w-4" /> },
     { id: 'timeline', label: 'Timeline', icon: <History className="h-4 w-4" /> },
-  ];
+  ].filter(tab => {
+    if (!isOwnStudentPortal) return true;
+    if (!portalSettings.show_progress_tracking && (tab.id === 'training' || tab.id === 'courses')) return false;
+    if (!portalSettings.show_invoices_in_portal && tab.id === 'billing') return false;
+    return true;
+  });
+
+  useEffect(() => {
+    if (!tabs.some(tab => tab.id === activeTab)) {
+      setActiveTab('profile');
+    }
+  }, [activeTab, tabs]);
 
   return (
     <div className="p-6">
@@ -460,7 +474,8 @@ const handleAddTrainingRecord = () => {
 
           {/* Right Column - Additional Profile Info */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+            {(!isOwnStudentPortal || portalSettings.show_progress_tracking) ? (
+              <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Training Progress Overview</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -524,7 +539,12 @@ const handleAddTrainingRecord = () => {
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-md">
+                Training progress tracking is not shown in the student portal.
+              </div>
+            )}
           </div>
         </div>
       )}

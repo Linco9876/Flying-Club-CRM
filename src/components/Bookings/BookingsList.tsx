@@ -9,6 +9,7 @@ import { isPastBooking } from '../../utils/timeUtils';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useStudents } from '../../hooks/useStudents';
+import { usePortalUxSettings } from '../../hooks/useSettings';
 
 interface BookingsListProps {
   bookings: Booking[];
@@ -30,13 +31,29 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { students } = useStudents();
+  const { settings: portalSettings } = usePortalUxSettings();
   const [showFlightLogForm, setShowFlightLogForm] = React.useState(false);
   const [showEditForm, setShowEditForm] = React.useState(false);
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null);
 
-  const userBookings = user?.role === 'student'
+  const userBookings = user?.role === 'student' || user?.role === 'pilot'
     ? bookings.filter(b => b.studentId === user.id)
     : bookings;
+  const canCancelOwnBookings = user?.role !== 'student' && user?.role !== 'pilot'
+    ? true
+    : portalSettings.allow_booking_cancellation;
+
+  const formatBookingDate = (date: Date) => {
+    if (portalSettings.date_format === 'yyyy-MM-dd') return date.toISOString().slice(0, 10);
+    return date.toLocaleDateString(portalSettings.date_format === 'MM/dd/yyyy' ? 'en-US' : 'en-AU');
+  };
+
+  const formatBookingTime = (date: Date) =>
+    date.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: portalSettings.time_format === '12h',
+    });
 
   const getAircraftInfo = (aircraftId: string) => {
     return aircraft.find(a => a.id === aircraftId);
@@ -170,7 +187,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                     onApprove={onApproveBooking ? () => onApproveBooking(booking.id) : undefined}
                     onReject={onRejectBooking ? () => onRejectBooking(booking.id) : undefined}
                     hasTrainingRecord={!!booking.flightLog}
-                    canDelete={user?.role !== 'student'}
+                    canDelete={canCancelOwnBookings}
                     canApprove={user?.role === 'admin' || user?.role === 'instructor'}
                   />
                 </div>
@@ -179,13 +196,12 @@ export const BookingsList: React.FC<BookingsListProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                 <div className="flex items-center space-x-2">
                   <Calendar className="h-4 w-4 text-gray-400" />
-                  <span className="text-gray-900">{startTime.toLocaleDateString()}</span>
+                  <span className="text-gray-900">{formatBookingDate(startTime)}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Clock className="h-4 w-4 text-gray-400" />
                   <span className="text-gray-900">
-                    {startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
-                    {endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatBookingTime(startTime)} - {formatBookingTime(endTime)}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -196,7 +212,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 </div>
                 <div className="flex items-center space-x-2">
                   <MapPin className="h-4 w-4 text-gray-400" />
-                  <span className="text-gray-900">{duration.toFixed(1)} hours</span>
+                  <span className="text-gray-900">{duration.toFixed(portalSettings.flight_time_decimals)} hours</span>
                 </div>
               </div>
 
@@ -208,7 +224,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                     <>
                       <span className="text-gray-500 ml-4">Est. Cost: </span>
                       <span className="font-medium text-gray-900">
-                        ${(duration * aircraft.hourlyRate + (booking.instructorId ? duration * 85 : 0)).toFixed(2)}
+                        ${(duration * aircraft.hourlyRate + (booking.instructorId ? duration * 85 : 0)).toFixed(portalSettings.currency_decimals)}
                       </span>
                     </>
                   )}
@@ -218,12 +234,14 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                     /* Quick Action Buttons for Future Bookings */
                     booking.status === 'confirmed' && (
                     <>
-                      <button className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors">
+                      <button onClick={() => { setSelectedBooking(booking); setShowEditForm(true); }} className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors">
                         Modify
                       </button>
-                      <button className="px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors">
-                        Cancel
-                      </button>
+                      {canCancelOwnBookings && (
+                        <button onClick={() => handleDeleteBooking(booking)} className="px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors">
+                          Cancel
+                        </button>
+                      )}
                     </>
                     )
                   )}

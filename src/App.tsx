@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { TrainingModulesProvider } from './context/TrainingModulesContext';
@@ -30,6 +30,7 @@ import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuild
 import { OutstandingRecordsTab } from './components/Training/OutstandingRecordsTab';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import { format } from 'date-fns';
+import { usePortalUxSettings } from './hooks/useSettings';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -86,6 +87,7 @@ const AuthenticatedApp: React.FC<{
   bookingFormData: any;
   setBookingFormData: (data: any) => void;
 }> = ({
+  user,
   showBookingForm,
   setShowBookingForm,
   showTrainingRecordForm,
@@ -100,9 +102,29 @@ const AuthenticatedApp: React.FC<{
   const navigate = useNavigate();
   const location = useLocation();
   const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking } = useBookings();
+  const { settings: portalSettings } = usePortalUxSettings();
+
+  React.useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const useDarkTheme = portalSettings.theme === 'dark' || (portalSettings.theme === 'auto' && media.matches);
+      document.documentElement.dataset.portalTheme = useDarkTheme ? 'dark' : 'light';
+    };
+    applyTheme();
+    media.addEventListener('change', applyTheme);
+    return () => media.removeEventListener('change', applyTheme);
+  }, [portalSettings.theme]);
 
   const handleViewChange = (view: string) => {
     navigate(getPathForView(view));
+  };
+
+  const handleNewBooking = () => {
+    if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
+      toast.error('Student self-booking is disabled. Please contact the club.');
+      return;
+    }
+    setShowBookingForm(true);
   };
 
   const handleNewBookingWithResource = (
@@ -112,6 +134,11 @@ const AuthenticatedApp: React.FC<{
     resourceId?: string,
     resourceType?: 'aircraft' | 'instructor'
   ) => {
+    if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
+      toast.error('Student self-booking is disabled. Please contact the club.');
+      return;
+    }
+
     const formData: any = {
       date: format(date, 'yyyy-MM-dd'),
       startTime,
@@ -198,7 +225,7 @@ const AuthenticatedApp: React.FC<{
       case 'calendar':
         return <Calendar
           bookings={bookings}
-          onNewBooking={() => setShowBookingForm(true)}
+          onNewBooking={handleNewBooking}
           onNewBookingWithTime={handleNewBookingWithResource}
           onEditBooking={(booking) => {
             setEditingBooking(booking);
@@ -426,6 +453,7 @@ const getRequiredActionForView = (view: string) => {
 const getRequiredResourceForView = (view: string) => {
   const resourceMap: Record<string, 'all' | 'own'> = {
     'bookings': 'own',
+    'billing': 'own',
     'profile': 'own',
     'mylogbook': 'own',
     'safety': 'own',

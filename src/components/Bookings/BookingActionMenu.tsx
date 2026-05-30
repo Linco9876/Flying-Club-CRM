@@ -1,6 +1,8 @@
 import React from 'react';
 import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon } from 'lucide-react';
 import { Booking } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { usePortalUxSettings } from '../../hooks/useSettings';
 
 interface BookingActionMenuProps {
   booking: Booking;
@@ -31,6 +33,13 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   position,
   onClose,
 }) => {
+  const { user } = useAuth();
+  const { settings: portalSettings } = usePortalUxSettings();
+  const canCurrentUserDelete = canDelete && (
+    user?.role !== 'student' && user?.role !== 'pilot'
+      ? true
+      : portalSettings.allow_booking_cancellation && booking.studentId === user.id
+  );
   const [isOpen, setIsOpen] = React.useState(position ? true : false);
   const [fixedMenuStyle, setFixedMenuStyle] = React.useState<React.CSSProperties>(() => ({
     left: position?.x ?? 0,
@@ -90,7 +99,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       left: Math.min(Math.max(position.x, margin), maxLeft),
       top: Math.min(Math.max(position.y, margin), maxTop),
     });
-  }, [position, isOpen, canDelete, canApprove, hasTrainingRecord, booking.status]);
+  }, [position, isOpen, canCurrentUserDelete, canApprove, hasTrainingRecord, booking.status]);
 
   const menuContent = (
     <>
@@ -144,7 +153,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
         </>
       )}
 
-      {canDelete && (
+      {canCurrentUserDelete && (
         <>
           <div className="border-t border-gray-200 my-1"></div>
           <button

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, FlightLog } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
 
 export const useBookings = () => {
@@ -9,6 +10,7 @@ export const useBookings = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
+  const { settings: portalSettings } = usePortalUxSettings();
 
   const fetchBookings = async () => {
     try {
@@ -157,6 +159,17 @@ export const useBookings = () => {
   const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>) => {
     try {
       console.log('Creating booking with data:', bookingData);
+
+      if ((user?.role === 'student' || user?.role === 'pilot') && !portalSettings.allow_self_booking) {
+        throw new Error('Student self-booking is disabled. Please contact the club.');
+      }
+
+      if (
+        (user?.role === 'student' || user?.role === 'pilot') &&
+        bookingData.startTime.getTime() > Date.now() + portalSettings.max_advance_booking_days * 24 * 60 * 60 * 1000
+      ) {
+        throw new Error(`Bookings can only be made up to ${portalSettings.max_advance_booking_days} days in advance`);
+      }
 
       // Validate required fields
       if (!bookingData.studentId || bookingData.studentId.trim() === '') {
@@ -340,6 +353,15 @@ export const useBookings = () => {
 
   const deleteBooking = async (id: string) => {
     try {
+      const booking = bookings.find(existing => existing.id === id);
+      if (
+        (user?.role === 'student' || user?.role === 'pilot') &&
+        booking?.studentId === user.id &&
+        !portalSettings.allow_booking_cancellation
+      ) {
+        throw new Error('Student booking cancellation is disabled. Please contact the club.');
+      }
+
       const { error } = await supabase
         .from('bookings')
         .update({ deleted_at: new Date().toISOString() })

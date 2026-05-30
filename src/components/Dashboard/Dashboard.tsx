@@ -15,6 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { usePortalUxSettings } from '../../hooks/useSettings';
 
 const StatCard: React.FC<{
   title: string;
@@ -86,6 +87,8 @@ const statusColors: Record<string, string> = {
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const { stats, loading } = useDashboardStats(user?.id, user?.role);
+  const { settings: portalSettings } = usePortalUxSettings();
+  const timePattern = portalSettings.time_format === '12h' ? 'h:mm a' : 'HH:mm';
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -95,7 +98,12 @@ export const Dashboard: React.FC = () => {
   };
 
   const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(amount);
+    new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      minimumFractionDigits: portalSettings.currency_decimals,
+      maximumFractionDigits: portalSettings.currency_decimals,
+    }).format(amount);
 
   if (loading) {
     return (
@@ -181,7 +189,7 @@ export const Dashboard: React.FC = () => {
                     >
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {format(booking.startTime, 'HH:mm')} – {format(booking.endTime, 'HH:mm')}
+                          {format(booking.startTime, timePattern)} – {format(booking.endTime, timePattern)}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {booking.studentName} · {booking.aircraftRegistration}
@@ -238,7 +246,7 @@ export const Dashboard: React.FC = () => {
             />
             <StatCard
               title="Total Flight Hours"
-              value={stats.myFlightHours.toFixed(1)}
+              value={stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)}
               icon={<Plane className="h-6 w-6 text-sky-600" />}
               iconBg="bg-sky-100"
               subtitle="Hours instructed"
@@ -269,7 +277,7 @@ export const Dashboard: React.FC = () => {
                     <div key={booking.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {format(booking.startTime, 'HH:mm')} – {format(booking.endTime, 'HH:mm')}
+                          {format(booking.startTime, timePattern)} – {format(booking.endTime, timePattern)}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {booking.studentName} · {booking.aircraftRegistration}
@@ -311,17 +319,17 @@ export const Dashboard: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
               title="Flight Hours"
-              value={stats.myFlightHours.toFixed(1)}
+              value={stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)}
               icon={<Clock className="h-6 w-6 text-blue-600" />}
               iconBg="bg-blue-100"
               subtitle="Total logged"
             />
             <StatCard
               title="Next Booking"
-              value={stats.nextBooking ? format(stats.nextBooking.startTime, 'dd MMM') : 'None'}
+              value={stats.nextBooking ? format(stats.nextBooking.startTime, portalSettings.date_format) : 'None'}
               icon={<Calendar className="h-6 w-6 text-emerald-600" />}
               iconBg="bg-emerald-100"
-              subtitle={stats.nextBooking ? `${format(stats.nextBooking.startTime, 'HH:mm')} · ${stats.nextBooking.aircraftRegistration}` : 'No upcoming bookings'}
+              subtitle={stats.nextBooking ? `${format(stats.nextBooking.startTime, timePattern)} · ${stats.nextBooking.aircraftRegistration}` : 'No upcoming bookings'}
             />
             <StatCard
               title="Prepaid Balance"
@@ -356,7 +364,7 @@ export const Dashboard: React.FC = () => {
                     <div key={booking.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {format(booking.startTime, 'HH:mm')} – {format(booking.endTime, 'HH:mm')}
+                          {format(booking.startTime, timePattern)} – {format(booking.endTime, timePattern)}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {booking.aircraftRegistration}
