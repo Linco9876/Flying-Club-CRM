@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, FlightLog } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { usePortalUxSettings } from './useSettings';
+import { useBookingRulesSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
 
 export const useBookings = () => {
@@ -11,6 +11,38 @@ export const useBookings = () => {
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
+  const { settings: bookingRules } = useBookingRulesSettings();
+
+  const isStudentOrPilot = user?.role === 'student' || user?.role === 'pilot';
+
+  const validateTimingRules = (startTime: Date, endTime: Date, checkPast = true) => {
+    const now = Date.now();
+    const durationHours = (endTime.getTime() - startTime.getTime()) / (60 * 60 * 1000);
+
+    if (endTime <= startTime) throw new Error('End time must be after start time');
+    if (checkPast && bookingRules?.prevent_past_bookings && startTime.getTime() < now) {
+      throw new Error('Bookings cannot be created in the past');
+    }
+    if (
+      bookingRules?.enforce_max_duration &&
+      durationHours > bookingRules.max_booking_duration_hours
+    ) {
+      throw new Error(`Bookings cannot be longer than ${bookingRules.max_booking_duration_hours} hours`);
+    }
+    if (!isStudentOrPilot) return;
+    if (
+      bookingRules?.enforce_min_notice &&
+      startTime.getTime() < now + bookingRules.min_booking_notice_hours * 60 * 60 * 1000
+    ) {
+      throw new Error(`Bookings must be made at least ${bookingRules.min_booking_notice_hours} hours in advance`);
+    }
+    if (
+      bookingRules?.enforce_max_advance &&
+      startTime.getTime() > now + bookingRules.max_booking_advance_days * 24 * 60 * 60 * 1000
+    ) {
+      throw new Error(`Bookings can only be made up to ${bookingRules.max_booking_advance_days} days in advance`);
+    }
+  };
 
   const fetchBookings = async () => {
     try {
@@ -165,11 +197,13 @@ export const useBookings = () => {
       }
 
       if (
-        (user?.role === 'student' || user?.role === 'pilot') &&
+        isStudentOrPilot &&
         bookingData.startTime.getTime() > Date.now() + portalSettings.max_advance_booking_days * 24 * 60 * 60 * 1000
       ) {
         throw new Error(`Bookings can only be made up to ${portalSettings.max_advance_booking_days} days in advance`);
       }
+
+      validateTimingRules(bookingData.startTime, bookingData.endTime);
 
       // Validate required fields
       if (!bookingData.studentId || bookingData.studentId.trim() === '') {
@@ -179,35 +213,15 @@ export const useBookings = () => {
         throw new Error('Aircraft is required');
       }
 
-      // Validate against booking rules
-      const { data: ruleValidation, error: ruleError } = await supabase
-        .rpc('validate_booking_rules', {
-          p_start_time: bookingData.startTime.toISOString(),
-          p_end_time: bookingData.endTime.toISOString(),
-          p_instructor_id: bookingData.instructorId || null
-        });
-
-      if (ruleError) {
-        console.error('Error validating booking rules:', ruleError);
-      }
-
-      // Students always need approval; admins/instructors book directly
-      let needsApproval = user?.role === 'student' || user?.role === 'pilot';
-
-      if (ruleValidation && Array.isArray(ruleValidation) && ruleValidation.length > 0) {
-        const errors = ruleValidation.filter((err: any) => !err.needs_approval);
-        const approvalRequired = ruleValidation.some((err: any) => err.needs_approval);
-
-        if (errors.length > 0) {
-          const errorMessages = errors.map((err: any) => err.message);
-          throw new Error(errorMessages.join('. '));
-        }
-
-        if (approvalRequired) needsApproval = true;
-      }
+      // Students always need approval; optionally hold staff-created solo bookings too.
+      let needsApproval = isStudentOrPilot ||
+        Boolean(bookingRules?.require_instructor_approval && !bookingData.instructorId);
 
       const conflicts = findConfirmedConflicts(bookingData);
       const isWaitlisted = conflicts.length > 0;
+      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
+        throw new Error('This time overlaps an existing booking and waiting-list overlaps are disabled');
+      }
 
       const bookingStatus = needsApproval ? 'pending_approval' : bookingData.status;
 
@@ -317,6 +331,15 @@ export const useBookings = () => {
         : null;
       const conflicts = candidateBooking ? findConfirmedConflicts(candidateBooking, id) : [];
       const isWaitlisted = conflicts.length > 0;
+      if (candidateBooking && (
+        bookingData.startTime !== undefined ||
+        bookingData.endTime !== undefined
+      )) {
+        validateTimingRules(new Date(candidateBooking.startTime), new Date(candidateBooking.endTime), false);
+      }
+      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
+        throw new Error('This time overlaps an existing booking and waiting-list overlaps are disabled');
+      }
 
       if (
         bookingData.aircraftId !== undefined ||
@@ -355,11 +378,19 @@ export const useBookings = () => {
     try {
       const booking = bookings.find(existing => existing.id === id);
       if (
-        (user?.role === 'student' || user?.role === 'pilot') &&
+        isStudentOrPilot &&
         booking?.studentId === user.id &&
         !portalSettings.allow_booking_cancellation
       ) {
         throw new Error('Student booking cancellation is disabled. Please contact the club.');
+      }
+      if (
+        isStudentOrPilot &&
+        booking &&
+        bookingRules?.enforce_cancellation_notice &&
+        new Date(booking.startTime).getTime() < Date.now() + bookingRules.cancellation_notice_hours * 60 * 60 * 1000
+      ) {
+        throw new Error(`Bookings cannot be cancelled within ${bookingRules.cancellation_notice_hours} hours of departure`);
       }
 
       const { error } = await supabase

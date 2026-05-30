@@ -5,7 +5,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
-import { usePortalUxSettings } from '../../hooks/useSettings';
+import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
 import { Booking } from '../../types';
 import toast from 'react-hot-toast';
 
@@ -31,6 +31,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes } = useBillingSettings();
   const { settings: portalSettings } = usePortalUxSettings();
+  const { settings: bookingRules } = useBookingRulesSettings();
+  const { settings: organisationSettings } = useOrganisationSettings();
   const [formData, setFormData] = useState({
     studentId: booking?.studentId || user?.id || '',
     date: booking
@@ -131,6 +133,16 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       return;
     }
 
+    const durationHours = (endDateTime.getTime() - startDateTime.getTime()) / (60 * 60 * 1000);
+    if (!isEdit && bookingRules?.prevent_past_bookings && startDateTime.getTime() < Date.now()) {
+      toast.error('Bookings cannot be created in the past');
+      return;
+    }
+    if (bookingRules?.enforce_max_duration && durationHours > bookingRules.max_booking_duration_hours) {
+      toast.error(`Bookings cannot be longer than ${bookingRules.max_booking_duration_hours} hours`);
+      return;
+    }
+
     if (
       !isEdit &&
       (user?.role === 'student' || user?.role === 'pilot') &&
@@ -148,7 +160,18 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const instructors = getInstructors();
   const userRole = user?.role || 'student';
   const isLoading = aircraftLoading || usersLoading;
-  const timeOptions = React.useMemo(() => generateTimeOptions(6, 21), []);
+  const parseHour = (time: string | undefined, fallback: number, roundUp = false) => {
+    if (!time) return fallback;
+    const [hour, minute] = time.split(':').map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return fallback;
+    return roundUp && minute > 0 ? hour + 1 : hour;
+  };
+  const bookingDayStartHour = parseHour(organisationSettings?.booking_day_start, 6);
+  const bookingDayEndHour = parseHour(organisationSettings?.booking_day_end, 22, true);
+  const timeOptions = React.useMemo(
+    () => generateTimeOptions(bookingDayStartHour, bookingDayEndHour),
+    [bookingDayStartHour, bookingDayEndHour]
+  );
 
   if (!isOpen) return null;
 
@@ -437,7 +460,7 @@ function generateTimeOptions(startHour: number, endHour: number): string[] {
   const normalizedStart = Math.max(0, Math.min(23, startHour));
   const normalizedEnd = Math.max(normalizedStart, Math.min(23, endHour));
 
-  for (let hour = normalizedStart; hour <= normalizedEnd; hour++) {
+  for (let hour = normalizedStart; hour < normalizedEnd; hour++) {
     for (let quarter = 0; quarter < 4; quarter++) {
       const minute = quarter * 15;
       const time = `${hour.toString().padStart(2, '0')}:${minute
@@ -446,6 +469,7 @@ function generateTimeOptions(startHour: number, endHour: number): string[] {
       options.push(time);
     }
   }
+  options.push(`${normalizedEnd.toString().padStart(2, '0')}:00`);
 
   return options;
 }

@@ -43,6 +43,9 @@ export interface BookingRulesSettings {
   enforce_min_notice: boolean;
   enforce_max_advance: boolean;
   enforce_cancellation_notice: boolean;
+  prevent_past_bookings: boolean;
+  enforce_max_duration: boolean;
+  max_booking_duration_hours: number;
 }
 
 export interface NotificationSettings {
@@ -351,6 +354,9 @@ export const useBookingRulesSettings = () => {
 
   useEffect(() => {
     fetchSettings();
+    const handleUpdated = () => fetchSettings();
+    window.addEventListener('booking-rules-settings-updated', handleUpdated);
+    return () => window.removeEventListener('booking-rules-settings-updated', handleUpdated);
   }, []);
 
   const updateSettings = async (updates: Partial<BookingRulesSettings>) => {
@@ -371,6 +377,7 @@ export const useBookingRulesSettings = () => {
       if (error) throw error;
 
       await fetchSettings();
+      window.dispatchEvent(new Event('booking-rules-settings-updated'));
       toast.success('Booking rules settings updated successfully');
     } catch (err: any) {
       toast.error('Failed to update booking rules settings');

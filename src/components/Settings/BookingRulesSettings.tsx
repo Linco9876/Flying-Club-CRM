@@ -17,7 +17,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
     cancellationNoticeHours: 24,
     enforceMinNotice: true,
     enforceMaxAdvance: true,
-    enforceCancellationNotice: true
+    enforceCancellationNotice: true,
+    preventPastBookings: true,
+    enforceMaxDuration: true,
+    maxBookingDurationHours: 8
   });
 
   useEffect(() => {
@@ -30,7 +33,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         cancellationNoticeHours: settings.cancellation_notice_hours,
         enforceMinNotice: settings.enforce_min_notice,
         enforceMaxAdvance: settings.enforce_max_advance,
-        enforceCancellationNotice: settings.enforce_cancellation_notice
+        enforceCancellationNotice: settings.enforce_cancellation_notice,
+        preventPastBookings: settings.prevent_past_bookings ?? true,
+        enforceMaxDuration: settings.enforce_max_duration ?? true,
+        maxBookingDurationHours: settings.max_booking_duration_hours ?? 8
       });
     }
   }, [settings]);
@@ -45,10 +51,33 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         cancellation_notice_hours: formData.cancellationNoticeHours,
         enforce_min_notice: formData.enforceMinNotice,
         enforce_max_advance: formData.enforceMaxAdvance,
-        enforce_cancellation_notice: formData.enforceCancellationNotice
+        enforce_cancellation_notice: formData.enforceCancellationNotice,
+        prevent_past_bookings: formData.preventPastBookings,
+        enforce_max_duration: formData.enforceMaxDuration,
+        max_booking_duration_hours: formData.maxBookingDurationHours
       });
     };
-  }, [formData, updateSettings]);
+    (window as any).__bookingrulesSettingsCancel = () => {
+      if (!settings) return;
+      setFormData({
+        minBookingNoticeHours: settings.min_booking_notice_hours,
+        maxBookingAdvanceDays: settings.max_booking_advance_days,
+        allowDoubleBooking: settings.allow_double_booking,
+        requireInstructorApproval: settings.require_instructor_approval,
+        cancellationNoticeHours: settings.cancellation_notice_hours,
+        enforceMinNotice: settings.enforce_min_notice,
+        enforceMaxAdvance: settings.enforce_max_advance,
+        enforceCancellationNotice: settings.enforce_cancellation_notice,
+        preventPastBookings: settings.prevent_past_bookings ?? true,
+        enforceMaxDuration: settings.enforce_max_duration ?? true,
+        maxBookingDurationHours: settings.max_booking_duration_hours ?? 8
+      });
+    };
+    return () => {
+      delete (window as any).__bookingrulesSettingsSave;
+      delete (window as any).__bookingrulesSettingsCancel;
+    };
+  }, [formData, settings, updateSettings]);
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -169,12 +198,53 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
                 <p className="text-xs text-gray-500 mt-1">Required notice for cancellations</p>
               </div>
             </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <div className="flex items-center space-x-3 mb-3">
+                <input
+                  type="checkbox"
+                  id="enforceMaxDuration"
+                  checked={formData.enforceMaxDuration}
+                  onChange={(e) => handleInputChange('enforceMaxDuration', e.target.checked)}
+                  disabled={!canEdit}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                />
+                <label htmlFor="enforceMaxDuration" className="text-sm font-medium text-gray-700">
+                  Enforce Maximum Booking Duration
+                </label>
+              </div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Maximum Duration (hours)</label>
+              <input
+                type="number"
+                min="1"
+                max="24"
+                value={formData.maxBookingDurationHours}
+                onChange={(e) => handleInputChange('maxBookingDurationHours', parseInt(e.target.value))}
+                disabled={!canEdit || !formData.enforceMaxDuration}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+              <p className="text-xs text-gray-500 mt-1">Stops accidental all-day or overnight allocations</p>
+            </div>
           </div>
         </div>
 
         <div>
           <h3 className="text-lg font-medium text-gray-900 mb-4">Booking Permissions</h3>
           <div className="space-y-4">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="preventPastBookings"
+                checked={formData.preventPastBookings}
+                onChange={(e) => handleInputChange('preventPastBookings', e.target.checked)}
+                disabled={!canEdit}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+              />
+              <label htmlFor="preventPastBookings" className="text-sm text-gray-700">
+                Prevent creating bookings in the past
+              </label>
+            </div>
+
             <div className="flex items-center space-x-3">
               <input
                 type="checkbox"
@@ -185,7 +255,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
               />
               <label htmlFor="allowDoubleBooking" className="text-sm text-gray-700">
-                Allow double booking (with warnings)
+                Allow overlapping requests on the waiting list
               </label>
             </div>
 
