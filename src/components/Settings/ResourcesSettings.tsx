@@ -1,95 +1,127 @@
-import React, { useState } from 'react';
-import { Plane, Building, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Building2, Lock, Pencil, Plane, Plus, Trash2, X } from 'lucide-react';
+import toast from 'react-hot-toast';
+import {
+  ResourceAircraftField,
+  ResourceDocumentType,
+  RoomResource,
+  useResourceSettings,
+} from '../../hooks/useResourceSettings';
 
 interface ResourcesSettingsProps {
   canEdit: boolean;
   onFormChange: () => void;
 }
 
-interface RequiredField {
-  id: string;
-  name: string;
-  type: 'text' | 'number' | 'date' | 'select';
-  required: boolean;
-  options?: string[];
-}
+const EMPTY_ROOM: Omit<RoomResource, 'id'> = {
+  name: '',
+  location: '',
+  description: '',
+  capacity: 1,
+  status: 'available',
+  isBookable: true,
+};
 
 export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, onFormChange }) => {
-  const [aircraftFields, setAircraftFields] = useState<RequiredField[]>([
-    { id: '1', name: 'Registration', type: 'text', required: true },
-    { id: '2', name: 'Make', type: 'text', required: true },
-    { id: '3', name: 'Model', type: 'text', required: true },
-    { id: '4', name: 'Aircraft Type', type: 'select', required: true, options: ['Single Engine', 'Multi Engine', 'Helicopter'] },
-    { id: '5', name: 'Tach Start', type: 'number', required: false },
-    { id: '6', name: 'Fuel Capacity', type: 'number', required: false },
-    { id: '7', name: 'Empty Weight', type: 'number', required: false },
-    { id: '8', name: 'Max Weight', type: 'number', required: false }
-  ]);
+  const {
+    aircraftFields: savedFields,
+    documentTypes: savedDocumentTypes,
+    rooms,
+    loading,
+    saveSettings,
+    addRoom,
+    updateRoom,
+    deleteRoom,
+  } = useResourceSettings();
+  const [aircraftFields, setAircraftFields] = useState<ResourceAircraftField[]>([]);
+  const [documentTypes, setDocumentTypes] = useState<ResourceDocumentType[]>([]);
+  const [roomDraft, setRoomDraft] = useState(EMPTY_ROOM);
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [showRoomForm, setShowRoomForm] = useState(false);
 
-  const [documentTypes, setDocumentTypes] = useState([
-    { id: '1', name: 'Pilot Operating Handbook (POH)', required: true },
-    { id: '2', name: 'Insurance Certificate', required: true },
-    { id: '3', name: 'Certificate of Airworthiness', required: true },
-    { id: '4', name: 'Weight & Balance Sheet', required: false },
-    { id: '5', name: 'Maintenance Log', required: false }
-  ]);
-
-  const [instructorSettings, setInstructorSettings] = useState({
-    defaultDutyHours: '08:00-18:00',
-    requiredBreakMinutes: 30,
-    maxDailyHours: 8,
-    publicAvailabilityVisible: true
-  });
-
-  const handleFieldChange = (id: string, field: string, value: any) => {
-    setAircraftFields(prev => prev.map(f =>
-      f.id === id ? { ...f, [field]: value } : f
-    ));
-    onFormChange();
+  const resetDrafts = () => {
+    setAircraftFields(savedFields);
+    setDocumentTypes(savedDocumentTypes);
   };
 
-  const handleDocumentChange = (id: string, field: string, value: any) => {
-    setDocumentTypes(prev => prev.map(doc =>
-      doc.id === id ? { ...doc, [field]: value } : doc
-    ));
-    onFormChange();
-  };
+  useEffect(resetDrafts, [savedFields, savedDocumentTypes]);
 
-  const handleInstructorSettingChange = (field: string, value: string | number | boolean) => {
-    setInstructorSettings(prev => ({ ...prev, [field]: value }));
-    onFormChange();
-  };
-
-  const addField = () => {
-    const newField: RequiredField = {
-      id: (aircraftFields.length + 1).toString(),
-      name: 'New Field',
-      type: 'text',
-      required: false
+  useEffect(() => {
+    (window as any).__resourcesSettingsSave = async () => {
+      await saveSettings(aircraftFields, documentTypes);
     };
-    setAircraftFields(prev => [...prev, newField]);
+    (window as any).__resourcesSettingsCancel = resetDrafts;
+    return () => {
+      delete (window as any).__resourcesSettingsSave;
+      delete (window as any).__resourcesSettingsCancel;
+    };
+  }, [aircraftFields, documentTypes, savedFields, savedDocumentTypes]);
+
+  const changeField = (id: string, changes: Partial<ResourceAircraftField>) => {
+    setAircraftFields(current => current.map(field => field.id === id ? { ...field, ...changes } : field));
     onFormChange();
   };
 
-  const removeField = (id: string) => {
-    setAircraftFields(prev => prev.filter(f => f.id !== id));
+  const changeDocumentType = (id: string, changes: Partial<ResourceDocumentType>) => {
+    setDocumentTypes(current => current.map(type => type.id === id ? { ...type, ...changes } : type));
     onFormChange();
   };
 
   const addDocumentType = () => {
-    const newDoc = {
-      id: (documentTypes.length + 1).toString(),
-      name: 'New Document Type',
-      required: false
-    };
-    setDocumentTypes(prev => [...prev, newDoc]);
+    setDocumentTypes(current => [
+      ...current,
+      { id: `custom-${Date.now()}`, name: 'New document type', required: false },
+    ]);
     onFormChange();
   };
 
   const removeDocumentType = (id: string) => {
-    setDocumentTypes(prev => prev.filter(doc => doc.id !== id));
+    setDocumentTypes(current => current.filter(type => type.id !== id));
     onFormChange();
   };
+
+  const openRoomForm = (room?: RoomResource) => {
+    setEditingRoomId(room?.id || null);
+    setRoomDraft(room ? {
+      name: room.name,
+      location: room.location,
+      description: room.description,
+      capacity: room.capacity,
+      status: room.status,
+      isBookable: room.isBookable,
+    } : EMPTY_ROOM);
+    setShowRoomForm(true);
+  };
+
+  const closeRoomForm = () => {
+    setShowRoomForm(false);
+    setEditingRoomId(null);
+    setRoomDraft(EMPTY_ROOM);
+  };
+
+  const handleRoomSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      if (editingRoomId) await updateRoom(editingRoomId, roomDraft);
+      else await addRoom(roomDraft);
+      closeRoomForm();
+    } catch (error) {
+      console.error('Failed to save room:', error);
+      toast.error('Failed to save room');
+    }
+  };
+
+  const handleDeleteRoom = async (id: string) => {
+    if (!window.confirm('Remove this room resource?')) return;
+    try {
+      await deleteRoom(id);
+    } catch (error) {
+      console.error('Failed to remove room:', error);
+      toast.error('Failed to remove room');
+    }
+  };
+
+  if (loading) return <div className="p-6 text-gray-500">Loading resources...</div>;
 
   return (
     <div className="p-6 space-y-8">
@@ -98,192 +130,143 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
           <Plane className="h-5 w-5 mr-2" />
           Resources (Aircraft & Rooms)
         </h2>
-        <p className="text-gray-600">Configure default fields and requirements for aircraft and facility resources</p>
+        <p className="text-gray-600">Configure aircraft records, required documents, and club rooms</p>
       </div>
 
-      {/* Aircraft Default Fields */}
-      <div className="space-y-6">
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Aircraft Required Fields</h3>
-          <div className="space-y-3">
-            {aircraftFields.map(field => (
-              <div key={field.id} className="p-4 bg-gray-50 rounded-lg">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Field Name</label>
-                    <input
-                      type="text"
-                      value={field.name}
-                      onChange={(e) => handleFieldChange(field.id, 'name', e.target.value)}
-                      disabled={!canEdit}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                    <select
-                      value={field.type}
-                      onChange={(e) => handleFieldChange(field.id, 'type', e.target.value)}
-                      disabled={!canEdit}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                    >
-                      <option value="text">Text</option>
-                      <option value="number">Number</option>
-                      <option value="date">Date</option>
-                      <option value="select">Select</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="checkbox"
-                      id={`required-${field.id}`}
-                      checked={field.required}
-                      onChange={(e) => handleFieldChange(field.id, 'required', e.target.checked)}
-                      disabled={!canEdit}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
-                    />
-                    <label htmlFor={`required-${field.id}`} className="text-sm text-gray-700">
-                      Required
-                    </label>
-                  </div>
-
-                  {canEdit && (
-                    <div>
-                      <button
-                        onClick={() => removeField(field.id)}
-                        className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {canEdit && (
-              <button
-                onClick={addField}
-                className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-800 transition-colors flex items-center justify-center space-x-2"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Add Field</span>
-              </button>
-            )}
+      <section>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Aircraft Fields</h3>
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <div className="grid grid-cols-[1fr_100px_100px] gap-3 px-4 py-2 bg-gray-50 text-xs font-semibold uppercase text-gray-500">
+            <span>Field</span><span>Visible</span><span>Required</span>
           </div>
-        </div>
-
-        {/* Document Requirements */}
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Required Document Types</h3>
-          <div className="space-y-3">
-            {documentTypes.map(docType => (
-              <div key={docType.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={docType.name}
-                    onChange={(e) => handleDocumentChange(docType.id, 'name', e.target.value)}
-                    disabled={!canEdit}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                  />
-                </div>
-                <div className="flex items-center space-x-3 ml-4">
-                  <input
-                    type="checkbox"
-                    id={`doc-required-${docType.id}`}
-                    checked={docType.required}
-                    onChange={(e) => handleDocumentChange(docType.id, 'required', e.target.checked)}
-                    disabled={!canEdit}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
-                  />
-                  <label htmlFor={`doc-required-${docType.id}`} className="text-sm text-gray-700">
-                    Required
-                  </label>
-                  {canEdit && (
-                    <button
-                      onClick={() => removeDocumentType(docType.id)}
-                      className="p-1 text-red-600 hover:text-red-800"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {canEdit && (
-              <button
-                onClick={addDocumentType}
-                className="w-full p-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-gray-400 hover:text-gray-800 transition-colors"
-              >
-                + Add Document Type
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Instructor Roster Settings */}
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Instructor Roster</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Default Duty Hours</label>
-              <input
-                type="text"
-                value={instructorSettings.defaultDutyHours}
-                onChange={(e) => handleInstructorSettingChange('defaultDutyHours', e.target.value)}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-                placeholder="08:00-18:00"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Required Break (minutes)</label>
-              <input
-                type="number"
-                min="0"
-                max="120"
-                value={instructorSettings.requiredBreakMinutes}
-                onChange={(e) => handleInstructorSettingChange('requiredBreakMinutes', parseInt(e.target.value))}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Max Daily Hours</label>
-              <input
-                type="number"
-                min="1"
-                max="12"
-                step="0.5"
-                value={instructorSettings.maxDailyHours}
-                onChange={(e) => handleInstructorSettingChange('maxDailyHours', parseFloat(e.target.value))}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-            </div>
-
-            <div className="flex items-center space-x-3 pt-8">
+          {aircraftFields.map(field => (
+            <div key={field.id} className="grid grid-cols-[1fr_100px_100px] gap-3 items-center px-4 py-3 border-t border-gray-200">
+              <span className="flex items-center gap-2 text-sm font-medium text-gray-800">
+                {field.name}
+                {field.locked && <Lock className="h-3.5 w-3.5 text-gray-400" />}
+              </span>
               <input
                 type="checkbox"
-                id="publicAvailabilityVisible"
-                checked={instructorSettings.publicAvailabilityVisible}
-                onChange={(e) => handleInstructorSettingChange('publicAvailabilityVisible', e.target.checked)}
-                disabled={!canEdit}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                checked={field.visible}
+                disabled={!canEdit || field.locked}
+                onChange={event => changeField(field.id, { visible: event.target.checked })}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded disabled:opacity-50"
               />
-              <label htmlFor="publicAvailabilityVisible" className="text-sm text-gray-700">
-                Show instructor availability publicly
-              </label>
+              <input
+                type="checkbox"
+                checked={field.required}
+                disabled={!canEdit || field.locked}
+                onChange={event => changeField(field.id, { required: event.target.checked })}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded disabled:opacity-50"
+              />
             </div>
-          </div>
+          ))}
         </div>
-      </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-gray-900">Aircraft Document Types</h3>
+          {canEdit && (
+            <button onClick={addDocumentType} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+              <Plus className="h-4 w-4" /> Add Type
+            </button>
+          )}
+        </div>
+        <div className="space-y-2">
+          {documentTypes.map(type => (
+            <div key={type.id} className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <input
+                value={type.name}
+                disabled={!canEdit}
+                onChange={event => changeDocumentType(type.id, { name: event.target.value })}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md disabled:bg-gray-100"
+              />
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={type.required}
+                  disabled={!canEdit}
+                  onChange={event => changeDocumentType(type.id, { required: event.target.checked })}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                />
+                Required
+              </label>
+              {canEdit && (
+                <button onClick={() => removeDocumentType(type.id)} title="Remove document type" className="p-2 text-red-600 hover:bg-red-50 rounded-md">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
+              <Building2 className="h-5 w-5" /> Rooms
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">Manage club facilities and briefing rooms</p>
+          </div>
+          {canEdit && (
+            <button onClick={() => openRoomForm()} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+              <Plus className="h-4 w-4" /> Add Room
+            </button>
+          )}
+        </div>
+
+        {showRoomForm && (
+          <form onSubmit={handleRoomSubmit} className="p-4 mb-4 border border-blue-200 bg-blue-50 rounded-lg space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-medium text-gray-900">{editingRoomId ? 'Edit Room' : 'Add Room'}</h4>
+              <button type="button" onClick={closeRoomForm} title="Close" className="p-1 text-gray-600 hover:bg-blue-100 rounded"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input required value={roomDraft.name} onChange={e => setRoomDraft(room => ({ ...room, name: e.target.value }))} placeholder="Room name" className="px-3 py-2 border border-gray-300 rounded-md" />
+              <input value={roomDraft.location} onChange={e => setRoomDraft(room => ({ ...room, location: e.target.value }))} placeholder="Location" className="px-3 py-2 border border-gray-300 rounded-md" />
+              <input type="number" min="1" required value={roomDraft.capacity} onChange={e => setRoomDraft(room => ({ ...room, capacity: Number(e.target.value) }))} placeholder="Capacity" className="px-3 py-2 border border-gray-300 rounded-md" />
+              <select value={roomDraft.status} onChange={e => setRoomDraft(room => ({ ...room, status: e.target.value as RoomResource['status'] }))} className="px-3 py-2 border border-gray-300 rounded-md">
+                <option value="available">Available</option>
+                <option value="unavailable">Unavailable</option>
+                <option value="maintenance">Maintenance</option>
+              </select>
+              <input value={roomDraft.description} onChange={e => setRoomDraft(room => ({ ...room, description: e.target.value }))} placeholder="Description" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-md" />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={roomDraft.isBookable} onChange={e => setRoomDraft(room => ({ ...room, isBookable: e.target.checked }))} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
+              Available for bookings
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={closeRoomForm} className="px-3 py-2 text-sm border border-gray-300 bg-white rounded-md hover:bg-gray-50">Cancel</button>
+              <button type="submit" className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Room</button>
+            </div>
+          </form>
+        )}
+
+        {rooms.length === 0 ? (
+          <div className="py-8 text-center text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg">No rooms added</div>
+        ) : (
+          <div className="space-y-2">
+            {rooms.map(room => (
+              <div key={room.id} className="flex items-center justify-between gap-4 p-4 border border-gray-200 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900">{room.name}</p>
+                  <p className="text-sm text-gray-600">{room.location || 'No location'} · Capacity {room.capacity} · {room.status}</p>
+                  {room.description && <p className="text-xs text-gray-500 mt-1">{room.description}</p>}
+                </div>
+                {canEdit && (
+                  <div className="flex gap-1">
+                    <button onClick={() => openRoomForm(room)} title="Edit room" className="p-2 text-blue-600 hover:bg-blue-50 rounded-md"><Pencil className="h-4 w-4" /></button>
+                    <button onClick={() => handleDeleteRoom(room.id)} title="Remove room" className="p-2 text-red-600 hover:bg-red-50 rounded-md"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 };

@@ -350,7 +350,7 @@ export const useAircraft = () => {
     instructorRates?: { prepaid: number; payg: number; account: number };
     rates?: Array<any>;
     milestones?: Array<{ title: string; dueCondition: string; dueValue: string }>;
-    documents?: Array<{ name: string; type: string; size: number }>;
+    documents?: Array<{ name: string; type: string; size: number; documentType?: string }>;
   }) => {
     try {
       const { data: newAircraft, error } = await supabase
@@ -419,6 +419,7 @@ export const useAircraft = () => {
             file_path: `/documents/${newAircraft.id}/${d.name}`,
             file_type: d.type,
             file_size: d.size,
+            document_type: d.documentType || null,
             uploaded_by: null
           }))
         );
@@ -439,6 +440,7 @@ export const useAircraft = () => {
   const updateAircraft = async (id: string, aircraftData: Partial<Omit<Aircraft, 'id' | 'defects'>> & {
     rates?: Array<any>;
     milestones?: Array<{ title: string; dueCondition: string; dueValue: string }>;
+    documents?: Array<{ name: string; type: string; size: number; documentType?: string }>;
   }) => {
     try {
       const updateData: any = {};
@@ -507,6 +509,21 @@ export const useAircraft = () => {
           }))
         );
         if (milestonesError) console.error('Error saving milestones:', milestonesError);
+      }
+
+      if (aircraftData.documents && aircraftData.documents.length > 0) {
+        const { error: documentsError } = await supabase.from('aircraft_documents').insert(
+          aircraftData.documents.map(d => ({
+            aircraft_id: id,
+            filename: d.name,
+            file_path: `/documents/${id}/${d.name}`,
+            file_type: d.type,
+            file_size: d.size,
+            document_type: d.documentType || null,
+            uploaded_by: null
+          }))
+        );
+        if (documentsError) console.error('Error saving documents:', documentsError);
       }
 
       await fetchAircraft();

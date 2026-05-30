@@ -3,6 +3,7 @@ import { X, Plane, Save, Upload, Plus, Trash2, DollarSign } from 'lucide-react';
 import { Aircraft, AircraftRate } from '../../types';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useAircraftRates } from '../../hooks/useAircraftRates';
+import { useResourceSettings } from '../../hooks/useResourceSettings';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -26,6 +27,11 @@ interface CostStructure {
   prepaid: number;
   payg: number;
   account: number;
+}
+
+interface UploadedDocument {
+  file: File;
+  documentType: string;
 }
 
 export const AircraftForm: React.FC<AircraftFormProps> = ({
@@ -52,6 +58,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
 
   const { flightTypes, paymentMethods, loading: billingLoading } = useBillingSettings();
   const { rates: existingRates, loading: ratesLoading, refetch: refetchRates } = useAircraftRates(aircraft?.id);
+  const { aircraftFields, documentTypes } = useResourceSettings();
 
   const [aircraftRates, setAircraftRates] = useState<Partial<AircraftRate>[]>([]);
 
@@ -132,7 +139,24 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       });
   }, [isOpen, isEdit, aircraft?.id]);
 
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedDocument[]>([]);
+  const [existingDocumentTypes, setExistingDocumentTypes] = useState<string[]>([]);
+
+  const fieldSetting = (id: string) => aircraftFields.find(field => field.id === id);
+  const isFieldVisible = (id: string) => fieldSetting(id)?.visible !== false;
+  const isFieldRequired = (id: string) => fieldSetting(id)?.required === true;
+
+  useEffect(() => {
+    if (!isOpen || !isEdit || !aircraft?.id) {
+      setExistingDocumentTypes([]);
+      return;
+    }
+    supabase
+      .from('aircraft_documents')
+      .select('document_type')
+      .eq('aircraft_id', aircraft.id)
+      .then(({ data }) => setExistingDocumentTypes((data || []).map(document => document.document_type).filter(Boolean)));
+  }, [isOpen, isEdit, aircraft?.id]);
 
   useEffect(() => {
     if (aircraft && (isEdit || isDuplicate)) {
@@ -191,6 +215,31 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       return;
     }
 
+    const numericValues: Record<string, number> = {
+      tachStart: formData.tachStart,
+      seatCapacity: formData.seatCapacity,
+      fuelCapacity: formData.fuelCapacity,
+      emptyWeight: formData.emptyWeight,
+      maxWeight: formData.maxWeight,
+    };
+    const missingField = aircraftFields.find(field =>
+      field.required && numericValues[field.id] !== undefined && numericValues[field.id] <= 0
+    );
+    if (missingField) {
+      toast.error(`${missingField.name} is required`);
+      return;
+    }
+
+    const selectedDocumentTypes = new Set([
+      ...existingDocumentTypes,
+      ...uploadedFiles.map(upload => upload.documentType),
+    ]);
+    const missingDocument = documentTypes.find(type => type.required && !selectedDocumentTypes.has(type.id));
+    if (missingDocument) {
+      toast.error(`${missingDocument.name} is required`);
+      return;
+    }
+
     // Validate registration format
     const registrationRegex = /^[A-Z0-9-]{3,10}$/;
     if (!registrationRegex.test(formData.registration)) {
@@ -233,10 +282,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           dueCondition: m.dueCondition,
           dueValue: m.dueValue
         })),
-      documents: uploadedFiles.map(f => ({
-        name: f.name,
-        type: f.type,
-        size: f.size
+      documents: uploadedFiles.map(({ file, documentType }) => ({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        documentType
       }))
     };
 
@@ -271,7 +321,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setUploadedFiles(prev => [...prev, ...files]);
+    setUploadedFiles(prev => [...prev, ...files.map(file => ({ file, documentType: documentTypes[0]?.id || '' }))]);
     toast.success(`${files.length} file(s) uploaded`);
   };
 
@@ -355,9 +405,9 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                 />
               </div>
 
-              <div>
+              {isFieldVisible('type') && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Aircraft Type
+                  Aircraft Type {isFieldRequired('type') && '*'}
                 </label>
                 <select
                   value={formData.type}
@@ -368,11 +418,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   <option value="multi-engine">Multi Engine</option>
                   <option value="helicopter">Helicopter</option>
                 </select>
-              </div>
+              </div>}
 
-              <div>
+              {isFieldVisible('tachStart') && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tach Start
+                  Tach Start {isFieldRequired('tachStart') && '*'}
                 </label>
                 <input
                   type="number"
@@ -381,11 +431,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, tachStart: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </div>}
 
-              <div>
+              {isFieldVisible('seatCapacity') && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Seat Capacity
+                  Seat Capacity {isFieldRequired('seatCapacity') && '*'}
                 </label>
                 <input
                   type="number"
@@ -395,7 +445,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, seatCapacity: parseInt(e.target.value) || 2 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </div>}
             </div>
           </div>
 
@@ -403,9 +453,9 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-4">Specifications</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
+              {isFieldVisible('fuelCapacity') && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fuel Capacity (L)
+                  Fuel Capacity (L) {isFieldRequired('fuelCapacity') && '*'}
                 </label>
                 <input
                   type="number"
@@ -414,11 +464,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, fuelCapacity: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </div>}
 
-              <div>
+              {isFieldVisible('emptyWeight') && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Empty Weight (kg)
+                  Empty Weight (kg) {isFieldRequired('emptyWeight') && '*'}
                 </label>
                 <input
                   type="number"
@@ -427,11 +477,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, emptyWeight: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </div>}
 
-              <div>
+              {isFieldVisible('maxWeight') && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Max Weight (kg)
+                  Max Weight (kg) {isFieldRequired('maxWeight') && '*'}
                 </label>
                 <input
                   type="number"
@@ -440,7 +490,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, maxWeight: parseFloat(e.target.value) || 0 }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
+              </div>}
             </div>
           </div>
 
@@ -717,9 +767,18 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
               {uploadedFiles.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium text-gray-700">Uploaded Files</h4>
-                  {uploadedFiles.map((file, index) => (
+                  {uploadedFiles.map((upload, index) => (
                     <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-gray-700">{file.name}</span>
+                      <span className="text-sm text-gray-700 flex-1 truncate">{upload.file.name}</span>
+                      <select
+                        value={upload.documentType}
+                        onChange={(event) => setUploadedFiles(current => current.map((item, itemIndex) =>
+                          itemIndex === index ? { ...item, documentType: event.target.value } : item
+                        ))}
+                        className="mx-3 px-2 py-1 text-sm border border-gray-300 rounded-md"
+                      >
+                        {documentTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
+                      </select>
                       <button
                         type="button"
                         onClick={() => removeFile(index)}
