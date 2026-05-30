@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { getCurrentTimeInMinutes, getTimeSlotFromMinutes } from '../../utils/timeUtils';
+import { getCurrentTimeInMinutes } from '../../utils/timeUtils';
 
 interface CurrentTimeIndicatorProps {
   isVisible: boolean;
+  startHour: number;
+  endHour: number;
 }
 
-export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({ isVisible }) => {
+export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({ isVisible, startHour, endHour }) => {
   const [currentMinutes, setCurrentMinutes] = useState(getCurrentTimeInMinutes());
 
   useEffect(() => {
@@ -26,15 +28,13 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({ isVi
 
   if (!isVisible) return null;
 
-  const timeSlot = getTimeSlotFromMinutes(currentMinutes);
-  
-  // Don't show if outside calendar hours (6 AM - 8 PM)
-  if (timeSlot < 0 || timeSlot >= 56) return null; // 56 slots = 14 hours * 4
+  const totalMinutes = (endHour - startHour) * 60;
+
+  if (currentMinutes < startHour * 60 || currentMinutes >= endHour * 60) return null;
 
   // Calculate position within the calendar grid
-  const startHour = 6; // 6:00 AM
   const minutesFromStart = currentMinutes - (startHour * 60);
-  const positionPercent = (minutesFromStart / (14 * 60)) * 100; // 14 hours total
+  const positionPercent = (minutesFromStart / totalMinutes) * 100;
 
   return (
     <div

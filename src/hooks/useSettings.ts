@@ -27,6 +27,8 @@ export interface CalendarSettings {
   resource_display_order: string;
   conflict_rules: string;
   week_starts_on: string;
+  show_weekends: boolean;
+  highlight_unlogged_bookings: boolean;
   hidden_resources: string[];
   resource_order: { id: string; type: 'aircraft' | 'instructor' }[];
 }
@@ -268,6 +270,9 @@ export const useCalendarSettings = () => {
 
   useEffect(() => {
     fetchSettings();
+    const handleUpdated = () => fetchSettings();
+    window.addEventListener('calendar-settings-updated', handleUpdated);
+    return () => window.removeEventListener('calendar-settings-updated', handleUpdated);
   }, []);
 
   const updateSettings = async (updates: Partial<CalendarSettings>) => {
@@ -288,6 +293,7 @@ export const useCalendarSettings = () => {
       if (error) throw error;
 
       await fetchSettings();
+      window.dispatchEvent(new Event('calendar-settings-updated'));
       toast.success('Calendar settings updated successfully');
     } catch (err: any) {
       toast.error('Failed to update calendar settings');

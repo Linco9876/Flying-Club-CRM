@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Eye, Clock, Users } from 'lucide-react';
+import { Calendar, Eye, RotateCcw } from 'lucide-react';
 import { useCalendarSettings } from '../../hooks/useSettings';
 
 interface CalendarSettingsProps {
@@ -16,8 +16,11 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
     doubleHeightSlots: false,
     resourceDisplayOrder: 'aircraft-first',
     conflictRules: 'hard-block',
-    weekStartsOn: 'monday'
+    weekStartsOn: 'monday',
+    showWeekends: true,
+    highlightUnloggedBookings: false,
   });
+  const [resetResourceLayout, setResetResourceLayout] = useState(false);
 
   useEffect(() => {
     if (settings) {
@@ -28,7 +31,9 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
         doubleHeightSlots: settings.double_height_slots,
         resourceDisplayOrder: settings.resource_display_order,
         conflictRules: settings.conflict_rules,
-        weekStartsOn: settings.week_starts_on
+        weekStartsOn: settings.week_starts_on,
+        showWeekends: settings.show_weekends ?? true,
+        highlightUnloggedBookings: settings.highlight_unlogged_bookings ?? false,
       });
     }
   }, [settings]);
@@ -41,11 +46,34 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
         snap_duration: formData.snapDuration,
         double_height_slots: formData.doubleHeightSlots,
         resource_display_order: formData.resourceDisplayOrder,
-        conflict_rules: formData.conflictRules,
-        week_starts_on: formData.weekStartsOn
+        conflict_rules: 'waitlist',
+        week_starts_on: formData.weekStartsOn,
+        show_weekends: formData.showWeekends,
+        highlight_unlogged_bookings: formData.highlightUnloggedBookings,
+        ...(resetResourceLayout ? { hidden_resources: [], resource_order: [] } : {}),
       });
+      setResetResourceLayout(false);
     };
-  }, [formData, updateSettings]);
+    (window as any).__calendarSettingsCancel = () => {
+      if (!settings) return;
+      setFormData({
+        defaultView: settings.default_view,
+        showCurrentTimeIndicator: settings.show_current_time_indicator,
+        snapDuration: settings.snap_duration,
+        doubleHeightSlots: settings.double_height_slots,
+        resourceDisplayOrder: settings.resource_display_order,
+        conflictRules: 'waitlist',
+        weekStartsOn: settings.week_starts_on,
+        showWeekends: settings.show_weekends ?? true,
+        highlightUnloggedBookings: settings.highlight_unlogged_bookings ?? false,
+      });
+      setResetResourceLayout(false);
+    };
+    return () => {
+      delete (window as any).__calendarSettingsSave;
+      delete (window as any).__calendarSettingsCancel;
+    };
+  }, [formData, resetResourceLayout, settings, updateSettings]);
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -106,7 +134,10 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
               <label className="block text-sm font-medium text-gray-700 mb-2">Resource Display Order</label>
               <select
                 value={formData.resourceDisplayOrder}
-                onChange={(e) => handleInputChange('resourceDisplayOrder', e.target.value)}
+                onChange={(e) => {
+                  handleInputChange('resourceDisplayOrder', e.target.value);
+                  setResetResourceLayout(true);
+                }}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
               >
@@ -162,7 +193,51 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
                 Use double-height time slots
               </label>
             </div>
+
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="showWeekends"
+                checked={formData.showWeekends}
+                onChange={(e) => handleInputChange('showWeekends', e.target.checked)}
+                disabled={!canEdit}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+              />
+              <label htmlFor="showWeekends" className="text-sm text-gray-700">
+                Show weekends in week and month views
+              </label>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                id="highlightUnloggedBookings"
+                checked={formData.highlightUnloggedBookings}
+                onChange={(e) => handleInputChange('highlightUnloggedBookings', e.target.checked)}
+                disabled={!canEdit}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+              />
+              <label htmlFor="highlightUnloggedBookings" className="text-sm text-gray-700">
+                Highlight overdue unlogged flights by default
+              </label>
+            </div>
           </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Resource Layout</h3>
+          <button
+            type="button"
+            onClick={() => {
+              setResetResourceLayout(true);
+              onFormChange();
+            }}
+            disabled={!canEdit}
+            className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Reset hidden resources and manual ordering
+          </button>
         </div>
 
         {/* Conflict Rules */}
@@ -171,13 +246,11 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Conflict Rules</label>
             <select
-              value={formData.conflictRules}
-              onChange={(e) => handleInputChange('conflictRules', e.target.value)}
-              disabled={!canEdit}
+              value="waitlist"
+              disabled
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
             >
-              <option value="hard-block">Hard Block - Prevent overlapping bookings</option>
-              <option value="warn">Warn - Allow with warning message</option>
+              <option value="waitlist">Waiting list - Keep overlaps out of the confirmed lane</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
               How to handle booking conflicts when resources are double-booked

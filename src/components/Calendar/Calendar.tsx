@@ -7,6 +7,8 @@ import {
   startOfWeek,
   addWeeks,
   subWeeks,
+  addMonths,
+  subMonths,
 } from 'date-fns';
 import {
   ChevronLeft,
@@ -20,7 +22,7 @@ import {
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
-import { useCalendarSettings } from '../../hooks/useSettings';
+import { useCalendarSettings, useOrganisationSettings } from '../../hooks/useSettings';
 import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
 import { useAuth } from '../../context/AuthContext';
 import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
@@ -85,6 +87,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { users, getInstructors } = useUsers();
   const instructors = getInstructors();
   const { settings: calendarSettings, updateSettingsSilent } = useCalendarSettings();
+  const { settings: organisationSettings } = useOrganisationSettings();
   const { weeklySchedules, absences, scheduleChanges, addAbsence, deleteAbsence } = useInstructorAvailability();
 
   // Per-resource visibility & ordering (loaded from/synced to DB)
@@ -120,6 +123,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     booking: Booking;
     handle: 'top' | 'bottom';
   } | null>(null);
+  const [hasBookingInteractionMoved, setHasBookingInteractionMoved] =
+    useState(false);
   const [wasResizing, setWasResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({
     x: 0,
@@ -150,6 +155,16 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [showFlightLogModal, setShowFlightLogModal] = useState(false);
   const [flightLogBooking, setFlightLogBooking] = useState<Booking | null>(null);
   const [highlightUnlogged, setHighlightUnlogged] = useState(false);
+
+  const parseHour = (time: string | undefined, fallback: number, roundUp = false) => {
+    if (!time) return fallback;
+    const [hour, minute] = time.split(':').map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return fallback;
+    return roundUp && minute > 0 ? hour + 1 : hour;
+  };
+  const calendarStartHour = parseHour(organisationSettings?.booking_day_start, 6);
+  const calendarEndHour = Math.max(calendarStartHour + 1, parseHour(organisationSettings?.booking_day_end, 20, true));
+  const availableCalendarHours = calendarEndHour - calendarStartHour;
 
   // Drag delay state
   const [dragDelayTimer, setDragDelayTimer] = useState<NodeJS.Timeout | null>(null);
@@ -198,6 +213,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   }, [calendarSettings?.default_view]);
 
+  useEffect(() => {
+    setHighlightUnlogged(calendarSettings?.highlight_unlogged_bookings ?? false);
+  }, [calendarSettings?.highlight_unlogged_bookings]);
+
   // Seed hidden/order from persisted settings once data is ready
   useEffect(() => {
     if (!calendarSettings) return;
@@ -205,24 +224,38 @@ export const Calendar: React.FC<CalendarProps> = ({
     const savedOrder = calendarSettings.resource_order ?? [];
     if (savedOrder.length > 0) {
       setOrderedIds(savedOrder.map((r: { id: string }) => r.id));
+    } else {
+      const aircraftIds = aircraft.map(a => a.id);
+      const instructorIds = instructors.map(i => i.id);
+      setOrderedIds(calendarSettings.resource_display_order === 'instructors-first'
+        ? [...instructorIds, ...aircraftIds]
+        : [...aircraftIds, ...instructorIds]);
     }
   // Only run when settings first loads (id changes)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calendarSettings?.id]);
+  }, [
+    calendarSettings?.id,
+    calendarSettings?.resource_order,
+    calendarSettings?.hidden_resources,
+    calendarSettings?.resource_display_order,
+    aircraft.length,
+    instructors.length,
+  ]);
 
   // When aircraft/instructors load, ensure orderedIds includes all current resources
   useEffect(() => {
-    const allIds = [
-      ...aircraft.map(a => a.id),
-      ...instructors.map(i => i.id),
-    ];
+    const aircraftIds = aircraft.map(a => a.id);
+    const instructorIds = instructors.map(i => i.id);
+    const allIds = calendarSettings?.resource_display_order === 'instructors-first'
+      ? [...instructorIds, ...aircraftIds]
+      : [...aircraftIds, ...instructorIds];
     setOrderedIds(prev => {
       const existing = new Set(prev);
       const newIds = allIds.filter(id => !existing.has(id));
       return [...prev, ...newIds];
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aircraft.length, instructors.length]);
+  }, [aircraft.length, instructors.length, calendarSettings?.resource_display_order]);
 
 
   // Compute slot height on mount and resize
@@ -239,7 +272,12 @@ export const Calendar: React.FC<CalendarProps> = ({
     computeSlotHeight();
     window.addEventListener('resize', computeSlotHeight);
     return () => window.removeEventListener('resize', computeSlotHeight);
-  }, [calendarSettings?.double_height_slots]);
+  }, [
+    calendarSettings?.double_height_slots,
+    calendarSettings?.snap_duration,
+    calendarStartHour,
+    calendarEndHour,
+  ]);
 
   const navigateDate = (direction: 'prev' | 'next') => {
     if (viewMode === 'day') {
@@ -256,7 +294,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   const getWeekDays = () => {
     const weekStartsOn = calendarSettings?.week_starts_on === 'sunday' ? 0 : 1;
     const start = startOfWeek(currentDate, { weekStartsOn });
-    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+    return Array.from({ length: 7 }, (_, i) => addDays(start, i))
+      .filter(day => calendarSettings?.show_weekends !== false || (day.getDay() !== 0 && day.getDay() !== 6));
   };
 
   const getSelectedResources = (): Resource[] => {
@@ -319,17 +358,21 @@ export const Calendar: React.FC<CalendarProps> = ({
     return normalized.length > maxLength ? `${normalized.slice(0, maxLength).trimEnd()}...` : normalized;
   };
 
-  const getBookingCardDensity = (booking: Booking): BookingCardDensity => {
+  const getBookingCardEstimatedHeight = (booking: Booking) => {
     const snapDuration = calendarSettings?.snap_duration || 15;
     const durationMinutes = Math.max(
       1,
       (new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / (1000 * 60)
     );
     const renderedSlots = Math.max(1, Math.ceil(durationMinutes / snapDuration));
-    const estimatedHeight = renderedSlots * slotHeight;
+    return renderedSlots * slotHeight;
+  };
 
-    if (estimatedHeight < 48) return 'name-only';
-    if (estimatedHeight < 96) return 'compact';
+  const getBookingCardDensity = (booking: Booking): BookingCardDensity => {
+    const estimatedHeight = getBookingCardEstimatedHeight(booking);
+
+    if (estimatedHeight < 44) return 'name-only';
+    if (estimatedHeight < 76) return 'compact';
     return 'full';
   };
 
@@ -347,6 +390,10 @@ export const Calendar: React.FC<CalendarProps> = ({
   const getBookingColorClasses = (booking: Booking) => {
     if (booking.hasConflict) {
       return 'bg-red-200/70 border-red-300 hover:bg-red-200 text-red-950';
+    } else {
+      setCurrentDate((prev) =>
+        direction === 'next' ? addMonths(prev, 1) : subMonths(prev, 1)
+      );
     }
 
     if (booking.status === 'pending_approval') {
@@ -365,7 +412,12 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceType: 'aircraft' | 'instructor',
     density: BookingCardDensity
   ) => {
-    const notes = density === 'full' ? truncateNotes(booking.notes) : '';
+    const estimatedHeight = getBookingCardEstimatedHeight(booking);
+    const showSecondaryResource = estimatedHeight >= 64;
+    const showNotes = estimatedHeight >= 88;
+    const notes = showNotes
+      ? truncateNotes(booking.notes, estimatedHeight >= 120 ? 84 : 48)
+      : '';
     const hirerName = getHirerName(booking);
 
     if (density === 'name-only') {
@@ -389,13 +441,13 @@ export const Calendar: React.FC<CalendarProps> = ({
           <div className="text-sm font-bold leading-tight truncate">
             {hirerName}
           </div>
-          {density === 'full' && instructorName && (
+          {showSecondaryResource && instructorName && (
             <div className="text-[11px] leading-tight opacity-90 truncate">
               {instructorName}
             </div>
           )}
           {notes && (
-            <div className="mt-auto text-[10px] leading-tight opacity-90">
+            <div className="mt-auto line-clamp-2 text-[10px] leading-tight opacity-90">
               {notes}
             </div>
           )}
@@ -411,13 +463,13 @@ export const Calendar: React.FC<CalendarProps> = ({
         <div className="text-xs font-bold leading-tight truncate">
           {hirerName}
         </div>
-        {density === 'full' && (
+        {showSecondaryResource && (
           <div className="text-[11px] leading-tight opacity-90 truncate">
             {getAircraftName(booking)}
           </div>
         )}
         {notes && (
-          <div className="mt-auto text-[10px] leading-tight opacity-90">
+          <div className="mt-auto line-clamp-2 text-[10px] leading-tight opacity-90">
             {notes}
           </div>
         )}
@@ -506,7 +558,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const snapDuration = calendarSettings?.snap_duration || 15;
     const slotsPerHour = 60 / snapDuration;
     const slots = [];
-    for (let hour = 6; hour < 20; hour++) {
+    for (let hour = calendarStartHour; hour < calendarEndHour; hour++) {
       for (let i = 0; i < slotsPerHour; i++) {
         slots.push(hour * (60 / snapDuration) + i);
       }
@@ -609,9 +661,9 @@ export const Calendar: React.FC<CalendarProps> = ({
       );
 
       instructorAbsences.forEach((absence) => {
-        let startHour = 6;
+        let startHour = calendarStartHour;
         let startMinute = 0;
-        let endHour = 20;
+        let endHour = calendarEndHour;
         let endMinute = 0;
 
         if (absence.startTime && absence.endTime) {
@@ -817,7 +869,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const startHour = startTime.getHours();
     const startMinute = startTime.getMinutes();
 
-    const startSlot = (startHour - 6) * slotsPerHour + Math.floor(startMinute / snapDuration);
+    const startSlot = (startHour - calendarStartHour) * slotsPerHour + Math.floor(startMinute / snapDuration);
     const durationMs = endTime.getTime() - startTime.getTime();
     const durationHours = durationMs / (1000 * 60 * 60);
     const durationInSlots = Math.max(1, Math.ceil(durationHours * slotsPerHour));
@@ -938,6 +990,15 @@ export const Calendar: React.FC<CalendarProps> = ({
     setIsDragDelayActive(false);
   };
 
+  const resetBookingInteractionState = useCallback(() => {
+    setDraggedBooking(null);
+    setDraggedBookingOriginal(null);
+    setDragPreview(null);
+    setResizingBooking(null);
+    setHasBookingInteractionMoved(false);
+    setTimeout(() => setWasResizing(false), 100);
+  }, []);
+
   const startDragDelayTimer = (
     booking: Booking,
     resourceType: 'aircraft' | 'instructor'
@@ -982,6 +1043,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     setDraggedBooking(booking);
     setDraggedBookingOriginal(booking);
+    setHasBookingInteractionMoved(false);
     updateDragPreview({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
@@ -1006,6 +1068,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     setWasResizing(true);
     setResizingBooking({ booking, handle });
     setDraggedBookingOriginal(booking);
+    setHasBookingInteractionMoved(false);
     updateDragPreview({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
@@ -1040,6 +1103,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       if (resizingBooking.handle === 'top') {
         const newStartTime = slotTime;
         if (newStartTime.getTime() + minDuration <= originalEnd.getTime()) {
+          setHasBookingInteractionMoved(true);
           updateDragPreview({
             startTime: newStartTime,
             endTime: originalEnd,
@@ -1052,6 +1116,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         newEndTime.setMinutes(newEndTime.getMinutes() + snapDuration);
 
         if (newEndTime.getTime() >= originalStart.getTime() + minDuration) {
+          setHasBookingInteractionMoved(true);
           updateDragPreview({
             startTime: originalStart,
             endTime: newEndTime,
@@ -1068,6 +1133,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       const newStartTime = slotTime;
       const newEndTime = new Date(newStartTime.getTime() + duration);
 
+      setHasBookingInteractionMoved(true);
       updateDragPreview({
         startTime: newStartTime,
         endTime: newEndTime,
@@ -1077,14 +1143,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
-  const handleBookingDrop = () => {
+  const handleBookingDrop = useCallback(() => {
     const booking = draggedBooking || resizingBooking?.booking;
     if (!booking || !dragPreview || !onUpdateBooking) {
-      setDraggedBooking(null);
-      setDraggedBookingOriginal(null);
-      setDragPreview(null);
-      setResizingBooking(null);
-      setTimeout(() => setWasResizing(false), 100);
+      resetBookingInteractionState();
       return;
     }
 
@@ -1109,11 +1171,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         ...updates,
       },
     }));
-    setDraggedBooking(null);
-    setDraggedBookingOriginal(null);
-    setDragPreview(null);
-    setResizingBooking(null);
-    setTimeout(() => setWasResizing(false), 100);
+    resetBookingInteractionState();
 
     void onUpdateBooking(booking.id, updates, true)
       .then(() => {
@@ -1134,9 +1192,37 @@ export const Calendar: React.FC<CalendarProps> = ({
           delete next[booking.id];
           return next;
         });
-        setTimeout(() => setWasResizing(false), 100);
       });
-  };
+  }, [
+    draggedBooking,
+    resizingBooking,
+    dragPreview,
+    onUpdateBooking,
+    resetBookingInteractionState,
+  ]);
+
+  useEffect(() => {
+    if (!draggedBooking && !resizingBooking) {
+      return;
+    }
+
+    const handleWindowMouseUp = () => {
+      if (hasBookingInteractionMoved) {
+        handleBookingDrop();
+      } else {
+        resetBookingInteractionState();
+      }
+    };
+
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+  }, [
+    draggedBooking,
+    resizingBooking,
+    hasBookingInteractionMoved,
+    handleBookingDrop,
+    resetBookingInteractionState,
+  ]);
 
   const handleMouseDown = (
     slot: number,
@@ -1366,7 +1452,11 @@ export const Calendar: React.FC<CalendarProps> = ({
             }}
           >
             {/* Current Time Indicator */}
-            <CurrentTimeIndicator isVisible={isToday(currentDate) && (calendarSettings?.show_current_time_indicator ?? true)} />
+            <CurrentTimeIndicator
+              isVisible={isToday(currentDate) && (calendarSettings?.show_current_time_indicator ?? true)}
+              startHour={calendarStartHour}
+              endHour={calendarEndHour}
+            />
 
             {timeSlots.map((slot, slotIndex) => {
               const snapDuration = calendarSettings?.snap_duration || 15;
@@ -1487,13 +1577,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             currentDate
                           )
                         }
-                        onMouseUp={() => {
-                          if (draggedBooking || resizingBooking) {
-                            handleBookingDrop();
-                          } else {
-                            handleMouseUp(currentDate);
-                          }
-                        }}
+                        onMouseUp={() => handleMouseUp(currentDate)}
                         onMouseEnter={(e) => {
                           if (draggedBooking || resizingBooking) {
                             handleBookingDragOver(e, slot, resource.id, resource.type, currentDate);
@@ -1781,6 +1865,8 @@ export const Calendar: React.FC<CalendarProps> = ({
             {/* Current Time Indicator - show on today only */}
             <CurrentTimeIndicator
               isVisible={weekDays.some((day) => isToday(day)) && (calendarSettings?.show_current_time_indicator ?? true)}
+              startHour={calendarStartHour}
+              endHour={calendarEndHour}
             />
 
             {timeSlots.map((slot, slotIndex) => {
@@ -1910,13 +1996,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               dayIndex
                             )
                           }
-                          onMouseUp={() => {
-                            if (draggedBooking || resizingBooking) {
-                              handleBookingDrop();
-                            } else {
-                              handleMouseUp(day);
-                            }
-                          }}
+                          onMouseUp={() => handleMouseUp(day)}
                           onMouseEnter={(e) => {
                             if (draggedBooking || resizingBooking) {
                               handleBookingDragOver(e, slot, selectedAircraftId, 'aircraft', day);
@@ -2018,13 +2098,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               dayIndex
                             )
                           }
-                          onMouseUp={() => {
-                            if (draggedBooking || resizingBooking) {
-                              handleBookingDrop();
-                            } else {
-                              handleMouseUp(day);
-                            }
-                          }}
+                          onMouseUp={() => handleMouseUp(day)}
                           onMouseEnter={(e) => {
                             if (draggedBooking || resizingBooking) {
                               handleBookingDragOver(e, slot, selectedInstructorId, 'instructor', day);
@@ -2316,6 +2390,12 @@ export const Calendar: React.FC<CalendarProps> = ({
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
+              <button
+                onClick={() => setCurrentDate(new Date())}
+                className="px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Today
+              </button>
             </div>
           </div>
           <div className="flex items-center space-x-3 flex-wrap">
@@ -2386,6 +2466,9 @@ export const Calendar: React.FC<CalendarProps> = ({
             setCurrentDate(date);
             setViewMode('day');
           }}
+          weekStartsOn={calendarSettings?.week_starts_on === 'sunday' ? 0 : 1}
+          showWeekends={calendarSettings?.show_weekends ?? true}
+          availableHours={availableCalendarHours}
         />
       )}
 

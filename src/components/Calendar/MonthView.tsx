@@ -9,6 +9,9 @@ interface MonthViewProps {
   aircraft: Array<{ id: string; registration: string; make: string; model: string }>;
   instructors: Array<{ id: string; name: string }>;
   onDayClick: (date: Date) => void;
+  weekStartsOn: 0 | 1;
+  showWeekends: boolean;
+  availableHours: number;
 }
 
 export const MonthView: React.FC<MonthViewProps> = ({
@@ -16,17 +19,21 @@ export const MonthView: React.FC<MonthViewProps> = ({
   bookings,
   aircraft,
   instructors,
-  onDayClick
+  onDayClick,
+  weekStartsOn,
+  showWeekends,
+  availableHours,
 }) => {
   const [selectedResourceType, setSelectedResourceType] = useState<'aircraft' | 'instructor'>('aircraft');
   const [selectedResourceId, setSelectedResourceId] = useState<string>('');
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
-  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn });
+  const calendarEnd = endOfWeek(monthEnd, { weekStartsOn });
 
-  const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+  const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd })
+    .filter(day => showWeekends || (day.getDay() !== 0 && day.getDay() !== 6));
 
   const getBookingsForDay = (date: Date): Booking[] => {
     if (!selectedResourceId) return [];
@@ -55,8 +62,6 @@ export const MonthView: React.FC<MonthViewProps> = ({
 
   const getAvailabilityStatus = (date: Date): 'available' | 'limited' | 'unavailable' => {
     const totalHours = getTotalBookingDuration(date);
-    const availableHours = 14;
-
     if (totalHours === 0) return 'available';
     if (totalHours >= availableHours) return 'unavailable';
     if (totalHours >= availableHours * 0.75) return 'limited';
@@ -74,7 +79,11 @@ export const MonthView: React.FC<MonthViewProps> = ({
     }
   };
 
-  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const weekDays = weekStartsOn === 0
+    ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const visibleWeekDays = showWeekends ? weekDays : weekDays.filter(day => day !== 'Sat' && day !== 'Sun');
+  const columnCount = showWeekends ? 7 : 5;
 
   return (
     <div className="p-6">
@@ -152,8 +161,8 @@ export const MonthView: React.FC<MonthViewProps> = ({
         </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
-            {weekDays.map(day => (
+          <div className="grid bg-gray-50 border-b border-gray-200" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
+            {visibleWeekDays.map(day => (
               <div
                 key={day}
                 className="p-3 text-center text-sm font-semibold text-gray-700 border-r border-gray-200 last:border-r-0"
@@ -163,7 +172,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
             ))}
           </div>
 
-          <div className="grid grid-cols-7">
+          <div className="grid" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
             {calendarDays.map((day, index) => {
               const dayBookings = getBookingsForDay(day);
               const bookingCount = dayBookings.length;
@@ -179,7 +188,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                     ${getStatusColor(availabilityStatus)}
                     ${!isCurrentMonth ? 'opacity-40' : ''}
                     ${isTodayDate ? 'ring-2 ring-blue-500 ring-inset' : ''}
-                    ${(index + 1) % 7 === 0 ? 'border-r-0' : ''}
+                    ${(index + 1) % columnCount === 0 ? 'border-r-0' : ''}
                   `}
                   onClick={() => onDayClick(day)}
                 >
