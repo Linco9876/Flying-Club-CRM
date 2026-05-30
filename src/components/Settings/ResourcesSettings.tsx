@@ -234,10 +234,6 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
               </select>
               <input value={roomDraft.description} onChange={e => setRoomDraft(room => ({ ...room, description: e.target.value }))} placeholder="Description" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-md" />
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={roomDraft.isBookable} onChange={e => setRoomDraft(room => ({ ...room, isBookable: e.target.checked }))} className="h-4 w-4 text-blue-600 border-gray-300 rounded" />
-              Available for bookings
-            </label>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={closeRoomForm} className="px-3 py-2 text-sm border border-gray-300 bg-white rounded-md hover:bg-gray-50">Cancel</button>
               <button type="submit" className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Room</button>
