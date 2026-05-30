@@ -2,9 +2,12 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Plane, User, LogOut } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
+import { useOrganisationSettings } from '../../hooks/useSettings';
 
 export const Header: React.FC = () => {
   const { user, logout } = useAuth();
+  const { settings } = useOrganisationSettings();
+  const businessName = settings?.club_name?.trim() || 'AeroClub Pro';
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -20,12 +23,22 @@ export const Header: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-3">
-            <div className="bg-blue-600 p-2 rounded-lg">
-              <Plane className="h-6 w-6 text-white" />
-            </div>
+            {settings?.logo_url ? (
+              <div className="h-10 w-10 overflow-hidden rounded-lg border border-gray-200 bg-white">
+                <img
+                  src={settings.logo_url}
+                  alt={`${businessName} logo`}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="bg-blue-600 p-2 rounded-lg">
+                <Plane className="h-6 w-6 text-white" />
+              </div>
+            )}
             <div>
-              <h1 className="text-xl font-bold text-gray-900">AeroClub Pro</h1>
-              <p className="text-xs text-gray-500">Flight Training Management</p>
+              <h1 className="text-xl font-bold text-gray-900">{businessName}</h1>
+              <p className="text-xs text-gray-500">Flight Training Management System</p>
             </div>
           </div>
 

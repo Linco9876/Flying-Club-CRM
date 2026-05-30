@@ -96,6 +96,15 @@ export const useOrganisationSettings = () => {
 
   useEffect(() => {
     fetchSettings();
+
+    const handleSettingsUpdated = () => {
+      fetchSettings();
+    };
+
+    window.addEventListener('organisation-settings-updated', handleSettingsUpdated);
+    return () => {
+      window.removeEventListener('organisation-settings-updated', handleSettingsUpdated);
+    };
   }, []);
 
   const uploadLogo = async (file: File): Promise<string | null> => {
@@ -134,6 +143,7 @@ export const useOrganisationSettings = () => {
       if (error) throw error;
 
       await fetchSettings();
+      window.dispatchEvent(new Event('organisation-settings-updated'));
       toast.success('Organisation settings saved');
     } catch (err: any) {
       toast.error('Failed to save organisation settings');
