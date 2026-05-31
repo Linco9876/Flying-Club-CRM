@@ -200,7 +200,6 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'organisation', label: 'Organisation', roles: ['admin'] as UserRole[] },
     { id: 'calendar', label: 'Calendar', roles: ['admin'] as UserRole[] },
     { id: 'booking-rules', label: 'Bookings & Rules', roles: ['admin'] as UserRole[] },
-    { id: 'booking-fields', label: 'Booking Form Fields', roles: ['admin'] as UserRole[] },
     { id: 'roster', label: 'Roster & Availability', roles: ['admin'] as UserRole[] },
     { id: 'training', label: 'Training / Syllabus', roles: ['admin'] as UserRole[] },
     { id: 'billing', label: 'Billing & Rates', roles: ['admin'] as UserRole[] },

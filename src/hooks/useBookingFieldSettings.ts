@@ -49,7 +49,7 @@ export const useBookingFieldSettings = () => {
     }
   };
 
-  const updateSetting = async (id: string, updates: Partial<BookingFieldSetting>) => {
+  const updateSetting = async (id: string, updates: Partial<BookingFieldSetting>, notify = true) => {
     try {
       const updateData: any = {};
       if (updates.isRequired !== undefined) updateData.is_required = updates.isRequired;
@@ -67,7 +67,8 @@ export const useBookingFieldSettings = () => {
       if (updateError) throw updateError;
 
       await fetchSettings();
-      toast.success('Settings updated successfully');
+      window.dispatchEvent(new Event('booking-field-settings-updated'));
+      if (notify) toast.success('Settings updated successfully');
     } catch (err) {
       console.error('Error updating setting:', err);
       toast.error('Failed to update settings');
@@ -91,6 +92,9 @@ export const useBookingFieldSettings = () => {
 
   useEffect(() => {
     fetchSettings();
+    const handleUpdated = () => fetchSettings();
+    window.addEventListener('booking-field-settings-updated', handleUpdated);
+    return () => window.removeEventListener('booking-field-settings-updated', handleUpdated);
   }, []);
 
   return {

@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Settings, Save, AlertCircle } from 'lucide-react';
+import { Settings } from 'lucide-react';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import toast from 'react-hot-toast';
 
 interface BookingFieldSettingsProps {
   canEdit: boolean;
+  onFormChange?: () => void;
+  embedded?: boolean;
 }
 
-export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canEdit }) => {
+export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canEdit, onFormChange, embedded = false }) => {
   const { settings, loading, updateSetting } = useBookingFieldSettings();
   const [hasChanges, setHasChanges] = useState(false);
   const [localSettings, setLocalSettings] = useState(settings);
@@ -24,6 +26,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
       )
     );
     setHasChanges(true);
+    onFormChange?.();
   };
 
   const handleToggleVisible = (id: string) => {
@@ -34,6 +37,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
       )
     );
     setHasChanges(true);
+    onFormChange?.();
   };
 
   const handleToggleRole = (id: string, role: string) => {
@@ -50,6 +54,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
       })
     );
     setHasChanges(true);
+    onFormChange?.();
   };
 
   const handleSaveChanges = async () => {
@@ -65,11 +70,11 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
             isRequired: setting.isRequired,
             isVisible: setting.isVisible,
             appliesToRoles: setting.appliesToRoles
-          });
+          }, false);
         }
       }
       setHasChanges(false);
-      toast.success('Settings saved successfully');
+      if (!embedded) toast.success('Settings saved successfully');
     } catch (error) {
       toast.error('Failed to save settings');
     }
@@ -80,6 +85,16 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
     setHasChanges(false);
   };
 
+  React.useEffect(() => {
+    if (!embedded) return;
+    (window as any).__bookingFieldsEmbeddedSave = handleSaveChanges;
+    (window as any).__bookingFieldsEmbeddedCancel = handleResetChanges;
+    return () => {
+      delete (window as any).__bookingFieldsEmbeddedSave;
+      delete (window as any).__bookingFieldsEmbeddedCancel;
+    };
+  }, [embedded, localSettings, settings]);
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
@@ -89,7 +104,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={embedded ? 'space-y-4' : 'p-6 space-y-6'}>
       <div>
         <h2 className="text-xl font-semibold text-gray-900 mb-2 flex items-center">
           <Settings className="h-5 w-5 mr-2" />
@@ -99,16 +114,6 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
           Configure which fields are required, visible, and applicable to different user roles
         </p>
       </div>
-
-      {!canEdit && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start space-x-3">
-          <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-yellow-800">
-            <p className="font-medium">View Only</p>
-            <p>You do not have permission to modify these settings. Contact an administrator for access.</p>
-          </div>
-        </div>
-      )}
 
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
@@ -163,7 +168,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center space-x-4">
-                    {['admin', 'instructor', 'student'].map(role => (
+                    {['admin', 'instructor', 'student', 'pilot'].map(role => (
                       <label key={role} className="inline-flex items-center cursor-pointer">
                         <input
                           type="checkbox"
@@ -183,7 +188,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
         </table>
       </div>
 
-      {canEdit && hasChanges && (
+      {!embedded && canEdit && hasChanges && (
         <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
           <button
             onClick={handleResetChanges}
@@ -201,14 +206,6 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-blue-900 mb-2">About Field Configuration</h3>
-        <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-          <li><strong>Required:</strong> Users must fill in this field before submitting the booking form</li>
-          <li><strong>Visible:</strong> The field will be shown in the booking form</li>
-          <li><strong>Applies To Roles:</strong> Which user roles will see this field requirement</li>
-        </ul>
-      </div>
     </div>
   );
 };

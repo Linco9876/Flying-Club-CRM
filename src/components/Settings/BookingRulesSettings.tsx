@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock } from 'lucide-react';
 import { useBookingRulesSettings } from '../../hooks/useSettings';
+import { BookingFieldSettings } from './BookingFieldSettings';
 
 interface BookingRulesSettingsProps {
   canEdit: boolean;
@@ -56,6 +57,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         enforce_max_duration: formData.enforceMaxDuration,
         max_booking_duration_hours: formData.maxBookingDurationHours
       });
+      await (window as any).__bookingFieldsEmbeddedSave?.();
     };
     (window as any).__bookingrulesSettingsCancel = () => {
       if (!settings) return;
@@ -72,6 +74,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         enforceMaxDuration: settings.enforce_max_duration ?? true,
         maxBookingDurationHours: settings.max_booking_duration_hours ?? 8
       });
+      (window as any).__bookingFieldsEmbeddedCancel?.();
     };
     return () => {
       delete (window as any).__bookingrulesSettingsSave;
@@ -280,6 +283,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="pt-2 border-t border-gray-200">
+          <BookingFieldSettings canEdit={canEdit} onFormChange={onFormChange} embedded />
         </div>
       </div>
     </div>

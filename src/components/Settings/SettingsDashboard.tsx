@@ -29,7 +29,6 @@ import { PortalUxSettings } from './PortalUxSettings';
 import { RolesPermissionsSettings } from './RolesPermissionsSettings';
 import { AuditDataSettings } from './AuditDataSettings';
 import { PersonalPreferencesSettings } from './PersonalPreferencesSettings';
-import { BookingFieldSettings } from './BookingFieldSettings';
 import { RosterAvailabilitySettings } from './RosterAvailabilitySettings';
 import { BillingRatesSettings } from './BillingRatesSettings';
 import FlightLogSettings from './FlightLogSettings';
@@ -59,8 +58,7 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'portal', label: 'Portal & UX', category: 'Club Setup', keywords: ['theme', 'student portal', 'date format', 'time format'], icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
     { id: 'resources', label: 'Resources (Aircraft & Rooms)', category: 'Club Setup', keywords: ['aircraft fields', 'rooms', 'documents', 'instructor roster'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
     { id: 'calendar', label: 'Calendar', category: 'Operations', keywords: ['default view', 'week starts', 'resource order', 'snap duration', 'conflicts'], icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
-    { id: 'booking-rules', label: 'Bookings & Rules', category: 'Operations', keywords: ['advance booking', 'notice', 'cancellation', 'solo approval', 'double booking'], icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
-    { id: 'booking-fields', label: 'Booking Form Fields', category: 'Operations', keywords: ['custom fields', 'booking form', 'required fields'], icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BookingFieldSettings },
+    { id: 'booking-rules', label: 'Bookings & Rules', category: 'Operations', keywords: ['advance booking', 'notice', 'cancellation', 'solo approval', 'double booking', 'booking form', 'required fields'], icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
     { id: 'roster', label: 'Roster & Availability', category: 'Operations', keywords: ['instructor availability', 'absence', 'weekly schedule', 'duty hours'], icon: <Users className="h-4 w-4" />, roles: ['admin', 'instructor'], component: RosterAvailabilitySettings },
     { id: 'maintenance', label: 'Maintenance', category: 'Operations', keywords: ['defects', 'grounding', 'maintenance reminders', 'milestones'], icon: <Wrench className="h-4 w-4" />, roles: ['admin', 'instructor'], component: MaintenanceSettings },
     { id: 'safety', label: 'Safety & Compliance', category: 'Operations', keywords: ['incidents', 'currency', 'medical', 'checklists', 'compliance'], icon: <Shield className="h-4 w-4" />, roles: ['admin', 'instructor'], component: SafetyComplianceSettings },
