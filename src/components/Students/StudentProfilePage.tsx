@@ -12,6 +12,7 @@ import { LogbookTab } from './LogbookTab';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useSafetyReports } from '../../hooks/useSafetyReports';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -36,6 +37,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const { modules: trainingCourses } = useTrainingModules();
   const { settings: portalSettings } = usePortalUxSettings();
   const { reports: safetyReports } = useSafetyReports();
+  const { settings: trainingSettings } = useTrainingSettings();
   const isOwnStudentPortal = (user?.role === 'student' || user?.role === 'pilot') && studentId === user.id;
 
   const student = useMemo(() => {
@@ -100,7 +102,8 @@ const handleAddTrainingRecord = () => {
 
   const canAddRecord = user?.role === 'instructor' || user?.role === 'admin';
   const canEditRecord = (record: TrainingRecord) => {
-    return (user?.role === 'instructor' || user?.role === 'admin') && record.status === 'draft';
+    return (user?.role === 'instructor' || user?.role === 'admin')
+      && (record.status === 'draft' || (trainingSettings.allowSubmittedRecordEditing && record.status === 'submitted'));
   };
 
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
@@ -113,7 +116,7 @@ const handleAddTrainingRecord = () => {
         studentAck: true,
         studentAckName: student.name,
         studentAckTimestamp: new Date(),
-        status: 'locked',
+        status: trainingSettings.lockRecordAfterStudentAck ? 'locked' : 'submitted',
       });
       toast.success('Record acknowledged');
     } catch {
@@ -121,7 +124,7 @@ const handleAddTrainingRecord = () => {
     } finally {
       setAcknowledgingId(null);
     }
-  }, [student, updateTrainingRecord]);
+  }, [student, trainingSettings.lockRecordAfterStudentAck, updateTrainingRecord]);
 
   // Apply filters to training records
   const filteredRecords = studentTrainingRecords.filter(record => {
@@ -1127,6 +1130,7 @@ interface CourseProgressTabProps {
 }
 
 const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ trainingRecords, courses }) => {
+  const { settings: trainingSettings } = useTrainingSettings();
   const courseProgress = useMemo(() => {
     // Build best result per lesson id from training records
     // Training records don't directly reference lesson ids from courses,
@@ -1246,9 +1250,15 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ trainingRecords, 
         : completedLessons > 0 ? Math.min(100, Math.round((completedLessons / lessons.length) * 100))
         : 0;
 
-      const isComplete = totalPoints > 0
-        ? criteriaProgress.every((cp) => cp.isComplete)
-        : completedLessons === lessons.length && lessons.length > 0;
+      const criteriaComplete = totalPoints > 0 && criteriaProgress.every((cp) => cp.isComplete);
+      const lessonsComplete = completedLessons === lessons.length && lessons.length > 0;
+      const isComplete = trainingSettings.courseCompletionRule === 'all_lessons_attempted'
+        ? lessonsComplete
+        : trainingSettings.courseCompletionRule === 'criteria_or_lessons'
+          ? criteriaComplete || lessonsComplete
+          : totalPoints > 0
+            ? criteriaComplete
+            : lessonsComplete;
 
       return {
         course,
@@ -1260,7 +1270,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ trainingRecords, 
         hasCriteria: criteria.length > 0,
       };
     }).filter(Boolean) as NonNullable<ReturnType<typeof courses['map']>[number]>[];
-  }, [courses, trainingRecords]);
+  }, [courses, trainingRecords, trainingSettings.courseCompletionRule]);
 
   const enrolledCourses = courseProgress.filter((cp) => {
     if (!cp) return false;

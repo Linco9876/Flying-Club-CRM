@@ -35,6 +35,7 @@ import {
 } from '../../types';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 
 interface NewCourseState {
   title: string;
@@ -506,6 +507,7 @@ const parseListLines = (value: string) =>
 
 export const TrainingCourseCatalog: React.FC = () => {
   const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
+  const { settings: trainingSettings } = useTrainingSettings();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
@@ -1086,7 +1088,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                 <ClipboardList className="h-4 w-4" />
                 <h4 className="text-sm font-semibold">Assessment criteria</h4>
               </div>
-              <button type="button" onClick={() => setCourseCriteria((p) => [...p, createEmptyCriterion()])} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">
+              <button type="button" onClick={() => setCourseCriteria((p) => [...p, createEmptyCriterion(trainingSettings.defaultGradingSystem)])} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100">
                 <Plus className="h-3.5 w-3.5" />Add criterion
               </button>
             </div>

@@ -1,0 +1,134 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { LessonGradingSystem } from '../types';
+import toast from 'react-hot-toast';
+
+export type NextLessonRule = 'advance_on_pass' | 'always_advance' | 'manual';
+export type CourseCompletionRule = 'all_required_criteria' | 'all_lessons_attempted' | 'criteria_or_lessons';
+
+export interface TrainingSyllabusSettingsData {
+  id?: string;
+  defaultGradingSystem: LessonGradingSystem;
+  requireStudentAcknowledgement: boolean;
+  lockRecordAfterStudentAck: boolean;
+  allowSubmittedRecordEditing: boolean;
+  requireFlightComments: boolean;
+  requireBriefingCommentsWhenFormal: boolean;
+  defaultFormalBriefing: boolean;
+  prefillHighestGrades: boolean;
+  nextLessonRule: NextLessonRule;
+  autoNotifyStudentOnSubmit: boolean;
+  autoMarkFlightLogRecorded: boolean;
+  courseCompletionRule: CourseCompletionRule;
+  showPassMarkGuidance: boolean;
+  showBestGradeGuidance: boolean;
+}
+
+export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
+  defaultGradingSystem: 'NC/S/C/-',
+  requireStudentAcknowledgement: true,
+  lockRecordAfterStudentAck: true,
+  allowSubmittedRecordEditing: false,
+  requireFlightComments: true,
+  requireBriefingCommentsWhenFormal: true,
+  defaultFormalBriefing: false,
+  prefillHighestGrades: true,
+  nextLessonRule: 'advance_on_pass',
+  autoNotifyStudentOnSubmit: true,
+  autoMarkFlightLogRecorded: true,
+  courseCompletionRule: 'all_required_criteria',
+  showPassMarkGuidance: true,
+  showBestGradeGuidance: true,
+};
+
+const TRAINING_SETTINGS_UPDATED_EVENT = 'training-syllabus-settings-updated';
+
+const mapRow = (row: any): TrainingSyllabusSettingsData => ({
+  ...DEFAULT_TRAINING_SETTINGS,
+  id: row.id,
+  defaultGradingSystem: row.default_grading_system ?? DEFAULT_TRAINING_SETTINGS.defaultGradingSystem,
+  requireStudentAcknowledgement: row.require_student_acknowledgement ?? DEFAULT_TRAINING_SETTINGS.requireStudentAcknowledgement,
+  lockRecordAfterStudentAck: row.lock_record_after_student_ack ?? DEFAULT_TRAINING_SETTINGS.lockRecordAfterStudentAck,
+  allowSubmittedRecordEditing: row.allow_submitted_record_editing ?? DEFAULT_TRAINING_SETTINGS.allowSubmittedRecordEditing,
+  requireFlightComments: row.require_flight_comments ?? DEFAULT_TRAINING_SETTINGS.requireFlightComments,
+  requireBriefingCommentsWhenFormal: row.require_briefing_comments_when_formal ?? DEFAULT_TRAINING_SETTINGS.requireBriefingCommentsWhenFormal,
+  defaultFormalBriefing: row.default_formal_briefing ?? DEFAULT_TRAINING_SETTINGS.defaultFormalBriefing,
+  prefillHighestGrades: row.prefill_highest_grades ?? DEFAULT_TRAINING_SETTINGS.prefillHighestGrades,
+  nextLessonRule: row.next_lesson_rule ?? DEFAULT_TRAINING_SETTINGS.nextLessonRule,
+  autoNotifyStudentOnSubmit: row.auto_notify_student_on_submit ?? DEFAULT_TRAINING_SETTINGS.autoNotifyStudentOnSubmit,
+  autoMarkFlightLogRecorded: row.auto_mark_flight_log_recorded ?? DEFAULT_TRAINING_SETTINGS.autoMarkFlightLogRecorded,
+  courseCompletionRule: row.course_completion_rule ?? DEFAULT_TRAINING_SETTINGS.courseCompletionRule,
+  showPassMarkGuidance: row.show_pass_mark_guidance ?? DEFAULT_TRAINING_SETTINGS.showPassMarkGuidance,
+  showBestGradeGuidance: row.show_best_grade_guidance ?? DEFAULT_TRAINING_SETTINGS.showBestGradeGuidance,
+});
+
+const toRow = (settings: TrainingSyllabusSettingsData) => ({
+  default_grading_system: settings.defaultGradingSystem,
+  require_student_acknowledgement: settings.requireStudentAcknowledgement,
+  lock_record_after_student_ack: settings.lockRecordAfterStudentAck,
+  allow_submitted_record_editing: settings.allowSubmittedRecordEditing,
+  require_flight_comments: settings.requireFlightComments,
+  require_briefing_comments_when_formal: settings.requireBriefingCommentsWhenFormal,
+  default_formal_briefing: settings.defaultFormalBriefing,
+  prefill_highest_grades: settings.prefillHighestGrades,
+  next_lesson_rule: settings.nextLessonRule,
+  auto_notify_student_on_submit: settings.autoNotifyStudentOnSubmit,
+  auto_mark_flight_log_recorded: settings.autoMarkFlightLogRecorded,
+  course_completion_rule: settings.courseCompletionRule,
+  show_pass_mark_guidance: settings.showPassMarkGuidance,
+  show_best_grade_guidance: settings.showBestGradeGuidance,
+});
+
+export function useTrainingSettings() {
+  const [settings, setSettings] = useState<TrainingSyllabusSettingsData>(DEFAULT_TRAINING_SETTINGS);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSettings = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('training_syllabus_settings')
+        .select('*')
+        .maybeSingle();
+      if (error) throw error;
+      setSettings(data ? mapRow(data) : DEFAULT_TRAINING_SETTINGS);
+    } catch (error) {
+      console.error('Error loading training settings:', error);
+      toast.error('Failed to load training settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+    const handleUpdated = () => fetchSettings();
+    window.addEventListener(TRAINING_SETTINGS_UPDATED_EVENT, handleUpdated);
+    return () => window.removeEventListener(TRAINING_SETTINGS_UPDATED_EVENT, handleUpdated);
+  }, []);
+
+  const updateSettings = async (updates: Partial<TrainingSyllabusSettingsData>) => {
+    const next = { ...settings, ...updates };
+    const { data: userData } = await supabase.auth.getUser();
+    const payload = {
+      ...toRow(next),
+      updated_at: new Date().toISOString(),
+      updated_by: userData.user?.id,
+    };
+
+    const result = settings.id
+      ? await supabase.from('training_syllabus_settings').update(payload).eq('id', settings.id)
+      : await supabase.from('training_syllabus_settings').insert(payload);
+
+    if (result.error) {
+      toast.error('Failed to save training settings');
+      throw result.error;
+    }
+
+    await fetchSettings();
+    window.dispatchEvent(new Event(TRAINING_SETTINGS_UPDATED_EVENT));
+    toast.success('Training settings saved');
+  };
+
+  return { settings, loading, updateSettings, refetch: fetchSettings };
+}

@@ -10,6 +10,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { LessonAssessmentCriterion } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 
@@ -72,6 +73,7 @@ function bestGrade(current: string | undefined, next: string | undefined) {
 
 export const OutstandingRecordsTab: React.FC = () => {
   const { user } = useAuth();
+  const { settings: trainingSettings } = useTrainingSettings();
   const isAdmin = user?.role === 'admin';
   const { outstandingLogs, loading, dismissRecord, markRecorded, refetch } = useOutstandingRecords(
     isAdmin ? undefined : user?.id,
@@ -134,22 +136,26 @@ export const OutstandingRecordsTab: React.FC = () => {
     });
   }, [activeCriteria, form.criteriaGrades, selectedLesson]);
 
-  const nextLessonForRecord = lessonPassed
-    ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
-    : selectedLesson
-      ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
-      : '';
+  const nextLessonForRecord = trainingSettings.nextLessonRule === 'manual'
+    ? ''
+    : trainingSettings.nextLessonRule === 'always_advance'
+      ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
+      : lessonPassed
+        ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
+        : selectedLesson
+          ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
+          : '';
 
   function openLog(log: OutstandingFlightLog) {
     setActiveLog(log);
     setStep('action');
-    setForm(emptyForm());
+    setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
   }
 
   function closePanel() {
     setActiveLog(null);
     setStep('action');
-    setForm(emptyForm());
+    setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
   }
 
   function toggleExpand(id: string) {
@@ -193,7 +199,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     const defaults: Record<string, string> = {};
     if (course && lesson) {
       for (const crit of course.assessmentCriteria) {
-        defaults[crit.id] = highestByCriterion[crit.id] ?? '-';
+        defaults[crit.id] = trainingSettings.prefillHighestGrades ? (highestByCriterion[crit.id] ?? '-') : '-';
       }
     }
     setForm(f => ({ ...f, lessonId, criteriaGrades: defaults }));
@@ -204,6 +210,14 @@ export const OutstandingRecordsTab: React.FC = () => {
     if (!activeLog || !user) return;
     if (!form.courseId || !form.lessonId) {
       toast.error('Please select a course and lesson');
+      return;
+    }
+    if (trainingSettings.requireFlightComments && !form.flightComments.trim()) {
+      toast.error('Flight comments are required');
+      return;
+    }
+    if (trainingSettings.requireBriefingCommentsWhenFormal && form.formalBriefing && !form.briefingComments.trim()) {
+      toast.error('Briefing comments are required when a formal briefing is selected');
       return;
     }
 
@@ -231,24 +245,30 @@ export const OutstandingRecordsTab: React.FC = () => {
         criteriaGrades: form.criteriaGrades,
         lessonCodes: selectedLesson ? [selectedLesson.sequenceCode].filter(Boolean) : [],
         nextLesson: nextLessonForRecord,
-        status: 'submitted',
+        status: trainingSettings.requireStudentAcknowledgement ? 'submitted' : 'locked',
         studentAck: false,
         attachments: [],
       });
 
-      await markRecorded(activeLog.id);
+      if (trainingSettings.autoMarkFlightLogRecorded) {
+        await markRecorded(activeLog.id);
+      }
 
       // Notify the student they have a lesson record to sign off
-      await supabase.from('notifications').insert({
-        user_id: activeLog.student_id,
-        type: 'training_record',
-        title: 'Lesson record requires your sign-off',
-        message: `${user.name} has submitted a training record for your flight on ${format(new Date(activeLog.start_time), 'd MMM yyyy')}. Please review and acknowledge it.`,
-        is_read: false,
-        metadata: { student_id: activeLog.student_id },
-      });
+      if (trainingSettings.requireStudentAcknowledgement && trainingSettings.autoNotifyStudentOnSubmit) {
+        await supabase.from('notifications').insert({
+          user_id: activeLog.student_id,
+          type: 'training_record',
+          title: 'Lesson record requires your sign-off',
+          message: `${user.name} has submitted a training record for your flight on ${format(new Date(activeLog.start_time), 'd MMM yyyy')}. Please review and acknowledge it.`,
+          is_read: false,
+          metadata: { student_id: activeLog.student_id },
+        });
+      }
 
-      toast.success(`Training record submitted — ${student?.name ?? 'student'} has been notified`);
+      toast.success(trainingSettings.requireStudentAcknowledgement
+        ? `Training record submitted - ${student?.name ?? 'student'} has been notified`
+        : 'Training record submitted and locked');
       closePanel();
     } catch {
       // error already toasted
@@ -603,14 +623,16 @@ export const OutstandingRecordsTab: React.FC = () => {
                                   }`}>
                                     {hasPassedCriterion ? 'Pass' : 'Below pass'}
                                   </span>
-                                  {passMarkForLesson && (
+                                  {trainingSettings.showPassMarkGuidance && passMarkForLesson && (
                                     <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
                                       Pass mark: {passMarkForLesson} {GRADE_LABELS[passMarkForLesson] ? `(${GRADE_LABELS[passMarkForLesson]})` : ''}
                                     </span>
                                   )}
-                                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                                    Best to date: {highestGrade} {GRADE_LABELS[highestGrade] ? `(${GRADE_LABELS[highestGrade]})` : ''}
-                                  </span>
+                                  {trainingSettings.showBestGradeGuidance && (
+                                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                                      Best to date: {highestGrade} {GRADE_LABELS[highestGrade] ? `(${GRADE_LABELS[highestGrade]})` : ''}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
 
@@ -680,7 +702,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                   <div className="pt-2 border-t border-gray-100">
                     <button
                       onClick={handleSubmit}
-                      disabled={submitting || !form.flightComments.trim()}
+                      disabled={submitting || (trainingSettings.requireFlightComments && !form.flightComments.trim())}
                       className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       {submitting ? (
@@ -696,7 +718,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                       )}
                     </button>
                     <p className="text-xs text-gray-400 text-center mt-2">
-                      The student will be asked to acknowledge this record.
+                      {trainingSettings.requireStudentAcknowledgement
+                        ? 'The student will be asked to acknowledge this record.'
+                        : 'Student acknowledgement is disabled; this record will lock on submit.'}
                     </p>
                   </div>
                 </div>
