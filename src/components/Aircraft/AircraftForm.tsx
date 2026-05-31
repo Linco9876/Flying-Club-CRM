@@ -92,7 +92,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     if (isEdit && aircraft?.id && ratesLoading) return;
 
     setAircraftRates(
-      flightTypes.map(ft => {
+      flightTypes.filter(ft => ft.active).map(ft => {
         const saved = existingRates.find(r => r.flightTypeId === ft.id);
         return saved ?? {
           flightTypeId: ft.id,
@@ -631,7 +631,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                               >
                                 <option value="">None</option>
-                                {paymentMethods.map(pm => (
+                                {paymentMethods.filter(pm => pm.active).map(pm => (
                                   <option key={pm.id} value={pm.id}>{pm.name}</option>
                                 ))}
                               </select>

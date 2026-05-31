@@ -4,6 +4,7 @@ import { Plane, ArrowLeft, Calendar, Pencil, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
 import toast from 'react-hot-toast';
+import { calculateFlightCost, isPrepaidPaymentMethod } from '../../utils/billing';
 
 interface FlightLog {
   id: string;
@@ -18,6 +19,8 @@ interface FlightLog {
   flight_duration: number;
   landings: number;
   payment_type: string | null;
+  flight_type_id: string | null;
+  flight_type_name: string | null;
   observations: string | null;
   created_at: string;
   student_name: string;
@@ -88,14 +91,26 @@ export const AircraftFlightLogs: React.FC = () => {
 
       const { data: ratesData } = await supabase
         .from('aircraft_rates')
-        .select('*')
+        .select('*, flight_types(name)')
         .eq('aircraft_id', aircraftId);
 
-      const tachRate = ratesData?.find(r => r.rate_type === 'tach')?.amount || 0;
-
       const combinedLogs: FlightLog[] = (logsData || []).map((log: any) => {
-        const tachTime = parseFloat(log.end_tach) - parseFloat(log.start_tach);
-        const calculatedCost = tachTime * parseFloat(tachRate);
+        const rate = ratesData?.find((item: any) => item.flight_type_id === log.flight_type_id);
+        const calculatedCost = log.calculated_cost != null
+          ? parseFloat(log.calculated_cost)
+          : calculateFlightCost({
+            rate: rate ? {
+              chargeType: rate.charge_type,
+              soloRate: parseFloat(rate.solo_rate || 0),
+              dualRate: parseFloat(rate.dual_rate || 0),
+              flatSurcharge: parseFloat(rate.flat_surcharge || 0),
+              weekendSurcharge: parseFloat(rate.weekend_surcharge || 0),
+            } : null,
+            durationHours: parseFloat(log.flight_duration || 0),
+            isDual: !!log.instructor_id,
+            passengerCount: log.passengers,
+            startTime: log.start_time,
+          });
 
         return {
           id: log.id,
@@ -110,6 +125,8 @@ export const AircraftFlightLogs: React.FC = () => {
           flight_duration: parseFloat(log.flight_duration),
           landings: log.landings || 0,
           payment_type: log.payment_type,
+          flight_type_id: log.flight_type_id,
+          flight_type_name: rate?.flight_types?.name || null,
           observations: log.observations,
           created_at: log.created_at,
           student_name: usersMap.get(log.student_id) || 'Unknown',
@@ -155,6 +172,34 @@ export const AircraftFlightLogs: React.FC = () => {
   const handleDeleteLog = async (log: FlightLog) => {
     if (!window.confirm('Delete this flight log?')) return;
 
+    const { data: chargeTransactions } = await supabase
+      .from('account_transactions')
+      .select('id, user_id, amount, type')
+      .eq('flight_log_id', log.id);
+
+    const prepaidCharges = (chargeTransactions || []).filter((tx: any) => tx.type === 'flight_charge');
+    if (prepaidCharges.length > 0) {
+      const refundByUser = prepaidCharges.reduce<Record<string, number>>((acc, tx: any) => {
+        acc[tx.user_id] = (acc[tx.user_id] || 0) + parseFloat(tx.amount || 0);
+        return acc;
+      }, {});
+
+      for (const [userId, refundAmount] of Object.entries(refundByUser)) {
+        const { data: student } = await supabase
+          .from('students')
+          .select('prepaid_balance')
+          .eq('id', userId)
+          .maybeSingle();
+        const newBalance = parseFloat(student?.prepaid_balance || 0) + refundAmount;
+        await supabase.from('students').upsert({ id: userId, prepaid_balance: newBalance }, { onConflict: 'id' });
+      }
+
+      await supabase
+        .from('account_transactions')
+        .delete()
+        .in('id', prepaidCharges.map((tx: any) => tx.id));
+    }
+
     const { error: deleteError } = await supabase
       .from('flight_logs')
       .delete()
@@ -195,6 +240,27 @@ export const AircraftFlightLogs: React.FC = () => {
       return;
     }
 
+    const { data: rate } = editingLog.flight_type_id
+      ? await supabase
+        .from('aircraft_rates')
+        .select('*')
+        .eq('aircraft_id', editingLog.aircraft_id)
+        .eq('flight_type_id', editingLog.flight_type_id)
+        .maybeSingle()
+      : { data: null };
+    const recalculatedCost = calculateFlightCost({
+      rate: rate ? {
+        chargeType: rate.charge_type,
+        soloRate: parseFloat(rate.solo_rate || 0),
+        dualRate: parseFloat(rate.dual_rate || 0),
+        flatSurcharge: parseFloat(rate.flat_surcharge || 0),
+        weekendSurcharge: parseFloat(rate.weekend_surcharge || 0),
+      } : null,
+      durationHours: duration,
+      isDual: !!editingLog.instructor_id,
+      startTime: new Date(editForm.start_time).toISOString(),
+    });
+
     setSavingLog(true);
     const { error: updateError } = await supabase
       .from('flight_logs')
@@ -206,6 +272,9 @@ export const AircraftFlightLogs: React.FC = () => {
         flight_duration: duration,
         landings: parseInt(editForm.landings, 10) || 0,
         payment_type: editForm.payment_type || null,
+        calculated_cost: recalculatedCost,
+        total_cost: recalculatedCost,
+        payment_status: recalculatedCost <= 0 ? 'free' : isPrepaidPaymentMethod(editForm.payment_type) ? 'paid' : 'pending',
         observations: editForm.observations || null,
       })
       .eq('id', editingLog.id);
@@ -215,6 +284,31 @@ export const AircraftFlightLogs: React.FC = () => {
     if (updateError) {
       toast.error('Failed to update flight log');
       return;
+    }
+
+    if (isPrepaidPaymentMethod(editForm.payment_type)) {
+      const { data: charge } = await supabase
+        .from('account_transactions')
+        .select('id, amount, user_id')
+        .eq('flight_log_id', editingLog.id)
+        .eq('type', 'flight_charge')
+        .maybeSingle();
+
+      if (charge) {
+        const previousAmount = parseFloat(charge.amount || 0);
+        const delta = recalculatedCost - previousAmount;
+        const { data: student } = await supabase
+          .from('students')
+          .select('prepaid_balance')
+          .eq('id', charge.user_id)
+          .maybeSingle();
+        const newBalance = parseFloat(student?.prepaid_balance || 0) - delta;
+        await supabase
+          .from('account_transactions')
+          .update({ amount: recalculatedCost, balance_after: newBalance })
+          .eq('id', charge.id);
+        await supabase.from('students').upsert({ id: charge.user_id, prepaid_balance: newBalance }, { onConflict: 'id' });
+      }
     }
 
     setEditingLog(null);
@@ -375,7 +469,8 @@ export const AircraftFlightLogs: React.FC = () => {
                         <div className="text-gray-500 text-xs">hours</div>
                       </td>
                       <td className="py-3 px-2 text-center align-middle">
-                        <div>{log.payment_type || 'Pre-Paid'}</div>
+                        <div>{log.flight_type_name || log.payment_type || 'Unknown'}</div>
+                        {log.payment_type && <div className="text-xs text-gray-500">{log.payment_type}</div>}
                       </td>
                       <td className="py-3 px-2 text-center align-middle">
                         <div>{log.landings}</div>

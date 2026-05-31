@@ -6,6 +6,8 @@ import { UserRole } from '../types';
 export interface FlightType {
   id: string;
   name: string;
+  description: string;
+  active: boolean;
   allowedRoles: UserRole[];
   displayOrder: number;
   forcedPaymentMethodId: string | null;
@@ -14,6 +16,8 @@ export interface FlightType {
 export interface PaymentMethod {
   id: string;
   name: string;
+  description: string;
+  active: boolean;
   displayOrder: number;
 }
 
@@ -36,8 +40,7 @@ export const useBillingSettings = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchFlightTypes();
-    fetchPaymentMethods();
+    refetch();
   }, []);
 
   const fetchFlightTypes = async () => {
@@ -53,6 +56,8 @@ export const useBillingSettings = () => {
         setFlightTypes(data.map(ft => ({
           id: ft.id,
           name: ft.name,
+          description: ft.description || '',
+          active: ft.active !== false,
           allowedRoles: ft.allowed_roles || [],
           displayOrder: ft.display_order,
           forcedPaymentMethodId: ft.forced_payment_method_id ?? null
@@ -61,8 +66,6 @@ export const useBillingSettings = () => {
     } catch (error) {
       console.error('Error fetching flight types:', error);
       toast.error('Failed to load flight types');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -79,6 +82,8 @@ export const useBillingSettings = () => {
         setPaymentMethods(data.map(pm => ({
           id: pm.id,
           name: pm.name,
+          description: pm.description || '',
+          active: pm.active !== false,
           displayOrder: pm.display_order
         })));
       }
@@ -106,6 +111,8 @@ export const useBillingSettings = () => {
         setFlightTypes([...flightTypes, {
           id: data.id,
           name: data.name,
+          description: data.description || '',
+          active: data.active !== false,
           allowedRoles: data.allowed_roles || [],
           displayOrder: data.display_order,
           forcedPaymentMethodId: data.forced_payment_method_id ?? null
@@ -122,6 +129,8 @@ export const useBillingSettings = () => {
     try {
       const dbUpdates: any = {};
       if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.active !== undefined) dbUpdates.active = updates.active;
       if (updates.allowedRoles !== undefined) dbUpdates.allowed_roles = updates.allowedRoles;
       if (updates.displayOrder !== undefined) dbUpdates.display_order = updates.displayOrder;
       if ('forcedPaymentMethodId' in updates) dbUpdates.forced_payment_method_id = updates.forcedPaymentMethodId ?? null;
@@ -177,6 +186,8 @@ export const useBillingSettings = () => {
         setPaymentMethods([...paymentMethods, {
           id: data.id,
           name: data.name,
+          description: data.description || '',
+          active: data.active !== false,
           displayOrder: data.display_order
         }]);
         toast.success('Payment method added');
@@ -191,6 +202,8 @@ export const useBillingSettings = () => {
     try {
       const dbUpdates: any = {};
       if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.active !== undefined) dbUpdates.active = updates.active;
       if (updates.displayOrder !== undefined) dbUpdates.display_order = updates.displayOrder;
 
       const { error } = await supabase
@@ -227,6 +240,85 @@ export const useBillingSettings = () => {
     }
   };
 
+  const saveBillingSettings = async (nextFlightTypes: FlightType[], nextPaymentMethods: PaymentMethod[]) => {
+    try {
+      const originalFlightTypeIds = new Set(flightTypes.map(item => item.id));
+      const originalPaymentMethodIds = new Set(paymentMethods.map(item => item.id));
+
+      const paymentMethodIdMap = new Map<string, string>();
+      const validPaymentMethods = nextPaymentMethods.filter(method => method.name.trim());
+
+      for (const [index, method] of validPaymentMethods.entries()) {
+        const dbMethod = {
+          name: method.name.trim(),
+          description: method.description?.trim() || null,
+          active: method.active,
+          display_order: index + 1,
+          updated_at: new Date().toISOString(),
+        };
+        const { data, error } = originalPaymentMethodIds.has(method.id)
+          ? await supabase.from('payment_methods').update(dbMethod).eq('id', method.id).select().single()
+          : await supabase.from('payment_methods').insert(dbMethod).select().single();
+        if (error) throw error;
+        if (data) paymentMethodIdMap.set(method.id, data.id);
+      }
+
+      const activePaymentMethodIds = new Set(validPaymentMethods.map(method => originalPaymentMethodIds.has(method.id) ? method.id : null).filter(Boolean));
+      const removedPaymentMethodIds = [...originalPaymentMethodIds].filter(id => !activePaymentMethodIds.has(id));
+      if (removedPaymentMethodIds.length > 0) {
+        const { error } = await supabase
+          .from('payment_methods')
+          .update({ active: false, updated_at: new Date().toISOString() })
+          .in('id', removedPaymentMethodIds);
+        if (error) throw error;
+      }
+
+      const validFlightTypes = nextFlightTypes.filter(type => type.name.trim());
+
+      for (const [index, type] of validFlightTypes.entries()) {
+        const forcedPaymentMethodId = type.forcedPaymentMethodId
+          ? paymentMethodIdMap.get(type.forcedPaymentMethodId) || type.forcedPaymentMethodId
+          : null;
+        const dbType = {
+          name: type.name.trim(),
+          description: type.description?.trim() || null,
+          active: type.active,
+          allowed_roles: type.allowedRoles,
+          display_order: index + 1,
+          forced_payment_method_id: forcedPaymentMethodId,
+          updated_at: new Date().toISOString(),
+        };
+        const { error } = originalFlightTypeIds.has(type.id)
+          ? await supabase.from('flight_types').update(dbType).eq('id', type.id)
+          : await supabase.from('flight_types').insert(dbType);
+        if (error) throw error;
+      }
+
+      const activeFlightTypeIds = new Set(validFlightTypes.map(type => originalFlightTypeIds.has(type.id) ? type.id : null).filter(Boolean));
+      const removedFlightTypeIds = [...originalFlightTypeIds].filter(id => !activeFlightTypeIds.has(id));
+      if (removedFlightTypeIds.length > 0) {
+        const { error } = await supabase
+          .from('flight_types')
+          .update({ active: false, updated_at: new Date().toISOString() })
+          .in('id', removedFlightTypeIds);
+        if (error) throw error;
+      }
+
+      await refetch();
+      toast.success('Billing settings saved');
+    } catch (error) {
+      console.error('Error saving billing settings:', error);
+      toast.error('Failed to save billing settings');
+      throw error;
+    }
+  };
+
+  const refetch = async () => {
+    setLoading(true);
+    await Promise.all([fetchFlightTypes(), fetchPaymentMethods()]);
+    setLoading(false);
+  };
+
   return {
     flightTypes,
     paymentMethods,
@@ -237,9 +329,7 @@ export const useBillingSettings = () => {
     addPaymentMethod,
     updatePaymentMethod,
     deletePaymentMethod,
-    refetch: () => {
-      fetchFlightTypes();
-      fetchPaymentMethods();
-    }
+    saveBillingSettings,
+    refetch
   };
 };

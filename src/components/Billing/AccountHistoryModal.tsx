@@ -269,7 +269,7 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
                               autoFocus
                             >
                               <option value="">— Method —</option>
-                              {paymentMethods.map(pm => (
+                              {paymentMethods.filter(pm => pm.active).map(pm => (
                                 <option key={pm.id} value={pm.id}>{pm.name}</option>
                               ))}
                             </select>

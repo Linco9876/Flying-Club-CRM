@@ -27,7 +27,7 @@ export const useAircraft = () => {
 
       const { data: ratesData, error: ratesError } = await supabase
         .from('aircraft_rates')
-        .select('*');
+        .select('*, flight_types(name), payment_methods(name)');
 
       if (ratesError) throw ratesError;
 
@@ -53,22 +53,38 @@ export const useAircraft = () => {
         defectsMap.set(d.aircraft_id, aircraftDefects);
       });
 
-      const ratesMap = new Map<string, { aircraft: any; instructor: any }>();
+      const ratesMap = new Map<string, { aircraft: any; instructor: any; rows: any[] }>();
       ratesData?.forEach(r => {
-        const aircraftRates = ratesMap.get(r.aircraft_id) || { aircraft: {}, instructor: {} };
+        const aircraftRates = ratesMap.get(r.aircraft_id) || { aircraft: {}, instructor: {}, rows: [] };
+        const soloRate = parseFloat(r.solo_rate || 0);
+        const dualRate = parseFloat(r.dual_rate || 0);
+        const instructorComponent = Math.max(0, dualRate - soloRate);
+        const flightTypeName = (r.flight_types?.name || '').toLowerCase();
 
-        if (r.rate_type === 'aircraft_prepaid') {
-          aircraftRates.aircraft.prepaid = parseFloat(r.amount);
-        } else if (r.rate_type === 'aircraft_payg') {
-          aircraftRates.aircraft.payg = parseFloat(r.amount);
-        } else if (r.rate_type === 'aircraft_account') {
-          aircraftRates.aircraft.account = parseFloat(r.amount);
-        } else if (r.rate_type === 'instructor_prepaid') {
-          aircraftRates.instructor.prepaid = parseFloat(r.amount);
-        } else if (r.rate_type === 'instructor_payg') {
-          aircraftRates.instructor.payg = parseFloat(r.amount);
-        } else if (r.rate_type === 'instructor_account') {
-          aircraftRates.instructor.account = parseFloat(r.amount);
+        aircraftRates.rows.push({
+          id: r.id,
+          aircraftId: r.aircraft_id,
+          flightTypeId: r.flight_type_id,
+          flightTypeName: r.flight_types?.name,
+          chargeType: r.charge_type,
+          soloRate,
+          dualRate,
+          flatSurcharge: parseFloat(r.flat_surcharge || 0),
+          weekendSurcharge: parseFloat(r.weekend_surcharge || 0),
+          defaultPaymentMethodId: r.default_payment_method_id,
+          defaultPaymentMethodName: r.payment_methods?.name,
+          includedTaxes: parseFloat(r.included_taxes || 0),
+        });
+
+        if (flightTypeName.includes('pre') && flightTypeName.includes('paid')) {
+          aircraftRates.aircraft.prepaid = soloRate;
+          aircraftRates.instructor.prepaid = instructorComponent;
+        } else if (flightTypeName.includes('payg') || flightTypeName.includes('pay as')) {
+          aircraftRates.aircraft.payg = soloRate;
+          aircraftRates.instructor.payg = instructorComponent;
+        } else if (flightTypeName.includes('account') || flightTypeName.includes('invoice')) {
+          aircraftRates.aircraft.account = soloRate;
+          aircraftRates.instructor.account = instructorComponent;
         }
 
         ratesMap.set(r.aircraft_id, aircraftRates);
@@ -93,6 +109,7 @@ export const useAircraft = () => {
           maxWeight: a.max_weight ? parseFloat(a.max_weight) : undefined,
           tachStart: a.total_hours ? parseFloat(a.total_hours) : 0,
           defects: defectsMap.get(a.id) || [],
+          rates: rates?.rows || [],
           aircraftRates: rates?.aircraft,
           instructorRates: rates?.instructor
         };

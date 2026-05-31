@@ -8,6 +8,7 @@ import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useAircraftRates } from '../../hooks/useAircraftRates';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
+import { calculateFlightCost } from '../../utils/billing';
 
 interface Booking {
   id: string;
@@ -65,6 +66,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       const pm = paymentMethods.find(p => p.id === ft.forcedPaymentMethodId);
       return pm?.name ?? '';
     }
+    if (rate?.defaultPaymentMethodId) {
+      const pm = paymentMethods.find(p => p.id === rate.defaultPaymentMethodId);
+      return pm?.name ?? '';
+    }
     return '';
   };
 
@@ -91,6 +96,13 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
   const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
   const isPaymentForced = !isFree && !!selectedFlightType?.forcedPaymentMethodId;
+  const estimatedCost = calculateFlightCost({
+    rate: selectedRate,
+    durationHours: formData.flight_duration === '' ? 0 : formData.flight_duration,
+    isDual: isDualFlight,
+    passengerCount: formData.passengers,
+    startTime: formData.start_time,
+  });
 
   // Re-derive payment type when billing data loads (paymentMethods/flightTypes async) or flight type changes
   useEffect(() => {
@@ -380,7 +392,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 required
               >
                 <option value="">Select flight type</option>
-                {flightTypes.map(ft => (
+                {flightTypes.filter(ft => ft.active).map(ft => (
                   <option key={ft.id} value={ft.id}>{ft.name}</option>
                 ))}
               </select>
@@ -418,13 +430,26 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   disabled={isPaymentForced}
                 >
                   <option value="">Select payment type</option>
-                  {paymentMethods.map(pm => (
+                  {paymentMethods.filter(pm => pm.active).map(pm => (
                     <option key={pm.id} value={pm.name}>{pm.name}</option>
                   ))}
                 </select>
               </div>
             )}
           </div>
+
+          {formData.flight_type_id && formData.flight_duration !== '' && (
+            <div className="rounded-lg border border-gray-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+              Estimated charge: <span className="font-semibold">${estimatedCost.toFixed(2)}</span>
+              {selectedRate && (
+                <span className="ml-2 text-xs text-blue-700">
+                  {selectedRate.chargeType === 'tach'
+                    ? `${isDualFlight ? 'Dual' : 'Solo'} tach rate`
+                    : selectedRate.chargeType.replace('_', ' ')}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Comments */}
           <div>

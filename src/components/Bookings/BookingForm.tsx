@@ -354,7 +354,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               required={isFieldRequired('paymentType', userRole)}
             >
               <option value="">Select flight type</option>
-              {flightTypes.map(ft => (
+              {flightTypes.filter(ft => ft.active).map(ft => (
                 <option key={ft.id} value={ft.id}>{ft.name}</option>
               ))}
             </select>

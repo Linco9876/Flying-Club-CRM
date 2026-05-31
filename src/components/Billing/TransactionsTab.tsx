@@ -55,7 +55,7 @@ const MarkPaidModal: React.FC<{
               autoFocus
             >
               <option value="">— Select —</option>
-              {paymentMethods.map(pm => (
+              {paymentMethods.filter(pm => pm.active).map(pm => (
                 <option key={pm.id} value={pm.id}>{pm.name}</option>
               ))}
             </select>

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { DollarSign, CreditCard, Plus, Trash2, Users, Lock } from 'lucide-react';
-import { useBillingSettings } from '../../hooks/useBillingSettings';
+import React, { useEffect, useMemo, useState } from 'react';
+import { CreditCard, DollarSign, GripVertical, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { useBillingSettings, FlightType, PaymentMethod } from '../../hooks/useBillingSettings';
+import { useAircraft } from '../../hooks/useAircraft';
 import { UserRole } from '../../types';
 
 interface BillingRatesSettingsProps {
@@ -8,90 +9,122 @@ interface BillingRatesSettingsProps {
   onFormChange: () => void;
 }
 
-export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
-  const {
-    flightTypes,
-    paymentMethods,
-    loading,
-    addFlightType,
-    updateFlightType,
-    deleteFlightType,
-    addPaymentMethod,
-    updatePaymentMethod,
-    deletePaymentMethod
-  } = useBillingSettings();
+const allRoles: UserRole[] = ['admin', 'instructor', 'pilot', 'student'];
+const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
 
-  const [newFlightTypeName, setNewFlightTypeName] = useState('');
-  const [newFlightTypeRoles, setNewFlightTypeRoles] = useState<UserRole[]>(['student', 'pilot', 'instructor', 'admin']);
-  const [newPaymentMethodName, setNewPaymentMethodName] = useState('');
-  const [localFlightTypeNames, setLocalFlightTypeNames] = useState<Record<string, string>>({});
-  const [localPaymentMethodNames, setLocalPaymentMethodNames] = useState<Record<string, string>>({});
+const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
+  const { flightTypes, paymentMethods, loading, saveBillingSettings } = useBillingSettings();
+  const { aircraft } = useAircraft();
+  const [draftFlightTypes, setDraftFlightTypes] = useState<FlightType[]>([]);
+  const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
 
   useEffect(() => {
-    const names: Record<string, string> = {};
-    flightTypes.forEach(ft => { names[ft.id] = ft.name; });
-    setLocalFlightTypeNames(names);
+    setDraftFlightTypes(flightTypes);
   }, [flightTypes]);
 
   useEffect(() => {
-    const names: Record<string, string> = {};
-    paymentMethods.forEach(pm => { names[pm.id] = pm.name; });
-    setLocalPaymentMethodNames(names);
+    setDraftPaymentMethods(paymentMethods);
   }, [paymentMethods]);
 
-  const allRoles: UserRole[] = ['admin', 'instructor', 'pilot', 'student'];
+  useEffect(() => {
+    (window as any).__billingSettingsSave = async () => {
+      await saveBillingSettings(draftFlightTypes, draftPaymentMethods);
+    };
+    (window as any).__billingSettingsCancel = () => {
+      setDraftFlightTypes(flightTypes);
+      setDraftPaymentMethods(paymentMethods);
+    };
+    return () => {
+      delete (window as any).__billingSettingsSave;
+      delete (window as any).__billingSettingsCancel;
+    };
+  }, [draftFlightTypes, draftPaymentMethods, flightTypes, paymentMethods, saveBillingSettings]);
 
-  const handleAddFlightType = () => {
-    if (!newFlightTypeName.trim()) return;
-    addFlightType(newFlightTypeName, newFlightTypeRoles);
-    setNewFlightTypeName('');
-    setNewFlightTypeRoles(['student', 'pilot', 'instructor', 'admin']);
+  const updateFlightType = (id: string, updates: Partial<FlightType>) => {
+    setDraftFlightTypes(current => current.map(type => type.id === id ? { ...type, ...updates } : type));
     onFormChange();
   };
 
-  const handleAddPaymentMethod = () => {
-    if (!newPaymentMethodName.trim()) return;
-    addPaymentMethod(newPaymentMethodName);
-    setNewPaymentMethodName('');
+  const updatePaymentMethod = (id: string, updates: Partial<PaymentMethod>) => {
+    setDraftPaymentMethods(current => current.map(method => method.id === id ? { ...method, ...updates } : method));
     onFormChange();
   };
 
-  const handleFlightTypeNameBlur = (id: string) => {
-    const name = localFlightTypeNames[id] ?? '';
-    if (!name.trim()) return;
-    updateFlightType(id, { name });
+  const moveFlightType = (id: string, direction: -1 | 1) => {
+    setDraftFlightTypes(current => {
+      const index = current.findIndex(type => type.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next.map((type, order) => ({ ...type, displayOrder: order + 1 }));
+    });
     onFormChange();
   };
 
-  const handleFlightTypeRolesChange = (id: string, roles: UserRole[]) => {
-    updateFlightType(id, { allowedRoles: roles });
+  const addFlightType = () => {
+    setDraftFlightTypes(current => [
+      ...current,
+      {
+        id: newId('flight-type'),
+        name: 'New Flight Type',
+        description: '',
+        active: true,
+        allowedRoles: ['student', 'pilot', 'instructor', 'admin'],
+        displayOrder: current.length + 1,
+        forcedPaymentMethodId: null,
+      },
+    ]);
     onFormChange();
   };
 
-  const handleForcedPaymentMethodChange = (id: string, value: string) => {
-    updateFlightType(id, { forcedPaymentMethodId: value === '' ? null : value });
+  const addPaymentMethod = () => {
+    setDraftPaymentMethods(current => [
+      ...current,
+      {
+        id: newId('payment-method'),
+        name: 'New Payment Method',
+        description: '',
+        active: true,
+        displayOrder: current.length + 1,
+      },
+    ]);
     onFormChange();
   };
 
-  const handlePaymentMethodNameBlur = (id: string) => {
-    const name = localPaymentMethodNames[id] ?? '';
-    if (!name.trim()) return;
-    updatePaymentMethod(id, { name });
+  const removeFlightType = (id: string) => {
+    setDraftFlightTypes(current => current.map(type => type.id === id ? { ...type, active: false } : type));
     onFormChange();
   };
 
-  const toggleRole = (currentRoles: UserRole[], role: UserRole): UserRole[] => {
-    if (currentRoles.includes(role)) {
-      return currentRoles.filter(r => r !== role);
-    } else {
-      return [...currentRoles, role];
-    }
+  const removePaymentMethod = (id: string) => {
+    setDraftPaymentMethods(current => current.map(method => method.id === id ? { ...method, active: false } : method));
+    setDraftFlightTypes(current => current.map(type =>
+      type.forcedPaymentMethodId === id ? { ...type, forcedPaymentMethodId: null } : type
+    ));
+    onFormChange();
   };
+
+  const activePaymentMethods = draftPaymentMethods.filter(method => method.active);
+  const activeFlightTypes = draftFlightTypes.filter(type => type.active);
+
+  const rateSummary = useMemo(() => {
+    return aircraft.flatMap(item => (item.rates || []).map(rate => ({
+      aircraft: item.registration,
+      flightType: draftFlightTypes.find(type => type.id === rate.flightTypeId)?.name || rate.flightTypeName || 'Unknown',
+      chargeType: rate.chargeType,
+      soloRate: rate.soloRate,
+      dualRate: rate.dualRate,
+      surcharge: rate.flatSurcharge,
+    })));
+  }, [aircraft, draftFlightTypes]);
 
   if (loading) {
     return (
-      <div className="p-6 flex items-center justify-center">
-        <div className="text-gray-500">Loading billing settings...</div>
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
   }
@@ -103,197 +136,188 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
           <DollarSign className="h-5 w-5 mr-2" />
           Billing & Rates
         </h2>
-        <p className="text-gray-600">Configure flight types and payment methods</p>
+        <p className="text-gray-600">Configure flight types, payment methods and the rate rules used when flights are logged.</p>
       </div>
 
-      {/* Flight Types */}
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-1 flex items-center">
-            <Users className="h-5 w-5 mr-2" />
-            Flight Types
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Define flight types, which roles can use them, and optionally force a specific payment method when that type is selected.
-          </p>
-
-          <div className="space-y-3">
-            {flightTypes.map(flightType => (
-              <div key={flightType.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    value={localFlightTypeNames[flightType.id] ?? flightType.name}
-                    onChange={(e) => setLocalFlightTypeNames(prev => ({ ...prev, [flightType.id]: e.target.value }))}
-                    onBlur={() => handleFlightTypeNameBlur(flightType.id)}
-                    disabled={!canEdit}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                    placeholder="Flight type name"
-                  />
-                  {canEdit && (
-                    <button
-                      onClick={() => {
-                        deleteFlightType(flightType.id);
-                        onFormChange();
-                      }}
-                      className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Allowed Roles</p>
-                    <div className="flex flex-wrap gap-2">
-                      {allRoles.map(role => (
-                        <label key={role} className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={flightType.allowedRoles.includes(role)}
-                            onChange={() => handleFlightTypeRolesChange(
-                              flightType.id,
-                              toggleRole(flightType.allowedRoles, role)
-                            )}
-                            disabled={!canEdit}
-                            className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <span className="text-xs text-gray-700 capitalize">{role}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide flex items-center gap-1">
-                      <Lock className="h-3 w-3" />
-                      Force Payment Method
-                    </p>
-                    <select
-                      value={flightType.forcedPaymentMethodId ?? ''}
-                      onChange={(e) => handleForcedPaymentMethodChange(flightType.id, e.target.value)}
-                      disabled={!canEdit || paymentMethods.length === 0}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed bg-white"
-                    >
-                      <option value="">No forced method</option>
-                      {paymentMethods.map(pm => (
-                        <option key={pm.id} value={pm.id}>{pm.name}</option>
-                      ))}
-                    </select>
-                    {flightType.forcedPaymentMethodId && (
-                      <p className="text-xs text-amber-600 mt-1">
-                        Bookings with this flight type must use "{paymentMethods.find(p => p.id === flightType.forcedPaymentMethodId)?.name ?? '—'}".
-                      </p>
-                    )}
-                    {paymentMethods.length === 0 && (
-                      <p className="text-xs text-gray-400 mt-1">Add payment methods below to enable this option.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {canEdit && (
-              <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg space-y-3">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    value={newFlightTypeName}
-                    onChange={(e) => setNewFlightTypeName(e.target.value)}
-                    placeholder="New flight type name"
-                    className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddFlightType()}
-                  />
-                  <button
-                    onClick={handleAddFlightType}
-                    disabled={!newFlightTypeName.trim()}
-                    className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Plus className="h-5 w-5" />
-                  </button>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Allowed Roles</p>
-                  <div className="flex flex-wrap gap-2">
-                    {allRoles.map(role => (
-                      <label key={role} className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={newFlightTypeRoles.includes(role)}
-                          onChange={() => setNewFlightTypeRoles(toggleRole(newFlightTypeRoles, role))}
-                          className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <span className="text-xs text-gray-700 capitalize">{role}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <CreditCard className="h-5 w-5 mr-2 text-blue-600" />
+              Payment Methods
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">These appear in booking, top-up and mark-paid workflows.</p>
           </div>
+          {canEdit && (
+            <button onClick={addPaymentMethod} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+              <Plus className="h-4 w-4" />
+              Add Method
+            </button>
+          )}
         </div>
-      </div>
 
-      {/* Payment Methods */}
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-1 flex items-center">
-            <CreditCard className="h-5 w-5 mr-2" />
-            Payment Methods
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Define available payment methods that can be selected as default for each aircraft, or forced for specific flight types.
-          </p>
-
-          <div className="space-y-3">
-            {paymentMethods.map(method => (
-              <div key={method.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="space-y-3">
+          {activePaymentMethods.map(method => (
+            <div key={method.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div className="grid grid-cols-1 md:grid-cols-[1.2fr_2fr_auto] gap-3 items-start">
                 <input
-                  type="text"
-                  value={localPaymentMethodNames[method.id] ?? method.name}
-                  onChange={(e) => setLocalPaymentMethodNames(prev => ({ ...prev, [method.id]: e.target.value }))}
-                  onBlur={() => handlePaymentMethodNameBlur(method.id)}
+                  value={method.name}
+                  onChange={event => updatePaymentMethod(method.id, { name: event.target.value })}
                   disabled={!canEdit}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                  placeholder="Payment method name"
+                  className={inputClass}
+                  placeholder="Payment method"
+                />
+                <input
+                  value={method.description}
+                  onChange={event => updatePaymentMethod(method.id, { description: event.target.value })}
+                  disabled={!canEdit}
+                  className={inputClass}
+                  placeholder="Description shown to staff"
                 />
                 {canEdit && (
                   <button
-                    onClick={() => {
-                      deletePaymentMethod(method.id);
-                      onFormChange();
-                    }}
-                    className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                    onClick={() => removePaymentMethod(method.id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-md"
+                    title="Deactivate payment method"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
               </div>
-            ))}
-
-            {canEdit && (
-              <div className="flex items-center space-x-3 p-3 border-2 border-dashed border-gray-300 rounded-lg">
-                <input
-                  type="text"
-                  value={newPaymentMethodName}
-                  onChange={(e) => setNewPaymentMethodName(e.target.value)}
-                  placeholder="New payment method name"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddPaymentMethod()}
-                />
-                <button
-                  onClick={handleAddPaymentMethod}
-                  disabled={!newPaymentMethodName.trim()}
-                  className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
-              </div>
-            )}
-          </div>
+            </div>
+          ))}
         </div>
-      </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <Users className="h-5 w-5 mr-2 text-blue-600" />
+              Flight Types
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">Flight types control booking choices, forced payment methods and aircraft rate rows.</p>
+          </div>
+          {canEdit && (
+            <button onClick={addFlightType} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+              <Plus className="h-4 w-4" />
+              Add Flight Type
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          {activeFlightTypes.map((type, index) => (
+            <div key={type.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+              <div className="grid grid-cols-1 xl:grid-cols-[auto_1fr_1.3fr_1fr_auto] gap-3 items-start">
+                <div className="flex items-center gap-1 pt-2 text-gray-400">
+                  <GripVertical className="h-4 w-4" />
+                  <div className="flex flex-col">
+                    <button disabled={!canEdit || index === 0} onClick={() => moveFlightType(type.id, -1)} className="text-xs disabled:opacity-30">Up</button>
+                    <button disabled={!canEdit || index === activeFlightTypes.length - 1} onClick={() => moveFlightType(type.id, 1)} className="text-xs disabled:opacity-30">Down</button>
+                  </div>
+                </div>
+                <input
+                  value={type.name}
+                  onChange={event => updateFlightType(type.id, { name: event.target.value })}
+                  disabled={!canEdit}
+                  className={inputClass}
+                  placeholder="Flight type"
+                />
+                <input
+                  value={type.description}
+                  onChange={event => updateFlightType(type.id, { description: event.target.value })}
+                  disabled={!canEdit}
+                  className={inputClass}
+                  placeholder="Description"
+                />
+                <select
+                  value={type.forcedPaymentMethodId ?? ''}
+                  onChange={event => updateFlightType(type.id, { forcedPaymentMethodId: event.target.value || null })}
+                  disabled={!canEdit}
+                  className={inputClass}
+                >
+                  <option value="">No forced method</option>
+                  {activePaymentMethods.map(method => (
+                    <option key={method.id} value={method.id}>{method.name}</option>
+                  ))}
+                </select>
+                {canEdit && (
+                  <button
+                    onClick={() => removeFlightType(type.id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-md"
+                    title="Deactivate flight type"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Allowed roles</p>
+                <div className="flex flex-wrap gap-2">
+                  {allRoles.map(role => (
+                    <label key={role} className="flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-700 capitalize">
+                      <input
+                        type="checkbox"
+                        checked={type.allowedRoles.includes(role)}
+                        disabled={!canEdit}
+                        onChange={() => {
+                          const roles = type.allowedRoles.includes(role)
+                            ? type.allowedRoles.filter(item => item !== role)
+                            : [...type.allowedRoles, role];
+                          updateFlightType(type.id, { allowedRoles: roles });
+                        }}
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {role}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-lg font-medium text-gray-900">Aircraft Rate Matrix</h3>
+          <p className="text-sm text-gray-500 mt-1">Rates are edited on each aircraft record. This table shows the active rules currently feeding flight-log billing.</p>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Aircraft</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Flight Type</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Charge</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">Solo</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">Dual</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">Surcharge</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {rateSummary.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">No aircraft rates configured yet.</td>
+                </tr>
+              ) : (
+                rateSummary.map((rate, index) => (
+                  <tr key={`${rate.aircraft}-${rate.flightType}-${index}`}>
+                    <td className="px-4 py-3 font-medium text-gray-900">{rate.aircraft}</td>
+                    <td className="px-4 py-3 text-gray-700">{rate.flightType}</td>
+                    <td className="px-4 py-3 text-gray-700 capitalize">{rate.chargeType.replace('_', ' ')}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">${rate.soloRate.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">${rate.dualRate.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">${rate.surcharge.toFixed(2)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 };

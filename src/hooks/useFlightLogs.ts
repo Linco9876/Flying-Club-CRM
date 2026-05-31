@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod } from '../utils/billing';
 
 export interface FlightLog {
   id: string;
@@ -18,6 +19,9 @@ export interface FlightLog {
   landings?: number;
   comments?: string;
   payment_type?: string;
+  flight_type_id?: string;
+  calculated_cost?: number;
+  payment_status?: 'free' | 'pending' | 'paid';
   observations?: string;
   oil_added?: number;
   fuel_added?: number;
@@ -42,10 +46,13 @@ export interface CreateFlightLogData {
   landings?: number;
   comments?: string;
   payment_type?: string;
+  flight_type_id?: string;
   observations?: string;
   oil_added?: number;
   fuel_added?: number;
   passengers?: number;
+  calculated_cost?: number;
+  payment_status?: 'free' | 'pending' | 'paid';
 }
 
 export function useFlightLogs(userId?: string) {
@@ -88,16 +95,95 @@ export function useFlightLogs(userId?: string) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      const { data: rateData } = logData.flight_type_id
+        ? await supabase
+          .from('aircraft_rates')
+          .select('*, payment_methods(id, name), flight_types(forced_payment_method_id)')
+          .eq('aircraft_id', logData.aircraft_id)
+          .eq('flight_type_id', logData.flight_type_id)
+          .maybeSingle()
+        : { data: null };
+
+      const selectedRate = rateData ? {
+        chargeType: rateData.charge_type,
+        soloRate: parseFloat(rateData.solo_rate || 0),
+        dualRate: parseFloat(rateData.dual_rate || 0),
+        flatSurcharge: parseFloat(rateData.flat_surcharge || 0),
+        weekendSurcharge: parseFloat(rateData.weekend_surcharge || 0),
+      } : null;
+      const calculatedCost = calculateFlightCost({
+        rate: selectedRate as any,
+        durationHours: logData.flight_duration,
+        isDual: !!logData.instructor_id,
+        passengerCount: logData.passengers,
+        startTime: logData.start_time,
+      });
+      const noCharge = isNoChargeRate(selectedRate?.chargeType);
+      let paymentMethodId = rateData?.default_payment_method_id ?? rateData?.flight_types?.forced_payment_method_id ?? null;
+      if (!paymentMethodId && logData.payment_type) {
+        const { data: paymentMethod } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .ilike('name', logData.payment_type)
+          .maybeSingle();
+        paymentMethodId = paymentMethod?.id ?? null;
+      }
+      const initialPaymentStatus: 'free' | 'pending' | 'paid' = noCharge || calculatedCost <= 0
+        ? 'free'
+        : isPrepaidPaymentMethod(logData.payment_type)
+          ? 'paid'
+          : 'pending';
+
       const { data, error: insertError } = await supabase
         .from('flight_logs')
         .insert({
           ...logData,
+          duration: logData.flight_duration,
+          tach_start: logData.start_tach,
+          tach_end: logData.end_tach,
+          total_cost: calculatedCost,
+          calculated_cost: calculatedCost,
+          payment_status: initialPaymentStatus,
           created_by: user.id,
         })
         .select()
         .single();
 
       if (insertError) throw insertError;
+
+      if (initialPaymentStatus === 'paid' && calculatedCost > 0 && logData.student_id) {
+        const { data: student } = await supabase
+          .from('students')
+          .select('prepaid_balance')
+          .eq('id', logData.student_id)
+          .maybeSingle();
+
+        const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
+        const newBalance = currentBalance - calculatedCost;
+
+        const { error: txError } = await supabase
+          .from('account_transactions')
+          .insert({
+            user_id: logData.student_id,
+            type: 'flight_charge',
+            amount: calculatedCost,
+            description: `Flight charge - ${new Date(logData.start_time).toLocaleDateString('en-AU')}`,
+            flight_log_id: data.id,
+            payment_method_id: paymentMethodId,
+            balance_after: newBalance,
+            verified_status: 'verified',
+            created_by: user.id,
+          });
+
+        if (txError) {
+          console.error('Error recording flight charge transaction:', txError);
+        } else {
+          const { error: balanceError } = await supabase
+            .from('students')
+            .upsert({ id: logData.student_id, prepaid_balance: newBalance }, { onConflict: 'id' });
+          if (balanceError) console.error('Error updating prepaid balance:', balanceError);
+        }
+      }
 
       if (logData.booking_id) {
         const { error: updateError } = await supabase
@@ -158,6 +244,39 @@ export function useFlightLogs(userId?: string) {
 
   const deleteFlightLog = async (id: string) => {
     try {
+      const { data: chargeTransactions } = await supabase
+        .from('account_transactions')
+        .select('id, user_id, amount, type')
+        .eq('flight_log_id', id);
+
+      const prepaidCharges = (chargeTransactions || []).filter((tx: any) => tx.type === 'flight_charge');
+      if (prepaidCharges.length > 0) {
+        const refundByUser = prepaidCharges.reduce<Record<string, number>>((acc, tx: any) => {
+          acc[tx.user_id] = (acc[tx.user_id] || 0) + parseFloat(tx.amount || 0);
+          return acc;
+        }, {});
+
+        for (const [studentId, refundAmount] of Object.entries(refundByUser)) {
+          const { data: student } = await supabase
+            .from('students')
+            .select('prepaid_balance')
+            .eq('id', studentId)
+            .maybeSingle();
+          const newBalance = parseFloat(student?.prepaid_balance ?? 0) + refundAmount;
+          const { error: balanceError } = await supabase
+            .from('students')
+            .upsert({ id: studentId, prepaid_balance: newBalance }, { onConflict: 'id' });
+          if (balanceError) throw balanceError;
+        }
+
+        const { error: txDeleteError } = await supabase
+          .from('account_transactions')
+          .delete()
+          .in('id', prepaidCharges.map((tx: any) => tx.id));
+
+        if (txDeleteError) throw txDeleteError;
+      }
+
       const { error: deleteError } = await supabase
         .from('flight_logs')
         .delete()
