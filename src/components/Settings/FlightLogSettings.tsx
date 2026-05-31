@@ -132,7 +132,7 @@ const makeDraft = (settings: FlightLogFieldSetting[]) => {
     const existing = byName.get(meta.fieldName);
     const fallback = defaults[meta.fieldName];
     return {
-      id: existing?.id || crypto.randomUUID(),
+      id: existing?.id || `flight-log-field-${meta.fieldName}`,
       field_name: meta.fieldName,
       is_enabled: meta.lockVisibility ? true : existing?.is_enabled ?? fallback.is_enabled,
       is_mandatory: meta.alwaysRequired ? true : existing?.is_mandatory ?? fallback.is_mandatory,
