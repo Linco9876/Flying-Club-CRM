@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
+const AVAILABILITY_UPDATED_EVENT = 'instructor-availability-updated';
+
 export interface WeeklySchedule {
   id: string;
   userId: string;
@@ -41,6 +43,10 @@ export const useInstructorAvailability = (instructorId?: string) => {
   const [scheduleChanges, setScheduleChanges] = useState<ScheduleChange[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const notifyAvailabilityUpdated = () => {
+    window.dispatchEvent(new Event(AVAILABILITY_UPDATED_EVENT));
+  };
+
   const fetchWeeklySchedules = async (userId?: string) => {
     try {
       let query = supabase.from('instructor_weekly_schedules').select('*');
@@ -55,12 +61,12 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       const schedules = (data || []).map(s => ({
         id: s.id,
-        userId: s.user_id,
+        userId: s.user_id || s.instructor_id,
         dayOfWeek: s.day_of_week,
         startTime: s.start_time,
         endTime: s.end_time,
-        afternoonStartTime: s.afternoon_start_time,
-        afternoonEndTime: s.afternoon_end_time,
+        afternoonStartTime: s.afternoon_start_time || s.start_time_2,
+        afternoonEndTime: s.afternoon_end_time || s.end_time_2,
         isAvailable: s.is_available
       }));
 
@@ -114,13 +120,13 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       const changes = (data || []).map(c => ({
         id: c.id,
-        userId: c.user_id,
-        effectiveFrom: c.effective_from,
+        userId: c.user_id || c.instructor_id,
+        effectiveFrom: c.effective_from || c.change_date,
         dayOfWeek: c.day_of_week,
         startTime: c.start_time,
         endTime: c.end_time,
-        afternoonStartTime: c.afternoon_start_time,
-        afternoonEndTime: c.afternoon_end_time,
+        afternoonStartTime: c.afternoon_start_time || c.start_time_2,
+        afternoonEndTime: c.afternoon_end_time || c.end_time_2,
         isAvailable: c.is_available
       }));
 
@@ -141,6 +147,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
           day_of_week: schedule.dayOfWeek,
           start_time: schedule.startTime,
           end_time: schedule.endTime,
+          start_time_2: schedule.afternoonStartTime || null,
+          end_time_2: schedule.afternoonEndTime || null,
           afternoon_start_time: schedule.afternoonStartTime || null,
           afternoon_end_time: schedule.afternoonEndTime || null,
           is_available: schedule.isAvailable,
@@ -152,6 +160,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       if (error) throw error;
 
       await fetchWeeklySchedules(instructorId);
+      notifyAvailabilityUpdated();
       toast.success('Weekly schedule updated');
     } catch (error) {
       console.error('Error updating weekly schedule:', error);
@@ -170,6 +179,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       if (error) throw error;
 
       await fetchWeeklySchedules(instructorId);
+      notifyAvailabilityUpdated();
       toast.success('Schedule deleted');
     } catch (error) {
       console.error('Error deleting schedule:', error);
@@ -195,6 +205,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       if (error) throw error;
 
       await fetchAbsences(instructorId);
+      notifyAvailabilityUpdated();
       toast.success('Absence added');
     } catch (error) {
       console.error('Error adding absence:', error);
@@ -221,6 +232,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       if (error) throw error;
 
       await fetchAbsences(instructorId);
+      notifyAvailabilityUpdated();
       toast.success('Absence updated');
     } catch (error) {
       console.error('Error updating absence:', error);
@@ -239,6 +251,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       if (error) throw error;
 
       await fetchAbsences(instructorId);
+      notifyAvailabilityUpdated();
       toast.success('Absence deleted');
     } catch (error) {
       console.error('Error deleting absence:', error);
@@ -253,10 +266,14 @@ export const useInstructorAvailability = (instructorId?: string) => {
         .from('instructor_schedule_changes')
         .insert({
           user_id: change.userId,
+          instructor_id: change.userId,
+          change_date: change.effectiveFrom,
           effective_from: change.effectiveFrom,
           day_of_week: change.dayOfWeek,
           start_time: change.startTime,
           end_time: change.endTime,
+          start_time_2: change.afternoonStartTime || null,
+          end_time_2: change.afternoonEndTime || null,
           afternoon_start_time: change.afternoonStartTime || null,
           afternoon_end_time: change.afternoonEndTime || null,
           is_available: change.isAvailable
@@ -265,6 +282,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       if (error) throw error;
 
       await fetchScheduleChanges(instructorId);
+      notifyAvailabilityUpdated();
       toast.success('Schedule change added');
     } catch (error) {
       console.error('Error adding schedule change:', error);
@@ -283,6 +301,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
       if (error) throw error;
 
       await fetchScheduleChanges(instructorId);
+      notifyAvailabilityUpdated();
       toast.success('Schedule change deleted');
     } catch (error) {
       console.error('Error deleting schedule change:', error);
@@ -303,6 +322,17 @@ export const useInstructorAvailability = (instructorId?: string) => {
     };
 
     fetchAll();
+  }, [instructorId]);
+
+  useEffect(() => {
+    const refreshAvailability = () => {
+      fetchWeeklySchedules(instructorId);
+      fetchAbsences(instructorId);
+      fetchScheduleChanges(instructorId);
+    };
+
+    window.addEventListener(AVAILABILITY_UPDATED_EVENT, refreshAvailability);
+    return () => window.removeEventListener(AVAILABILITY_UPDATED_EVENT, refreshAvailability);
   }, [instructorId]);
 
   return {

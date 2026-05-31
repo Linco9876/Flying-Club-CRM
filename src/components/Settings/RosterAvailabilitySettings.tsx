@@ -21,12 +21,33 @@ const DAYS_OF_WEEK = [
 ];
 
 type DayDraft = Omit<WeeklySchedule, 'id' | 'userId'>;
+type AbsenceDraft = {
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  reason: string;
+};
+
+const EMPTY_ABSENCE_DRAFT: AbsenceDraft = {
+  startDate: '',
+  endDate: '',
+  startTime: '',
+  endTime: '',
+  reason: '',
+};
+
+const formatRosterDate = (date: string) =>
+  new Date(`${date}T00:00:00`).toLocaleDateString();
+
+const formatRosterTime = (time: string) => time.slice(0, 5);
 
 export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProps> = ({ canEdit }) => {
   const { user } = useAuth();
-  const { users } = useUsers();
+  const { getInstructors } = useUsers();
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('');
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
+  const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>(EMPTY_ABSENCE_DRAFT);
   const [showScheduleChangeForm, setShowScheduleChangeForm] = useState(false);
   const [newScheduleEffectiveDate, setNewScheduleEffectiveDate] = useState('');
   const [newSchedule, setNewSchedule] = useState<{[key: number]: Omit<WeeklySchedule, 'id' | 'userId'>}>({});
@@ -47,9 +68,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     deleteScheduleChange
   } = useInstructorAvailability(selectedInstructorId);
 
-  const instructors = users.filter(u =>
-    u.roles?.includes('instructor') || u.roles?.includes('admin')
-  );
+  const instructors = getInstructors();
 
   useEffect(() => {
     if (user?.role === 'instructor' && !user.roles?.includes('admin')) {
@@ -63,6 +82,11 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   useEffect(() => {
     setDrafts({});
   }, [weeklySchedules, selectedInstructorId]);
+
+  useEffect(() => {
+    setShowAbsenceForm(false);
+    setAbsenceDraft(EMPTY_ABSENCE_DRAFT);
+  }, [selectedInstructorId]);
 
   const getScheduleForDay = (dayOfWeek: number) => {
     return weeklySchedules.find(s => s.dayOfWeek === dayOfWeek);
@@ -116,21 +140,32 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     e.preventDefault();
     if (!canEdit || !selectedInstructorId) return;
 
-    const formData = new FormData(e.currentTarget);
-    const startTime = formData.get('startTime') as string;
-    const endTime = formData.get('endTime') as string;
+    if (absenceDraft.startDate > absenceDraft.endDate) {
+      toast.error('End date must be on or after the start date');
+      return;
+    }
+
+    if (Boolean(absenceDraft.startTime) !== Boolean(absenceDraft.endTime)) {
+      toast.error('Select both a start and end time, or leave both blank for a full-day absence');
+      return;
+    }
+
+    if (absenceDraft.startTime && absenceDraft.endTime && absenceDraft.startTime >= absenceDraft.endTime) {
+      toast.error('End time must be later than the start time');
+      return;
+    }
 
     await addAbsence({
       userId: selectedInstructorId,
-      startDate: formData.get('startDate') as string,
-      endDate: formData.get('endDate') as string,
-      startTime: startTime || undefined,
-      endTime: endTime || undefined,
-      reason: formData.get('reason') as string || undefined
+      startDate: absenceDraft.startDate,
+      endDate: absenceDraft.endDate,
+      startTime: absenceDraft.startTime || undefined,
+      endTime: absenceDraft.endTime || undefined,
+      reason: absenceDraft.reason.trim() || undefined
     });
 
     setShowAbsenceForm(false);
-    e.currentTarget.reset();
+    setAbsenceDraft(EMPTY_ABSENCE_DRAFT);
   };
 
   const handleStartNewSchedule = () => {
@@ -326,7 +361,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
               <h3 className="text-lg font-medium text-gray-900">Temporary Absences</h3>
               {canEdit && (
                 <button
-                  onClick={() => setShowAbsenceForm(!showAbsenceForm)}
+                  onClick={() => {
+                    setShowAbsenceForm(!showAbsenceForm);
+                    setAbsenceDraft(EMPTY_ABSENCE_DRAFT);
+                  }}
                   className="flex items-center space-x-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   <Plus className="h-4 w-4" />
@@ -344,7 +382,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     </label>
                     <input
                       type="date"
-                      name="startDate"
+                      value={absenceDraft.startDate}
+                      onChange={(e) => setAbsenceDraft(prev => ({ ...prev, startDate: e.target.value }))}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -355,7 +394,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     </label>
                     <input
                       type="date"
-                      name="endDate"
+                      value={absenceDraft.endDate}
+                      onChange={(e) => setAbsenceDraft(prev => ({ ...prev, endDate: e.target.value }))}
                       required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -367,8 +407,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                       Start Time (Optional)
                     </label>
                     <TimeSelect
-                      value=""
-                      onChange={() => {}}
+                      value={absenceDraft.startTime}
+                      onChange={(value) => setAbsenceDraft(prev => ({ ...prev, startTime: value }))}
                       placeholder="Select time"
                       className="w-full"
                     />
@@ -379,8 +419,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                       End Time (Optional)
                     </label>
                     <TimeSelect
-                      value=""
-                      onChange={() => {}}
+                      value={absenceDraft.endTime}
+                      onChange={(value) => setAbsenceDraft(prev => ({ ...prev, endTime: value }))}
                       placeholder="Select time"
                       className="w-full"
                     />
@@ -393,7 +433,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                   </label>
                   <input
                     type="text"
-                    name="reason"
+                    value={absenceDraft.reason}
+                    onChange={(e) => setAbsenceDraft(prev => ({ ...prev, reason: e.target.value }))}
                     placeholder="e.g., Vacation, Training, etc."
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -407,7 +448,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowAbsenceForm(false)}
+                    onClick={() => {
+                      setShowAbsenceForm(false);
+                      setAbsenceDraft(EMPTY_ABSENCE_DRAFT);
+                    }}
                     className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
                   >
                     Cancel
@@ -427,10 +471,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                   <div key={absence.id} className="bg-amber-50 p-4 rounded-lg border border-amber-200 flex items-center justify-between">
                     <div>
                       <div className="font-medium text-gray-900">
-                        {new Date(absence.startDate).toLocaleDateString()} - {new Date(absence.endDate).toLocaleDateString()}
+                        {formatRosterDate(absence.startDate)} - {formatRosterDate(absence.endDate)}
                         {absence.startTime && absence.endTime && (
                           <span className="ml-2 text-sm font-normal">
-                            ({absence.startTime} - {absence.endTime})
+                            ({formatRosterTime(absence.startTime)} - {formatRosterTime(absence.endTime)})
                           </span>
                         )}
                       </div>
@@ -444,6 +488,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     {canEdit && (
                       <button
                         onClick={() => deleteAbsence(absence.id)}
+                        title="Delete absence"
+                        aria-label="Delete absence"
                         className="p-2 text-red-600 hover:bg-red-50 rounded-md"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -594,7 +640,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h4 className="font-semibold text-gray-900">
-                          Starting {new Date(effectiveFrom).toLocaleDateString()}
+                          Starting {formatRosterDate(effectiveFrom)}
                         </h4>
                         <p className="text-xs text-gray-600">Weekly schedule effective from this date</p>
                       </div>
@@ -621,10 +667,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                             <span className="font-medium text-gray-700 w-24">{day.label}</span>
                             {change.isAvailable ? (
                               <div className="flex-1 text-gray-600">
-                                {change.startTime} - {change.endTime}
+                                {formatRosterTime(change.startTime)} - {formatRosterTime(change.endTime)}
                                 {change.afternoonStartTime && change.afternoonEndTime && (
                                   <span className="ml-2 text-gray-500">
-                                    | {change.afternoonStartTime} - {change.afternoonEndTime}
+                                    | {formatRosterTime(change.afternoonStartTime)} - {formatRosterTime(change.afternoonEndTime)}
                                   </span>
                                 )}
                               </div>
