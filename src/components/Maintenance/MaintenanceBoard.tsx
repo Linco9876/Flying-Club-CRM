@@ -28,6 +28,7 @@ import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
 import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import { Defect } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import toast from 'react-hot-toast';
 
 type BoardDefect = Defect & { aircraftId: string };
 
@@ -430,10 +431,137 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
   </div>
 );
 
+interface OneTimeMilestoneModalProps {
+  aircraft: Array<{ id: string; registration: string; totalHours: number }>;
+  onClose: () => void;
+  onSave: (data: {
+    aircraftId: string;
+    title: string;
+    dueCondition: 'hours' | 'date';
+    dueValue: string;
+    description?: string;
+  }) => Promise<void>;
+}
+
+const OneTimeMilestoneModal: React.FC<OneTimeMilestoneModalProps> = ({ aircraft, onClose, onSave }) => {
+  const [formData, setFormData] = useState({
+    aircraftId: aircraft[0]?.id || '',
+    title: '',
+    dueCondition: 'hours' as 'hours' | 'date',
+    dueValue: '',
+    description: ''
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onSave({
+        ...formData,
+        description: formData.description.trim() || undefined
+      });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-xl w-full max-w-lg">
+        <div className="flex items-start justify-between p-6 border-b border-gray-200">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">Add One-Time Milestone</h2>
+            <p className="text-sm text-gray-600 mt-1">Create maintenance work for a single aircraft and deadline.</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Aircraft</label>
+            <select
+              value={formData.aircraftId}
+              onChange={(event) => setFormData(prev => ({ ...prev, aircraftId: event.target.value }))}
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {aircraft.map(item => <option key={item.id} value={item.id}>{item.registration}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Task Name</label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(event) => setFormData(prev => ({ ...prev, title: event.target.value }))}
+              placeholder="e.g. Replace left brake pads"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Due By</label>
+              <select
+                value={formData.dueCondition}
+                onChange={(event) => setFormData(prev => ({ ...prev, dueCondition: event.target.value as 'hours' | 'date', dueValue: '' }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="hours">Tach hours</option>
+                <option value="date">Calendar date</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {formData.dueCondition === 'hours' ? 'Due Tach Hours' : 'Due Date'}
+              </label>
+              <input
+                type={formData.dueCondition === 'hours' ? 'number' : 'date'}
+                step={formData.dueCondition === 'hours' ? '0.1' : undefined}
+                value={formData.dueValue}
+                onChange={(event) => setFormData(prev => ({ ...prev, dueValue: event.target.value }))}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+            <textarea
+              value={formData.description}
+              onChange={(event) => setFormData(prev => ({ ...prev, description: event.target.value }))}
+              rows={3}
+              placeholder="Optional instructions or context"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+          <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving} className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-70">
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            <span>Add Milestone</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
   const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory, deleteDefect } = useAircraft();
-  const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone } = useMaintenanceMilestones();
+  const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone, deleteMilestone } = useMaintenanceMilestones();
   const { templates, settings: maintenanceSettings, loading: templatesLoading } = useMaintenanceSettings();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('open');
   const [showDefectForm, setShowDefectForm] = useState(false);
@@ -446,6 +574,7 @@ export const MaintenanceBoard: React.FC = () => {
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [defectHistory, setDefectHistory] = useState<any[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showOneTimeMilestoneForm, setShowOneTimeMilestoneForm] = useState(false);
 
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
@@ -585,6 +714,39 @@ export const MaintenanceBoard: React.FC = () => {
     });
   };
 
+  const handleAddOneTimeMilestone = async (data: {
+    aircraftId: string;
+    title: string;
+    dueCondition: 'hours' | 'date';
+    dueValue: string;
+    description?: string;
+  }) => {
+    if (milestones.some(m => m.aircraftId === data.aircraftId && m.title.toLowerCase() === data.title.trim().toLowerCase())) {
+      toast.error('This aircraft already has a milestone with that name');
+      throw new Error('Duplicate milestone title');
+    }
+
+    const dueHours = data.dueCondition === 'hours' ? Number(data.dueValue) : undefined;
+    if (data.dueCondition === 'hours' && (!Number.isFinite(dueHours) || dueHours! <= 0)) {
+      toast.error('Enter a valid due tach value');
+      throw new Error('Invalid due hours');
+    }
+
+    await createMilestone({
+      aircraftId: data.aircraftId,
+      title: data.title.trim(),
+      type: data.dueCondition === 'hours' ? 'hours' : 'calendar',
+      intervalHours: 0,
+      intervalMonths: 0,
+      nextDueHours: dueHours,
+      nextDueDate: data.dueCondition === 'date' ? new Date(`${data.dueValue}T00:00:00`) : undefined,
+      description: data.description,
+      dueCondition: data.dueCondition,
+      dueValue: data.dueValue,
+      isOneTime: true
+    });
+  };
+
   const calculateDaysRemaining = (dueDate?: Date) => {
     if (!dueDate) return null;
     const today = new Date();
@@ -620,7 +782,7 @@ export const MaintenanceBoard: React.FC = () => {
     }> = [];
 
     aircraft.forEach(ac => {
-      milestones.filter(m => m.aircraftId === ac.id).forEach(milestone => {
+      milestones.filter(m => m.aircraftId === ac.id && m.status !== 'completed').forEach(milestone => {
         const hoursRemaining = calculateHoursRemaining(milestone.nextDueHours, ac.totalHours);
         const daysRemaining = calculateDaysRemaining(milestone.nextDueDate);
 
@@ -677,6 +839,7 @@ export const MaintenanceBoard: React.FC = () => {
   };
 
   const uniqueMilestoneNames = templates.map(t => t.name).sort();
+  const oneTimeMilestones = milestones.filter(m => m.isOneTime && m.status !== 'completed');
   const filteredMilestoneNames = selectedMilestoneFilters.length === 0
     ? uniqueMilestoneNames
     : uniqueMilestoneNames.filter(name => selectedMilestoneFilters.includes(name));
@@ -705,13 +868,22 @@ export const MaintenanceBoard: React.FC = () => {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Maintenance Board</h1>
-        <button
-          onClick={() => setShowDefectForm(true)}
-          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Report Defect</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowOneTimeMilestoneForm(true)}
+            className="flex items-center space-x-2 bg-gray-100 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>One-Time Milestone</span>
+          </button>
+          <button
+            onClick={() => setShowDefectForm(true)}
+            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Report Defect</span>
+          </button>
+        </div>
       </div>
 
       {!milestonesLoading && milestones.length > 0 && getWarnings().length > 0 && (
@@ -758,6 +930,49 @@ export const MaintenanceBoard: React.FC = () => {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {oneTimeMilestones.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+            <Wrench className="h-5 w-5 mr-2" />
+            One-Time Maintenance
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {oneTimeMilestones.map(milestone => (
+              <div key={milestone.id} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase text-gray-500">{getAircraftRegistration(milestone.aircraftId)}</p>
+                    <h3 className="font-semibold text-gray-900 mt-1">{milestone.title}</h3>
+                    {milestone.description && <p className="text-sm text-gray-600 mt-1">{milestone.description}</p>}
+                  </div>
+                  <button
+                    onClick={() => deleteMilestone(milestone.id)}
+                    title="Delete one-time milestone"
+                    aria-label="Delete one-time milestone"
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-md"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex items-end justify-between gap-3 mt-4">
+                  <div className="text-sm text-gray-700">
+                    {milestone.nextDueHours !== undefined && <p>Due at {milestone.nextDueHours.toFixed(1)} tach hours</p>}
+                    {milestone.nextDueDate && <p>Due by {milestone.nextDueDate.toLocaleDateString()}</p>}
+                  </div>
+                  <button
+                    onClick={() => setSelectedMaintenance({ milestone, aircraftId: milestone.aircraftId })}
+                    className="flex items-center gap-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded transition-colors"
+                  >
+                    <CheckSquare className="h-3 w-3" />
+                    <span>Mark Complete</span>
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -837,7 +1052,7 @@ export const MaintenanceBoard: React.FC = () => {
                       {ac.registration}
                     </td>
                     {filteredMilestoneNames.map(milestoneTitle => {
-                      const milestone = milestones.find(m => m.aircraftId === ac.id && m.title === milestoneTitle);
+                      const milestone = milestones.find(m => !m.isOneTime && m.aircraftId === ac.id && m.title === milestoneTitle);
 
                       if (!milestone) {
                         return (
@@ -1003,6 +1218,14 @@ export const MaintenanceBoard: React.FC = () => {
         onClose={() => setShowDefectForm(false)}
         onSubmit={handleDefectSubmit}
       />
+
+      {showOneTimeMilestoneForm && (
+        <OneTimeMilestoneModal
+          aircraft={aircraft.map(item => ({ id: item.id, registration: item.registration, totalHours: item.totalHours }))}
+          onClose={() => setShowOneTimeMilestoneForm(false)}
+          onSave={handleAddOneTimeMilestone}
+        />
+      )}
 
       {statusModalDefect && (
         <StatusUpdateModal

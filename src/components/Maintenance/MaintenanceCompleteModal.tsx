@@ -187,6 +187,7 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
                 </div>
               </div>
 
+              {!milestone.isOneTime && (
               <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
                 <h4 className="text-sm font-semibold text-blue-900 mb-3">Next Deadline</h4>
 
@@ -225,6 +226,15 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
                   </div>
                 )}
               </div>
+              )}
+
+              {milestone.isOneTime && (
+                <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                  <p className="text-sm text-blue-900">
+                    This is a one-time milestone. Completing it will close the task without creating another deadline.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

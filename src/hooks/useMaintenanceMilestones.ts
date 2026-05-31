@@ -16,6 +16,8 @@ export interface MaintenanceMilestone {
   description?: string;
   dueCondition?: string;
   dueValue?: string;
+  isOneTime?: boolean;
+  status?: 'upcoming' | 'due' | 'overdue' | 'completed';
 }
 
 export interface MaintenanceCompletion {
@@ -62,7 +64,9 @@ export const useMaintenanceMilestones = () => {
           nextDueDate: m.next_due_date ? new Date(m.next_due_date) : undefined,
           description: m.description,
           dueCondition: m.due_condition,
-          dueValue: m.due_value
+          dueValue: m.due_value,
+          isOneTime: m.is_one_time || false,
+          status: m.status || 'upcoming'
         })));
       }
     } catch (error) {
@@ -86,6 +90,8 @@ export const useMaintenanceMilestones = () => {
           next_due_hours: milestone.nextDueHours,
           next_due_date: milestone.nextDueDate,
           description: milestone.description,
+          is_one_time: milestone.isOneTime || false,
+          status: milestone.status || 'upcoming',
           due_condition: milestone.dueCondition || (milestone.type === 'calendar' ? 'date' : 'hours'),
           due_value: milestone.dueValue || (
             milestone.type === 'calendar'
@@ -129,6 +135,7 @@ export const useMaintenanceMilestones = () => {
         updateData.due_value = updates.nextDueDate.toISOString().split('T')[0];
       }
       if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.status !== undefined) updateData.status = updates.status;
 
       updateData.updated_at = new Date().toISOString();
 
@@ -192,6 +199,9 @@ export const useMaintenanceMilestones = () => {
           last_completed_tach: completion.completedTach,
           next_due_hours: completion.nextDueHours,
           next_due_date: completion.nextDueDate,
+          status: milestones.find(m => m.id === completion.milestoneId)?.isOneTime
+            ? 'completed'
+            : 'upcoming',
           updated_at: new Date().toISOString()
         })
         .eq('id', completion.milestoneId);
