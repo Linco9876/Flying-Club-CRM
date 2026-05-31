@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStudents } from '../../hooks/useStudents';
+import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { Download, Search, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
-import toast from 'react-hot-toast';
 
 interface InstructorApproval {
   id: string;
@@ -17,6 +17,7 @@ interface InstructorApproval {
 
 export const InstructorApprovalsTab: React.FC = () => {
   const { students } = useStudents();
+  const { settings } = useSafetySettings();
   const [searchTerm, setSearchTerm] = useState('');
 
   const calculateInstructorApprovals = (): InstructorApproval[] => {
@@ -24,9 +25,11 @@ export const InstructorApprovalsTab: React.FC = () => {
     const today = new Date();
 
     return instructors.map(instructor => {
-      // Mock dates - in real app these would come from instructor records
-      const standardsCheckDue = new Date(today.getTime() + (Math.random() * 365 - 180) * 24 * 60 * 60 * 1000);
-      const proficiencyCheckDue = new Date(today.getTime() + (Math.random() * 365 - 180) * 24 * 60 * 60 * 1000);
+      const lastCheck = instructor.lastFlightReview || new Date(0);
+      const standardsCheckDue = new Date(lastCheck);
+      standardsCheckDue.setMonth(standardsCheckDue.getMonth() + settings.instructorSopCheckMonths);
+      const proficiencyCheckDue = new Date(lastCheck);
+      proficiencyCheckDue.setMonth(proficiencyCheckDue.getMonth() + 12);
 
       // Calculate days until due
       const daysUntilStandardsCheck = Math.ceil((standardsCheckDue.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -41,13 +44,9 @@ export const InstructorApprovalsTab: React.FC = () => {
       else if (minDays <= 60) urgencyLevel = 'warning';
       else urgencyLevel = 'current';
 
-      // Mock restrictions and supervision requirements
       const flightRestrictions: string[] = [];
-      const supervisionRequired = Math.random() > 0.8; // 20% chance
-
-      if (Math.random() > 0.9) flightRestrictions.push('No night flying');
-      if (Math.random() > 0.95) flightRestrictions.push('Local area only');
-      if (supervisionRequired) flightRestrictions.push('Requires supervision');
+      const supervisionRequired = !instructor.lastFlightReview;
+      if (!instructor.lastFlightReview) flightRestrictions.push('Standards check date not recorded');
 
       return {
         id: instructor.id,
@@ -83,8 +82,24 @@ export const InstructorApprovalsTab: React.FC = () => {
     return aMinDays - bMinDays;
   });
 
-  const handleExport = (format: 'csv' | 'xlsx') => {
-    toast.success(`Exporting instructor approvals to ${format.toUpperCase()}...`);
+  const handleExport = () => {
+    const rows = sortedInstructors.map(instructor => [
+      instructor.name,
+      instructor.urgencyLevel,
+      formatDate(instructor.standardsCheckDue),
+      formatDate(instructor.proficiencyCheckDue),
+      instructor.flightRestrictions.join('; '),
+      instructor.supervisionRequired ? 'Yes' : 'No'
+    ]);
+    const csv = [['Instructor', 'Status', 'Standards Check Due', 'Proficiency Check Due', 'Restrictions', 'Supervision Required'], ...rows]
+      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'instructor-approvals.csv';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const getUrgencyColor = (urgencyLevel: string) => {
@@ -141,20 +156,13 @@ export const InstructorApprovalsTab: React.FC = () => {
           <div className="text-sm text-gray-600">
             Showing {sortedInstructors.length} instructors
           </div>
-          <div className="flex space-x-2">
+          <div>
             <button
-              onClick={() => handleExport('csv')}
+              onClick={handleExport}
               className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
               <Download className="h-4 w-4" />
-              <span>CSV</span>
-            </button>
-            <button
-              onClick={() => handleExport('xlsx')}
-              className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              <span>XLSX</span>
+              <span>Export CSV</span>
             </button>
           </div>
         </div>

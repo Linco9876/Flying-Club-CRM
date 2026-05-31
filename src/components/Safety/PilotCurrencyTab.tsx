@@ -2,18 +2,22 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudents } from '../../hooks/useStudents';
 import { useBookings } from '../../hooks/useBookings';
+import { useSafetySettings } from '../../hooks/useSafetySettings';
+import { hasAnyRole } from '../../utils/rbac';
 import { Download, Search, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
-import toast from 'react-hot-toast';
 
 interface PilotCurrency {
   id: string;
   name: string;
   lastFlightDate: Date | null;
   medicalExpiry: Date | null;
+  licenceExpiry: Date | null;
   bfrDue: Date | null;
   endorsements: string[];
   daysUntilMedicalExpiry: number;
+  daysUntilLicenceExpiry: number;
   daysUntilBfrDue: number;
+  daysSinceLastFlight: number;
   urgencyLevel: 'overdue' | 'urgent' | 'warning' | 'current';
 }
 
@@ -21,14 +25,15 @@ export const PilotCurrencyTab: React.FC = () => {
   const { user } = useAuth();
   const { students } = useStudents();
   const { bookings } = useBookings();
+  const { settings } = useSafetySettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [endorsementFilter, setEndorsementFilter] = useState('');
 
   const calculatePilotCurrency = (): PilotCurrency[] => {
-    let pilots = students.filter(s => s.role === 'student');
+    let pilots = students.filter(s => s.role === 'student' || s.role === 'pilot');
 
-    if (user?.role === 'student') {
+    if (hasAnyRole(user, ['student', 'pilot'])) {
       pilots = pilots.filter(p => p.id === user.id);
     }
 
@@ -42,9 +47,8 @@ export const PilotCurrencyTab: React.FC = () => {
         ? new Date(Math.max(...pilotBookings.map(b => new Date(b.startTime).getTime())))
         : null;
 
-      // Calculate BFR due date (24 months from last BFR or licence issue)
-      const bfrDue = pilot.licenceExpiry 
-        ? new Date(pilot.licenceExpiry.getTime() - (365 * 24 * 60 * 60 * 1000)) // 1 year before licence expiry
+      const bfrDue = pilot.lastFlightReview
+        ? new Date(new Date(pilot.lastFlightReview).setFullYear(pilot.lastFlightReview.getFullYear() + 2))
         : null;
 
       // Calculate days until expiry
@@ -55,14 +59,20 @@ export const PilotCurrencyTab: React.FC = () => {
       const daysUntilBfrDue = bfrDue 
         ? Math.ceil((bfrDue.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
         : 999;
+      const daysUntilLicenceExpiry = pilot.licenceExpiry
+        ? Math.ceil((pilot.licenceExpiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
+      const daysSinceLastFlight = lastFlightDate
+        ? Math.floor((today.getTime() - lastFlightDate.getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
 
       // Determine urgency level
-      const minDays = Math.min(daysUntilMedicalExpiry, daysUntilBfrDue);
+      const minDays = Math.min(daysUntilMedicalExpiry, daysUntilLicenceExpiry, daysUntilBfrDue);
       let urgencyLevel: 'overdue' | 'urgent' | 'warning' | 'current';
       
-      if (minDays < 0) urgencyLevel = 'overdue';
-      else if (minDays <= 30) urgencyLevel = 'urgent';
-      else if (minDays <= 60) urgencyLevel = 'warning';
+      if (minDays < 0 || daysSinceLastFlight > settings.recencyDays) urgencyLevel = 'overdue';
+      else if (minDays <= Math.min(settings.medicalWarningDays, settings.bfrWarningDays, 30)) urgencyLevel = 'urgent';
+      else if (daysUntilMedicalExpiry <= settings.medicalWarningDays || daysUntilLicenceExpiry <= settings.licenceWarningDays || daysUntilBfrDue <= settings.bfrWarningDays) urgencyLevel = 'warning';
       else urgencyLevel = 'current';
 
       // Get endorsement labels
@@ -75,10 +85,13 @@ export const PilotCurrencyTab: React.FC = () => {
         name: pilot.name,
         lastFlightDate,
         medicalExpiry: pilot.medicalExpiry || null,
+        licenceExpiry: pilot.licenceExpiry || null,
         bfrDue,
         endorsements,
         daysUntilMedicalExpiry,
+        daysUntilLicenceExpiry,
         daysUntilBfrDue,
+        daysSinceLastFlight,
         urgencyLevel
       };
     });
@@ -111,13 +124,30 @@ export const PilotCurrencyTab: React.FC = () => {
     }
     
     // Within same urgency, sort by soonest expiry
-    const aMinDays = Math.min(a.daysUntilMedicalExpiry, a.daysUntilBfrDue);
-    const bMinDays = Math.min(b.daysUntilMedicalExpiry, b.daysUntilBfrDue);
+    const aMinDays = Math.min(a.daysUntilMedicalExpiry, a.daysUntilLicenceExpiry, a.daysUntilBfrDue);
+    const bMinDays = Math.min(b.daysUntilMedicalExpiry, b.daysUntilLicenceExpiry, b.daysUntilBfrDue);
     return aMinDays - bMinDays;
   });
 
-  const handleExport = (format: 'csv' | 'xlsx') => {
-    toast.success(`Exporting pilot currency to ${format.toUpperCase()}...`);
+  const handleExport = () => {
+    const rows = sortedPilots.map(pilot => [
+      pilot.name,
+      pilot.urgencyLevel,
+      formatDate(pilot.lastFlightDate),
+      formatDate(pilot.medicalExpiry),
+      formatDate(pilot.licenceExpiry),
+      formatDate(pilot.bfrDue),
+      pilot.endorsements.join('; ')
+    ]);
+    const csv = [['Pilot', 'Status', 'Last Flight', 'Medical Expiry', 'Membership Expiry', 'BFR Due', 'Endorsements'], ...rows]
+      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'pilot-currency.csv';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const getUrgencyColor = (urgencyLevel: string) => {
@@ -212,20 +242,13 @@ export const PilotCurrencyTab: React.FC = () => {
           <div className="text-sm text-gray-600">
             Showing {sortedPilots.length} pilots
           </div>
-          <div className="flex space-x-2">
+          <div>
             <button
-              onClick={() => handleExport('csv')}
+              onClick={handleExport}
               className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
               <Download className="h-4 w-4" />
-              <span>CSV</span>
-            </button>
-            <button
-              onClick={() => handleExport('xlsx')}
-              className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              <span>XLSX</span>
+              <span>Export CSV</span>
             </button>
           </div>
         </div>
@@ -248,6 +271,9 @@ export const PilotCurrencyTab: React.FC = () => {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Medical Expiry
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Membership Expiry
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   BFR Due Date
@@ -282,6 +308,12 @@ export const PilotCurrencyTab: React.FC = () => {
                           {formatDaysUntil(pilot.daysUntilMedicalExpiry)}
                         </div>
                       )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div>
+                      <div>{formatDate(pilot.licenceExpiry)}</div>
+                      {pilot.licenceExpiry && <div className="text-xs text-gray-500">{formatDaysUntil(pilot.daysUntilLicenceExpiry)}</div>}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

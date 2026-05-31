@@ -11,6 +11,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { LogbookTab } from './LogbookTab';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
+import { useSafetyReports } from '../../hooks/useSafetyReports';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -34,6 +35,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const { users } = useUsers();
   const { modules: trainingCourses } = useTrainingModules();
   const { settings: portalSettings } = usePortalUxSettings();
+  const { reports: safetyReports } = useSafetyReports();
   const isOwnStudentPortal = (user?.role === 'student' || user?.role === 'pilot') && studentId === user.id;
 
   const student = useMemo(() => {
@@ -46,6 +48,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const studentTrainingRecords = useMemo(
     () => trainingRecords.filter(record => record.studentId === studentId),
     [trainingRecords, studentId]
+  );
+  const linkedSafetyReports = useMemo(
+    () => safetyReports.filter(report => report.reporterId === studentId || report.involvedUserIds.includes(studentId || '')),
+    [safetyReports, studentId]
   );
 
   useEffect(() => {
@@ -626,11 +632,24 @@ const handleAddTrainingRecord = () => {
           <p className="text-sm text-gray-600 mb-6">
             Safety reports involving this pilot or student should appear here, including hazards, incidents, accidents and corrective actions.
           </p>
-          <div className="text-center py-10 border border-dashed border-gray-300 rounded-lg">
-            <AlertTriangle className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm font-medium text-gray-900">No linked safety reports</p>
-            <p className="text-xs text-gray-500 mt-1">Incident linking will be connected when the safety workflow is expanded.</p>
-          </div>
+          {linkedSafetyReports.length === 0 ? (
+            <div className="text-center py-10 border border-dashed border-gray-300 rounded-lg">
+              <AlertTriangle className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm font-medium text-gray-900">No linked safety reports</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 border border-gray-200 rounded-lg">
+              {linkedSafetyReports.map(report => (
+                <div key={report.id} className="p-4 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{report.title}</p>
+                    <p className="text-xs text-gray-500 mt-1">{report.createdAt.toLocaleDateString()} · {report.reportType.replace('_', ' ')}</p>
+                  </div>
+                  <span className="text-xs font-medium text-gray-600 capitalize">{report.status.replace('_', ' ')}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Shield, AlertTriangle, Clock, Users, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Shield, Users, Plus, Trash2, Loader2 } from 'lucide-react';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 
 interface SafetyComplianceSettingsProps {
@@ -17,10 +17,10 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
     updateCategory,
     deleteCategory
   } = useSafetySettings();
+  const [formData, setFormData] = useState(settings);
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
-    if (!settings) return;
-    updateSettings({ [field]: value } as any);
+    setFormData(current => ({ ...current, [field]: value }));
     onFormChange();
   };
 
@@ -39,10 +39,23 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
     onFormChange();
   };
 
-  if (loading || !settings) {
+  useEffect(() => {
+    setFormData(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    (window as any).__safetySettingsSave = async () => updateSettings(formData);
+    (window as any).__safetySettingsCancel = () => setFormData(settings);
+    return () => {
+      delete (window as any).__safetySettingsSave;
+      delete (window as any).__safetySettingsCancel;
+    };
+  }, [formData, settings]);
+
+  if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
-        <div className="text-gray-500">Loading settings...</div>
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
   }
@@ -71,7 +84,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 type="number"
                 min="30"
                 max="365"
-                value={settings.recencyDays}
+                value={formData.recencyDays}
                 onChange={(e) => handleInputChange('recencyDays', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
@@ -85,7 +98,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 type="number"
                 min="7"
                 max="180"
-                value={settings.medicalWarningDays}
+                value={formData.medicalWarningDays}
                 onChange={(e) => handleInputChange('medicalWarningDays', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
@@ -99,7 +112,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 type="number"
                 min="7"
                 max="180"
-                value={settings.licenceWarningDays}
+                value={formData.licenceWarningDays}
                 onChange={(e) => handleInputChange('licenceWarningDays', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
@@ -112,7 +125,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 type="number"
                 min="7"
                 max="90"
-                value={settings.bfrWarningDays}
+                value={formData.bfrWarningDays}
                 onChange={(e) => handleInputChange('bfrWarningDays', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
@@ -131,7 +144,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 type="number"
                 min="6"
                 max="36"
-                value={settings.instructorSopCheckMonths}
+                value={formData.instructorSopCheckMonths}
                 onChange={(e) => handleInputChange('instructorSopCheckMonths', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
@@ -145,7 +158,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 type="number"
                 min="12"
                 max="48"
-                value={settings.seniorInstructorSopCheckMonths}
+                value={formData.seniorInstructorSopCheckMonths}
                 onChange={(e) => handleInputChange('seniorInstructorSopCheckMonths', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
@@ -207,17 +220,30 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
         <div>
           <h3 className="text-lg font-medium text-gray-900 mb-4">Compliance Automation</h3>
           <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Default Safety Officer</label>
+                <input
+                  type="text"
+                  value={formData.defaultSafetyOfficer}
+                  onChange={(e) => handleInputChange('defaultSafetyOfficer', e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+            </div>
+
             <div className="flex items-center space-x-3">
               <input
                 type="checkbox"
-                id="autoGroundOnMajorDefect"
-                checked={settings.autoGroundOnMajorDefect}
-                onChange={(e) => handleInputChange('autoGroundOnMajorDefect', e.target.checked)}
+                id="autoAssignIncidents"
+                checked={formData.autoAssignIncidents}
+                onChange={(e) => handleInputChange('autoAssignIncidents', e.target.checked)}
                 disabled={!canEdit}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
               />
-              <label htmlFor="autoGroundOnMajorDefect" className="text-sm text-gray-700">
-                Auto-ground aircraft on Major/Critical defects
+              <label htmlFor="autoAssignIncidents" className="text-sm text-gray-700">
+                Automatically assign new safety reports
               </label>
             </div>
 
@@ -225,7 +251,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
               <input
                 type="checkbox"
                 id="autoBlockExpiredMedical"
-                checked={settings.autoBlockExpiredMedical}
+                checked={formData.autoBlockExpiredMedical}
                 onChange={(e) => handleInputChange('autoBlockExpiredMedical', e.target.checked)}
                 disabled={!canEdit}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
@@ -239,7 +265,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
               <input
                 type="checkbox"
                 id="autoBlockExpiredLicence"
-                checked={settings.autoBlockExpiredLicence}
+                checked={formData.autoBlockExpiredLicence}
                 onChange={(e) => handleInputChange('autoBlockExpiredLicence', e.target.checked)}
                 disabled={!canEdit}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
@@ -253,7 +279,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
               <input
                 type="checkbox"
                 id="requireBfrForSolo"
-                checked={settings.requireBfrForSolo}
+                checked={formData.requireBfrForSolo}
                 onChange={(e) => handleInputChange('requireBfrForSolo', e.target.checked)}
                 disabled={!canEdit}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
