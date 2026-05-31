@@ -64,11 +64,38 @@ export function useFlightLogSettings() {
     }
   };
 
+  const updateSettings = async (nextSettings: FlightLogFieldSetting[]) => {
+    try {
+      const payload = nextSettings.map(setting => ({
+        id: setting.id,
+        field_name: setting.field_name,
+        is_enabled: setting.is_enabled,
+        is_mandatory: setting.is_enabled ? setting.is_mandatory : false,
+        display_order: setting.display_order,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error: upsertError } = await supabase
+        .from('flight_log_field_settings')
+        .upsert(payload, { onConflict: 'field_name' });
+
+      if (upsertError) throw upsertError;
+
+      await fetchSettings();
+      return { error: null };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save flight log settings';
+      console.error('Error saving flight log settings:', err);
+      return { error: errorMessage };
+    }
+  };
+
   return {
     settings,
     loading,
     error,
     updateSetting,
+    updateSettings,
     refetch: fetchSettings,
   };
 }

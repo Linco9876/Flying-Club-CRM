@@ -123,7 +123,6 @@ export const useBillingAccounts = () => {
           flight_types(name)
         `)
         .or('payment_status.is.null,payment_status.eq.unpaid')
-        .not('payment_type', 'is', null)
         .order('start_time', { ascending: false });
 
       if (error) throw error;
@@ -189,8 +188,7 @@ export const useBillingAccounts = () => {
       const { data: unpaid, error: unpaidError } = await supabase
         .from('flight_logs')
         .select('student_id')
-        .or('payment_status.is.null,payment_status.eq.unpaid')
-        .not('payment_type', 'is', null);
+        .or('payment_status.is.null,payment_status.eq.unpaid');
 
       if (unpaidError) throw unpaidError;
 

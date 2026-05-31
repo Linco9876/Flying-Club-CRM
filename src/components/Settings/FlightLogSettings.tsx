@@ -1,125 +1,279 @@
-import React from 'react';
-import { Save } from 'lucide-react';
-import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ClipboardList, Info, Loader2 } from 'lucide-react';
+import { FlightLogFieldSetting, useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import toast from 'react-hot-toast';
 
-const FlightLogSettings: React.FC = () => {
-  const { settings, loading, updateSetting } = useFlightLogSettings();
+interface FlightLogSettingsProps {
+  canEdit: boolean;
+  onFormChange: () => void;
+}
 
-  const handleToggleEnabled = async (id: string, currentValue: boolean) => {
-    const { error } = await updateSetting(id, { is_enabled: !currentValue });
-    if (error) {
-      toast.error(error);
-    } else {
-      toast.success('Setting updated successfully');
-    }
-  };
+interface FieldMeta {
+  fieldName: string;
+  label: string;
+  description: string;
+  group: 'Core Flight Details' | 'Billing' | 'Operational Notes' | 'Aircraft Servicing';
+  alwaysRequired?: boolean;
+  lockVisibility?: boolean;
+}
 
-  const handleToggleMandatory = async (id: string, currentValue: boolean) => {
-    const { error } = await updateSetting(id, { is_mandatory: !currentValue });
-    if (error) {
-      toast.error(error);
-    } else {
-      toast.success('Setting updated successfully');
-    }
-  };
+const fieldMeta: FieldMeta[] = [
+  {
+    fieldName: 'start_time',
+    label: 'Start Time',
+    description: 'The booked or actual engine/flight start time.',
+    group: 'Core Flight Details',
+    alwaysRequired: true,
+    lockVisibility: true,
+  },
+  {
+    fieldName: 'end_time',
+    label: 'End Time',
+    description: 'The booked or actual end time used for the log period.',
+    group: 'Core Flight Details',
+    alwaysRequired: true,
+    lockVisibility: true,
+  },
+  {
+    fieldName: 'start_tach',
+    label: 'Start Tach',
+    description: 'Auto-fills from the previous aircraft log where possible.',
+    group: 'Core Flight Details',
+    alwaysRequired: true,
+    lockVisibility: true,
+  },
+  {
+    fieldName: 'end_tach',
+    label: 'End Tach',
+    description: 'Required so aircraft hours and maintenance tracking stay accurate.',
+    group: 'Core Flight Details',
+    alwaysRequired: true,
+    lockVisibility: true,
+  },
+  {
+    fieldName: 'flight_duration',
+    label: 'Flight Duration',
+    description: 'Can be typed directly and will update end tach.',
+    group: 'Core Flight Details',
+    alwaysRequired: true,
+    lockVisibility: true,
+  },
+  {
+    fieldName: 'flight_type',
+    label: 'Flight Type',
+    description: 'Drives the aircraft rate and payment rules used for billing.',
+    group: 'Billing',
+    alwaysRequired: true,
+    lockVisibility: true,
+  },
+  {
+    fieldName: 'payment_type',
+    label: 'Payment Type',
+    description: 'Manual payment selector for non-free flights. Forced/default payment methods still apply.',
+    group: 'Billing',
+  },
+  {
+    fieldName: 'takeoffs_landings',
+    label: 'Takeoffs & Landings',
+    description: 'A compact field that records both takeoffs and landings together.',
+    group: 'Core Flight Details',
+  },
+  {
+    fieldName: 'comments',
+    label: 'Debrief Comments',
+    description: 'General flight notes and student debrief summary.',
+    group: 'Operational Notes',
+  },
+  {
+    fieldName: 'observations',
+    label: 'Operational Observations',
+    description: 'Aircraft or operational notes that should appear on the aircraft flight log.',
+    group: 'Operational Notes',
+  },
+  {
+    fieldName: 'passengers',
+    label: 'Passenger Count',
+    description: 'Used by per-passenger rates and passenger-carrying records.',
+    group: 'Operational Notes',
+  },
+  {
+    fieldName: 'oil_added',
+    label: 'Oil Added',
+    description: 'Oil quantity added after the flight.',
+    group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'fuel_added',
+    label: 'Fuel Added',
+    description: 'Fuel quantity added after the flight.',
+    group: 'Aircraft Servicing',
+  },
+];
 
-  const getFieldLabel = (fieldName: string): string => {
-    const labels: Record<string, string> = {
-      landings: 'Number of Landings',
-      payment_type: 'Payment Type',
-      observations: 'Observations/Comments',
-      oil_added: 'Oil Added (quarts)',
-      fuel_added: 'Fuel Added (gallons)',
-      passengers: 'Number of Passengers',
+const defaults: Record<string, Pick<FlightLogFieldSetting, 'is_enabled' | 'is_mandatory' | 'display_order'>> = {
+  start_time: { is_enabled: true, is_mandatory: true, display_order: 1 },
+  end_time: { is_enabled: true, is_mandatory: true, display_order: 2 },
+  start_tach: { is_enabled: true, is_mandatory: true, display_order: 3 },
+  end_tach: { is_enabled: true, is_mandatory: true, display_order: 4 },
+  flight_duration: { is_enabled: true, is_mandatory: true, display_order: 5 },
+  flight_type: { is_enabled: true, is_mandatory: true, display_order: 6 },
+  payment_type: { is_enabled: true, is_mandatory: true, display_order: 7 },
+  takeoffs_landings: { is_enabled: true, is_mandatory: false, display_order: 8 },
+  comments: { is_enabled: true, is_mandatory: false, display_order: 9 },
+  observations: { is_enabled: false, is_mandatory: false, display_order: 10 },
+  passengers: { is_enabled: false, is_mandatory: false, display_order: 11 },
+  oil_added: { is_enabled: false, is_mandatory: false, display_order: 12 },
+  fuel_added: { is_enabled: false, is_mandatory: false, display_order: 13 },
+};
+
+const makeDraft = (settings: FlightLogFieldSetting[]) => {
+  const byName = new Map(settings.map(setting => [setting.field_name, setting]));
+  return fieldMeta.map(meta => {
+    const existing = byName.get(meta.fieldName);
+    const fallback = defaults[meta.fieldName];
+    return {
+      id: existing?.id || crypto.randomUUID(),
+      field_name: meta.fieldName,
+      is_enabled: meta.lockVisibility ? true : existing?.is_enabled ?? fallback.is_enabled,
+      is_mandatory: meta.alwaysRequired ? true : existing?.is_mandatory ?? fallback.is_mandatory,
+      display_order: fallback.display_order,
+      created_at: existing?.created_at || new Date().toISOString(),
+      updated_at: existing?.updated_at || new Date().toISOString(),
     };
-    return labels[fieldName] || fieldName;
+  });
+};
+
+const Toggle = ({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) => (
+  <button
+    type="button"
+    disabled={disabled}
+    onClick={() => onChange(!checked)}
+    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+      checked ? 'bg-blue-600' : 'bg-gray-200'
+    }`}
+  >
+    <span className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-1'}`} />
+  </button>
+);
+
+const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormChange }) => {
+  const { settings, loading, updateSettings } = useFlightLogSettings();
+  const [draft, setDraft] = useState<FlightLogFieldSetting[]>([]);
+
+  useEffect(() => {
+    setDraft(makeDraft(settings));
+  }, [settings]);
+
+  useEffect(() => {
+    (window as any).__flightlogSettingsSave = async () => {
+      const { error } = await updateSettings(draft);
+      if (error) toast.error(error);
+      else toast.success('Flight log form settings saved');
+    };
+    (window as any).__flightlogSettingsCancel = () => setDraft(makeDraft(settings));
+    return () => {
+      delete (window as any).__flightlogSettingsSave;
+      delete (window as any).__flightlogSettingsCancel;
+    };
+  }, [draft, settings, updateSettings]);
+
+  const settingsByName = useMemo(() => new Map(draft.map(setting => [setting.field_name, setting])), [draft]);
+
+  const updateDraft = (fieldName: string, updates: Partial<FlightLogFieldSetting>) => {
+    setDraft(current => current.map(setting => {
+      if (setting.field_name !== fieldName) return setting;
+      const next = { ...setting, ...updates };
+      if (!next.is_enabled) next.is_mandatory = false;
+      return next;
+    }));
+    onFormChange();
   };
+
+  const grouped = fieldMeta.reduce<Record<FieldMeta['group'], FieldMeta[]>>((groups, meta) => {
+    groups[meta.group] = groups[meta.group] || [];
+    groups[meta.group].push(meta);
+    return groups;
+  }, {} as Record<FieldMeta['group'], FieldMeta[]>);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900">Flight Log Form Settings</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Configure which fields appear in the flight log form and whether they are required.
-        </p>
+        <h2 className="text-xl font-semibold text-gray-900 mb-2 flex items-center">
+          <ClipboardList className="h-5 w-5 mr-2" />
+          Flight Log Form Settings
+        </h2>
+        <p className="text-gray-600">Choose which fields appear when staff log a flight and which fields must be completed before saving.</p>
       </div>
 
-      <div className="bg-white shadow rounded-lg border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Optional Fields</h3>
-          <p className="mt-1 text-sm text-gray-600">
-            The following fields are always shown: Aircraft, Pilot, Instructor, Start Time, End Time, Start Tach, End Tach, Flight Duration.
-          </p>
-        </div>
-
-        <div className="p-6">
-          <div className="space-y-4">
-            <div className="grid grid-cols-12 gap-4 text-sm font-medium text-gray-700 pb-2 border-b border-gray-200">
-              <div className="col-span-6">Field Name</div>
-              <div className="col-span-3 text-center">Show in Form</div>
-              <div className="col-span-3 text-center">Required</div>
+      {Object.entries(grouped).map(([group, fields]) => (
+        <section key={group} className="space-y-3">
+          <h3 className="text-lg font-medium text-gray-900">{group}</h3>
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <div className="grid grid-cols-[1fr_110px_110px] gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <div>Field</div>
+              <div className="text-center">Show</div>
+              <div className="text-center">Required</div>
             </div>
-
-            {settings.map((setting) => (
-              <div key={setting.id} className="grid grid-cols-12 gap-4 items-center py-3 border-b border-gray-100 last:border-0">
-                <div className="col-span-6">
-                  <label className="text-sm font-medium text-gray-900">
-                    {getFieldLabel(setting.field_name)}
-                  </label>
-                </div>
-
-                <div className="col-span-3 flex justify-center">
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
+            {fields.map(meta => {
+              const setting = settingsByName.get(meta.fieldName);
+              if (!setting) return null;
+              return (
+                <div key={meta.fieldName} className="grid grid-cols-[1fr_110px_110px] gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{meta.label}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{meta.description}</p>
+                    {(meta.alwaysRequired || meta.lockVisibility) && (
+                      <p className="mt-1 text-xs text-blue-700">Locked on because the flight log cannot be saved reliably without this field.</p>
+                    )}
+                  </div>
+                  <div className="flex justify-center pt-1">
+                    <Toggle
                       checked={setting.is_enabled}
-                      onChange={() => handleToggleEnabled(setting.id, setting.is_enabled)}
-                      className="sr-only peer"
+                      disabled={!canEdit || meta.lockVisibility}
+                      onChange={checked => updateDraft(meta.fieldName, { is_enabled: checked })}
                     />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-
-                <div className="col-span-3 flex justify-center">
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
+                  </div>
+                  <div className="flex justify-center pt-1">
+                    <Toggle
                       checked={setting.is_mandatory}
-                      onChange={() => handleToggleMandatory(setting.id, setting.is_mandatory)}
-                      disabled={!setting.is_enabled}
-                      className="sr-only peer disabled:cursor-not-allowed"
+                      disabled={!canEdit || meta.alwaysRequired || !setting.is_enabled}
+                      onChange={checked => updateDraft(meta.fieldName, { is_mandatory: checked })}
                     />
-                    <div className={`w-11 h-6 ${setting.is_enabled ? 'bg-gray-200' : 'bg-gray-100'} peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] ${setting.is_enabled ? 'after:bg-white' : 'after:bg-gray-300'} after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 ${!setting.is_enabled ? 'opacity-50 cursor-not-allowed' : ''}`}></div>
-                  </label>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+        </section>
+      ))}
 
-          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <Save className="h-5 w-5 text-blue-600" />
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-blue-800">Settings Auto-Save</h3>
-                <div className="mt-1 text-sm text-blue-700">
-                  Changes are saved automatically when you toggle a setting.
-                </div>
-              </div>
-            </div>
+      <section className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <div className="flex gap-3">
+          <Info className="h-5 w-5 text-blue-700 shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-semibold text-blue-900">Useful defaults</h3>
+            <p className="mt-1 text-sm text-blue-800">
+              Start/end tach and duration stay locked on for aircraft hours, maintenance tracking and billing. Optional servicing and observation fields can be enabled only when your club wants to capture that detail on every logged flight.
+            </p>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 };

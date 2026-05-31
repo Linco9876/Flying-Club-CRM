@@ -64,7 +64,6 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
           .select('id, start_time, flight_duration, calculated_cost, payment_status, payment_type, aircraft!flight_logs_aircraft_id_fkey(registration), users!flight_logs_student_id_fkey(name, email), flight_types(name)')
           .eq('student_id', userId)
           .or('payment_status.is.null,payment_status.eq.unpaid')
-          .not('payment_type', 'is', null)
           .order('start_time', { ascending: false }),
       ]);
 

@@ -189,8 +189,31 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   };
 
   const getFieldSetting = (fieldName: string) => settings.find((s) => s.field_name === fieldName);
-  const isFieldEnabled = (fieldName: string) => getFieldSetting(fieldName)?.is_enabled || false;
-  const isFieldMandatory = (fieldName: string) => getFieldSetting(fieldName)?.is_mandatory || false;
+  const fieldDefaultEnabled: Record<string, boolean> = {
+    start_time: true,
+    end_time: true,
+    start_tach: true,
+    end_tach: true,
+    flight_duration: true,
+    flight_type: true,
+    payment_type: true,
+    takeoffs_landings: true,
+    comments: true,
+  };
+  const fieldDefaultMandatory: Record<string, boolean> = {
+    start_time: true,
+    end_time: true,
+    start_tach: true,
+    end_tach: true,
+    flight_duration: true,
+    flight_type: true,
+    payment_type: true,
+  };
+  const isFieldEnabled = (fieldName: string) => getFieldSetting(fieldName)?.is_enabled ?? fieldDefaultEnabled[fieldName] ?? false;
+  const isFieldMandatory = (fieldName: string) => getFieldSetting(fieldName)?.is_mandatory ?? fieldDefaultMandatory[fieldName] ?? false;
+  const isTakeoffsLandingsEnabled = isFieldEnabled('takeoffs_landings') || isFieldEnabled('landings');
+  const isTakeoffsLandingsMandatory = isFieldMandatory('takeoffs_landings') || isFieldMandatory('landings');
+  const isPaymentSelectorEnabled = isFieldEnabled('payment_type');
 
   const validateForm = (): string | null => {
     if (formData.end_tach === '') return 'Please enter end tach';
@@ -198,7 +221,13 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
     if (!formData.flight_type_id) return 'Please select a flight type';
-    if (!isFree && !formData.payment_type) return 'Please select a payment type';
+    if (!isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a payment type';
+    if (isTakeoffsLandingsMandatory && (formData.takeoffs === undefined || formData.landings === undefined)) return 'Please enter takeoffs and landings';
+    if (isFieldMandatory('comments') && !formData.comments.trim()) return 'Please enter debrief comments';
+    if (isFieldMandatory('observations') && !formData.observations.trim()) return 'Please enter observations';
+    if (isFieldMandatory('oil_added') && formData.oil_added === undefined) return 'Please enter oil added';
+    if (isFieldMandatory('fuel_added') && formData.fuel_added === undefined) return 'Please enter fuel added';
+    if (isFieldMandatory('passengers') && formData.passengers === undefined) return 'Please enter passenger count';
     return null;
   };
 
@@ -228,11 +257,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         flight_duration: formData.flight_duration,
         dual_time: formData.dual_time,
         solo_time: formData.solo_time,
-        takeoffs: formData.takeoffs,
-        comments: formData.comments || undefined,
+        takeoffs: isTakeoffsLandingsEnabled ? formData.takeoffs : undefined,
+        comments: isFieldEnabled('comments') ? formData.comments || undefined : undefined,
         flight_type_id: formData.flight_type_id || undefined,
         payment_type: formData.payment_type || undefined,
-        ...(isFieldEnabled('landings') && { landings: formData.landings }),
+        ...(isTakeoffsLandingsEnabled && { landings: formData.landings }),
         ...(isFieldEnabled('observations') && { observations: formData.observations }),
         ...(isFieldEnabled('oil_added') && { oil_added: formData.oil_added }),
         ...(isFieldEnabled('fuel_added') && { fuel_added: formData.fuel_added }),
@@ -361,22 +390,24 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 required
               />
             </div>
-            <div>
-              <label className={labelClass}>
-                T/O &amp; Landings {isFieldMandatory('landings') && <span className="text-red-500">*</span>}
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={formData.takeoffs ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value ? parseInt(e.target.value) : undefined;
-                  setFormData({ ...formData, takeoffs: val, landings: val });
-                }}
-                className={fieldClass}
-                required={isFieldMandatory('landings')}
-              />
-            </div>
+            {isTakeoffsLandingsEnabled && (
+              <div>
+                <label className={labelClass}>
+                  T/O &amp; Landings {isTakeoffsLandingsMandatory && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.takeoffs ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value ? parseInt(e.target.value) : undefined;
+                    setFormData({ ...formData, takeoffs: val, landings: val });
+                  }}
+                  className={fieldClass}
+                  required={isTakeoffsLandingsMandatory}
+                />
+              </div>
+            )}
           </div>
 
           {/* Flight Type + Payment Type */}
@@ -403,11 +434,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               )}
             </div>
 
-            {!isFree && (
+            {!isFree && isPaymentSelectorEnabled && (
               <div>
                 <label className={labelClass}>
                   <span className="flex items-center gap-1.5">
-                    Payment Type <span className="text-red-500">*</span>
+                    Payment Type {isFieldMandatory('payment_type') && <span className="text-red-500">*</span>}
                     {isPaymentForced && (
                       <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                         <Lock className="h-3 w-3" />
@@ -426,7 +457,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                       ? 'border-amber-300 bg-amber-50 text-amber-900 cursor-not-allowed'
                       : 'border-gray-300'
                   }`}
-                  required
+                  required={isFieldMandatory('payment_type')}
                   disabled={isPaymentForced}
                 >
                   <option value="">Select payment type</option>
@@ -451,17 +482,21 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             </div>
           )}
 
-          {/* Comments */}
-          <div>
-            <label className={labelClass}>Comments</label>
-            <textarea
-              value={formData.comments}
-              onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
-              rows={2}
-              placeholder="Flight notes, debrief summary, areas to work on..."
-              className={fieldClass}
-            />
-          </div>
+          {isFieldEnabled('comments') && (
+            <div>
+              <label className={labelClass}>
+                Comments {isFieldMandatory('comments') && <span className="text-red-500">*</span>}
+              </label>
+              <textarea
+                value={formData.comments}
+                onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
+                rows={2}
+                placeholder="Flight notes, debrief summary, areas to work on..."
+                className={fieldClass}
+                required={isFieldMandatory('comments')}
+              />
+            </div>
+          )}
 
           {/* Optional settings-controlled fields */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
