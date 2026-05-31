@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Wrench, Plus, Trash2, Loader2, Save } from 'lucide-react';
+import { Wrench, Plus, Trash2, Loader2 } from 'lucide-react';
 import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
+import toast from 'react-hot-toast';
 
 interface MaintenanceSettingsProps {
   canEdit: boolean;
@@ -19,9 +20,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
   } = useMaintenanceSettings();
 
   const [formData, setFormData] = useState(settings);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [saving, setSaving] = useState(false);
-
+  const [, setHasChanges] = useState(false);
   useEffect(() => {
     setFormData(settings);
   }, [settings]);
@@ -67,15 +66,33 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
 
   const handleSaveSettings = async () => {
     try {
-      setSaving(true);
+      if (
+        formData.upcomingReminderHours < formData.urgentReminderHours ||
+        formData.upcomingReminderDays < formData.urgentReminderDays
+      ) {
+        toast.error('Upcoming maintenance thresholds must be greater than or equal to urgent thresholds');
+        return;
+      }
       await updateSettings(formData);
       setHasChanges(false);
     } catch (error) {
       console.error('Error saving settings:', error);
-    } finally {
-      setSaving(false);
     }
   };
+
+  const handleCancelSettings = () => {
+    setFormData(settings);
+    setHasChanges(false);
+  };
+
+  useEffect(() => {
+    (window as any).__maintenanceSettingsSave = handleSaveSettings;
+    (window as any).__maintenanceSettingsCancel = handleCancelSettings;
+    return () => {
+      delete (window as any).__maintenanceSettingsSave;
+      delete (window as any).__maintenanceSettingsCancel;
+    };
+  }, [formData, settings]);
 
   if (loading) {
     return (
@@ -95,16 +112,6 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
           </h2>
           <p className="text-gray-600">Configure maintenance schedules and defect management</p>
         </div>
-        {canEdit && hasChanges && (
-          <button
-            onClick={handleSaveSettings}
-            disabled={saving}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-70"
-          >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            <span>Save Settings</span>
-          </button>
-        )}
       </div>
 
       {/* General Settings */}
@@ -168,8 +175,75 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                 />
                 <p className="text-xs text-gray-500 mt-1">Days before maintenance due to send reminder</p>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Default Defect View</label>
+                <select
+                  value={formData?.defaultDefectFilter ?? 'open'}
+                  onChange={(e) => handleInputChange('defaultDefectFilter', e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                >
+                  <option value="open">Open defects</option>
+                  <option value="all">All defects</option>
+                  <option value="mel">MEL defects</option>
+                  <option value="deferred">Deferred defects</option>
+                  <option value="fixed">Fixed defects</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Initial filter shown on the maintenance board</p>
+              </div>
             </div>
           </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Maintenance Alert Thresholds</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Urgent Warning (hours remaining)</label>
+              <input
+                type="number"
+                min="1"
+                value={formData?.urgentReminderHours ?? 10}
+                onChange={(e) => handleInputChange('urgentReminderHours', parseInt(e.target.value))}
+                disabled={!canEdit}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Upcoming Warning (hours remaining)</label>
+              <input
+                type="number"
+                min="1"
+                value={formData?.upcomingReminderHours ?? 25}
+                onChange={(e) => handleInputChange('upcomingReminderHours', parseInt(e.target.value))}
+                disabled={!canEdit}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Urgent Warning (days remaining)</label>
+              <input
+                type="number"
+                min="1"
+                value={formData?.urgentReminderDays ?? 7}
+                onChange={(e) => handleInputChange('urgentReminderDays', parseInt(e.target.value))}
+                disabled={!canEdit}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Upcoming Warning (days remaining)</label>
+              <input
+                type="number"
+                min="1"
+                value={formData?.upcomingReminderDays ?? 30}
+                onChange={(e) => handleInputChange('upcomingReminderDays', parseInt(e.target.value))}
+                disabled={!canEdit}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">Upcoming thresholds should be greater than urgent thresholds.</p>
         </div>
 
         {/* Milestone Templates */}

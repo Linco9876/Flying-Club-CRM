@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
-import { useSafetySettings } from '../../hooks/useSafetySettings';
+import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import { Defect } from '../../types';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
@@ -22,7 +22,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 }) => {
   const { user } = useAuth();
   const { aircraft, loading } = useAircraft();
-  const { settings: safetySettings } = useSafetySettings();
+  const { settings: maintenanceSettings } = useMaintenanceSettings();
   const [formData, setFormData] = useState({
     aircraftId: preSelectedAircraftId || '',
     discoveredDateTime: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm format
@@ -49,13 +49,13 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   useEffect(() => {
     const shouldAutoGround =
-      safetySettings?.autoGroundOnMajorDefect &&
+      maintenanceSettings.autoGroundOnMajorDefect &&
       (formData.severity === 'Critical' || formData.severity === 'Major');
 
     if (shouldAutoGround) {
       setFormData(prev => ({ ...prev, groundAircraft: true }));
     }
-  }, [formData.severity, safetySettings]);
+  }, [formData.severity, maintenanceSettings.autoGroundOnMajorDefect]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +63,11 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
     // Validation
     if (!formData.aircraftId || !formData.defectSummary || !formData.detailedDescription) {
       toast.error('Aircraft, defect summary, and detailed description are required');
+      return;
+    }
+
+    if (maintenanceSettings.defectPhotoRequired && uploadedFiles.length === 0) {
+      toast.error('Attach at least one photo or file before submitting this defect');
       return;
     }
 
@@ -389,7 +394,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
           {/* File Upload */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Attach Photos/Files
+              Attach Photos/Files {maintenanceSettings.defectPhotoRequired && <span className="text-red-500">*</span>}
             </label>
             <div className="flex items-center justify-center w-full">
               <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">

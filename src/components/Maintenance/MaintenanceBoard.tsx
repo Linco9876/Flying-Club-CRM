@@ -268,9 +268,10 @@ interface StatusUpdateModalProps {
   defect: BoardDefect;
   onClose: () => void;
   onSave: (status: StatusOption, melNotes?: string, fixNotes?: string) => Promise<void>;
+  canMarkFixed: boolean;
 }
 
-const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, onSave }) => {
+const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, onSave, canMarkFixed }) => {
   const [status, setStatus] = useState<StatusOption>(defect.status);
   const [melNotes, setMelNotes] = useState(defect.melNotes ?? '');
   const [fixNotes, setFixNotes] = useState('');
@@ -325,12 +326,17 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, 
               onChange={(event) => setStatus(event.target.value as StatusOption)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {(['open', 'mel', 'fixed', 'deferred'] as StatusOption[]).map(option => (
+              {(['open', 'mel', 'fixed', 'deferred'] as StatusOption[])
+                .filter(option => option !== 'fixed' || canMarkFixed || defect.status === 'fixed')
+                .map(option => (
                 <option key={option} value={option}>
                   {statusLabel(option)}
                 </option>
               ))}
             </select>
+            {!canMarkFixed && defect.status !== 'fixed' && (
+              <p className="text-xs text-gray-500 mt-1">An administrator must approve return to service.</p>
+            )}
           </div>
 
           {status === 'fixed' && (
@@ -428,7 +434,7 @@ export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
   const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory, deleteDefect } = useAircraft();
   const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone } = useMaintenanceMilestones();
-  const { templates, loading: templatesLoading } = useMaintenanceSettings();
+  const { templates, settings: maintenanceSettings, loading: templatesLoading } = useMaintenanceSettings();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('open');
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [selectedDefect, setSelectedDefect] = useState<BoardDefect | null>(null);
@@ -444,6 +450,15 @@ export const MaintenanceBoard: React.FC = () => {
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
     : undefined;
+
+  const canMarkFixed =
+    !maintenanceSettings.requireMaintenanceApproval ||
+    user?.role === 'admin' ||
+    user?.roles?.includes('admin');
+
+  useEffect(() => {
+    setSelectedStatus(maintenanceSettings.defaultDefectFilter);
+  }, [maintenanceSettings.defaultDefectFilter]);
 
   useEffect(() => {
     const initializeMilestones = async () => {
@@ -470,7 +485,7 @@ export const MaintenanceBoard: React.FC = () => {
                 nextDueDate: template.type === 'calendar' || template.type === 'both'
                   ? new Date(Date.now() + template.intervalMonths * 30 * 24 * 60 * 60 * 1000)
                   : undefined
-              });
+              }, false);
             } catch (error) {
               console.error('Error creating milestone:', error);
             }
@@ -623,28 +638,28 @@ export const MaintenanceBoard: React.FC = () => {
             type: 'overdue',
             message: `${ac.registration} - ${milestone.title} is ${Math.abs(daysRemaining)} days overdue`
           });
-        } else if (hoursRemaining !== null && hoursRemaining < 10) {
+        } else if (hoursRemaining !== null && hoursRemaining < maintenanceSettings.urgentReminderHours) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'urgent',
             message: `${ac.registration} - ${milestone.title} due in ${hoursRemaining.toFixed(1)} hours`
           });
-        } else if (daysRemaining !== null && daysRemaining < 7) {
+        } else if (daysRemaining !== null && daysRemaining < maintenanceSettings.urgentReminderDays) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'urgent',
             message: `${ac.registration} - ${milestone.title} due in ${daysRemaining} days`
           });
-        } else if (hoursRemaining !== null && hoursRemaining < 25) {
+        } else if (hoursRemaining !== null && hoursRemaining < maintenanceSettings.upcomingReminderHours) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'upcoming',
             message: `${ac.registration} - ${milestone.title} due in ${hoursRemaining.toFixed(1)} hours`
           });
-        } else if (daysRemaining !== null && daysRemaining < 30) {
+        } else if (daysRemaining !== null && daysRemaining < maintenanceSettings.upcomingReminderDays) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
@@ -837,16 +852,16 @@ export const MaintenanceBoard: React.FC = () => {
 
                       let statusColor = 'text-green-600';
                       let bgColor = 'bg-green-50';
-                      if (hoursRemaining !== null && hoursRemaining < 10) {
+                      if (hoursRemaining !== null && hoursRemaining < maintenanceSettings.urgentReminderHours) {
                         statusColor = 'text-red-600';
                         bgColor = 'bg-red-50';
-                      } else if (hoursRemaining !== null && hoursRemaining < 25) {
+                      } else if (hoursRemaining !== null && hoursRemaining < maintenanceSettings.upcomingReminderHours) {
                         statusColor = 'text-yellow-600';
                         bgColor = 'bg-yellow-50';
-                      } else if (daysRemaining !== null && daysRemaining < 7) {
+                      } else if (daysRemaining !== null && daysRemaining < maintenanceSettings.urgentReminderDays) {
                         statusColor = 'text-red-600';
                         bgColor = 'bg-red-50';
-                      } else if (daysRemaining !== null && daysRemaining < 30) {
+                      } else if (daysRemaining !== null && daysRemaining < maintenanceSettings.upcomingReminderDays) {
                         statusColor = 'text-yellow-600';
                         bgColor = 'bg-yellow-50';
                       }
@@ -994,6 +1009,7 @@ export const MaintenanceBoard: React.FC = () => {
           defect={statusModalDefect}
           onClose={() => setStatusModalDefect(null)}
           onSave={handleStatusSave}
+          canMarkFixed={canMarkFixed}
         />
       )}
 

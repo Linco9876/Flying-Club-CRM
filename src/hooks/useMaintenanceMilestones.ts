@@ -73,11 +73,11 @@ export const useMaintenanceMilestones = () => {
     }
   };
 
-  const createMilestone = async (milestone: Omit<MaintenanceMilestone, 'id'>) => {
+  const createMilestone = async (milestone: Omit<MaintenanceMilestone, 'id'>, notify = true) => {
     try {
       const { error } = await supabase
         .from('maintenance_milestones')
-        .insert({
+        .upsert({
           aircraft_id: milestone.aircraftId,
           title: milestone.title,
           type: milestone.type,
@@ -86,14 +86,21 @@ export const useMaintenanceMilestones = () => {
           next_due_hours: milestone.nextDueHours,
           next_due_date: milestone.nextDueDate,
           description: milestone.description,
-          due_condition: milestone.dueCondition || 'hours',
-          due_value: milestone.dueValue || '0'
+          due_condition: milestone.dueCondition || (milestone.type === 'calendar' ? 'date' : 'hours'),
+          due_value: milestone.dueValue || (
+            milestone.type === 'calendar'
+              ? String(milestone.nextDueDate?.toISOString().split('T')[0] || '')
+              : String(milestone.nextDueHours || 0)
+          )
+        }, {
+          onConflict: 'aircraft_id,title',
+          ignoreDuplicates: true
         });
 
       if (error) throw error;
 
       await fetchMilestones();
-      toast.success('Maintenance milestone created');
+      if (notify) toast.success('Maintenance milestone created');
     } catch (error) {
       console.error('Error creating milestone:', error);
       toast.error('Failed to create milestone');
@@ -105,13 +112,22 @@ export const useMaintenanceMilestones = () => {
     try {
       const updateData: any = {};
       if (updates.title !== undefined) updateData.title = updates.title;
-      if (updates.type !== undefined) updateData.type = updates.type;
+      if (updates.type !== undefined) {
+        updateData.type = updates.type;
+        updateData.due_condition = updates.type;
+      }
       if (updates.intervalHours !== undefined) updateData.interval_hours = updates.intervalHours;
       if (updates.intervalMonths !== undefined) updateData.interval_months = updates.intervalMonths;
       if (updates.lastCompletedDate !== undefined) updateData.last_completed_date = updates.lastCompletedDate;
       if (updates.lastCompletedTach !== undefined) updateData.last_completed_tach = updates.lastCompletedTach;
-      if (updates.nextDueHours !== undefined) updateData.next_due_hours = updates.nextDueHours;
-      if (updates.nextDueDate !== undefined) updateData.next_due_date = updates.nextDueDate;
+      if (updates.nextDueHours !== undefined) {
+        updateData.next_due_hours = updates.nextDueHours;
+        updateData.due_value = String(updates.nextDueHours);
+      }
+      if (updates.nextDueDate !== undefined) {
+        updateData.next_due_date = updates.nextDueDate;
+        updateData.due_value = updates.nextDueDate.toISOString().split('T')[0];
+      }
       if (updates.description !== undefined) updateData.description = updates.description;
 
       updateData.updated_at = new Date().toISOString();
@@ -158,7 +174,9 @@ export const useMaintenanceMilestones = () => {
           milestone_id: completion.milestoneId,
           aircraft_id: completion.aircraftId,
           completed_date: completion.completedDate,
+          completed_at: completion.completedDate,
           completed_tach: completion.completedTach,
+          tach_hours: completion.completedTach,
           completed_by: completion.completedBy,
           next_due_hours: completion.nextDueHours,
           next_due_date: completion.nextDueDate,

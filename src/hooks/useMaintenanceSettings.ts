@@ -18,20 +18,37 @@ export interface MaintenanceSettingsData {
   requireMaintenanceApproval: boolean;
   maintenanceReminderDays: number;
   defectPhotoRequired: boolean;
+  urgentReminderHours: number;
+  upcomingReminderHours: number;
+  urgentReminderDays: number;
+  upcomingReminderDays: number;
+  defaultDefectFilter: 'all' | 'open' | 'mel' | 'fixed' | 'deferred';
 }
+
+const MAINTENANCE_SETTINGS_UPDATED_EVENT = 'maintenance-settings-updated';
+
+const DEFAULT_SETTINGS: MaintenanceSettingsData = {
+  autoGroundOnMajorDefect: true,
+  requireMaintenanceApproval: true,
+  maintenanceReminderDays: 14,
+  defectPhotoRequired: false,
+  urgentReminderHours: 10,
+  upcomingReminderHours: 25,
+  urgentReminderDays: 7,
+  upcomingReminderDays: 30,
+  defaultDefectFilter: 'open'
+};
 
 export const useMaintenanceSettings = () => {
   const [templates, setTemplates] = useState<MaintenanceMilestoneTemplate[]>([]);
-  const [settings, setSettings] = useState<MaintenanceSettingsData>({
-    autoGroundOnMajorDefect: true,
-    requireMaintenanceApproval: true,
-    maintenanceReminderDays: 14,
-    defectPhotoRequired: false
-  });
+  const [settings, setSettings] = useState<MaintenanceSettingsData>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
+    const handleUpdated = () => fetchData();
+    window.addEventListener(MAINTENANCE_SETTINGS_UPDATED_EVENT, handleUpdated);
+    return () => window.removeEventListener(MAINTENANCE_SETTINGS_UPDATED_EVENT, handleUpdated);
   }, []);
 
   const fetchData = async () => {
@@ -49,7 +66,7 @@ export const useMaintenanceSettings = () => {
       if (templatesResult.data) {
         setTemplates(templatesResult.data.map(t => ({
           id: t.id,
-          name: t.name,
+          name: t.name || t.title,
           type: t.type,
           intervalHours: parseFloat(t.interval_hours || 0),
           intervalMonths: parseInt(t.interval_months || 0),
@@ -59,12 +76,11 @@ export const useMaintenanceSettings = () => {
       }
 
       if (settingsResult.data) {
+        const savedSettings = settingsResult.data.settings || {};
         setSettings({
+          ...DEFAULT_SETTINGS,
+          ...savedSettings,
           id: settingsResult.data.id,
-          autoGroundOnMajorDefect: settingsResult.data.auto_ground_on_major_defect,
-          requireMaintenanceApproval: settingsResult.data.require_maintenance_approval,
-          maintenanceReminderDays: settingsResult.data.maintenance_reminder_days,
-          defectPhotoRequired: settingsResult.data.defect_photo_required
         });
       }
     } catch (error) {
@@ -80,6 +96,11 @@ export const useMaintenanceSettings = () => {
       const { error } = await supabase
         .from('maintenance_milestone_templates')
         .insert({
+          title: template.name,
+          due_condition: template.type,
+          due_value: template.type === 'calendar'
+            ? String(template.intervalMonths)
+            : String(template.intervalHours),
           name: template.name,
           type: template.type,
           interval_hours: template.intervalHours,
@@ -91,6 +112,7 @@ export const useMaintenanceSettings = () => {
       if (error) throw error;
 
       await fetchData();
+      window.dispatchEvent(new Event(MAINTENANCE_SETTINGS_UPDATED_EVENT));
       toast.success('Template created');
     } catch (error) {
       console.error('Error creating template:', error);
@@ -102,10 +124,22 @@ export const useMaintenanceSettings = () => {
   const updateTemplate = async (id: string, updates: Partial<MaintenanceMilestoneTemplate>) => {
     try {
       const updateData: any = { updated_at: new Date().toISOString() };
-      if (updates.name !== undefined) updateData.name = updates.name;
-      if (updates.type !== undefined) updateData.type = updates.type;
-      if (updates.intervalHours !== undefined) updateData.interval_hours = updates.intervalHours;
-      if (updates.intervalMonths !== undefined) updateData.interval_months = updates.intervalMonths;
+      if (updates.name !== undefined) {
+        updateData.name = updates.name;
+        updateData.title = updates.name;
+      }
+      if (updates.type !== undefined) {
+        updateData.type = updates.type;
+        updateData.due_condition = updates.type;
+      }
+      if (updates.intervalHours !== undefined) {
+        updateData.interval_hours = updates.intervalHours;
+        updateData.due_value = String(updates.intervalHours);
+      }
+      if (updates.intervalMonths !== undefined) {
+        updateData.interval_months = updates.intervalMonths;
+        updateData.due_value = String(updates.intervalMonths);
+      }
       if (updates.description !== undefined) updateData.description = updates.description;
       if (updates.isDefault !== undefined) updateData.is_default = updates.isDefault;
 
@@ -117,6 +151,7 @@ export const useMaintenanceSettings = () => {
       if (error) throw error;
 
       await fetchData();
+      window.dispatchEvent(new Event(MAINTENANCE_SETTINGS_UPDATED_EVENT));
       toast.success('Template updated');
     } catch (error) {
       console.error('Error updating template:', error);
@@ -135,6 +170,7 @@ export const useMaintenanceSettings = () => {
       if (error) throw error;
 
       await fetchData();
+      window.dispatchEvent(new Event(MAINTENANCE_SETTINGS_UPDATED_EVENT));
       toast.success('Template deleted');
     } catch (error) {
       console.error('Error deleting template:', error);
@@ -145,11 +181,10 @@ export const useMaintenanceSettings = () => {
 
   const updateSettings = async (newSettings: Partial<MaintenanceSettingsData>) => {
     try {
+      const settingsPayload = { ...settings, ...newSettings };
+      delete settingsPayload.id;
       const updateData = {
-        auto_ground_on_major_defect: newSettings.autoGroundOnMajorDefect ?? settings.autoGroundOnMajorDefect,
-        require_maintenance_approval: newSettings.requireMaintenanceApproval ?? settings.requireMaintenanceApproval,
-        maintenance_reminder_days: newSettings.maintenanceReminderDays ?? settings.maintenanceReminderDays,
-        defect_photo_required: newSettings.defectPhotoRequired ?? settings.defectPhotoRequired,
+        settings: settingsPayload,
         updated_at: new Date().toISOString()
       };
 
@@ -169,6 +204,7 @@ export const useMaintenanceSettings = () => {
       }
 
       await fetchData();
+      window.dispatchEvent(new Event(MAINTENANCE_SETTINGS_UPDATED_EVENT));
       toast.success('Settings updated');
     } catch (error) {
       console.error('Error updating settings:', error);
