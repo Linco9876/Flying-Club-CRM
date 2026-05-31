@@ -12,7 +12,7 @@ interface FieldMeta {
   fieldName: string;
   label: string;
   description: string;
-  group: 'Core Flight Details' | 'Billing' | 'Operational Notes' | 'Aircraft Servicing';
+  group: 'Core Flight Details' | 'Billing' | 'Operational Notes' | 'Aircraft Servicing' | 'Aircraft Status';
   alwaysRequired?: boolean;
   lockVisibility?: boolean;
 }
@@ -97,9 +97,45 @@ const fieldMeta: FieldMeta[] = [
     group: 'Operational Notes',
   },
   {
+    fieldName: 'hobbs_start',
+    label: 'Hobbs Start',
+    description: 'Optional Hobbs meter start reading for aircraft with a Hobbs meter.',
+    group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'hobbs_end',
+    label: 'Hobbs End',
+    description: 'Optional Hobbs meter end reading for cross-checking utilisation.',
+    group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'fuel_start',
+    label: 'Fuel Before Flight',
+    description: 'Fuel quantity before departure, useful for fuel tracking and reconciliation.',
+    group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'fuel_end',
+    label: 'Fuel After Flight',
+    description: 'Fuel quantity remaining after the flight.',
+    group: 'Aircraft Servicing',
+  },
+  {
     fieldName: 'oil_added',
     label: 'Oil Added',
     description: 'Oil quantity added after the flight.',
+    group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'oil_start',
+    label: 'Oil Before Flight',
+    description: 'Oil level before departure.',
+    group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'oil_end',
+    label: 'Oil After Flight',
+    description: 'Oil level after shutdown.',
     group: 'Aircraft Servicing',
   },
   {
@@ -107,6 +143,24 @@ const fieldMeta: FieldMeta[] = [
     label: 'Fuel Added',
     description: 'Fuel quantity added after the flight.',
     group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'fuel_type',
+    label: 'Fuel Type',
+    description: 'Fuel used or uplifted, such as Avgas, Mogas or Jet A-1.',
+    group: 'Aircraft Servicing',
+  },
+  {
+    fieldName: 'aircraft_condition',
+    label: 'Aircraft Condition',
+    description: 'Post-flight condition summary such as serviceable, monitor, or attention required.',
+    group: 'Aircraft Status',
+  },
+  {
+    fieldName: 'maintenance_notes',
+    label: 'Maintenance Notes',
+    description: 'Notes for engineering or aircraft management that do not need a defect report.',
+    group: 'Aircraft Status',
   },
 ];
 
@@ -122,8 +176,17 @@ const defaults: Record<string, Pick<FlightLogFieldSetting, 'is_enabled' | 'is_ma
   comments: { is_enabled: true, is_mandatory: false, display_order: 9 },
   observations: { is_enabled: false, is_mandatory: false, display_order: 10 },
   passengers: { is_enabled: false, is_mandatory: false, display_order: 11 },
-  oil_added: { is_enabled: false, is_mandatory: false, display_order: 12 },
-  fuel_added: { is_enabled: false, is_mandatory: false, display_order: 13 },
+  hobbs_start: { is_enabled: false, is_mandatory: false, display_order: 12 },
+  hobbs_end: { is_enabled: false, is_mandatory: false, display_order: 13 },
+  fuel_start: { is_enabled: false, is_mandatory: false, display_order: 14 },
+  fuel_end: { is_enabled: false, is_mandatory: false, display_order: 15 },
+  oil_added: { is_enabled: false, is_mandatory: false, display_order: 16 },
+  oil_start: { is_enabled: false, is_mandatory: false, display_order: 17 },
+  oil_end: { is_enabled: false, is_mandatory: false, display_order: 18 },
+  fuel_added: { is_enabled: false, is_mandatory: false, display_order: 19 },
+  fuel_type: { is_enabled: false, is_mandatory: false, display_order: 20 },
+  aircraft_condition: { is_enabled: false, is_mandatory: false, display_order: 21 },
+  maintenance_notes: { is_enabled: false, is_mandatory: false, display_order: 22 },
 };
 
 const makeDraft = (settings: FlightLogFieldSetting[]) => {

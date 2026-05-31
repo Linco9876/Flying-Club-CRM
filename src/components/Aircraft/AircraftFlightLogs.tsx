@@ -22,6 +22,17 @@ interface FlightLog {
   flight_type_id: string | null;
   flight_type_name: string | null;
   observations: string | null;
+  hobbs_start: number | null;
+  hobbs_end: number | null;
+  fuel_start: number | null;
+  fuel_end: number | null;
+  fuel_added: number | null;
+  fuel_type: string | null;
+  oil_start: number | null;
+  oil_end: number | null;
+  oil_added: number | null;
+  aircraft_condition: string | null;
+  maintenance_notes: string | null;
   created_at: string;
   student_name: string;
   instructor_name: string | null;
@@ -128,6 +139,17 @@ export const AircraftFlightLogs: React.FC = () => {
           flight_type_id: log.flight_type_id,
           flight_type_name: rate?.flight_types?.name || null,
           observations: log.observations,
+          hobbs_start: log.hobbs_start != null ? parseFloat(log.hobbs_start) : null,
+          hobbs_end: log.hobbs_end != null ? parseFloat(log.hobbs_end) : null,
+          fuel_start: log.fuel_start != null ? parseFloat(log.fuel_start) : null,
+          fuel_end: log.fuel_end != null ? parseFloat(log.fuel_end) : null,
+          fuel_added: log.fuel_added != null ? parseFloat(log.fuel_added) : null,
+          fuel_type: log.fuel_type,
+          oil_start: log.oil_start != null ? parseFloat(log.oil_start) : null,
+          oil_end: log.oil_end != null ? parseFloat(log.oil_end) : null,
+          oil_added: log.oil_added != null ? parseFloat(log.oil_added) : null,
+          aircraft_condition: log.aircraft_condition,
+          maintenance_notes: log.maintenance_notes,
           created_at: log.created_at,
           student_name: usersMap.get(log.student_id) || 'Unknown',
           instructor_name: log.instructor_id ? usersMap.get(log.instructor_id) || 'Unknown' : null,
@@ -425,6 +447,15 @@ export const AircraftFlightLogs: React.FC = () => {
                   const startDate = new Date(log.start_time);
                   const endDate = new Date(log.end_time);
                   const isAlternateRow = index % 2 === 1;
+                  const aircraftDetails = [
+                    log.aircraft_condition ? `Condition: ${log.aircraft_condition}` : null,
+                    log.hobbs_start != null || log.hobbs_end != null ? `Hobbs: ${log.hobbs_start ?? '–'}-${log.hobbs_end ?? '–'}` : null,
+                    log.fuel_start != null || log.fuel_end != null ? `Fuel: ${log.fuel_start ?? '–'}-${log.fuel_end ?? '–'}` : null,
+                    log.fuel_added != null ? `Fuel added: ${log.fuel_added}${log.fuel_type ? ` ${log.fuel_type}` : ''}` : null,
+                    log.oil_start != null || log.oil_end != null ? `Oil: ${log.oil_start ?? '–'}-${log.oil_end ?? '–'}` : null,
+                    log.oil_added != null ? `Oil added: ${log.oil_added}` : null,
+                    log.maintenance_notes ? `Mx: ${log.maintenance_notes}` : null,
+                  ].filter((detail): detail is string => Boolean(detail));
 
                   return (
                     <tr
@@ -478,6 +509,13 @@ export const AircraftFlightLogs: React.FC = () => {
                       <td className="py-3 px-2 text-center align-middle">
                         {log.observations && (
                           <div className="text-gray-700">{log.observations}</div>
+                        )}
+                        {aircraftDetails.length > 0 && (
+                          <div className="mt-1 space-y-0.5 text-xs text-gray-500">
+                            {aircraftDetails.map(detail => (
+                              <div key={detail}>{detail}</div>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-2 text-center align-middle">

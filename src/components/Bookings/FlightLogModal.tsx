@@ -87,8 +87,17 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     flight_type_id: booking.flightTypeId || '',
     payment_type: derivePaymentType(booking.flightTypeId || ''),
     observations: '',
+    hobbs_start: undefined as number | undefined,
+    hobbs_end: undefined as number | undefined,
+    fuel_start: undefined as number | undefined,
+    fuel_end: undefined as number | undefined,
     oil_added: undefined as number | undefined,
+    oil_start: undefined as number | undefined,
+    oil_end: undefined as number | undefined,
     fuel_added: undefined as number | undefined,
+    fuel_type: '',
+    aircraft_condition: '',
+    maintenance_notes: '',
     passengers: undefined as number | undefined,
   });
 
@@ -225,8 +234,18 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (isTakeoffsLandingsMandatory && (formData.takeoffs === undefined || formData.landings === undefined)) return 'Please enter takeoffs and landings';
     if (isFieldMandatory('comments') && !formData.comments.trim()) return 'Please enter debrief comments';
     if (isFieldMandatory('observations') && !formData.observations.trim()) return 'Please enter observations';
+    if (isFieldMandatory('hobbs_start') && formData.hobbs_start === undefined) return 'Please enter Hobbs start';
+    if (isFieldMandatory('hobbs_end') && formData.hobbs_end === undefined) return 'Please enter Hobbs end';
+    if (formData.hobbs_start !== undefined && formData.hobbs_end !== undefined && formData.hobbs_end < formData.hobbs_start) return 'Hobbs end must be greater than or equal to Hobbs start';
+    if (isFieldMandatory('fuel_start') && formData.fuel_start === undefined) return 'Please enter fuel before flight';
+    if (isFieldMandatory('fuel_end') && formData.fuel_end === undefined) return 'Please enter fuel after flight';
     if (isFieldMandatory('oil_added') && formData.oil_added === undefined) return 'Please enter oil added';
+    if (isFieldMandatory('oil_start') && formData.oil_start === undefined) return 'Please enter oil before flight';
+    if (isFieldMandatory('oil_end') && formData.oil_end === undefined) return 'Please enter oil after flight';
     if (isFieldMandatory('fuel_added') && formData.fuel_added === undefined) return 'Please enter fuel added';
+    if (isFieldMandatory('fuel_type') && !formData.fuel_type.trim()) return 'Please enter fuel type';
+    if (isFieldMandatory('aircraft_condition') && !formData.aircraft_condition.trim()) return 'Please enter aircraft condition';
+    if (isFieldMandatory('maintenance_notes') && !formData.maintenance_notes.trim()) return 'Please enter maintenance notes';
     if (isFieldMandatory('passengers') && formData.passengers === undefined) return 'Please enter passenger count';
     return null;
   };
@@ -263,8 +282,17 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         payment_type: formData.payment_type || undefined,
         ...(isTakeoffsLandingsEnabled && { landings: formData.landings }),
         ...(isFieldEnabled('observations') && { observations: formData.observations }),
+        ...(isFieldEnabled('hobbs_start') && { hobbs_start: formData.hobbs_start }),
+        ...(isFieldEnabled('hobbs_end') && { hobbs_end: formData.hobbs_end }),
+        ...(isFieldEnabled('fuel_start') && { fuel_start: formData.fuel_start }),
+        ...(isFieldEnabled('fuel_end') && { fuel_end: formData.fuel_end }),
         ...(isFieldEnabled('oil_added') && { oil_added: formData.oil_added }),
+        ...(isFieldEnabled('oil_start') && { oil_start: formData.oil_start }),
+        ...(isFieldEnabled('oil_end') && { oil_end: formData.oil_end }),
         ...(isFieldEnabled('fuel_added') && { fuel_added: formData.fuel_added }),
+        ...(isFieldEnabled('fuel_type') && { fuel_type: formData.fuel_type || undefined }),
+        ...(isFieldEnabled('aircraft_condition') && { aircraft_condition: formData.aircraft_condition || undefined }),
+        ...(isFieldEnabled('maintenance_notes') && { maintenance_notes: formData.maintenance_notes || undefined }),
         ...(isFieldEnabled('passengers') && { passengers: formData.passengers }),
       };
 
@@ -500,6 +528,66 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
           {/* Optional settings-controlled fields */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {isFieldEnabled('hobbs_start') && (
+              <div>
+                <label className={labelClass}>
+                  Hobbs Start {isFieldMandatory('hobbs_start') && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.hobbs_start ?? ''}
+                  onChange={(e) => setFormData({ ...formData, hobbs_start: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  className={fieldClass}
+                  required={isFieldMandatory('hobbs_start')}
+                />
+              </div>
+            )}
+            {isFieldEnabled('hobbs_end') && (
+              <div>
+                <label className={labelClass}>
+                  Hobbs End {isFieldMandatory('hobbs_end') && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.hobbs_end ?? ''}
+                  onChange={(e) => setFormData({ ...formData, hobbs_end: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  className={fieldClass}
+                  required={isFieldMandatory('hobbs_end')}
+                />
+              </div>
+            )}
+            {isFieldEnabled('fuel_start') && (
+              <div>
+                <label className={labelClass}>
+                  Fuel Before {isFieldMandatory('fuel_start') && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.fuel_start ?? ''}
+                  onChange={(e) => setFormData({ ...formData, fuel_start: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  className={fieldClass}
+                  required={isFieldMandatory('fuel_start')}
+                />
+              </div>
+            )}
+            {isFieldEnabled('fuel_end') && (
+              <div>
+                <label className={labelClass}>
+                  Fuel After {isFieldMandatory('fuel_end') && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.fuel_end ?? ''}
+                  onChange={(e) => setFormData({ ...formData, fuel_end: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  className={fieldClass}
+                  required={isFieldMandatory('fuel_end')}
+                />
+              </div>
+            )}
             {isFieldEnabled('oil_added') && (
               <div>
                 <label className={labelClass}>
@@ -512,6 +600,36 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   onChange={(e) => setFormData({ ...formData, oil_added: e.target.value ? parseFloat(e.target.value) : undefined })}
                   className={fieldClass}
                   required={isFieldMandatory('oil_added')}
+                />
+              </div>
+            )}
+            {isFieldEnabled('oil_start') && (
+              <div>
+                <label className={labelClass}>
+                  Oil Before {isFieldMandatory('oil_start') && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.oil_start ?? ''}
+                  onChange={(e) => setFormData({ ...formData, oil_start: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  className={fieldClass}
+                  required={isFieldMandatory('oil_start')}
+                />
+              </div>
+            )}
+            {isFieldEnabled('oil_end') && (
+              <div>
+                <label className={labelClass}>
+                  Oil After {isFieldMandatory('oil_end') && <span className="text-red-500">*</span>}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.oil_end ?? ''}
+                  onChange={(e) => setFormData({ ...formData, oil_end: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  className={fieldClass}
+                  required={isFieldMandatory('oil_end')}
                 />
               </div>
             )}
@@ -530,6 +648,25 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 />
               </div>
             )}
+            {isFieldEnabled('fuel_type') && (
+              <div>
+                <label className={labelClass}>
+                  Fuel Type {isFieldMandatory('fuel_type') && <span className="text-red-500">*</span>}
+                </label>
+                <select
+                  value={formData.fuel_type}
+                  onChange={(e) => setFormData({ ...formData, fuel_type: e.target.value })}
+                  className={fieldClass}
+                  required={isFieldMandatory('fuel_type')}
+                >
+                  <option value="">Select fuel type</option>
+                  <option value="Avgas">Avgas</option>
+                  <option value="Mogas">Mogas</option>
+                  <option value="Jet A-1">Jet A-1</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            )}
             {isFieldEnabled('passengers') && (
               <div>
                 <label className={labelClass}>
@@ -545,6 +682,44 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               </div>
             )}
           </div>
+
+          {(isFieldEnabled('aircraft_condition') || isFieldEnabled('maintenance_notes')) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {isFieldEnabled('aircraft_condition') && (
+                <div>
+                  <label className={labelClass}>
+                    Aircraft Condition {isFieldMandatory('aircraft_condition') && <span className="text-red-500">*</span>}
+                  </label>
+                  <select
+                    value={formData.aircraft_condition}
+                    onChange={(e) => setFormData({ ...formData, aircraft_condition: e.target.value })}
+                    className={fieldClass}
+                    required={isFieldMandatory('aircraft_condition')}
+                  >
+                    <option value="">Select condition</option>
+                    <option value="Serviceable">Serviceable</option>
+                    <option value="Monitor">Monitor</option>
+                    <option value="Attention required">Attention required</option>
+                    <option value="Defect reported">Defect reported</option>
+                  </select>
+                </div>
+              )}
+              {isFieldEnabled('maintenance_notes') && (
+                <div>
+                  <label className={labelClass}>
+                    Maintenance Notes {isFieldMandatory('maintenance_notes') && <span className="text-red-500">*</span>}
+                  </label>
+                  <textarea
+                    value={formData.maintenance_notes}
+                    onChange={(e) => setFormData({ ...formData, maintenance_notes: e.target.value })}
+                    rows={2}
+                    className={fieldClass}
+                    required={isFieldMandatory('maintenance_notes')}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {isFieldEnabled('observations') && (
             <div>
