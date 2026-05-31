@@ -42,6 +42,15 @@ const formatRosterDate = (date: string) =>
 
 const formatRosterTime = (time: string) => time.slice(0, 5);
 
+const getTodayDate = () => {
+  const today = new Date();
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+};
+
 export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProps> = ({ canEdit }) => {
   const { user } = useAuth();
   const { getInstructors } = useUsers();
@@ -234,6 +243,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   }
 
   const isAdmin = user?.roles?.includes('admin');
+  const futureAbsences = absences.filter(absence => absence.endDate >= getTodayDate());
 
   return (
     <div className="p-6 space-y-8">
@@ -460,14 +470,14 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
               </form>
             )}
 
-            {absences.length === 0 ? (
+            {futureAbsences.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <AlertCircle className="h-12 w-12 mx-auto mb-2 text-gray-400" />
-                <p>No absences scheduled</p>
+                <p>No upcoming absences scheduled</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {absences.map(absence => (
+                {futureAbsences.map(absence => (
                   <div key={absence.id} className="bg-amber-50 p-4 rounded-lg border border-amber-200 flex items-center justify-between">
                     <div>
                       <div className="font-medium text-gray-900">
