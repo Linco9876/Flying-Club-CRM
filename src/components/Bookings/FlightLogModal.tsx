@@ -89,7 +89,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     return '';
   };
 
-  const [formData, setFormData] = useState({
+  const buildDefaultFormData = () => ({
     start_time: startTime.toISOString(),
     end_time: endTime.toISOString(),
     start_tach: currentTach,
@@ -117,6 +117,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     passengers: undefined as number | undefined,
   });
 
+  const [formData, setFormData] = useState(buildDefaultFormData);
+
   const selectedFlightType = flightTypes.find(ft => ft.id === formData.flight_type_id) ?? null;
   const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
   const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
@@ -128,6 +130,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     passengerCount: formData.passengers,
     startTime: formData.start_time,
   });
+
+  useEffect(() => {
+    setIsSubmitting(false);
+    setTachAutoFilled(false);
+    setLoadedFlightLogId(flightLogId || '');
+    setShowOverlapWarning(false);
+    setOverlappingLogs([]);
+    setPendingLogData(null);
+    setFormData(buildDefaultFormData());
+  }, [booking.id, flightLogId, mode]);
 
   // Re-derive payment type when billing data loads (paymentMethods/flightTypes async) or flight type changes
   useEffect(() => {
@@ -159,12 +171,14 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         return;
       }
 
+      const defaults = buildDefaultFormData();
       setLoadedFlightLogId(data.id);
-      setFormData(prev => ({
-        ...prev,
-        start_time: data.start_time ?? prev.start_time,
-        end_time: data.end_time ?? prev.end_time,
-        start_tach: Number(data.start_tach ?? data.tach_start ?? prev.start_tach),
+      setTachAutoFilled(false);
+      setFormData({
+        ...defaults,
+        start_time: data.start_time ?? defaults.start_time,
+        end_time: data.end_time ?? defaults.end_time,
+        start_tach: Number(data.start_tach ?? data.tach_start ?? defaults.start_tach),
         end_tach: data.end_tach ?? data.tach_end ?? '',
         flight_duration: data.flight_duration ?? data.duration ?? '',
         dual_time: Number(data.dual_time ?? 0),
@@ -172,8 +186,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         takeoffs: data.takeoffs ?? undefined,
         landings: data.landings ?? undefined,
         comments: data.comments ?? data.notes ?? '',
-        flight_type_id: data.flight_type_id ?? prev.flight_type_id,
-        payment_type: data.payment_type ?? prev.payment_type,
+        flight_type_id: data.flight_type_id ?? defaults.flight_type_id,
+        payment_type: data.payment_type ?? defaults.payment_type,
         observations: data.observations ?? '',
         hobbs_start: data.hobbs_start ?? undefined,
         hobbs_end: data.hobbs_end ?? undefined,
@@ -187,7 +201,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         aircraft_condition: data.aircraft_condition ?? '',
         maintenance_notes: data.maintenance_notes ?? '',
         passengers: data.passengers ?? undefined,
-      }));
+      });
     };
 
     loadExistingFlightLog();
@@ -195,6 +209,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   useEffect(() => {
     const calculateStartTach = async () => {
+      if (mode === 'edit') return;
       if (!booking.aircraftId) return;
       try {
         const { data: logs, error } = await supabase

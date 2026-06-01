@@ -33,58 +33,61 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { settings: portalSettings } = usePortalUxSettings();
   const { settings: bookingRules } = useBookingRulesSettings();
   const { settings: organisationSettings } = useOrganisationSettings();
-  const [formData, setFormData] = useState({
-    studentId: booking?.studentId || user?.id || '',
-    date: booking
-      ? format(new Date(booking.startTime), 'yyyy-MM-dd')
-      : prefilledData?.date || format(new Date(), 'yyyy-MM-dd'),
-    endDate: booking
-      ? format(new Date(booking.endTime), 'yyyy-MM-dd')
-      : prefilledData?.date || format(new Date(), 'yyyy-MM-dd'),
-    startTime: booking
-      ? normalizeToQuarterHour(format(new Date(booking.startTime), 'HH:mm'))
-      : normalizeToQuarterHour(prefilledData?.startTime) || '09:00',
-    endTime: booking
-      ? normalizeToQuarterHour(format(new Date(booking.endTime), 'HH:mm'))
-      : normalizeToQuarterHour(prefilledData?.endTime) || '11:00',
-    aircraftId: booking?.aircraftId || prefilledData?.aircraftId || '',
-    instructorId: booking?.instructorId || prefilledData?.instructorId || '',
-    paymentType: booking?.paymentType || '',
-    flightTypeId: booking?.flightTypeId || '',
-    notes: booking?.notes || ''
-  });
+  const buildInitialFormData = React.useCallback(() => {
+    const today = format(new Date(), 'yyyy-MM-dd');
 
-  // Update form data when prefilledData changes
-  React.useEffect(() => {
     if (booking) {
-      setFormData({
-        studentId: booking.studentId,
+      return {
+        studentId: booking.studentId || '',
         date: format(new Date(booking.startTime), 'yyyy-MM-dd'),
         endDate: format(new Date(booking.endTime), 'yyyy-MM-dd'),
-        startTime: normalizeToQuarterHour(
-          format(new Date(booking.startTime), 'HH:mm')
-        ),
-        endTime: normalizeToQuarterHour(
-          format(new Date(booking.endTime), 'HH:mm')
-        ),
-        aircraftId: booking.aircraftId,
+        startTime: normalizeToQuarterHour(format(new Date(booking.startTime), 'HH:mm')) || '09:00',
+        endTime: normalizeToQuarterHour(format(new Date(booking.endTime), 'HH:mm')) || '11:00',
+        aircraftId: booking.aircraftId || '',
         instructorId: booking.instructorId || '',
-        paymentType: booking.paymentType,
+        paymentType: booking.paymentType || '',
         flightTypeId: booking.flightTypeId || '',
-        notes: booking.notes || ''
-      });
-    } else if (prefilledData) {
-      setFormData(prev => ({
-        ...prev,
-        date: prefilledData.date || prev.date,
-        endDate: prefilledData.date || prev.endDate,
-        startTime: normalizeToQuarterHour(prefilledData.startTime) || prev.startTime,
-        endTime: normalizeToQuarterHour(prefilledData.endTime) || prev.endTime,
-        aircraftId: prefilledData.aircraftId || prev.aircraftId,
-        instructorId: prefilledData.instructorId || prev.instructorId,
-      }));
+        notes: booking.notes || '',
+      };
     }
-  }, [prefilledData, booking]);
+
+    return {
+      studentId: user?.id || '',
+      date: prefilledData?.date || today,
+      endDate: prefilledData?.date || today,
+      startTime: normalizeToQuarterHour(prefilledData?.startTime) || '09:00',
+      endTime: normalizeToQuarterHour(prefilledData?.endTime) || '11:00',
+      aircraftId: prefilledData?.aircraftId || '',
+      instructorId: prefilledData?.instructorId || '',
+      paymentType: '',
+      flightTypeId: '',
+      notes: '',
+    };
+  }, [
+    booking?.id,
+    booking?.studentId,
+    booking?.aircraftId,
+    booking?.instructorId,
+    booking?.paymentType,
+    booking?.flightTypeId,
+    booking?.notes,
+    booking?.startTime,
+    booking?.endTime,
+    prefilledData?.date,
+    prefilledData?.startTime,
+    prefilledData?.endTime,
+    prefilledData?.aircraftId,
+    prefilledData?.instructorId,
+    user?.id,
+  ]);
+
+  const [formData, setFormData] = useState(buildInitialFormData);
+
+  // Rebuild the whole form every time it opens so stale values cannot leak between bookings.
+  React.useEffect(() => {
+    if (!isOpen) return;
+    setFormData(buildInitialFormData());
+  }, [buildInitialFormData, isOpen]);
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 

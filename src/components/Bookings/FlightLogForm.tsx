@@ -29,7 +29,7 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
   const student = mockStudents.find(s => s.id === booking.studentId);
   const instructor = mockStudents.find(s => s.id === booking.instructorId);
 
-  const [formData, setFormData] = useState({
+  const buildDefaultFormData = () => ({
     date: booking.startTime.toISOString().split('T')[0],
     dualTime: booking.instructorId ? 0.0 : 0.0,
     soloTime: !booking.instructorId ? 0.0 : 0.0,
@@ -39,9 +39,19 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
     notes: ''
   });
 
+  const [formData, setFormData] = useState(buildDefaultFormData);
+
   const [showOverlapWarning, setShowOverlapWarning] = useState(false);
   const [overlappingLogs, setOverlappingLogs] = useState<any[]>([]);
   const [pendingFlightLogData, setPendingFlightLogData] = useState<Omit<FlightLog, 'id'> | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(buildDefaultFormData());
+    setShowOverlapWarning(false);
+    setOverlappingLogs([]);
+    setPendingFlightLogData(null);
+  }, [booking.id, isOpen]);
 
   // Automatically calculate start tach based on previous flight logs
   useEffect(() => {
