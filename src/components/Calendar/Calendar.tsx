@@ -1434,7 +1434,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const renderViewModeButtons = () => (
-    <div className="flex bg-gray-100 rounded-lg p-1">
+    <div className="grid w-full grid-cols-4 rounded-lg bg-gray-100 p-1 sm:w-auto sm:flex">
         {(['day', 'week', 'month', 'list'] as ViewMode[]).map((mode) => (
           <button
             key={mode}
@@ -1455,7 +1455,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 });
               }
             }}
-            className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+            className={`px-2 py-1 text-xs font-medium rounded-md transition-colors sm:px-3 sm:text-sm ${
               viewMode === mode
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
@@ -1468,15 +1468,15 @@ export const Calendar: React.FC<CalendarProps> = ({
     );
 
   const renderResourceSelectors = () => (
-    <div className="flex items-center space-x-4">
-      <div>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="min-w-0">
         <label className="block text-xs font-medium text-gray-700 mb-1">
           Aircraft
         </label>
         <select
           value={selectedAircraftId}
           onChange={(e) => setSelectedAircraftId(e.target.value)}
-          className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:py-1"
         >
           <option value="">Select Aircraft</option>
           {aircraft.map((a) => (
@@ -1487,14 +1487,14 @@ export const Calendar: React.FC<CalendarProps> = ({
         </select>
       </div>
 
-      <div>
+      <div className="min-w-0">
         <label className="block text-xs font-medium text-gray-700 mb-1">
           Instructor
         </label>
         <select
           value={selectedInstructorId}
           onChange={(e) => setSelectedInstructorId(e.target.value)}
-          className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:py-1"
         >
           <option value="">Select Instructor</option>
           {instructors.map((instructor) => (
@@ -1521,13 +1521,13 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const renderFilterControls = () => (
-    <div className="flex items-center gap-3 flex-wrap">
+    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <select
         value={resourceFilter}
         onChange={(e) =>
           setResourceFilter(e.target.value as any)
         }
-        className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto"
       >
         <option value="both">Aircraft & Instructors</option>
         <option value="aircraft">Aircraft Only</option>
@@ -1592,17 +1592,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     const resources = getAllResources();
 
     return (
-      <div className="p-6">
-        <div className="resource-calendar-grid relative border border-gray-200 rounded-lg overflow-hidden bg-white">
+      <div className="p-3 sm:p-6">
+        <div className="resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white">
           {/* Fixed header */}
           <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
             <div
               className="grid"
               style={{
-                gridTemplateColumns: `80px repeat(${resources.length}, 1fr)`,
+                gridTemplateColumns: `64px repeat(${resources.length}, minmax(120px, 1fr))`,
+                minWidth: `${64 + resources.length * 120}px`,
               }}
             >
-              <div className="bg-gray-50 border-r border-gray-200 p-2 h-[80px] flex items-center justify-center">
+              <div className="flex h-[72px] items-center justify-center border-r border-gray-200 bg-gray-50 p-2">
                 <span className="text-xs font-medium text-gray-500 transform -rotate-90">
                   Local time
                 </span>
@@ -1611,7 +1612,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               {resources.map((resource) => (
                 <div
                   key={resource.id}
-                  className="bg-gray-50 border-r border-gray-200 p-2 text-center h-[80px] flex flex-col justify-center"
+                  className="flex h-[72px] flex-col justify-center border-r border-gray-200 bg-gray-50 p-2 text-center"
                 >
                   <div className="flex items-center justify-center space-x-1 mb-1">
                     {resource.icon}
@@ -1644,8 +1645,9 @@ export const Calendar: React.FC<CalendarProps> = ({
             className="relative overflow-hidden"
             style={{
               display: 'grid',
-              gridTemplateColumns: `80px repeat(${resources.length}, 1fr)`,
+              gridTemplateColumns: `64px repeat(${resources.length}, minmax(120px, 1fr))`,
               gridTemplateRows: `repeat(${timeSlots.length}, ${slotHeight}px)`,
+              minWidth: `${64 + resources.length * 120}px`,
             }}
           >
             {/* Current Time Indicator */}
@@ -1956,7 +1958,9 @@ export const Calendar: React.FC<CalendarProps> = ({
     const columnsPerDay =
       hasAircraft && hasInstructor ? 2 : 1;
     const totalColumns = weekDays.length * columnsPerDay;
-    const weekGridTemplateColumns = `56px repeat(${totalColumns}, minmax(0, 1fr))`;
+    const weekTimeColumnWidth = 42;
+    const weekResourceColumnWidth = 54;
+    const weekGridTemplateColumns = `${weekTimeColumnWidth}px repeat(${totalColumns}, minmax(${weekResourceColumnWidth}px, 1fr))`;
     const selectedAircraft = hasAircraft
       ? aircraft.find((a) => a.id === selectedAircraftId)
       : undefined;
@@ -1965,8 +1969,8 @@ export const Calendar: React.FC<CalendarProps> = ({
       : undefined;
 
     return (
-      <div className="p-6">
-        <div className="resource-calendar-grid relative overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="p-3 sm:p-6">
+        <div className="resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white">
           {/* Fixed header */}
           <div className="sticky top-0 z-20 border-b border-gray-200 bg-white">
             <div
@@ -1974,6 +1978,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               style={{
                 gridTemplateColumns: weekGridTemplateColumns,
                 gridTemplateRows: '32px 56px',
+                minWidth: `${weekTimeColumnWidth + totalColumns * weekResourceColumnWidth}px`,
               }}
             >
               <div
@@ -2082,6 +2087,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               display: 'grid',
               gridTemplateColumns: weekGridTemplateColumns,
               gridTemplateRows: `repeat(${timeSlots.length}, ${slotHeight}px)`,
+              minWidth: `${weekTimeColumnWidth + totalColumns * weekResourceColumnWidth}px`,
             }}
           >
             {/* Current Time Indicator - show on today only */}
@@ -2703,24 +2709,26 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200 select-none">
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center space-x-4">
-            <h2 className="text-xl font-semibold text-gray-900">Calendar</h2>
-            <div className="flex items-center space-x-2">
+    <div className="select-none rounded-lg border border-gray-200 bg-white shadow-md">
+      <div className="border-b border-gray-200 p-3 sm:p-6">
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:space-x-4">
+            <h2 className="text-lg font-semibold text-gray-900 sm:text-xl">Calendar</h2>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 sm:flex sm:space-x-2">
               <button
                 onClick={() => navigateDate('prev')}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Previous date range"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="text-sm text-gray-600 min-w-[200px] text-center">
+              <span className="min-w-0 truncate px-1 text-center text-sm text-gray-600 sm:min-w-[200px]">
                 {getDateRangeText()}
               </span>
               <button
                 onClick={() => navigateDate('next')}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Next date range"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -2732,10 +2740,10 @@ export const Calendar: React.FC<CalendarProps> = ({
               </button>
             </div>
           </div>
-          <div className="flex items-center space-x-3 flex-wrap">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             {renderViewModeButtons()}
 
-            <label className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors">
+            <label className="flex items-center justify-center space-x-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center hover:bg-gray-100 transition-colors">
               <input
                 type="checkbox"
                 checked={highlightUnlogged}
@@ -2748,7 +2756,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             {onRefresh && (
               <button
                 onClick={() => void onRefresh()}
-                className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-center space-x-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
                 title="Refresh calendar"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -2758,7 +2766,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
             <button
               onClick={onNewBooking}
-              className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
             >
               <Plus className="h-4 w-4" />
               <span>New Booking</span>

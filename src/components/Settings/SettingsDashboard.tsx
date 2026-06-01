@@ -170,15 +170,15 @@ export const SettingsDashboard: React.FC = () => {
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600">Configure system preferences and organizational settings</p>
+    <div className="p-3 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Settings</h1>
+        <p className="text-sm text-gray-600 sm:text-base">Configure system preferences and organizational settings</p>
       </div>
 
-      <div className="flex gap-6 h-[calc(100vh-200px)]">
+      <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100vh-200px)] lg:flex-row lg:gap-6">
         {/* Left Sidebar */}
-        <div className="w-80 bg-white rounded-lg shadow-md border border-gray-200 flex flex-col">
+        <div className="flex max-h-[42vh] w-full flex-col rounded-lg border border-gray-200 bg-white shadow-md lg:max-h-none lg:w-80">
           {/* Search */}
           <div className="p-4 border-b border-gray-200">
             <div className="relative">
@@ -215,7 +215,7 @@ export const SettingsDashboard: React.FC = () => {
                         <span className={activeSection === section.id ? 'text-blue-600' : 'text-gray-400'}>
                           {section.icon}
                         </span>
-                        <span className="flex-1">{section.label}</span>
+                        <span className="min-w-0 flex-1 truncate">{section.label}</span>
                         {!canEdit(section.id) && (
                           <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
                             Read-only
@@ -231,7 +231,7 @@ export const SettingsDashboard: React.FC = () => {
         </div>
 
         {/* Right Content Pane */}
-        <div className="flex-1 bg-white rounded-lg shadow-md border border-gray-200 flex flex-col">
+        <div className="flex min-h-[60vh] flex-1 flex-col rounded-lg border border-gray-200 bg-white shadow-md">
           <div className="flex-1 overflow-y-auto">
             <ActiveComponent 
               canEdit={canEdit(activeSection)}
@@ -242,9 +242,9 @@ export const SettingsDashboard: React.FC = () => {
           {/* Sticky Save/Cancel Bar */}
           {hasUnsavedChanges && (
             <div className="border-t border-gray-200 bg-gray-50 px-6 py-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-gray-600">You have unsaved changes</p>
-                <div className="flex space-x-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:space-x-3">
                   <button
                     onClick={handleCancel}
                     disabled={isLoading}

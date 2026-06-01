@@ -20,11 +20,11 @@ export const Header: React.FC = () => {
 
   return (
     <header className="bg-white shadow-md border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center space-x-3">
+      <div className="mx-auto max-w-7xl px-4 pl-16 sm:px-6 lg:px-8">
+        <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 py-3 lg:flex-nowrap lg:py-0">
+          <div className="flex min-w-0 items-center space-x-3">
             {settings?.logo_url ? (
-              <div className="h-10 w-10 overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
                 <img
                   src={settings.logo_url}
                   alt={`${businessName} logo`}
@@ -32,22 +32,22 @@ export const Header: React.FC = () => {
                 />
               </div>
             ) : (
-              <div className="bg-blue-600 p-2 rounded-lg">
+              <div className="flex-shrink-0 bg-blue-600 p-2 rounded-lg">
                 <Plane className="h-6 w-6 text-white" />
               </div>
             )}
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">{businessName}</h1>
-              <p className="text-xs text-gray-500">Flight Training Management System</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold text-gray-900 sm:text-xl">{businessName}</h1>
+              <p className="hidden text-xs text-gray-500 sm:block">Flight Training Management System</p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex min-w-0 items-center space-x-2 sm:space-x-4">
             <NotificationBell />
 
-            <div className="flex items-center space-x-3">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+            <div className="flex min-w-0 items-center space-x-2 sm:space-x-3">
+              <div className="min-w-0 text-right">
+                <p className="truncate text-sm font-medium text-gray-900">{user?.name}</p>
                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(user?.role || '')}`}>
                   {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
                 </span>

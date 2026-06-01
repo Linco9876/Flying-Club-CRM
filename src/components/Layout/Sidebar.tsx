@@ -94,7 +94,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
       {/* Mobile Menu Button */}
       <button
         onClick={() => setIsMobileMenuOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md border border-gray-200"
+        className="fixed left-4 top-4 z-50 rounded-lg border border-gray-200 bg-white p-2 shadow-md lg:hidden"
+        aria-label="Open navigation menu"
       >
         <Menu className="h-6 w-6 text-gray-600" />
       </button>
@@ -116,17 +117,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
           />
           
           {/* Sidebar */}
-          <div className="relative bg-white w-64 min-h-screen shadow-xl">
+          <div className="relative flex min-h-screen w-[min(18rem,85vw)] flex-col bg-white shadow-xl">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Menu</h2>
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Close navigation menu"
               >
                 <X className="h-5 w-5 text-gray-600" />
               </button>
             </div>
-            <nav className="mt-4 px-4">
+            <nav className="mt-4 flex-1 overflow-y-auto px-4 pb-6">
               {renderMenuItems()}
             </nav>
           </div>

@@ -33,9 +33,9 @@ export const SafetyDashboard: React.FC = () => {
   }, [tabs, activeTab]);
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Safety</h1>
+    <div className="p-3 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Safety</h1>
         <p className="text-gray-600">
           {isStudentOrPilot
             ? 'Review your currency, safety reports involving you, and club safety documents'
@@ -44,8 +44,8 @@ export const SafetyDashboard: React.FC = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
+      <div className="mb-4 overflow-x-auto border-b border-gray-200 sm:mb-6">
+        <nav className="flex min-w-max space-x-4 sm:space-x-8">
           {tabs.map(tab => (
             <button
               key={tab.id}

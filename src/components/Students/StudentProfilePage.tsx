@@ -1239,19 +1239,19 @@ export const StudentProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-3 sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-4">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center space-x-3 sm:space-x-4">
           <button
             onClick={() => navigate('/students')}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900">{student.name}</h1>
+              <h1 className="min-w-0 truncate text-xl font-bold text-gray-900 sm:text-2xl">{student.name}</h1>
               <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isPilot ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'}`}>
                 {isPilot ? 'Pilot' : 'Student'}
               </span>
@@ -1259,7 +1259,7 @@ export const StudentProfilePage: React.FC = () => {
             <p className="text-gray-600">{isPilot ? 'Pilot File' : 'Student File'}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
         {canManagePilotStatus && !isPilot && (
           <button
             onClick={markStudentAsPilot}
@@ -1282,8 +1282,8 @@ export const StudentProfilePage: React.FC = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
+      <div className="mb-4 overflow-x-auto border-b border-gray-200 sm:mb-6">
+        <nav className="flex min-w-max space-x-4 sm:space-x-8">
           {tabs.map(tab => (
             <button
               key={tab.id}
@@ -1431,13 +1431,13 @@ export const StudentProfilePage: React.FC = () => {
             </div>
 
             {/* Flight Statistics */}
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 sm:p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Clock className="h-5 w-5 mr-2" />
                 Flight Statistics
               </h2>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                 <div className="bg-blue-50 p-3 rounded-lg">
                   <p className="text-xs font-medium text-blue-900">Total Hours</p>
                   <p className="text-lg font-bold text-blue-600">{formatDecimalTime(totalFlightTime)}</p>
@@ -1467,7 +1467,7 @@ export const StudentProfilePage: React.FC = () => {
               )}
             </div>
 
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 sm:p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Shield className="h-5 w-5 mr-2" />
                 Compliance Snapshot
@@ -1600,7 +1600,7 @@ export const StudentProfilePage: React.FC = () => {
       {activeTab === 'exams' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
           {hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']) && (
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 sm:p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <Award className="h-5 w-5 mr-2" />
                 Log Exam

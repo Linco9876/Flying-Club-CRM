@@ -15,13 +15,13 @@ export const BillingDashboard: React.FC = () => {
 
   if (isStudentPortal) {
     if (!portalSettings.show_invoices_in_portal) {
-      return <div className="p-6 text-sm text-gray-500">Billing history is not available in the student portal.</div>;
+      return <div className="p-3 text-sm text-gray-500 sm:p-6">Billing history is not available in the student portal.</div>;
     }
 
     const account = billing.pilotAccounts.find(item => item.userId === user?.id);
     const transactions = billing.transactions.filter(item => item.userId === user?.id);
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Billing</h1>
           <p className="text-gray-600">Review your account balance and billing history.</p>
@@ -39,7 +39,7 @@ export const BillingDashboard: React.FC = () => {
           ) : (
             <div className="divide-y divide-gray-100">
               {transactions.map(transaction => (
-                <div key={transaction.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                <div key={transaction.id} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{transaction.description || transaction.type}</p>
                     <p className="mt-1 text-xs text-gray-500">
@@ -64,15 +64,15 @@ export const BillingDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
+    <div className="p-3 sm:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Billing</h1>
         <p className="text-gray-600">Manage transactions and pilot accounts</p>
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
+      <div className="mb-4 overflow-x-auto border-b border-gray-200 sm:mb-6">
+        <nav className="flex min-w-max space-x-4 sm:space-x-8">
           {tabs.map(tab => (
             <button
               key={tab.id}

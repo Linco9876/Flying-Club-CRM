@@ -251,7 +251,7 @@ export const AircraftProfilePage: React.FC = () => {
   }
 
   if (!selectedAircraft) {
-    return <div className="p-6 text-sm text-gray-500">Aircraft not found.</div>;
+    return <div className="p-3 text-sm text-gray-500 sm:p-6">Aircraft not found.</div>;
   }
 
   const tabs: Array<{ id: AircraftProfileTab; label: string; icon: React.ReactNode; adminOnly?: boolean }> = [
@@ -263,15 +263,15 @@ export const AircraftProfilePage: React.FC = () => {
   ].filter(tab => !tab.adminOnly || isAdmin);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
           <button onClick={() => navigate('/aircraft')} className="mt-1 rounded-lg p-2 hover:bg-gray-100">
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-gray-900">{selectedAircraft.registration}</h1>
+              <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">{selectedAircraft.registration}</h1>
               <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
                 selectedAircraft.status === 'serviceable' ? 'bg-emerald-100 text-emerald-800' :
                 selectedAircraft.status === 'maintenance' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
@@ -290,7 +290,7 @@ export const AircraftProfilePage: React.FC = () => {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase text-gray-500">Seats</p>
           <p className="mt-1 text-lg font-semibold text-gray-900">{selectedAircraft.seatCapacity || '-'}</p>
@@ -313,8 +313,8 @@ export const AircraftProfilePage: React.FC = () => {
         </div>
       </div>
 
-      <div className="border-b border-gray-200">
-        <nav className="flex flex-wrap gap-2">
+      <div className="overflow-x-auto border-b border-gray-200">
+        <nav className="flex min-w-max gap-2">
           {tabs.map(tab => (
             <button
               key={tab.id}

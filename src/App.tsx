@@ -296,7 +296,7 @@ const AuthenticatedApp: React.FC<{
       case 'outstanding-records':
         return (
           <div className="p-0">
-            <div className="px-6 pt-6 pb-2">
+            <div className="px-4 pt-4 pb-2 sm:px-6 sm:pt-6">
               <h1 className="text-2xl font-bold text-gray-900">Outstanding Records</h1>
               <p className="text-gray-600 mt-1 text-sm">Flights awaiting a training record entry</p>
             </div>
@@ -325,7 +325,7 @@ const AuthenticatedApp: React.FC<{
             <Header />
             <div className="flex lg:ml-0 ml-0">
               <Sidebar activeView="students" onViewChange={handleViewChange} />
-              <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
+              <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-0 ml-0">
                 <StudentProfilePage />
               </main>
             </div>
@@ -338,7 +338,7 @@ const AuthenticatedApp: React.FC<{
             <Header />
             <div className="flex lg:ml-0 ml-0">
               <Sidebar activeView="aircraft" onViewChange={handleViewChange} />
-              <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0 p-6">
+              <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:ml-0 ml-0">
                 <AircraftFlightLogs />
               </main>
             </div>
@@ -351,7 +351,7 @@ const AuthenticatedApp: React.FC<{
             <Header />
             <div className="flex lg:ml-0 ml-0">
               <Sidebar activeView={activeView} onViewChange={handleViewChange} />
-              <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
+              <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-0 ml-0">
                 <AppErrorBoundary key={activeView}>
                   {renderActiveView(activeView)}
                 </AppErrorBoundary>
@@ -391,7 +391,7 @@ const AuthenticatedApp: React.FC<{
             <Header />
             <div className="flex lg:ml-0 ml-0">
               <Sidebar activeView="aircraft" onViewChange={handleViewChange} />
-              <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
+              <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-0 ml-0">
                 <AircraftProfilePage />
               </main>
             </div>
