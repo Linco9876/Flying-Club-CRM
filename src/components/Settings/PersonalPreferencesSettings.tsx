@@ -227,7 +227,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         .upload(path, avatarFile, {
           cacheControl: '3600',
           contentType: avatarFile.type,
-          upsert: true,
+          upsert: false,
         });
 
       if (error) throw error;

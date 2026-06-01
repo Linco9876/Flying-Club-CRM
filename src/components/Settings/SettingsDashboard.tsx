@@ -134,6 +134,7 @@ export const SettingsDashboard: React.FC = () => {
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error saving settings:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to save settings');
     } finally {
       setIsLoading(false);
     }
