@@ -1,13 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   CalendarDays,
+  Camera,
   Eye,
   Globe,
+  Loader2,
   Lock,
   Palette,
   Phone,
   Shield,
+  Trash2,
   User,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -31,6 +34,7 @@ type AccountTab = 'info' | 'security' | 'calendar' | 'notifications' | 'appearan
 interface ProfileFormData {
   name: string;
   email: string;
+  avatarUrl: string;
   birthdate: string;
   mobile: string;
   homePhone: string;
@@ -46,10 +50,12 @@ interface ProfileFormData {
 }
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
+const AVATAR_BUCKET = 'user-avatars';
 
 const blankProfile: ProfileFormData = {
   name: '',
   email: '',
+  avatarUrl: '',
   birthdate: '',
   mobile: '',
   homePhone: '',
@@ -71,7 +77,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   saveKey = 'personal',
   showInternalTabs = true,
 }) => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { aircraft } = useAircraft();
   const { preferences, loading, error, updatePreferences } = useUserPreferences(user?.id || '');
   const [activeTab, setActiveTab] = useState<AccountTab>('info');
@@ -79,6 +85,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const [profileForm, setProfileForm] = useState<ProfileFormData>(blankProfile);
   const [savedProfile, setSavedProfile] = useState<ProfileFormData>(blankProfile);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [preferenceForm, setPreferenceForm] = useState<PreferenceFormData>(() => {
     const { user_id, preferences: _preferences, ...defaults } = defaultUserPreferences(user?.id || '');
     return defaults;
@@ -126,6 +136,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         ...blankProfile,
         name: userData?.name || user.name || '',
         email: userData?.email || user.email || '',
+        avatarUrl: userData?.avatar_url || user.avatar || '',
         birthdate: userData?.date_of_birth || studentData?.date_of_birth || '',
         mobile: userData?.mobile_phone || userData?.phone || user.phone || '',
         homePhone: userData?.home_phone || '',
@@ -139,6 +150,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
       setProfileForm(nextProfile);
       setSavedProfile(nextProfile);
+      setAvatarFile(null);
     } catch (err: any) {
       console.error('Failed to load account settings:', err);
       toast.error(err.message || 'Failed to load account settings');
@@ -158,6 +170,17 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   }, [preferences]);
 
   useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview('');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [avatarFile]);
+
+  useEffect(() => {
     const globalSaveKey = `__${saveKey.replace(/-/g, '')}SettingsSave`;
     const globalCancelKey = `__${saveKey.replace(/-/g, '')}SettingsCancel`;
 
@@ -166,6 +189,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     };
     (window as any)[globalCancelKey] = () => {
       setProfileForm(savedProfile);
+      setAvatarFile(null);
       if (preferences) {
         const { id, user_id, preferences: _preferences, ...values } = preferences;
         setPreferenceForm(values);
@@ -175,7 +199,45 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       delete (window as any)[globalSaveKey];
       delete (window as any)[globalCancelKey];
     };
-  }, [profileForm, savedProfile, preferenceForm, preferences, updatePreferences, user?.id, saveKey]);
+  }, [profileForm, savedProfile, preferenceForm, preferences, updatePreferences, user?.id, saveKey, avatarFile]);
+
+  const safeAvatarFilename = (filename: string) => filename
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'avatar';
+
+  const uploadAvatar = async () => {
+    if (!user?.id || !avatarFile) return profileForm.avatarUrl || null;
+
+    if (!avatarFile.type.startsWith('image/')) {
+      toast.error('Avatar must be an image file');
+      throw new Error('Invalid avatar file type');
+    }
+
+    if (avatarFile.size > 5 * 1024 * 1024) {
+      toast.error('Avatar image must be smaller than 5 MB');
+      throw new Error('Avatar image too large');
+    }
+
+    setAvatarUploading(true);
+    try {
+      const path = `${user.id}/avatar-${Date.now()}-${safeAvatarFilename(avatarFile.name)}`;
+      const { error } = await supabase.storage
+        .from(AVATAR_BUCKET)
+        .upload(path, avatarFile, {
+          cacheControl: '3600',
+          contentType: avatarFile.type,
+          upsert: true,
+        });
+
+      if (error) throw error;
+
+      const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+      return data.publicUrl;
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   const saveAccountSettings = async () => {
     if (!user?.id) return;
@@ -222,8 +284,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       toast.success('Verification email sent. Your login email will change after you confirm it.');
     }
 
+    const avatarUrl = avatarFile ? await uploadAvatar() : profileForm.avatarUrl.trim() || null;
+
     const profileUpdates = {
       name: profileForm.name.trim(),
+      avatar_url: avatarUrl,
       phone: profileForm.mobile.trim() || null,
       mobile_phone: profileForm.mobile.trim() || null,
       home_phone: profileForm.homePhone.trim() || null,
@@ -262,18 +327,40 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     await updatePreferences(preferenceForm);
     setProfileForm(prev => ({
       ...prev,
+      avatarUrl: avatarUrl || '',
       currentPassword: '',
       newPassword: '',
       confirmPassword: '',
       email: trimmedEmail === currentEmail ? trimmedEmail : savedProfile.email,
     }));
     await fetchProfile();
+    await refreshUser();
     toast.success('Account settings saved');
   };
 
   const updateProfile = (field: keyof ProfileFormData, value: string) => {
     setProfileForm(prev => ({ ...prev, [field]: value }));
     onFormChange();
+  };
+
+  const handleAvatarChange = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image file for your avatar');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Avatar image must be smaller than 5 MB');
+      return;
+    }
+    setAvatarFile(file);
+    onFormChange();
+  };
+
+  const removeAvatar = () => {
+    setAvatarFile(null);
+    updateProfile('avatarUrl', '');
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
   };
 
   const updatePreference = (field: PreferenceField, value: string | boolean) => {
@@ -396,6 +483,56 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         <div className="space-y-6">
           <section className="space-y-4">
             <h3 className="text-lg font-medium text-gray-900">Personal Details</h3>
+            <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="relative flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-600 text-white ring-4 ring-blue-50">
+                  {avatarPreview || profileForm.avatarUrl ? (
+                    <img
+                      src={avatarPreview || profileForm.avatarUrl}
+                      alt={`${profileForm.name || 'User'} avatar`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <User className="h-9 w-9" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">Profile photo</p>
+                  <p className="mt-1 text-xs text-gray-500">Shown in the header and user lists. JPG, PNG or WebP up to 5 MB.</p>
+                  {avatarFile && <p className="mt-1 truncate text-xs text-blue-600">{avatarFile.name}</p>}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={event => handleAvatarChange(event.target.files?.[0])}
+                  disabled={!canEdit || avatarUploading}
+                />
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={!canEdit || avatarUploading}
+                  className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                  Change Photo
+                </button>
+                {(profileForm.avatarUrl || avatarFile) && (
+                  <button
+                    type="button"
+                    onClick={removeAvatar}
+                    disabled={!canEdit || avatarUploading}
+                    className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="Name" field="name" />
               <Field label="Email" field="email" type="email" />

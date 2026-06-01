@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -79,6 +80,27 @@ const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): 
   return null;
 };
 
+const mapUserData = (userData: any): User => ({
+  id: userData.id,
+  email: userData.email,
+  name: userData.name,
+  role: userData.role,
+  roles: userData.roles,
+  phone: userData.phone,
+  mobilePhone: userData.mobile_phone,
+  homePhone: userData.home_phone,
+  workPhone: userData.work_phone,
+  address: userData.address,
+  dateOfBirth: userData.date_of_birth ? new Date(userData.date_of_birth) : undefined,
+  emergencyContact: userData.emergency_contact_name ? {
+    name: userData.emergency_contact_name,
+    phone: userData.emergency_contact_phone || '',
+    relationship: userData.emergency_contact_relationship || ''
+  } : undefined,
+  preferredAircraftId: userData.preferred_aircraft_id,
+  avatar: userData.avatar_url
+});
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -107,26 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const userData = await fetchUserWithRetry(session.user.id);
 
             if (userData && mounted) {
-              setUser({
-                id: userData.id,
-                email: userData.email,
-                name: userData.name,
-                role: userData.role,
-                roles: userData.roles,
-                phone: userData.phone,
-                mobilePhone: userData.mobile_phone,
-                homePhone: userData.home_phone,
-                workPhone: userData.work_phone,
-                address: userData.address,
-                dateOfBirth: userData.date_of_birth ? new Date(userData.date_of_birth) : undefined,
-                emergencyContact: userData.emergency_contact_name ? {
-                  name: userData.emergency_contact_name,
-                  phone: userData.emergency_contact_phone || '',
-                  relationship: userData.emergency_contact_relationship || ''
-                } : undefined,
-                preferredAircraftId: userData.preferred_aircraft_id,
-                avatar: userData.avatar_url
-              });
+              setUser(mapUserData(userData));
             } else {
               console.warn('User session exists but no user record found after retries');
               await supabase.auth.signOut();
@@ -179,26 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUser(prev => {
                 // Only update if we don't have this user already
                 if (prev?.id === userData.id) return prev;
-                return {
-                  id: userData.id,
-                  email: userData.email,
-                  name: userData.name,
-                  role: userData.role,
-                  roles: userData.roles,
-                  phone: userData.phone,
-                  mobilePhone: userData.mobile_phone,
-                  homePhone: userData.home_phone,
-                  workPhone: userData.work_phone,
-                  address: userData.address,
-                  dateOfBirth: userData.date_of_birth ? new Date(userData.date_of_birth) : undefined,
-                  emergencyContact: userData.emergency_contact_name ? {
-                    name: userData.emergency_contact_name,
-                    phone: userData.emergency_contact_phone || '',
-                    relationship: userData.emergency_contact_relationship || ''
-                  } : undefined,
-                  preferredAircraftId: userData.preferred_aircraft_id,
-                  avatar: userData.avatar_url
-                };
+                return mapUserData(userData);
               });
             }
           } catch (error) {
@@ -234,26 +218,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userData = await fetchUserWithRetry(data.user.id);
 
           if (userData) {
-            setUser({
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              roles: userData.roles,
-              phone: userData.phone,
-              mobilePhone: userData.mobile_phone,
-              homePhone: userData.home_phone,
-              workPhone: userData.work_phone,
-              address: userData.address,
-              dateOfBirth: userData.date_of_birth ? new Date(userData.date_of_birth) : undefined,
-              emergencyContact: userData.emergency_contact_name ? {
-                name: userData.emergency_contact_name,
-                phone: userData.emergency_contact_phone || '',
-                relationship: userData.emergency_contact_relationship || ''
-              } : undefined,
-              preferredAircraftId: userData.preferred_aircraft_id,
-              avatar: userData.avatar_url
-            });
+            setUser(mapUserData(userData));
             setIsLoading(false);
             return { success: true };
           } else {
@@ -291,8 +256,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.history.replaceState(null, '', '/');
   };
 
+  const refreshUser = async () => {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) return;
+    const userData = await fetchUserWithRetry(data.user.id);
+    if (userData) setUser(mapUserData(userData));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, logout, refreshUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

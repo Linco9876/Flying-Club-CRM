@@ -8,6 +8,7 @@ export const Header: React.FC = () => {
   const { user, logout } = useAuth();
   const { settings } = useOrganisationSettings();
   const businessName = settings?.club_name?.trim() || 'Bendigo Flying Club';
+  const avatarUrl = user?.avatar?.trim();
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -52,8 +53,12 @@ export const Header: React.FC = () => {
                   {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
                 </span>
               </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 shadow-sm ring-2 ring-white">
-                <User className="h-5 w-5 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-blue-600 shadow-sm ring-2 ring-white">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt={`${user?.name || 'User'} avatar`} className="h-full w-full object-cover" />
+                ) : (
+                  <User className="h-5 w-5 text-white" />
+                )}
               </div>
             </div>
 
