@@ -528,6 +528,9 @@ export const TrainingCourseCatalog: React.FC = () => {
   const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
   const { settings: trainingSettings } = useTrainingSettings();
   const { user } = useAuth();
+  const editCourseFormRef = useRef<HTMLDivElement | null>(null);
+  const lessonFormRef = useRef<HTMLDivElement | null>(null);
+  const pendingScrollTargetRef = useRef<'edit-course' | 'lesson' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
 
@@ -597,6 +600,24 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   const selectedModule = modules.find((module) => module.id === selectedModuleId) ?? null;
 
+  const queueFormScroll = (target: 'edit-course' | 'lesson') => {
+    pendingScrollTargetRef.current = target;
+  };
+
+  useEffect(() => {
+    const target = pendingScrollTargetRef.current;
+    if (!target) return;
+
+    const node = target === 'edit-course' ? editCourseFormRef.current : lessonFormRef.current;
+    if (!node) return;
+
+    pendingScrollTargetRef.current = null;
+    window.requestAnimationFrame(() => {
+      const top = node.getBoundingClientRect().top + window.scrollY - 16;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    });
+  }, [editingLessonId, selectedModuleId, showEditCourseForm, showLessonForm]);
+
   useEffect(() => {
     if (!selectedModule) {
       setExpandedLessons({});
@@ -651,6 +672,7 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   const handleOpenEditCourse = () => {
     if (!selectedModule) return;
+    queueFormScroll('edit-course');
     setEditCourse({
       title: selectedModule.title,
       category: selectedModule.category,
@@ -732,6 +754,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   };
 
   const handleEditLesson = (lesson: TrainingLesson) => {
+    queueFormScroll('lesson');
     setNewLesson({
       name: lesson.name,
       objective: lesson.objective,
@@ -873,6 +896,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       toast.error('Please select a course first');
       return;
     }
+    queueFormScroll('lesson');
     resetLessonForm();
     setShowLessonForm(true);
     setShowEditCourseForm(false);
@@ -896,6 +920,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
 
     setNewLesson(pilotCertificateFlightTestTemplate);
+    queueFormScroll('lesson');
     setLessonPassMarks(
       Object.fromEntries(
         selectedModule.assessmentCriteria.map((criterion) => [
@@ -1450,7 +1475,7 @@ export const TrainingCourseCatalog: React.FC = () => {
 
               {/* ── Edit course form ── */}
               {showEditCourseForm && selectedModule && (
-                <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div ref={editCourseFormRef} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
                   <div className="flex items-center justify-between gap-3 mb-5">
                     <div className="flex items-center gap-2 text-gray-900">
                       <Pencil className="h-5 w-5 text-blue-600" />
@@ -1615,7 +1640,7 @@ export const TrainingCourseCatalog: React.FC = () => {
               )}
 
               {showLessonForm && (
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-6 shadow-inner">
+                <div ref={lessonFormRef} className="rounded-xl border border-blue-200 bg-blue-50 p-6 shadow-inner">
                   <div className="flex flex-wrap items-center justify-between gap-3 text-blue-900">
                     <div className="flex items-center gap-2">
                       {editingLessonId ? <Pencil className="h-5 w-5" /> : <FilePlus className="h-5 w-5" />}
