@@ -19,12 +19,12 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="bg-white shadow-md border-b border-gray-200">
-      <div className="mx-auto max-w-7xl px-4 pl-16 sm:px-6 lg:px-8">
-        <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 py-3 lg:flex-nowrap lg:py-0">
-          <div className="flex min-w-0 items-center space-x-3">
+    <header className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/95 shadow-sm backdrop-blur">
+      <div className="mx-auto max-w-7xl px-3 pl-16 sm:px-6 lg:px-8">
+        <div className="grid min-h-[4.75rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3 sm:min-h-16 lg:py-0">
+          <div className="flex min-w-0 items-center gap-3">
             {settings?.logo_url ? (
-              <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <div className="h-11 w-11 flex-shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
                 <img
                   src={settings.logo_url}
                   alt={`${businessName} logo`}
@@ -32,38 +32,57 @@ export const Header: React.FC = () => {
                 />
               </div>
             ) : (
-              <div className="flex-shrink-0 bg-blue-600 p-2 rounded-lg">
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-sm">
                 <Plane className="h-6 w-6 text-white" />
               </div>
             )}
             <div className="min-w-0">
-              <h1 className="truncate text-base font-bold text-gray-900 sm:text-xl">{businessName}</h1>
+              <h1 className="truncate text-lg font-bold leading-tight text-gray-950 sm:text-xl">{businessName}</h1>
               <p className="hidden text-xs text-gray-500 sm:block">Flight Training Management System</p>
             </div>
           </div>
 
-          <div className="flex min-w-0 items-center space-x-2 sm:space-x-4">
+          <div className="flex items-center justify-end gap-1.5 sm:gap-3">
             <NotificationBell />
 
-            <div className="flex min-w-0 items-center space-x-2 sm:space-x-3">
-              <div className="min-w-0 text-right">
-                <p className="truncate text-sm font-medium text-gray-900">{user?.name}</p>
-                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(user?.role || '')}`}>
+            <div className="flex min-w-0 items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-1.5 py-1 shadow-inner sm:px-2">
+              <div className="hidden min-w-0 text-right sm:block">
+                <p className="max-w-44 truncate text-sm font-semibold leading-tight text-gray-900">{user?.name}</p>
+                <span className={`mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${getRoleBadgeColor(user?.role || '')}`}>
                   {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
                 </span>
               </div>
-              <div className="flex items-center space-x-2">
-                <div className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center">
-                  <User className="h-4 w-4 text-white" />
-                </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 shadow-sm ring-2 ring-white">
+                <User className="h-5 w-5 text-white" />
+              </div>
+              <div className="hidden sm:block">
                 <button
                   onClick={logout}
-                  className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="rounded-full p-2 text-gray-400 transition-colors hover:bg-white hover:text-gray-700"
                   title="Logout"
+                  aria-label="Logout"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
               </div>
+            </div>
+
+            <button
+              onClick={logout}
+              className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 sm:hidden"
+              title="Logout"
+              aria-label="Logout"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="col-span-2 min-w-0 sm:hidden">
+            <div className="flex min-w-0 items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+              <p className="min-w-0 truncate text-sm font-semibold text-gray-900">{user?.name}</p>
+              <span className={`ml-3 inline-flex flex-shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getRoleBadgeColor(user?.role || '')}`}>
+                {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
+              </span>
             </div>
           </div>
         </div>

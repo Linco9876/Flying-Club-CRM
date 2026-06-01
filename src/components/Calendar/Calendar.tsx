@@ -1434,7 +1434,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const renderViewModeButtons = () => (
-    <div className="grid w-full grid-cols-4 rounded-lg bg-gray-100 p-1 sm:w-auto sm:flex">
+    <div className="grid w-full grid-cols-4 rounded-xl bg-gray-100 p-1 sm:w-auto sm:flex">
         {(['day', 'week', 'month', 'list'] as ViewMode[]).map((mode) => (
           <button
             key={mode}
@@ -1455,7 +1455,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 });
               }
             }}
-            className={`px-2 py-1 text-xs font-medium rounded-md transition-colors sm:px-3 sm:text-sm ${
+            className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors sm:px-3 sm:py-1.5 sm:text-sm ${
               viewMode === mode
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
@@ -2709,32 +2709,32 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   return (
-    <div className="select-none rounded-lg border border-gray-200 bg-white shadow-md">
-      <div className="border-b border-gray-200 p-3 sm:p-6">
-        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <div className="select-none overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 bg-white p-4 sm:p-6">
+        <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:space-x-4">
-            <h2 className="text-lg font-semibold text-gray-900 sm:text-xl">Calendar</h2>
-            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 sm:flex sm:space-x-2">
+            <h2 className="text-xl font-bold tracking-tight text-gray-950 sm:text-2xl">Calendar</h2>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex sm:space-x-2">
               <button
                 onClick={() => navigateDate('prev')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
                 aria-label="Previous date range"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="min-w-0 truncate px-1 text-center text-sm text-gray-600 sm:min-w-[200px]">
+              <span className="min-w-0 truncate px-1 text-center text-base font-medium text-gray-600 sm:min-w-[200px]">
                 {getDateRangeText()}
               </span>
               <button
                 onClick={() => navigateDate('next')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
                 aria-label="Next date range"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setCurrentDate(new Date())}
-                className="px-3 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
                 Today
               </button>
@@ -2743,12 +2743,12 @@ export const Calendar: React.FC<CalendarProps> = ({
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             {renderViewModeButtons()}
 
-            <label className="flex items-center justify-center space-x-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center hover:bg-gray-100 transition-colors">
+            <label className="flex items-center justify-center space-x-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-center transition-colors hover:bg-gray-100">
               <input
                 type="checkbox"
                 checked={highlightUnlogged}
                 onChange={(e) => setHighlightUnlogged(e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700">Highlight Unlogged</span>
             </label>
@@ -2756,7 +2756,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             {onRefresh && (
               <button
                 onClick={() => void onRefresh()}
-                className="flex items-center justify-center space-x-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                className="flex items-center justify-center space-x-2 rounded-xl border border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
                 title="Refresh calendar"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -2766,7 +2766,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
             <button
               onClick={onNewBooking}
-              className="flex items-center justify-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
+              className="flex items-center justify-center space-x-2 rounded-xl bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:py-2.5 sm:text-sm"
             >
               <Plus className="h-4 w-4" />
               <span>New Booking</span>
@@ -2792,7 +2792,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           <div className="lg:hidden">
             <button
               onClick={() => setShowMobileFilters(!showMobileFilters)}
-              className="flex items-center space-x-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex items-center space-x-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-gray-50"
             >
               <Filter className="h-4 w-4" />
               <span>Filter</span>
