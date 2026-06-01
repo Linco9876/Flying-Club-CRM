@@ -532,6 +532,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const lessonFormRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<'edit-course' | 'lesson' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTagFilter, setSelectedTagFilter] = useState('all');
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
 
   // Create course form
@@ -582,21 +583,46 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   const filteredModules = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
+    const tagFilter = selectedTagFilter.toLowerCase();
     const sorted = [...modules].sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
 
-    if (!term) {
+    if (!term && selectedTagFilter === 'all') {
       return sorted;
     }
 
     return sorted.filter((module) => {
       const tagString = module.tags.join(' ').toLowerCase();
-      return (
+      const matchesSearch =
+        !term ||
         module.title.toLowerCase().includes(term) ||
         module.category.toLowerCase().includes(term) ||
-        tagString.includes(term)
-      );
+        tagString.includes(term);
+      const matchesTag =
+        selectedTagFilter === 'all' ||
+        module.tags.some((tag) => tag.toLowerCase() === tagFilter);
+
+      return matchesSearch && matchesTag;
     });
-  }, [modules, searchTerm]);
+  }, [modules, searchTerm, selectedTagFilter]);
+
+  const availableTags = useMemo(() => {
+    const tags = new Set<string>();
+    modules.forEach((module) => {
+      module.tags.forEach((tag) => {
+        const trimmed = tag.trim();
+        if (trimmed) tags.add(trimmed);
+      });
+    });
+
+    return Array.from(tags).sort((a, b) => a.localeCompare(b));
+  }, [modules]);
+
+  useEffect(() => {
+    if (selectedTagFilter === 'all') return;
+    if (!availableTags.some((tag) => tag.toLowerCase() === selectedTagFilter.toLowerCase())) {
+      setSelectedTagFilter('all');
+    }
+  }, [availableTags, selectedTagFilter]);
 
   const selectedModule = modules.find((module) => module.id === selectedModuleId) ?? null;
 
@@ -1082,7 +1108,7 @@ export const TrainingCourseCatalog: React.FC = () => {
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="flex items-center rounded-lg border border-gray-200 px-3 py-2 shadow-sm">
               <Search className="mr-2 h-4 w-4 text-gray-400" />
               <input
@@ -1093,6 +1119,22 @@ export const TrainingCourseCatalog: React.FC = () => {
                 className="w-full border-none bg-transparent text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none"
               />
             </div>
+            <label className="flex items-center rounded-lg border border-gray-200 px-3 py-2 shadow-sm">
+              <Tag className="mr-2 h-4 w-4 text-gray-400" />
+              <span className="sr-only">Filter by tag</span>
+              <select
+                value={selectedTagFilter}
+                onChange={(event) => setSelectedTagFilter(event.target.value)}
+                className="min-w-40 border-none bg-transparent text-sm text-gray-700 focus:outline-none"
+              >
+                <option value="all">All tags</option>
+                {availableTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="hidden text-sm text-gray-500 md:block">
               {filteredModules.length} course{filteredModules.length === 1 ? '' : 's'} found
             </div>
