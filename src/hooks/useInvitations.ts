@@ -60,8 +60,8 @@ export const useInvitations = () => {
   }) => {
     try {
       const roles = data.roles && data.roles.length > 0 ? data.roles : ['student'];
-      if (roles.includes('student') && roles.includes('pilot')) {
-        toast.error('A user cannot be both a student and a pilot');
+      if (roles.includes('student') && roles.length > 1) {
+        toast.error('Student cannot be combined with any other role');
         return;
       }
 

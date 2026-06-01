@@ -70,8 +70,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (userRoles.includes("student") && userRoles.includes("pilot")) {
-      return new Response(JSON.stringify({ error: "A user cannot be both a student and a pilot" }), {
+    if (userRoles.includes("student") && userRoles.length > 1) {
+      return new Response(JSON.stringify({ error: "Student cannot be combined with any other role" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

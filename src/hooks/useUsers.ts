@@ -3,6 +3,16 @@ import { supabase } from '../lib/supabase';
 import { User, UserRole } from '../types';
 import toast from 'react-hot-toast';
 
+const getPrimaryRoleFromRoles = (roles: UserRole[]): UserRole =>
+  roles.includes('admin') ? 'admin'
+    : roles.includes('senior_instructor') ? 'senior_instructor'
+    : roles.includes('instructor') ? 'instructor'
+    : roles.includes('pilot') ? 'pilot'
+    : 'student';
+
+const hasStudentRoleConflict = (roles: UserRole[]) =>
+  roles.includes('student') && roles.length > 1;
+
 export const useUsers = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,11 +44,7 @@ export const useUsers = () => {
 
       const mappedUsers: User[] = (usersData || []).map(u => {
         const userRoles = rolesMap.get(u.id) || ['student'];
-        const primaryRole = userRoles.includes('admin') ? 'admin'
-                          : userRoles.includes('senior_instructor') ? 'senior_instructor'
-                          : userRoles.includes('instructor') ? 'instructor'
-                          : userRoles.includes('pilot') ? 'pilot'
-                          : 'student';
+        const primaryRole = getPrimaryRoleFromRoles(userRoles);
 
         return {
           id: u.id,
@@ -122,12 +128,25 @@ export const useUsers = () => {
     try {
       const existingRoles = users.find(u => u.id === userId)?.roles || [];
       if (existingRoles.includes(role)) return;
+      const nextRoles = Array.from(new Set([...existingRoles, role]));
+
+      if (hasStudentRoleConflict(nextRoles)) {
+        toast.error('Student cannot be combined with any other role');
+        return;
+      }
 
       const { error } = await supabase
         .from('user_roles')
         .insert({ user_id: userId, role });
 
       if (error) throw error;
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ role: getPrimaryRoleFromRoles(nextRoles) })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
 
       await fetchUsers();
       toast.success(`${role} role added successfully`);
@@ -141,10 +160,12 @@ export const useUsers = () => {
   const removeRole = async (userId: string, role: UserRole) => {
     try {
       const user = users.find(u => u.id === userId);
+      if (!user) return;
       if (user && user.roles && user.roles.length === 1) {
         toast.error('Cannot remove the last role from a user');
         return;
       }
+      const nextRoles = (user.roles || [user.role]).filter(existingRole => existingRole !== role);
 
       const { error } = await supabase
         .from('user_roles')
@@ -153,6 +174,13 @@ export const useUsers = () => {
         .eq('role', role);
 
       if (error) throw error;
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ role: getPrimaryRoleFromRoles(nextRoles) })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
 
       await fetchUsers();
       toast.success(`${role} role removed successfully`);
@@ -170,17 +198,30 @@ export const useUsers = () => {
         return;
       }
 
+      const uniqueRoles = Array.from(new Set(roles));
+      if (hasStudentRoleConflict(uniqueRoles)) {
+        toast.error('Student cannot be combined with any other role');
+        return;
+      }
+
       await supabase
         .from('user_roles')
         .delete()
         .eq('user_id', userId);
 
-      const rolesToInsert = roles.map(role => ({ user_id: userId, role }));
+      const rolesToInsert = uniqueRoles.map(role => ({ user_id: userId, role }));
       const { error } = await supabase
         .from('user_roles')
         .insert(rolesToInsert);
 
       if (error) throw error;
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ role: getPrimaryRoleFromRoles(uniqueRoles) })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
 
       await fetchUsers();
       toast.success('User roles updated successfully');

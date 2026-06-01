@@ -61,9 +61,11 @@ const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): 
 
       if (userResult.data) {
         const roles = (rolesResult.data?.map(r => r.role as UserRole) || []).filter(Boolean);
+        const resolvedRoles = roles.length > 0 ? roles : [userResult.data.role as UserRole];
         return {
           ...userResult.data,
-          roles: roles.length > 0 ? roles : [userResult.data.role as UserRole]
+          role: getPrimaryRoleFromRoles(resolvedRoles),
+          roles: resolvedRoles
         };
       }
 
@@ -80,11 +82,18 @@ const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): 
   return null;
 };
 
+const getPrimaryRoleFromRoles = (roles: UserRole[]): UserRole =>
+  roles.includes('admin') ? 'admin'
+    : roles.includes('senior_instructor') ? 'senior_instructor'
+    : roles.includes('instructor') ? 'instructor'
+    : roles.includes('pilot') ? 'pilot'
+    : 'student';
+
 const mapUserData = (userData: any): User => ({
   id: userData.id,
   email: userData.email,
   name: userData.name,
-  role: userData.role,
+  role: getPrimaryRoleFromRoles(userData.roles && userData.roles.length > 0 ? userData.roles : [userData.role]),
   roles: userData.roles,
   phone: userData.phone,
   mobilePhone: userData.mobile_phone,

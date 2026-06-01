@@ -29,13 +29,13 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const hasStudentPilotConflict = formData.roles.includes('student') && formData.roles.includes('pilot');
+  const hasStudentRoleConflict = formData.roles.includes('student') && formData.roles.length > 1;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (hasStudentPilotConflict) {
-      toast.error('A user cannot be both a student and a pilot');
+    if (hasStudentRoleConflict) {
+      toast.error('Student cannot be combined with any other role');
       return;
     }
 
@@ -72,10 +72,10 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
         : [...prev.roles, role];
 
       if (role === 'student' && newRoles.includes('student')) {
-        newRoles = newRoles.filter(r => r !== 'pilot');
+        newRoles = ['student'];
       }
 
-      if (role === 'pilot' && newRoles.includes('pilot')) {
+      if (role !== 'student' && newRoles.includes(role)) {
         newRoles = newRoles.filter(r => r !== 'student');
       }
 
@@ -231,11 +231,11 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  Users can have multiple roles. Student and pilot are mutually exclusive; all other combinations are allowed.
+                  Student is a standalone role. Staff and pilot roles can be combined; the highest-ranked selected role controls the login portal.
                 </p>
-                {hasStudentPilotConflict && (
+                {hasStudentRoleConflict && (
                   <p className="text-xs text-red-600 mt-1">
-                    Remove either Student or Pilot before inviting this user.
+                    Remove Student or remove the other roles before inviting this user.
                   </p>
                 )}
               </div>
@@ -251,7 +251,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || hasStudentPilotConflict}
+                disabled={isSubmitting || hasStudentRoleConflict}
                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? 'Inviting...' : 'Invite User'}

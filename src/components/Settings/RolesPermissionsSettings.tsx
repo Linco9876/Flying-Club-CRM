@@ -92,12 +92,21 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
     if (!target) return;
 
     const targetRoles = target.roles || [target.role];
-    const nextRoles = isChecked
+    let nextRoles = isChecked
       ? Array.from(new Set([...targetRoles, role]))
       : targetRoles.filter(existingRole => existingRole !== role);
 
+    if (role === 'senior_instructor' && isChecked && !nextRoles.includes('instructor')) {
+      nextRoles = [...nextRoles, 'instructor'];
+    }
+
     if (!isChecked && nextRoles.length === 0) {
       toast.error('Each user must keep at least one role.');
+      return;
+    }
+
+    if (nextRoles.includes('student') && nextRoles.length > 1) {
+      toast.error('Student cannot be combined with any other role.');
       return;
     }
 
@@ -158,7 +167,9 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
               <Users className="h-5 w-5 mr-2 text-blue-600" />
               User Role Assignment
             </h3>
-            <p className="text-sm text-gray-500 mt-1">Role changes save immediately and update the user role table used by database policies.</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Role changes save immediately. Student is standalone; mixed-role users log in as their highest rank: admin, instructor, pilot, then student.
+            </p>
           </div>
           <input
             value={searchTerm}
@@ -212,10 +223,20 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                         </td>
                         {editableRoles.map(role => {
                           const checked = userRoles.includes(role) || (role === 'senior_instructor' && Boolean(user.isSeniorInstructor));
+                          const wouldConflictWithStudent =
+                            !checked &&
+                            ((role === 'student' && userRoles.some(existingRole => existingRole !== 'student'))
+                              || (role !== 'student' && userRoles.includes('student')));
                           const disabled = !canEdit
                             || isUpdating
                             || (!checked && role === 'senior_instructor' && !userRoles.includes('instructor'))
+                            || wouldConflictWithStudent
                             || (user.id === currentUser?.id && role === 'admin' && checked);
+                          const title = wouldConflictWithStudent
+                            ? 'Student cannot be combined with any other role'
+                            : role === 'senior_instructor' && !userRoles.includes('instructor')
+                              ? 'Assign Instructor before Senior Instructor'
+                              : undefined;
 
                           return (
                             <td key={role} className="px-4 py-4 text-center">
@@ -224,7 +245,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                                 checked={checked}
                                 onChange={event => handleRoleToggle(user.id, role, event.target.checked)}
                                 disabled={disabled}
-                                title={role === 'senior_instructor' && !userRoles.includes('instructor') ? 'Assign Instructor before Senior Instructor' : undefined}
+                                title={title}
                                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
                               />
                             </td>

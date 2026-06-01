@@ -308,6 +308,14 @@ export const StudentProfilePage: React.FC = () => {
   const markStudentAsPilot = async () => {
     if (!student || !canManagePilotStatus) return;
     try {
+      const { error: removeStudentRoleError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', student.id)
+        .eq('role', 'student');
+
+      if (removeStudentRoleError) throw removeStudentRoleError;
+
       const { error: roleError } = await supabase
         .from('user_roles')
         .insert({ user_id: student.id, role: 'pilot' });
@@ -317,8 +325,7 @@ export const StudentProfilePage: React.FC = () => {
       await supabase
         .from('users')
         .update({ role: 'pilot' })
-        .eq('id', student.id)
-        .eq('role', 'student');
+        .eq('id', student.id);
 
       await refetchStudents();
       toast.success(`${student.name} is now marked as a pilot`);
