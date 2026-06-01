@@ -375,20 +375,20 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       </div>
 
       {showInternalTabs && (
-        <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                selectedTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+        <div className="app-tab-scroller">
+          <nav className="app-tab-list">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`app-tab-button ${selectedTab === tab.id ? 'app-tab-button-active' : ''}`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </nav>
         </div>
       )}
 

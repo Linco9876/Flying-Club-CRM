@@ -230,14 +230,14 @@ export const StudentProfile: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="flex gap-6">
+      <div className="app-tab-scroller">
+        <nav className="app-tab-list">
           <button
             onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-2 pb-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`app-tab-button ${
               activeTab === 'profile'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'app-tab-button-active'
+                : ''
             }`}
           >
             <User className="h-4 w-4" />
@@ -245,10 +245,10 @@ export const StudentProfile: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('training')}
-            className={`flex items-center gap-2 pb-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`app-tab-button ${
               activeTab === 'training'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'app-tab-button-active'
+                : ''
             }`}
           >
             <BookOpen className="h-4 w-4" />

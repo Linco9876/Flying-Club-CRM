@@ -313,14 +313,14 @@ export const AircraftProfilePage: React.FC = () => {
         </div>
       </div>
 
-      <div className="overflow-x-auto border-b border-gray-200">
-        <nav className="flex min-w-max gap-2">
+      <div className="app-tab-scroller">
+        <nav className="app-tab-list">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex items-center gap-2 border-b-2 px-3 py-3 text-sm font-medium ${
-                activeTab === tab.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'
+              className={`app-tab-button ${
+                activeTab === tab.id ? 'app-tab-button-active' : ''
               }`}
             >
               {tab.icon}
