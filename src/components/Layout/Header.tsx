@@ -42,38 +42,28 @@ export const Header: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-1.5 sm:gap-3">
+          <div className="flex items-center justify-end gap-2 sm:gap-3">
             <NotificationBell />
 
-            <div className="flex min-w-0 items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-1.5 py-1 shadow-inner sm:px-2">
+            <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
               <div className="hidden min-w-0 text-right sm:block">
-                <p className="max-w-44 truncate text-sm font-semibold leading-tight text-gray-900">{user?.name}</p>
-                <span className={`mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${getRoleBadgeColor(user?.role || '')}`}>
+                <p className="max-w-52 truncate text-sm font-semibold leading-tight text-gray-900">{user?.name}</p>
+                <span className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${getRoleBadgeColor(user?.role || '')}`}>
                   {user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1)}
                 </span>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 shadow-sm ring-2 ring-white">
                 <User className="h-5 w-5 text-white" />
               </div>
-              <div className="hidden sm:block">
-                <button
-                  onClick={logout}
-                  className="rounded-full p-2 text-gray-400 transition-colors hover:bg-white hover:text-gray-700"
-                  title="Logout"
-                  aria-label="Logout"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
-              </div>
             </div>
 
             <button
               onClick={logout}
-              className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 sm:hidden"
+              className="rounded-full border border-transparent p-2 text-gray-400 transition-colors hover:border-gray-200 hover:bg-gray-50 hover:text-gray-700"
               title="Logout"
               aria-label="Logout"
             >
-              <LogOut className="h-5 w-5" />
+              <LogOut className="h-5 w-5 sm:h-4 sm:w-4" />
             </button>
           </div>
 
