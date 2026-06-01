@@ -59,6 +59,12 @@ export const useInvitations = () => {
     roles?: UserRole[];
   }) => {
     try {
+      const roles = data.roles && data.roles.length > 0 ? data.roles : ['student'];
+      if (roles.includes('student') && roles.includes('pilot')) {
+        toast.error('A user cannot be both a student and a pilot');
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
@@ -74,7 +80,7 @@ export const useInvitations = () => {
           email: data.email,
           name: data.name,
           phone: data.phone,
-          roles: data.roles && data.roles.length > 0 ? data.roles : ['student'],
+          roles,
         }),
       });
 

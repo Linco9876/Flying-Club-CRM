@@ -29,8 +29,16 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const hasStudentPilotConflict = formData.roles.includes('student') && formData.roles.includes('pilot');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (hasStudentPilotConflict) {
+      toast.error('A user cannot be both a student and a pilot');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -59,9 +67,17 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
 
   const toggleRole = (role: UserRole) => {
     setFormData(prev => {
-      const newRoles = prev.roles.includes(role)
+      let newRoles = prev.roles.includes(role)
         ? prev.roles.filter(r => r !== role)
         : [...prev.roles, role];
+
+      if (role === 'student' && newRoles.includes('student')) {
+        newRoles = newRoles.filter(r => r !== 'pilot');
+      }
+
+      if (role === 'pilot' && newRoles.includes('pilot')) {
+        newRoles = newRoles.filter(r => r !== 'student');
+      }
 
       return {
         ...prev,
@@ -215,8 +231,13 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  Users can have multiple roles. Students must have an instructor for bookings, pilots can book solo.
+                  Users can have multiple roles. Student and pilot are mutually exclusive; all other combinations are allowed.
                 </p>
+                {hasStudentPilotConflict && (
+                  <p className="text-xs text-red-600 mt-1">
+                    Remove either Student or Pilot before inviting this user.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -230,7 +251,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || hasStudentPilotConflict}
                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? 'Inviting...' : 'Invite User'}
