@@ -9,6 +9,7 @@ export type CourseCompletionRule = 'all_required_criteria' | 'all_lessons_attemp
 export interface TrainingSyllabusSettingsData {
   id?: string;
   defaultGradingSystem: LessonGradingSystem;
+  forceStudentAcknowledgementForAllCourses: boolean;
   requireStudentAcknowledgement: boolean;
   lockRecordAfterStudentAck: boolean;
   allowSubmittedRecordEditing: boolean;
@@ -26,6 +27,7 @@ export interface TrainingSyllabusSettingsData {
 
 export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
   defaultGradingSystem: 'NC/S/C/-',
+  forceStudentAcknowledgementForAllCourses: false,
   requireStudentAcknowledgement: true,
   lockRecordAfterStudentAck: true,
   allowSubmittedRecordEditing: false,
@@ -47,6 +49,9 @@ const mapRow = (row: any): TrainingSyllabusSettingsData => ({
   ...DEFAULT_TRAINING_SETTINGS,
   id: row.id,
   defaultGradingSystem: row.default_grading_system ?? DEFAULT_TRAINING_SETTINGS.defaultGradingSystem,
+  forceStudentAcknowledgementForAllCourses: row.force_student_acknowledgement_for_all_courses
+    ?? row.require_student_acknowledgement
+    ?? DEFAULT_TRAINING_SETTINGS.forceStudentAcknowledgementForAllCourses,
   requireStudentAcknowledgement: row.require_student_acknowledgement ?? DEFAULT_TRAINING_SETTINGS.requireStudentAcknowledgement,
   lockRecordAfterStudentAck: row.lock_record_after_student_ack ?? DEFAULT_TRAINING_SETTINGS.lockRecordAfterStudentAck,
   allowSubmittedRecordEditing: row.allow_submitted_record_editing ?? DEFAULT_TRAINING_SETTINGS.allowSubmittedRecordEditing,
@@ -64,6 +69,7 @@ const mapRow = (row: any): TrainingSyllabusSettingsData => ({
 
 const toRow = (settings: TrainingSyllabusSettingsData) => ({
   default_grading_system: settings.defaultGradingSystem,
+  force_student_acknowledgement_for_all_courses: settings.forceStudentAcknowledgementForAllCourses,
   require_student_acknowledgement: settings.requireStudentAcknowledgement,
   lock_record_after_student_ack: settings.lockRecordAfterStudentAck,
   allow_submitted_record_editing: settings.allowSubmittedRecordEditing,

@@ -204,18 +204,25 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <SettingToggle
             id="requireStudentAcknowledgement"
-            label="Require student acknowledgement"
-            description="Students must acknowledge submitted records before they become fully complete."
-            checked={formData.requireStudentAcknowledgement}
+            label="Force student acknowledgement for all courses"
+            description="Overrides course settings so every submitted lesson record must be acknowledged by the student."
+            checked={formData.forceStudentAcknowledgementForAllCourses}
             disabled={!canEdit}
-            onChange={value => setField('requireStudentAcknowledgement', value)}
+            onChange={value => {
+              setFormData(current => ({
+                ...current,
+                forceStudentAcknowledgementForAllCourses: value,
+                requireStudentAcknowledgement: value,
+              }));
+              onFormChange();
+            }}
           />
           <SettingToggle
             id="lockRecordAfterStudentAck"
             label="Lock records after student acknowledgement"
             description="Moves acknowledged records to locked status so they stop appearing as open sign-off work."
             checked={formData.lockRecordAfterStudentAck}
-            disabled={!canEdit || !formData.requireStudentAcknowledgement}
+            disabled={!canEdit}
             onChange={value => setField('lockRecordAfterStudentAck', value)}
           />
           <SettingToggle
@@ -223,7 +230,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
             label="Notify student when a record is submitted"
             description="Creates the existing student notification asking them to review and sign off."
             checked={formData.autoNotifyStudentOnSubmit}
-            disabled={!canEdit || !formData.requireStudentAcknowledgement}
+            disabled={!canEdit}
             onChange={value => setField('autoNotifyStudentOnSubmit', value)}
           />
           <SettingToggle
@@ -243,7 +250,7 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
           <div>
             <h3 className="text-sm font-semibold text-blue-900">How this maps to training records</h3>
             <p className="text-sm text-blue-800 mt-1">
-              Course content, lesson order and pass marks remain in Training Records. These settings control how instructors fill a record, how progression is suggested, and when students are asked to acknowledge the result.
+              Course content, lesson order, course-level acknowledgement and pass marks remain in Training Records. These settings control how instructors fill a record, how progression is suggested, and whether course acknowledgement rules are overridden for every course.
             </p>
           </div>
         </div>

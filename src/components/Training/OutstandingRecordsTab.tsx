@@ -7,7 +7,7 @@ import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
-import { LessonAssessmentCriterion } from '../../types';
+import { LessonAssessmentCriterion, LessonGradingSystem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
@@ -59,24 +59,23 @@ const GRADE_LABELS: Record<string, string> = {
 
 const ORDERED_GRADES = ['-', 'NC', 'S', 'C'];
 
-function gradeRank(grade?: string) {
+function gradeRank(grade?: string, system: LessonGradingSystem = 'NC/S/C/-') {
   if (!grade) return 0;
-  if (grade === 'Fail') return 0;
-  if (grade === 'Pass') return 1;
+  if (system === 'Pass or Fail') return grade === 'Pass' ? 1 : 0;
   const numeric = Number(grade);
-  if (!Number.isNaN(numeric)) return numeric;
+  if (system === 'Out of 100') return Number.isNaN(numeric) ? 0 : numeric;
   const index = ORDERED_GRADES.indexOf(grade);
   return index === -1 ? 0 : index;
 }
 
-function isGradeAtLeast(grade: string | undefined, passMark: string | undefined) {
+function isGradeAtLeast(grade: string | undefined, passMark: string | undefined, system: LessonGradingSystem = 'NC/S/C/-') {
   if (!passMark || passMark === '-') return true;
   if (!grade) return false;
-  return gradeRank(grade) >= gradeRank(passMark);
+  return gradeRank(grade, system) >= gradeRank(passMark, system);
 }
 
-function bestGrade(current: string | undefined, next: string | undefined) {
-  return gradeRank(next) > gradeRank(current) ? next : current;
+function bestGrade(current: string | undefined, next: string | undefined, system: LessonGradingSystem = 'NC/S/C/-') {
+  return gradeRank(next, system) > gradeRank(current, system) ? next : current;
 }
 
 export const OutstandingRecordsTab: React.FC = () => {
@@ -128,7 +127,8 @@ export const OutstandingRecordsTab: React.FC = () => {
       .filter(record => record.studentId === activeLog.student_id && record.courseId === selectedCourse.id)
       .reduce<Record<string, string>>((acc, record) => {
         Object.entries(record.criteriaGrades ?? {}).forEach(([criterionId, grade]) => {
-          acc[criterionId] = bestGrade(acc[criterionId], grade) ?? '-';
+          const criterion = selectedCourse.assessmentCriteria.find(item => item.id === criterionId);
+          acc[criterionId] = bestGrade(acc[criterionId], grade, criterion?.gradingSystem) ?? '-';
         });
         return acc;
       }, {});
@@ -140,7 +140,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     return activeCriteria.every(criterion => {
       const passMark = selectedLesson.passMarks?.[criterion.id] ?? '-';
       const grade = form.criteriaGrades[criterion.id] ?? '-';
-      return isGradeAtLeast(grade, passMark);
+      return isGradeAtLeast(grade, passMark, criterion.gradingSystem);
     });
   }, [activeCriteria, form.criteriaGrades, selectedLesson]);
 
@@ -149,6 +149,11 @@ export const OutstandingRecordsTab: React.FC = () => {
     : selectedLesson
       ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
       : '';
+
+  const selectedCourseRequiresAck = Boolean(
+    trainingSettings.forceStudentAcknowledgementForAllCourses ||
+    selectedCourse?.requiresStudentAcknowledgement
+  );
 
   function openLog(log: OutstandingFlightLog) {
     setActiveLog(log);
@@ -194,7 +199,8 @@ export const OutstandingRecordsTab: React.FC = () => {
 
     const highestByCriterion = studentPreviousRecords.reduce<Record<string, string>>((acc, record) => {
       Object.entries(record.criteriaGrades ?? {}).forEach(([criterionId, grade]) => {
-        acc[criterionId] = bestGrade(acc[criterionId], grade) ?? '-';
+        const criterion = course.assessmentCriteria.find(item => item.id === criterionId);
+        acc[criterionId] = bestGrade(acc[criterionId], grade, criterion?.gradingSystem) ?? '-';
       });
       return acc;
     }, {});
@@ -249,7 +255,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         criteriaGrades: form.criteriaGrades,
         lessonCodes: selectedLesson ? [selectedLesson.sequenceCode].filter(Boolean) : [],
         nextLesson: nextLessonForRecord,
-        status: trainingSettings.requireStudentAcknowledgement ? 'submitted' : 'locked',
+        status: selectedCourseRequiresAck ? 'submitted' : 'locked',
         studentAck: false,
         studentComments: '',
         attachments: [],
@@ -264,7 +270,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       }
 
       // Notify the student they have a lesson record to sign off
-      if (trainingSettings.requireStudentAcknowledgement && trainingSettings.autoNotifyStudentOnSubmit) {
+      if (selectedCourseRequiresAck && trainingSettings.autoNotifyStudentOnSubmit) {
         await supabase.from('notifications').insert({
           user_id: activeLog.student_id,
           type: 'training_record',
@@ -275,7 +281,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         });
       }
 
-      toast.success(trainingSettings.requireStudentAcknowledgement
+      toast.success(selectedCourseRequiresAck
         ? `Training record submitted - ${student?.name ?? 'student'} has been notified`
         : 'Training record submitted and locked');
       closePanel();
@@ -778,9 +784,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                       )}
                     </button>
                     <p className="text-xs text-gray-400 text-center mt-2">
-                      {trainingSettings.requireStudentAcknowledgement
+                      {selectedCourseRequiresAck
                         ? 'The student will be asked to acknowledge this record.'
-                        : 'Student acknowledgement is disabled; this record will lock on submit.'}
+                        : 'This course does not require acknowledgement; the record will lock on submit.'}
                     </p>
                   </div>
                 </div>

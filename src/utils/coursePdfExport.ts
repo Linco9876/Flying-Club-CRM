@@ -67,6 +67,26 @@ const criterionCode = (name: string, index: number) => {
 
 const minutesToHours = (minutes: number) => (minutes / 60).toFixed(1);
 
+const matrixGradeLabel = (grade: string, system?: string) => {
+  if (!grade || grade === '-' || grade === '–' || grade.includes('â')) return '-';
+  return system === 'Out of 100' ? `${grade}%` : grade;
+};
+
+const matrixGradeColor = (grade: string, system?: string, palette?: { green: any; blue: any; amber: any; red: any; dark: any; grey: any }) => {
+  if (!palette || !grade || grade === '-' || grade === '–' || grade.includes('â')) return palette?.grey;
+  if (system === 'Out of 100') {
+    const score = Number(grade);
+    if (Number.isNaN(score)) return palette.grey;
+    if (score >= 80) return palette.green;
+    if (score >= 50) return palette.amber;
+    return palette.red;
+  }
+  if (grade === 'C' || grade === 'Pass') return palette.green;
+  if (grade === 'S') return palette.blue;
+  if (grade === 'NC' || grade === 'Fail') return palette.red;
+  return palette.dark;
+};
+
 const safeFilename = (value: string) =>
   value
     .trim()
@@ -133,6 +153,7 @@ export async function exportCoursePdf({
   const blue = rgb(0.05, 0.3, 0.65);
   const green = rgb(0.04, 0.45, 0.24);
   const amber = rgb(0.72, 0.35, 0.05);
+  const red = rgb(0.72, 0.08, 0.08);
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setTitle(`${student.name} - ${course.title}`);
   pdfDoc.setAuthor('Bendigo Flying Club CRM');
@@ -305,7 +326,9 @@ export async function exportCoursePdf({
     if (criteria.length > 0) {
       ensureSpace(42);
       drawText('Criteria key', { x: margin, y: cursor }, { size: 8, font: bold, color: grey });
-      const keyLines = criteria.map((criterion, index) => `${criterionCode(criterion.name, index)} = ${criterion.name}`);
+      const keyLines = criteria.map((criterion, index) =>
+        `${criterionCode(criterion.name, index)} = ${criterion.name} (${criterion.gradingSystem}, pass ${criterion.passingGrade})`
+      );
       const keyColumnWidth = (width - margin * 2) / 3;
       keyLines.forEach((line, index) => {
         const col = index % 3;
@@ -355,7 +378,9 @@ export async function exportCoursePdf({
       });
       criteria.forEach((criterion) => {
         const grade = record.criteriaGrades?.[criterion.id] || '-';
-        page.drawText(grade, { x: x + criterionWidth / 2 - 3, y: cursor - 13, size: 7, font: mono, color: grade === 'C' ? green : grade === 'S' ? blue : dark });
+        const label = matrixGradeLabel(grade, criterion.gradingSystem);
+        const color = matrixGradeColor(grade, criterion.gradingSystem, { green, blue, amber, red, dark, grey }) || grey;
+        page.drawText(label.slice(0, 5), { x: x + Math.max(2, criterionWidth / 2 - 8), y: cursor - 13, size: 7, font: mono, color });
         x += criterionWidth;
       });
       page.drawText(minutesToHours(record.dualTimeMin), { x: width - margin - 50, y: cursor - 13, size: 7, font: regular, color: dark });

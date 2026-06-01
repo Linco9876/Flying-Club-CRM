@@ -44,6 +44,7 @@ interface NewCourseState {
   category: string;
   description: string;
   estimatedDurationHours: number;
+  requiresStudentAcknowledgement: boolean;
   tags: string;
   objectives: string;
   evaluationFocus: string;
@@ -511,6 +512,7 @@ const emptyCourseForm = (): CourseFormState => ({
   category: '',
   description: '',
   estimatedDurationHours: 6,
+  requiresStudentAcknowledgement: true,
   tags: '',
   objectives: '',
   evaluationFocus: '',
@@ -654,6 +656,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       category: selectedModule.category,
       description: selectedModule.description,
       estimatedDurationHours: selectedModule.estimatedDurationHours,
+      requiresStudentAcknowledgement: selectedModule.requiresStudentAcknowledgement ?? true,
       tags: selectedModule.tags.join(', '),
       objectives: selectedModule.objectives.join('\n'),
       evaluationFocus: selectedModule.evaluationCriteria.join('\n'),
@@ -706,6 +709,7 @@ export const TrainingCourseCatalog: React.FC = () => {
         category,
         description: editCourse.description.trim() || cur.description,
         estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
+        requiresStudentAcknowledgement: editCourse.requiresStudentAcknowledgement,
         tags: tags.length > 0 ? tags : cur.tags,
         objectives,
         evaluationCriteria,
@@ -835,6 +839,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       version: '1.0',
       status: 'draft',
       estimatedDurationHours: Math.max(1, Number(newCourse.estimatedDurationHours) || 1),
+      requiresStudentAcknowledgement: newCourse.requiresStudentAcknowledgement,
       prerequisites: [],
       objectives,
       evaluationCriteria,
@@ -1149,6 +1154,20 @@ export const TrainingCourseCatalog: React.FC = () => {
                 className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
+            <label className="flex items-start gap-3 rounded-lg border border-blue-200 bg-white p-4 text-sm text-blue-900 md:col-span-2">
+              <input
+                type="checkbox"
+                checked={newCourse.requiresStudentAcknowledgement}
+                onChange={(event) => setNewCourse((prev) => ({ ...prev, requiresStudentAcknowledgement: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>
+                <span className="block font-semibold">Require student acknowledgement for this course</span>
+                <span className="mt-1 block text-xs text-blue-700">
+                  Submitted lesson records for this course will ask the student to review and acknowledge unless the organisation setting is forcing all courses anyway.
+                </span>
+              </span>
+            </label>
           </div>
           {/* Assessment criteria for new course */}
           <div className="mt-6 rounded-lg border border-blue-200 bg-white p-4">
@@ -1219,6 +1238,13 @@ export const TrainingCourseCatalog: React.FC = () => {
                         >
                           {module.status === 'published' ? 'Published' : 'Draft'}
                         </span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          module.requiresStudentAcknowledgement ?? true
+                            ? 'bg-blue-50 text-blue-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {(module.requiresStudentAcknowledgement ?? true) ? 'Student sign-off' : 'No sign-off'}
+                        </span>
                       </div>
                       <p className="mt-1 text-sm text-gray-600">{module.description}</p>
                     </div>
@@ -1284,6 +1310,9 @@ export const TrainingCourseCatalog: React.FC = () => {
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedModule.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                       {selectedModule.status === 'published' ? 'Published' : 'Draft'}
                     </span>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${(selectedModule.requiresStudentAcknowledgement ?? true) ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {(selectedModule.requiresStudentAcknowledgement ?? true) ? 'Student acknowledgement required' : 'Student acknowledgement optional'}
+                    </span>
                     <div className="flex flex-wrap justify-end gap-2">
                       {selectedModule.status !== 'published' && (
                         <button onClick={handlePublishCourse} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
@@ -1337,6 +1366,10 @@ export const TrainingCourseCatalog: React.FC = () => {
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Course exams</dt>
                     <dd className="mt-1 text-sm text-gray-700">{(selectedModule.exams || []).length} defined</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Student acknowledgement</dt>
+                    <dd className="mt-1 text-sm text-gray-700">{(selectedModule.requiresStudentAcknowledgement ?? true) ? 'Required for this course' : 'Not required unless forced in settings'}</dd>
                   </div>
                 </dl>
                 <p className="mt-4 text-xs text-gray-500">Last updated {formatDistanceToNow(selectedModule.lastUpdated, { addSuffix: true })}</p>
@@ -1465,6 +1498,20 @@ export const TrainingCourseCatalog: React.FC = () => {
                     <label className="flex flex-col text-sm font-medium text-gray-700">
                       Tags (comma separated)
                       <input type="text" value={editCourse.tags} onChange={(e) => setEditCourse((p) => ({ ...p, tags: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 md:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={editCourse.requiresStudentAcknowledgement}
+                        onChange={(e) => setEditCourse((p) => ({ ...p, requiresStudentAcknowledgement: e.target.checked }))}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-gray-900">Require student acknowledgement for this course</span>
+                        <span className="mt-1 block text-xs text-gray-500">
+                          Turn this off for internal/proficiency courses that do not need student sign-off. The organisation setting can still force all courses.
+                        </span>
+                      </span>
                     </label>
                   </div>
                   {/* Assessment criteria editor */}

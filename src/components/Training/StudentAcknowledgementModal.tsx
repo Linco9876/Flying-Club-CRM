@@ -43,9 +43,14 @@ export const StudentAcknowledgementModal: React.FC = () => {
   const pendingRecords = useMemo(() => {
     if (!user || !isStudentLike) return [];
     return trainingRecords
-      .filter(record => record.studentId === user.id && record.status === 'submitted' && !record.studentAck)
+      .filter(record => {
+        if (record.studentId !== user.id || record.status !== 'submitted' || record.studentAck) return false;
+        if (settings.forceStudentAcknowledgementForAllCourses) return true;
+        const course = modules.find(module => module.id === record.courseId);
+        return Boolean(course?.requiresStudentAcknowledgement);
+      })
       .sort((a, b) => (b.bookingStartTime || b.date).getTime() - (a.bookingStartTime || a.date).getTime());
-  }, [isStudentLike, trainingRecords, user]);
+  }, [isStudentLike, modules, settings.forceStudentAcknowledgementForAllCourses, trainingRecords, user]);
 
   const lessonNameForRecord = (record: TrainingRecord) => {
     const course = modules.find(module => module.id === record.courseId);

@@ -100,6 +100,7 @@ export const StudentProfilePage: React.FC = () => {
   const studentId = routeStudentId || user?.id;
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
   const [showMatrixView, setShowMatrixView] = useState(true);
+  const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
   const [instructorFilter, setInstructorFilter] = useState('');
@@ -171,10 +172,30 @@ export const StudentProfilePage: React.FC = () => {
     () => trainingRecords.filter(record => record.studentId === studentId),
     [trainingRecords, studentId]
   );
+  const trainingCourseOptions = useMemo(() => {
+    const courseIdsWithRecords = new Set(studentTrainingRecords.map(record => record.courseId).filter(Boolean));
+    const coursesWithRecords = trainingCourses.filter(course => courseIdsWithRecords.has(course.id));
+    return coursesWithRecords.length > 0 ? coursesWithRecords : trainingCourses;
+  }, [studentTrainingRecords, trainingCourses]);
+  const selectedTrainingCourse = useMemo(
+    () => trainingCourses.find(course => course.id === selectedTrainingCourseId) ?? null,
+    [selectedTrainingCourseId, trainingCourses]
+  );
   const linkedSafetyReports = useMemo(
     () => safetyReports.filter(report => report.reporterId === studentId || report.involvedUserIds.includes(studentId || '')),
     [safetyReports, studentId]
   );
+
+  useEffect(() => {
+    if (trainingCourseOptions.length === 0) {
+      if (selectedTrainingCourseId) setSelectedTrainingCourseId('');
+      return;
+    }
+
+    if (!selectedTrainingCourseId || !trainingCourseOptions.some(course => course.id === selectedTrainingCourseId)) {
+      setSelectedTrainingCourseId(trainingCourseOptions[0].id);
+    }
+  }, [selectedTrainingCourseId, trainingCourseOptions]);
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -810,7 +831,11 @@ export const StudentProfilePage: React.FC = () => {
       return;
     }
 
-    const wasAcknowledged = editingTrainingRecord.studentAck;
+    const courseRequiresAck = Boolean(
+      trainingSettings.forceStudentAcknowledgementForAllCourses ||
+      getRecordCourse(editingTrainingRecord)?.requiresStudentAcknowledgement
+    );
+    const wasAcknowledged = editingTrainingRecord.studentAck && courseRequiresAck;
     const calculatedNextLesson = getNextLessonFromAssessment(editingTrainingRecord, trainingEditForm.criteriaGrades);
     const updatedAuditLog = [
       ...(editingTrainingRecord.auditLog || []),
@@ -879,12 +904,13 @@ export const StudentProfilePage: React.FC = () => {
     const startDate = dateFilter.start ? new Date(dateFilter.start) : null;
     const endDate = dateFilter.end ? new Date(dateFilter.end) : null;
     const bookingDate = getBookingDateTime(record);
+    const matchesCourse = !selectedTrainingCourseId || record.courseId === selectedTrainingCourseId;
     const matchesDateRange = (!startDate || bookingDate >= startDate) &&
                             (!endDate || bookingDate <= endDate);
     const matchesAircraft = !aircraftFilter || record.registration === aircraftFilter;
     const matchesInstructor = !instructorFilter || record.instructorId === instructorFilter;
 
-    return matchesDateRange && matchesAircraft && matchesInstructor;
+    return matchesCourse && matchesDateRange && matchesAircraft && matchesInstructor;
   });
 
   const sortedRecords = [...filteredRecords].sort((a, b) =>
@@ -2181,7 +2207,7 @@ export const StudentProfilePage: React.FC = () => {
         <div className="space-y-6">
           {/* Pending sign-off banner — shown to the student whose profile this is */}
           {user?.id === studentId && (() => {
-            const pendingAck = studentTrainingRecords.filter(r => r.status === 'submitted' && !r.studentAck);
+            const pendingAck = filteredRecords.filter(r => r.status === 'submitted' && !r.studentAck);
             if (pendingAck.length === 0) return null;
             return (
               <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
@@ -2191,7 +2217,7 @@ export const StudentProfilePage: React.FC = () => {
                     {pendingAck.length} record{pendingAck.length > 1 ? 's require' : ' requires'} your acknowledgement
                   </p>
                   <p className="text-xs text-amber-700 mt-0.5">
-                    Review your instructor's comments below and sign off that you have read and agree.
+                    Review your instructor's comments below for {selectedTrainingCourse?.title || 'the selected course'} and sign off that you have read and agree.
                   </p>
                 </div>
               </div>
@@ -2207,7 +2233,7 @@ export const StudentProfilePage: React.FC = () => {
                     Training Records
                   </h2>
                   <p className="text-sm text-gray-500 mt-1">
-                    Sorted by booking time, newest first. Use cards for review and matrix for assessment scanning.
+                    Select a course first, then review its records or assessment matrix.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2239,6 +2265,35 @@ export const StudentProfilePage: React.FC = () => {
                     </button>
                   )}
                 </div>
+              </div>
+
+              <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4">
+                <label className="block">
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-blue-700 mb-2">Course</span>
+                  <select
+                    value={selectedTrainingCourseId}
+                    onChange={(event) => setSelectedTrainingCourseId(event.target.value)}
+                    className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {trainingCourseOptions.length === 0 ? (
+                      <option value="">No courses available</option>
+                    ) : (
+                      trainingCourseOptions.map(course => {
+                        const count = studentTrainingRecords.filter(record => record.courseId === course.id).length;
+                        return (
+                          <option key={course.id} value={course.id}>
+                            {course.title}{count > 0 ? ` (${count} record${count === 1 ? '' : 's'})` : ''}
+                          </option>
+                        );
+                      })
+                    )}
+                  </select>
+                </label>
+                {selectedTrainingCourse && (
+                  <p className="mt-2 text-xs text-blue-700">
+                    Showing {selectedTrainingCourse.title}. Matrix columns use this course's assessment criteria and grading types.
+                  </p>
+                )}
               </div>
 
               <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -2337,33 +2392,29 @@ export const StudentProfilePage: React.FC = () => {
             <>
               {/* Overview Matrix */}
               {showMatrixView && (() => {
-                // Build the set of criteria from all courses used in these records
-                const criteriaMap = new Map<string, { id: string; name: string; shortName: string }>();
-                sortedRecords.forEach(record => {
-                  const course = trainingCourses.find(c => c.id === record.courseId);
-                  if (!course) return;
-                  course.assessmentCriteria.forEach(crit => {
-                    if (!criteriaMap.has(crit.id)) {
-                      criteriaMap.set(crit.id, {
-                        id: crit.id,
-                        name: crit.name,
-                        shortName: crit.name.length > 8 ? crit.name.slice(0, 8) : crit.name,
-                      });
-                    }
-                  });
-                });
-                const matrixCriteria = Array.from(criteriaMap.values());
+                const matrixCriteria = selectedTrainingCourse?.assessmentCriteria ?? [];
 
                 const getGrade = (record: TrainingRecord, critId: string) => {
                   const g = record.criteriaGrades?.[critId];
                   return g && g !== '-' ? g : '–';
                 };
 
-                const gradeColor = (g: string) => {
-                  if (g === 'C' || g === 'Pass') return 'bg-green-500 text-white';
-                  if (g === 'S') return 'bg-yellow-400 text-white';
-                  if (g === 'NC' || g === 'Fail') return 'bg-red-500 text-white';
-                  return 'bg-gray-100 text-gray-400';
+                const isUnassessedGrade = (grade: string) => !grade || grade === '-' || grade === '–' || grade.includes('â');
+                const normaliseGradeLabel = (grade: string, system: LessonGradingSystem) =>
+                  isUnassessedGrade(grade) ? '-' : system === 'Out of 100' ? `${grade}%` : grade;
+                const gradeColor = (grade: string, system: LessonGradingSystem) => {
+                  if (isUnassessedGrade(grade)) return 'bg-gray-100 text-gray-400 border-gray-200';
+                  if (system === 'Out of 100') {
+                    const score = Number(grade);
+                    if (Number.isNaN(score)) return 'bg-gray-100 text-gray-400 border-gray-200';
+                    if (score >= 80) return 'bg-emerald-600 text-white border-emerald-600';
+                    if (score >= 50) return 'bg-amber-400 text-white border-amber-400';
+                    return 'bg-red-500 text-white border-red-500';
+                  }
+                  if (grade === 'C' || grade === 'Pass') return 'bg-emerald-600 text-white border-emerald-600';
+                  if (grade === 'S') return 'bg-amber-400 text-white border-amber-400';
+                  if (grade === 'NC' || grade === 'Fail') return 'bg-red-500 text-white border-red-500';
+                  return 'bg-gray-100 text-gray-400 border-gray-200';
                 };
 
                 return (
@@ -2371,9 +2422,9 @@ export const StudentProfilePage: React.FC = () => {
                     <div className="p-4 border-b border-gray-200">
                       <h3 className="text-lg font-medium text-gray-900">Competency Overview Matrix</h3>
                       <div className="flex flex-wrap items-center gap-4 mt-2 text-xs">
-                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span><span>C / Pass = Pilot Ready</span></div>
-                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-400 rounded"></span><span>S = Solo Ready</span></div>
-                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span><span>NC / Fail = Not competent</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-emerald-600 rounded"></span><span>C / Pass / 80-100% = strong pass</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-amber-400 rounded"></span><span>S / 50-79% = developing</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span><span>NC / Fail / &lt;50% = not yet competent</span></div>
                         <div className="flex items-center gap-1"><span className="w-3 h-3 bg-gray-100 border border-gray-300 rounded"></span><span>– = Not Assessed</span></div>
                       </div>
                     </div>
@@ -2418,8 +2469,8 @@ export const StudentProfilePage: React.FC = () => {
                                     const grade = getGrade(record, crit.id);
                                     return (
                                       <td key={crit.id} className="px-1 py-2 text-center border-r border-gray-100">
-                                        <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${gradeColor(grade)}`}>
-                                          {grade}
+                                        <span className={`inline-flex min-w-8 items-center justify-center rounded border px-1.5 py-1 text-xs font-bold ${gradeColor(grade, crit.gradingSystem)}`}>
+                                          {normaliseGradeLabel(grade, crit.gradingSystem)}
                                         </span>
                                       </td>
                                     );

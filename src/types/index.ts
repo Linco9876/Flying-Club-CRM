@@ -255,6 +255,8 @@ export interface TrainingModule {
   tags: string[];
   /** Course-level criteria shared across all lessons */
   assessmentCriteria: LessonAssessmentCriterion[];
+  /** Whether this course normally asks students to acknowledge submitted lesson records */
+  requiresStudentAcknowledgement?: boolean;
   exams?: TrainingExam[];
   lessons: TrainingLesson[];
   resources: TrainingResource[];

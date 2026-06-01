@@ -33,6 +33,9 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     evaluationCriteria: (row.evaluation_criteria as string[]) ?? [],
     tags: (row.tags as string[]) ?? [],
     assessmentCriteria: (row.assessment_criteria as TrainingModule['assessmentCriteria']) ?? [],
+    requiresStudentAcknowledgement: row.requires_student_acknowledgement === undefined || row.requires_student_acknowledgement === null
+      ? true
+      : Boolean(row.requires_student_acknowledgement),
     exams: rawExams.map((exam: any) => ({
       id: String(exam.id ?? `exam-${Date.now()}`),
       name: String(exam.name ?? ''),
@@ -79,6 +82,7 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     evaluation_criteria: module.evaluationCriteria,
     tags: module.tags,
     assessment_criteria: module.assessmentCriteria,
+    requires_student_acknowledgement: module.requiresStudentAcknowledgement ?? true,
     exam_requirements: module.exams ?? [],
     last_updated: module.lastUpdated.toISOString(),
   };
@@ -185,6 +189,7 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       evaluationCriteria: [],
       tags: ['draft'],
       assessmentCriteria: [],
+      requiresStudentAcknowledgement: true,
       exams: [],
       lessons: [],
       resources: [],
