@@ -80,7 +80,7 @@
 
 CREATE TABLE IF NOT EXISTS organisation_settings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  club_name text NOT NULL DEFAULT 'AeroClub Pro',
+  club_name text NOT NULL DEFAULT 'Bendigo Flying Club',
   address text DEFAULT '',
   timezone text NOT NULL DEFAULT 'Australia/Melbourne',
   currency text NOT NULL DEFAULT 'AUD',

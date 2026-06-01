@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Booking } from '../../types';
-import { Calendar, Clock, Plane, User, MapPin } from 'lucide-react';
+import { Calendar, Clock, Search, SlidersHorizontal, User, MapPin, X } from 'lucide-react';
 import { BookingActionMenu } from './BookingActionMenu';
 import { FlightLogForm } from './FlightLogForm';
 import BookingForm from './BookingForm';
@@ -9,6 +9,7 @@ import { isPastBooking } from '../../utils/timeUtils';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useStudents } from '../../hooks/useStudents';
+import { useUsers } from '../../hooks/useUsers';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 
 interface BookingsListProps {
@@ -31,10 +32,24 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { students } = useStudents();
+  const { users, getInstructors } = useUsers();
   const { settings: portalSettings } = usePortalUxSettings();
   const [showFlightLogForm, setShowFlightLogForm] = React.useState(false);
   const [showEditForm, setShowEditForm] = React.useState(false);
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null);
+  const [showFilters, setShowFilters] = React.useState(false);
+  const [filters, setFilters] = React.useState({
+    search: '',
+    datePreset: 'all',
+    startDate: '',
+    endDate: '',
+    status: '',
+    aircraftId: '',
+    instructorId: '',
+    pilotId: '',
+    logState: '',
+    flightMode: '',
+  });
 
   const userBookings = user?.role === 'student' || user?.role === 'pilot'
     ? bookings.filter(b => b.studentId === user.id)
@@ -42,6 +57,12 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const canCancelOwnBookings = user?.role !== 'student' && user?.role !== 'pilot'
     ? true
     : portalSettings.allow_booking_cancellation;
+  const isStaffUser = user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor'
+    || user?.roles?.some(role => role === 'admin' || role === 'instructor' || role === 'senior_instructor');
+  const instructors = getInstructors();
+  const pilotOptions = students
+    .filter(student => student.role === 'student' || student.role === 'pilot')
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const formatBookingDate = (date: Date) => {
     if (portalSettings.date_format === 'yyyy-MM-dd') return date.toISOString().slice(0, 10);
@@ -58,6 +79,123 @@ export const BookingsList: React.FC<BookingsListProps> = ({
   const getAircraftInfo = (aircraftId: string) => {
     return aircraft.find(a => a.id === aircraftId);
   };
+
+  const getPersonName = (personId?: string) => {
+    if (!personId) return '';
+    return students.find(s => s.id === personId)?.name
+      || users.find(u => u.id === personId)?.name
+      || '';
+  };
+
+  const getDateOnly = (date: Date) => {
+    const copy = new Date(date);
+    copy.setHours(0, 0, 0, 0);
+    return copy;
+  };
+
+  const parseDateFilter = (value: string, endOfDay = false) => {
+    if (!value) return null;
+    const date = new Date(`${value}T00:00:00`);
+    if (endOfDay) date.setHours(23, 59, 59, 999);
+    return date;
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      search: '',
+      datePreset: 'all',
+      startDate: '',
+      endDate: '',
+      status: '',
+      aircraftId: '',
+      instructorId: '',
+      pilotId: '',
+      logState: '',
+      flightMode: '',
+    });
+  };
+
+  const setFilter = (field: keyof typeof filters, value: string) => {
+    setFilters(prev => ({
+      ...prev,
+      [field]: value,
+      ...(field === 'startDate' || field === 'endDate' ? { datePreset: 'custom' } : {}),
+    }));
+  };
+
+  const matchesDatePreset = (booking: Booking) => {
+    if (filters.datePreset === 'all' || filters.datePreset === 'custom') return true;
+
+    const now = new Date();
+    const todayStart = getDateOnly(now);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const weekEnd = new Date(todayStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    const startTime = new Date(booking.startTime);
+    const bookingDay = getDateOnly(startTime);
+
+    if (filters.datePreset === 'today') return bookingDay.getTime() === todayStart.getTime();
+    if (filters.datePreset === 'week') return startTime >= todayStart && startTime < weekEnd;
+    if (filters.datePreset === 'past') return isPastBooking(booking);
+    return startTime >= now || !isPastBooking(booking);
+  };
+
+  const filteredBookings = React.useMemo(() => {
+    const searchTerm = filters.search.trim().toLowerCase();
+    const customStart = parseDateFilter(filters.startDate);
+    const customEnd = parseDateFilter(filters.endDate, true);
+
+    return userBookings
+      .filter(booking => {
+        const startTime = new Date(booking.startTime);
+        const aircraftInfo = getAircraftInfo(booking.aircraftId);
+        const pilotName = getPersonName(booking.studentId || booking.pilotId);
+        const instructorName = getPersonName(booking.instructorId);
+        const aircraftLabel = [aircraftInfo?.registration, aircraftInfo?.make, aircraftInfo?.model]
+          .filter(Boolean)
+          .join(' ');
+
+        if (!matchesDatePreset(booking)) return false;
+        if (customStart && startTime < customStart) return false;
+        if (customEnd && startTime > customEnd) return false;
+        if (filters.status && booking.status !== filters.status) return false;
+        if (filters.aircraftId && booking.aircraftId !== filters.aircraftId) return false;
+        if (filters.instructorId === 'solo' && booking.instructorId) return false;
+        if (filters.instructorId && filters.instructorId !== 'solo' && booking.instructorId !== filters.instructorId) return false;
+        if (filters.pilotId && (booking.studentId || booking.pilotId) !== filters.pilotId) return false;
+        if (filters.logState === 'logged' && !booking.flightLog && !booking.flight_logged) return false;
+        if (filters.logState === 'unlogged' && (booking.flightLog || booking.flight_logged)) return false;
+        if (filters.flightMode === 'dual' && !booking.instructorId) return false;
+        if (filters.flightMode === 'solo' && booking.instructorId) return false;
+        if (filters.flightMode === 'waitlist' && !booking.hasConflict) return false;
+
+        if (!searchTerm) return true;
+        return [
+          aircraftLabel,
+          pilotName,
+          instructorName,
+          booking.notes,
+          booking.paymentType,
+          booking.status,
+        ].some(value => value?.toLowerCase().includes(searchTerm));
+      })
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  }, [userBookings, filters, aircraft, students, users]);
+
+  const activeFilterCount = [
+    filters.search,
+    filters.status,
+    filters.aircraftId,
+    filters.instructorId,
+    filters.pilotId,
+    filters.logState,
+    filters.flightMode,
+    filters.startDate,
+    filters.endDate,
+    filters.datePreset !== 'all' ? filters.datePreset : '',
+  ].filter(Boolean).length;
 
   const handleFlightLog = async (flightLogData: any) => {
     if (selectedBooking && onUpdateBooking) {
@@ -137,14 +275,192 @@ export const BookingsList: React.FC<BookingsListProps> = ({
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          {user?.role === 'student' ? 'My Bookings' : 'All Bookings'}
-        </h1>
+      <div className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {user?.role === 'student' || user?.role === 'pilot' ? 'My Bookings' : 'All Bookings'}
+          </h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Showing {filteredBookings.length} of {userBookings.length} bookings
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              value={filters.search}
+              onChange={event => setFilter('search', event.target.value)}
+              placeholder="Search bookings"
+              className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 sm:w-72"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowFilters(prev => !prev)}
+            className={`inline-flex items-center justify-center rounded-lg border px-4 py-2 text-sm font-medium shadow-sm transition-colors ${
+              showFilters || activeFilterCount > 0
+                ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <SlidersHorizontal className="mr-2 h-4 w-4" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-2 rounded-full bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
+      <div className="mb-5 flex flex-wrap gap-2">
+        {[
+          { value: 'upcoming', label: 'Upcoming' },
+          { value: 'today', label: 'Today' },
+          { value: 'week', label: 'Next 7 days' },
+          { value: 'past', label: 'Past' },
+          { value: 'all', label: 'All' },
+        ].map(option => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setFilters(prev => ({ ...prev, datePreset: option.value, startDate: '', endDate: '' }))}
+            className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+              filters.datePreset === option.value
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {showFilters && (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">From</span>
+              <input
+                type="date"
+                value={filters.startDate}
+                onChange={event => setFilter('startDate', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">To</span>
+              <input
+                type="date"
+                value={filters.endDate}
+                onChange={event => setFilter('endDate', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Status</span>
+              <select
+                value={filters.status}
+                onChange={event => setFilter('status', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">Any status</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="pending_approval">Pending approval</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="no-show">No-show</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Aircraft</span>
+              <select
+                value={filters.aircraftId}
+                onChange={event => setFilter('aircraftId', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">Any aircraft</option>
+                {aircraft.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.registration} - {item.make} {item.model}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isStaffUser && (
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Pilot or student</span>
+                <select
+                  value={filters.pilotId}
+                  onChange={event => setFilter('pilotId', event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Any pilot/student</option>
+                  {pilotOptions.map(student => (
+                    <option key={student.id} value={student.id}>{student.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Instructor</span>
+              <select
+                value={filters.instructorId}
+                onChange={event => setFilter('instructorId', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">Any instructor</option>
+                <option value="solo">Solo / no instructor</option>
+                {instructors.map(instructor => (
+                  <option key={instructor.id} value={instructor.id}>{instructor.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Flight type</span>
+              <select
+                value={filters.flightMode}
+                onChange={event => setFilter('flightMode', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">Any type</option>
+                <option value="dual">Dual</option>
+                <option value="solo">Solo</option>
+                <option value="waitlist">Waitlisted/conflict</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Flight log</span>
+              <select
+                value={filters.logState}
+                onChange={event => setFilter('logState', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">Any log state</option>
+                <option value="logged">Logged</option>
+                <option value="unlogged">Unlogged</option>
+              </select>
+            </label>
+          </div>
+          {activeFilterCount > 0 && (
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <X className="mr-2 h-4 w-4" />
+                Clear filters
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="space-y-4">
-        {userBookings.map(booking => {
+        {filteredBookings.map(booking => {
           const aircraft = getAircraftInfo(booking.aircraftId);
           const startTime = new Date(booking.startTime);
           const endTime = new Date(booking.endTime);
@@ -265,11 +581,17 @@ export const BookingsList: React.FC<BookingsListProps> = ({
           );
         })}
 
-        {userBookings.length === 0 && (
+        {filteredBookings.length === 0 && (
           <div className="text-center py-12 bg-white rounded-lg shadow-md border border-gray-200">
             <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No bookings found</h3>
-            <p className="text-gray-600">You don't have any bookings yet. Create your first booking to get started!</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {userBookings.length === 0 ? 'No bookings found' : 'No bookings match these filters'}
+            </h3>
+            <p className="text-gray-600">
+              {userBookings.length === 0
+                ? "You don't have any bookings yet. Create your first booking to get started!"
+                : 'Adjust the search or clear filters to see more bookings.'}
+            </p>
           </div>
         )}
       </div>

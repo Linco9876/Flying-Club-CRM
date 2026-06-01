@@ -175,6 +175,9 @@ export const useMaintenanceMilestones = () => {
 
   const completeMaintenance = async (completion: Omit<MaintenanceCompletion, 'id'>) => {
     try {
+      const milestone = milestones.find(m => m.id === completion.milestoneId);
+      const isOneTime = milestone?.isOneTime;
+
       const { error: completionError } = await supabase
         .from('maintenance_completions')
         .insert({
@@ -192,18 +195,22 @@ export const useMaintenanceMilestones = () => {
 
       if (completionError) throw completionError;
 
+      const milestoneUpdates: any = {
+        last_completed_date: completion.completedDate,
+        last_completed_tach: completion.completedTach,
+        next_due_hours: isOneTime ? null : completion.nextDueHours,
+        next_due_date: isOneTime ? null : completion.nextDueDate,
+        status: isOneTime ? 'completed' : 'upcoming',
+        updated_at: new Date().toISOString()
+      };
+
+      if (isOneTime) {
+        milestoneUpdates.due_value = '';
+      }
+
       const { error: updateError } = await supabase
         .from('maintenance_milestones')
-        .update({
-          last_completed_date: completion.completedDate,
-          last_completed_tach: completion.completedTach,
-          next_due_hours: completion.nextDueHours,
-          next_due_date: completion.nextDueDate,
-          status: milestones.find(m => m.id === completion.milestoneId)?.isOneTime
-            ? 'completed'
-            : 'upcoming',
-          updated_at: new Date().toISOString()
-        })
+        .update(milestoneUpdates)
         .eq('id', completion.milestoneId);
 
       if (updateError) throw updateError;

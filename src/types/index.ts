@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'instructor' | 'pilot' | 'student';
+export type UserRole = 'admin' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
 
 export interface User {
   id: string;
@@ -7,6 +7,17 @@ export interface User {
   role: UserRole;
   roles?: UserRole[];
   phone?: string;
+  mobilePhone?: string;
+  homePhone?: string;
+  workPhone?: string;
+  address?: string;
+  dateOfBirth?: Date;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relationship: string;
+  };
+  preferredAircraftId?: string;
   avatar?: string;
   isAvailable?: boolean;
   isSeniorInstructor?: boolean;
@@ -21,12 +32,6 @@ export interface Student extends User {
   lastFlightReview?: Date;
   occupation?: string;
   alternatePhone?: string;
-  emergencyContact?: {
-    name: string;
-    phone: string;
-    relationship: string;
-  };
-  dateOfBirth?: Date;
   prepaidBalance: number;
   endorsements: Endorsement[];
 }
@@ -124,6 +129,7 @@ export interface TrainingRecord {
   courseId?: string;
   lessonId?: string;
   date: Date;
+  bookingStartTime?: Date;
   aircraftId: string;
   aircraftType: string;
   registration: string;
@@ -145,6 +151,11 @@ export interface TrainingRecord {
   studentAckTimestamp?: Date;
   attachments: string[];
   auditLog: TrainingAuditEntry[];
+  isFlightReview?: boolean;
+  flightReviewType?: string;
+  flightReviewResult?: 'pass' | 'fail' | 'not_assessed';
+  flightReviewNotes?: string;
+  pilotRoleGranted?: boolean;
   sequences: TrainingSequenceResult[];
 }
 
@@ -172,6 +183,31 @@ export interface TrainingResource {
   title: string;
   url?: string;
   notes?: string;
+}
+
+export interface TrainingExam {
+  id: string;
+  name: string;
+  passMark: number;
+}
+
+export interface StudentExamResult {
+  id: string;
+  studentId: string;
+  courseId?: string;
+  examId: string;
+  examName: string;
+  score: number;
+  passMark: number;
+  result: 'pass' | 'fail';
+  examDate: Date;
+  notes: string;
+  instructorId?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+  storagePath?: string;
+  createdAt: Date;
 }
 
 export type LessonGradingSystem = 'NC/S/C/-' | 'Pass or Fail' | 'Out of 100';
@@ -219,6 +255,7 @@ export interface TrainingModule {
   tags: string[];
   /** Course-level criteria shared across all lessons */
   assessmentCriteria: LessonAssessmentCriterion[];
+  exams?: TrainingExam[];
   lessons: TrainingLesson[];
   resources: TrainingResource[];
   lastUpdated: Date;

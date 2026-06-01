@@ -9,6 +9,7 @@ import { useAircraftRates } from '../../hooks/useAircraftRates';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { calculateFlightCost } from '../../utils/billing';
+import { TachOverlapWarningModal } from './TachOverlapWarningModal';
 
 interface Booking {
   id: string;
@@ -27,6 +28,8 @@ interface FlightLogModalProps {
   onClose: () => void;
   onSuccess: () => void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
+  mode?: 'create' | 'edit';
+  flightLogId?: string;
 }
 
 export const FlightLogModal: React.FC<FlightLogModalProps> = ({
@@ -34,8 +37,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   onClose,
   onSuccess,
   onApproveBooking,
+  mode = 'create',
+  flightLogId,
 }) => {
-  const { createFlightLog } = useFlightLogs();
+  const { createFlightLog, updateFlightLog, checkTachOverlap } = useFlightLogs();
   const { settings } = useFlightLogSettings();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
@@ -53,6 +58,17 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tachAutoFilled, setTachAutoFilled] = useState(false);
+  const [loadedFlightLogId, setLoadedFlightLogId] = useState<string>(flightLogId || '');
+  const [showOverlapWarning, setShowOverlapWarning] = useState(false);
+  const [overlappingLogs, setOverlappingLogs] = useState<Array<{
+    id: string;
+    start_tach: number;
+    end_tach: number;
+    start_time: string;
+    end_time: string;
+  }>>([]);
+  const [pendingLogData, setPendingLogData] = useState<any>(null);
+  const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 
   // Derive payment type from the pre-filled flight type (respects forced payment and free types)
   const derivePaymentType = (flightTypeId: string) => {
@@ -121,6 +137,63 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length]);
 
   useEffect(() => {
+    if (mode !== 'edit') return;
+
+    const loadExistingFlightLog = async () => {
+      const query = supabase
+        .from('flight_logs')
+        .select('*')
+        .limit(1);
+
+      const { data, error } = flightLogId
+        ? await query.eq('id', flightLogId).maybeSingle()
+        : await query.eq('booking_id', booking.id).maybeSingle();
+
+      if (error) {
+        toast.error('Failed to load flight log');
+        return;
+      }
+
+      if (!data) {
+        toast.error('Flight log could not be found');
+        return;
+      }
+
+      setLoadedFlightLogId(data.id);
+      setFormData(prev => ({
+        ...prev,
+        start_time: data.start_time ?? prev.start_time,
+        end_time: data.end_time ?? prev.end_time,
+        start_tach: Number(data.start_tach ?? data.tach_start ?? prev.start_tach),
+        end_tach: data.end_tach ?? data.tach_end ?? '',
+        flight_duration: data.flight_duration ?? data.duration ?? '',
+        dual_time: Number(data.dual_time ?? 0),
+        solo_time: Number(data.solo_time ?? 0),
+        takeoffs: data.takeoffs ?? undefined,
+        landings: data.landings ?? undefined,
+        comments: data.comments ?? data.notes ?? '',
+        flight_type_id: data.flight_type_id ?? prev.flight_type_id,
+        payment_type: data.payment_type ?? prev.payment_type,
+        observations: data.observations ?? '',
+        hobbs_start: data.hobbs_start ?? undefined,
+        hobbs_end: data.hobbs_end ?? undefined,
+        fuel_start: data.fuel_start ?? undefined,
+        fuel_end: data.fuel_end ?? undefined,
+        oil_added: data.oil_added ?? undefined,
+        oil_start: data.oil_start ?? undefined,
+        oil_end: data.oil_end ?? undefined,
+        fuel_added: data.fuel_added ?? undefined,
+        fuel_type: data.fuel_type ?? '',
+        aircraft_condition: data.aircraft_condition ?? '',
+        maintenance_notes: data.maintenance_notes ?? '',
+        passengers: data.passengers ?? undefined,
+      }));
+    };
+
+    loadExistingFlightLog();
+  }, [booking.id, flightLogId, mode]);
+
+  useEffect(() => {
     const calculateStartTach = async () => {
       if (!booking.aircraftId) return;
       try {
@@ -163,12 +236,12 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     }
 
     if (field === 'start_tach' && formData.end_tach !== '') {
-      const duration = Math.max(0, formData.end_tach - numValue);
+      const duration = roundFlightDecimal(Math.max(0, formData.end_tach - numValue));
       newData.flight_duration = duration;
       newData.dual_time = isDualFlight ? duration : 0;
       newData.solo_time = isDualFlight ? 0 : duration;
     } else if (field === 'end_tach') {
-      const duration = Math.max(0, numValue - formData.start_tach);
+      const duration = roundFlightDecimal(Math.max(0, numValue - formData.start_tach));
       newData.flight_duration = duration;
       newData.dual_time = isDualFlight ? duration : 0;
       newData.solo_time = isDualFlight ? 0 : duration;
@@ -177,7 +250,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   };
 
   const handleDurationChange = (value: string) => {
-    const duration = value === '' ? '' : parseFloat(value);
+    const duration = value === '' ? '' : roundFlightDecimal(parseFloat(value));
     if (duration === '' || Number.isNaN(duration)) {
       setFormData({
         ...formData,
@@ -191,7 +264,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     setFormData({
       ...formData,
       flight_duration: duration,
-      end_tach: formData.start_tach + duration,
+      end_tach: roundFlightDecimal(formData.start_tach + duration),
       dual_time: isDualFlight ? duration : 0,
       solo_time: isDualFlight ? 0 : duration,
     });
@@ -250,6 +323,31 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     return null;
   };
 
+  const saveFlightLog = async (logData: any) => {
+    if (booking.status === 'pending_approval' && onApproveBooking) {
+      await onApproveBooking(booking.id);
+    }
+
+    const targetFlightLogId = loadedFlightLogId || flightLogId;
+    if (mode === 'edit' && !targetFlightLogId) {
+      toast.error('Flight log could not be found');
+      return;
+    }
+
+    const result = mode === 'edit'
+      ? await updateFlightLog(targetFlightLogId, logData)
+      : await createFlightLog(logData);
+    const { error } = result;
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    toast.success(mode === 'edit' ? 'Flight log updated successfully' : 'Flight logged successfully');
+    onSuccess();
+    onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -260,10 +358,6 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       }
       setIsSubmitting(true);
 
-      if (booking.status === 'pending_approval' && onApproveBooking) {
-        await onApproveBooking(booking.id);
-      }
-
       const logData = {
         booking_id: booking.id,
         aircraft_id: booking.aircraftId,
@@ -273,9 +367,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         end_time: formData.end_time,
         start_tach: formData.start_tach,
         end_tach: formData.end_tach,
-        flight_duration: formData.flight_duration,
-        dual_time: formData.dual_time,
-        solo_time: formData.solo_time,
+        flight_duration: roundFlightDecimal(Number(formData.flight_duration)),
+        dual_time: roundFlightDecimal(formData.dual_time),
+        solo_time: roundFlightDecimal(formData.solo_time),
         takeoffs: isTakeoffsLandingsEnabled ? formData.takeoffs : undefined,
         comments: isFieldEnabled('comments') ? formData.comments || undefined : undefined,
         flight_type_id: formData.flight_type_id || undefined,
@@ -296,20 +390,52 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         ...(isFieldEnabled('passengers') && { passengers: formData.passengers }),
       };
 
-      const { error } = await createFlightLog(logData);
-      if (error) {
-        toast.error(error);
+      const { overlaps, error: overlapError } = await checkTachOverlap(
+        booking.aircraftId,
+        Number(logData.start_tach),
+        Number(logData.end_tach),
+        mode === 'edit' ? (loadedFlightLogId || flightLogId) : undefined
+      );
+
+      if (overlapError) {
+        toast.error(overlapError);
         return;
       }
 
-      toast.success('Flight logged successfully');
-      onSuccess();
-      onClose();
+      if (overlaps.length > 0) {
+        setOverlappingLogs(overlaps);
+        setPendingLogData(logData);
+        setShowOverlapWarning(true);
+        return;
+      }
+
+      await saveFlightLog(logData);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to log flight');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleConfirmOverlap = async () => {
+    if (!pendingLogData) return;
+    try {
+      setIsSubmitting(true);
+      await saveFlightLog(pendingLogData);
+      setShowOverlapWarning(false);
+      setPendingLogData(null);
+      setOverlappingLogs([]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to log flight');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelOverlap = () => {
+    setShowOverlapWarning(false);
+    setPendingLogData(null);
+    setOverlappingLogs([]);
   };
 
   const student = users.find((u) => u.id === booking.studentId);
@@ -318,10 +444,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const otherPilot = instructor ? student?.name || 'Unknown' : (isDualFlight ? student?.name || 'Unknown' : 'Self');
 
   return (
+    <>
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[94vh] overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
-          <h2 className="text-lg font-semibold text-gray-900">Log Flight</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{mode === 'edit' ? 'Edit Flight Log' : 'Log Flight'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X className="h-5 w-5" />
           </button>
@@ -750,11 +877,20 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               disabled={isSubmitting}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? 'Logging...' : 'Log Flight'}
+              {isSubmitting ? (mode === 'edit' ? 'Saving...' : 'Logging...') : (mode === 'edit' ? 'Save Flight Log' : 'Log Flight')}
             </button>
           </div>
         </form>
       </div>
     </div>
+    <TachOverlapWarningModal
+      isOpen={showOverlapWarning}
+      onClose={handleCancelOverlap}
+      onConfirm={handleConfirmOverlap}
+      overlappingLogs={overlappingLogs}
+      tachStart={Number(pendingLogData?.start_tach ?? formData.start_tach)}
+      tachEnd={Number(pendingLogData?.end_tach ?? formData.end_tach)}
+    />
+    </>
   );
 };

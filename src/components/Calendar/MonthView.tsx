@@ -8,6 +8,7 @@ interface MonthViewProps {
   bookings: Booking[];
   aircraft: Array<{ id: string; registration: string; make: string; model: string }>;
   instructors: Array<{ id: string; name: string }>;
+  defaultAircraftId?: string;
   onDayClick: (date: Date) => void;
   weekStartsOn: 0 | 1;
   showWeekends: boolean;
@@ -19,6 +20,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
   bookings,
   aircraft,
   instructors,
+  defaultAircraftId,
   onDayClick,
   weekStartsOn,
   showWeekends,
@@ -26,6 +28,17 @@ export const MonthView: React.FC<MonthViewProps> = ({
 }) => {
   const [selectedResourceType, setSelectedResourceType] = useState<'aircraft' | 'instructor'>('aircraft');
   const [selectedResourceId, setSelectedResourceId] = useState<string>('');
+
+  React.useEffect(() => {
+    if (selectedResourceId) return;
+
+    if (selectedResourceType === 'aircraft' && aircraft.length > 0) {
+      const preferredAircraft = aircraft.find(a => a.id === defaultAircraftId);
+      setSelectedResourceId(preferredAircraft?.id || aircraft[0].id);
+    } else if (selectedResourceType === 'instructor' && instructors.length > 0) {
+      setSelectedResourceId(instructors[0].id);
+    }
+  }, [aircraft, defaultAircraftId, instructors, selectedResourceId, selectedResourceType]);
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -39,6 +52,8 @@ export const MonthView: React.FC<MonthViewProps> = ({
     if (!selectedResourceId) return [];
 
     return bookings.filter(booking => {
+      if (booking.status === 'cancelled' || booking.hasConflict) return false;
+
       const isSameDate = isSameDay(new Date(booking.startTime), date);
       if (!isSameDate) return false;
 

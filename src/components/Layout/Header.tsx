@@ -7,7 +7,7 @@ import { useOrganisationSettings } from '../../hooks/useSettings';
 export const Header: React.FC = () => {
   const { user, logout } = useAuth();
   const { settings } = useOrganisationSettings();
-  const businessName = settings?.club_name?.trim() || 'AeroClub Pro';
+  const businessName = settings?.club_name?.trim() || 'Bendigo Flying Club';
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {

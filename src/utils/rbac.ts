@@ -24,12 +24,12 @@ export type Action =
 
 export type Resource = 'all' | 'own' | 'none';
 
-interface Permission {
+export interface Permission {
   action: Action;
   resource: Resource;
 }
 
-const rolePermissions: Record<UserRole, Permission[]> = {
+export const rolePermissions: Record<UserRole, Permission[]> = {
   admin: [
     { action: 'view-dashboard', resource: 'all' },
     { action: 'view-calendar', resource: 'all' },
@@ -49,6 +49,24 @@ const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-safety-reports', resource: 'all' },
     { action: 'view-checklists-docs', resource: 'all' },
     { action: 'edit-settings', resource: 'all' },
+    { action: 'edit-personal-settings', resource: 'own' }
+  ],
+  senior_instructor: [
+    { action: 'view-dashboard', resource: 'all' },
+    { action: 'view-calendar', resource: 'all' },
+    { action: 'view-bookings', resource: 'all' },
+    { action: 'view-students', resource: 'all' },
+    { action: 'view-aircraft', resource: 'all' },
+    { action: 'view-maintenance', resource: 'all' },
+    { action: 'view-training', resource: 'all' },
+    { action: 'view-outstanding-records', resource: 'all' },
+    { action: 'view-safety', resource: 'all' },
+    { action: 'view-settings', resource: 'own' },
+    { action: 'view-logbook', resource: 'own' },
+    { action: 'view-pilot-currency', resource: 'all' },
+    { action: 'view-instructor-approvals', resource: 'all' },
+    { action: 'view-safety-reports', resource: 'all' },
+    { action: 'view-checklists-docs', resource: 'all' },
     { action: 'edit-personal-settings', resource: 'own' }
   ],
   instructor: [
@@ -122,6 +140,7 @@ export const getPrimaryRole = (user: User | null): UserRole | null => {
   const roles = getUserRoles(user);
 
   if (roles.includes('admin')) return 'admin';
+  if (roles.includes('senior_instructor')) return 'senior_instructor';
   if (roles.includes('instructor')) return 'instructor';
   if (roles.includes('pilot')) return 'pilot';
   return 'student';
@@ -152,14 +171,13 @@ export const getAuthorizedMenuItems = (user: User | null) => {
   const allMenuItems: { id: string; label: string; action: Action; resource?: Resource; roles?: UserRole[] }[] = [
     { id: 'dashboard', label: 'Dashboard', action: 'view-dashboard' },
     { id: 'calendar', label: 'Calendar', action: 'view-calendar' },
-    { id: 'bookings', label: 'My Bookings', action: 'view-bookings', resource: 'own', roles: ['student', 'pilot'] },
     { id: 'students', label: 'Students', action: 'view-students' },
     { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' },
     { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' },
     { id: 'training', label: 'Training Records', action: 'view-training' },
     { id: 'outstanding-records', label: 'Outstanding Records', action: 'view-outstanding-records' },
     { id: 'profile', label: 'My Profile', action: 'edit-personal-settings', resource: 'own', roles: ['student', 'pilot'] },
-    { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook' },
+    { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook', resource: 'own', roles: ['admin', 'senior_instructor', 'instructor'] },
     { id: 'billing', label: 'Billing', action: 'view-billing' },
     { id: 'reports', label: 'Reports', action: 'view-reports' },
     { id: 'safety', label: 'Safety', action: 'view-safety', resource: hasAnyRole(user, ['student', 'pilot']) ? 'own' : 'all' },
@@ -209,11 +227,15 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'safety', label: 'Safety & Compliance', roles: ['admin'] as UserRole[] },
     { id: 'maintenance', label: 'Maintenance', roles: ['admin'] as UserRole[] },
     { id: 'resources', label: 'Resources (Aircraft & Rooms)', roles: ['admin'] as UserRole[] },
-    { id: 'documents', label: 'Documents & Templates', roles: ['admin'] as UserRole[] },
     { id: 'portal', label: 'Portal & UX', roles: ['admin'] as UserRole[] },
     { id: 'roles', label: 'Roles & Permissions', roles: ['admin'] as UserRole[] },
     { id: 'audit', label: 'Audit & Data', roles: ['admin'] as UserRole[] },
-    { id: 'personal', label: 'Personal Preferences', roles: ['admin', 'instructor', 'pilot', 'student'] as UserRole[] }
+    { id: 'account-info', label: 'Update My Info', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
+    { id: 'account-security', label: 'Security', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
+    { id: 'account-calendar', label: 'Calendar Preferences', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
+    { id: 'account-notifications', label: 'Notification Preferences', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
+    { id: 'account-appearance', label: 'Appearance', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
+    { id: 'account-dashboard', label: 'Portal Dashboard', roles: ['pilot', 'student'] as UserRole[] }
   ];
 
   return allSections.filter(section =>

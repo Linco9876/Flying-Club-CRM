@@ -14,7 +14,6 @@ import {
   CreditCard,
   BookOpen,
   Shield,
-  ClipboardList,
   AlertCircle,
   Menu,
   X
@@ -33,7 +32,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
   const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['admin', 'instructor', 'student'] },
     { id: 'calendar', label: 'Calendar', icon: Calendar, roles: ['admin', 'instructor', 'student'] },
-    { id: 'bookings', label: 'My Bookings', icon: ClipboardList, roles: ['student'] },
     { id: 'students', label: 'Students/Pilots', icon: Users, roles: ['admin', 'instructor'] },
     { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'student'] },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },

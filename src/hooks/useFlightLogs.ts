@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod } from '../utils/billing';
 
+const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
+
 export interface FlightLog {
   id: string;
   booking_id?: string;
@@ -37,6 +39,22 @@ export interface FlightLog {
   passengers?: number;
   created_at: string;
   created_by?: string;
+  aircraft?: {
+    id: string;
+    registration: string;
+    make: string;
+    model: string;
+  } | null;
+  student?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  instructor?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
 }
 
 export interface CreateFlightLogData {
@@ -85,7 +103,12 @@ export function useFlightLogs(userId?: string) {
 
       let query = supabase
         .from('flight_logs')
-        .select('*')
+        .select(`
+          *,
+          aircraft:aircraft_id(id, registration, make, model),
+          student:student_id(id, name, email),
+          instructor:instructor_id(id, name, email)
+        `)
         .order('start_time', { ascending: false });
 
       if (userId) {
@@ -112,13 +135,21 @@ export function useFlightLogs(userId?: string) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
+      const normalisedLogData = {
+        ...logData,
+        start_tach: roundFlightDecimal(logData.start_tach),
+        end_tach: roundFlightDecimal(logData.end_tach),
+        flight_duration: roundFlightDecimal(logData.flight_duration),
+        dual_time: roundFlightDecimal(logData.dual_time),
+        solo_time: roundFlightDecimal(logData.solo_time),
+      };
 
-      const { data: rateData } = logData.flight_type_id
+      const { data: rateData } = normalisedLogData.flight_type_id
         ? await supabase
           .from('aircraft_rates')
           .select('*, payment_methods(id, name), flight_types(forced_payment_method_id)')
-          .eq('aircraft_id', logData.aircraft_id)
-          .eq('flight_type_id', logData.flight_type_id)
+          .eq('aircraft_id', normalisedLogData.aircraft_id)
+          .eq('flight_type_id', normalisedLogData.flight_type_id)
           .maybeSingle()
         : { data: null };
 
@@ -131,34 +162,34 @@ export function useFlightLogs(userId?: string) {
       } : null;
       const calculatedCost = calculateFlightCost({
         rate: selectedRate as any,
-        durationHours: logData.flight_duration,
-        isDual: !!logData.instructor_id,
-        passengerCount: logData.passengers,
-        startTime: logData.start_time,
+        durationHours: normalisedLogData.flight_duration,
+        isDual: !!normalisedLogData.instructor_id,
+        passengerCount: normalisedLogData.passengers,
+        startTime: normalisedLogData.start_time,
       });
       const noCharge = isNoChargeRate(selectedRate?.chargeType);
       let paymentMethodId = rateData?.default_payment_method_id ?? rateData?.flight_types?.forced_payment_method_id ?? null;
-      if (!paymentMethodId && logData.payment_type) {
+      if (!paymentMethodId && normalisedLogData.payment_type) {
         const { data: paymentMethod } = await supabase
           .from('payment_methods')
           .select('id')
-          .ilike('name', logData.payment_type)
+          .ilike('name', normalisedLogData.payment_type)
           .maybeSingle();
         paymentMethodId = paymentMethod?.id ?? null;
       }
       const initialPaymentStatus: 'free' | 'pending' | 'paid' = noCharge || calculatedCost <= 0
         ? 'free'
-        : isPrepaidPaymentMethod(logData.payment_type)
+        : isPrepaidPaymentMethod(normalisedLogData.payment_type)
           ? 'paid'
           : 'pending';
 
       const { data, error: insertError } = await supabase
         .from('flight_logs')
         .insert({
-          ...logData,
-          duration: logData.flight_duration,
-          tach_start: logData.start_tach,
-          tach_end: logData.end_tach,
+          ...normalisedLogData,
+          duration: normalisedLogData.flight_duration,
+          tach_start: normalisedLogData.start_tach,
+          tach_end: normalisedLogData.end_tach,
           total_cost: calculatedCost,
           calculated_cost: calculatedCost,
           payment_status: initialPaymentStatus,
@@ -169,11 +200,11 @@ export function useFlightLogs(userId?: string) {
 
       if (insertError) throw insertError;
 
-      if (initialPaymentStatus === 'paid' && calculatedCost > 0 && logData.student_id) {
+      if (initialPaymentStatus === 'paid' && calculatedCost > 0 && normalisedLogData.student_id) {
         const { data: student } = await supabase
           .from('students')
           .select('prepaid_balance')
-          .eq('id', logData.student_id)
+          .eq('id', normalisedLogData.student_id)
           .maybeSingle();
 
         const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
@@ -182,10 +213,10 @@ export function useFlightLogs(userId?: string) {
         const { error: txError } = await supabase
           .from('account_transactions')
           .insert({
-            user_id: logData.student_id,
+            user_id: normalisedLogData.student_id,
             type: 'flight_charge',
             amount: calculatedCost,
-            description: `Flight charge - ${new Date(logData.start_time).toLocaleDateString('en-AU')}`,
+            description: `Flight charge - ${new Date(normalisedLogData.start_time).toLocaleDateString('en-AU')}`,
             flight_log_id: data.id,
             payment_method_id: paymentMethodId,
             balance_after: newBalance,
@@ -198,16 +229,16 @@ export function useFlightLogs(userId?: string) {
         } else {
           const { error: balanceError } = await supabase
             .from('students')
-            .upsert({ id: logData.student_id, prepaid_balance: newBalance }, { onConflict: 'id' });
+            .upsert({ id: normalisedLogData.student_id, prepaid_balance: newBalance }, { onConflict: 'id' });
           if (balanceError) console.error('Error updating prepaid balance:', balanceError);
         }
       }
 
-      if (logData.booking_id) {
+      if (normalisedLogData.booking_id) {
         const { error: updateError } = await supabase
           .from('bookings')
           .update({ flight_logged: true })
-          .eq('id', logData.booking_id);
+          .eq('id', normalisedLogData.booking_id);
 
         if (updateError) console.error('Error updating booking:', updateError);
 
@@ -218,7 +249,7 @@ export function useFlightLogs(userId?: string) {
             approved_by: user.id,
             approved_at: new Date().toISOString(),
           })
-          .eq('id', logData.booking_id)
+          .eq('id', normalisedLogData.booking_id)
           .eq('status', 'pending_approval');
 
         if (approvalError) console.error('Error approving logged booking:', approvalError);
@@ -226,14 +257,15 @@ export function useFlightLogs(userId?: string) {
 
       const { error: aircraftUpdateError } = await supabase
         .from('aircraft')
-        .update({ total_hours: logData.end_tach })
-        .eq('id', logData.aircraft_id);
+        .update({ total_hours: normalisedLogData.end_tach })
+        .eq('id', normalisedLogData.aircraft_id);
 
       if (aircraftUpdateError) {
         console.error('Error updating aircraft hours:', aircraftUpdateError);
       }
 
       await fetchFlightLogs();
+      window.dispatchEvent(new Event('calendar-data-changed'));
       return { data, error: null };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create flight log';
@@ -244,14 +276,22 @@ export function useFlightLogs(userId?: string) {
 
   const updateFlightLog = async (id: string, updates: Partial<CreateFlightLogData>) => {
     try {
+      const normalisedUpdates = { ...updates };
+      if (normalisedUpdates.start_tach !== undefined) normalisedUpdates.start_tach = roundFlightDecimal(normalisedUpdates.start_tach);
+      if (normalisedUpdates.end_tach !== undefined) normalisedUpdates.end_tach = roundFlightDecimal(normalisedUpdates.end_tach);
+      if (normalisedUpdates.flight_duration !== undefined) normalisedUpdates.flight_duration = roundFlightDecimal(normalisedUpdates.flight_duration);
+      if (normalisedUpdates.dual_time !== undefined) normalisedUpdates.dual_time = roundFlightDecimal(normalisedUpdates.dual_time);
+      if (normalisedUpdates.solo_time !== undefined) normalisedUpdates.solo_time = roundFlightDecimal(normalisedUpdates.solo_time);
+
       const { error: updateError } = await supabase
         .from('flight_logs')
-        .update(updates)
+        .update(normalisedUpdates)
         .eq('id', id);
 
       if (updateError) throw updateError;
 
       await fetchFlightLogs();
+      window.dispatchEvent(new Event('calendar-data-changed'));
       return { error: null };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update flight log';
@@ -262,6 +302,14 @@ export function useFlightLogs(userId?: string) {
 
   const deleteFlightLog = async (id: string) => {
     try {
+      const { data: existingLog, error: existingLogError } = await supabase
+        .from('flight_logs')
+        .select('booking_id')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (existingLogError) throw existingLogError;
+
       const { data: chargeTransactions } = await supabase
         .from('account_transactions')
         .select('id, user_id, amount, type')
@@ -302,7 +350,19 @@ export function useFlightLogs(userId?: string) {
 
       if (deleteError) throw deleteError;
 
+      if (existingLog?.booking_id) {
+        const { error: bookingUpdateError } = await supabase
+          .from('bookings')
+          .update({ flight_logged: false })
+          .eq('id', existingLog.booking_id);
+
+        if (bookingUpdateError) {
+          console.error('Error marking booking unlogged:', bookingUpdateError);
+        }
+      }
+
       await fetchFlightLogs();
+      window.dispatchEvent(new Event('calendar-data-changed'));
       return { error: null };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete flight log';

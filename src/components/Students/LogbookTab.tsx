@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { BookOpen, Clock, TrendingUp, Navigation } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { BookOpen, Clock, Download, TrendingUp, Navigation } from 'lucide-react';
 import { useFlightLogs, FlightLog } from '../../hooks/useFlightLogs';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -17,19 +18,14 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
 
   const enrichedLogs = useMemo(() => {
     return flightLogs.map(log => {
-      const aircraft = aircraftList.find(a => a.id === log.aircraft_id);
-      const student = users.find(u => u.id === log.student_id);
-      const instructor = log.instructor_id ? users.find(u => u.id === log.instructor_id) : null;
+      const aircraft = log.aircraft || aircraftList.find(a => a.id === log.aircraft_id);
+      const student = log.student || users.find(u => u.id === log.student_id);
+      const instructor = log.instructor || (log.instructor_id ? users.find(u => u.id === log.instructor_id) : null);
 
       const isDual = !!log.instructor_id;
 
-      const pilotInCommand = instructor ? instructor.name : (student?.name || 'Unknown');
-      let otherPilotOrCrew: string;
-      if (isInstructor) {
-        otherPilotOrCrew = student?.name || 'Unknown';
-      } else {
-        otherPilotOrCrew = isDual ? 'Self' : 'Self';
-      }
+      const pilotInCommand = instructor?.name || student?.name || 'Not recorded';
+      const otherPilotOrCrew = isDual ? (student?.name || 'Not recorded') : '';
 
       const hoursAsPIC = isInstructor ? (log.solo_time || 0) : (isDual ? 0 : (log.solo_time || 0));
       const hoursInstructor = isInstructor ? (log.dual_time || 0) : 0;
@@ -73,6 +69,52 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       month: '2-digit',
       year: 'numeric',
     });
+  };
+
+  const exportExcel = () => {
+    const rows = enrichedLogs.map(log => ({
+      Date: formatDate(log.start_time),
+      'Aircraft Type': log.aircraft ? `${log.aircraft.make} ${log.aircraft.model}` : '',
+      'Aircraft Registration': log.aircraft?.registration || '',
+      'Pilot in Command': log.pilotInCommand,
+      'Other Pilot or Crew': log.otherPilotOrCrew,
+      'Dual Hours': Number(formatHours(log.dual_time || 0)),
+      'Command Hours': Number(formatHours(log.solo_time || 0)),
+      Takeoffs: log.takeoffs ?? '',
+      Landings: log.landings ?? '',
+      Comments: log.comments || '',
+    }));
+
+    rows.push({
+      Date: `Totals (${enrichedLogs.length} flights)`,
+      'Aircraft Type': '',
+      'Aircraft Registration': '',
+      'Pilot in Command': '',
+      'Other Pilot or Crew': '',
+      'Dual Hours': Number(formatHours(totals.dualHours)),
+      'Command Hours': Number(formatHours(totals.soloHours)),
+      Takeoffs: totals.takeoffs,
+      Landings: totals.landings,
+      Comments: '',
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 20 },
+      { wch: 24 },
+      { wch: 24 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 40 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Logbook');
+    XLSX.writeFile(workbook, `${userName.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'logbook'}-logbook.xlsx`);
   };
 
   if (loading) {
@@ -126,7 +168,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
               <BookOpen className="h-5 w-5 text-orange-600" />
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Solo / PIC</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{isInstructor ? 'Command' : 'Solo / PIC'}</p>
               <p className="text-xl font-bold text-gray-900">{formatHours(totals.soloHours)}</p>
             </div>
           </div>
@@ -147,12 +189,23 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
 
       {/* Logbook Table */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
           <h3 className="text-base font-semibold text-gray-900 flex items-center space-x-2">
             <BookOpen className="h-5 w-5 text-gray-600" />
             <span>Flight Logbook — {userName}</span>
           </h3>
           <p className="text-sm text-gray-500 mt-1">{enrichedLogs.length} entries</p>
+          </div>
+          <button
+            type="button"
+            onClick={exportExcel}
+            disabled={enrichedLogs.length === 0}
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            Export Excel
+          </button>
         </div>
 
         {enrichedLogs.length === 0 ? (
@@ -173,19 +226,19 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                     Aircraft Type
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">
-                    Rego
+                    Registration
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">
                     Pilot in Command
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">
-                    {isInstructor ? 'Student' : 'Other / Crew'}
+                    Other Pilot or Crew
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">
                     Dual (hrs)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">
-                    Solo (hrs)
+                    {isInstructor ? 'Command (hrs)' : 'Solo (hrs)'}
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">
                     T/O

@@ -50,8 +50,14 @@ interface EditLogForm {
   observations: string;
 }
 
-export const AircraftFlightLogs: React.FC = () => {
-  const { aircraftId } = useParams<{ aircraftId: string }>();
+interface AircraftFlightLogsProps {
+  aircraftIdOverride?: string;
+  embedded?: boolean;
+}
+
+export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraftIdOverride, embedded = false }) => {
+  const { aircraftId: routeAircraftId } = useParams<{ aircraftId: string }>();
+  const aircraftId = aircraftIdOverride || routeAircraftId;
   const navigate = useNavigate();
   const { aircraft: allAircraft } = useAircraft();
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
@@ -169,6 +175,18 @@ export const AircraftFlightLogs: React.FC = () => {
   useEffect(() => {
     fetchFlightLogs();
   }, [aircraftId]);
+
+  useEffect(() => {
+    if (flightLogs.length === 0) return;
+
+    const months = Array.from(
+      new Set(flightLogs.map(log => new Date(log.start_time).toISOString().slice(0, 7)))
+    ).sort().reverse();
+
+    if (!months.includes(selectedMonth)) {
+      setSelectedMonth(months[0]);
+    }
+  }, [flightLogs, selectedMonth]);
 
   const toDateTimeLocal = (value: string) => {
     const date = new Date(value);
@@ -383,12 +401,14 @@ export const AircraftFlightLogs: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <button
-            onClick={() => navigate('/aircraft')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
+          {!embedded && (
+            <button
+              onClick={() => navigate('/aircraft')}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          )}
           <div>
             <h1 className="text-xl font-bold text-gray-900 flex items-center">
               <Plane className="h-5 w-5 mr-2 text-blue-600" />
@@ -429,17 +449,15 @@ export const AircraftFlightLogs: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="min-w-[900px] w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-300">
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Date</th>
-                  <th className="text-left py-2 px-2 font-semibold text-gray-700">Crew</th>
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Duration</th>
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Flight type</th>
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Landings</th>
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Observation</th>
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Tach</th>
-                  <th className="text-center py-2 px-2 font-semibold text-gray-700">Price</th>
+                <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <th className="px-3 py-2 text-left font-semibold">Date / Time</th>
+                  <th className="px-3 py-2 text-left font-semibold">Crew</th>
+                  <th className="px-3 py-2 text-left font-semibold">Flight</th>
+                  <th className="px-3 py-2 text-left font-semibold">Notes / Aircraft</th>
+                  <th className="px-3 py-2 text-left font-semibold">Tach</th>
+                  <th className="px-3 py-2 text-right font-semibold">Billing</th>
                 </tr>
               </thead>
               <tbody>
@@ -447,6 +465,7 @@ export const AircraftFlightLogs: React.FC = () => {
                   const startDate = new Date(log.start_time);
                   const endDate = new Date(log.end_time);
                   const isAlternateRow = index % 2 === 1;
+                  const timeRange = `${startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
                   const aircraftDetails = [
                     log.aircraft_condition ? `Condition: ${log.aircraft_condition}` : null,
                     log.hobbs_start != null || log.hobbs_end != null ? `Hobbs: ${log.hobbs_start ?? '–'}-${log.hobbs_end ?? '–'}` : null,
@@ -456,94 +475,67 @@ export const AircraftFlightLogs: React.FC = () => {
                     log.oil_added != null ? `Oil added: ${log.oil_added}` : null,
                     log.maintenance_notes ? `Mx: ${log.maintenance_notes}` : null,
                   ].filter((detail): detail is string => Boolean(detail));
+                  const aircraftDetailSummary = aircraftDetails.join(' | ');
 
                   return (
                     <tr
                       key={log.id}
-                      className={`group border-b border-gray-200 cursor-pointer transition-colors hover:bg-blue-100 ${isAlternateRow ? 'bg-blue-50' : 'bg-white'}`}
+                      className={`group border-b border-gray-100 cursor-pointer transition-colors hover:bg-blue-50 ${isAlternateRow ? 'bg-slate-50' : 'bg-white'}`}
                       onClick={() => setActionLog(log)}
                       title="Click to edit or delete this log"
                     >
-                      <td className="py-3 px-2 text-center align-middle">
-                        <div className="flex flex-col items-center justify-center space-y-1">
-                          <div className="flex items-center space-x-1">
-                            <Calendar className="h-3 w-3 text-gray-400" />
-                            <span>{startDate.toLocaleDateString('en-GB')}</span>
-                          </div>
-                          <div className="flex items-center space-x-1 text-gray-500">
-                            <Calendar className="h-3 w-3 text-gray-400" />
-                            <span>{endDate.toLocaleDateString('en-GB')}</span>
-                          </div>
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex items-center gap-1.5 font-semibold text-gray-900">
+                          <Calendar className="h-3.5 w-3.5 text-gray-400" />
+                          <span>{startDate.toLocaleDateString('en-GB')}</span>
+                        </div>
+                        <div className="mt-0.5 text-xs text-gray-500">{timeRange}</div>
+                        {startDate.toDateString() !== endDate.toDateString() && (
+                          <div className="text-xs text-gray-400">Ends {endDate.toLocaleDateString('en-GB')}</div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="font-medium text-gray-900">{log.student_name}</div>
+                        <div className="mt-0.5 text-xs text-gray-500">
+                          {log.instructor_name ? log.instructor_name : 'Solo / no instructor'}
                         </div>
                       </td>
-                      <td className="py-3 px-2 text-left align-middle">
-                        <div className="flex flex-col items-start justify-center space-y-1">
-                          <div className="flex items-center justify-start space-x-1">
-                            <span className="inline-block w-3 h-3 bg-blue-500 rounded-full"></span>
-                            <span className="text-gray-600">Pilot:</span>
-                            <span className="text-blue-600">{log.student_name}</span>
-                          </div>
-                          {log.instructor_name && (
-                            <div className="flex items-center justify-start space-x-1">
-                              <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
-                              <span className="text-gray-600">Instructor:</span>
-                              <span className="text-blue-600">{log.instructor_name}</span>
-                            </div>
+                      <td className="px-3 py-2 align-top">
+                        <div className="font-medium text-gray-900">{log.flight_type_name || log.payment_type || 'Unknown flight'}</div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                            {log.flight_duration.toFixed(1)} hr
+                          </span>
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+                            {log.landings} landing{log.landings === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="max-w-md text-gray-700">
+                          {log.observations ? (
+                            <div className="line-clamp-1">{log.observations}</div>
+                          ) : (
+                            <span className="text-xs text-gray-400">No observations</span>
                           )}
-                          <div className="pt-1 text-xs text-gray-400 opacity-0 transition-opacity group-hover:opacity-100">
-                            Click for actions
-                          </div>
                         </div>
-                      </td>
-                      <td className="py-3 px-2 text-center align-middle">
-                        <div>{log.flight_duration.toFixed(2)}</div>
-                        <div className="text-gray-500 text-xs">hours</div>
-                      </td>
-                      <td className="py-3 px-2 text-center align-middle">
-                        <div>{log.flight_type_name || log.payment_type || 'Unknown'}</div>
-                        {log.payment_type && <div className="text-xs text-gray-500">{log.payment_type}</div>}
-                      </td>
-                      <td className="py-3 px-2 text-center align-middle">
-                        <div>{log.landings}</div>
-                      </td>
-                      <td className="py-3 px-2 text-center align-middle">
-                        {log.observations && (
-                          <div className="text-gray-700">{log.observations}</div>
-                        )}
-                        {aircraftDetails.length > 0 && (
-                          <div className="mt-1 space-y-0.5 text-xs text-gray-500">
-                            {aircraftDetails.map(detail => (
-                              <div key={detail}>{detail}</div>
-                            ))}
+                        {aircraftDetailSummary && (
+                          <div className="mt-0.5 max-w-md truncate text-xs text-gray-500" title={aircraftDetailSummary}>
+                            {aircraftDetailSummary}
                           </div>
                         )}
                       </td>
-                      <td className="py-3 px-2 text-center align-middle">
-                        <div className="flex flex-col items-center justify-center space-y-3">
-                          <div className="text-center">
-                            <div className="flex items-center justify-center space-x-1">
-                              {log.start_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
-                                <span key={`start-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px] text-center">{digit}</span>
-                              ))}
-                              <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px] text-center">{log.start_tach.toFixed(1).split('.')[1]}</span>
-                            </div>
-                            <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
-                          </div>
-                          <div className="text-center">
-                            <div className="flex items-center justify-center space-x-1">
-                              {log.end_tach.toFixed(1).split('.')[0].split('').map((digit, i) => (
-                                <span key={`end-${i}`} className="inline-block border border-gray-400 px-1 min-w-[20px] text-center">{digit}</span>
-                              ))}
-                              <span className="inline-block border border-red-400 bg-red-100 px-1 min-w-[20px] text-center">{log.end_tach.toFixed(1).split('.')[1]}</span>
-                            </div>
-                            <div className="text-gray-500 text-xs mt-1">hours/hundredths</div>
-                          </div>
+                      <td className="px-3 py-2 align-top">
+                        <div className="font-mono text-sm font-semibold text-gray-900">
+                          {log.start_tach.toFixed(1)} - {log.end_tach.toFixed(1)}
                         </div>
+                        <div className="mt-0.5 text-xs text-gray-500">Tach +{log.flight_duration.toFixed(1)}</div>
                       </td>
-                      <td className="py-3 px-2 text-center align-middle">
-                        <div className="flex flex-col items-center justify-center space-y-1">
-                          <div className="font-medium">AUD{log.total_cost.toFixed(2)}</div>
-                          <div className="text-gray-500 text-xs">Paid AUD{log.total_cost.toFixed(2)}</div>
+                      <td className="px-3 py-2 text-right align-top">
+                        <div className="font-semibold text-gray-900">AUD{log.total_cost.toFixed(2)}</div>
+                        <div className="mt-0.5 text-xs text-gray-500">{log.payment_type || 'No payment type'}</div>
+                        <div className="mt-1 text-xs text-blue-600 opacity-0 transition-opacity group-hover:opacity-100">
+                          Click for actions
                         </div>
                       </td>
                     </tr>

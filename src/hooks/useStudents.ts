@@ -69,6 +69,10 @@ export const useStudents = () => {
           role: primaryRole as 'student' | 'instructor' | 'admin' | 'pilot',
           roles: userRoles,
           phone: user.phone,
+          mobilePhone: user.mobile_phone,
+          homePhone: user.home_phone,
+          workPhone: user.work_phone,
+          address: user.address,
           avatar: user.avatar_url,
           raausId: studentData?.raaus_id,
           casaId: studentData?.casa_id,
@@ -82,8 +86,13 @@ export const useStudents = () => {
             name: studentData.emergency_contact_name,
             phone: studentData.emergency_contact_phone || '',
             relationship: studentData.emergency_contact_relationship || ''
+          } : user.emergency_contact_name ? {
+            name: user.emergency_contact_name,
+            phone: user.emergency_contact_phone || '',
+            relationship: user.emergency_contact_relationship || ''
           } : undefined,
-          dateOfBirth: studentData?.date_of_birth ? new Date(studentData.date_of_birth) : undefined,
+          dateOfBirth: studentData?.date_of_birth ? new Date(studentData.date_of_birth) : user.date_of_birth ? new Date(user.date_of_birth) : undefined,
+          preferredAircraftId: user.preferred_aircraft_id,
           prepaidBalance: studentData?.prepaid_balance ? parseFloat(studentData.prepaid_balance) : 0,
           endorsements: endorsementsMap.get(user.id) || []
         };

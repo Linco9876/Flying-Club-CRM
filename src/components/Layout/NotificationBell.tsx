@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Bell, X, AlertCircle, Info, Calendar, ClipboardList, Check, XCircle } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useBookings } from '../../hooks/useBookings';
+import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -9,6 +10,7 @@ import toast from 'react-hot-toast';
 export const NotificationBell: React.FC = () => {
   const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
   const { approveBooking, rejectBooking } = useBookings();
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -32,10 +34,17 @@ export const NotificationBell: React.FC = () => {
     markAsRead(notification.id);
     setIsOpen(false);
     if (notification.type === 'training_record' && notification.metadata?.student_id) {
-      navigate(`/students/${notification.metadata.student_id}?tab=training`);
+      const isOwnStudentRecord =
+        (user?.role === 'student' || user?.role === 'pilot') &&
+        notification.metadata.student_id === user.id;
+
+      navigate(isOwnStudentRecord
+        ? '/profile?tab=training'
+        : `/students/${notification.metadata.student_id}?tab=training`
+      );
     }
     if (notification.type === 'booking_approval' && notification.metadata?.booking_id) {
-      navigate('/bookings');
+      navigate('/calendar?view=list');
     }
   };
 

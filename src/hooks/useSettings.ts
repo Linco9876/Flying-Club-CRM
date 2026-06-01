@@ -50,17 +50,35 @@ export interface BookingRulesSettings {
 
 export interface NotificationSettings {
   id: string;
+  email_notifications_enabled: boolean;
+  sms_notifications_enabled: boolean;
+  in_app_notifications_enabled: boolean;
   booking_confirmation_enabled: boolean;
   booking_reminder_24h_enabled: boolean;
   booking_reminder_2h_enabled: boolean;
+  booking_change_notification_enabled: boolean;
   cancellation_notification_enabled: boolean;
+  waitlist_notification_enabled: boolean;
+  instructor_absence_notification_enabled: boolean;
   maintenance_alert_enabled: boolean;
+  maintenance_due_alert_days: number;
+  maintenance_due_alert_hours: number;
+  defect_report_notification_enabled: boolean;
+  safety_report_notification_enabled: boolean;
+  approval_request_notification_enabled: boolean;
   currency_expiry_alert_days: number;
+  overdue_flight_record_alert_hours: number;
+  daily_ops_digest_enabled: boolean;
+  daily_ops_digest_time: string;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
 }
 
 export interface UserPreferences {
   id?: string;
   user_id: string;
+  preferences?: Record<string, unknown>;
   email_notifications: boolean;
   sms_notifications: boolean;
   booking_reminders: boolean;
@@ -76,6 +94,25 @@ export interface UserPreferences {
   show_recent_activity: boolean;
   compact_view: boolean;
 }
+
+export const defaultUserPreferences = (userId: string): Omit<UserPreferences, 'id'> => ({
+  user_id: userId,
+  email_notifications: true,
+  sms_notifications: false,
+  booking_reminders: true,
+  currency_alerts: true,
+  maintenance_alerts: true,
+  timezone: 'Australia/Melbourne',
+  date_format: 'dd/MM/yyyy',
+  time_format: '24h',
+  default_calendar_view: 'day',
+  theme: 'light',
+  show_progress_dashboard: true,
+  show_upcoming_bookings: true,
+  show_recent_activity: true,
+  compact_view: false,
+  preferences: {},
+});
 
 export interface PortalUxSettings {
   id: string;
@@ -393,6 +430,32 @@ export const useNotificationSettings = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const defaultNotificationSettings: Omit<NotificationSettings, 'id'> = {
+    email_notifications_enabled: true,
+    sms_notifications_enabled: false,
+    in_app_notifications_enabled: true,
+    booking_confirmation_enabled: true,
+    booking_reminder_24h_enabled: true,
+    booking_reminder_2h_enabled: true,
+    booking_change_notification_enabled: true,
+    cancellation_notification_enabled: true,
+    waitlist_notification_enabled: true,
+    instructor_absence_notification_enabled: true,
+    maintenance_alert_enabled: true,
+    maintenance_due_alert_days: 14,
+    maintenance_due_alert_hours: 10,
+    defect_report_notification_enabled: true,
+    safety_report_notification_enabled: true,
+    approval_request_notification_enabled: true,
+    currency_expiry_alert_days: 30,
+    overdue_flight_record_alert_hours: 24,
+    daily_ops_digest_enabled: false,
+    daily_ops_digest_time: '07:00',
+    quiet_hours_enabled: false,
+    quiet_hours_start: '20:00',
+    quiet_hours_end: '07:00',
+  };
+
   const fetchSettings = async () => {
     try {
       const { data, error } = await supabase
@@ -401,7 +464,7 @@ export const useNotificationSettings = () => {
         .maybeSingle();
 
       if (error) throw error;
-      setSettings(data);
+      setSettings(data ? { ...defaultNotificationSettings, ...data } : null);
     } catch (err: any) {
       setError(err.message);
       toast.error('Failed to load notification settings');
@@ -415,31 +478,47 @@ export const useNotificationSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<NotificationSettings>) => {
-    if (!settings) return;
-
     try {
       const { data: userData } = await supabase.auth.getUser();
+      const payload = {
+        ...defaultNotificationSettings,
+        ...updates,
+        updated_at: new Date().toISOString(),
+        updated_by: userData.user?.id
+      };
 
-      const { error } = await supabase
-        .from('notification_settings')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-          updated_by: userData.user?.id
-        })
-        .eq('id', settings.id);
+      if (!settings?.id) {
+        const { error: insertError } = await supabase
+          .from('notification_settings')
+          .insert(payload);
 
-      if (error) throw error;
+        if (insertError) throw insertError;
+      } else {
+        const { error } = await supabase
+          .from('notification_settings')
+          .update(payload)
+          .eq('id', settings.id);
+
+        if (error) throw error;
+      }
 
       await fetchSettings();
+      window.dispatchEvent(new Event('notification-settings-updated'));
       toast.success('Notification settings updated successfully');
     } catch (err: any) {
-      toast.error('Failed to update notification settings');
+      console.error('Failed to update notification settings:', err);
+      toast.error(`Failed to update notification settings: ${err.message || 'Unknown error'}`);
       throw err;
     }
   };
 
-  return { settings, loading, error, updateSettings, refetch: fetchSettings };
+  return {
+    settings: settings ?? ({ id: '', ...defaultNotificationSettings } as NotificationSettings),
+    loading,
+    error,
+    updateSettings,
+    refetch: fetchSettings
+  };
 };
 
 export const useUserPreferences = (userId: string) => {
@@ -447,8 +526,41 @@ export const useUserPreferences = (userId: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const normalizePreferences = (data: any): UserPreferences => {
+    const jsonPreferences = data?.preferences && typeof data.preferences === 'object' ? data.preferences : {};
+    const defaults = defaultUserPreferences(data?.user_id || userId);
+
+    return {
+      ...defaults,
+      ...jsonPreferences,
+      ...data,
+      email_notifications: data?.email_notifications ?? jsonPreferences.email_notifications ?? defaults.email_notifications,
+      sms_notifications: data?.sms_notifications ?? jsonPreferences.sms_notifications ?? defaults.sms_notifications,
+      booking_reminders: data?.booking_reminders ?? jsonPreferences.booking_reminders ?? defaults.booking_reminders,
+      currency_alerts: data?.currency_alerts ?? jsonPreferences.currency_alerts ?? defaults.currency_alerts,
+      maintenance_alerts: data?.maintenance_alerts ?? jsonPreferences.maintenance_alerts ?? defaults.maintenance_alerts,
+      timezone: data?.timezone ?? jsonPreferences.timezone ?? defaults.timezone,
+      date_format: data?.date_format ?? jsonPreferences.date_format ?? defaults.date_format,
+      time_format: data?.time_format ?? jsonPreferences.time_format ?? defaults.time_format,
+      default_calendar_view: data?.default_calendar_view ?? jsonPreferences.default_calendar_view ?? defaults.default_calendar_view,
+      theme: data?.theme ?? jsonPreferences.theme ?? defaults.theme,
+      show_progress_dashboard: data?.show_progress_dashboard ?? jsonPreferences.show_progress_dashboard ?? defaults.show_progress_dashboard,
+      show_upcoming_bookings: data?.show_upcoming_bookings ?? jsonPreferences.show_upcoming_bookings ?? defaults.show_upcoming_bookings,
+      show_recent_activity: data?.show_recent_activity ?? jsonPreferences.show_recent_activity ?? defaults.show_recent_activity,
+      compact_view: data?.compact_view ?? jsonPreferences.compact_view ?? defaults.compact_view,
+      preferences: jsonPreferences,
+    };
+  };
+
   const fetchPreferences = async () => {
+    if (!userId) {
+      setPreferences(null);
+      setLoading(false);
+      return;
+    }
+
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('user_preferences')
         .select('*')
@@ -458,35 +570,20 @@ export const useUserPreferences = (userId: string) => {
       if (error) throw error;
 
       if (!data) {
-        const defaultPreferences: Omit<UserPreferences, 'id'> = {
-          user_id: userId,
-          email_notifications: true,
-          sms_notifications: false,
-          booking_reminders: true,
-          currency_alerts: true,
-          maintenance_alerts: true,
-          timezone: 'Australia/Melbourne',
-          date_format: 'dd/MM/yyyy',
-          time_format: '24h',
-          default_calendar_view: 'day',
-          theme: 'light',
-          show_progress_dashboard: true,
-          show_upcoming_bookings: true,
-          show_recent_activity: true,
-          compact_view: false
-        };
+        const defaultPreferences = defaultUserPreferences(userId);
 
         const { data: newData, error: insertError } = await supabase
           .from('user_preferences')
-          .insert(defaultPreferences)
+          .upsert(defaultPreferences, { onConflict: 'user_id' })
           .select()
           .single();
 
         if (insertError) throw insertError;
-        setPreferences(newData);
+        setPreferences(normalizePreferences(newData));
       } else {
-        setPreferences(data);
+        setPreferences(normalizePreferences(data));
       }
+      setError(null);
     } catch (err: any) {
       setError(err.message);
       toast.error('Failed to load user preferences');
@@ -502,26 +599,56 @@ export const useUserPreferences = (userId: string) => {
   }, [userId]);
 
   const updatePreferences = async (updates: Partial<UserPreferences>) => {
-    if (!preferences) return;
+    if (!userId) return;
 
     try {
+      const nextPreferences = {
+        ...defaultUserPreferences(userId),
+        ...(preferences || {}),
+        ...updates,
+      };
+      delete (nextPreferences as any).id;
+
       const { error } = await supabase
         .from('user_preferences')
-        .update({
-          ...updates,
+        .upsert({
+          ...nextPreferences,
+          preferences: {
+            email_notifications: nextPreferences.email_notifications,
+            sms_notifications: nextPreferences.sms_notifications,
+            booking_reminders: nextPreferences.booking_reminders,
+            currency_alerts: nextPreferences.currency_alerts,
+            maintenance_alerts: nextPreferences.maintenance_alerts,
+            timezone: nextPreferences.timezone,
+            date_format: nextPreferences.date_format,
+            time_format: nextPreferences.time_format,
+            default_calendar_view: nextPreferences.default_calendar_view,
+            theme: nextPreferences.theme,
+            show_progress_dashboard: nextPreferences.show_progress_dashboard,
+            show_upcoming_bookings: nextPreferences.show_upcoming_bookings,
+            show_recent_activity: nextPreferences.show_recent_activity,
+            compact_view: nextPreferences.compact_view,
+          },
           updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId);
+        }, { onConflict: 'user_id' });
 
       if (error) throw error;
 
       await fetchPreferences();
+      window.dispatchEvent(new Event('user-preferences-updated'));
       toast.success('Preferences updated successfully');
     } catch (err: any) {
-      toast.error('Failed to update preferences');
+      console.error('Failed to update preferences:', err);
+      toast.error(`Failed to update preferences: ${err.message || 'Unknown error'}`);
       throw err;
     }
   };
 
-  return { preferences, loading, error, updatePreferences, refetch: fetchPreferences };
+  return {
+    preferences,
+    loading,
+    error,
+    updatePreferences,
+    refetch: fetchPreferences
+  };
 };

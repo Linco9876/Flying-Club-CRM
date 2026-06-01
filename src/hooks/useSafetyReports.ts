@@ -53,7 +53,7 @@ export const useSafetyReports = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setReports((data || []).map((report: any) => ({
+      const mappedReports = (data || []).map((report: any) => ({
         id: report.id,
         reporterId: report.reporter_id,
         reporterName: report.reporter?.name || 'Unknown',
@@ -70,7 +70,15 @@ export const useSafetyReports = () => {
         assignedTo: report.assigned_to || undefined,
         createdAt: new Date(report.created_at),
         updatedAt: new Date(report.updated_at)
-      })));
+      }));
+
+      const visibleReports = user?.role === 'student' || user?.role === 'pilot'
+        ? mappedReports.filter((report: SafetyReport) =>
+            report.reporterId === user.id || report.involvedUserIds.includes(user.id)
+          )
+        : mappedReports;
+
+      setReports(visibleReports);
     } catch (error) {
       console.error('Error fetching safety reports:', error);
       toast.error('Failed to load safety reports');

@@ -15,6 +15,8 @@ export const TimeSelect: React.FC<TimeSelectProps> = ({
   className = '',
   placeholder
 }) => {
+  const normalizedValue = value ? value.slice(0, 5) : '';
+
   const generateTimeOptions = () => {
     const times: string[] = [];
     for (let hour = 0; hour < 24; hour++) {
@@ -30,7 +32,7 @@ export const TimeSelect: React.FC<TimeSelectProps> = ({
 
   return (
     <select
-      value={value}
+      value={normalizedValue}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
       className={`px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 ${className}`}

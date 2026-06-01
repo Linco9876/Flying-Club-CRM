@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { can, Action } from '../../utils/rbac';
+import { can, Action, getAuthorizedMenuItems } from '../../utils/rbac';
 import { AlertTriangle, Home, LogOut } from 'lucide-react';
 
 interface RouteGuardProps {
@@ -19,6 +19,8 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
 }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const fallbackView = getAuthorizedMenuItems(user)[0]?.id || 'dashboard';
+  const fallbackPath = fallbackView === 'dashboard' ? '/' : `/${fallbackView.replace('mylogbook', 'my-logbook')}`;
 
   if (!can(user, requiredAction, resource)) {
     if (fallback) {
@@ -45,11 +47,11 @@ export const RouteGuard: React.FC<RouteGuardProps> = ({
 
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate(fallbackPath, { replace: true })}
               className="flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Home className="h-4 w-4" />
-              <span>Go to Dashboard</span>
+              <span>Go to Allowed Page</span>
             </button>
             <button
               onClick={logout}

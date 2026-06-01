@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 
 const AVAILABILITY_UPDATED_EVENT = 'instructor-availability-updated';
 
+const normalizeTime = (time?: string | null) => time ? time.slice(0, 5) : undefined;
+
 export interface WeeklySchedule {
   id: string;
   userId: string;
@@ -63,10 +65,10 @@ export const useInstructorAvailability = (instructorId?: string) => {
         id: s.id,
         userId: s.user_id || s.instructor_id,
         dayOfWeek: s.day_of_week,
-        startTime: s.start_time,
-        endTime: s.end_time,
-        afternoonStartTime: s.afternoon_start_time || s.start_time_2,
-        afternoonEndTime: s.afternoon_end_time || s.end_time_2,
+        startTime: normalizeTime(s.start_time) || '09:00',
+        endTime: normalizeTime(s.end_time) || '17:00',
+        afternoonStartTime: normalizeTime(s.afternoon_start_time || s.start_time_2),
+        afternoonEndTime: normalizeTime(s.afternoon_end_time || s.end_time_2),
         isAvailable: s.is_available
       }));
 
@@ -94,8 +96,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
         userId: a.user_id || a.instructor_id,
         startDate: a.start_date,
         endDate: a.end_date,
-        startTime: a.start_time,
-        endTime: a.end_time,
+        startTime: normalizeTime(a.start_time),
+        endTime: normalizeTime(a.end_time),
         reason: a.reason
       }));
 
@@ -123,10 +125,10 @@ export const useInstructorAvailability = (instructorId?: string) => {
         userId: c.user_id || c.instructor_id,
         effectiveFrom: c.effective_from || c.change_date,
         dayOfWeek: c.day_of_week,
-        startTime: c.start_time,
-        endTime: c.end_time,
-        afternoonStartTime: c.afternoon_start_time || c.start_time_2,
-        afternoonEndTime: c.afternoon_end_time || c.end_time_2,
+        startTime: normalizeTime(c.start_time) || '09:00',
+        endTime: normalizeTime(c.end_time) || '17:00',
+        afternoonStartTime: normalizeTime(c.afternoon_start_time || c.start_time_2),
+        afternoonEndTime: normalizeTime(c.afternoon_end_time || c.end_time_2),
         isAvailable: c.is_available
       }));
 

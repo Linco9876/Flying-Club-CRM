@@ -118,6 +118,12 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       toast.error('Payment type is required');
       return;
     }
+    const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
+    const isStudentOnlyUser = userRoles.includes('student') && !userRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
+    if (isStudentOnlyUser && !formData.instructorId) {
+      toast.error('Students need an instructor assigned. Pilots can book aircraft solo.');
+      return;
+    }
 
     const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
     if (selectedAircraft && selectedAircraft.status !== 'serviceable') {
@@ -134,10 +140,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
 
     const durationHours = (endDateTime.getTime() - startDateTime.getTime()) / (60 * 60 * 1000);
-    if (!isEdit && bookingRules?.prevent_past_bookings && startDateTime.getTime() < Date.now()) {
-      toast.error('Bookings cannot be created in the past');
-      return;
-    }
     if (bookingRules?.enforce_max_duration && durationHours > bookingRules.max_booking_duration_hours) {
       toast.error(`Bookings cannot be longer than ${bookingRules.max_booking_duration_hours} hours`);
       return;
@@ -159,6 +161,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const availableAircraft = aircraft.filter(a => a.status === 'serviceable');
   const instructors = getInstructors();
   const userRole = user?.role || 'student';
+  const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
+  const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
   const isLoading = aircraftLoading || usersLoading;
   const parseHour = (time: string | undefined, fallback: number, roundUp = false) => {
     if (!time) return fallback;
@@ -314,15 +318,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             {isFieldVisible('instructor', userRole) && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
-                Instructor {isFieldRequired('instructor', userRole) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
+                Instructor {(isFieldRequired('instructor', userRole) || isStudentOnlyUser) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
               </label>
               <select
                 value={formData.instructorId}
                 onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('instructor', userRole)}
+                required={isFieldRequired('instructor', userRole) || isStudentOnlyUser}
               >
-                <option value="">Solo flight</option>
+                <option value="">{isStudentOnlyUser ? 'Select instructor' : 'Solo flight'}</option>
                 {instructors.map(instructor => (
                   <option key={instructor.id} value={instructor.id}>
                     {instructor.name}

@@ -213,8 +213,12 @@ export const useBillingAccounts = () => {
     }
   };
 
-  const addTopUp = async (userId: string, amount: number, description: string, paymentMethodId?: string) => {
+  const addTopUp = async (userId: string, amount: number, description: string, paymentMethodId?: string, transactionDate?: string) => {
     try {
+      const createdAt = transactionDate
+        ? new Date(`${transactionDate}T12:00:00`).toISOString()
+        : new Date().toISOString();
+
       // Insert as pending — balance is NOT applied until an admin verifies the payment
       const { error: txError } = await supabase
         .from('account_transactions')
@@ -224,6 +228,7 @@ export const useBillingAccounts = () => {
           amount,
           description: description || 'Account top-up',
           payment_method_id: paymentMethodId ?? null,
+          created_at: createdAt,
           balance_after: null, // set when verified
           verified_status: 'pending',
         });

@@ -14,15 +14,18 @@ export const useBookings = () => {
   const { settings: bookingRules } = useBookingRulesSettings();
 
   const isStudentOrPilot = user?.role === 'student' || user?.role === 'pilot';
+  const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
+  const isStudentOnlyUser = userRoles.includes('student') && !userRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
+  const notifyCalendarChanged = () => {
+    window.dispatchEvent(new Event('calendar-data-changed'));
+  };
 
-  const validateTimingRules = (startTime: Date, endTime: Date, checkPast = true) => {
+  const validateTimingRules = (startTime: Date, endTime: Date) => {
     const now = Date.now();
     const durationHours = (endTime.getTime() - startTime.getTime()) / (60 * 60 * 1000);
+    const isPastBooking = startTime.getTime() < now;
 
     if (endTime <= startTime) throw new Error('End time must be after start time');
-    if (checkPast && bookingRules?.prevent_past_bookings && startTime.getTime() < now) {
-      throw new Error('Bookings cannot be created in the past');
-    }
     if (
       bookingRules?.enforce_max_duration &&
       durationHours > bookingRules.max_booking_duration_hours
@@ -31,6 +34,7 @@ export const useBookings = () => {
     }
     if (!isStudentOrPilot) return;
     if (
+      !isPastBooking &&
       bookingRules?.enforce_min_notice &&
       startTime.getTime() < now + bookingRules.min_booking_notice_hours * 60 * 60 * 1000
     ) {
@@ -204,6 +208,9 @@ export const useBookings = () => {
       }
 
       validateTimingRules(bookingData.startTime, bookingData.endTime);
+      if (bookingData.startTime.getTime() < Date.now()) {
+        toast('Warning: this booking is being created in the past.');
+      }
 
       // Validate required fields
       if (!bookingData.studentId || bookingData.studentId.trim() === '') {
@@ -213,8 +220,12 @@ export const useBookings = () => {
         throw new Error('Aircraft is required');
       }
 
-      // Students always need approval; optionally hold staff-created solo bookings too.
-      let needsApproval = isStudentOrPilot ||
+      if (isStudentOnlyUser && !bookingData.instructorId) {
+        throw new Error('Students need an instructor assigned before booking an aircraft solo. Pilots can book solo.');
+      }
+
+      // Student-only users need approval; pilots can hire without instructor approval.
+      let needsApproval = isStudentOnlyUser ||
         Boolean(bookingRules?.require_instructor_approval && !bookingData.instructorId);
 
       const conflicts = findConfirmedConflicts(bookingData);
@@ -275,6 +286,7 @@ export const useBookings = () => {
       }
 
       await fetchBookings();
+      notifyCalendarChanged();
 
       if (isWaitlisted) {
         toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
@@ -335,7 +347,7 @@ export const useBookings = () => {
         bookingData.startTime !== undefined ||
         bookingData.endTime !== undefined
       )) {
-        validateTimingRules(new Date(candidateBooking.startTime), new Date(candidateBooking.endTime), false);
+        validateTimingRules(new Date(candidateBooking.startTime), new Date(candidateBooking.endTime));
       }
       if (isWaitlisted && bookingRules?.allow_double_booking === false) {
         throw new Error('This time overlaps an existing booking and waiting-list overlaps are disabled');
@@ -362,6 +374,7 @@ export const useBookings = () => {
       }
 
       await fetchBookings();
+      notifyCalendarChanged();
       if (isWaitlisted) {
         toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
       } else if (!silent) {
@@ -402,6 +415,7 @@ export const useBookings = () => {
 
       await promoteAvailableWaitlistedBookings();
       await fetchBookings();
+      notifyCalendarChanged();
       toast.success('Booking deleted successfully');
     } catch (err) {
       console.error('Error deleting booking:', err);
@@ -429,6 +443,7 @@ export const useBookings = () => {
       if (error) throw error;
 
       await fetchBookings();
+      notifyCalendarChanged();
       toast.success('Flight log added successfully');
     } catch (err) {
       console.error('Error adding flight log:', err);
@@ -444,10 +459,44 @@ export const useBookings = () => {
         throw new Error('User not authenticated');
       }
 
+      const { data: activeBookings, error: activeBookingsError } = await supabase
+        .from('bookings')
+        .select('*')
+        .is('deleted_at', null);
+
+      if (activeBookingsError) throw activeBookingsError;
+
+      const bookingToApprove = activeBookings?.find((booking: any) => booking.id === bookingId);
+      if (!bookingToApprove) {
+        throw new Error('Booking could not be found');
+      }
+
+      const conflicts = (activeBookings || []).filter((existing: any) =>
+        existing.id !== bookingId &&
+        !existing.has_conflict &&
+        existing.status === 'confirmed' &&
+        timeRangesOverlap(
+          bookingToApprove.start_time,
+          bookingToApprove.end_time,
+          existing.start_time,
+          existing.end_time
+        ) &&
+        (
+          existing.aircraft_id === bookingToApprove.aircraft_id ||
+          Boolean(bookingToApprove.instructor_id && existing.instructor_id === bookingToApprove.instructor_id)
+        )
+      );
+
+      const isWaitlisted = conflicts.length > 0;
+      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
+        throw new Error('This booking overlaps an existing booking and waiting-list overlaps are disabled');
+      }
+
       const { error } = await supabase
         .from('bookings')
         .update({
           status: 'confirmed',
+          has_conflict: isWaitlisted,
           approved_by: userData.user.id,
           approved_at: new Date().toISOString()
         })
@@ -463,10 +512,15 @@ export const useBookings = () => {
         .eq('type', 'booking_approval');
 
       await fetchBookings();
-      toast.success('Booking approved successfully');
+      notifyCalendarChanged();
+      if (isWaitlisted) {
+        toast('Booking approved and placed on the waiting list because it overlaps an existing booking.');
+      } else {
+        toast.success('Booking approved successfully');
+      }
     } catch (err) {
       console.error('Error approving booking:', err);
-      toast.error('Failed to approve booking');
+      toast.error(err instanceof Error ? err.message : 'Failed to approve booking');
       throw err;
     }
   };
@@ -491,6 +545,7 @@ export const useBookings = () => {
         .eq('type', 'booking_approval');
 
       await fetchBookings();
+      notifyCalendarChanged();
       toast.success('Booking rejected');
     } catch (err) {
       console.error('Error rejecting booking:', err);
@@ -501,6 +556,11 @@ export const useBookings = () => {
 
   useEffect(() => {
     fetchBookings();
+
+    const handleCalendarDataChanged = () => {
+      fetchBookings();
+    };
+    window.addEventListener('calendar-data-changed', handleCalendarDataChanged);
 
     // Debounce rapid back-to-back realtime events (e.g. insert + update on same row)
     let refetchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -573,6 +633,7 @@ export const useBookings = () => {
 
     return () => {
       if (refetchTimer) clearTimeout(refetchTimer);
+      window.removeEventListener('calendar-data-changed', handleCalendarDataChanged);
       bookingsSubscription.unsubscribe();
       flightLogsSubscription.unsubscribe();
     };

@@ -29,6 +29,11 @@ interface FlightTolerance {
   }[];
 }
 
+const fromDateInputValue = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
 export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
   isOpen,
   onClose,
@@ -217,7 +222,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
       bookingId: booking?.id,
       studentId: formData.studentId,
       instructorId: formData.instructorId,
-      date: new Date(formData.date),
+      date: fromDateInputValue(formData.date),
       aircraftId: booking?.aircraftId || '',
       aircraftType: formData.aircraftType,
       registration: formData.aircraftRegistration,
@@ -263,7 +268,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
       bookingId: booking?.id,
       studentId: formData.studentId,
       instructorId: formData.instructorId,
-      date: new Date(formData.date),
+      date: fromDateInputValue(formData.date),
       aircraftId: booking?.aircraftId || '',
       aircraftType: formData.aircraftType,
       registration: formData.aircraftRegistration,

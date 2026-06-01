@@ -11,21 +11,106 @@ export const ResetPasswordPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isValidToken, setIsValidToken] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState('Please wait...');
+  const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+    let cancelled = false;
+    let recoveryConfirmed = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-      if (session) {
+    if (window.location.pathname !== '/reset-password') {
+      window.history.replaceState(null, '', `/reset-password${window.location.search}${window.location.hash}`);
+    }
+
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const searchParams = new URLSearchParams(window.location.search);
+    const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+    const code = searchParams.get('code') || hashParams.get('code');
+    const recoveryType = hashParams.get('type') === 'recovery' || searchParams.get('type') === 'recovery';
+    const hasRecoveryLink = recoveryType || Boolean((accessToken && refreshToken) || code);
+
+    const markValid = (email?: string | null) => {
+      if (!cancelled) {
+        recoveryConfirmed = true;
+        if (timeoutId) clearTimeout(timeoutId);
         setIsValidToken(true);
-      } else {
-        toast.error('Invalid or expired reset link');
-        setTimeout(() => navigate('/'), 3000);
+        setRecoveryEmail(email || null);
+        setVerificationMessage('Please enter your new password.');
       }
     };
 
-    checkSession();
+    const prepareRecoverySession = async () => {
+      if (!hasRecoveryLink) {
+        setVerificationMessage('This reset link is missing recovery details.');
+        return false;
+      }
+
+      setVerificationMessage('Preparing your password reset session...');
+
+      if (accessToken && refreshToken) {
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (error) throw error;
+        if (data.session) {
+          markValid(data.session.user.email);
+          return true;
+        }
+      }
+
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (error) throw error;
+        if (data.session) {
+          markValid(data.session.user.email);
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY' && session) {
+        markValid(session.user.email);
+      }
+    });
+
+    prepareRecoverySession().then((prepared) => {
+      if (prepared || cancelled) return;
+      setVerificationMessage('Waiting for the reset link session...');
+    }).catch((error) => {
+      console.error('Password recovery session error:', error);
+      if (!cancelled) {
+        toast.error(error.message || 'Invalid or expired reset link');
+        navigate('/', { replace: true });
+      }
+    });
+
+    timeoutId = setTimeout(async () => {
+      if (cancelled || recoveryConfirmed) return;
+      toast.error('Invalid or expired reset link');
+      navigate('/', { replace: true });
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      subscription.unsubscribe();
+    };
   }, [navigate]);
+
+  useEffect(() => {
+    if (!isValidToken) return;
+    if (window.location.hash || window.location.search) {
+      window.history.replaceState(null, '', '/reset-password');
+    }
+  }, [isValidToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +128,10 @@ export const ResetPasswordPage: React.FC = () => {
     setIsLoading(true);
 
     try {
+      if (recoveryEmail) {
+        sessionStorage.setItem('lastPasswordResetEmail', recoveryEmail);
+      }
+
       const { error } = await supabase.auth.updateUser({
         password: password
       });
@@ -54,11 +143,22 @@ export const ResetPasswordPage: React.FC = () => {
       await supabase.auth.signOut();
 
       setTimeout(() => {
-        navigate('/');
-      }, 2000);
+        navigate('/', { replace: true });
+      }, 1200);
     } catch (error: any) {
       console.error('Password update error:', error);
-      toast.error(error.message || 'Failed to update password');
+      const message = error.message || 'Failed to update password';
+
+      if (message.toLowerCase().includes('same as the old')) {
+        toast.success('That password is already current for this account. Redirecting to login...');
+        await supabase.auth.signOut();
+        setTimeout(() => {
+          navigate('/', { replace: true });
+        }, 1200);
+        return;
+      }
+
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
@@ -73,7 +173,7 @@ export const ResetPasswordPage: React.FC = () => {
               <Plane className="h-8 w-8 text-white" />
             </div>
             <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Verifying Reset Link</h2>
-            <p className="text-gray-600">Please wait...</p>
+            <p className="text-gray-600">{verificationMessage}</p>
           </div>
         </div>
       </div>
@@ -88,7 +188,9 @@ export const ResetPasswordPage: React.FC = () => {
             <Plane className="h-8 w-8 text-white" />
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Set New Password</h2>
-          <p className="text-gray-600">Enter your new password below</p>
+          <p className="text-gray-600">
+            {recoveryEmail ? `Enter a new password for ${recoveryEmail}` : 'Enter your new password below'}
+          </p>
         </div>
 
         <div className="bg-white rounded-lg shadow-xl p-8">

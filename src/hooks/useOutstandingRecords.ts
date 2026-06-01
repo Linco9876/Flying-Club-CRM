@@ -38,7 +38,7 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
         .select('id, booking_id, aircraft_id, student_id, instructor_id, start_time, end_time, dual_time, solo_time, training_record_status')
         .eq('training_record_status', 'pending')
         .not('instructor_id', 'is', null)
-        .order('start_time', { ascending: false });
+        .order('start_time', { ascending: true });
 
       if (!fetchAll && instructorId) {
         query = query.eq('instructor_id', instructorId);

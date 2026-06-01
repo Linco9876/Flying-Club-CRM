@@ -14,12 +14,12 @@ import { ResetPasswordPage } from './components/Auth/ResetPasswordPage';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { Calendar } from './components/Calendar/Calendar';
 import BookingForm from './components/Bookings/BookingForm';
-import { BookingsList } from './components/Bookings/BookingsList';
 import { StudentList } from './components/Students/StudentList';
 import { StudentProfilePage } from './components/Students/StudentProfilePage';
 import { MyLogbookPage } from './components/Students/MyLogbookPage';
 import { AircraftList } from './components/Aircraft/AircraftList';
 import { AircraftFlightLogs } from './components/Aircraft/AircraftFlightLogs';
+import { AircraftProfilePage } from './components/Aircraft/AircraftProfilePage';
 import { MaintenanceBoard } from './components/Maintenance/MaintenanceBoard';
 import { BillingDashboard } from './components/Billing/BillingDashboard';
 import { ReportsDashboard } from './components/Reports/ReportsDashboard';
@@ -28,12 +28,15 @@ import { TrainingRecordForm } from './components/Training/TrainingRecordForm';
 import { TrainingCourseCatalog } from './components/Training/TrainingCourseCatalog';
 import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuilder';
 import { OutstandingRecordsTab } from './components/Training/OutstandingRecordsTab';
+import { StudentAcknowledgementModal } from './components/Training/StudentAcknowledgementModal';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import { format } from 'date-fns';
 import { usePortalUxSettings } from './hooks/useSettings';
+import { can, getAuthorizedMenuItems } from './utils/rbac';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
+  const location = useLocation();
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [showTrainingRecordForm, setShowTrainingRecordForm] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
@@ -43,6 +46,14 @@ const AppContent: React.FC = () => {
     startTime?: string;
     endTime?: string;
   }>({});
+  const isPasswordRecovery =
+    location.pathname === '/reset-password' ||
+    new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'recovery' ||
+    new URLSearchParams(location.search).get('type') === 'recovery';
+
+  if (isPasswordRecovery) {
+    return <ResetPasswordPage />;
+  }
 
   if (isLoading) {
     return (
@@ -101,7 +112,7 @@ const AuthenticatedApp: React.FC<{
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking } = useBookings();
+  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings();
   const { settings: portalSettings } = usePortalUxSettings();
 
   React.useEffect(() => {
@@ -217,6 +228,25 @@ const AuthenticatedApp: React.FC<{
     setShowTrainingRecordForm(true);
   };
   const activeView = getViewForPath(location.pathname);
+  const requiredAction = getRequiredActionForView(activeView);
+  const requiredResource = getRequiredResourceForView(activeView);
+
+  React.useEffect(() => {
+    if (location.pathname.startsWith('/bookings')) {
+      navigate('/calendar?view=list', { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
+  React.useEffect(() => {
+    if (can(user, requiredAction, requiredResource)) return;
+
+    const firstAllowedView = getAuthorizedMenuItems(user)[0]?.id || 'dashboard';
+    const firstAllowedPath = getPathForView(firstAllowedView);
+
+    if (location.pathname !== firstAllowedPath) {
+      navigate(firstAllowedPath, { replace: true });
+    }
+  }, [activeView, location.pathname, navigate, requiredAction, requiredResource, user]);
 
   const renderActiveView = (view: string) => {
     switch (view) {
@@ -247,33 +277,7 @@ const AuthenticatedApp: React.FC<{
               throw error;
             }
           }}
-        />;
-      case 'bookings':
-        return <BookingsList
-          bookings={bookings}
-          onUpdateBooking={handleUpdateBooking}
-          onDeleteBooking={async (bookingId) => {
-            try {
-              await deleteBooking(bookingId);
-            } catch (error) {
-              console.error('Error deleting booking:', error);
-            }
-          }}
-          onApproveBooking={async (bookingId) => {
-            try {
-              await approveBooking(bookingId);
-            } catch (error) {
-              console.error('Error approving booking:', error);
-            }
-          }}
-          onRejectBooking={async (bookingId) => {
-            try {
-              await rejectBooking(bookingId);
-            } catch (error) {
-              console.error('Error rejecting booking:', error);
-            }
-          }}
-          onOpenTrainingRecord={handleOpenTrainingRecord}
+          onRefresh={refetchBookings}
         />;
       case 'students':
         return <StudentList />;
@@ -302,12 +306,7 @@ const AuthenticatedApp: React.FC<{
       case 'syllabus-management':
         return <TrainingModuleBuilder />;
       case 'profile':
-        return <StudentProfilePage
-          onOpenTrainingRecord={(booking) => {
-            setSelectedBookingForRecord(booking);
-            setShowTrainingRecordForm(true);
-          }}
-        />;
+        return <StudentProfilePage />;
       case 'mylogbook':
         return <MyLogbookPage />;
       case 'settings':
@@ -327,19 +326,14 @@ const AuthenticatedApp: React.FC<{
             <div className="flex lg:ml-0 ml-0">
               <Sidebar activeView="students" onViewChange={handleViewChange} />
               <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
-                <StudentProfilePage
-                  onOpenTrainingRecord={(booking) => {
-                    setSelectedBookingForRecord(booking);
-                    setShowTrainingRecordForm(true);
-                  }}
-                />
+                <StudentProfilePage />
               </main>
             </div>
           </div>
         </RouteGuard>
       } />
       <Route path="/aircraft/:aircraftId/logs" element={
-        <RouteGuard requiredAction="view-aircraft">
+        <RouteGuard requiredAction="view-maintenance">
           <div className="min-h-screen bg-gray-50">
             <Header />
             <div className="flex lg:ml-0 ml-0">
@@ -352,7 +346,7 @@ const AuthenticatedApp: React.FC<{
         </RouteGuard>
       } />
       <Route path="*" element={
-        <RouteGuard requiredAction={getRequiredActionForView(activeView)} resource={getRequiredResourceForView(activeView)}>
+        <RouteGuard requiredAction={requiredAction} resource={requiredResource}>
           <div className="min-h-screen bg-gray-50">
             <Header />
             <div className="flex lg:ml-0 ml-0">
@@ -386,6 +380,21 @@ const AuthenticatedApp: React.FC<{
               onSubmit={handleTrainingRecordSubmit}
               booking={selectedBookingForRecord || undefined}
             />
+
+            <StudentAcknowledgementModal />
+          </div>
+        </RouteGuard>
+      } />
+      <Route path="/aircraft/:aircraftId" element={
+        <RouteGuard requiredAction="view-maintenance">
+          <div className="min-h-screen bg-gray-50">
+            <Header />
+            <div className="flex lg:ml-0 ml-0">
+              <Sidebar activeView="aircraft" onViewChange={handleViewChange} />
+              <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
+                <AircraftProfilePage />
+              </main>
+            </div>
           </div>
         </RouteGuard>
       } />
@@ -396,7 +405,6 @@ const AuthenticatedApp: React.FC<{
 const viewPathMap: Record<string, string> = {
   dashboard: '/',
   calendar: '/calendar',
-  bookings: '/bookings',
   students: '/students',
   aircraft: '/aircraft',
   maintenance: '/maintenance',
@@ -420,6 +428,7 @@ const getPathForView = (view: string) => viewPathMap[view] || '/';
 
 const getViewForPath = (pathname: string) => {
   if (pathViewMap[pathname]) return pathViewMap[pathname];
+  if (pathname.startsWith('/bookings')) return 'calendar';
   if (pathname.startsWith('/students')) return 'students';
   if (pathname.startsWith('/aircraft')) return 'aircraft';
   if (pathname.startsWith('/training/outstanding-records')) return 'outstanding-records';
@@ -433,13 +442,12 @@ const getRequiredActionForView = (view: string) => {
   const actionMap: Record<string, any> = {
     'dashboard': 'view-dashboard',
     'calendar': 'view-calendar',
-    'bookings': 'view-bookings',
     'students': 'view-students',
     'aircraft': 'view-aircraft',
     'maintenance': 'view-maintenance',
     'training': 'view-training',
     'outstanding-records': 'view-outstanding-records',
-    'syllabus-management': 'view-training',
+    'syllabus-management': 'edit-settings',
     'billing': 'view-billing',
     'reports': 'view-reports',
     'safety': 'view-safety',
@@ -452,7 +460,6 @@ const getRequiredActionForView = (view: string) => {
 
 const getRequiredResourceForView = (view: string) => {
   const resourceMap: Record<string, 'all' | 'own'> = {
-    'bookings': 'own',
     'billing': 'own',
     'profile': 'own',
     'mylogbook': 'own',
@@ -463,8 +470,9 @@ const getRequiredResourceForView = (view: string) => {
 };
 
 function App() {
+  const basename = import.meta.env.BASE_URL === '/' ? undefined : import.meta.env.BASE_URL;
   return (
-    <Router>
+    <Router basename={basename}>
       <AuthProvider>
         <TrainingModulesProvider>
           <AppContent />

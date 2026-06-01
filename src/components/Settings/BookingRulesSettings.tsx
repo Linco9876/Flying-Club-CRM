@@ -234,18 +234,11 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         <div>
           <h3 className="text-lg font-medium text-gray-900 mb-4">Booking Permissions</h3>
           <div className="space-y-4">
-            <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                id="preventPastBookings"
-                checked={formData.preventPastBookings}
-                onChange={(e) => handleInputChange('preventPastBookings', e.target.checked)}
-                disabled={!canEdit}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
-              />
-              <label htmlFor="preventPastBookings" className="text-sm text-gray-700">
-                Prevent creating bookings in the past
-              </label>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-medium text-amber-900">Past bookings are allowed</p>
+              <p className="mt-1 text-sm text-amber-800">
+                The booking form warns users when a start time is in the past, but still allows the booking to be created for backdating and admin corrections.
+              </p>
             </div>
 
             <div className="flex items-center space-x-3">

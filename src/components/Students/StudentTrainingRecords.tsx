@@ -23,6 +23,11 @@ const competenceColors: Record<string, string> = {
   '-': 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
+const fromDateOnly = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
 const StatusBadge: React.FC<{ status: TrainingRecord['status']; studentAck: boolean }> = ({ status, studentAck }) => {
   if (status === 'submitted' && !studentAck) {
     return (
@@ -284,10 +289,13 @@ export const StudentTrainingRecords: React.FC = () => {
 
       if (error) throw error;
 
-      const { data: seqData } = await supabase
-        .from('training_sequence_results')
-        .select('*')
-        .in('training_record_id', (recordsData || []).map(r => r.id));
+      const recordIds = (recordsData || []).map(r => r.id);
+      const { data: seqData } = recordIds.length > 0
+        ? await supabase
+            .from('training_sequence_results')
+            .select('*')
+            .in('training_record_id', recordIds)
+        : { data: [] };
 
       const seqMap = new Map<string, TrainingSequenceResult[]>();
       (seqData || []).forEach(sr => {
@@ -310,7 +318,7 @@ export const StudentTrainingRecords: React.FC = () => {
         flightLogId: r.flight_log_id,
         courseId: r.course_id,
         lessonId: r.lesson_id,
-        date: new Date(r.date),
+        date: fromDateOnly(r.date),
         aircraftId: r.aircraft_id,
         aircraftType: r.aircraft_type,
         registration: r.registration,
@@ -328,7 +336,7 @@ export const StudentTrainingRecords: React.FC = () => {
         studentAck: r.student_ack,
         studentAckName: r.student_ack_name,
         studentComments: r.student_comments || '',
-        instructorSignTimestamp: r.instructor_sign_timestamp ? new Date(r.instructor_sign_timestamp) : undefined,
+        instructorSignTimestamp: r.instructor_sign_timestamp ? new Date(r.instructor_sign_timestamp) : (r.created_at ? new Date(r.created_at) : undefined),
         studentAckTimestamp: r.student_ack_timestamp ? new Date(r.student_ack_timestamp) : undefined,
         attachments: r.attachments || [],
         auditLog: [],

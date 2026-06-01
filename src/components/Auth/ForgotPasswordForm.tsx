@@ -23,9 +23,10 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
     setIsLoading(true);
 
     try {
-      const redirectUrl = window.location.origin.includes('localhost')
-        ? 'http://localhost:5173/reset-password'
-        : `${window.location.origin}/reset-password`;
+      const authRedirectOrigin = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN?.trim();
+      const redirectOrigin = authRedirectOrigin || window.location.origin;
+      const basePath = authRedirectOrigin ? '/' : import.meta.env.BASE_URL;
+      const redirectUrl = `${redirectOrigin.replace(/\/$/, '')}${basePath}reset-password`;
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl

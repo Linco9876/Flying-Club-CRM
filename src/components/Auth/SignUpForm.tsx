@@ -43,7 +43,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
             phone: formData.phone || null,
             role: 'student'
           },
-          emailRedirectTo: window.location.origin
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`
         }
       });
 
@@ -73,7 +73,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
             <Plane className="h-8 w-8 text-white" />
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Create Account</h2>
-          <p className="text-gray-600">Join AeroClub Pro today</p>
+          <p className="text-gray-600">Join Bendigo Flying Club today</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-xl p-8">

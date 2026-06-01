@@ -8,6 +8,8 @@ interface BookingActionMenuProps {
   booking: Booking;
   onEdit: () => void;
   onLogFlight: () => void;
+  onEditFlightLog?: () => void;
+  onDeleteFlightLog?: () => void;
   onDelete: () => void;
   onViewTrainingRecord?: () => void;
   onApprove?: () => void;
@@ -15,6 +17,7 @@ interface BookingActionMenuProps {
   hasTrainingRecord?: boolean;
   canDelete?: boolean;
   canApprove?: boolean;
+  isFlightLogged?: boolean;
   position?: { x: number; y: number };
   onClose?: () => void;
 }
@@ -23,6 +26,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   booking,
   onEdit,
   onLogFlight,
+  onEditFlightLog,
+  onDeleteFlightLog,
   onDelete,
   onViewTrainingRecord,
   onApprove,
@@ -30,6 +35,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   hasTrainingRecord,
   canDelete = true,
   canApprove = false,
+  isFlightLogged = false,
   position,
   onClose,
 }) => {
@@ -103,21 +109,46 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
 
   const menuContent = (
     <>
-      <button
-        onClick={() => handleAction(onEdit)}
-        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
-      >
-        <Edit className="h-4 w-4" />
-        <span>Edit Booking</span>
-      </button>
+      {!isFlightLogged && (
+        <button
+          onClick={() => handleAction(onEdit)}
+          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+        >
+          <Edit className="h-4 w-4" />
+          <span>Edit Booking</span>
+        </button>
+      )}
 
-      <button
-        onClick={() => handleAction(onLogFlight)}
-        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
-      >
-        <FileText className="h-4 w-4" />
-        <span>Log Flight</span>
-      </button>
+      {isFlightLogged ? (
+        <>
+          {onEditFlightLog && (
+            <button
+              onClick={() => handleAction(onEditFlightLog)}
+              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+            >
+              <FileText className="h-4 w-4" />
+              <span>Edit Flight Log</span>
+            </button>
+          )}
+          {onDeleteFlightLog && (
+            <button
+              onClick={() => handleAction(onDeleteFlightLog)}
+              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>Delete Flight Log</span>
+            </button>
+          )}
+        </>
+      ) : (
+        <button
+          onClick={() => handleAction(onLogFlight)}
+          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+        >
+          <FileText className="h-4 w-4" />
+          <span>Log Flight</span>
+        </button>
+      )}
 
       {hasTrainingRecord && onViewTrainingRecord && (
         <button
@@ -153,7 +184,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
         </>
       )}
 
-      {canCurrentUserDelete && (
+      {canCurrentUserDelete && !isFlightLogged && (
         <>
           <div className="border-t border-gray-200 my-1"></div>
           <button

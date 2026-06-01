@@ -7,7 +7,7 @@ import { ForgotPasswordForm } from './ForgotPasswordForm';
 
 export const LoginForm: React.FC = () => {
   const { login, isLoading } = useAuth();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => sessionStorage.getItem('lastPasswordResetEmail') || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUp, setShowSignUp] = useState(false);
@@ -16,15 +16,19 @@ export const LoginForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!email || !password) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
       toast.error('Please enter both email and password');
       return;
     }
 
     try {
-      const success = await login(email, password);
-      if (!success) {
-        toast.error('Invalid email or password. Please check your credentials and try again.');
+      const result = await login(normalizedEmail, password);
+      if (!result.success) {
+        toast.error(result.error || 'Unable to sign in. Please check your details and try again.');
+      } else {
+        sessionStorage.removeItem('lastPasswordResetEmail');
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -47,11 +51,17 @@ export const LoginForm: React.FC = () => {
           <div className="mx-auto h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
             <Plane className="h-8 w-8 text-white" />
           </div>
-          <h2 className="text-3xl font-extrabold text-gray-900 mb-2">AeroClub Pro</h2>
+          <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Bendigo Flying Club</h2>
           <p className="text-gray-600">Flight Training Management System</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-xl p-8">
+          {email && sessionStorage.getItem('lastPasswordResetEmail') === email && (
+            <div className="mb-5 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+              Use the new password for <span className="font-semibold">{email}</span>.
+            </div>
+          )}
+
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">

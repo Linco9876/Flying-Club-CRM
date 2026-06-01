@@ -21,6 +21,10 @@ interface RecordFormState {
   briefingComments: string;
   flightComments: string;
   criteriaGrades: Record<string, string>;
+  isFlightReview: boolean;
+  flightReviewType: string;
+  flightReviewResult: 'pass' | 'fail' | 'not_assessed';
+  flightReviewNotes: string;
 }
 
 function emptyForm(): RecordFormState {
@@ -31,6 +35,10 @@ function emptyForm(): RecordFormState {
     briefingComments: '',
     flightComments: '',
     criteriaGrades: {},
+    isFlightReview: false,
+    flightReviewType: 'Flight Review',
+    flightReviewResult: 'not_assessed',
+    flightReviewNotes: '',
   };
 }
 
@@ -136,19 +144,15 @@ export const OutstandingRecordsTab: React.FC = () => {
     });
   }, [activeCriteria, form.criteriaGrades, selectedLesson]);
 
-  const nextLessonForRecord = trainingSettings.nextLessonRule === 'manual'
-    ? ''
-    : trainingSettings.nextLessonRule === 'always_advance'
-      ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
-      : lessonPassed
-        ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
-        : selectedLesson
-          ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
-          : '';
+  const nextLessonForRecord = lessonPassed
+    ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
+    : selectedLesson
+      ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
+      : '';
 
   function openLog(log: OutstandingFlightLog) {
     setActiveLog(log);
-    setStep('action');
+    setStep('course');
     setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
   }
 
@@ -247,7 +251,12 @@ export const OutstandingRecordsTab: React.FC = () => {
         nextLesson: nextLessonForRecord,
         status: trainingSettings.requireStudentAcknowledgement ? 'submitted' : 'locked',
         studentAck: false,
+        studentComments: '',
         attachments: [],
+        isFlightReview: form.isFlightReview,
+        flightReviewType: form.isFlightReview ? form.flightReviewType || 'Flight Review' : undefined,
+        flightReviewResult: form.isFlightReview ? form.flightReviewResult : undefined,
+        flightReviewNotes: form.isFlightReview ? form.flightReviewNotes : undefined,
       });
 
       if (trainingSettings.autoMarkFlightLogRecorded) {
@@ -293,7 +302,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   return (
     <div className="flex h-full gap-6 p-6">
       {/* Left: list of outstanding flights */}
-      <div className={`flex flex-col gap-4 ${activeLog ? 'w-1/2' : 'w-full max-w-2xl mx-auto'}`}>
+      <div className={`flex flex-col gap-4 ${activeLog ? 'w-[30%] min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Outstanding Records</h2>
@@ -399,7 +408,7 @@ export const OutstandingRecordsTab: React.FC = () => {
 
       {/* Right: record entry panel */}
       {activeLog && (
-        <div className="flex-1 min-w-0">
+        <div className="w-[70%] min-w-0">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col">
             {/* Panel header */}
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
@@ -696,6 +705,57 @@ export const OutstandingRecordsTab: React.FC = () => {
                     <p className={`mt-1 text-xs ${lessonPassed ? 'text-emerald-700' : 'text-amber-700'}`}>
                       Next lesson on record: {nextLessonForRecord || 'Not set'}
                     </p>
+                  </div>
+
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={form.isFlightReview}
+                        onChange={event => setForm(f => ({ ...f, isFlightReview: event.target.checked }))}
+                        className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm font-semibold text-orange-950">This record is a flight review / flight test</span>
+                    </label>
+                    {form.isFlightReview && (
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="block text-xs font-medium text-orange-800 mb-1">Review type</span>
+                          <input
+                            value={form.flightReviewType}
+                            onChange={event => setForm(f => ({ ...f, flightReviewType: event.target.value }))}
+                            placeholder="Flight Test, Flight Review, RPC Test"
+                            className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="block text-xs font-medium text-orange-800 mb-1">Result</span>
+                          <select
+                            value={form.flightReviewResult}
+                            onChange={event => setForm(f => ({ ...f, flightReviewResult: event.target.value as RecordFormState['flightReviewResult'] }))}
+                            className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          >
+                            <option value="not_assessed">Not assessed</option>
+                            <option value="pass">Pass - mark as pilot</option>
+                            <option value="fail">Fail</option>
+                          </select>
+                        </label>
+                        <label className="block sm:col-span-2">
+                          <span className="block text-xs font-medium text-orange-800 mb-1">Review notes</span>
+                          <textarea
+                            rows={3}
+                            value={form.flightReviewNotes}
+                            onChange={event => setForm(f => ({ ...f, flightReviewNotes: event.target.value }))}
+                            className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                          />
+                        </label>
+                        {form.flightReviewResult === 'pass' && (
+                          <p className="text-xs text-orange-800 sm:col-span-2">
+                            On submit, the student will be marked as a pilot and their flight review date will be updated.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Submit */}

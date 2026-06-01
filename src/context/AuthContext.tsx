@@ -4,7 +4,7 @@ import { User, UserRole } from '../types';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -114,6 +114,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 role: userData.role,
                 roles: userData.roles,
                 phone: userData.phone,
+                mobilePhone: userData.mobile_phone,
+                homePhone: userData.home_phone,
+                workPhone: userData.work_phone,
+                address: userData.address,
+                dateOfBirth: userData.date_of_birth ? new Date(userData.date_of_birth) : undefined,
+                emergencyContact: userData.emergency_contact_name ? {
+                  name: userData.emergency_contact_name,
+                  phone: userData.emergency_contact_phone || '',
+                  relationship: userData.emergency_contact_relationship || ''
+                } : undefined,
+                preferredAircraftId: userData.preferred_aircraft_id,
                 avatar: userData.avatar_url
               });
             } else {
@@ -175,6 +186,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   role: userData.role,
                   roles: userData.roles,
                   phone: userData.phone,
+                  mobilePhone: userData.mobile_phone,
+                  homePhone: userData.home_phone,
+                  workPhone: userData.work_phone,
+                  address: userData.address,
+                  dateOfBirth: userData.date_of_birth ? new Date(userData.date_of_birth) : undefined,
+                  emergencyContact: userData.emergency_contact_name ? {
+                    name: userData.emergency_contact_name,
+                    phone: userData.emergency_contact_phone || '',
+                    relationship: userData.emergency_contact_relationship || ''
+                  } : undefined,
+                  preferredAircraftId: userData.preferred_aircraft_id,
                   avatar: userData.avatar_url
                 };
               });
@@ -193,18 +215,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim().toLowerCase(),
         password
       });
 
       if (error) {
         console.error('Login error:', error.message);
         setIsLoading(false);
-        return false;
+        return { success: false, error: 'Invalid email or password. Please check your credentials and try again.' };
       }
 
       if (data.user) {
@@ -219,30 +241,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               role: userData.role,
               roles: userData.roles,
               phone: userData.phone,
+              mobilePhone: userData.mobile_phone,
+              homePhone: userData.home_phone,
+              workPhone: userData.work_phone,
+              address: userData.address,
+              dateOfBirth: userData.date_of_birth ? new Date(userData.date_of_birth) : undefined,
+              emergencyContact: userData.emergency_contact_name ? {
+                name: userData.emergency_contact_name,
+                phone: userData.emergency_contact_phone || '',
+                relationship: userData.emergency_contact_relationship || ''
+              } : undefined,
+              preferredAircraftId: userData.preferred_aircraft_id,
               avatar: userData.avatar_url
             });
             setIsLoading(false);
-            return true;
+            return { success: true };
           } else {
-            console.error('User profile not found');
+            console.error('User profile not found for authenticated user:', data.user.id, data.user.email);
             await supabase.auth.signOut();
             setIsLoading(false);
-            return false;
+            return {
+              success: false,
+              error: `Password accepted, but no CRM profile was found for ${data.user.email || email.trim()}. Ask an admin to check this user's profile/role record.`
+            };
           }
         } catch (error) {
           console.error('Error fetching user profile:', error);
           await supabase.auth.signOut();
           setIsLoading(false);
-          return false;
+          return {
+            success: false,
+            error: 'Password accepted, but the CRM profile could not be loaded. Please try again or ask an admin to check this user profile.'
+          };
         }
       }
 
       setIsLoading(false);
-      return false;
+      return { success: false, error: 'Login did not return a user session. Please try again.' };
     } catch (error) {
       console.error('Login error:', error);
       setIsLoading(false);
-      return false;
+      return { success: false, error: 'An error occurred during login. Please try again.' };
     }
   };
 

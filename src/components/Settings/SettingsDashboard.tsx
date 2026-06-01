@@ -12,10 +12,15 @@ import {
   Shield, 
   Wrench, 
   FileText, 
+  Bell,
   Monitor, 
   UserCheck, 
   Database, 
-  Settings as SettingsIcon 
+  Settings as SettingsIcon,
+  User,
+  Lock,
+  Palette,
+  Eye
 } from 'lucide-react';
 import { OrganisationSettings } from './OrganisationSettings';
 import { CalendarSettings } from './CalendarSettings';
@@ -24,11 +29,17 @@ import { NotificationsSettings } from './NotificationsSettings';
 import { SafetyComplianceSettings } from './SafetyComplianceSettings';
 import { MaintenanceSettings } from './MaintenanceSettings';
 import { ResourcesSettings } from './ResourcesSettings';
-import { DocumentsTemplatesSettings } from './DocumentsTemplatesSettings';
 import { PortalUxSettings } from './PortalUxSettings';
 import { RolesPermissionsSettings } from './RolesPermissionsSettings';
 import { AuditDataSettings } from './AuditDataSettings';
-import { PersonalPreferencesSettings } from './PersonalPreferencesSettings';
+import {
+  UpdateMyInfoSettings,
+  AccountSecuritySettings,
+  AccountCalendarSettings,
+  AccountNotificationSettings,
+  AccountAppearanceSettings,
+  AccountDashboardSettings,
+} from './PersonalPreferencesSettings';
 import { RosterAvailabilitySettings } from './RosterAvailabilitySettings';
 import { BillingRatesSettings } from './BillingRatesSettings';
 import FlightLogSettings from './FlightLogSettings';
@@ -39,7 +50,7 @@ import toast from 'react-hot-toast';
 interface SettingsSection {
   id: string;
   label: string;
-  category: 'Club Setup' | 'Operations' | 'Training & Billing' | 'System';
+  category: 'Club Setup' | 'Operations' | 'Training & Billing' | 'System' | 'Account & Preferences';
   keywords: string[];
   icon: React.ReactNode;
   roles: string[];
@@ -65,12 +76,16 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'training', label: 'Training / Syllabus', category: 'Training & Billing', keywords: ['lesson records', 'syllabus', 'student acknowledgement', 'grading'], icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: TrainingSyllabusSettings },
     { id: 'billing', label: 'Billing & Rates', category: 'Training & Billing', keywords: ['flight types', 'rates', 'payment methods', 'prepaid', 'charges'], icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BillingRatesSettings },
     { id: 'flight-log', label: 'Flight Log Form', category: 'Training & Billing', keywords: ['tach', 'landings', 'oil', 'fuel', 'passengers'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: FlightLogSettings },
-    { id: 'documents', label: 'Documents & Templates', category: 'Training & Billing', keywords: ['pdf', 'invoice template', 'certificate', 'branding'], icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
     { id: 'integrations', label: 'Integrations', category: 'System', keywords: ['xero', 'accounting', 'sync', 'api'], icon: <Database className="h-4 w-4" />, roles: ['admin'], component: IntegrationsSettings },
-    { id: 'notifications', label: 'Notifications', category: 'System', keywords: ['email', 'sms', 'reminders', 'alerts'], icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: NotificationsSettings },
+    { id: 'notifications', label: 'Notifications', category: 'System', keywords: ['email', 'sms', 'reminders', 'alerts', 'digest', 'quiet hours'], icon: <Bell className="h-4 w-4" />, roles: ['admin'], component: NotificationsSettings },
     { id: 'roles', label: 'Roles & Permissions', category: 'System', keywords: ['access', 'permissions', 'admin', 'instructor', 'student'], icon: <UserCheck className="h-4 w-4" />, roles: ['admin'], component: RolesPermissionsSettings },
     { id: 'audit', label: 'Audit & Data', category: 'System', keywords: ['export', 'audit log', 'data', 'backup'], icon: <Database className="h-4 w-4" />, roles: ['admin'], component: AuditDataSettings },
-    { id: 'personal', label: 'Personal Preferences', category: 'System', keywords: ['my settings', 'notifications', 'display', 'calendar view'], icon: <SettingsIcon className="h-4 w-4" />, roles: ['admin', 'instructor', 'student'], component: PersonalPreferencesSettings }
+    { id: 'account-info', label: 'Update My Info', category: 'Account & Preferences', keywords: ['my settings', 'update my info', 'profile', 'name', 'email', 'phone', 'emergency contact', 'preferred aircraft'], icon: <User className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: UpdateMyInfoSettings },
+    { id: 'account-security', label: 'Security', category: 'Account & Preferences', keywords: ['password', 'security', 'verification', 'login'], icon: <Lock className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountSecuritySettings },
+    { id: 'account-calendar', label: 'Calendar Preferences', category: 'Account & Preferences', keywords: ['date format', 'time format', 'calendar view', 'timezone'], icon: <SettingsIcon className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountCalendarSettings },
+    { id: 'account-notifications', label: 'Notification Preferences', category: 'Account & Preferences', keywords: ['notifications', 'email', 'sms', 'alerts', 'reminders'], icon: <Bell className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountNotificationSettings },
+    { id: 'account-appearance', label: 'Appearance', category: 'Account & Preferences', keywords: ['appearance', 'theme', 'compact', 'display'], icon: <Palette className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountAppearanceSettings },
+    { id: 'account-dashboard', label: 'Portal Dashboard', category: 'Account & Preferences', keywords: ['dashboard', 'student portal', 'progress', 'upcoming bookings'], icon: <Eye className="h-4 w-4" />, roles: ['pilot', 'student'], component: AccountDashboardSettings }
   ];
 
   // Get authorized sections using RBAC
@@ -95,8 +110,8 @@ export const SettingsDashboard: React.FC = () => {
 
   // Set default section based on user role (only on mount)
   useEffect(() => {
-    if (user?.role === 'student' || user?.role === 'instructor' || user?.role === 'pilot') {
-      setActiveSection('personal');
+    if (user?.role === 'student' || user?.role === 'instructor' || user?.role === 'senior_instructor' || user?.role === 'pilot') {
+      setActiveSection('account-info');
     } else {
       setActiveSection('organisation');
     }
@@ -147,7 +162,10 @@ export const SettingsDashboard: React.FC = () => {
 
   const canEdit = (sectionId: string) => {
     if (user?.role === 'admin') return true;
-    if ((user?.role === 'instructor' || user?.role === 'student' || user?.role === 'pilot') && sectionId === 'personal') return true;
+    if (
+      (user?.role === 'senior_instructor' || user?.role === 'instructor' || user?.role === 'student' || user?.role === 'pilot') &&
+      sectionId.startsWith('account-')
+    ) return true;
     return false;
   };
 

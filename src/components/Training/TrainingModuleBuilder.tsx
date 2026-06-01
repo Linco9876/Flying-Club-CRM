@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { mockSyllabusSequences } from '../../data/mockData';
 import {
   SyllabusSequence,
+  TrainingExam,
   TrainingLesson,
   TrainingModule,
   TrainingResource
@@ -36,7 +37,8 @@ const createLessonFromSequence = (sequence: SyllabusSequence): TrainingLesson =>
   objective: `Outline objectives for ${sequence.title.toLowerCase()}.`,
   flightExercises: 'Describe the flight exercises to be covered during delivery.',
   theory: 'Summarise the theory topics or references for this lesson.',
-  assessmentCriteria: []
+  assessmentCriteria: [],
+  passMarks: {}
 });
 
 export const TrainingModuleBuilder: React.FC = () => {
@@ -252,6 +254,41 @@ export const TrainingModuleBuilder: React.FC = () => {
     updateModule(selectedModule.id, (current) => ({
       ...current,
       resources: [...current.resources, resource]
+    }));
+  };
+
+  const handleAddExam = () => {
+    if (!selectedModule) return;
+    const exam: TrainingExam = {
+      id: `exam-${Date.now()}`,
+      name: 'New exam',
+      passMark: 80,
+    };
+    updateModule(selectedModule.id, (current) => ({
+      ...current,
+      exams: [...(current.exams || []), exam],
+    }));
+  };
+
+  const handleExamChange = <K extends keyof TrainingExam>(
+    examId: string,
+    field: K,
+    value: TrainingExam[K]
+  ) => {
+    if (!selectedModule) return;
+    updateModule(selectedModule.id, (current) => ({
+      ...current,
+      exams: (current.exams || []).map((exam) =>
+        exam.id === examId ? { ...exam, [field]: value } : exam
+      ),
+    }));
+  };
+
+  const handleRemoveExam = (examId: string) => {
+    if (!selectedModule) return;
+    updateModule(selectedModule.id, (current) => ({
+      ...current,
+      exams: (current.exams || []).filter((exam) => exam.id !== examId),
     }));
   };
 
@@ -711,6 +748,65 @@ export const TrainingModuleBuilder: React.FC = () => {
                         <Plus className="h-4 w-4" />
                         Add prerequisite
                       </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900">Course exams</h3>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Exams are logged separately on the student profile and do not appear as flight lessons.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleAddExam}
+                        className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-200 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add exam
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {(selectedModule.exams || []).map((exam) => (
+                        <div key={exam.id} className="grid gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 md:grid-cols-[minmax(0,1fr)_140px_auto]">
+                          <label className="space-y-1">
+                            <span className="text-xs font-medium text-gray-600">Exam name</span>
+                            <input
+                              value={exam.name}
+                              onChange={(event) => handleExamChange(exam.id, 'name', event.target.value)}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            />
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-xs font-medium text-gray-600">Pass mark (%)</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={exam.passMark}
+                              onChange={(event) => handleExamChange(exam.id, 'passMark', Number(event.target.value))}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            />
+                          </label>
+                          <div className="flex items-end">
+                            <button
+                              onClick={() => handleRemoveExam(exam.id)}
+                              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {(selectedModule.exams || []).length === 0 && (
+                        <p className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                          No exams added yet. Add items like Pre-solo, Radio, BAK or Airlaw with their required pass mark.
+                        </p>
+                      )}
                     </div>
                   </div>
 

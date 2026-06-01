@@ -35,6 +35,7 @@ export const useUsers = () => {
       const mappedUsers: User[] = (usersData || []).map(u => {
         const userRoles = rolesMap.get(u.id) || ['student'];
         const primaryRole = userRoles.includes('admin') ? 'admin'
+                          : userRoles.includes('senior_instructor') ? 'senior_instructor'
                           : userRoles.includes('instructor') ? 'instructor'
                           : userRoles.includes('pilot') ? 'pilot'
                           : 'student';
@@ -46,6 +47,17 @@ export const useUsers = () => {
           role: primaryRole as UserRole,
           roles: userRoles,
           phone: u.phone,
+          mobilePhone: u.mobile_phone,
+          homePhone: u.home_phone,
+          workPhone: u.work_phone,
+          address: u.address,
+          dateOfBirth: u.date_of_birth ? new Date(u.date_of_birth) : undefined,
+          emergencyContact: u.emergency_contact_name ? {
+            name: u.emergency_contact_name,
+            phone: u.emergency_contact_phone || '',
+            relationship: u.emergency_contact_relationship || ''
+          } : undefined,
+          preferredAircraftId: u.preferred_aircraft_id,
           avatar: u.avatar_url,
           isSeniorInstructor: u.is_senior_instructor || false
         };
@@ -63,7 +75,7 @@ export const useUsers = () => {
   };
 
   const getInstructors = () => {
-    return users.filter(u => u.roles?.includes('instructor'));
+    return users.filter(u => u.roles?.includes('instructor') || u.roles?.includes('senior_instructor'));
   };
 
   const getPilots = () => {
@@ -76,6 +88,17 @@ export const useUsers = () => {
       if (updates.name !== undefined) updateData.name = updates.name;
       if (updates.email !== undefined) updateData.email = updates.email;
       if (updates.phone !== undefined) updateData.phone = updates.phone;
+      if (updates.mobilePhone !== undefined) updateData.mobile_phone = updates.mobilePhone;
+      if (updates.homePhone !== undefined) updateData.home_phone = updates.homePhone;
+      if (updates.workPhone !== undefined) updateData.work_phone = updates.workPhone;
+      if (updates.address !== undefined) updateData.address = updates.address;
+      if (updates.dateOfBirth !== undefined) updateData.date_of_birth = updates.dateOfBirth;
+      if (updates.emergencyContact !== undefined) {
+        updateData.emergency_contact_name = updates.emergencyContact?.name;
+        updateData.emergency_contact_phone = updates.emergencyContact?.phone;
+        updateData.emergency_contact_relationship = updates.emergencyContact?.relationship;
+      }
+      if (updates.preferredAircraftId !== undefined) updateData.preferred_aircraft_id = updates.preferredAircraftId;
       if (updates.avatar !== undefined) updateData.avatar_url = updates.avatar;
       if (updates.isSeniorInstructor !== undefined) updateData.is_senior_instructor = updates.isSeniorInstructor;
 
@@ -97,6 +120,9 @@ export const useUsers = () => {
 
   const addRole = async (userId: string, role: UserRole) => {
     try {
+      const existingRoles = users.find(u => u.id === userId)?.roles || [];
+      if (existingRoles.includes(role)) return;
+
       const { error } = await supabase
         .from('user_roles')
         .insert({ user_id: userId, role });

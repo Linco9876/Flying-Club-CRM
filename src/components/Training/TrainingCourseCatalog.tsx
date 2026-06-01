@@ -3,6 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
   ArrowDown,
   ArrowUp,
+  Award,
   Bold,
   CheckCircle2,
   ChevronDown,
@@ -30,6 +31,7 @@ import toast from 'react-hot-toast';
 import {
   LessonAssessmentCriterion,
   LessonGradingSystem,
+  TrainingExam,
   TrainingLesson,
   TrainingModule
 } from '../../types';
@@ -62,6 +64,8 @@ type EditableCriterion = {
   gradingSystem: LessonGradingSystem;
   passingGrade: string;
 };
+
+type EditableExam = TrainingExam;
 
 const escapeHtml = (value: string) =>
   value
@@ -483,6 +487,19 @@ const createEmptyCriterion = (system: LessonGradingSystem = 'NC/S/C/-'): Editabl
   passingGrade: getDefaultPassingGrade(system)
 });
 
+const createEmptyExam = (): EditableExam => ({
+  id: `exam-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  name: '',
+  passMark: 80
+});
+
+const pilotCertificateFlightTestTemplate: NewLessonState = {
+  name: 'Pilot Certificate Flight Test',
+  objective: 'Complete the RAAus Pilot Certificate Flight Test and record the result against the student file as the certificate flight review / test outcome.',
+  flightExercises: '<ul><li>Pre-flight planning, aircraft documents and operational decision making.</li><li>Normal and abnormal handling across the RPC flight test profile.</li><li>Circuit, forced landing, training area, emergency and undesired-state management.</li><li>Post-flight debrief, result, limitations and next actions.</li></ul>',
+  theory: '<p>Confirm Presolo, Radio, BAK and Pre Certificate Airlaw exam results are recorded before the certificate test result is finalised.</p>',
+};
+
 const normaliseKeyExercises = (content: string) =>
   richTextToPlainText(content)
     .split(/\n+/)
@@ -522,6 +539,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const [showEditCourseForm, setShowEditCourseForm] = useState(false);
   const [editCourse, setEditCourse] = useState<CourseFormState>(emptyCourseForm);
   const [editCourseCriteria, setEditCourseCriteria] = useState<EditableCriterion[]>([]);
+  const [editCourseExams, setEditCourseExams] = useState<EditableExam[]>([]);
 
   // Delete course confirm
   const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
@@ -641,6 +659,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       evaluationFocus: selectedModule.evaluationCriteria.join('\n'),
     });
     setEditCourseCriteria(selectedModule.assessmentCriteria.map((c) => ({ ...c })));
+    setEditCourseExams((selectedModule.exams || []).map((exam) => ({ ...exam })));
     setShowEditCourseForm(true);
     setShowLessonForm(false);
   };
@@ -662,6 +681,24 @@ export const TrainingCourseCatalog: React.FC = () => {
     const tags = editCourse.tags.split(',').map((t) => t.trim()).filter(Boolean);
     const objectives = parseListLines(editCourse.objectives);
     const evaluationCriteria = parseListLines(editCourse.evaluationFocus);
+    const exams: TrainingExam[] = [];
+    for (const exam of editCourseExams) {
+      const name = exam.name.trim();
+      if (!name) {
+        toast.error('Each exam needs a name');
+        return;
+      }
+      const passMark = Number(exam.passMark);
+      if (Number.isNaN(passMark) || passMark < 0 || passMark > 100) {
+        toast.error(`Pass mark for "${name}" must be between 0 and 100`);
+        return;
+      }
+      exams.push({
+        id: exam.id || `exam-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        name,
+        passMark: Math.round(passMark)
+      });
+    }
     try {
       await updateModule(selectedModule.id, (cur) => ({
         ...cur,
@@ -673,6 +710,7 @@ export const TrainingCourseCatalog: React.FC = () => {
         objectives,
         evaluationCriteria,
         assessmentCriteria: criteria,
+        exams,
         lastUpdated: new Date(),
       }));
       toast.success('Course updated');
@@ -831,6 +869,37 @@ export const TrainingCourseCatalog: React.FC = () => {
       return;
     }
     resetLessonForm();
+    setShowLessonForm(true);
+    setShowEditCourseForm(false);
+  };
+
+  const handleOpenFlightTestLessonForm = () => {
+    if (!selectedModule) {
+      toast.error('Please select a course first');
+      return;
+    }
+
+    const existingFlightTest = selectedModule.lessons.find((lesson) =>
+      lesson.name.toLowerCase().includes('pilot certificate flight test') ||
+      lesson.sequenceCode === 'RPC-FLT-TEST'
+    );
+
+    if (existingFlightTest) {
+      handleEditLesson(existingFlightTest);
+      toast('Pilot Certificate Flight Test already exists. Opening it for editing.');
+      return;
+    }
+
+    setNewLesson(pilotCertificateFlightTestTemplate);
+    setLessonPassMarks(
+      Object.fromEntries(
+        selectedModule.assessmentCriteria.map((criterion) => [
+          criterion.id,
+          criterion.gradingSystem === 'NC/S/C/-' ? 'C' : getDefaultPassingGrade(criterion.gradingSystem)
+        ])
+      )
+    );
+    setEditingLessonId(null);
     setShowLessonForm(true);
     setShowEditCourseForm(false);
   };
@@ -1238,6 +1307,10 @@ export const TrainingCourseCatalog: React.FC = () => {
                         <FilePlus className="h-4 w-4" />
                         New lesson
                       </button>
+                      <button onClick={handleOpenFlightTestLessonForm} className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-100">
+                        <Award className="h-4 w-4" />
+                        Add flight test
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1260,6 +1333,10 @@ export const TrainingCourseCatalog: React.FC = () => {
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Assessment criteria</dt>
                     <dd className="mt-1 text-sm text-gray-700">{selectedModule.assessmentCriteria.length} defined</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Course exams</dt>
+                    <dd className="mt-1 text-sm text-gray-700">{(selectedModule.exams || []).length} defined</dd>
                   </div>
                 </dl>
                 <p className="mt-4 text-xs text-gray-500">Last updated {formatDistanceToNow(selectedModule.lastUpdated, { addSuffix: true })}</p>
@@ -1290,6 +1367,24 @@ export const TrainingCourseCatalog: React.FC = () => {
                         {tag}
                       </span>
                     ))}
+                  </div>
+                )}
+                {(selectedModule.exams || []).length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-gray-900">Course exams</h3>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {(selectedModule.exams || []).map((exam) => (
+                        <div key={exam.id} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                          <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-amber-950">
+                            <Award className="h-4 w-4 shrink-0 text-amber-700" />
+                            <span className="truncate">{exam.name}</span>
+                          </span>
+                          <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-amber-800">
+                            {exam.passMark}% pass
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {selectedModule.objectives.length > 0 && (
@@ -1398,6 +1493,67 @@ export const TrainingCourseCatalog: React.FC = () => {
                           <button type="button" onClick={() => setEditCourseCriteria((p) => p.filter((c) => c.id !== criterion.id))} className="text-red-500 hover:text-red-700">
                             <X className="h-4 w-4" />
                           </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2 text-amber-950">
+                        <Award className="h-4 w-4" />
+                        <h4 className="text-sm font-semibold">Course exams</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditCourseExams((current) => [...current, createEmptyExam()])}
+                        className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add exam
+                      </button>
+                    </div>
+                    <p className="mb-3 text-xs text-amber-800">
+                      These appear in the student's Exams tab for logging theory results. They are not shown as flight lessons.
+                    </p>
+                    {editCourseExams.length === 0 && (
+                      <p className="rounded-md border border-dashed border-amber-300 bg-white/70 px-3 py-3 text-xs text-amber-800">
+                        No exams yet. Add items like Presolo, Radio, BAK or Pre Certificate Airlaw.
+                      </p>
+                    )}
+                    <div className="space-y-3">
+                      {editCourseExams.map((exam) => (
+                        <div key={exam.id} className="grid gap-3 rounded-md border border-amber-200 bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_120px_auto]">
+                          <label className="flex flex-col text-xs font-medium text-amber-950">
+                            Exam name
+                            <input
+                              type="text"
+                              placeholder="e.g. BAK Exam"
+                              value={exam.name}
+                              onChange={(event) => setEditCourseExams((current) => current.map((item) => item.id === exam.id ? { ...item, name: event.target.value } : item))}
+                              className="mt-1 rounded-md border border-amber-200 px-2 py-1.5 text-sm text-gray-900 focus:border-amber-400 focus:outline-none"
+                            />
+                          </label>
+                          <label className="flex flex-col text-xs font-medium text-amber-950">
+                            Pass mark %
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={exam.passMark}
+                              onChange={(event) => setEditCourseExams((current) => current.map((item) => item.id === exam.id ? { ...item, passMark: Number(event.target.value) } : item))}
+                              className="mt-1 rounded-md border border-amber-200 px-2 py-1.5 text-sm text-gray-900 focus:border-amber-400 focus:outline-none"
+                            />
+                          </label>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => setEditCourseExams((current) => current.filter((item) => item.id !== exam.id))}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                              title="Remove exam"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>

@@ -61,7 +61,7 @@ BEGIN
       booking_day_end,
       default_slot_length
     ) VALUES (
-      'AeroClub Pro',
+      'Bendigo Flying Club',
       '123 Aviation Way, Airfield VIC 3000',
       'Australia/Melbourne',
       'AUD',

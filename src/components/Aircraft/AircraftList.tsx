@@ -13,7 +13,8 @@ import { useAuth } from '../../context/AuthContext';
 export const AircraftList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canManage = user?.role === 'admin' || user?.role === 'instructor';
+  const canManage = user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor'
+    || user?.roles?.some(role => role === 'admin' || role === 'instructor' || role === 'senior_instructor');
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
@@ -91,8 +92,7 @@ export const AircraftList: React.FC = () => {
   };
 
   const openViewModal = (aircraft: Aircraft) => {
-    setViewingAircraft(aircraft);
-    setShowViewModal(true);
+    navigate(`/aircraft/${aircraft.id}`);
   };
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -121,7 +121,11 @@ export const AircraftList: React.FC = () => {
   };
 
   const getNextMilestone = (aircraftId: string) => {
-    const aircraftMilestones = milestones.filter(m => m.aircraftId === aircraftId);
+    const aircraftMilestones = milestones.filter(m =>
+      m.aircraftId === aircraftId
+      && m.status !== 'completed'
+      && (m.nextDueHours !== undefined || m.nextDueDate)
+    );
     if (aircraftMilestones.length === 0) return null;
 
     const ac = aircraft.find(a => a.id === aircraftId);
@@ -256,13 +260,15 @@ export const AircraftList: React.FC = () => {
                         <Eye className="h-4 w-4 mr-2 text-gray-400" />
                         View Details
                       </button>
-                      <button
-                        onClick={() => { navigate(`/aircraft/${aircraftItem.id}/logs`); setOpenMenuId(null); }}
-                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        <FileText className="h-4 w-4 mr-2 text-gray-400" />
-                        Flight Logs
-                      </button>
+                      {canManage && (
+                        <button
+                          onClick={() => { navigate(`/aircraft/${aircraftItem.id}/logs`); setOpenMenuId(null); }}
+                          className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <FileText className="h-4 w-4 mr-2 text-gray-400" />
+                          Flight Logs
+                        </button>
+                      )}
                       {canManage && (
                         <>
                           <button

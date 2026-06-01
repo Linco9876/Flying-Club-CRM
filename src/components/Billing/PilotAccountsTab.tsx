@@ -10,7 +10,7 @@ interface TopUpModalProps {
   userId: string;
   userName: string;
   onClose: () => void;
-  onConfirm: (amount: number, description: string, paymentMethodId?: string) => Promise<void>;
+  onConfirm: (amount: number, description: string, paymentMethodId?: string, transactionDate?: string) => Promise<void>;
   paymentMethods: { id: string; name: string }[];
 }
 
@@ -18,6 +18,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('Account top-up');
   const [paymentMethodId, setPaymentMethodId] = useState('');
+  const [transactionDate, setTransactionDate] = useState(new Date().toISOString().slice(0, 10));
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -26,7 +27,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
     if (!parsed || parsed <= 0) return;
     setSaving(true);
     try {
-      await onConfirm(parsed, description, paymentMethodId || undefined);
+      await onConfirm(parsed, description, paymentMethodId || undefined, transactionDate);
       onClose();
     } finally {
       setSaving(false);
@@ -54,6 +55,17 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
               required
               autoFocus
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Top-up Date</label>
+            <input
+              type="date"
+              value={transactionDate}
+              onChange={e => setTransactionDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <p className="mt-1 text-xs text-gray-500">Use this to backdate historical payments.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -290,7 +302,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
           userName={topUpAccount.name}
           paymentMethods={paymentMethods}
           onClose={() => setTopUpUserId(null)}
-          onConfirm={(amount, description, pmId) => addTopUp(topUpUserId, amount, description, pmId)}
+          onConfirm={(amount, description, pmId, transactionDate) => addTopUp(topUpUserId, amount, description, pmId, transactionDate)}
         />
       )}
 
