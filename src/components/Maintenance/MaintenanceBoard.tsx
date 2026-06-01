@@ -18,7 +18,8 @@ import {
   MoreVertical,
   Edit as EditIcon,
   History as HistoryIcon,
-  Trash2
+  Trash2,
+  Plane
 } from 'lucide-react';
 import { DefectReportForm } from './DefectReportForm';
 import { DefectEditForm } from './DefectEditForm';
@@ -865,20 +866,25 @@ export const MaintenanceBoard: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Maintenance Board</h1>
-        <div className="flex items-center gap-3">
+    <div className="p-3 sm:p-6">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Maintenance Board</h1>
+          <p className="mt-1 text-sm text-gray-500 lg:hidden">
+            Track defects, alerts, and upcoming aircraft maintenance.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:items-center lg:gap-3">
           <button
             onClick={() => setShowOneTimeMilestoneForm(true)}
-            className="flex items-center space-x-2 bg-gray-100 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors"
+            className="flex items-center justify-center space-x-2 rounded-xl bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-200 lg:rounded-lg lg:py-2"
           >
             <Plus className="h-4 w-4" />
             <span>One-Time Milestone</span>
           </button>
           <button
             onClick={() => setShowDefectForm(true)}
-            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex items-center justify-center space-x-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 lg:rounded-lg lg:py-2"
           >
             <Plus className="h-4 w-4" />
             <span>Report Defect</span>
@@ -888,8 +894,8 @@ export const MaintenanceBoard: React.FC = () => {
 
       {!milestonesLoading && milestones.length > 0 && getWarnings().length > 0 && (
         <div className="mb-6">
-          <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm lg:rounded-lg lg:shadow-md">
+            <h2 className="mb-3 flex items-center text-base font-semibold text-gray-900 sm:text-lg">
               <AlertTriangle className="h-5 w-5 mr-2 text-orange-600" />
               Maintenance Alerts
             </h2>
@@ -936,13 +942,13 @@ export const MaintenanceBoard: React.FC = () => {
 
       {oneTimeMilestones.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+          <h2 className="mb-4 flex items-center text-lg font-semibold text-gray-900 sm:text-xl">
             <Wrench className="h-5 w-5 mr-2" />
             One-Time Maintenance
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {oneTimeMilestones.map(milestone => (
-              <div key={milestone.id} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
+              <div key={milestone.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm lg:rounded-lg">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-medium uppercase text-gray-500">{getAircraftRegistration(milestone.aircraftId)}</p>
@@ -958,14 +964,14 @@ export const MaintenanceBoard: React.FC = () => {
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="flex items-end justify-between gap-3 mt-4">
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div className="text-sm text-gray-700">
                     {milestone.nextDueHours !== undefined && <p>Due at {milestone.nextDueHours.toFixed(1)} tach hours</p>}
                     {milestone.nextDueDate && <p>Due by {milestone.nextDueDate.toLocaleDateString()}</p>}
                   </div>
                   <button
                     onClick={() => setSelectedMaintenance({ milestone, aircraftId: milestone.aircraftId })}
-                    className="flex items-center gap-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded transition-colors"
+                    className="flex items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-700 sm:rounded sm:py-1.5"
                   >
                     <CheckSquare className="h-3 w-3" />
                     <span>Mark Complete</span>
@@ -979,15 +985,15 @@ export const MaintenanceBoard: React.FC = () => {
 
       {!templatesLoading && templates.length > 0 && (
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="flex items-center text-lg font-semibold text-gray-900 sm:text-xl">
               <Calendar className="h-5 w-5 mr-2" />
               Upcoming Maintenance
             </h2>
             <div className="relative">
               <button
                 onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white hover:bg-gray-50 flex items-center space-x-2"
+                className="flex w-full items-center justify-center space-x-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto lg:rounded-lg lg:py-2"
               >
                 <span>
                   {selectedMilestoneFilters.length === 0
@@ -1000,7 +1006,7 @@ export const MaintenanceBoard: React.FC = () => {
               </button>
 
               {showFilterDropdown && (
-                <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <div className="absolute right-0 z-10 mt-2 w-[min(16rem,calc(100vw-2rem))] rounded-lg border border-gray-200 bg-white shadow-lg">
                   <div className="p-3 border-b border-gray-200 flex justify-between items-center">
                     <span className="font-medium text-sm text-gray-700">Filter Milestones</span>
                     <button
@@ -1031,7 +1037,78 @@ export const MaintenanceBoard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
+          <div className="space-y-3 lg:hidden">
+            {aircraft.map(ac => {
+              const aircraftMilestones = filteredMilestoneNames
+                .map(milestoneTitle => milestones.find(m => !m.isOneTime && m.aircraftId === ac.id && m.title === milestoneTitle))
+                .filter(Boolean);
+
+              return (
+                <article key={ac.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                  <div className="border-b border-gray-100 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-semibold text-gray-900">{ac.registration}</h3>
+                        <p className="text-xs text-gray-500">{ac.make} {ac.model} | {ac.totalHours.toFixed(1)} hrs</p>
+                      </div>
+                      <Plane className="h-5 w-5 text-gray-400" />
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-gray-100">
+                    {aircraftMilestones.length === 0 ? (
+                      <p className="px-4 py-4 text-sm text-gray-500">No matching milestones.</p>
+                    ) : (
+                      aircraftMilestones.map(milestone => {
+                        if (!milestone) return null;
+                        const hoursRemaining = calculateHoursRemaining(milestone.nextDueHours, ac.totalHours);
+                        const daysRemaining = calculateDaysRemaining(milestone.nextDueDate);
+
+                        let statusClasses = 'bg-green-50 text-green-700 border-green-100';
+                        if (
+                          (hoursRemaining !== null && hoursRemaining < maintenanceSettings.urgentReminderHours) ||
+                          (daysRemaining !== null && daysRemaining < maintenanceSettings.urgentReminderDays)
+                        ) {
+                          statusClasses = 'bg-red-50 text-red-700 border-red-100';
+                        } else if (
+                          (hoursRemaining !== null && hoursRemaining < maintenanceSettings.upcomingReminderHours) ||
+                          (daysRemaining !== null && daysRemaining < maintenanceSettings.upcomingReminderDays)
+                        ) {
+                          statusClasses = 'bg-yellow-50 text-yellow-700 border-yellow-100';
+                        }
+
+                        return (
+                          <div key={milestone.id} className={`px-4 py-3 ${statusClasses}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold">{milestone.title}</p>
+                                <div className="mt-1 space-y-0.5 text-xs">
+                                  {milestone.nextDueHours !== undefined && (
+                                    <p>Due: {milestone.nextDueHours.toFixed(1)} hrs{hoursRemaining !== null ? ` (${hoursRemaining.toFixed(1)} remaining)` : ''}</p>
+                                  )}
+                                  {milestone.nextDueDate && (
+                                    <p>Due: {new Date(milestone.nextDueDate).toLocaleDateString()}{daysRemaining !== null ? ` (${daysRemaining} days)` : ''}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setSelectedMaintenance({ milestone, aircraftId: ac.id })}
+                                className="flex-shrink-0 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white"
+                              >
+                                Complete
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto lg:block">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -1120,7 +1197,7 @@ export const MaintenanceBoard: React.FC = () => {
       )}
 
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+        <h2 className="mb-4 flex items-center text-lg font-semibold text-gray-900 sm:text-xl">
           <AlertTriangle className="h-5 w-5 mr-2" />
           Defect Reports
         </h2>
@@ -1144,12 +1221,12 @@ export const MaintenanceBoard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {filteredDefects.map(defect => {
           return (
-            <div key={defect.id} className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center space-x-3">
-                  {getStatusIcon(defect.status)}
+            <div key={defect.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm lg:rounded-lg lg:p-6 lg:shadow-md">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center space-x-3">
+                  <div className="flex-shrink-0">{getStatusIcon(defect.status)}</div>
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900">
+                    <h3 className="text-base font-semibold text-gray-900 sm:text-lg">
                       {getAircraftRegistration(defect.aircraftId)}
                     </h3>
                     <p className="text-sm text-gray-600">
@@ -1172,13 +1249,13 @@ export const MaintenanceBoard: React.FC = () => {
               </div>
 
               {defect.melNotes && (
-                <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg mb-4">
+                <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 p-3 lg:rounded-lg">
                   <p className="text-xs font-medium text-yellow-900">MEL Notes:</p>
                   <p className="text-xs text-yellow-800 mt-1">{defect.melNotes}</p>
                 </div>
               )}
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center space-x-2">
                   <Camera className="h-4 w-4 text-gray-400" />
                   <span className="text-xs text-gray-500">
@@ -1186,7 +1263,7 @@ export const MaintenanceBoard: React.FC = () => {
                   </span>
                 </div>
                 <button
-                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 lg:rounded-lg lg:py-2"
                   onClick={() => {
                     setActivePhoto(null);
                     setSelectedDefect(defect);
