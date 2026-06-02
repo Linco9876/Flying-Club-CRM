@@ -24,6 +24,7 @@ import { MaintenanceBoard } from './components/Maintenance/MaintenanceBoard';
 import { BillingDashboard } from './components/Billing/BillingDashboard';
 import { ReportsDashboard } from './components/Reports/ReportsDashboard';
 import { SafetyDashboard } from './components/Safety/SafetyDashboard';
+import { SafetyLoginWarningModal } from './components/Safety/SafetyLoginWarningModal';
 import { TrainingRecordForm } from './components/Training/TrainingRecordForm';
 import { TrainingCourseCatalog } from './components/Training/TrainingCourseCatalog';
 import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuilder';
@@ -329,6 +330,7 @@ const AuthenticatedApp: React.FC<{
                 <StudentProfilePage />
               </main>
             </div>
+            <SafetyLoginWarningModal />
           </div>
         </RouteGuard>
       } />
@@ -342,6 +344,7 @@ const AuthenticatedApp: React.FC<{
                 <AircraftFlightLogs />
               </main>
             </div>
+            <SafetyLoginWarningModal />
           </div>
         </RouteGuard>
       } />
@@ -382,6 +385,7 @@ const AuthenticatedApp: React.FC<{
             />
 
             <StudentAcknowledgementModal />
+            <SafetyLoginWarningModal />
           </div>
         </RouteGuard>
       } />
@@ -395,6 +399,7 @@ const AuthenticatedApp: React.FC<{
                 <AircraftProfilePage />
               </main>
             </div>
+            <SafetyLoginWarningModal />
           </div>
         </RouteGuard>
       } />

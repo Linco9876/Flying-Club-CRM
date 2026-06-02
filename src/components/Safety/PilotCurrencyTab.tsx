@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudents } from '../../hooks/useStudents';
-import { useBookings } from '../../hooks/useBookings';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
-import { hasAnyRole } from '../../utils/rbac';
+import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { buildSafetyComplianceSummary, getBfrDueDate, isStudentOnly } from '../../utils/safetyCompliance';
 import { Download, Search, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 
 interface PilotCurrency {
@@ -19,37 +19,34 @@ interface PilotCurrency {
   daysUntilBfrDue: number;
   daysSinceLastFlight: number;
   urgencyLevel: 'overdue' | 'urgent' | 'warning' | 'current';
+  isStudentOnly: boolean;
 }
 
 export const PilotCurrencyTab: React.FC = () => {
   const { user } = useAuth();
   const { students } = useStudents();
-  const { bookings } = useBookings();
+  const { flightLogs } = useFlightLogs();
   const { settings } = useSafetySettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [endorsementFilter, setEndorsementFilter] = useState('');
 
   const calculatePilotCurrency = (): PilotCurrency[] => {
-    let pilots = students.filter(s => s.role === 'student' || s.role === 'pilot');
+    let pilots = students.filter(s =>
+      isStudentOnly(s) ||
+      s.roles?.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role)) ||
+      ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(s.role)
+    );
 
-    if (hasAnyRole(user, ['student', 'pilot'])) {
+    if (user?.role === 'student' || user?.role === 'pilot') {
       pilots = pilots.filter(p => p.id === user.id);
     }
 
     const today = new Date();
 
     return pilots.map(pilot => {
-      const pilotBookings = bookings.filter(b =>
-        b.studentId === pilot.id && (b.status === 'completed' || b.flight_logged || Boolean(b.flightLog))
-      );
-      const lastFlightDate = pilotBookings.length > 0 
-        ? new Date(Math.max(...pilotBookings.map(b => new Date(b.startTime).getTime())))
-        : null;
-
-      const bfrDue = pilot.lastFlightReview
-        ? new Date(new Date(pilot.lastFlightReview).setFullYear(pilot.lastFlightReview.getFullYear() + 2))
-        : null;
+      const summary = buildSafetyComplianceSummary(pilot, settings, flightLogs);
+      const bfrDue = getBfrDueDate(pilot);
 
       // Calculate days until expiry
       const daysUntilMedicalExpiry = pilot.medicalExpiry 
@@ -62,15 +59,14 @@ export const PilotCurrencyTab: React.FC = () => {
       const daysUntilLicenceExpiry = pilot.licenceExpiry
         ? Math.ceil((pilot.licenceExpiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
         : 999;
-      const daysSinceLastFlight = lastFlightDate
-        ? Math.floor((today.getTime() - lastFlightDate.getTime()) / (1000 * 60 * 60 * 24))
-        : 999;
+      const daysSinceLastFlight = summary.daysSinceLastFlight ?? 999;
 
       // Determine urgency level
       const minDays = Math.min(daysUntilMedicalExpiry, daysUntilLicenceExpiry, daysUntilBfrDue);
       let urgencyLevel: 'overdue' | 'urgent' | 'warning' | 'current';
       
-      if (minDays < 0 || daysSinceLastFlight > settings.recencyDays) urgencyLevel = 'overdue';
+      if (summary.blockingConcerns.length > 0 || summary.warningConcerns.some(concern => concern.severity === 'lapsed')) urgencyLevel = 'overdue';
+      else if (!summary.isStudentOnly && daysSinceLastFlight > settings.recencyDays) urgencyLevel = 'overdue';
       else if (minDays <= Math.min(settings.medicalWarningDays, settings.bfrWarningDays, 30)) urgencyLevel = 'urgent';
       else if (daysUntilMedicalExpiry <= settings.medicalWarningDays || daysUntilLicenceExpiry <= settings.licenceWarningDays || daysUntilBfrDue <= settings.bfrWarningDays) urgencyLevel = 'warning';
       else urgencyLevel = 'current';
@@ -83,7 +79,7 @@ export const PilotCurrencyTab: React.FC = () => {
       return {
         id: pilot.id,
         name: pilot.name,
-        lastFlightDate,
+        lastFlightDate: summary.lastFlightDate,
         medicalExpiry: pilot.medicalExpiry || null,
         licenceExpiry: pilot.licenceExpiry || null,
         bfrDue,
@@ -91,8 +87,9 @@ export const PilotCurrencyTab: React.FC = () => {
         daysUntilMedicalExpiry,
         daysUntilLicenceExpiry,
         daysUntilBfrDue,
-        daysSinceLastFlight,
-        urgencyLevel
+        daysSinceLastFlight: summary.daysSinceLastFlight ?? 999,
+        urgencyLevel,
+        isStudentOnly: summary.isStudentOnly
       };
     });
   };

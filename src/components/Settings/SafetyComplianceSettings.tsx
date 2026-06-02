@@ -288,6 +288,32 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 Require current BFR for solo flights
               </label>
             </div>
+
+            <div className="grid grid-cols-1 gap-4 pt-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Booking recency acknowledgement wording</label>
+                <textarea
+                  rows={5}
+                  value={formData.recencyWarningMessage}
+                  onChange={(e) => handleInputChange('recencyWarningMessage', e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Shown when a non-student books outside the recency period. Keep the PIC-hour guidance here if your club requires it.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Login safety warning wording</label>
+                <textarea
+                  rows={3}
+                  value={formData.safetyLoginWarningMessage}
+                  onChange={(e) => handleInputChange('safetyLoginWarningMessage', e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Shown on login when medical, membership, BFR or currency items need attention.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 
 export interface SafetyComplianceSettings {
   id?: string;
+  settingsJson?: Record<string, unknown>;
   recencyDays: number;
   medicalWarningDays: number;
   licenceWarningDays: number;
@@ -15,6 +16,8 @@ export interface SafetyComplianceSettings {
   autoBlockExpiredMedical: boolean;
   autoBlockExpiredLicence: boolean;
   requireBfrForSolo: boolean;
+  recencyWarningMessage: string;
+  safetyLoginWarningMessage: string;
 }
 
 export interface SafetyReportCategory {
@@ -37,12 +40,15 @@ export const DEFAULT_SAFETY_SETTINGS: SafetyComplianceSettings = {
   autoAssignIncidents: true,
   autoBlockExpiredMedical: true,
   autoBlockExpiredLicence: true,
-  requireBfrForSolo: true
+  requireBfrForSolo: true,
+  recencyWarningMessage: 'You may not be current for solo aircraft hire. If you have less than 50 pilot in command hours and are outside the recency period, book a check flight with an instructor. If you have more than 50 pilot in command hours, complete 3 take-offs and landings before carrying passengers. If you have flown elsewhere, acknowledge this warning and make sure your records are updated.',
+  safetyLoginWarningMessage: 'Your safety and compliance record needs attention. Please review any medical, membership, BFR or currency items before flying.'
 };
 
 const mapSettings = (data: any): SafetyComplianceSettings => ({
   ...DEFAULT_SAFETY_SETTINGS,
   id: data.id,
+  settingsJson: data.settings ?? {},
   recencyDays: data.recency_days ?? DEFAULT_SAFETY_SETTINGS.recencyDays,
   medicalWarningDays: data.medical_warning_days ?? DEFAULT_SAFETY_SETTINGS.medicalWarningDays,
   licenceWarningDays: data.licence_warning_days ?? DEFAULT_SAFETY_SETTINGS.licenceWarningDays,
@@ -53,7 +59,9 @@ const mapSettings = (data: any): SafetyComplianceSettings => ({
   autoAssignIncidents: data.auto_assign_incidents ?? DEFAULT_SAFETY_SETTINGS.autoAssignIncidents,
   autoBlockExpiredMedical: data.auto_block_expired_medical ?? DEFAULT_SAFETY_SETTINGS.autoBlockExpiredMedical,
   autoBlockExpiredLicence: data.auto_block_expired_licence ?? DEFAULT_SAFETY_SETTINGS.autoBlockExpiredLicence,
-  requireBfrForSolo: data.require_bfr_for_solo ?? DEFAULT_SAFETY_SETTINGS.requireBfrForSolo
+  requireBfrForSolo: data.require_bfr_for_solo ?? DEFAULT_SAFETY_SETTINGS.requireBfrForSolo,
+  recencyWarningMessage: data.settings?.recency_warning_message ?? DEFAULT_SAFETY_SETTINGS.recencyWarningMessage,
+  safetyLoginWarningMessage: data.settings?.safety_login_warning_message ?? DEFAULT_SAFETY_SETTINGS.safetyLoginWarningMessage
 });
 
 export const useSafetySettings = () => {
@@ -108,6 +116,11 @@ export const useSafetySettings = () => {
       auto_block_expired_medical: nextSettings.autoBlockExpiredMedical,
       auto_block_expired_licence: nextSettings.autoBlockExpiredLicence,
       require_bfr_for_solo: nextSettings.requireBfrForSolo,
+      settings: {
+        ...(settings.settingsJson ?? {}),
+        recency_warning_message: nextSettings.recencyWarningMessage,
+        safety_login_warning_message: nextSettings.safetyLoginWarningMessage
+      },
       updated_at: new Date().toISOString()
     };
 

@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
-import { X, Clock, Plane, User, CreditCard } from 'lucide-react';
+import { AlertTriangle, X, Clock, Plane, User, CreditCard } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
+import { useStudents } from '../../hooks/useStudents';
+import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
 import { Booking } from '../../types';
+import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
 import toast from 'react-hot-toast';
 
 interface BookingFormProps {
@@ -28,6 +32,9 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { user } = useAuth();
   const { aircraft, loading: aircraftLoading } = useAircraft();
   const { users, getInstructors, loading: usersLoading } = useUsers();
+  const { students } = useStudents();
+  const { flightLogs } = useFlightLogs();
+  const { settings: safetySettings } = useSafetySettings();
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes } = useBillingSettings();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -82,15 +89,22 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   ]);
 
   const [formData, setFormData] = useState(buildInitialFormData);
+  const [pendingSafetySubmit, setPendingSafetySubmit] = useState<typeof formData | null>(null);
+  const [safetyWarningState, setSafetyWarningState] = useState<{
+    concerns: SafetyConcern[];
+    blocking: boolean;
+    pilotName: string;
+    picHours: number;
+  } | null>(null);
 
   // Rebuild the whole form every time it opens so stale values cannot leak between bookings.
   React.useEffect(() => {
     if (!isOpen) return;
     setFormData(buildInitialFormData());
+    setPendingSafetySubmit(null);
+    setSafetyWarningState(null);
   }, [buildInitialFormData, isOpen]);
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const validateFormData = () => {
     const userRole = user?.role || 'student';
 
     if (isFieldRequired('pilot', userRole) && !formData.studentId) {
@@ -157,8 +171,39 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       return;
     }
 
-    onSubmit(formData);
+    return { startDateTime, endDateTime };
+  };
+
+  const submitBookingData = (data: typeof formData) => {
+    onSubmit(data);
     onClose();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const validation = validateFormData();
+    if (!validation) return;
+
+    const selectedPerson = students.find((student) => student.id === formData.studentId);
+    if (selectedPerson) {
+      const compliance = buildSafetyComplianceSummary(selectedPerson, safetySettings, flightLogs, {
+        hasInstructor: Boolean(formData.instructorId)
+      });
+      const concerns = compliance.concerns;
+
+      if (concerns.length > 0) {
+        setSafetyWarningState({
+          concerns,
+          blocking: compliance.blockingConcerns.length > 0,
+          pilotName: selectedPerson.name,
+          picHours: compliance.picHours
+        });
+        setPendingSafetySubmit(formData);
+        return;
+      }
+    }
+
+    submitBookingData(formData);
   };
 
   const availableAircraft = aircraft.filter(a => a.status === 'serviceable');
@@ -180,9 +225,22 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     [bookingDayStartHour, bookingDayEndHour]
   );
 
+  const handleConfirmSafetyWarning = () => {
+    if (!pendingSafetySubmit || safetyWarningState?.blocking) return;
+    submitBookingData(pendingSafetySubmit);
+    setPendingSafetySubmit(null);
+    setSafetyWarningState(null);
+  };
+
+  const handleCloseSafetyWarning = () => {
+    setSafetyWarningState(null);
+    setPendingSafetySubmit(null);
+  };
+
   if (!isOpen) return null;
 
   return (
+    <>
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex justify-between items-center px-4 py-3 border-b border-gray-200 bg-gray-50">
@@ -407,6 +465,67 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         </form>
       </div>
     </div>
+    {safetyWarningState && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+        <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+          <div className="flex items-start gap-3 border-b border-gray-200 px-5 py-4">
+            <div className="rounded-full bg-amber-100 p-2 text-amber-700">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                {safetyWarningState.blocking ? 'Booking requires an instructor' : 'Safety acknowledgement required'}
+              </h3>
+              <p className="mt-1 text-sm text-gray-600">
+                {safetyWarningState.pilotName} has safety or currency items that need attention before this booking.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-4 px-5 py-4">
+            <ul className="space-y-2">
+              {safetyWarningState.concerns.map((concern) => (
+                <li key={`${concern.type}-${concern.label}`} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-sm font-semibold text-amber-950">{concern.label}</p>
+                  <p className="text-sm text-amber-900">{concern.message}</p>
+                </li>
+              ))}
+            </ul>
+            {safetyWarningState.concerns.some((concern) => concern.type === 'recency') && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
+                <p>{safetySettings.recencyWarningMessage}</p>
+                <p className="mt-2 text-xs font-semibold text-blue-800">
+                  Recorded solo/PIC hours in this system: {safetyWarningState.picHours.toFixed(1)}
+                </p>
+              </div>
+            )}
+            {safetyWarningState.blocking && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+                BFR is lapsed. This person cannot book an aircraft without an instructor. Add an instructor to continue.
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
+            <button
+              type="button"
+              onClick={handleCloseSafetyWarning}
+              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Go back
+            </button>
+            {!safetyWarningState.blocking && (
+              <button
+                type="button"
+                onClick={handleConfirmSafetyWarning}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                I acknowledge and continue
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 
