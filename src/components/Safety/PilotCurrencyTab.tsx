@@ -41,7 +41,7 @@ export const PilotCurrencyTab: React.FC = () => {
 
     return pilots.map(pilot => {
       const pilotBookings = bookings.filter(b =>
-        b.studentId === pilot.id && b.status === 'completed'
+        b.studentId === pilot.id && (b.status === 'completed' || b.flight_logged || Boolean(b.flightLog))
       );
       const lastFlightDate = pilotBookings.length > 0 
         ? new Date(Math.max(...pilotBookings.map(b => new Date(b.startTime).getTime())))
