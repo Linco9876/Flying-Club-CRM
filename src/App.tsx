@@ -32,7 +32,7 @@ import { OutstandingRecordsTab } from './components/Training/OutstandingRecordsT
 import { StudentAcknowledgementModal } from './components/Training/StudentAcknowledgementModal';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import { format } from 'date-fns';
-import { usePortalUxSettings } from './hooks/useSettings';
+import { usePortalUxSettings, useUserPreferences } from './hooks/useSettings';
 import { can, getAuthorizedMenuItems } from './utils/rbac';
 
 const AppContent: React.FC = () => {
@@ -115,17 +115,19 @@ const AuthenticatedApp: React.FC<{
   const location = useLocation();
   const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings();
   const { settings: portalSettings } = usePortalUxSettings();
+  const { preferences: userPreferences } = useUserPreferences(user?.id || '');
+  const effectiveTheme = userPreferences?.theme || portalSettings.theme || 'auto';
 
   React.useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = () => {
-      const useDarkTheme = portalSettings.theme === 'dark' || (portalSettings.theme === 'auto' && media.matches);
+      const useDarkTheme = effectiveTheme === 'dark' || (effectiveTheme === 'auto' && media.matches);
       document.documentElement.dataset.portalTheme = useDarkTheme ? 'dark' : 'light';
     };
     applyTheme();
     media.addEventListener('change', applyTheme);
     return () => media.removeEventListener('change', applyTheme);
-  }, [portalSettings.theme]);
+  }, [effectiveTheme]);
 
   const handleViewChange = (view: string) => {
     navigate(getPathForView(view));

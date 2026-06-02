@@ -106,7 +106,7 @@ export const defaultUserPreferences = (userId: string): Omit<UserPreferences, 'i
   date_format: 'dd/MM/yyyy',
   time_format: '24h',
   default_calendar_view: 'day',
-  theme: 'light',
+  theme: 'auto',
   show_progress_dashboard: true,
   show_upcoming_bookings: true,
   show_recent_activity: true,
@@ -130,7 +130,7 @@ export interface PortalUxSettings {
 }
 
 export const defaultPortalUxSettings: Omit<PortalUxSettings, 'id'> = {
-  theme: 'light',
+  theme: 'auto',
   date_format: 'dd/MM/yyyy',
   time_format: '24h',
   flight_time_decimals: 1,
