@@ -649,6 +649,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select field="theme" label="Theme">
               <option value="light">Light</option>
+              <option value="semi-dark">Semi-dark</option>
               <option value="dark">Dark</option>
               <option value="auto">Auto (System)</option>
             </Select>

@@ -88,6 +88,22 @@ export const StudentList: React.FC = () => {
     }
   };
 
+  const renderAvatar = (student: Student, sizeClass: string, iconClass: string) => (
+    <div className={`${sizeClass} flex-shrink-0 overflow-hidden rounded-full bg-blue-600 shadow-sm ring-2 ring-white`}>
+      {student.avatar ? (
+        <img
+          src={student.avatar}
+          alt={`${student.name || 'Member'} avatar`}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <User className={`${iconClass} text-white`} />
+        </div>
+      )}
+    </div>
+  );
+
   const statsByStudent = useMemo(() => {
     const stats = new Map<string, { totalHours: number; lessonCount: number; lastFlight?: Date }>();
 
@@ -243,9 +259,7 @@ export const StudentList: React.FC = () => {
                 className="block w-full px-4 py-4 text-left transition-colors hover:bg-gray-50"
               >
                 <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-blue-600">
-                    <User className="h-5 w-5 text-white" />
-                  </div>
+                  {renderAvatar(student, 'h-11 w-11', 'h-5 w-5')}
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -393,9 +407,7 @@ export const StudentList: React.FC = () => {
                   <tr key={student.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className="h-10 w-10 bg-blue-600 rounded-full flex items-center justify-center">
-                          <User className="h-5 w-5 text-white" />
-                        </div>
+                        {renderAvatar(student, 'h-10 w-10', 'h-5 w-5')}
                         <div className="ml-4">
                           <div className="flex items-center gap-2">
                             <div className="text-sm font-medium text-gray-900">{student.name}</div>

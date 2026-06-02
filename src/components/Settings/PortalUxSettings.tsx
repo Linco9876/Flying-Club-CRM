@@ -75,6 +75,7 @@ export const PortalUxSettings: React.FC<PortalUxSettingsProps> = ({ canEdit, onF
             Theme
             <select value={formData.theme} onChange={e => handleInputChange('theme', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
               <option value="light">Light</option>
+              <option value="semi-dark">Semi-dark</option>
               <option value="dark">Dark</option>
               <option value="auto">Auto (System)</option>
             </select>

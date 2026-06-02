@@ -116,7 +116,7 @@ export const defaultUserPreferences = (userId: string): Omit<UserPreferences, 'i
 
 export interface PortalUxSettings {
   id: string;
-  theme: 'light' | 'dark' | 'auto';
+  theme: 'light' | 'semi-dark' | 'dark' | 'auto';
   date_format: string;
   time_format: '24h' | '12h';
   flight_time_decimals: number;

@@ -121,8 +121,16 @@ const AuthenticatedApp: React.FC<{
   React.useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = () => {
-      const useDarkTheme = effectiveTheme === 'dark' || (effectiveTheme === 'auto' && media.matches);
+      const useDarkTheme =
+        effectiveTheme === 'dark' ||
+        effectiveTheme === 'semi-dark' ||
+        (effectiveTheme === 'auto' && media.matches);
       document.documentElement.dataset.portalTheme = useDarkTheme ? 'dark' : 'light';
+      if (effectiveTheme === 'semi-dark') {
+        document.documentElement.dataset.portalVariant = 'semi-dark';
+      } else {
+        delete document.documentElement.dataset.portalVariant;
+      }
     };
     applyTheme();
     media.addEventListener('change', applyTheme);
