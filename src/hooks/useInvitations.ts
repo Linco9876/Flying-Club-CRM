@@ -101,7 +101,8 @@ export const useInvitations = () => {
       const result = await response.json();
 
       if (!response.ok) {
-        toast.error(result.error || 'Failed to invite user');
+        const message = result.error || result.message || result.msg || 'Failed to invite user';
+        toast.error(message);
         return;
       }
 
