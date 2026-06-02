@@ -598,6 +598,17 @@ export const useUserPreferences = (userId: string) => {
     }
   }, [userId]);
 
+  useEffect(() => {
+    if (!userId) return;
+
+    const handlePreferencesUpdated = () => {
+      fetchPreferences();
+    };
+
+    window.addEventListener('user-preferences-updated', handlePreferencesUpdated);
+    return () => window.removeEventListener('user-preferences-updated', handlePreferencesUpdated);
+  }, [userId]);
+
   const updatePreferences = async (updates: Partial<UserPreferences>) => {
     if (!userId) return;
 
