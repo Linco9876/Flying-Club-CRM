@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { email, name, phone, roles } = await req.json();
+    const { email, name, phone, roles, redirectTo } = await req.json();
     const requestedRoles = Array.isArray(roles) && roles.length > 0 ? roles : ["student"];
     const userRoles = Array.from(new Set(requestedRoles))
       .map((role) => String(role).trim())
@@ -90,29 +90,36 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    let tempPassword = "";
-    for (let i = 0; i < 10; i++) {
-      tempPassword += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    tempPassword += "A1!";
+    const primaryRole = getPrimaryRole(userRoles);
+    const inviteOptions: {
+      data: Record<string, unknown>;
+      redirectTo?: string;
+    } = {
+      data: {
+        name,
+        phone: phone || null,
+        roles: userRoles,
+        role: primaryRole,
+      },
+    };
 
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+    if (typeof redirectTo === "string" && redirectTo.trim()) {
+      inviteOptions.redirectTo = redirectTo.trim();
+    }
+
+    const { data: authData, error: authError } = await adminClient.auth.admin.inviteUserByEmail(
       email,
-      password: tempPassword,
-      email_confirm: true,
-      user_metadata: { name, phone: phone || null },
-    });
+      inviteOptions,
+    );
 
     if (authError || !authData.user) {
-      return new Response(JSON.stringify({ error: authError?.message || "Failed to create user" }), {
+      return new Response(JSON.stringify({ error: authError?.message || "Failed to send invitation email" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const newUserId = authData.user.id;
-    const primaryRole = getPrimaryRole(userRoles);
 
     const { error: userUpsertError } = await adminClient.from("users").upsert({
       id: newUserId,
@@ -149,8 +156,8 @@ Deno.serve(async (req: Request) => {
       phone: phone || null,
       role: primaryRole,
       invited_by: callerUser.id,
-      status: "accepted",
-      accepted_at: new Date().toISOString(),
+      status: "pending",
+      accepted_at: null,
       user_id: newUserId,
     });
 
@@ -164,7 +171,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    return new Response(JSON.stringify({ tempPassword, userId: newUserId }), {
+    return new Response(JSON.stringify({ emailSent: true, userId: newUserId }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

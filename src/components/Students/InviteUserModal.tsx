@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Mail, User, Phone, UserPlus, Copy, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { UserRole } from '../../types';
+import { InviteUserResult } from '../../hooks/useInvitations';
 
 interface InviteUserModalProps {
   isOpen: boolean;
@@ -11,7 +12,7 @@ interface InviteUserModalProps {
     name: string;
     phone?: string;
     roles?: UserRole[];
-  }) => Promise<string | undefined>;
+  }) => Promise<InviteUserResult | undefined>;
 }
 
 export const InviteUserModal: React.FC<InviteUserModalProps> = ({
@@ -26,9 +27,10 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
     roles: ['student'] as UserRole[]
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [inviteResult, setInviteResult] = useState<InviteUserResult | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const tempPassword = inviteResult?.tempPassword || null;
   const hasStudentRoleConflict = formData.roles.includes('student') && formData.roles.length > 1;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,9 +44,9 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      const password = await onInvite(formData);
-      if (password) {
-        setTempPassword(password);
+      const result = await onInvite(formData);
+      if (result?.tempPassword || result?.emailSent) {
+        setInviteResult(result);
       }
     } catch (error) {
       console.error('Error inviting user:', error);
@@ -60,7 +62,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
       phone: '',
       roles: ['student']
     });
-    setTempPassword(null);
+    setInviteResult(null);
     setCopied(false);
     onClose();
   };
@@ -113,13 +115,21 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
           </button>
         </div>
 
-        {tempPassword ? (
+        {inviteResult ? (
           <div className="p-6">
             <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-green-800 font-medium mb-2">User invited successfully!</p>
-              <p className="text-sm text-green-700">
-                An account has been created for {formData.name}. They can log in immediately with the temporary password below.
+              <p className="text-green-800 font-medium mb-2">
+                {inviteResult.emailSent ? 'Invitation email sent!' : 'User invited successfully!'}
               </p>
+              {inviteResult.emailSent ? (
+                <p className="text-sm text-green-700">
+                  An invitation email has been sent to {formData.name}. They can open the link to set their password and access the CRM.
+                </p>
+              ) : (
+                <p className="text-sm text-green-700">
+                  An account has been created for {formData.name}. They can log in immediately with the temporary password below.
+                </p>
+              )}
             </div>
 
             <div className="mb-4">
@@ -129,26 +139,32 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
               <p className="text-gray-900 font-medium">{formData.email}</p>
             </div>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Temporary Password
-              </label>
-              <div className="flex items-center space-x-2">
-                <div className="flex-1 p-3 bg-gray-50 border border-gray-300 rounded-lg font-mono text-sm">
-                  {tempPassword}
+            {tempPassword ? (
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Temporary Password
+                </label>
+                <div className="flex items-center space-x-2">
+                  <div className="flex-1 p-3 bg-gray-50 border border-gray-300 rounded-lg font-mono text-sm">
+                    {tempPassword}
+                  </div>
+                  <button
+                    onClick={copyToClipboard}
+                    className="p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                  </button>
                 </div>
-                <button
-                  onClick={copyToClipboard}
-                  className="p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  title="Copy to clipboard"
-                >
-                  {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
-                </button>
+                <p className="text-xs text-gray-500 mt-2">
+                  Share this password securely with the user. They should change it after their first login.
+                </p>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Share this password securely with the user. They should change it after their first login.
-              </p>
-            </div>
+            ) : (
+              <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                Ask them to check junk or spam if it does not arrive shortly. The invite email uses the Supabase Auth invite template and sender settings.
+              </div>
+            )}
 
             <button
               onClick={handleClose}

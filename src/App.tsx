@@ -50,7 +50,9 @@ const AppContent: React.FC = () => {
   const isPasswordRecovery =
     location.pathname === '/reset-password' ||
     new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'recovery' ||
-    new URLSearchParams(location.search).get('type') === 'recovery';
+    new URLSearchParams(location.search).get('type') === 'recovery' ||
+    new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'invite' ||
+    new URLSearchParams(location.search).get('type') === 'invite';
 
   if (isPasswordRecovery) {
     return <ResetPasswordPage />;

@@ -16,6 +16,12 @@ export interface Invitation {
   userId?: string;
 }
 
+export interface InviteUserResult {
+  tempPassword?: string;
+  emailSent?: boolean;
+  message?: string;
+}
+
 export const useInvitations = () => {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,12 +58,19 @@ export const useInvitations = () => {
     }
   };
 
+  const getInviteRedirectUrl = () => {
+    const authRedirectOrigin = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN?.trim();
+    const redirectOrigin = authRedirectOrigin || window.location.origin;
+    const basePath = authRedirectOrigin ? '/' : import.meta.env.BASE_URL;
+    return `${redirectOrigin.replace(/\/$/, '')}${basePath}reset-password`;
+  };
+
   const inviteUser = async (data: {
     email: string;
     name: string;
     phone?: string;
     roles?: UserRole[];
-  }) => {
+  }): Promise<InviteUserResult | undefined> => {
     try {
       const roles = data.roles && data.roles.length > 0 ? data.roles : ['student'];
       if (roles.includes('student') && roles.length > 1) {
@@ -81,6 +94,7 @@ export const useInvitations = () => {
           name: data.name,
           phone: data.phone,
           roles,
+          redirectTo: getInviteRedirectUrl(),
         }),
       });
 
@@ -92,9 +106,13 @@ export const useInvitations = () => {
       }
 
       await fetchInvitations();
-      toast.success('User invited successfully');
+      toast.success(result.emailSent ? 'Invitation email sent' : 'User invited successfully');
 
-      return result.tempPassword as string;
+      return {
+        tempPassword: result.tempPassword,
+        emailSent: Boolean(result.emailSent),
+        message: result.message,
+      };
     } catch (err) {
       console.error('Error inviting user:', err);
       toast.error('Failed to invite user');

@@ -6,7 +6,7 @@ import { InviteUserModal } from './InviteUserModal';
 import { Student, UserRole } from '../../types';
 import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2, Search, UserPlus } from 'lucide-react';
 import { useStudents } from '../../hooks/useStudents';
-import { useInvitations } from '../../hooks/useInvitations';
+import { InviteUserResult, useInvitations } from '../../hooks/useInvitations';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 
@@ -178,12 +178,12 @@ export const StudentList: React.FC = () => {
     name: string;
     phone?: string;
     roles?: UserRole[];
-  }) => {
-    const password = await inviteUser(data);
-    if (password) {
+  }): Promise<InviteUserResult | undefined> => {
+    const result = await inviteUser(data);
+    if (result?.tempPassword || result?.emailSent) {
       await refetch();
     }
-    return password;
+    return result;
   };
 
   if (loading) {

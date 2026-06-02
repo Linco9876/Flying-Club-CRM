@@ -28,8 +28,9 @@ export const ResetPasswordPage: React.FC = () => {
     const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
     const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
     const code = searchParams.get('code') || hashParams.get('code');
-    const recoveryType = hashParams.get('type') === 'recovery' || searchParams.get('type') === 'recovery';
-    const hasRecoveryLink = recoveryType || Boolean((accessToken && refreshToken) || code);
+    const linkType = hashParams.get('type') || searchParams.get('type');
+    const passwordSetupType = linkType === 'recovery' || linkType === 'invite';
+    const hasRecoveryLink = passwordSetupType || Boolean((accessToken && refreshToken) || code);
 
     const markValid = (email?: string | null) => {
       if (!cancelled) {
