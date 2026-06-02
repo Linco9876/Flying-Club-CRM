@@ -98,8 +98,6 @@ Deno.serve(async (req: Request) => {
       data: {
         name,
         phone: phone || null,
-        roles: userRoles,
-        role: primaryRole,
       },
     };
 
@@ -136,6 +134,8 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    await adminClient.from("user_roles").delete().eq("user_id", newUserId);
 
     const { error: roleInsertError } = await adminClient
       .from("user_roles")
