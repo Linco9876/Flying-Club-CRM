@@ -24,7 +24,7 @@ const permissionRows: PermissionRow[] = [
   { action: 'view-dashboard', name: 'Dashboard', description: 'Can open the main dashboard.' },
   { action: 'view-calendar', name: 'Calendar', description: 'Can view the club calendar.' },
   { action: 'view-bookings', name: 'Bookings', description: 'Can view booking records according to role scope.' },
-  { action: 'view-students', name: 'Students/Pilots', description: 'Can view student and pilot records.' },
+  { action: 'view-students', name: 'Members', description: 'Can view member records for admins, instructors, pilots and students.' },
   { action: 'view-aircraft', name: 'Aircraft', description: 'Can view aircraft records and availability.' },
   { action: 'view-maintenance', name: 'Maintenance', description: 'Can view aircraft maintenance and defect workflows.' },
   { action: 'view-training', name: 'Training Records', description: 'Can view training records and student progress.' },

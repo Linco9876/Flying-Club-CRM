@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { StudentForm } from './StudentForm';
 import { InviteUserModal } from './InviteUserModal';
 import { Student, UserRole } from '../../types';
-import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2, UserPlus } from 'lucide-react';
+import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2, Search, UserPlus } from 'lucide-react';
 import { useStudents } from '../../hooks/useStudents';
 import { useInvitations } from '../../hooks/useInvitations';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -19,18 +19,79 @@ export const StudentList: React.FC = () => {
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'instructor' | 'pilot' | 'student'>('all');
 
-  const visibleStudentFiles = useMemo(() => (
-    students.filter(student => {
-      const roles = student.roles && student.roles.length > 0 ? student.roles : [student.role as UserRole];
-      return roles.includes('student') || roles.includes('pilot');
-    })
-  ), [students]);
+  const normaliseSearch = (value?: string | null) =>
+    (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const getMemberRoles = (student: Student): UserRole[] =>
+    student.roles && student.roles.length > 0 ? student.roles : [student.role as UserRole];
+
+  const matchesRoleFilter = (student: Student) => {
+    if (roleFilter === 'all') return true;
+    const roles = getMemberRoles(student);
+    if (roleFilter === 'instructor') return roles.includes('instructor') || roles.includes('senior_instructor');
+    return roles.includes(roleFilter);
+  };
+
+  const visibleMembers = useMemo(() => {
+    const terms = normaliseSearch(searchTerm).split(/\s+/).filter(Boolean);
+
+    return students.filter(student => {
+      if (!matchesRoleFilter(student)) return false;
+      if (terms.length === 0) return true;
+
+      const haystack = normaliseSearch([
+        student.name,
+        student.email,
+        student.phone,
+        student.mobilePhone,
+        student.homePhone,
+        student.workPhone,
+        student.raausId,
+        student.casaId
+      ].filter(Boolean).join(' '));
+
+      return terms.every(term => haystack.includes(term));
+    });
+  }, [roleFilter, searchTerm, students]);
+
+  const roleFilters: { id: typeof roleFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'admin', label: 'Admin' },
+    { id: 'instructor', label: 'Instructor' },
+    { id: 'pilot', label: 'Pilot' },
+    { id: 'student', label: 'Student' }
+  ];
+
+  const roleLabels: Record<UserRole, string> = {
+    admin: 'Admin',
+    senior_instructor: 'Senior Instructor',
+    instructor: 'Instructor',
+    pilot: 'Pilot',
+    student: 'Student'
+  };
+
+  const roleBadgeClass = (role: UserRole) => {
+    switch (role) {
+      case 'admin':
+        return 'bg-red-100 text-red-800';
+      case 'senior_instructor':
+        return 'bg-indigo-100 text-indigo-800';
+      case 'instructor':
+        return 'bg-green-100 text-green-800';
+      case 'pilot':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-blue-100 text-blue-800';
+    }
+  };
 
   const statsByStudent = useMemo(() => {
     const stats = new Map<string, { totalHours: number; lessonCount: number; lastFlight?: Date }>();
 
-    visibleStudentFiles.forEach(student => {
+    visibleMembers.forEach(student => {
       stats.set(student.id, { totalHours: 0, lessonCount: 0 });
     });
 
@@ -55,7 +116,7 @@ export const StudentList: React.FC = () => {
     });
 
     return stats;
-  }, [flightLogs, trainingRecords, visibleStudentFiles]);
+  }, [flightLogs, trainingRecords, visibleMembers]);
 
   const getStudentStats = (studentId: string) => statsByStudent.get(studentId) || { totalHours: 0, lessonCount: 0 };
 
@@ -121,9 +182,9 @@ export const StudentList: React.FC = () => {
     <div className="p-3 sm:p-6">
       <div className="mb-4 flex flex-col gap-3 sm:mb-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Students/Pilots</h1>
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Members</h1>
           <p className="mt-1 text-sm text-gray-500 lg:hidden">
-            {visibleStudentFiles.length} active file{visibleStudentFiles.length === 1 ? '' : 's'}
+            {visibleMembers.length} member{visibleMembers.length === 1 ? '' : 's'}
           </p>
         </div>
         <button
@@ -135,12 +196,41 @@ export const StudentList: React.FC = () => {
         </button>
       </div>
 
+      <div className="mb-4 grid gap-3 lg:mb-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            value={searchTerm}
+            onChange={event => setSearchTerm(event.target.value)}
+            placeholder="Search name, email, RAAus or CASA..."
+            className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-10 pr-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 lg:rounded-lg lg:py-2"
+          />
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
+          {roleFilters.map(filter => (
+            <button
+              key={filter.id}
+              type="button"
+              onClick={() => setRoleFilter(filter.id)}
+              className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+                roleFilter === filter.id
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-3 lg:hidden">
-        {visibleStudentFiles.map(student => {
+        {visibleMembers.map(student => {
           const stats = getStudentStats(student.id);
           const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
           const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
           const activeEndorsements = student.endorsements.filter(e => e.isActive).length;
+          const memberRoles = getMemberRoles(student);
 
           return (
             <article
@@ -162,13 +252,13 @@ export const StudentList: React.FC = () => {
                         <h2 className="truncate text-base font-semibold text-gray-900">{student.name}</h2>
                         <p className="truncate text-xs text-gray-500">{student.email}</p>
                       </div>
-                      <span className={`flex-shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold capitalize ${
-                        student.role === 'admin' ? 'bg-purple-100 text-purple-800' :
-                        student.role === 'instructor' ? 'bg-green-100 text-green-800' :
-                        'bg-blue-100 text-blue-800'
-                      }`}>
-                        {student.role}
-                      </span>
+                      <div className="flex flex-shrink-0 flex-wrap justify-end gap-1">
+                        {memberRoles.slice(0, 2).map(role => (
+                          <span key={role} className={`rounded-full px-2 py-1 text-[11px] font-semibold ${roleBadgeClass(role)}`}>
+                            {roleLabels[role]}
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -260,9 +350,9 @@ export const StudentList: React.FC = () => {
             </article>
           );
         })}
-        {visibleStudentFiles.length === 0 && (
+        {visibleMembers.length === 0 && (
           <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
-            No student or pilot files found.
+            No members match your filters.
           </div>
         )}
       </div>
@@ -293,10 +383,11 @@ export const StudentList: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {visibleStudentFiles.map(student => {
+              {visibleMembers.map(student => {
                 const stats = getStudentStats(student.id);
                 const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
                 const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
+                const memberRoles = getMemberRoles(student);
 
                 return (
                   <tr key={student.id} className="hover:bg-gray-50">
@@ -308,16 +399,17 @@ export const StudentList: React.FC = () => {
                         <div className="ml-4">
                           <div className="flex items-center gap-2">
                             <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                              student.role === 'admin' ? 'bg-purple-100 text-purple-800' :
-                              student.role === 'instructor' ? 'bg-green-100 text-green-800' :
-                              'bg-blue-100 text-blue-800'
-                            }`}>
-                              {student.role}
-                            </span>
+                            {memberRoles.map(role => (
+                              <span key={role} className={`px-2 py-1 text-xs font-medium rounded-full ${roleBadgeClass(role)}`}>
+                                {roleLabels[role]}
+                              </span>
+                            ))}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {student.raausId && `RAAus: ${student.raausId}`}
+                            {[
+                              student.raausId ? `RAAus: ${student.raausId}` : '',
+                              student.casaId ? `CASA: ${student.casaId}` : ''
+                            ].filter(Boolean).join(' | ')}
                           </div>
                         </div>
                       </div>
@@ -404,10 +496,10 @@ export const StudentList: React.FC = () => {
                   </tr>
                 );
               })}
-              {visibleStudentFiles.length === 0 && (
+              {visibleMembers.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
-                    No student or pilot files found.
+                    No members match your filters.
                   </td>
                 </tr>
               )}

@@ -171,7 +171,7 @@ export const getAuthorizedMenuItems = (user: User | null) => {
   const allMenuItems: { id: string; label: string; action: Action; resource?: Resource; roles?: UserRole[] }[] = [
     { id: 'dashboard', label: 'Dashboard', action: 'view-dashboard' },
     { id: 'calendar', label: 'Calendar', action: 'view-calendar' },
-    { id: 'students', label: 'Students', action: 'view-students' },
+    { id: 'students', label: 'Members', action: 'view-students' },
     { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' },
     { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' },
     { id: 'training', label: 'Training Records', action: 'view-training' },

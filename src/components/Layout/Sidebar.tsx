@@ -32,7 +32,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
   const allMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['admin', 'instructor', 'student'] },
     { id: 'calendar', label: 'Calendar', icon: Calendar, roles: ['admin', 'instructor', 'student'] },
-    { id: 'students', label: 'Students/Pilots', icon: Users, roles: ['admin', 'instructor'] },
+    { id: 'students', label: 'Members', icon: Users, roles: ['admin', 'instructor'] },
     { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'student'] },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },
     { id: 'training', label: 'Training Records', icon: BookOpen, roles: ['admin', 'instructor'] },
