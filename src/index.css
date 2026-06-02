@@ -121,6 +121,10 @@ html[data-portal-theme='dark'] {
   --dark-blue-soft: rgb(37 99 235 / 0.22);
   --dark-blue-border: rgb(59 130 246 / 0.38);
   --dark-blue-text: rgb(147 197 253);
+  --calendar-slot-base: rgb(14 14 16);
+  --calendar-slot-alt: rgb(26 26 29);
+  --calendar-slot-hover: rgb(36 36 40);
+  --calendar-slot-selected: rgb(55 65 81);
   background: var(--dark-app);
 }
 
@@ -138,6 +142,10 @@ html[data-portal-theme='dark'][data-portal-variant='semi-dark'] {
   --dark-blue-soft: rgb(37 99 235 / 0.18);
   --dark-blue-border: rgb(59 130 246 / 0.42);
   --dark-blue-text: rgb(191 219 254);
+  --calendar-slot-base: rgb(36 36 40);
+  --calendar-slot-alt: rgb(49 49 54);
+  --calendar-slot-hover: rgb(63 63 70);
+  --calendar-slot-selected: rgb(75 85 99);
 }
 
 html[data-portal-theme='dark'] #root {
@@ -450,6 +458,22 @@ html[data-portal-theme='dark'] .resource-calendar-grid {
 
 html[data-portal-theme='dark'] .resource-calendar-grid .bg-white {
   background-color: var(--dark-panel);
+}
+
+html[data-portal-theme='dark'] .resource-calendar-grid .calendar-slot-base {
+  background-color: var(--calendar-slot-base) !important;
+}
+
+html[data-portal-theme='dark'] .resource-calendar-grid .calendar-slot-alt {
+  background-color: var(--calendar-slot-alt) !important;
+}
+
+html[data-portal-theme='dark'] .resource-calendar-grid .calendar-slot-cell:hover {
+  background-color: var(--calendar-slot-hover) !important;
+}
+
+html[data-portal-theme='dark'] .resource-calendar-grid .calendar-slot-selected {
+  background-color: var(--calendar-slot-selected) !important;
 }
 
 html[data-portal-theme='dark'] ::selection {

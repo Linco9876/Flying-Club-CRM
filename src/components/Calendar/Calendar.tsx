@@ -1732,16 +1732,16 @@ export const Calendar: React.FC<CalendarProps> = ({
                     const backgroundClass = unavailability
                       ? ''
                       : isInDragRange
-                      ? 'bg-blue-100'
+                      ? 'calendar-slot-selected bg-blue-100'
                       : isAlternateHour
-                      ? 'bg-blue-50 hover:bg-blue-100'
-                      : 'hover:bg-gray-50';
+                      ? 'calendar-slot-alt bg-blue-50 hover:bg-blue-100'
+                      : 'calendar-slot-base hover:bg-gray-50';
                     const borderClasses = resourceBorderClasses;
 
                     return (
                       <div
                         key={`${resource.id}-${slot}`}
-                        className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                        className={`calendar-slot-cell border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
                         style={{
                           height: slotHeight,
                           gridColumn: resourceIndex + 2,
@@ -2180,15 +2180,15 @@ export const Calendar: React.FC<CalendarProps> = ({
                       const backgroundClass = unavailability
                         ? ''
                         : isInDragRange
-                        ? 'bg-blue-100'
+                        ? 'calendar-slot-selected bg-blue-100'
                         : isAlternateHour
-                        ? 'bg-blue-50 hover:bg-blue-100'
-                        : 'hover:bg-gray-50';
+                        ? 'calendar-slot-alt bg-blue-50 hover:bg-blue-100'
+                        : 'calendar-slot-base hover:bg-gray-50';
 
                       daySlots.push(
                         <div
                           key={`${dayIndex}-aircraft-${slot}`}
-                          className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          className={`calendar-slot-cell border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
@@ -2282,15 +2282,15 @@ export const Calendar: React.FC<CalendarProps> = ({
                       const backgroundClass = unavailability
                         ? ''
                         : isInDragRange
-                        ? 'bg-blue-100'
+                        ? 'calendar-slot-selected bg-blue-100'
                         : isAlternateHour
-                        ? 'bg-blue-50 hover:bg-blue-100'
-                        : 'hover:bg-gray-50';
+                        ? 'calendar-slot-alt bg-blue-50 hover:bg-blue-100'
+                        : 'calendar-slot-base hover:bg-gray-50';
 
                       daySlots.push(
                         <div
                           key={`${dayIndex}-instructor-${slot}`}
-                          className={`border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          className={`calendar-slot-cell border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
