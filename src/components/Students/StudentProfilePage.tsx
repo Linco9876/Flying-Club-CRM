@@ -95,7 +95,7 @@ interface StudentInvoiceSummary {
 export const StudentProfilePage: React.FC = () => {
   const { studentId: routeStudentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const studentId = routeStudentId || user?.id;
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
@@ -201,6 +201,17 @@ export const StudentProfilePage: React.FC = () => {
     const tab = searchParams.get('tab');
     if (tab) setActiveTab(tab);
   }, [searchParams]);
+
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    const nextParams = new URLSearchParams(searchParams);
+    if (tabId === 'profile') {
+      nextParams.delete('tab');
+    } else {
+      nextParams.set('tab', tabId);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
 
   useEffect(() => {
     if (!studentsLoading && routeStudentId && !student) {
@@ -952,7 +963,7 @@ export const StudentProfilePage: React.FC = () => {
 
   useEffect(() => {
     if (!tabs.some(tab => tab.id === activeTab)) {
-      setActiveTab('profile');
+      handleTabChange('profile');
     }
   }, [activeTab, tabs]);
 
@@ -1320,7 +1331,7 @@ export const StudentProfilePage: React.FC = () => {
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`app-tab-button ${
                 activeTab === tab.id
                   ? 'app-tab-button-active'

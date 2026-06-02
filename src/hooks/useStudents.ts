@@ -1,12 +1,37 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Student, Endorsement } from '../types';
+import { Student, Endorsement, UserRole } from '../types';
 import toast from 'react-hot-toast';
 
 export const useStudents = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const writeStudentRow = async (
+    mode: 'insert' | 'update',
+    payload: Record<string, unknown>,
+    id?: string
+  ) => {
+    const runWrite = (nextPayload: Record<string, unknown>) => {
+      if (mode === 'insert') {
+        return supabase.from('students').insert(nextPayload);
+      }
+      return supabase.from('students').update(nextPayload).eq('id', id);
+    };
+
+    const result = await runWrite(payload);
+    if (
+      result.error &&
+      'last_flight_review' in payload &&
+      result.error.message?.includes('last_flight_review')
+    ) {
+      const { last_flight_review, ...fallbackPayload } = payload;
+      return runWrite(fallbackPayload);
+    }
+
+    return result;
+  };
 
   const fetchStudents = async () => {
     try {
@@ -59,6 +84,7 @@ export const useStudents = () => {
         const studentData = studentsMap.get(user.id);
         const userRoles = rolesMap.get(user.id) || [user.role || 'student'];
         const primaryRole = userRoles.includes('admin') ? 'admin'
+                          : userRoles.includes('senior_instructor') ? 'senior_instructor'
                           : userRoles.includes('instructor') ? 'instructor'
                           : userRoles.includes('pilot') ? 'pilot'
                           : 'student';
@@ -66,8 +92,8 @@ export const useStudents = () => {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: primaryRole as 'student' | 'instructor' | 'admin' | 'pilot',
-          roles: userRoles,
+          role: primaryRole as UserRole,
+          roles: userRoles as UserRole[],
           phone: user.phone,
           mobilePhone: user.mobile_phone,
           homePhone: user.home_phone,
@@ -160,24 +186,28 @@ export const useStudents = () => {
 
       const userData = { id: authData.user.id };
 
-      const { error: studentError } = await supabase
-        .from('students')
-        .insert({
-          id: userData.id,
-          raaus_id: studentData.raausId,
-          casa_id: studentData.casaId,
-          medical_type: studentData.medicalType,
-          medical_expiry: studentData.medicalExpiry,
-          licence_expiry: studentData.licenceExpiry,
-          last_flight_review: studentData.lastFlightReview,
-          occupation: studentData.occupation,
-          alternate_phone: studentData.alternatePhone,
-          date_of_birth: studentData.dateOfBirth,
-          prepaid_balance: studentData.prepaidBalance,
-          emergency_contact_name: studentData.emergencyContact?.name,
-          emergency_contact_phone: studentData.emergencyContact?.phone,
-          emergency_contact_relationship: studentData.emergencyContact?.relationship
-        });
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .insert({ user_id: userData.id, role: 'student' });
+
+      if (roleError) throw roleError;
+
+      const { error: studentError } = await writeStudentRow('insert', {
+        id: userData.id,
+        raaus_id: studentData.raausId,
+        casa_id: studentData.casaId,
+        medical_type: studentData.medicalType,
+        medical_expiry: studentData.medicalExpiry,
+        licence_expiry: studentData.licenceExpiry,
+        last_flight_review: studentData.lastFlightReview,
+        occupation: studentData.occupation,
+        alternate_phone: studentData.alternatePhone,
+        date_of_birth: studentData.dateOfBirth,
+        prepaid_balance: studentData.prepaidBalance,
+        emergency_contact_name: studentData.emergencyContact?.name,
+        emergency_contact_phone: studentData.emergencyContact?.phone,
+        emergency_contact_relationship: studentData.emergencyContact?.relationship
+      });
 
       if (studentError) throw studentError;
 
@@ -224,24 +254,21 @@ export const useStudents = () => {
 
       if (userError) throw userError;
 
-      const { error: studentError } = await supabase
-        .from('students')
-        .update({
-          raaus_id: studentData.raausId,
-          casa_id: studentData.casaId,
-          medical_type: studentData.medicalType,
-          medical_expiry: studentData.medicalExpiry,
-          licence_expiry: studentData.licenceExpiry,
-          last_flight_review: studentData.lastFlightReview,
-          occupation: studentData.occupation,
-          alternate_phone: studentData.alternatePhone,
-          date_of_birth: studentData.dateOfBirth,
-          prepaid_balance: studentData.prepaidBalance,
-          emergency_contact_name: studentData.emergencyContact?.name,
-          emergency_contact_phone: studentData.emergencyContact?.phone,
-          emergency_contact_relationship: studentData.emergencyContact?.relationship
-        })
-        .eq('id', id);
+      const { error: studentError } = await writeStudentRow('update', {
+        raaus_id: studentData.raausId,
+        casa_id: studentData.casaId,
+        medical_type: studentData.medicalType,
+        medical_expiry: studentData.medicalExpiry,
+        licence_expiry: studentData.licenceExpiry,
+        last_flight_review: studentData.lastFlightReview,
+        occupation: studentData.occupation,
+        alternate_phone: studentData.alternatePhone,
+        date_of_birth: studentData.dateOfBirth,
+        prepaid_balance: studentData.prepaidBalance,
+        emergency_contact_name: studentData.emergencyContact?.name,
+        emergency_contact_phone: studentData.emergencyContact?.phone,
+        emergency_contact_relationship: studentData.emergencyContact?.relationship
+      }, id);
 
       if (studentError) throw studentError;
 

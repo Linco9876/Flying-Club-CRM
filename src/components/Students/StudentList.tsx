@@ -1,31 +1,63 @@
 import React from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockTrainingRecords } from '../../data/mockData';
 import { StudentForm } from './StudentForm';
-import { StudentDetails } from './StudentDetails';
 import { InviteUserModal } from './InviteUserModal';
-import { Student } from '../../types';
+import { Student, UserRole } from '../../types';
 import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2, UserPlus } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useInvitations } from '../../hooks/useInvitations';
+import { useTrainingRecords } from '../../hooks/useTrainingRecords';
+import { useFlightLogs } from '../../hooks/useFlightLogs';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
   const { students, loading, addStudent, updateStudent, refetch } = useStudents();
   const { inviteUser } = useInvitations();
+  const { trainingRecords } = useTrainingRecords();
+  const { flightLogs } = useFlightLogs();
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showStudentDetails, setShowStudentDetails] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
-  const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
 
-  const getStudentStats = (studentId: string) => {
-    const records = mockTrainingRecords.filter(r => r.studentId === studentId);
-    const totalHours = records.reduce((sum, r) => sum + r.soloTime + r.dualTime, 0);
-    return { totalHours, lessonCount: records.length };
-  };
+  const visibleStudentFiles = useMemo(() => (
+    students.filter(student => {
+      const roles = student.roles && student.roles.length > 0 ? student.roles : [student.role as UserRole];
+      return roles.includes('student') || roles.includes('pilot');
+    })
+  ), [students]);
+
+  const statsByStudent = useMemo(() => {
+    const stats = new Map<string, { totalHours: number; lessonCount: number; lastFlight?: Date }>();
+
+    visibleStudentFiles.forEach(student => {
+      stats.set(student.id, { totalHours: 0, lessonCount: 0 });
+    });
+
+    flightLogs.forEach(log => {
+      if (!stats.has(log.student_id)) return;
+      const current = stats.get(log.student_id)!;
+      const flightDate = log.start_time ? new Date(log.start_time) : undefined;
+      stats.set(log.student_id, {
+        ...current,
+        totalHours: current.totalHours + Number(log.flight_duration || 0),
+        lastFlight: flightDate && (!current.lastFlight || flightDate > current.lastFlight) ? flightDate : current.lastFlight
+      });
+    });
+
+    trainingRecords.forEach(record => {
+      if (!stats.has(record.studentId)) return;
+      const current = stats.get(record.studentId)!;
+      stats.set(record.studentId, {
+        ...current,
+        lessonCount: current.lessonCount + 1
+      });
+    });
+
+    return stats;
+  }, [flightLogs, trainingRecords, visibleStudentFiles]);
+
+  const getStudentStats = (studentId: string) => statsByStudent.get(studentId) || { totalHours: 0, lessonCount: 0 };
 
   const isExpiryNear = (date?: Date) => {
     if (!date) return false;
@@ -55,21 +87,20 @@ export const StudentList: React.FC = () => {
     navigate(`/students/${student.id}`);
   };
 
+  const openStudentTab = (student: Student, tab: string) => {
+    navigate(`/students/${student.id}?tab=${tab}`);
+  };
+
   const closeStudentForm = () => {
     setShowStudentForm(false);
     setEditingStudent(null);
-  };
-
-  const closeStudentDetails = () => {
-    setShowStudentDetails(false);
-    setViewingStudent(null);
   };
 
   const handleInviteUser = async (data: {
     email: string;
     name: string;
     phone?: string;
-    role?: 'student' | 'instructor' | 'admin';
+    roles?: UserRole[];
   }) => {
     const password = await inviteUser(data);
     if (password) {
@@ -92,7 +123,7 @@ export const StudentList: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Students/Pilots</h1>
           <p className="mt-1 text-sm text-gray-500 lg:hidden">
-            {students.length} active file{students.length === 1 ? '' : 's'}
+            {visibleStudentFiles.length} active file{visibleStudentFiles.length === 1 ? '' : 's'}
           </p>
         </div>
         <button
@@ -105,7 +136,7 @@ export const StudentList: React.FC = () => {
       </div>
 
       <div className="space-y-3 lg:hidden">
-        {students.map(student => {
+        {visibleStudentFiles.map(student => {
           const stats = getStudentStats(student.id);
           const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
           const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
@@ -146,8 +177,8 @@ export const StudentList: React.FC = () => {
                         <p className="mt-0.5 text-sm font-semibold text-gray-900">{stats.totalHours.toFixed(1)}</p>
                       </div>
                       <div className="rounded-xl bg-gray-50 px-3 py-2">
-                        <p className="font-medium text-gray-500">Balance</p>
-                        <p className="mt-0.5 text-sm font-semibold text-gray-900">${student.prepaidBalance.toFixed(2)}</p>
+                        <p className="font-medium text-gray-500">Lessons</p>
+                        <p className="mt-0.5 text-sm font-semibold text-gray-900">{stats.lessonCount}</p>
                       </div>
                     </div>
                   </div>
@@ -202,10 +233,38 @@ export const StudentList: React.FC = () => {
                     Edit
                   </button>
                 </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openStudentTab(student, 'training')}
+                    className="rounded-xl border border-blue-100 bg-blue-50 px-2 py-2 text-xs font-semibold text-blue-700"
+                  >
+                    Training
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openStudentTab(student, 'logbook')}
+                    className="rounded-xl border border-green-100 bg-green-50 px-2 py-2 text-xs font-semibold text-green-700"
+                  >
+                    Logbook
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openStudentTab(student, 'documents')}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-2 py-2 text-xs font-semibold text-gray-700"
+                  >
+                    Docs
+                  </button>
+                </div>
               </div>
             </article>
           );
         })}
+        {visibleStudentFiles.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+            No student or pilot files found.
+          </div>
+        )}
       </div>
 
       <div className="hidden bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden lg:block">
@@ -234,7 +293,7 @@ export const StudentList: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {students.map(student => {
+              {visibleStudentFiles.map(student => {
                 const stats = getStudentStats(student.id);
                 const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
                 const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
@@ -284,6 +343,9 @@ export const StudentList: React.FC = () => {
                           {stats.totalHours.toFixed(1)} hrs
                         </div>
                         <div className="text-xs text-gray-500">{stats.lessonCount} lessons</div>
+                        {stats.lastFlight && (
+                          <div className="text-xs text-gray-500">Last flight {stats.lastFlight.toLocaleDateString()}</div>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -308,11 +370,29 @@ export const StudentList: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button 
+                      <button
                         onClick={() => openViewDetails(student)}
                         className="text-blue-600 hover:text-blue-900 mr-3"
                       >
                         View
+                      </button>
+                      <button
+                        onClick={() => openStudentTab(student, 'training')}
+                        className="text-green-600 hover:text-green-900 mr-3"
+                      >
+                        Training
+                      </button>
+                      <button
+                        onClick={() => openStudentTab(student, 'logbook')}
+                        className="text-indigo-600 hover:text-indigo-900 mr-3"
+                      >
+                        Logbook
+                      </button>
+                      <button
+                        onClick={() => openStudentTab(student, 'documents')}
+                        className="text-gray-600 hover:text-gray-900 mr-3"
+                      >
+                        Docs
                       </button>
                       <button 
                         onClick={() => openEditForm(student)}
@@ -324,6 +404,13 @@ export const StudentList: React.FC = () => {
                   </tr>
                 );
               })}
+              {visibleStudentFiles.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+                    No student or pilot files found.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -336,14 +423,6 @@ export const StudentList: React.FC = () => {
         student={editingStudent || undefined}
         isEdit={!!editingStudent}
       />
-
-      {viewingStudent && (
-        <StudentDetails
-          isOpen={showStudentDetails}
-          onClose={closeStudentDetails}
-          student={viewingStudent}
-        />
-      )}
 
       <InviteUserModal
         isOpen={showInviteModal}
