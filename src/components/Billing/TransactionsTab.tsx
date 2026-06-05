@@ -7,6 +7,46 @@ import toast from 'react-hot-toast';
 
 type BillingHook = ReturnType<typeof useBillingAccounts>;
 
+const XERO_SALES_INVOICE_HEADERS = [
+  '*ContactName',
+  'EmailAddress',
+  'POAddressLine1',
+  'POAddressLine2',
+  'POAddressLine3',
+  'POAddressLine4',
+  'POCity',
+  'PORegion',
+  'POPostalCode',
+  'POCountry',
+  '*InvoiceNumber',
+  'Reference',
+  '*InvoiceDate',
+  '*DueDate',
+  'InventoryItemCode',
+  '*Description',
+  '*Quantity',
+  '*UnitAmount',
+  'Discount',
+  '*AccountCode',
+  '*TaxType',
+  'TrackingName1',
+  'TrackingOption1',
+  'TrackingName2',
+  'TrackingOption2',
+  'Currency',
+  'BrandingTheme',
+];
+
+const escapeCsvValue = (value: string | number | null | undefined) => {
+  const text = value == null ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+const makeInvoiceNumber = (rowId: string, index: number) => {
+  const cleanId = rowId.replace(/^unpaid-/, '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+  return `BFC-${format(new Date(), 'yyyyMMdd')}-${String(index + 1).padStart(3, '0')}${cleanId ? `-${cleanId}` : ''}`;
+};
+
 const MarkPaidModal: React.FC<{
   flightId: string;
   description: string;
@@ -241,28 +281,52 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
 
   const handleExport = () => {
     const rows = [
-      ['Date', 'Student', 'Description', 'Amount', 'Payment Method', 'Balance After', 'Status'],
-      ...filtered.map(r => [
-        format(parseISO(r.date), 'dd/MM/yyyy HH:mm'),
+      XERO_SALES_INVOICE_HEADERS,
+      ...filtered.map((r, index) => [
         r.userName,
+        r.userEmail,
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        'Australia',
+        makeInvoiceNumber(r.id, index),
+        [
+          r.rowType === 'unpaid' ? 'Unpaid flight' : r.isTopup ? 'Account top-up' : 'CRM transaction',
+          r.paymentMethod ? `Payment method: ${r.paymentMethod}` : null,
+          r.balanceAfter != null ? `Balance after: $${r.balanceAfter.toFixed(2)}` : null,
+        ].filter(Boolean).join(' | '),
+        format(parseISO(r.date), 'dd/MM/yyyy'),
+        format(parseISO(r.date), 'dd/MM/yyyy'),
+        r.isTopup ? 'TOPUP' : r.rowType === 'unpaid' || r.rowType === 'debit' ? 'FLIGHT' : 'CRM',
         r.description,
-        r.amount != null ? r.amount.toFixed(2) : '',
-        r.paymentMethod ?? '',
-        r.balanceAfter != null ? r.balanceAfter.toFixed(2) : '',
+        '1',
+        r.amount != null ? Math.abs(r.amount).toFixed(2) : '',
+        '',
+        '200',
+        'OUTPUT',
+        'CRM Type',
+        r.rowType === 'unpaid' ? 'Unpaid' : r.isTopup ? 'Top-up' : r.rowType === 'debit' ? 'Flight charge' : 'Credit',
+        'Payment Status',
         r.rowType === 'unpaid' ? 'Unpaid' :
         r.isTopup ? (r.verifiedStatus === 'verified' ? 'Verified' : r.verifiedStatus === 'rejected' ? 'Rejected' : 'Pending') :
-        'Payment',
+        'Recorded',
+        'AUD',
+        '',
       ]),
     ];
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const csv = rows.map(r => r.map(escapeCsvValue).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.download = `xero-sales-invoices-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Exported to CSV');
+    toast.success('Exported Xero sales invoice CSV');
   };
 
   const handleVerify = async (id: string) => {
@@ -463,7 +527,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
             className="flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-medium bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors sm:w-auto sm:py-1.5"
           >
             <Download className="h-3.5 w-3.5" />
-            Export CSV
+            Export Xero CSV
           </button>
         </div>
       </div>
