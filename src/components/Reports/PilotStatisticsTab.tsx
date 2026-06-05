@@ -257,7 +257,41 @@ export const PilotStatisticsTab: React.FC = () => {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-4 md:hidden">
+          {sorted.map(s => (
+            <article key={s.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-gray-900">{s.name}</h3>
+                  <p className="truncate text-xs text-gray-500">{s.email}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-lg font-bold text-gray-900">{s.totalHours.toFixed(1)}</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">hours</p>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-blue-50 p-2">
+                  <p className="text-xs text-blue-700">Bookings</p>
+                  <p className="font-bold text-blue-900">{s.totalBookings}</p>
+                </div>
+                <div className="rounded-lg bg-green-50 p-2">
+                  <p className="text-xs text-green-700">Dual</p>
+                  <p className="font-bold text-green-900">{s.dualHours.toFixed(1)}</p>
+                </div>
+                <div className="rounded-lg bg-sky-50 p-2">
+                  <p className="text-xs text-sky-700">Solo</p>
+                  <p className="font-bold text-sky-900">{s.soloHours.toFixed(1)}</p>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
+                <span>{s.completedFlights} completed</span>
+                <span className={s.cancelledFlights > 0 ? 'font-semibold text-red-600' : 'text-gray-400'}>{s.cancelledFlights} cancelled</span>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full divide-y divide-gray-100">
             <thead className="bg-gray-50">
               <tr>

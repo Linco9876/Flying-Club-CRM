@@ -12,6 +12,7 @@ interface InviteUserModalProps {
     name: string;
     phone?: string;
     roles?: UserRole[];
+    resend?: boolean;
   }) => Promise<InviteUserResult | undefined>;
 }
 
@@ -29,8 +30,11 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [inviteResult, setInviteResult] = useState<InviteUserResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyLinkDone, setCopyLinkDone] = useState(false);
 
   const tempPassword = inviteResult?.tempPassword || null;
+  const manualLink = inviteResult?.manualLink || null;
+  const pendingInviteExists = Boolean(inviteResult?.pendingInviteExists);
   const hasStudentRoleConflict = formData.roles.includes('student') && formData.roles.length > 1;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,7 +49,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
 
     try {
       const result = await onInvite(formData);
-      if (result?.tempPassword || result?.emailSent) {
+      if (result?.tempPassword || result?.emailSent || result?.manualLink || result?.pendingInviteExists) {
         setInviteResult(result);
       }
     } catch (error) {
@@ -64,6 +68,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
     });
     setInviteResult(null);
     setCopied(false);
+    setCopyLinkDone(false);
     onClose();
   };
 
@@ -97,6 +102,28 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
     }
   };
 
+  const copyInviteLink = async () => {
+    if (!manualLink) return;
+    await navigator.clipboard.writeText(manualLink);
+    setCopyLinkDone(true);
+    toast.success('Invite setup link copied');
+    setTimeout(() => setCopyLinkDone(false), 2000);
+  };
+
+  const handleGenerateSetupLink = async () => {
+    setIsSubmitting(true);
+    try {
+      const result = await onInvite({ ...formData, resend: true });
+      if (result?.manualLink || result?.emailSent || result?.tempPassword) {
+        setInviteResult(result);
+      }
+    } catch (error) {
+      console.error('Error generating invite link:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -117,13 +144,29 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
 
         {inviteResult ? (
           <div className="p-6">
-            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-green-800 font-medium mb-2">
-                {inviteResult.emailSent ? 'Invitation email sent!' : 'User invited successfully!'}
+            <div className={`mb-4 rounded-lg border p-4 ${
+              pendingInviteExists
+                ? 'border-amber-200 bg-amber-50'
+                : 'border-green-200 bg-green-50'
+            }`}>
+              <p className={`font-medium mb-2 ${pendingInviteExists ? 'text-amber-800' : 'text-green-800'}`}>
+                {pendingInviteExists
+                  ? 'Pending invite already exists'
+                  : inviteResult.emailSent
+                    ? 'Invitation email sent!'
+                    : 'User invited successfully!'}
               </p>
-              {inviteResult.emailSent ? (
+              {pendingInviteExists ? (
+                <p className="text-sm text-amber-700">
+                  This email already has a pending invite. Generate a setup link below if the email did not arrive.
+                </p>
+              ) : inviteResult.emailSent ? (
                 <p className="text-sm text-green-700">
                   An invitation email has been sent to {formData.name}. They can open the link to set their password and access the CRM.
+                </p>
+              ) : manualLink ? (
+                <p className="text-sm text-green-700">
+                  A setup link has been generated for {formData.name}. Send this link to them if the invite email did not arrive.
                 </p>
               ) : (
                 <p className="text-sm text-green-700">
@@ -139,7 +182,28 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
               <p className="text-gray-900 font-medium">{formData.email}</p>
             </div>
 
-            {tempPassword ? (
+            {manualLink ? (
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Invite Setup Link
+                </label>
+                <div className="flex items-center space-x-2">
+                  <div className="min-w-0 flex-1 truncate rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
+                    {manualLink}
+                  </div>
+                  <button
+                    onClick={copyInviteLink}
+                    className="p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    title="Copy setup link"
+                  >
+                    {copyLinkDone ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  This link lets the user set their password. Treat it like a password and send it only to the intended person.
+                </p>
+              </div>
+            ) : tempPassword ? (
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Temporary Password
@@ -161,8 +225,22 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-                Ask them to check junk or spam if it does not arrive shortly. The invite email uses the Supabase Auth invite template and sender settings.
+              <div className="mb-6 space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                {pendingInviteExists ? (
+                  <p>Generate a setup link and send it directly to the user.</p>
+                ) : (
+                  <p>
+                    Ask them to check junk or spam if it does not arrive shortly. The invite email uses the Supabase Auth invite template and sender settings.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleGenerateSetupLink}
+                  disabled={isSubmitting}
+                  className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Generating...' : 'Generate setup link'}
+                </button>
               </div>
             )}
 

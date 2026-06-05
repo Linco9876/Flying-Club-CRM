@@ -36,7 +36,7 @@ export interface DashboardStats {
   myPrepaidBalance: number;
 }
 
-export function useDashboardStats(userId?: string, userRole?: string) {
+export function useDashboardStats(userId?: string, userRole?: string, scheduleScope: 'global' | 'user' = 'global') {
   const [stats, setStats] = useState<DashboardStats>({
     totalStudents: 0,
     totalAircraft: 0,
@@ -67,6 +67,24 @@ export function useDashboardStats(userId?: string, userRole?: string) {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
+      let todaysScheduleQuery = supabase
+        .from('bookings')
+        .select(`
+          id, start_time, end_time, status,
+          student:student_id (name),
+          instructor:instructor_id (name),
+          aircraft:aircraft_id (registration)
+        `)
+        .is('deleted_at', null)
+        .gte('start_time', todayStart)
+        .lt('start_time', todayEnd)
+        .order('start_time', { ascending: true })
+        .limit(5);
+
+      if (scheduleScope === 'user') {
+        todaysScheduleQuery = todaysScheduleQuery.or(`student_id.eq.${userId},instructor_id.eq.${userId}`);
+      }
+
       const [
         studentsResult,
         aircraftResult,
@@ -95,19 +113,7 @@ export function useDashboardStats(userId?: string, userRole?: string) {
           .select('id', { count: 'exact' })
           .is('deleted_at', null)
           .eq('status', 'pending_approval'),
-        supabase
-          .from('bookings')
-          .select(`
-            id, start_time, end_time, status,
-            student:student_id (name),
-            instructor:instructor_id (name),
-            aircraft:aircraft_id (registration)
-          `)
-          .is('deleted_at', null)
-          .gte('start_time', todayStart)
-          .lt('start_time', todayEnd)
-          .order('start_time', { ascending: true })
-          .limit(5),
+        todaysScheduleQuery,
       ]);
 
       const allAircraft = aircraftResult.data || [];
@@ -227,7 +233,7 @@ export function useDashboardStats(userId?: string, userRole?: string) {
       }
 
       if (userRole === 'student' || userRole === 'pilot') {
-        const [myHoursResult, myNextBookingResult, balanceResult] = await Promise.all([
+        const [myHoursResult, myNextBookingResult, balanceResult, myBookingsTodayResult] = await Promise.all([
           supabase
             .from('flight_logs')
             .select('flight_duration')
@@ -250,6 +256,13 @@ export function useDashboardStats(userId?: string, userRole?: string) {
             .select('prepaid_balance')
             .eq('id', userId)
             .maybeSingle(),
+          supabase
+            .from('bookings')
+            .select('id', { count: 'exact' })
+            .is('deleted_at', null)
+            .eq('student_id', userId)
+            .gte('start_time', todayStart)
+            .lt('start_time', todayEnd),
         ]);
 
         myFlightHours = (myHoursResult.data || []).reduce((sum, log) => sum + (log.flight_duration || 0), 0);
@@ -264,7 +277,7 @@ export function useDashboardStats(userId?: string, userRole?: string) {
           };
         }
 
-        myBookingsToday = (bookingsTodayResult.count || 0);
+        myBookingsToday = (myBookingsTodayResult.count || 0);
       }
 
       setStats({
@@ -294,7 +307,7 @@ export function useDashboardStats(userId?: string, userRole?: string) {
 
   useEffect(() => {
     fetchStats();
-  }, [userId, userRole]);
+  }, [userId, userRole, scheduleScope]);
 
   return { stats, loading, refetch: fetchStats };
 }

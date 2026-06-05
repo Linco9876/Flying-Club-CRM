@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { TrainingRecord, TrainingSequenceResult } from '../types';
 import toast from 'react-hot-toast';
@@ -15,20 +15,49 @@ const fromDateOnly = (value: string) => {
   return new Date(year, month - 1, day);
 };
 
-export const useTrainingRecords = () => {
+interface UseTrainingRecordsOptions {
+  requireStudentId?: boolean;
+}
+
+export const useTrainingRecords = (studentId?: string, options: UseTrainingRecordsOptions = {}) => {
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const realtimeRefetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestFetchIdRef = useRef(0);
+  const requireStudentId = options.requireStudentId ?? false;
+  const realtimeChannelIdRef = useRef(
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 
-  const fetchTrainingRecords = async () => {
+  const fetchTrainingRecords = useCallback(async (silent = false) => {
+    if (requireStudentId && !studentId) {
+      setTrainingRecords([]);
+      setError(null);
+      setLoading(true);
+      return;
+    }
+
+    const fetchId = latestFetchIdRef.current + 1;
+    latestFetchIdRef.current = fetchId;
+
     try {
       setLoading(true);
-      const { data: recordsData, error: recordsError } = await supabase
+      let recordsQuery = supabase
         .from('training_records')
         .select('*')
         .order('date', { ascending: false });
 
+      if (studentId) {
+        recordsQuery = recordsQuery.eq('student_id', studentId);
+      }
+
+      const { data: recordsData, error: recordsError } = await recordsQuery;
+
       if (recordsError) throw recordsError;
+      if (fetchId !== latestFetchIdRef.current) return;
 
       const recordIds = (recordsData || []).map(record => record.id);
       const flightLogIds = [...new Set((recordsData || []).map(record => record.flight_log_id).filter(Boolean))];
@@ -42,6 +71,7 @@ export const useTrainingRecords = () => {
         : { data: [], error: null };
 
       if (sequenceResultsError) throw sequenceResultsError;
+      if (fetchId !== latestFetchIdRef.current) return;
 
       const [
         { data: flightLogRows, error: flightLogError },
@@ -57,6 +87,7 @@ export const useTrainingRecords = () => {
 
       if (flightLogError) throw flightLogError;
       if (bookingError) throw bookingError;
+      if (fetchId !== latestFetchIdRef.current) return;
 
       const flightLogStartMap = new Map((flightLogRows || []).map(row => [row.id, row.start_time]));
       const bookingStartMap = new Map((bookingRows || []).map(row => [row.id, row.start_time]));
@@ -128,13 +159,28 @@ export const useTrainingRecords = () => {
       setTrainingRecords(combinedRecords);
       setError(null);
     } catch (err) {
+      if (fetchId !== latestFetchIdRef.current) return;
       console.error('Error fetching training records:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch training records');
-      toast.error('Failed to load training records');
+      if (!silent) {
+        toast.error('Failed to load training records');
+      }
     } finally {
-      setLoading(false);
+      if (fetchId === latestFetchIdRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, [requireStudentId, studentId]);
+
+  const queueRealtimeRefetch = useCallback(() => {
+    if (realtimeRefetchTimeoutRef.current) {
+      clearTimeout(realtimeRefetchTimeoutRef.current);
+    }
+
+    realtimeRefetchTimeoutRef.current = setTimeout(() => {
+      void fetchTrainingRecords(true);
+    }, 250);
+  }, [fetchTrainingRecords]);
 
   const addTrainingRecord = async (recordData: Omit<TrainingRecord, 'id' | 'sequences' | 'auditLog'> & { sequences?: TrainingSequenceResult[] }) => {
     try {
@@ -195,7 +241,7 @@ export const useTrainingRecords = () => {
         if (sequenceError) throw sequenceError;
       }
 
-      await fetchTrainingRecords();
+      await fetchTrainingRecords(true);
       return data;
     } catch (err) {
       console.error('Error adding training record:', err);
@@ -256,7 +302,7 @@ export const useTrainingRecords = () => {
 
       if (error) throw error;
 
-      await fetchTrainingRecords();
+      await fetchTrainingRecords(true);
     } catch (err) {
       console.error('Error updating training record:', err);
       toast.error('Failed to update training record');
@@ -273,7 +319,7 @@ export const useTrainingRecords = () => {
 
       if (error) throw error;
 
-      await fetchTrainingRecords();
+      await fetchTrainingRecords(true);
       toast.success('Training record deleted successfully');
     } catch (err) {
       console.error('Error deleting training record:', err);
@@ -283,8 +329,33 @@ export const useTrainingRecords = () => {
   };
 
   useEffect(() => {
-    fetchTrainingRecords();
-  }, []);
+    void fetchTrainingRecords();
+  }, [fetchTrainingRecords]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`training-records-live-${studentId || 'all'}-${realtimeChannelIdRef.current}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'training_records' },
+        queueRealtimeRefetch
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'training_sequence_results' },
+        queueRealtimeRefetch
+      )
+      .subscribe();
+
+    return () => {
+      if (realtimeRefetchTimeoutRef.current) {
+        clearTimeout(realtimeRefetchTimeoutRef.current);
+      }
+      void supabase.removeChannel(channel);
+    };
+  }, [queueRealtimeRefetch, studentId]);
+
+  const refetch = useCallback(() => fetchTrainingRecords(false), [fetchTrainingRecords]);
 
   return {
     trainingRecords,
@@ -293,6 +364,6 @@ export const useTrainingRecords = () => {
     addTrainingRecord,
     updateTrainingRecord,
     deleteTrainingRecord,
-    refetch: fetchTrainingRecords
+    refetch
   };
 };

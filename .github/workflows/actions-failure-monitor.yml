@@ -1,0 +1,51 @@
+name: GitHub Actions failure monitor
+
+on:
+  workflow_run:
+    workflows:
+      - Daily CRM backup
+      - Deploy to GitHub Pages
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  alert:
+    if: ${{ github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.conclusion != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Send failure alert
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WEBHOOK_TYPE: ${{ secrets.ALERT_WEBHOOK_TYPE }}
+          ALERT_TITLE: Bendigo Flying Club CRM GitHub Action failed
+          ALERT_SUMMARY: "${{ github.event.workflow_run.name }} finished with ${{ github.event.workflow_run.conclusion }}."
+          ALERT_STATUS: ${{ github.event.workflow_run.conclusion }}
+          ALERT_WORKFLOW: ${{ github.event.workflow_run.name }}
+          ALERT_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: node ./scripts/send-alert.mjs
+
+      - name: Create in-app admin notification
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ADMIN_NOTIFICATION_TITLE: Bendigo Flying Club CRM automation failed
+          ADMIN_NOTIFICATION_MESSAGE: "${{ github.event.workflow_run.name }} finished with ${{ github.event.workflow_run.conclusion }}. Check the linked GitHub Actions run."
+          ADMIN_NOTIFICATION_ALERT_TYPE: github_actions_failure
+          ADMIN_NOTIFICATION_STATUS: ${{ github.event.workflow_run.conclusion }}
+          ADMIN_NOTIFICATION_WORKFLOW: ${{ github.event.workflow_run.name }}
+          ADMIN_NOTIFICATION_URL: ${{ github.event.workflow_run.html_url }}
+        run: node ./scripts/create-admin-notification.mjs

@@ -2,19 +2,16 @@ import React from 'react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getAuthorizedMenuItems } from '../../utils/rbac';
-import { usePortalUxSettings } from '../../hooks/useSettings';
 import {
-  Calendar,
   Users,
   Plane,
   FileText,
   Settings,
-  BarChart3,
   Wrench,
-  CreditCard,
   BookOpen,
   Shield,
   AlertCircle,
+  DollarSign,
   Menu,
   X
 } from 'lucide-react';
@@ -26,21 +23,17 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
   const { user } = useAuth();
-  const { settings: portalSettings } = usePortalUxSettings();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const allMenuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['admin', 'instructor', 'student'] },
-    { id: 'calendar', label: 'Calendar', icon: Calendar, roles: ['admin', 'instructor', 'student'] },
     { id: 'students', label: 'Members', icon: Users, roles: ['admin', 'instructor'] },
     { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'student'] },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },
-    { id: 'training', label: 'Training Records', icon: BookOpen, roles: ['admin', 'instructor'] },
+    { id: 'training', label: 'Training Records', icon: BookOpen, roles: ['admin', 'instructor', 'pilot', 'student'] },
     { id: 'outstanding-records', label: 'Outstanding Records', icon: AlertCircle, roles: ['admin', 'instructor'] },
     { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },
-    { id: 'profile', label: 'My Profile', icon: Users, roles: ['student'] },
-    { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin'] },
-    { id: 'billing', label: 'Billing', icon: CreditCard, roles: ['admin', 'instructor', 'student'] },
+    { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin', 'pilot', 'student'] },
+    { id: 'financial-dashboard', label: 'Financial Dashboard', icon: DollarSign, roles: ['admin'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['admin', 'instructor'] },
     { id: 'safety', label: 'Safety', icon: Shield, roles: ['admin', 'instructor', 'student'] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin'] }
@@ -49,13 +42,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
   // Get authorized menu items using RBAC
   const authorizedItems = getAuthorizedMenuItems(user);
   const filteredMenuItems = allMenuItems.filter(item => {
-    if (
-      item.id === 'billing' &&
-      (user?.role === 'student' || user?.role === 'pilot') &&
-      !portalSettings.show_invoices_in_portal
-    ) {
-      return false;
-    }
     return authorizedItems.some(authItem => authItem.id === item.id);
   });
 

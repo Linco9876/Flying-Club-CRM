@@ -11,7 +11,7 @@ interface TopUpModalProps {
   userName: string;
   onClose: () => void;
   onConfirm: (amount: number, description: string, paymentMethodId?: string, transactionDate?: string) => Promise<void>;
-  paymentMethods: { id: string; name: string }[];
+  paymentMethods: { id: string; name: string; active: boolean; allowAccountTopup?: boolean }[];
 }
 
 const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onConfirm, paymentMethods }) => {
@@ -84,7 +84,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">— Select —</option>
-              {paymentMethods.filter(pm => pm.active).map(pm => (
+              {paymentMethods.filter(pm => pm.active && pm.allowAccountTopup !== false).map(pm => (
                 <option key={pm.id} value={pm.id}>{pm.name}</option>
               ))}
             </select>

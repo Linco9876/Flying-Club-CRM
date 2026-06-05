@@ -1,26 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, FlightLog } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useBookingRulesSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
 
-export const useBookings = () => {
+export const useBookings = (enabled = true) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
   const { settings: bookingRules } = useBookingRulesSettings();
+  const localCreatedBookingIdsRef = useRef<Set<string>>(new Set());
+  const localDeletedBookingIdsRef = useRef<Set<string>>(new Set());
 
   const isStudentOrPilot = user?.role === 'student' || user?.role === 'pilot';
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
   const isStudentOnlyUser = userRoles.includes('student') && !userRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
-  const notifyCalendarChanged = () => {
-    window.dispatchEvent(new Event('calendar-data-changed'));
-  };
+  const mapBookingRow = (row: any, flightLog?: FlightLog): Booking => ({
+    id: row.id,
+    studentId: row.student_id,
+    instructorId: row.instructor_id,
+    aircraftId: row.aircraft_id,
+    startTime: new Date(row.start_time),
+    endTime: new Date(row.end_time),
+    paymentType: row.payment_type,
+    notes: row.notes,
+    status: row.deleted_at ? 'cancelled' : row.status,
+    hasConflict: row.has_conflict || false,
+    deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
+    flightLog,
+    flight_logged: row.flight_logged || false,
+    flightTypeId: row.flight_type_id || undefined,
+  });
 
-  const validateTimingRules = (startTime: Date, endTime: Date) => {
+  const validateTimingRules = (
+    startTime: Date,
+    endTime: Date,
+    options: { enforceMinNotice?: boolean } = { enforceMinNotice: true }
+  ) => {
     const now = Date.now();
     const durationHours = (endTime.getTime() - startTime.getTime()) / (60 * 60 * 1000);
     const isPastBooking = startTime.getTime() < now;
@@ -35,6 +54,7 @@ export const useBookings = () => {
     if (!isStudentOrPilot) return;
     if (
       !isPastBooking &&
+      options.enforceMinNotice !== false &&
       bookingRules?.enforce_min_notice &&
       startTime.getTime() < now + bookingRules.min_booking_notice_hours * 60 * 60 * 1000
     ) {
@@ -49,17 +69,23 @@ export const useBookings = () => {
   };
 
   const fetchBookings = async () => {
+    if (!enabled) {
+      setBookings([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     try {
       setLoading(true);
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 5000)
+        setTimeout(() => reject(new Error('Request timeout')), 15000)
       );
 
       const bookingsPromise = supabase
         .from('bookings')
         .select('*')
-        .is('deleted_at', null)
         .order('start_time', { ascending: false });
 
       const { data: bookingsData, error: bookingsError } = await Promise.race([
@@ -69,7 +95,6 @@ export const useBookings = () => {
 
       if (bookingsError) {
         console.error('Bookings error:', bookingsError);
-        setBookings([]);
         setError(null);
         setLoading(false);
         return;
@@ -96,28 +121,15 @@ export const useBookings = () => {
         notes: fl.notes
       } as FlightLog]) || []);
 
-      const combinedBookings: Booking[] = (bookingsData || []).map(b => ({
-        id: b.id,
-        studentId: b.student_id,
-        instructorId: b.instructor_id,
-        aircraftId: b.aircraft_id,
-        startTime: new Date(b.start_time),
-        endTime: new Date(b.end_time),
-        paymentType: b.payment_type,
-        notes: b.notes,
-        status: b.status,
-        hasConflict: b.has_conflict || false,
-        flightLog: flightLogsMap.get(b.id),
-        flight_logged: b.flight_logged || false,
-        flightTypeId: b.flight_type_id || undefined,
-      }));
+      const combinedBookings: Booking[] = (bookingsData || []).map(b =>
+        mapBookingRow(b, flightLogsMap.get(b.id))
+      );
 
       setBookings(combinedBookings);
       setError(null);
     } catch (err) {
       console.error('Error fetching bookings:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch bookings');
-      setBookings([]);
     } finally {
       setLoading(false);
     }
@@ -129,6 +141,90 @@ export const useBookings = () => {
     bStart: Date | string,
     bEnd: Date | string
   ) => new Date(aStart) < new Date(bEnd) && new Date(aEnd) > new Date(bStart);
+
+  const toLocalDateString = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const addDays = (date: Date, days: number) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+
+  const getDatesBetween = (startTime: Date, endTime: Date) => {
+    const dates: Date[] = [];
+    let cursor = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate());
+    const end = new Date(endTime.getFullYear(), endTime.getMonth(), endTime.getDate());
+
+    while (cursor <= end) {
+      dates.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+
+    return dates;
+  };
+
+  const buildAbsenceDateTime = (date: Date, time: string | null | undefined, fallback: 'start' | 'end') => {
+    const [hour, minute] = (time || (fallback === 'start' ? '00:00' : '23:59')).slice(0, 5).split(':').map(Number);
+    return new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      Number.isFinite(hour) ? hour : fallback === 'start' ? 0 : 23,
+      Number.isFinite(minute) ? minute : fallback === 'start' ? 0 : 59,
+      fallback === 'end' ? 59 : 0
+    );
+  };
+
+  const findInstructorAbsenceConflicts = async (
+    instructorId: string | null | undefined,
+    startTime: Date,
+    endTime: Date
+  ) => {
+    if (!instructorId) return [];
+
+    const bookingStartDate = toLocalDateString(startTime);
+    const bookingEndDate = toLocalDateString(endTime);
+
+    const { data, error } = await supabase
+      .from('instructor_absences')
+      .select('id,user_id,instructor_id,start_date,end_date,start_time,end_time,reason')
+      .or(`user_id.eq.${instructorId},instructor_id.eq.${instructorId}`)
+      .lte('start_date', bookingEndDate)
+      .gte('end_date', bookingStartDate);
+
+    if (error) {
+      console.error('Error checking instructor absences:', error);
+      throw new Error('Could not check instructor availability');
+    }
+
+    return (data || []).filter((absence: any) =>
+      getDatesBetween(startTime, endTime).some((date) => {
+        const dateString = toLocalDateString(date);
+        if (dateString < absence.start_date || dateString > absence.end_date) return false;
+
+        const absenceStart = buildAbsenceDateTime(date, absence.start_time, 'start');
+        const absenceEnd = buildAbsenceDateTime(date, absence.end_time, 'end');
+        return timeRangesOverlap(startTime, endTime, absenceStart, absenceEnd);
+      })
+    );
+  };
+
+  const assertInstructorAvailable = async (
+    bookingData: Pick<Booking, 'instructorId' | 'startTime' | 'endTime'>
+  ) => {
+    const absences = await findInstructorAbsenceConflicts(
+      bookingData.instructorId,
+      new Date(bookingData.startTime),
+      new Date(bookingData.endTime)
+    );
+
+    if (absences.length > 0) {
+      const reason = absences[0]?.reason ? ` (${absences[0].reason})` : '';
+      throw new Error(`Instructor is unavailable during that time${reason}`);
+    }
+  };
 
   const findConfirmedConflicts = (
     bookingData: Pick<Booking, 'aircraftId' | 'instructorId' | 'startTime' | 'endTime'>,
@@ -157,10 +253,12 @@ export const useBookings = () => {
       return;
     }
 
-    const activeConfirmed = data.filter((booking: any) =>
+      const activeConfirmed = data.filter((booking: any) =>
+      !booking.deleted_at &&
       booking.status === 'confirmed' && !booking.has_conflict
     );
     const waitlisted = data.filter((booking: any) =>
+      !booking.deleted_at &&
       booking.status === 'confirmed' && booking.has_conflict
     );
     const promoteIds: string[] = [];
@@ -224,6 +322,8 @@ export const useBookings = () => {
         throw new Error('Students need an instructor assigned before booking an aircraft solo. Pilots can book solo.');
       }
 
+      await assertInstructorAvailable(bookingData);
+
       // Student-only users need approval; pilots can hire without instructor approval.
       let needsApproval = isStudentOnlyUser ||
         Boolean(bookingRules?.require_instructor_approval && !bookingData.instructorId);
@@ -272,6 +372,11 @@ export const useBookings = () => {
       }
 
       console.log('Booking created:', data);
+      const createdBooking = data?.[0];
+      if (createdBooking?.id) {
+        localCreatedBookingIdsRef.current.add(createdBooking.id);
+        setBookings(prev => [mapBookingRow(createdBooking), ...prev]);
+      }
 
       // Send approval notifications if needed
       if (needsApproval && data && data.length > 0) {
@@ -284,9 +389,6 @@ export const useBookings = () => {
           console.error('Error sending approval notifications:', notifyError);
         }
       }
-
-      await fetchBookings();
-      notifyCalendarChanged();
 
       if (isWaitlisted) {
         toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
@@ -347,7 +449,16 @@ export const useBookings = () => {
         bookingData.startTime !== undefined ||
         bookingData.endTime !== undefined
       )) {
-        validateTimingRules(new Date(candidateBooking.startTime), new Date(candidateBooking.endTime));
+        validateTimingRules(new Date(candidateBooking.startTime), new Date(candidateBooking.endTime), {
+          enforceMinNotice: false,
+        });
+      }
+      if (candidateBooking && (
+        bookingData.instructorId !== undefined ||
+        bookingData.startTime !== undefined ||
+        bookingData.endTime !== undefined
+      )) {
+        await assertInstructorAvailable(candidateBooking);
       }
       if (isWaitlisted && bookingRules?.allow_double_booking === false) {
         throw new Error('This time overlaps an existing booking and waiting-list overlaps are disabled');
@@ -362,27 +473,40 @@ export const useBookings = () => {
         updateData.has_conflict = isWaitlisted;
       }
 
+      const previousBookings = bookings;
+      setBookings(prev => prev.map(existing =>
+        existing.id === id
+          ? {
+              ...existing,
+              ...bookingData,
+              hasConflict: updateData.has_conflict ?? existing.hasConflict,
+            }
+          : existing
+      ));
+
       const { error } = await supabase
         .from('bookings')
         .update(updateData)
         .eq('id', id);
 
-      if (error) throw error;
-
-      if (!isWaitlisted) {
-        await promoteAvailableWaitlistedBookings();
+      if (error) {
+        setBookings(previousBookings);
+        throw error;
       }
 
-      await fetchBookings();
-      notifyCalendarChanged();
+      if (!isWaitlisted) {
+        void promoteAvailableWaitlistedBookings().catch((promoteError) => {
+          console.error('Error promoting waitlisted bookings after booking update:', promoteError);
+        });
+      }
       if (isWaitlisted) {
         toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
-      } else if (!silent) {
-        toast.success('Booking updated successfully');
       }
     } catch (err) {
       console.error('Error updating booking:', err);
-      toast.error('Failed to update booking');
+      if (!silent) {
+        toast.error(err instanceof Error ? err.message : 'Failed to update booking');
+      }
       throw err;
     }
   };
@@ -413,9 +537,15 @@ export const useBookings = () => {
 
       if (error) throw error;
 
-      await promoteAvailableWaitlistedBookings();
-      await fetchBookings();
-      notifyCalendarChanged();
+      void promoteAvailableWaitlistedBookings().catch((promoteError) => {
+        console.error('Error promoting waitlisted bookings after booking deletion:', promoteError);
+      });
+      localDeletedBookingIdsRef.current.add(id);
+      setBookings(prev => prev.map(existing =>
+        existing.id === id
+          ? { ...existing, status: 'cancelled', deletedAt: new Date(), hasConflict: false }
+          : existing
+      ));
       toast.success('Booking deleted successfully');
     } catch (err) {
       console.error('Error deleting booking:', err);
@@ -442,8 +572,26 @@ export const useBookings = () => {
 
       if (error) throw error;
 
-      await fetchBookings();
-      notifyCalendarChanged();
+      setBookings(prev => prev.map(existing =>
+        existing.id === flightLogData.bookingId
+          ? {
+              ...existing,
+              flight_logged: true,
+              flightLog: {
+                id: crypto.randomUUID(),
+                bookingId: flightLogData.bookingId,
+                landings: flightLogData.landings,
+                duration: flightLogData.duration,
+                tachStart: flightLogData.tachStart,
+                tachEnd: flightLogData.tachEnd,
+                engineStart: flightLogData.engineStart,
+                engineEnd: flightLogData.engineEnd,
+                totalCost: flightLogData.totalCost,
+                notes: flightLogData.notes,
+              },
+            }
+          : existing
+      ));
       toast.success('Flight log added successfully');
     } catch (err) {
       console.error('Error adding flight log:', err);
@@ -470,6 +618,12 @@ export const useBookings = () => {
       if (!bookingToApprove) {
         throw new Error('Booking could not be found');
       }
+
+      await assertInstructorAvailable({
+        instructorId: bookingToApprove.instructor_id || undefined,
+        startTime: new Date(bookingToApprove.start_time),
+        endTime: new Date(bookingToApprove.end_time),
+      });
 
       const conflicts = (activeBookings || []).filter((existing: any) =>
         existing.id !== bookingId &&
@@ -511,8 +665,15 @@ export const useBookings = () => {
         .eq('booking_id', bookingId)
         .eq('type', 'booking_approval');
 
-      await fetchBookings();
-      notifyCalendarChanged();
+      setBookings(prev => prev.map(existing =>
+        existing.id === bookingId
+          ? {
+              ...existing,
+              status: 'confirmed',
+              hasConflict: isWaitlisted,
+            }
+          : existing
+      ));
       if (isWaitlisted) {
         toast('Booking approved and placed on the waiting list because it overlaps an existing booking.');
       } else {
@@ -544,8 +705,15 @@ export const useBookings = () => {
         .eq('booking_id', bookingId)
         .eq('type', 'booking_approval');
 
-      await fetchBookings();
-      notifyCalendarChanged();
+      setBookings(prev => prev.map(existing =>
+        existing.id === bookingId
+          ? {
+              ...existing,
+              status: 'cancelled',
+              notes: reason ? `Rejected: ${reason}` : 'Rejected by instructor',
+            }
+          : existing
+      ));
       toast.success('Booking rejected');
     } catch (err) {
       console.error('Error rejecting booking:', err);
@@ -555,89 +723,113 @@ export const useBookings = () => {
   };
 
   useEffect(() => {
+    if (!enabled) {
+      setBookings([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     fetchBookings();
 
-    const handleCalendarDataChanged = () => {
-      fetchBookings();
-    };
-    window.addEventListener('calendar-data-changed', handleCalendarDataChanged);
-
-    // Debounce rapid back-to-back realtime events (e.g. insert + update on same row)
-    let refetchTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleRefetch = () => {
-      if (refetchTimer) clearTimeout(refetchTimer);
-      refetchTimer = setTimeout(() => {
-        fetchBookings();
-        refetchTimer = null;
-      }, 300);
-    };
+    const channelId = `bookings_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
     const bookingsSubscription = supabase
-      .channel('bookings_realtime')
+      .channel(`${channelId}_bookings`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bookings' },
         (payload) => {
-          // Apply optimistic update immediately so the colour changes right away,
-          // then schedule a full refetch to reconcile.
+          // Apply row-level realtime changes without forcing a full calendar refetch.
           if (payload.eventType === 'UPDATE' && payload.new) {
             const updated = payload.new as any;
+            if (updated?.deleted_at) {
+              if (updated?.id && localDeletedBookingIdsRef.current.has(updated.id)) {
+                localDeletedBookingIdsRef.current.delete(updated.id);
+                return;
+              }
+              setBookings(prev =>
+                prev.some(b => b.id === updated.id)
+                  ? prev.map(b => b.id === updated.id ? mapBookingRow(updated, b.flightLog) : b)
+                  : [mapBookingRow(updated), ...prev]
+              );
+              return;
+            }
             setBookings(prev =>
-              prev.map(b =>
-                b.id === updated.id
-                  ? {
-                      ...b,
-                      status: updated.status ?? b.status,
-                      hasConflict: updated.has_conflict ?? b.hasConflict,
-                      flight_logged: updated.flight_logged ?? b.flight_logged,
-                      startTime: updated.start_time ? new Date(updated.start_time) : b.startTime,
-                      endTime: updated.end_time ? new Date(updated.end_time) : b.endTime,
-                    }
-                  : b
-              )
+              prev.some(b => b.id === updated.id)
+                ? prev.map(b => b.id === updated.id ? mapBookingRow(updated, b.flightLog) : b)
+                : [mapBookingRow(updated), ...prev]
             );
           } else if (payload.eventType === 'INSERT' && payload.new) {
-            // New booking from another user — schedule refetch to get full joined data
-            scheduleRefetch();
+            // New booking from another user.
+            const inserted = payload.new as any;
+            if (inserted?.id && localCreatedBookingIdsRef.current.has(inserted.id)) {
+              localCreatedBookingIdsRef.current.delete(inserted.id);
+              return;
+            }
+            setBookings(prev =>
+              prev.some(b => b.id === inserted.id) ? prev : [mapBookingRow(inserted), ...prev]
+            );
             return;
           } else if (payload.eventType === 'DELETE' && payload.old) {
             const deleted = payload.old as any;
             setBookings(prev => prev.filter(b => b.id !== deleted.id));
           }
-          scheduleRefetch();
         }
       )
       .subscribe();
 
     const flightLogsSubscription = supabase
-      .channel('flight_logs_realtime')
+      .channel(`${channelId}_flight_logs`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'flight_logs' },
+        { event: '*', schema: 'public', table: 'flight_logs' },
         (payload) => {
-          // When a flight log is inserted, immediately mark the linked booking as logged
-          const newLog = payload.new as any;
-          if (newLog?.booking_id) {
+          const row = (payload.new || payload.old) as any;
+          if (!row?.booking_id) return;
+
+          if (payload.eventType === 'DELETE') {
             setBookings(prev =>
               prev.map(b =>
-                b.id === newLog.booking_id
-                  ? { ...b, flight_logged: true }
+                b.id === row.booking_id
+                  ? { ...b, flight_logged: false, flightLog: undefined }
                   : b
               )
             );
+            return;
           }
-          scheduleRefetch();
+
+          setBookings(prev =>
+            prev.map(b =>
+              b.id === row.booking_id
+                ? {
+                    ...b,
+                    flight_logged: true,
+                    flightLog: {
+                      id: row.id,
+                      bookingId: row.booking_id,
+                      landings: row.landings,
+                      duration: parseFloat(row.duration ?? row.flight_duration ?? 0),
+                      tachStart: parseFloat(row.tach_start ?? 0),
+                      tachEnd: parseFloat(row.tach_end ?? 0),
+                      engineStart: parseFloat(row.engine_start ?? 0),
+                      engineEnd: parseFloat(row.engine_end ?? 0),
+                      totalCost: parseFloat(row.total_cost ?? row.calculated_cost ?? 0),
+                      notes: row.notes,
+                    },
+                  }
+                : b
+            )
+          );
         }
       )
       .subscribe();
 
     return () => {
-      if (refetchTimer) clearTimeout(refetchTimer);
-      window.removeEventListener('calendar-data-changed', handleCalendarDataChanged);
       bookingsSubscription.unsubscribe();
       flightLogsSubscription.unsubscribe();
     };
-  }, []);
+  }, [enabled]);
 
   return {
     bookings,

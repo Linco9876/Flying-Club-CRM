@@ -4,15 +4,38 @@ import { useNavigate } from 'react-router-dom';
 import { StudentForm } from './StudentForm';
 import { InviteUserModal } from './InviteUserModal';
 import { Student, UserRole } from '../../types';
-import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2, Search, UserPlus } from 'lucide-react';
+import {
+  User,
+  Phone,
+  Mail,
+  Clock,
+  Award,
+  AlertTriangle,
+  CheckCircle,
+  Loader2,
+  Search,
+  UserPlus,
+  Archive,
+  RotateCcw,
+  Trash2,
+  Eye,
+  Pencil,
+  BookOpen,
+  FileText,
+  ArrowUpDown,
+  X,
+  MoreVertical
+} from 'lucide-react';
 import { useStudents } from '../../hooks/useStudents';
 import { InviteUserResult, useInvitations } from '../../hooks/useInvitations';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { useAuth } from '../../context/AuthContext';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
-  const { students, loading, addStudent, updateStudent, refetch } = useStudents();
+  const { user } = useAuth();
+  const { students, loading, addStudent, updateStudent, deleteStudent, setStudentActive, refetch } = useStudents();
   const { inviteUser } = useInvitations();
   const { trainingRecords } = useTrainingRecords();
   const { flightLogs } = useFlightLogs();
@@ -21,6 +44,10 @@ export const StudentList: React.FC = () => {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'instructor' | 'pilot' | 'student'>('all');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
+  const [sortBy, setSortBy] = useState<'name' | 'role' | 'hours' | 'lastFlight' | 'balance'>('name');
+  const [openActionsId, setOpenActionsId] = useState<string | null>(null);
+  const canManageMembers = user?.role === 'admin' || user?.roles?.includes('admin');
 
   const normaliseSearch = (value?: string | null) =>
     (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -35,10 +62,34 @@ export const StudentList: React.FC = () => {
     return roles.includes(roleFilter);
   };
 
-  const visibleMembers = useMemo(() => {
+  const memberStatusCounts = useMemo(() => {
+    const active = students.filter(student => student.isActive !== false).length;
+    const archived = students.length - active;
+    const roles = {
+      admin: 0,
+      instructor: 0,
+      pilot: 0,
+      student: 0
+    };
+
+    students.forEach(student => {
+      const memberRoles = getMemberRoles(student);
+      if (memberRoles.includes('admin')) roles.admin += 1;
+      if (memberRoles.includes('instructor') || memberRoles.includes('senior_instructor')) roles.instructor += 1;
+      if (memberRoles.includes('pilot')) roles.pilot += 1;
+      if (memberRoles.includes('student')) roles.student += 1;
+    });
+
+    return { active, archived, total: students.length, roles };
+  }, [students]);
+
+  const rawVisibleMembers = useMemo(() => {
     const terms = normaliseSearch(searchTerm).split(/\s+/).filter(Boolean);
 
     return students.filter(student => {
+      const isActive = student.isActive !== false;
+      if (statusFilter === 'active' && !isActive) return false;
+      if (statusFilter === 'archived' && isActive) return false;
       if (!matchesRoleFilter(student)) return false;
       if (terms.length === 0) return true;
 
@@ -55,7 +106,74 @@ export const StudentList: React.FC = () => {
 
       return terms.every(term => haystack.includes(term));
     });
-  }, [roleFilter, searchTerm, students]);
+  }, [roleFilter, searchTerm, statusFilter, students]);
+
+  const statsByStudent = useMemo(() => {
+    const stats = new Map<string, { totalHours: number; lessonCount: number; lastFlight?: Date }>();
+
+    rawVisibleMembers.forEach(student => {
+      stats.set(student.id, { totalHours: 0, lessonCount: 0 });
+    });
+
+    flightLogs.forEach(log => {
+      if (!stats.has(log.student_id)) return;
+      const current = stats.get(log.student_id)!;
+      const flightDate = log.start_time ? new Date(log.start_time) : undefined;
+      stats.set(log.student_id, {
+        ...current,
+        totalHours: current.totalHours + Number(log.flight_duration || 0),
+        lastFlight: flightDate && (!current.lastFlight || flightDate > current.lastFlight) ? flightDate : current.lastFlight
+      });
+    });
+
+    trainingRecords.forEach(record => {
+      if (!stats.has(record.studentId)) return;
+      const current = stats.get(record.studentId)!;
+      stats.set(record.studentId, {
+        ...current,
+        lessonCount: current.lessonCount + 1
+      });
+    });
+
+    return stats;
+  }, [flightLogs, trainingRecords, rawVisibleMembers]);
+
+  const getStudentStats = (studentId: string) => statsByStudent.get(studentId) || { totalHours: 0, lessonCount: 0 };
+
+  const visibleMembers = useMemo(() => {
+    const roleRank: Record<UserRole, number> = {
+      admin: 1,
+      senior_instructor: 2,
+      instructor: 3,
+      pilot: 4,
+      student: 5
+    };
+
+    return [...rawVisibleMembers].sort((a, b) => {
+      const aStats = getStudentStats(a.id);
+      const bStats = getStudentStats(b.id);
+
+      if (sortBy === 'role') {
+        return (roleRank[a.role] || 99) - (roleRank[b.role] || 99) || a.name.localeCompare(b.name);
+      }
+
+      if (sortBy === 'hours') {
+        return bStats.totalHours - aStats.totalHours || a.name.localeCompare(b.name);
+      }
+
+      if (sortBy === 'lastFlight') {
+        const aTime = aStats.lastFlight?.getTime() || 0;
+        const bTime = bStats.lastFlight?.getTime() || 0;
+        return bTime - aTime || a.name.localeCompare(b.name);
+      }
+
+      if (sortBy === 'balance') {
+        return b.prepaidBalance - a.prepaidBalance || a.name.localeCompare(b.name);
+      }
+
+      return a.name.localeCompare(b.name);
+    });
+  }, [rawVisibleMembers, sortBy, statsByStudent]);
 
   const roleFilters: { id: typeof roleFilter; label: string }[] = [
     { id: 'all', label: 'All' },
@@ -72,6 +190,14 @@ export const StudentList: React.FC = () => {
     pilot: 'Pilot',
     student: 'Student'
   };
+
+  const sortOptions: { id: typeof sortBy; label: string }[] = [
+    { id: 'name', label: 'Name' },
+    { id: 'role', label: 'Role' },
+    { id: 'hours', label: 'Hours' },
+    { id: 'lastFlight', label: 'Last flight' },
+    { id: 'balance', label: 'Balance' }
+  ];
 
   const roleBadgeClass = (role: UserRole) => {
     switch (role) {
@@ -104,42 +230,152 @@ export const StudentList: React.FC = () => {
     </div>
   );
 
-  const statsByStudent = useMemo(() => {
-    const stats = new Map<string, { totalHours: number; lessonCount: number; lastFlight?: Date }>();
-
-    visibleMembers.forEach(student => {
-      stats.set(student.id, { totalHours: 0, lessonCount: 0 });
-    });
-
-    flightLogs.forEach(log => {
-      if (!stats.has(log.student_id)) return;
-      const current = stats.get(log.student_id)!;
-      const flightDate = log.start_time ? new Date(log.start_time) : undefined;
-      stats.set(log.student_id, {
-        ...current,
-        totalHours: current.totalHours + Number(log.flight_duration || 0),
-        lastFlight: flightDate && (!current.lastFlight || flightDate > current.lastFlight) ? flightDate : current.lastFlight
-      });
-    });
-
-    trainingRecords.forEach(record => {
-      if (!stats.has(record.studentId)) return;
-      const current = stats.get(record.studentId)!;
-      stats.set(record.studentId, {
-        ...current,
-        lessonCount: current.lessonCount + 1
-      });
-    });
-
-    return stats;
-  }, [flightLogs, trainingRecords, visibleMembers]);
-
-  const getStudentStats = (studentId: string) => statsByStudent.get(studentId) || { totalHours: 0, lessonCount: 0 };
-
   const isExpiryNear = (date?: Date) => {
     if (!date) return false;
     const daysUntilExpiry = Math.ceil((date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
     return daysUntilExpiry <= 60;
+  };
+
+  const isExpired = (date?: Date) => {
+    if (!date) return false;
+    return date.getTime() < new Date().setHours(0, 0, 0, 0);
+  };
+
+  const getComplianceSummary = (student: Student) => {
+    const medicalMissing = !student.medicalExpiry;
+    const membershipMissing = !student.licenceExpiry;
+    const medicalExpired = isExpired(student.medicalExpiry);
+    const membershipExpired = isExpired(student.licenceExpiry);
+    const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
+    const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
+
+    if (medicalMissing || membershipMissing) {
+      return {
+        label: 'Incomplete',
+        detail: medicalMissing ? 'Medical not recorded' : 'Membership not recorded',
+        className: 'border-gray-200 bg-gray-50 text-gray-700',
+        icon: AlertTriangle
+      };
+    }
+
+    if (medicalExpired || membershipExpired) {
+      return {
+        label: 'Expired',
+        detail: medicalExpired ? 'Medical expired' : 'Membership expired',
+        className: 'border-red-200 bg-red-50 text-red-700',
+        icon: AlertTriangle
+      };
+    }
+
+    if (medicalNearExpiry || licenceNearExpiry) {
+      return {
+        label: 'Review',
+        detail: medicalNearExpiry ? 'Medical due soon' : 'Membership due soon',
+        className: 'border-amber-200 bg-amber-50 text-amber-700',
+        icon: AlertTriangle
+      };
+    }
+
+    return {
+      label: 'Current',
+      detail: 'No alerts',
+      className: 'border-green-200 bg-green-50 text-green-700',
+      icon: CheckCircle
+    };
+  };
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setRoleFilter('all');
+    setStatusFilter('active');
+    setSortBy('name');
+  };
+
+  const closeActionsMenu = () => setOpenActionsId(null);
+
+  const runMemberAction = async (action: () => void | Promise<void>) => {
+    closeActionsMenu();
+    await action();
+  };
+
+  const canEditMember = (student: Student) => {
+    const roles = user?.roles || (user?.role ? [user.role] : []);
+    return student.id === user?.id
+      || roles.includes('admin')
+      || roles.includes('instructor')
+      || roles.includes('senior_instructor');
+  };
+
+  const renderActionsMenu = (student: Student, placement: 'mobile' | 'desktop') => {
+    const isArchived = student.isActive === false;
+    const menuId = `${placement}-${student.id}`;
+    const isOpen = openActionsId === menuId;
+    const menuItemClass = 'flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50';
+
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpenActionsId(isOpen ? null : menuId);
+          }}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+          aria-label={`Actions for ${student.name}`}
+          aria-expanded={isOpen}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+
+        {isOpen && (
+          <div className="absolute right-0 top-9 z-30 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+            <button type="button" onClick={() => runMemberAction(() => openViewDetails(student))} className={menuItemClass}>
+              <Eye className="h-3.5 w-3.5 text-blue-600" />
+              View file
+            </button>
+            {canEditMember(student) && (
+              <button type="button" onClick={() => runMemberAction(() => openEditForm(student))} className={menuItemClass}>
+                <Pencil className="h-3.5 w-3.5 text-gray-500" />
+                Edit
+              </button>
+            )}
+            <button type="button" onClick={() => runMemberAction(() => openStudentTab(student, 'training'))} className={menuItemClass}>
+              <BookOpen className="h-3.5 w-3.5 text-green-600" />
+              Training
+            </button>
+            <button type="button" onClick={() => runMemberAction(() => openStudentTab(student, 'logbook'))} className={menuItemClass}>
+              <Clock className="h-3.5 w-3.5 text-indigo-600" />
+              Logbook
+            </button>
+            <button type="button" onClick={() => runMemberAction(() => openStudentTab(student, 'documents'))} className={menuItemClass}>
+              <FileText className="h-3.5 w-3.5 text-gray-500" />
+              Docs
+            </button>
+
+            {canManageMembers && (
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                {isArchived ? (
+                  <button type="button" onClick={() => runMemberAction(() => handleRestoreMember(student))} className={menuItemClass}>
+                    <RotateCcw className="h-3.5 w-3.5 text-green-600" />
+                    Restore
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => runMemberAction(() => handleArchiveMember(student))} className={menuItemClass}>
+                    <Archive className="h-3.5 w-3.5 text-amber-600" />
+                    Archive
+                  </button>
+                )}
+                <button type="button" onClick={() => runMemberAction(() => handleRemoveMember(student))} className={`${menuItemClass} text-red-700 hover:bg-red-50`}>
+                  <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                  Remove
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const handleAddStudent = async (studentData: Omit<Student, 'id'>) => {
@@ -168,6 +404,34 @@ export const StudentList: React.FC = () => {
     navigate(`/students/${student.id}?tab=${tab}`);
   };
 
+  const handleArchiveMember = async (student: Student) => {
+    if (student.id === user?.id) {
+      alert('You cannot archive your own account while logged in.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Archive ${student.name}? They will be hidden from the active members list but their records will remain available.`);
+    if (!confirmed) return;
+    await setStudentActive(student.id, false);
+  };
+
+  const handleRestoreMember = async (student: Student) => {
+    await setStudentActive(student.id, true);
+  };
+
+  const handleRemoveMember = async (student: Student) => {
+    if (student.id === user?.id) {
+      alert('You cannot remove your own account while logged in.');
+      return;
+    }
+
+    const typed = window.prompt(
+      `Remove ${student.name} from the CRM?\n\nThis is destructive and may fail if historical records still require this member. Type REMOVE to confirm.`
+    );
+    if (typed !== 'REMOVE') return;
+    await deleteStudent(student.id);
+  };
+
   const closeStudentForm = () => {
     setShowStudentForm(false);
     setEditingStudent(null);
@@ -178,9 +442,10 @@ export const StudentList: React.FC = () => {
     name: string;
     phone?: string;
     roles?: UserRole[];
+    resend?: boolean;
   }): Promise<InviteUserResult | undefined> => {
     const result = await inviteUser(data);
-    if (result?.tempPassword || result?.emailSent) {
+    if (result?.tempPassword || result?.emailSent || result?.manualLink) {
       await refetch();
     }
     return result;
@@ -195,171 +460,261 @@ export const StudentList: React.FC = () => {
   }
 
   return (
-    <div className="p-3 sm:p-6">
-      <div className="mb-4 flex flex-col gap-3 sm:mb-6 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Members</h1>
-          <p className="mt-1 text-sm text-gray-500 lg:hidden">
-            {visibleMembers.length} member{visibleMembers.length === 1 ? '' : 's'}
-          </p>
-        </div>
-        <button
-          onClick={() => setShowInviteModal(true)}
-          className="flex items-center justify-center space-x-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:w-auto sm:py-2 lg:rounded-lg"
-        >
-          <UserPlus className="h-4 w-4" />
-          <span>Invite User</span>
-        </button>
-      </div>
+    <div className="min-h-full bg-transparent p-3 sm:p-6">
+      <div className="mx-auto max-w-6xl">
+        <section className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div>
+              <h2 className="text-2xl font-bold leading-tight text-gray-900 sm:text-xl">Members</h2>
+              <p className="text-sm text-gray-500">{visibleMembers.length} shown from {memberStatusCounts.total}</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="hidden gap-2 overflow-x-auto sm:flex">
+                {[
+                  { label: 'Active', value: memberStatusCounts.active, tone: 'text-green-700 bg-green-50 border-green-200' },
+                  { label: 'Archived', value: memberStatusCounts.archived, tone: 'text-gray-700 bg-gray-50 border-gray-200' },
+                  { label: 'Instructors', value: memberStatusCounts.roles.instructor, tone: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
+                  { label: 'Students', value: memberStatusCounts.roles.student, tone: 'text-blue-700 bg-blue-50 border-blue-200' }
+                ].map(item => (
+                  <div key={item.label} className={`flex flex-shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${item.tone}`}>
+                    <span>{item.label}</span>
+                    <span className="text-sm font-bold">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+              {canManageMembers && (
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:self-auto sm:px-3"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Invite
+                </button>
+              )}
+            </div>
+          </div>
 
-      <div className="mb-4 grid gap-3 lg:mb-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            value={searchTerm}
-            onChange={event => setSearchTerm(event.target.value)}
-            placeholder="Search name, email, RAAus or CASA..."
-            className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-10 pr-3 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 lg:rounded-lg lg:py-2"
-          />
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
-          {roleFilters.map(filter => (
+          <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[minmax(280px,1fr)_auto_auto] xl:items-center">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={searchTerm}
+              onChange={event => setSearchTerm(event.target.value)}
+              placeholder="Search name, email, phone, RAAus or CASA..."
+              className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-10 pr-10 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 lg:rounded-lg lg:py-2.5"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:hidden">
+            <label className="block">
+              <span className="sr-only">Status</span>
+              <select
+                value={statusFilter}
+                onChange={event => setStatusFilter(event.target.value as typeof statusFilter)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="active">Active ({memberStatusCounts.active})</option>
+                <option value="archived">Archived ({memberStatusCounts.archived})</option>
+                <option value="all">All ({memberStatusCounts.total})</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="sr-only">Role</span>
+              <select
+                value={roleFilter}
+                onChange={event => setRoleFilter(event.target.value as typeof roleFilter)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-3 text-sm font-semibold text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {roleFilters.map(filter => {
+                  const count = filter.id === 'all' ? memberStatusCounts.total : memberStatusCounts.roles[filter.id];
+                  return (
+                    <option key={filter.id} value={filter.id}>
+                      {filter.label} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          </div>
+
+          <div className="hidden gap-2 overflow-x-auto pb-1 sm:flex xl:overflow-visible xl:pb-0">
+            {(['active', 'archived', 'all'] as const).map(status => {
+              const count = status === 'active' ? memberStatusCounts.active : status === 'archived' ? memberStatusCounts.archived : memberStatusCounts.total;
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setStatusFilter(status)}
+                  className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold capitalize transition-colors ${
+                    statusFilter === status
+                      ? 'border-gray-900 bg-gray-900 text-white'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {status} <span className="ml-1 opacity-70">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <label className="relative block">
+              <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <select
+                value={sortBy}
+                onChange={event => setSortBy(event.target.value as typeof sortBy)}
+                className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-10 pr-8 text-sm font-semibold text-gray-700 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 lg:rounded-lg lg:py-2.5"
+              >
+                {sortOptions.map(option => (
+                  <option key={option.id} value={option.id}>Sort: {option.label}</option>
+                ))}
+              </select>
+            </label>
             <button
-              key={filter.id}
               type="button"
-              onClick={() => setRoleFilter(filter.id)}
-              className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
-                roleFilter === filter.id
-                  ? 'border-blue-600 bg-blue-600 text-white'
-                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-              }`}
+              onClick={resetFilters}
+              className="rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 lg:rounded-lg lg:py-2.5"
             >
-              {filter.label}
+              Reset
             </button>
-          ))}
-        </div>
-      </div>
+          </div>
+          </div>
 
-      <div className="space-y-3 lg:hidden">
+          <div className="hidden border-t border-gray-100 px-4 pb-4 sm:block sm:px-5 sm:pb-5">
+          <div className="flex gap-2 overflow-x-auto pt-4">
+            {roleFilters.map(filter => {
+              const count = filter.id === 'all' ? memberStatusCounts.total : memberStatusCounts.roles[filter.id];
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  onClick={() => setRoleFilter(filter.id)}
+                  className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${
+                    roleFilter === filter.id
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {filter.label} <span className="ml-1 opacity-70">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          </div>
+        </section>
+
+      <div className="grid gap-2 lg:grid-cols-2">
         {visibleMembers.map(student => {
           const stats = getStudentStats(student.id);
           const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
           const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
           const activeEndorsements = student.endorsements.filter(e => e.isActive).length;
           const memberRoles = getMemberRoles(student);
+          const isArchived = student.isActive === false;
+          const compliance = getComplianceSummary(student);
+          const ComplianceIcon = compliance.icon;
 
           return (
             <article
               key={student.id}
-              className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
+              className="overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm"
             >
+              <div className="flex items-start gap-3 px-3 py-3">
+                <button
+                  type="button"
+                  onClick={() => openViewDetails(student)}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                >
+                  {renderAvatar(student, 'h-10 w-10', 'h-4 w-4')}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <h2 className="truncate text-sm font-semibold text-gray-900">{student.name}</h2>
+                      {isArchived && (
+                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
+                          Archived
+                        </span>
+                      )}
+                    </div>
+                    <p className="truncate text-xs text-gray-500">{student.email}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {memberRoles.slice(0, 3).map(role => (
+                        <span key={role} className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${roleBadgeClass(role)}`}>
+                          {roleLabels[role]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </button>
+                {renderActionsMenu(student, 'mobile')}
+              </div>
+
               <button
                 type="button"
                 onClick={() => openViewDetails(student)}
-                className="block w-full px-4 py-4 text-left transition-colors hover:bg-gray-50"
+                className="block w-full border-t border-gray-100 px-3 py-2 text-left transition-colors hover:bg-gray-50"
               >
-                <div className="flex items-start gap-3">
-                  {renderAvatar(student, 'h-11 w-11', 'h-5 w-5')}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h2 className="truncate text-base font-semibold text-gray-900">{student.name}</h2>
-                        <p className="truncate text-xs text-gray-500">{student.email}</p>
-                      </div>
-                      <div className="flex flex-shrink-0 flex-wrap justify-end gap-1">
-                        {memberRoles.slice(0, 2).map(role => (
-                          <span key={role} className={`rounded-full px-2 py-1 text-[11px] font-semibold ${roleBadgeClass(role)}`}>
-                            {roleLabels[role]}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-xl bg-gray-50 px-3 py-2">
-                        <p className="font-medium text-gray-500">Hours</p>
-                        <p className="mt-0.5 text-sm font-semibold text-gray-900">{stats.totalHours.toFixed(1)}</p>
-                      </div>
-                      <div className="rounded-xl bg-gray-50 px-3 py-2">
-                        <p className="font-medium text-gray-500">Lessons</p>
-                        <p className="mt-0.5 text-sm font-semibold text-gray-900">{stats.lessonCount}</p>
-                      </div>
-                    </div>
+                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <div>
+                    <p className="font-medium text-gray-500">Hours</p>
+                    <p className="text-sm font-semibold text-gray-900">{stats.totalHours.toFixed(1)}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-500">Lessons</p>
+                    <p className="text-sm font-semibold text-gray-900">{stats.lessonCount}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-500">Status</p>
+                    <p className={`truncate text-sm font-semibold ${
+                      compliance.label === 'Expired' ? 'text-red-700' : compliance.label === 'Review' ? 'text-amber-700' : compliance.label === 'Incomplete' ? 'text-gray-700' : 'text-green-700'
+                    }`}>{compliance.label}</p>
                   </div>
                 </div>
               </button>
 
-              <div className="space-y-2 border-t border-gray-100 px-4 py-3">
-                <div className="flex flex-wrap gap-2">
+              <div className="space-y-1.5 border-t border-gray-100 px-3 py-2">
+                <div className="flex flex-wrap gap-1">
                   {student.raausId && (
-                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
                       RAAus {student.raausId}
                     </span>
                   )}
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                     {stats.lessonCount} lesson{stats.lessonCount === 1 ? '' : 's'}
                   </span>
-                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                     {activeEndorsements} endorsement{activeEndorsements === 1 ? '' : 's'}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${compliance.className}`}>
+                    <ComplianceIcon className="mr-1 h-3 w-3" />
+                    {compliance.detail}
                   </span>
                 </div>
 
-                <div className="grid gap-2 text-xs">
-                  <div className={`flex items-center ${medicalNearExpiry ? 'text-yellow-700' : 'text-green-700'}`}>
-                    {medicalNearExpiry ? <AlertTriangle className="mr-1.5 h-3.5 w-3.5" /> : <CheckCircle className="mr-1.5 h-3.5 w-3.5" />}
-                    Medical: {student.medicalExpiry?.toLocaleDateString() || 'Not recorded'}
-                  </div>
-                  <div className={`flex items-center ${licenceNearExpiry ? 'text-yellow-700' : 'text-green-700'}`}>
-                    {licenceNearExpiry ? <AlertTriangle className="mr-1.5 h-3.5 w-3.5" /> : <CheckCircle className="mr-1.5 h-3.5 w-3.5" />}
-                    Membership: {student.licenceExpiry?.toLocaleDateString() || 'Not recorded'}
-                  </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-600">
+                  <span className={medicalNearExpiry ? 'text-yellow-700' : 'text-gray-600'}>
+                    Medical {student.medicalExpiry?.toLocaleDateString() || 'not set'}
+                  </span>
+                  <span className={licenceNearExpiry ? 'text-yellow-700' : 'text-gray-600'}>
+                    Membership {student.licenceExpiry?.toLocaleDateString() || 'not set'}
+                  </span>
                   {student.phone && (
-                    <div className="flex items-center text-gray-600">
-                      <Phone className="mr-1.5 h-3.5 w-3.5 text-gray-400" />
+                    <span className="inline-flex items-center text-gray-600">
+                      <Phone className="mr-1 h-3 w-3 text-gray-400" />
                       {student.phone}
-                    </div>
+                    </span>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => openViewDetails(student)}
-                    className="rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
-                  >
-                    View file
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openEditForm(student)}
-                    className="rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-                  >
-                    Edit
-                  </button>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openStudentTab(student, 'training')}
-                    className="rounded-xl border border-blue-100 bg-blue-50 px-2 py-2 text-xs font-semibold text-blue-700"
-                  >
-                    Training
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openStudentTab(student, 'logbook')}
-                    className="rounded-xl border border-green-100 bg-green-50 px-2 py-2 text-xs font-semibold text-green-700"
-                  >
-                    Logbook
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openStudentTab(student, 'documents')}
-                    className="rounded-xl border border-gray-200 bg-gray-50 px-2 py-2 text-xs font-semibold text-gray-700"
-                  >
-                    Docs
-                  </button>
-                </div>
               </div>
             </article>
           );
@@ -371,153 +726,6 @@ export const StudentList: React.FC = () => {
         )}
       </div>
 
-      <div className="hidden bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden lg:block">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Contact
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Flight Hours
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Currency Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Balance
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {visibleMembers.map(student => {
-                const stats = getStudentStats(student.id);
-                const medicalNearExpiry = isExpiryNear(student.medicalExpiry);
-                const licenceNearExpiry = isExpiryNear(student.licenceExpiry);
-                const memberRoles = getMemberRoles(student);
-
-                return (
-                  <tr key={student.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        {renderAvatar(student, 'h-10 w-10', 'h-5 w-5')}
-                        <div className="ml-4">
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium text-gray-900">{student.name}</div>
-                            {memberRoles.map(role => (
-                              <span key={role} className={`px-2 py-1 text-xs font-medium rounded-full ${roleBadgeClass(role)}`}>
-                                {roleLabels[role]}
-                              </span>
-                            ))}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {[
-                              student.raausId ? `RAAus: ${student.raausId}` : '',
-                              student.casaId ? `CASA: ${student.casaId}` : ''
-                            ].filter(Boolean).join(' | ')}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        <div className="flex items-center mb-1">
-                          <Mail className="h-3 w-3 text-gray-400 mr-2" />
-                          {student.email}
-                        </div>
-                        {student.phone && (
-                          <div className="flex items-center">
-                            <Phone className="h-3 w-3 text-gray-400 mr-2" />
-                            {student.phone}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        <div className="flex items-center mb-1">
-                          <Clock className="h-3 w-3 text-gray-400 mr-2" />
-                          {stats.totalHours.toFixed(1)} hrs
-                        </div>
-                        <div className="text-xs text-gray-500">{stats.lessonCount} lessons</div>
-                        {stats.lastFlight && (
-                          <div className="text-xs text-gray-500">Last flight {stats.lastFlight.toLocaleDateString()}</div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="space-y-1">
-                        <div className={`flex items-center text-xs ${medicalNearExpiry ? 'text-yellow-600' : 'text-green-600'}`}>
-                          {medicalNearExpiry ? <AlertTriangle className="h-3 w-3 mr-1" /> : <CheckCircle className="h-3 w-3 mr-1" />}
-                          Medical: {student.medicalExpiry?.toLocaleDateString()}
-                        </div>
-                        <div className={`flex items-center text-xs ${licenceNearExpiry ? 'text-yellow-600' : 'text-green-600'}`}>
-                          {licenceNearExpiry ? <AlertTriangle className="h-3 w-3 mr-1" /> : <CheckCircle className="h-3 w-3 mr-1" />}
-                          Membership: {student.licenceExpiry?.toLocaleDateString()}
-                        </div>
-                        <div className="flex items-center text-xs text-blue-600">
-                          <Award className="h-3 w-3 mr-1" />
-                          {student.endorsements.filter(e => e.isActive).length} endorsements
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-gray-900">
-                        ${student.prepaidBalance.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={() => openViewDetails(student)}
-                        className="text-blue-600 hover:text-blue-900 mr-3"
-                      >
-                        View
-                      </button>
-                      <button
-                        onClick={() => openStudentTab(student, 'training')}
-                        className="text-green-600 hover:text-green-900 mr-3"
-                      >
-                        Training
-                      </button>
-                      <button
-                        onClick={() => openStudentTab(student, 'logbook')}
-                        className="text-indigo-600 hover:text-indigo-900 mr-3"
-                      >
-                        Logbook
-                      </button>
-                      <button
-                        onClick={() => openStudentTab(student, 'documents')}
-                        className="text-gray-600 hover:text-gray-900 mr-3"
-                      >
-                        Docs
-                      </button>
-                      <button 
-                        onClick={() => openEditForm(student)}
-                        className="text-gray-600 hover:text-gray-900"
-                      >
-                        Edit
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {visibleMembers.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
-                    No members match your filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       <StudentForm
@@ -526,6 +734,7 @@ export const StudentList: React.FC = () => {
         onSubmit={editingStudent ? handleEditStudent : handleAddStudent}
         student={editingStudent || undefined}
         isEdit={!!editingStudent}
+        canEditEmail={!editingStudent || canManageMembers}
       />
 
       <InviteUserModal

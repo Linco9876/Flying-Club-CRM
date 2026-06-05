@@ -36,6 +36,11 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     requiresStudentAcknowledgement: row.requires_student_acknowledgement === undefined || row.requires_student_acknowledgement === null
       ? true
       : Boolean(row.requires_student_acknowledgement),
+    completionEndorsementEnabled: Boolean(row.completion_endorsement_enabled),
+    completionEndorsementType: (row.completion_endorsement_type as string) ?? '',
+    completionEndorsementExpiryMonths: row.completion_endorsement_expiry_months === null || row.completion_endorsement_expiry_months === undefined
+      ? null
+      : Number(row.completion_endorsement_expiry_months),
     exams: rawExams.map((exam: any) => ({
       id: String(exam.id ?? `exam-${Date.now()}`),
       name: String(exam.name ?? ''),
@@ -66,6 +71,7 @@ function dbLessonToLesson(row: Record<string, unknown>): TrainingLesson {
     theory: (row.theory as string) ?? '',
     assessmentCriteria: (row.assessment_criteria as TrainingLesson['assessmentCriteria']) ?? [],
     passMarks: (row.pass_marks as Record<string, string>) ?? {},
+    isFlightTest: Boolean(row.is_flight_test),
   };
 }
 
@@ -83,6 +89,11 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     tags: module.tags,
     assessment_criteria: module.assessmentCriteria,
     requires_student_acknowledgement: module.requiresStudentAcknowledgement ?? true,
+    completion_endorsement_enabled: module.completionEndorsementEnabled ?? false,
+    completion_endorsement_type: module.completionEndorsementEnabled ? (module.completionEndorsementType || null) : null,
+    completion_endorsement_expiry_months: module.completionEndorsementEnabled && module.completionEndorsementExpiryMonths
+      ? module.completionEndorsementExpiryMonths
+      : null,
     exam_requirements: module.exams ?? [],
     last_updated: module.lastUpdated.toISOString(),
   };
@@ -107,6 +118,7 @@ function lessonToDbRow(lesson: TrainingLesson, courseId: string, sortOrder: numb
     instructor_notes: lesson.instructorNotes,
     assessment_criteria: lesson.assessmentCriteria,
     pass_marks: lesson.passMarks ?? {},
+    is_flight_test: lesson.isFlightTest ?? false,
   };
 }
 
@@ -190,6 +202,9 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       tags: ['draft'],
       assessmentCriteria: [],
       requiresStudentAcknowledgement: true,
+      completionEndorsementEnabled: false,
+      completionEndorsementType: '',
+      completionEndorsementExpiryMonths: null,
       exams: [],
       lessons: [],
       resources: [],

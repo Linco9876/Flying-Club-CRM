@@ -126,6 +126,11 @@ export const PilotCurrencyTab: React.FC = () => {
     return aMinDays - bMinDays;
   });
 
+  const urgencyCounts = sortedPilots.reduce((counts, pilot) => {
+    counts[pilot.urgencyLevel] = (counts[pilot.urgencyLevel] ?? 0) + 1;
+    return counts;
+  }, {} as Record<PilotCurrency['urgencyLevel'], number>);
+
   const handleExport = () => {
     const rows = sortedPilots.map(pilot => [
       pilot.name,
@@ -182,7 +187,21 @@ export const PilotCurrencyTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: 'Overdue', value: urgencyCounts.overdue ?? 0, color: 'border-red-200 bg-red-50 text-red-700' },
+          { label: 'Urgent', value: urgencyCounts.urgent ?? 0, color: 'border-orange-200 bg-orange-50 text-orange-700' },
+          { label: 'Warning', value: urgencyCounts.warning ?? 0, color: 'border-yellow-200 bg-yellow-50 text-yellow-700' },
+          { label: 'Current', value: urgencyCounts.current ?? 0, color: 'border-green-200 bg-green-50 text-green-700' },
+        ].map(card => (
+          <div key={card.label} className={`rounded-xl border p-3 sm:p-4 ${card.color}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-75">{card.label}</p>
+            <p className="mt-1 text-2xl font-bold">{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Search Pilot</label>
@@ -235,14 +254,14 @@ export const PilotCurrencyTab: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex justify-between items-center mt-4">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-600">
             Showing {sortedPilots.length} pilots
           </div>
           <div>
             <button
               onClick={handleExport}
-              className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              className="flex w-full items-center justify-center space-x-2 rounded-lg bg-green-600 px-3 py-2 text-white transition-colors hover:bg-green-700 sm:w-auto"
             >
               <Download className="h-4 w-4" />
               <span>Export CSV</span>
@@ -252,8 +271,55 @@ export const PilotCurrencyTab: React.FC = () => {
       </div>
 
       {/* Currency Table */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="space-y-3 p-4 md:hidden">
+          {sortedPilots.map(pilot => (
+            <article key={pilot.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-gray-900">{pilot.name}</h3>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {pilot.isStudentOnly ? 'Student - no solo recency requirement' : `Last flight: ${formatDate(pilot.lastFlightDate)}`}
+                  </p>
+                </div>
+                <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${getUrgencyColor(pilot.urgencyLevel)}`}>
+                  {getUrgencyIcon(pilot.urgencyLevel)}
+                  {pilot.urgencyLevel.charAt(0).toUpperCase() + pilot.urgencyLevel.slice(1)}
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Medical</p>
+                  <p className="mt-1 font-semibold text-gray-900">{formatDate(pilot.medicalExpiry)}</p>
+                  {pilot.medicalExpiry && <p className="text-xs text-gray-500">{formatDaysUntil(pilot.daysUntilMedicalExpiry)}</p>}
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Membership</p>
+                  <p className="mt-1 font-semibold text-gray-900">{formatDate(pilot.licenceExpiry)}</p>
+                  {pilot.licenceExpiry && <p className="text-xs text-gray-500">{formatDaysUntil(pilot.daysUntilLicenceExpiry)}</p>}
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">BFR</p>
+                  <p className="mt-1 font-semibold text-gray-900">{formatDate(pilot.bfrDue)}</p>
+                  {pilot.bfrDue && <p className="text-xs text-gray-500">{formatDaysUntil(pilot.daysUntilBfrDue)}</p>}
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Recency</p>
+                  <p className="mt-1 font-semibold text-gray-900">{pilot.daysSinceLastFlight === 999 ? 'N/A' : `${pilot.daysSinceLastFlight} days`}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {pilot.endorsements.length > 0 ? pilot.endorsements.map(endorsement => (
+                  <span key={endorsement} className="rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">{endorsement}</span>
+                )) : <span className="text-xs text-gray-500">No endorsements recorded</span>}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>

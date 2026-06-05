@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react';
 import {
   format,
   addDays,
   isSameDay,
   isToday,
   startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
   addWeeks,
   subWeeks,
   addMonths,
@@ -13,19 +17,20 @@ import {
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Plus,
-  Filter,
   Plane,
   Trash2,
   User,
   RefreshCw,
+  CalendarDays,
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
-import { useCalendarSettings, useOrganisationSettings } from '../../hooks/useSettings';
+import { useCalendarSettings, useOrganisationSettings, useUserPreferences } from '../../hooks/useSettings';
 import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
 import { useAuth } from '../../context/AuthContext';
 import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
@@ -52,6 +57,7 @@ interface CalendarProps {
   onDeleteBooking?: (bookingId: string) => Promise<void> | void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
   onRefresh?: () => Promise<void> | void;
+  isKioskMode?: boolean;
 }
 
 interface Resource {
@@ -75,7 +81,27 @@ interface UnavailabilityPeriod {
 
 type ViewMode = 'day' | 'week' | 'month' | 'list';
 type BookingCardDensity = 'full' | 'compact' | 'name-only';
-const BOOKING_DRAG_START_DELAY_MS = 75;
+const BOOKING_DRAG_MOVE_THRESHOLD_PX = 4;
+const CALENDAR_RESOURCE_LAYOUT_KEY = 'calendar_resource_layout';
+const MIN_CALENDAR_SLOT_HEIGHT = 18;
+const MAX_CALENDAR_SLOT_HEIGHT = 48;
+const MIN_CALENDAR_VISIBLE_SLOTS = 12;
+
+interface CalendarResourceLayoutPreference {
+  hiddenIds?: string[];
+  orderedIds?: string[];
+}
+
+const parseCalendarDateParam = (value: string | null) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getStoredCalendarDate = (key: string) => {
+  if (typeof window === 'undefined') return null;
+  return parseCalendarDateParam(window.sessionStorage.getItem(key));
+};
 
 export const Calendar: React.FC<CalendarProps> = ({
   bookings,
@@ -86,22 +112,80 @@ export const Calendar: React.FC<CalendarProps> = ({
   onDeleteBooking,
   onApproveBooking,
   onRefresh,
+  isKioskMode = false,
 }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { aircraft } = useAircraft();
-  const { users, getInstructors } = useUsers();
+  const { users } = useUsers();
   const { deleteFlightLog } = useFlightLogs();
-  const instructors = getInstructors();
-  const { settings: calendarSettings, updateSettingsSilent } = useCalendarSettings();
+  const instructors = useMemo(
+    () => users.filter(u => u.roles?.includes('instructor') || u.roles?.includes('senior_instructor')),
+    [users]
+  );
+  const lastKnownAircraftRef = useRef<typeof aircraft>([]);
+  const lastKnownUsersRef = useRef<typeof users>([]);
+  const lastKnownInstructorsRef = useRef<typeof instructors>([]);
+  useEffect(() => {
+    if (aircraft.length > 0) lastKnownAircraftRef.current = aircraft;
+    if (users.length > 0) lastKnownUsersRef.current = users;
+    if (instructors.length > 0) lastKnownInstructorsRef.current = instructors;
+  }, [aircraft, users, instructors]);
+  const displayAircraft = aircraft.length > 0 ? aircraft : lastKnownAircraftRef.current;
+  const displayUsers = users.length > 0 ? users : lastKnownUsersRef.current;
+  const displayInstructors = instructors.length > 0 ? instructors : lastKnownInstructorsRef.current;
+  const { settings: calendarSettings } = useCalendarSettings();
+  const { preferences: userPreferences, updatePreferencesSilent } = useUserPreferences(user?.id || '');
   const { settings: organisationSettings } = useOrganisationSettings();
-  const { weeklySchedules, absences, scheduleChanges, addAbsence, deleteAbsence } = useInstructorAvailability();
+  const {
+    weeklySchedules,
+    absences,
+    scheduleChanges,
+    loading: availabilityLoading,
+    addAbsence,
+    deleteAbsence,
+  } = useInstructorAvailability();
+  const lastAvailabilityRef = useRef({
+    weeklySchedules,
+    absences,
+    scheduleChanges,
+    hasLoaded: false,
+  });
+  useEffect(() => {
+    if (!availabilityLoading) {
+      lastAvailabilityRef.current = {
+        weeklySchedules,
+        absences,
+        scheduleChanges,
+        hasLoaded: true,
+      };
+    }
+  }, [absences, availabilityLoading, scheduleChanges, weeklySchedules]);
+  const displayWeeklySchedules =
+    availabilityLoading && lastAvailabilityRef.current.hasLoaded
+      ? lastAvailabilityRef.current.weeklySchedules
+      : weeklySchedules;
+  const displayAbsences =
+    availabilityLoading && lastAvailabilityRef.current.hasLoaded
+      ? lastAvailabilityRef.current.absences
+      : absences;
+  const displayScheduleChanges =
+    availabilityLoading && lastAvailabilityRef.current.hasLoaded
+      ? lastAvailabilityRef.current.scheduleChanges
+      : scheduleChanges;
+  const hasAvailabilityData =
+    !availabilityLoading || lastAvailabilityRef.current.hasLoaded;
   const preferredAircraftId = user?.preferredAircraftId;
+  const selectedDateStorageKey = `bfc_calendar_selected_date_${isKioskMode ? 'kiosk' : 'app'}_${user?.id || 'guest'}`;
 
   // Per-resource visibility & ordering (loaded from/synced to DB)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => parseCalendarDateParam(searchParams.get('date')) || getStoredCalendarDate(selectedDateStorageKey) || new Date());
+  const [datePickerMonth, setDatePickerMonth] = useState(() => parseCalendarDateParam(searchParams.get('date')) || getStoredCalendarDate(selectedDateStorageKey) || new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const datePickerRef = useRef<HTMLDivElement | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [listPilotFilter, setListPilotFilter] = useState<string>('');
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
@@ -110,7 +194,6 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [resourceFilter, setResourceFilter] = useState<
     'all' | 'aircraft' | 'instructors' | 'both'
   >('both');
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showWaitlistedBookings, setShowWaitlistedBookings] = useState(true);
   const [showPendingBookings, setShowPendingBookings] = useState(true);
   const [showCancelledBookings, setShowCancelledBookings] = useState(false);
@@ -140,6 +223,13 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [hasBookingInteractionMoved, setHasBookingInteractionMoved] =
     useState(false);
   const [wasResizing, setWasResizing] = useState(false);
+  const [wasMovingBooking, setWasMovingBooking] = useState(false);
+  const [pendingBookingDrag, setPendingBookingDrag] = useState<{
+    booking: Booking;
+    resourceType: 'aircraft' | 'instructor';
+    startX: number;
+    startY: number;
+  } | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0,
@@ -161,7 +251,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   } | null>(null);
 
   // Dynamic slot height based on viewport and settings
-  const [slotHeight, setSlotHeight] = useState<number>(60);
+  const [slotHeight, setSlotHeight] = useState<number>(MIN_CALENDAR_SLOT_HEIGHT);
+  const lastStableSlotHeightRef = useRef<number>(MIN_CALENDAR_SLOT_HEIGHT);
 
   // Action menu and flight log states
   const [actionMenuBooking, setActionMenuBooking] = useState<Booking | null>(null);
@@ -170,6 +261,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [flightLogBooking, setFlightLogBooking] = useState<Booking | null>(null);
   const [flightLogMode, setFlightLogMode] = useState<'create' | 'edit'>('create');
   const [highlightUnlogged, setHighlightUnlogged] = useState(false);
+  const isInteractingWithBooking = Boolean(draggedBooking || resizingBooking || pendingBookingDrag);
 
   const parseHour = (time: string | undefined, fallback: number, roundUp = false) => {
     if (!time) return fallback;
@@ -180,10 +272,6 @@ export const Calendar: React.FC<CalendarProps> = ({
   const calendarStartHour = parseHour(organisationSettings?.booking_day_start, 6);
   const calendarEndHour = Math.max(calendarStartHour + 1, parseHour(organisationSettings?.booking_day_end, 20, true));
   const availableCalendarHours = calendarEndHour - calendarStartHour;
-
-  // Drag delay state
-  const [dragDelayTimer, setDragDelayTimer] = useState<NodeJS.Timeout | null>(null);
-  const [isDragDelayActive, setIsDragDelayActive] = useState(false);
 
   // Tick every 30 seconds so past-unlogged bookings turn red automatically
   const [, setTick] = useState(0);
@@ -196,11 +284,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     onArrowLeft: () => navigateDate('prev'),
     onArrowRight: () => navigateDate('next'),
     onEscape: () => {
-      if (dragDelayTimer) {
-        clearTimeout(dragDelayTimer);
-        setDragDelayTimer(null);
-      }
-      setIsDragDelayActive(false);
+      setPendingBookingDrag(null);
       setIsDragging(false);
       setDragStart(null);
       setDragEnd(null);
@@ -209,20 +293,54 @@ export const Calendar: React.FC<CalendarProps> = ({
       setDragPreview(null);
       setResizingBooking(null);
       setWasResizing(false);
+      setWasMovingBooking(false);
     },
     enabled: true,
   });
 
-  // Cleanup drag delay timer on unmount
   useEffect(() => {
+    if (!isInteractingWithBooking) return;
+
+    document.documentElement.classList.add('calendar-booking-interaction-active');
+    document.body.classList.add('calendar-booking-interaction-active');
+
     return () => {
-      if (dragDelayTimer) {
-        clearTimeout(dragDelayTimer);
-      }
+      document.documentElement.classList.remove('calendar-booking-interaction-active');
+      document.body.classList.remove('calendar-booking-interaction-active');
     };
-  }, [dragDelayTimer]);
+  }, [isInteractingWithBooking]);
 
   useEffect(() => {
+    setDatePickerMonth(currentDate);
+  }, [currentDate]);
+
+  useEffect(() => {
+    const requestedDate = parseCalendarDateParam(searchParams.get('date'));
+    if (!requestedDate) return;
+    setCurrentDate(prev => isSameDay(requestedDate, prev) ? prev : requestedDate);
+  }, [searchParams]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(selectedDateStorageKey, format(currentDate, 'yyyy-MM-dd'));
+  }, [currentDate, selectedDateStorageKey]);
+
+  useEffect(() => {
+    if (!showDatePicker) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        datePickerRef.current &&
+        !datePickerRef.current.contains(event.target as Node)
+      ) {
+        setShowDatePicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showDatePicker]);
+
+  useLayoutEffect(() => {
     if (searchParams.get('view') === 'list') return;
     if (calendarSettings?.default_view) {
       const defaultView = calendarSettings.default_view === 'list'
@@ -262,20 +380,70 @@ export const Calendar: React.FC<CalendarProps> = ({
     setHighlightUnlogged(calendarSettings?.highlight_unlogged_bookings ?? false);
   }, [calendarSettings?.highlight_unlogged_bookings]);
 
-  // Seed hidden/order from persisted settings once data is ready
+  const getResourceLayoutStorageKey = useCallback(
+    () => `bfc_calendar_resource_layout_${user?.id || 'guest'}`,
+    [user?.id]
+  );
+
+  const persistResourceLayout = useCallback((nextHiddenIds: Set<string>, nextOrderedIds: string[]) => {
+    const layout: CalendarResourceLayoutPreference = {
+      hiddenIds: Array.from(nextHiddenIds),
+      orderedIds: nextOrderedIds,
+    };
+
+    localStorage.setItem(getResourceLayoutStorageKey(), JSON.stringify(layout));
+
+    if (user?.id) {
+      updatePreferencesSilent({
+        preferences: {
+          [CALENDAR_RESOURCE_LAYOUT_KEY]: layout,
+        },
+      }).catch((error) => {
+        console.error('Failed to save calendar resource layout preference:', error);
+      });
+    }
+  }, [getResourceLayoutStorageKey, updatePreferencesSilent, user?.id]);
+
+  // Seed hidden/order from personal preferences first, then organisation defaults.
   useEffect(() => {
     if (!calendarSettings) return;
-    setHiddenIds(new Set(calendarSettings.hidden_resources ?? []));
-    const savedOrder = calendarSettings.resource_order ?? [];
-    if (savedOrder.length > 0) {
-      setOrderedIds(savedOrder.map((r: { id: string }) => r.id));
-    } else {
-      const aircraftIds = aircraft.map(a => a.id);
-      const instructorIds = instructors.map(i => i.id);
-      setOrderedIds(calendarSettings.resource_display_order === 'instructors-first'
-        ? [...instructorIds, ...aircraftIds]
-        : [...aircraftIds, ...instructorIds]);
+    const personalLayout = userPreferences?.preferences?.[CALENDAR_RESOURCE_LAYOUT_KEY] as CalendarResourceLayoutPreference | undefined;
+    let localLayout: CalendarResourceLayoutPreference | undefined;
+    try {
+      const raw = localStorage.getItem(getResourceLayoutStorageKey());
+      localLayout = raw ? JSON.parse(raw) as CalendarResourceLayoutPreference : undefined;
+    } catch {
+      localLayout = undefined;
     }
+
+    const aircraftIds = aircraft.map(a => a.id);
+    const instructorIds = instructors.map(i => i.id);
+    const defaultOrder = calendarSettings.resource_display_order === 'instructors-first'
+      ? [...instructorIds, ...aircraftIds]
+      : [...aircraftIds, ...instructorIds];
+    const currentResourceIds = new Set(defaultOrder);
+    const resourceLayout = personalLayout || localLayout;
+    const layoutHiddenIds = (resourceLayout?.hiddenIds ?? []).filter(id => currentResourceIds.has(id));
+    const layoutOrderedIds = (resourceLayout?.orderedIds ?? []).filter(id => currentResourceIds.has(id));
+    const hasPersonalLayout = layoutHiddenIds.length > 0 || layoutOrderedIds.length > 0;
+
+    if (hasPersonalLayout) {
+      const orderWithNewResources = [
+        ...layoutOrderedIds,
+        ...defaultOrder.filter(id => !layoutOrderedIds.includes(id)),
+      ];
+      setHiddenIds(new Set(layoutHiddenIds));
+      setOrderedIds(orderWithNewResources);
+      return;
+    }
+
+    setHiddenIds(new Set((calendarSettings.hidden_resources ?? []).filter(id => currentResourceIds.has(id))));
+    const savedOrder = (calendarSettings.resource_order ?? [])
+      .map((r: { id: string }) => r.id)
+      .filter(id => currentResourceIds.has(id));
+    setOrderedIds(savedOrder.length > 0
+      ? [...savedOrder, ...defaultOrder.filter(id => !savedOrder.includes(id))]
+      : defaultOrder);
   // Only run when settings first loads (id changes)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -283,6 +451,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     calendarSettings?.resource_order,
     calendarSettings?.hidden_resources,
     calendarSettings?.resource_display_order,
+    userPreferences?.preferences,
+    getResourceLayoutStorageKey,
     aircraft.length,
     instructors.length,
   ]);
@@ -307,11 +477,41 @@ export const Calendar: React.FC<CalendarProps> = ({
   useEffect(() => {
     const computeSlotHeight = () => {
       const headerHeight = 200;
-      const availableHeight = window.innerHeight - headerHeight;
-      const numSlots = getTimeSlots().length;
+      const availableHeight = Math.max(420, window.innerHeight - headerHeight);
+      const snapDuration = calendarSettings?.snap_duration || 15;
+      const slotsPerHour = 60 / snapDuration;
+      const numSlots = availableCalendarHours * slotsPerHour;
+      if (!Number.isFinite(numSlots) || numSlots < MIN_CALENDAR_VISIBLE_SLOTS) {
+        return;
+      }
+
       const baseHeight = availableHeight / numSlots;
       const heightMultiplier = calendarSettings?.double_height_slots ? 2 : 1;
-      setSlotHeight(baseHeight * heightMultiplier);
+      const maxSlotHeight = MAX_CALENDAR_SLOT_HEIGHT * heightMultiplier;
+      const nextSlotHeight = baseHeight * heightMultiplier;
+
+      if (!Number.isFinite(nextSlotHeight)) return;
+
+      setSlotHeight((currentHeight) => {
+        if (nextSlotHeight > maxSlotHeight) {
+          const stableHeight =
+            currentHeight > 0 && currentHeight <= maxSlotHeight
+              ? currentHeight
+              : Math.min(lastStableSlotHeightRef.current, maxSlotHeight);
+          lastStableSlotHeightRef.current = stableHeight;
+          return stableHeight;
+        }
+
+        const boundedHeight = Math.min(
+          maxSlotHeight,
+          Math.max(MIN_CALENDAR_SLOT_HEIGHT, nextSlotHeight)
+        );
+        if (Math.abs(currentHeight - boundedHeight) < 0.5) {
+          return currentHeight;
+        }
+        lastStableSlotHeightRef.current = boundedHeight;
+        return boundedHeight;
+      });
     };
 
     computeSlotHeight();
@@ -351,7 +551,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const resources: Resource[] = [];
 
     if (selectedAircraftId) {
-      const selectedAircraft = aircraft.find(
+      const selectedAircraft = displayAircraft.find(
         (a) => a.id === selectedAircraftId
       );
       if (selectedAircraft) {
@@ -366,7 +566,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     if (selectedInstructorId) {
-      const instructor = instructors.find(
+      const instructor = displayInstructors.find(
         (i) => i.id === selectedInstructorId
       );
       if (instructor) {
@@ -384,23 +584,34 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getHirerName = (booking: Booking) => {
     const hirerId = booking.studentId || booking.pilotId;
-    return users.find((u) => u.id === hirerId)?.name || 'Unknown Hirer';
+    return displayUsers.find((u) => u.id === hirerId)?.name || 'Unknown Hirer';
   };
 
   const getInstructorName = (booking: Booking) => {
     if (!booking.instructorId) return '';
-    return users.find((u) => u.id === booking.instructorId)?.name || 'Unknown Instructor';
+    return displayUsers.find((u) => u.id === booking.instructorId)?.name || 'Unknown Instructor';
   };
 
   const getAircraftName = (booking: Booking) => {
-    const bookedAircraft = aircraft.find((a) => a.id === booking.aircraftId);
+    const bookedAircraft = displayAircraft.find((a) => a.id === booking.aircraftId);
     if (!bookedAircraft) return 'Unknown Aircraft';
     return `${bookedAircraft.registration} ${bookedAircraft.make || ''} ${bookedAircraft.model || ''}`.trim();
   };
 
   const isBookingFlightLogged = (booking: Booking) => Boolean(booking.flight_logged || booking.flightLog);
+  const canDragOrResizeBooking = (booking: Booking) => !isBookingFlightLogged(booking);
 
-  const pilotOptions = users
+  const isCancelledBooking = (booking: Booking) =>
+    booking.status === 'cancelled' || Boolean(booking.deletedAt);
+
+  const passesCalendarFilters = (booking: Booking) => {
+    if (isCancelledBooking(booking)) return showCancelledBookings;
+    if (!showWaitlistedBookings && booking.hasConflict) return false;
+    if (!showPendingBookings && booking.status === 'pending_approval') return false;
+    return true;
+  };
+
+  const pilotOptions = displayUsers
     .filter((candidate) =>
       candidate.role === 'student' ||
       candidate.role === 'pilot' ||
@@ -410,6 +621,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const filteredListBookings = bookings
     .filter((booking) => {
+      if (!passesCalendarFilters(booking)) return false;
       if (!listPilotFilter) return true;
       return (booking.studentId || booking.pilotId) === listPilotFilter;
     })
@@ -419,7 +631,6 @@ export const Calendar: React.FC<CalendarProps> = ({
     `${format(new Date(booking.startTime), 'HH:mm')} - ${format(new Date(booking.endTime), 'HH:mm')}`;
 
   const refreshCalendarData = useCallback(() => {
-    window.dispatchEvent(new Event('calendar-data-changed'));
     if (onRefresh) {
       void onRefresh();
     }
@@ -445,7 +656,6 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     toast.success('Flight log deleted');
-    refreshCalendarData();
   };
 
   const truncateNotes = (notes?: string, maxLength = 84) => {
@@ -591,42 +801,144 @@ export const Calendar: React.FC<CalendarProps> = ({
     );
   };
 
+  const renderMobileAgendaCard = (booking: Booking) => {
+    const instructorName = getInstructorName(booking);
+    const aircraftName = getAircraftName(booking);
+    const notes = truncateNotes(booking.notes, 110);
+    const isLogged = booking.flight_logged || Boolean(booking.flightLog);
+    const statusLabel = booking.hasConflict
+      ? 'Waitlist'
+      : isLogged
+        ? 'Logged'
+        : isPastBooking(booking)
+          ? 'Unlogged'
+          : booking.status === 'pending_approval'
+            ? 'Pending'
+            : booking.status === 'cancelled'
+              ? 'Cancelled'
+              : 'Confirmed';
+
+    return (
+      <button
+        key={booking.id}
+        type="button"
+        onClick={(event) => {
+          setActionMenuBooking(booking);
+          setActionMenuPosition({
+            x: Math.min(event.clientX || window.innerWidth - 20, window.innerWidth - 20),
+            y: Math.min(event.clientY || 160, window.innerHeight - 20),
+          });
+        }}
+        className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} block w-full rounded-xl border-2 p-3 text-left shadow-sm transition-transform active:scale-[0.99]`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-bold uppercase tracking-wide opacity-80">
+              {formatBookingTimeRange(booking)}
+            </div>
+            <div className="mt-1 truncate text-base font-extrabold leading-tight">
+              {getHirerName(booking)}
+            </div>
+          </div>
+          <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-[11px] font-bold leading-none text-gray-800 ring-1 ring-black/5">
+            {statusLabel}
+          </span>
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-1.5 text-xs font-semibold">
+          {booking.aircraftId && (
+            <span className="rounded-full bg-white/55 px-2 py-1">
+              {aircraftName}
+            </span>
+          )}
+          {instructorName && (
+            <span className="rounded-full bg-white/55 px-2 py-1">
+              {instructorName}
+            </span>
+          )}
+        </div>
+
+        {notes && (
+          <p className="mt-2 line-clamp-2 text-xs leading-snug opacity-85">
+            {notes}
+          </p>
+        )}
+      </button>
+    );
+  };
+
+  const renderMobileAgenda = (days: Date[]) => (
+    <div className="space-y-3 md:hidden">
+      {days.map((day) => {
+        const dayBookings = getAgendaBookingsForDate(day);
+        return (
+          <section
+            key={day.toISOString()}
+            className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-extrabold text-gray-950 dark:text-gray-100">
+                  {format(day, 'EEEE')}
+                </h3>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {format(day, 'MMMM d, yyyy')}
+                </p>
+              </div>
+              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-600 dark:bg-[#262b33] dark:text-gray-200">
+                {dayBookings.length}
+              </span>
+            </div>
+
+            {dayBookings.length > 0 ? (
+              <div className="space-y-2">
+                {dayBookings.map(renderMobileAgendaCard)}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-6 text-center dark:border-[#363b45] dark:bg-[#11141a]">
+                <Plane className="mx-auto h-7 w-7 text-gray-300 dark:text-gray-600" />
+                <p className="mt-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                  No bookings
+                </p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Use New Booking above to add one for this date.
+                </p>
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+
   const handleHideResource = useCallback((id: string) => {
     setHiddenIds(prev => {
       const next = new Set(prev);
       next.add(id);
-      updateSettingsSilent({ hidden_resources: Array.from(next) });
+      persistResourceLayout(next, orderedIds);
       return next;
     });
-  }, [updateSettingsSilent]);
+  }, [orderedIds, persistResourceLayout]);
 
   const handleShowResource = useCallback((id: string) => {
     setHiddenIds(prev => {
       const next = new Set(prev);
       next.delete(id);
-      updateSettingsSilent({ hidden_resources: Array.from(next) });
+      persistResourceLayout(next, orderedIds);
       return next;
     });
-  }, [updateSettingsSilent]);
+  }, [orderedIds, persistResourceLayout]);
 
   const handleReorderResources = useCallback((newOrderIds: string[]) => {
     setOrderedIds(newOrderIds);
-    const allResources = [
-      ...aircraft.map(a => ({ id: a.id, type: 'aircraft' as const })),
-      ...instructors.map(i => ({ id: i.id, type: 'instructor' as const })),
-    ];
-    const resourceMap = new Map(allResources.map(r => [r.id, r]));
-    const resourceOrder = newOrderIds
-      .map(id => resourceMap.get(id))
-      .filter((r): r is { id: string; type: 'aircraft' | 'instructor' } => !!r);
-    updateSettingsSilent({ resource_order: resourceOrder });
-  }, [aircraft, instructors, updateSettingsSilent]);
+    persistResourceLayout(hiddenIds, newOrderIds);
+  }, [hiddenIds, persistResourceLayout]);
 
   const getAllResources = (): Resource[] => {
     const resourceMap = new Map<string, Resource>();
 
     if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
-      aircraft.forEach((a) => {
+      displayAircraft.forEach((a) => {
         resourceMap.set(a.id, {
           id: a.id,
           name: a.registration,
@@ -638,7 +950,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     if (resourceFilter === 'instructors' || resourceFilter === 'both') {
-      instructors.forEach((instructor) => {
+      displayInstructors.forEach((instructor) => {
         resourceMap.set(instructor.id, {
           id: instructor.id,
           name: instructor.name || instructor.email,
@@ -674,7 +986,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const slots = [];
     for (let hour = calendarStartHour; hour < calendarEndHour; hour++) {
       for (let i = 0; i < slotsPerHour; i++) {
-        slots.push(hour * (60 / snapDuration) + i);
+        slots.push(hour * slotsPerHour + i);
       }
     }
     return slots;
@@ -704,10 +1016,6 @@ export const Calendar: React.FC<CalendarProps> = ({
     user?.role === 'admin' ||
     user?.role === 'instructor' ||
     user?.roles?.some(role => role === 'admin' || role === 'instructor');
-  const canManageCalendarResources =
-    user?.role === 'admin' ||
-    user?.roles?.some(role => role === 'admin');
-
   const canApproveCalendarBooking = (booking: Booking) => {
     const isAdmin =
       user?.role === 'admin' ||
@@ -763,52 +1071,135 @@ export const Calendar: React.FC<CalendarProps> = ({
     await deleteAbsence(absenceId);
   };
 
-  const getUnavailabilityPeriods = (date: Date): UnavailabilityPeriod[] => {
-    const periods: UnavailabilityPeriod[] = [];
-    const dayOfWeek = date.getDay();
-    const dateStr = format(date, 'yyyy-MM-dd');
+  const getUnavailabilityPeriods = useMemo(() => {
+    const cache = new Map<string, UnavailabilityPeriod[]>();
 
-    instructors.forEach((instructor) => {
-      // One-off absences layer over the permanent weekly schedule.
-      const instructorAbsences = absences.filter(
-        (a) =>
-          a.userId === instructor.id &&
-          dateStr >= a.startDate &&
-          dateStr <= a.endDate
-      );
+    return (date: Date): UnavailabilityPeriod[] => {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const cachedPeriods = cache.get(dateStr);
+      if (cachedPeriods) return cachedPeriods;
 
-      instructorAbsences.forEach((absence) => {
-        let startHour = calendarStartHour;
-        let startMinute = 0;
-        let endHour = calendarEndHour;
-        let endMinute = 0;
+      const periods: UnavailabilityPeriod[] = [];
+      const dayOfWeek = date.getDay();
 
-        if (absence.startTime && absence.endTime) {
-          [startHour, startMinute] = absence.startTime.split(':').map(Number);
-          [endHour, endMinute] = absence.endTime.split(':').map(Number);
+      displayInstructors.forEach((instructor) => {
+        // One-off absences layer over the permanent weekly schedule.
+        const instructorAbsences = displayAbsences.filter(
+          (a) =>
+            a.userId === instructor.id &&
+            dateStr >= a.startDate &&
+            dateStr <= a.endDate
+        );
+
+        instructorAbsences.forEach((absence) => {
+          let startHour = calendarStartHour;
+          let startMinute = 0;
+          let endHour = calendarEndHour;
+          let endMinute = 0;
+
+          if (absence.startTime && absence.endTime) {
+            [startHour, startMinute] = absence.startTime.split(':').map(Number);
+            [endHour, endMinute] = absence.endTime.split(':').map(Number);
+          }
+
+          periods.push({
+            id: absence.id,
+            resourceId: instructor.id,
+            resourceType: 'instructor',
+            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+            reason: absence.reason || 'Absent',
+            pattern: 'solid',
+            source: 'absence',
+          });
+        });
+
+        if (!hasAvailabilityData) {
+          return;
         }
 
-        periods.push({
-          id: absence.id,
-          resourceId: instructor.id,
-          resourceType: 'instructor',
-          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
-          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
-          reason: absence.reason || 'Absent',
-          pattern: 'solid',
-          source: 'absence',
-        });
-      });
+        // Check for schedule changes effective on this date
+        const applicableChanges = displayScheduleChanges
+          .filter((c) => c.userId === instructor.id && c.dayOfWeek === dayOfWeek && c.effectiveFrom <= dateStr)
+          .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
 
-      // Check for schedule changes effective on this date
-      const applicableChanges = scheduleChanges
-        .filter((c) => c.userId === instructor.id && c.dayOfWeek === dayOfWeek && c.effectiveFrom <= dateStr)
-        .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+        const scheduleChange = applicableChanges[0];
 
-      const scheduleChange = applicableChanges[0];
+        if (scheduleChange) {
+          if (!scheduleChange.isAvailable) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarStartHour, 0),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+              source: 'schedule',
+            });
+          } else {
+            const [startHour, startMinute] = scheduleChange.startTime.split(':').map(Number);
+            const [endHour, endMinute] = scheduleChange.endTime.split(':').map(Number);
 
-      if (scheduleChange) {
-        if (!scheduleChange.isAvailable) {
+            if (startHour > calendarStartHour) {
+              periods.push({
+                resourceId: instructor.id,
+                resourceType: 'instructor',
+                startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarStartHour, 0),
+                endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+                reason: 'Not Available',
+                pattern: 'diagonal',
+                source: 'schedule',
+              });
+            }
+
+            if (scheduleChange.afternoonStartTime && scheduleChange.afternoonEndTime) {
+              const [afternoonStartHour, afternoonStartMinute] = scheduleChange.afternoonStartTime.split(':').map(Number);
+              const [afternoonEndHour, afternoonEndMinute] = scheduleChange.afternoonEndTime.split(':').map(Number);
+
+              periods.push({
+                resourceId: instructor.id,
+                resourceType: 'instructor',
+                startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+                endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
+                reason: 'Lunch Break',
+                pattern: 'diagonal',
+                source: 'schedule',
+              });
+
+              if (afternoonEndHour < calendarEndHour) {
+                periods.push({
+                  resourceId: instructor.id,
+                  resourceType: 'instructor',
+                  startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonEndHour, afternoonEndMinute),
+                  endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0),
+                  reason: 'Not Available',
+                  pattern: 'diagonal',
+                  source: 'schedule',
+                });
+              }
+            } else {
+              if (endHour < calendarEndHour) {
+                periods.push({
+                  resourceId: instructor.id,
+                  resourceType: 'instructor',
+                  startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+                  endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0),
+                  reason: 'Not Available',
+                  pattern: 'diagonal',
+                  source: 'schedule',
+                });
+              }
+            }
+          }
+          return;
+        }
+
+        // Check weekly schedule
+        const weeklySchedule = displayWeeklySchedules.find(
+          (s) => s.userId === instructor.id && s.dayOfWeek === dayOfWeek
+        );
+
+        if (!weeklySchedule || !weeklySchedule.isAvailable) {
           periods.push({
             resourceId: instructor.id,
             resourceType: 'instructor',
@@ -819,8 +1210,8 @@ export const Calendar: React.FC<CalendarProps> = ({
             source: 'schedule',
           });
         } else {
-          const [startHour, startMinute] = scheduleChange.startTime.split(':').map(Number);
-          const [endHour, endMinute] = scheduleChange.endTime.split(':').map(Number);
+          const [startHour, startMinute] = weeklySchedule.startTime.split(':').map(Number);
+          const [endHour, endMinute] = weeklySchedule.endTime.split(':').map(Number);
 
           if (startHour > calendarStartHour) {
             periods.push({
@@ -834,9 +1225,9 @@ export const Calendar: React.FC<CalendarProps> = ({
             });
           }
 
-          if (scheduleChange.afternoonStartTime && scheduleChange.afternoonEndTime) {
-            const [afternoonStartHour, afternoonStartMinute] = scheduleChange.afternoonStartTime.split(':').map(Number);
-            const [afternoonEndHour, afternoonEndMinute] = scheduleChange.afternoonEndTime.split(':').map(Number);
+          if (weeklySchedule.afternoonStartTime && weeklySchedule.afternoonEndTime) {
+            const [afternoonStartHour, afternoonStartMinute] = weeklySchedule.afternoonStartTime.split(':').map(Number);
+            const [afternoonEndHour, afternoonEndMinute] = weeklySchedule.afternoonEndTime.split(':').map(Number);
 
             periods.push({
               resourceId: instructor.id,
@@ -873,83 +1264,20 @@ export const Calendar: React.FC<CalendarProps> = ({
             }
           }
         }
-        return;
-      }
+      });
 
-      // Check weekly schedule
-      const weeklySchedule = weeklySchedules.find(
-        (s) => s.userId === instructor.id && s.dayOfWeek === dayOfWeek
-      );
-
-      if (!weeklySchedule || !weeklySchedule.isAvailable) {
-        periods.push({
-          resourceId: instructor.id,
-          resourceType: 'instructor',
-          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarStartHour, 0),
-          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0),
-          reason: 'Not Available',
-          pattern: 'diagonal',
-          source: 'schedule',
-        });
-      } else {
-        const [startHour, startMinute] = weeklySchedule.startTime.split(':').map(Number);
-        const [endHour, endMinute] = weeklySchedule.endTime.split(':').map(Number);
-
-        if (startHour > calendarStartHour) {
-          periods.push({
-            resourceId: instructor.id,
-            resourceType: 'instructor',
-            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarStartHour, 0),
-            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
-            reason: 'Not Available',
-            pattern: 'diagonal',
-            source: 'schedule',
-          });
-        }
-
-        if (weeklySchedule.afternoonStartTime && weeklySchedule.afternoonEndTime) {
-          const [afternoonStartHour, afternoonStartMinute] = weeklySchedule.afternoonStartTime.split(':').map(Number);
-          const [afternoonEndHour, afternoonEndMinute] = weeklySchedule.afternoonEndTime.split(':').map(Number);
-
-          periods.push({
-            resourceId: instructor.id,
-            resourceType: 'instructor',
-            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
-            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
-            reason: 'Lunch Break',
-            pattern: 'diagonal',
-            source: 'schedule',
-          });
-
-          if (afternoonEndHour < calendarEndHour) {
-            periods.push({
-              resourceId: instructor.id,
-              resourceType: 'instructor',
-              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonEndHour, afternoonEndMinute),
-              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0),
-              reason: 'Not Available',
-              pattern: 'diagonal',
-              source: 'schedule',
-            });
-          }
-        } else {
-          if (endHour < calendarEndHour) {
-            periods.push({
-              resourceId: instructor.id,
-              resourceType: 'instructor',
-              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
-              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0),
-              reason: 'Not Available',
-              pattern: 'diagonal',
-              source: 'schedule',
-            });
-          }
-        }
-      }
-    });
-
-    return periods;
-  };
+      cache.set(dateStr, periods);
+      return periods;
+    };
+  }, [
+    calendarEndHour,
+    calendarStartHour,
+    displayAbsences,
+    displayInstructors,
+    displayScheduleChanges,
+    displayWeeklySchedules,
+    hasAvailabilityData,
+  ]);
 
   const getBookingsForResource = (
     resourceId: string,
@@ -963,10 +1291,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     let filteredBookings = visibleBookings.filter((booking) => {
       if (!isSameDay(new Date(booking.startTime), date)) return false;
-      if (!showWaitlistedBookings && booking.hasConflict) return false;
-      if (!showPendingBookings && booking.status === 'pending_approval') return false;
-      if (!showCancelledBookings && booking.status === 'cancelled') return false;
-      return true;
+      return passesCalendarFilters(booking);
     });
 
     if (resourceType === 'aircraft') {
@@ -980,6 +1305,31 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     return filteredBookings;
+  };
+
+  const getAgendaBookingsForDate = (date: Date): Booking[] => {
+    const resources = getAllResources();
+    const visibleAircraftIds = new Set(
+      resources.filter((resource) => resource.type === 'aircraft').map((resource) => resource.id)
+    );
+    const visibleInstructorIds = new Set(
+      resources.filter((resource) => resource.type === 'instructor').map((resource) => resource.id)
+    );
+
+    return bookings
+      .map((booking) => ({
+        ...booking,
+        ...optimisticBookingUpdates[booking.id],
+      }))
+      .filter((booking) => {
+        if (!isSameDay(new Date(booking.startTime), date)) return false;
+        if (!passesCalendarFilters(booking)) return false;
+        return (
+          (booking.aircraftId && visibleAircraftIds.has(booking.aircraftId)) ||
+          (booking.instructorId && visibleInstructorIds.has(booking.instructorId))
+        );
+      })
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   };
 
   const getBookingPosition = (booking: Booking) => {
@@ -1002,6 +1352,60 @@ export const Calendar: React.FC<CalendarProps> = ({
       gridRowEnd: startSlot + 1 + durationInSlots,
       marginTop:
         remainderMinutes === 0 ? 0 : remainderMinutes * minuteHeight,
+    };
+  };
+
+  const getPeriodPosition = (startTime: Date, endTime: Date) => {
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
+    const startHour = startTime.getHours();
+    const startMinute = startTime.getMinutes();
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const durationHours = durationMs / (1000 * 60 * 60);
+    const rawStartSlot =
+      (startHour - calendarStartHour) * slotsPerHour +
+      Math.floor(startMinute / snapDuration);
+    const totalSlots = getTimeSlots().length;
+    const startSlot = Math.max(0, Math.min(totalSlots - 1, rawStartSlot));
+    const durationInSlots = Math.max(1, Math.ceil(durationHours * slotsPerHour));
+    const remainderMinutes = startMinute % snapDuration;
+    const minuteHeight = slotHeight / snapDuration;
+
+    return {
+      gridRowStart: startSlot + 1,
+      gridRowEnd: Math.min(totalSlots + 1, startSlot + 1 + durationInSlots),
+      marginTop:
+        remainderMinutes === 0 ? 0 : remainderMinutes * minuteHeight,
+    };
+  };
+
+  const getBookingBlockStyle = (
+    position: ReturnType<typeof getBookingPosition>
+  ): React.CSSProperties => {
+    const rowSpan = Math.max(1, position.gridRowEnd - position.gridRowStart);
+    const blockHeight = Math.max(slotHeight, rowSpan * slotHeight - position.marginTop);
+
+    return {
+      alignSelf: 'start',
+      boxSizing: 'border-box',
+      height: blockHeight,
+      minHeight: slotHeight,
+      maxHeight: blockHeight,
+    };
+  };
+
+  const getUnavailabilityBlockStyle = (
+    position: ReturnType<typeof getPeriodPosition>
+  ): React.CSSProperties => {
+    const rowSpan = Math.max(1, position.gridRowEnd - position.gridRowStart);
+    const blockHeight = Math.max(slotHeight, rowSpan * slotHeight - position.marginTop);
+
+    return {
+      alignSelf: 'start',
+      boxSizing: 'border-box',
+      height: blockHeight,
+      minHeight: slotHeight,
+      maxHeight: blockHeight,
     };
   };
 
@@ -1053,9 +1457,13 @@ export const Calendar: React.FC<CalendarProps> = ({
       unavailability.source === 'absence' &&
       Boolean(unavailability.id);
 
+    if (unavailability.source === 'schedule') {
+      return null;
+    }
+
     return (
       <div className="absolute inset-0 flex items-center justify-center px-1">
-        <span className="inline-flex max-w-full items-center gap-1 rounded bg-white bg-opacity-85 px-1.5 py-0.5 text-xs font-medium text-gray-700 shadow-sm">
+        <span className="pointer-events-auto inline-flex max-w-full items-center gap-1 rounded bg-white bg-opacity-85 px-1.5 py-0.5 text-xs font-medium text-gray-700 shadow-sm">
           <span className="truncate">{unavailability.reason}</span>
           {canRemoveDowntime && (
             <button
@@ -1105,42 +1513,32 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
-  const cancelDragDelay = () => {
-    if (dragDelayTimer) {
-      clearTimeout(dragDelayTimer);
-      setDragDelayTimer(null);
-    }
-    setIsDragDelayActive(false);
-  };
-
   const resetBookingInteractionState = useCallback(() => {
     setDraggedBooking(null);
     setDraggedBookingOriginal(null);
     setDragPreview(null);
     setResizingBooking(null);
+    setPendingBookingDrag(null);
     setHasBookingInteractionMoved(false);
     setTimeout(() => setWasResizing(false), 100);
   }, []);
 
-  const startDragDelayTimer = (
+  const startBookingDragIntent = (
+    e: React.MouseEvent,
     booking: Booking,
     resourceType: 'aircraft' | 'instructor'
   ) => {
-    if (isBookingFlightLogged(booking)) {
+    if (!canDragOrResizeBooking(booking)) {
       return;
     }
 
-    if (isPastBooking(booking)) {
-      return;
-    }
-
-    setIsDragDelayActive(true);
-    const timer = setTimeout(() => {
-      handleBookingDragStart(booking, resourceType);
-      setIsDragDelayActive(false);
-      setDragDelayTimer(null);
-    }, BOOKING_DRAG_START_DELAY_MS);
-    setDragDelayTimer(timer);
+    setActionMenuBooking(null);
+    setPendingBookingDrag({
+      booking,
+      resourceType,
+      startX: e.clientX,
+      startY: e.clientY,
+    });
   };
 
   const updateDragPreview = (nextPreview: NonNullable<typeof dragPreview>) => {
@@ -1163,18 +1561,14 @@ export const Calendar: React.FC<CalendarProps> = ({
     booking: Booking,
     resourceType: 'aircraft' | 'instructor'
   ) => {
-    if (isBookingFlightLogged(booking)) {
+    if (!canDragOrResizeBooking(booking)) {
       toast.error('Delete the flight log before editing this booking');
-      return;
-    }
-
-    if (isPastBooking(booking)) {
-      toast.error('Cannot move past bookings');
       return;
     }
 
     setDraggedBooking(booking);
     setDraggedBookingOriginal(booking);
+    setPendingBookingDrag(null);
     setHasBookingInteractionMoved(false);
     updateDragPreview({
       startTime: new Date(booking.startTime),
@@ -1190,13 +1584,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     handle: 'top' | 'bottom',
     resourceType: 'aircraft' | 'instructor'
   ) => {
-    if (isBookingFlightLogged(booking)) {
+    if (!canDragOrResizeBooking(booking)) {
       toast.error('Delete the flight log before editing this booking');
-      return;
-    }
-
-    if (isPastBooking(booking)) {
-      toast.error('Cannot resize past bookings');
       return;
     }
 
@@ -1214,19 +1603,15 @@ export const Calendar: React.FC<CalendarProps> = ({
     });
   };
 
-  const handleBookingDragOver = (
-    e: React.MouseEvent,
+  const updateBookingPreviewForSlot = (
     slot: number,
     resourceId: string,
     resourceType: 'aircraft' | 'instructor',
     date: Date
   ) => {
     if (!draggedBooking && !resizingBooking) return;
-    e.preventDefault();
-    e.stopPropagation();
 
     const snapDuration = calendarSettings?.snap_duration || 15;
-    const slotsPerHour = 60 / snapDuration;
 
     const { hour, minute } = getTimeFromSlot(slot);
     const slotTime = new Date(date);
@@ -1280,6 +1665,19 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
+  const handleBookingDragOver = (
+    e: React.MouseEvent,
+    slot: number,
+    resourceId: string,
+    resourceType: 'aircraft' | 'instructor',
+    date: Date
+  ) => {
+    if (!draggedBooking && !resizingBooking) return;
+    e.preventDefault();
+    e.stopPropagation();
+    updateBookingPreviewForSlot(slot, resourceId, resourceType, date);
+  };
+
   const handleBookingDrop = useCallback(() => {
     const booking = draggedBooking || resizingBooking?.booking;
     if (!booking || !dragPreview || !onUpdateBooking) {
@@ -1308,13 +1706,13 @@ export const Calendar: React.FC<CalendarProps> = ({
         ...updates,
       },
     }));
+    if (draggedBooking) {
+      setWasMovingBooking(true);
+      setTimeout(() => setWasMovingBooking(false), 150);
+    }
     resetBookingInteractionState();
 
     void onUpdateBooking(booking.id, updates, true)
-      .then(() => {
-        refreshCalendarData();
-        toast.success(wasResizingBooking ? 'Booking resized successfully' : 'Booking moved successfully');
-      })
       .catch((error) => {
         console.error('Error updating booking:', error);
         setOptimisticBookingUpdates((current) => {
@@ -1322,7 +1720,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           delete next[booking.id];
           return next;
         });
-        toast.error('Failed to update booking');
+        toast.error(wasResizingBooking ? 'Failed to resize booking' : 'Failed to move booking');
       })
       .finally(() => {
         setOptimisticBookingUpdates((current) => {
@@ -1336,9 +1734,68 @@ export const Calendar: React.FC<CalendarProps> = ({
     resizingBooking,
     dragPreview,
     onUpdateBooking,
-    refreshCalendarData,
     resetBookingInteractionState,
   ]);
+
+  useEffect(() => {
+    if (!pendingBookingDrag || draggedBooking || resizingBooking) {
+      return;
+    }
+
+    const handleWindowMouseMove = (event: MouseEvent) => {
+      const distance = Math.hypot(
+        event.clientX - pendingBookingDrag.startX,
+        event.clientY - pendingBookingDrag.startY
+      );
+
+      if (distance >= BOOKING_DRAG_MOVE_THRESHOLD_PX) {
+        handleBookingDragStart(pendingBookingDrag.booking, pendingBookingDrag.resourceType);
+      }
+    };
+
+    const handleWindowMouseUp = () => {
+      setPendingBookingDrag(null);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [pendingBookingDrag, draggedBooking, resizingBooking]);
+
+  useEffect(() => {
+    if (!draggedBooking && !resizingBooking) {
+      return;
+    }
+
+    const handleWindowMouseMove = (event: MouseEvent) => {
+      const element = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+      const slotElement = element?.closest('[data-calendar-slot="true"]') as HTMLElement | null;
+      if (!slotElement) return;
+
+      const slot = Number(slotElement.dataset.slot);
+      const resourceId = slotElement.dataset.resourceId;
+      const resourceType = slotElement.dataset.resourceType as 'aircraft' | 'instructor' | undefined;
+      const dateValue = slotElement.dataset.date;
+
+      if (
+        !Number.isFinite(slot) ||
+        !resourceId ||
+        (resourceType !== 'aircraft' && resourceType !== 'instructor') ||
+        !dateValue
+      ) {
+        return;
+      }
+
+      updateBookingPreviewForSlot(slot, resourceId, resourceType, new Date(dateValue));
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    return () => window.removeEventListener('mousemove', handleWindowMouseMove);
+  }, [draggedBooking, resizingBooking, updateBookingPreviewForSlot]);
 
   useEffect(() => {
     if (!draggedBooking && !resizingBooking) {
@@ -1434,7 +1891,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const renderViewModeButtons = () => (
-    <div className="grid w-full grid-cols-4 rounded-xl bg-gray-100 p-1 sm:w-auto sm:flex">
+    <div className={`grid w-full min-w-0 grid-cols-4 rounded-xl bg-gray-100 p-1 dark:bg-[#11141a] ${isKioskMode ? '' : 'sm:w-auto sm:min-w-[17rem] sm:flex'}`}>
         {(['day', 'week', 'month', 'list'] as ViewMode[]).map((mode) => (
           <button
             key={mode}
@@ -1455,10 +1912,10 @@ export const Calendar: React.FC<CalendarProps> = ({
                 });
               }
             }}
-            className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors sm:px-3 sm:py-1.5 sm:text-sm ${
+            className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors ${isKioskMode ? 'px-2.5 py-3 text-sm' : 'sm:px-3 sm:py-2 sm:text-sm'} ${
               viewMode === mode
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-white text-blue-600 shadow-sm dark:bg-[#262b33] dark:text-blue-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
             }`}
           >
             {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -1521,66 +1978,65 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const renderFilterControls = () => (
-    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
       <select
         value={resourceFilter}
         onChange={(e) =>
           setResourceFilter(e.target.value as any)
         }
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto"
+        className={`w-full rounded-lg border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 sm:w-auto ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}
       >
         <option value="both">Aircraft & Instructors</option>
         <option value="aircraft">Aircraft Only</option>
         <option value="instructors">Instructors Only</option>
       </select>
 
-      {canManageCalendarResources && (
-        <ResourceManagerPanel
-          resources={getManagedResources()}
-          hiddenIds={hiddenIds}
-          orderedIds={orderedIds}
-          onHide={handleHideResource}
-          onShow={handleShowResource}
-          onReorder={handleReorderResources}
-        />
-      )}
+      <ResourceManagerPanel
+        resources={getManagedResources()}
+        hiddenIds={hiddenIds}
+        orderedIds={orderedIds}
+        onHide={handleHideResource}
+        onShow={handleShowResource}
+        onReorder={handleReorderResources}
+        compact={isKioskMode}
+      />
 
-      <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}>
         <input
           type="checkbox"
           checked={showWaitlistedBookings}
           onChange={(event) => setShowWaitlistedBookings(event.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
         />
         <span>Waitlist</span>
       </label>
 
-      <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}>
         <input
           type="checkbox"
           checked={showPendingBookings}
           onChange={(event) => setShowPendingBookings(event.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
         />
         <span>Pending</span>
       </label>
 
-      <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}>
         <input
           type="checkbox"
           checked={showUnavailableBlocks}
           onChange={(event) => setShowUnavailableBlocks(event.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
         />
         <span>Unavailable</span>
       </label>
 
-      <label className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}>
         <input
           type="checkbox"
           checked={showCancelledBookings}
           onChange={(event) => setShowCancelledBookings(event.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
         />
         <span>Cancelled</span>
       </label>
@@ -1592,8 +2048,9 @@ export const Calendar: React.FC<CalendarProps> = ({
     const resources = getAllResources();
 
     return (
-      <div className="p-3 sm:p-6">
-        <div className="resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <div className={isKioskMode ? 'h-full p-2' : 'p-3 sm:p-6'}>
+        {!isKioskMode && renderMobileAgenda([currentDate])}
+        <div className={`resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#171a21] ${isKioskMode ? 'h-full' : 'hidden md:block'}`}>
           {/* Fixed header */}
           <div className="sticky top-0 z-20 bg-white border-b border-gray-200">
             <div
@@ -1662,14 +2119,9 @@ export const Calendar: React.FC<CalendarProps> = ({
               const slotsPerHour = 60 / snapDuration;
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHourMarker = snapDuration <= 15 && minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
-              }${
-                isHalfHourMarker
-                  ? ' border-b border-dotted border-gray-300'
-                  : ''
               }`;
 
               return (
@@ -1689,10 +2141,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                           {timeLabel}
                         </span>
                       )}
-                      <div
-                        className="pointer-events-none absolute left-0 right-0 border-b border-dotted border-gray-300"
-                        style={{ top: '50%' }}
-                      />
                     </div>
                   )}
 
@@ -1741,22 +2189,16 @@ export const Calendar: React.FC<CalendarProps> = ({
                     return (
                       <div
                         key={`${resource.id}-${slot}`}
-                        className={`calendar-slot-cell border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                        data-calendar-slot="true"
+                        data-slot={slot}
+                        data-resource-id={resource.id}
+                        data-resource-type={resource.type}
+                        data-date={currentDate.toISOString()}
+                        className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
                         style={{
                           height: slotHeight,
                           gridColumn: resourceIndex + 2,
                           gridRow: slotIndex + 1,
-                          background: unavailability
-                            ? unavailability.pattern === 'diagonal'
-                              ? `repeating-linear-gradient(
-                                  45deg,
-                                  rgba(156, 163, 175, 0.3),
-                                  rgba(156, 163, 175, 0.3) 4px,
-                                  transparent 4px,
-                                  transparent 8px
-                                )`
-                              : 'rgba(156, 163, 175, 0.5)'
-                            : undefined,
                         }}
                         onClick={() =>
                           !unavailability &&
@@ -1788,16 +2230,66 @@ export const Calendar: React.FC<CalendarProps> = ({
                             );
                           }
                         }}
-                      >
-                        {unavailability && isFirstSlotOfPeriod && (
-                          renderUnavailabilityLabel(unavailability)
-                        )}
-                      </div>
+                      />
                     );
                   })}
                 </React.Fragment>
               );
             })}
+
+            {timeSlots.map((slot, slotIndex) => {
+              const { minute } = getTimeFromSlot(slot);
+              if (minute !== 30) return null;
+
+              return (
+                <div
+                  key={`half-hour-line-${slot}`}
+                  className="pointer-events-none relative z-[2] border-t border-dotted border-gray-300"
+                  style={{
+                    gridColumn: '1 / -1',
+                    gridRow: slotIndex + 1,
+                    alignSelf: 'start',
+                  }}
+                />
+              );
+            })}
+
+            {showUnavailableBlocks && resources.map((resource, resourceIndex) =>
+              getUnavailabilityPeriods(currentDate)
+                .filter(
+                  (period) =>
+                    period.resourceId === resource.id &&
+                    period.resourceType === resource.type
+                )
+                .map((period) => {
+                  const position = getPeriodPosition(period.startTime, period.endTime);
+                  return (
+                    <div
+                      key={`unavailable-${resource.id}-${period.id || period.reason}-${period.startTime.getTime()}-${period.endTime.getTime()}`}
+                      className="pointer-events-none relative z-[1] overflow-hidden border-r border-gray-200"
+                      style={{
+                        gridColumn: resourceIndex + 2,
+                        gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
+                        marginTop: position.marginTop,
+                        background: period.source === 'schedule'
+                          ? 'rgba(156, 163, 175, 0.35)'
+                          : period.pattern === 'diagonal'
+                          ? `repeating-linear-gradient(
+                              45deg,
+                              rgba(156, 163, 175, 0.3),
+                              rgba(156, 163, 175, 0.3) 4px,
+                              transparent 4px,
+                              transparent 8px
+                            )`
+                          : 'rgba(156, 163, 175, 0.5)',
+                        ...getUnavailabilityBlockStyle(position),
+                      }}
+                    >
+                      {renderUnavailabilityLabel(period)}
+                    </div>
+                  );
+                })
+            )}
 
             {/* Render bookings as grid items */}
             {resources.map((resource, resourceIndex) =>
@@ -1823,26 +2315,20 @@ export const Calendar: React.FC<CalendarProps> = ({
                       gridColumn: resourceIndex + 2,
                       gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
                       marginTop: position.marginTop,
-                      minHeight: slotHeight,
+                      ...getBookingBlockStyle(position),
                       ...getBookingLaneStyle(booking),
                     }}
                     title={`${booking.notes || 'Booking'}`}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      if (!isPastBooking(booking)) {
-                        startDragDelayTimer(booking, resource.type);
+                      if (canDragOrResizeBooking(booking)) {
+                        startBookingDragIntent(e, booking, resource.type);
                       }
                     }}
-                    onMouseUp={cancelDragDelay}
                     onClick={(e) => {
                       e.stopPropagation();
 
-                      // Cancel any drag state
-                      if (dragDelayTimer) {
-                        clearTimeout(dragDelayTimer);
-                        setDragDelayTimer(null);
-                      }
-                      setIsDragDelayActive(false);
+                      setPendingBookingDrag(null);
 
                       // If drag already started, cancel it
                       if (draggedBooking) {
@@ -1852,7 +2338,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         return;
                       }
 
-                      if (wasResizing) {
+                      if (wasResizing || wasMovingBooking) {
                         return;
                       }
 
@@ -1860,7 +2346,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       setActionMenuPosition({ x: e.clientX, y: e.clientY });
                     }}
                   >
-                    {!isPastBooking(booking) && (
+                    {canDragOrResizeBooking(booking) && (
                       <>
                         <div
                           className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
@@ -1907,7 +2393,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     gridColumn: resourceIndex + 2,
                     gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
                     marginTop: previewPosition.marginTop,
-                    minHeight: slotHeight,
+                    ...getBookingBlockStyle(previewPosition),
                     pointerEvents: 'none'
                   }}
                 >
@@ -1969,8 +2455,9 @@ export const Calendar: React.FC<CalendarProps> = ({
       : undefined;
 
     return (
-      <div className="p-3 sm:p-6">
-        <div className="resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white">
+      <div className={isKioskMode ? 'h-full p-2' : 'p-3 sm:p-6'}>
+        {!isKioskMode && renderMobileAgenda(weekDays)}
+        <div className={`resource-calendar-grid relative overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#171a21] ${isKioskMode ? 'h-full' : 'hidden md:block'}`}>
           {/* Fixed header */}
           <div className="sticky top-0 z-20 border-b border-gray-200 bg-white">
             <div
@@ -2102,14 +2589,9 @@ export const Calendar: React.FC<CalendarProps> = ({
               const slotsPerHour = 60 / snapDuration;
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHourMarker = snapDuration <= 15 && minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
-              }${
-                isHalfHourMarker
-                  ? ' border-b border-dotted border-gray-300'
-                  : ''
               }`;
 
               return (
@@ -2129,10 +2611,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                           {timeLabel}
                         </span>
                       )}
-                      <div
-                        className="pointer-events-none absolute left-0 right-0 border-b border-dotted border-gray-300"
-                        style={{ top: '50%' }}
-                      />
                     </div>
                   )}
 
@@ -2188,22 +2666,16 @@ export const Calendar: React.FC<CalendarProps> = ({
                       daySlots.push(
                         <div
                           key={`${dayIndex}-aircraft-${slot}`}
-                          className={`calendar-slot-cell border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          data-calendar-slot="true"
+                          data-slot={slot}
+                          data-resource-id={selectedAircraftId}
+                          data-resource-type="aircraft"
+                          data-date={day.toISOString()}
+                          className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
                             gridRow: slotIndex + 1,
-                            background: unavailability
-                              ? unavailability.pattern === 'diagonal'
-                                ? `repeating-linear-gradient(
-                                    45deg,
-                                    rgba(156, 163, 175, 0.3),
-                                    rgba(156, 163, 175, 0.3) 4px,
-                                    transparent 4px,
-                                    transparent 8px
-                                  )`
-                                : 'rgba(156, 163, 175, 0.5)'
-                              : undefined,
                           }}
                           onClick={() =>
                             !unavailability &&
@@ -2237,11 +2709,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               );
                             }
                           }}
-                        >
-                          {unavailability && isFirstSlotOfPeriod && (
-                            renderUnavailabilityLabel(unavailability)
-                          )}
-                        </div>
+                        />
                       );
                       columnOffset++;
                     }
@@ -2290,22 +2758,16 @@ export const Calendar: React.FC<CalendarProps> = ({
                       daySlots.push(
                         <div
                           key={`${dayIndex}-instructor-${slot}`}
-                          className={`calendar-slot-cell border-r border-gray-200 relative transition-colors${borderClasses} ${cursorClass} ${backgroundClass}`}
+                          data-calendar-slot="true"
+                          data-slot={slot}
+                          data-resource-id={selectedInstructorId}
+                          data-resource-type="instructor"
+                          data-date={day.toISOString()}
+                          className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
                             gridRow: slotIndex + 1,
-                            background: unavailability
-                              ? unavailability.pattern === 'diagonal'
-                                ? `repeating-linear-gradient(
-                                    45deg,
-                                    rgba(156, 163, 175, 0.3),
-                                    rgba(156, 163, 175, 0.3) 4px,
-                                    transparent 4px,
-                                    transparent 8px
-                                  )`
-                                : 'rgba(156, 163, 175, 0.5)'
-                              : undefined,
                           }}
                           onClick={() =>
                             !unavailability &&
@@ -2339,11 +2801,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               );
                             }
                           }}
-                        >
-                          {unavailability && isFirstSlotOfPeriod && (
-                            renderUnavailabilityLabel(unavailability)
-                          )}
-                        </div>
+                        />
                       );
                     }
 
@@ -2352,6 +2810,107 @@ export const Calendar: React.FC<CalendarProps> = ({
                   </React.Fragment>
                 );
               })}
+
+            {timeSlots.map((slot, slotIndex) => {
+              const { minute } = getTimeFromSlot(slot);
+              if (minute !== 30) return null;
+
+              return (
+                <div
+                  key={`week-half-hour-line-${slot}`}
+                  className="pointer-events-none relative z-[2] border-t border-dotted border-gray-300"
+                  style={{
+                    gridColumn: '1 / -1',
+                    gridRow: slotIndex + 1,
+                    alignSelf: 'start',
+                  }}
+                />
+              );
+            })}
+
+            {showUnavailableBlocks && weekDays.map((day, dayIndex) => {
+              const overlays = [];
+              let columnOffset = 0;
+
+              if (hasAircraft) {
+                const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                getUnavailabilityPeriods(day)
+                  .filter(
+                    (period) =>
+                      period.resourceId === selectedAircraftId &&
+                      period.resourceType === 'aircraft'
+                  )
+                  .forEach((period) => {
+                    const position = getPeriodPosition(period.startTime, period.endTime);
+                    overlays.push(
+                      <div
+                        key={`week-unavailable-aircraft-${dayIndex}-${period.id || period.reason}-${period.startTime.getTime()}-${period.endTime.getTime()}`}
+                        className="pointer-events-none relative z-[1] overflow-hidden border-r border-gray-200"
+                        style={{
+                          gridColumn: columnIndex + 2,
+                          gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
+                          marginTop: position.marginTop,
+                          background: period.source === 'schedule'
+                            ? 'rgba(156, 163, 175, 0.35)'
+                            : period.pattern === 'diagonal'
+                            ? `repeating-linear-gradient(
+                                45deg,
+                                rgba(156, 163, 175, 0.3),
+                                rgba(156, 163, 175, 0.3) 4px,
+                                transparent 4px,
+                                transparent 8px
+                              )`
+                            : 'rgba(156, 163, 175, 0.5)',
+                          ...getUnavailabilityBlockStyle(position),
+                        }}
+                      >
+                        {renderUnavailabilityLabel(period)}
+                      </div>
+                    );
+                  });
+                columnOffset++;
+              }
+
+              if (hasInstructor) {
+                const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                getUnavailabilityPeriods(day)
+                  .filter(
+                    (period) =>
+                      period.resourceId === selectedInstructorId &&
+                      period.resourceType === 'instructor'
+                  )
+                  .forEach((period) => {
+                    const position = getPeriodPosition(period.startTime, period.endTime);
+                    overlays.push(
+                      <div
+                        key={`week-unavailable-instructor-${dayIndex}-${period.id || period.reason}-${period.startTime.getTime()}-${period.endTime.getTime()}`}
+                        className="pointer-events-none relative z-[1] overflow-hidden border-r border-gray-200"
+                        style={{
+                          gridColumn: columnIndex + 2,
+                          gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
+                          marginTop: position.marginTop,
+                          background: period.source === 'schedule'
+                            ? 'rgba(156, 163, 175, 0.35)'
+                            : period.pattern === 'diagonal'
+                            ? `repeating-linear-gradient(
+                                45deg,
+                                rgba(156, 163, 175, 0.3),
+                                rgba(156, 163, 175, 0.3) 4px,
+                                transparent 4px,
+                                transparent 8px
+                              )`
+                            : 'rgba(156, 163, 175, 0.5)',
+                          ...getUnavailabilityBlockStyle(position),
+                        }}
+                      >
+                        {renderUnavailabilityLabel(period)}
+                      </div>
+                    );
+                  });
+              }
+
+              return overlays;
+            })}
 
             {/* Render bookings as grid items */}
             {weekDays.map((day, dayIndex) => {
@@ -2383,20 +2942,26 @@ export const Calendar: React.FC<CalendarProps> = ({
                         gridColumn: columnIndex + 2,
                         gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
                         marginTop: position.marginTop,
-                        minHeight: slotHeight,
+                        ...getBookingBlockStyle(position),
                         ...getBookingLaneStyle(booking),
                       }}
                       title={`${booking.notes || 'Booking'}`}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        if (!isPastBooking(booking)) {
-                          startDragDelayTimer(booking, 'aircraft');
+                        if (canDragOrResizeBooking(booking)) {
+                          startBookingDragIntent(e, booking, 'aircraft');
                         }
                       }}
-                      onMouseUp={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (wasResizing) {
+                        setPendingBookingDrag(null);
+                        if (draggedBooking) {
+                          setDraggedBooking(null);
+                          setDraggedBookingOriginal(null);
+                          setDragPreview(null);
+                          return;
+                        }
+                        if (wasResizing || wasMovingBooking) {
                           return;
                         }
 
@@ -2404,7 +2969,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         setActionMenuPosition({ x: e.clientX, y: e.clientY });
                       }}
                     >
-                      {!isPastBooking(booking) && (
+                      {canDragOrResizeBooking(booking) && (
                         <>
                           <div
                             className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
@@ -2456,20 +3021,26 @@ export const Calendar: React.FC<CalendarProps> = ({
                         gridColumn: columnIndex + 2,
                         gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
                         marginTop: position.marginTop,
-                        minHeight: slotHeight,
+                        ...getBookingBlockStyle(position),
                         ...getBookingLaneStyle(booking),
                       }}
                       title={`${booking.notes || 'Booking'}`}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        if (!isPastBooking(booking)) {
-                          startDragDelayTimer(booking, 'instructor');
+                        if (canDragOrResizeBooking(booking)) {
+                          startBookingDragIntent(e, booking, 'instructor');
                         }
                       }}
-                      onMouseUp={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (wasResizing) {
+                        setPendingBookingDrag(null);
+                        if (draggedBooking) {
+                          setDraggedBooking(null);
+                          setDraggedBookingOriginal(null);
+                          setDragPreview(null);
+                          return;
+                        }
+                        if (wasResizing || wasMovingBooking) {
                           return;
                         }
 
@@ -2477,7 +3048,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         setActionMenuPosition({ x: e.clientX, y: e.clientY });
                       }}
                     >
-                      {!isPastBooking(booking) && (
+                      {canDragOrResizeBooking(booking) && (
                         <>
                           <div
                             className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
@@ -2534,7 +3105,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       gridColumn: columnIndex + 2,
                       gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
                       marginTop: previewPosition.marginTop,
-                      minHeight: slotHeight,
+                      ...getBookingBlockStyle(previewPosition),
                       pointerEvents: 'none'
                     }}
                   >
@@ -2564,7 +3135,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       gridColumn: columnIndex + 2,
                       gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
                       marginTop: previewPosition.marginTop,
-                      minHeight: slotHeight,
+                      ...getBookingBlockStyle(previewPosition),
                       pointerEvents: 'none'
                     }}
                   >
@@ -2708,109 +3279,312 @@ export const Calendar: React.FC<CalendarProps> = ({
     return format(currentDate, 'MMMM yyyy');
   };
 
-  return (
-    <div className="select-none overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 bg-white p-4 sm:p-6">
-        <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:space-x-4">
-            <h2 className="text-xl font-bold tracking-tight text-gray-950 sm:text-2xl">Calendar</h2>
-            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex sm:space-x-2">
-              <button
-                onClick={() => navigateDate('prev')}
-                className="rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-                aria-label="Previous date range"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="min-w-0 truncate px-1 text-center text-base font-medium text-gray-600 sm:min-w-[200px]">
-                {getDateRangeText()}
-              </span>
-              <button
-                onClick={() => navigateDate('next')}
-                className="rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-                aria-label="Next date range"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setCurrentDate(new Date())}
-                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                Today
-              </button>
-            </div>
+  const renderDatePicker = () => {
+    const weekStartsOn = calendarSettings?.week_starts_on === 'sunday' ? 0 : 1;
+    const monthStart = startOfMonth(datePickerMonth);
+    const monthEnd = endOfMonth(datePickerMonth);
+    const calendarStart = startOfWeek(monthStart, { weekStartsOn });
+    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn });
+    const pickerDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+    const weekdayLabels = Array.from({ length: 7 }, (_, index) =>
+      format(addDays(calendarStart, index), 'EEE')
+    );
+
+    return (
+      <div
+        ref={datePickerRef}
+        className="absolute left-1/2 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-2xl dark:border-[#363b45] dark:bg-[#171a21]"
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setDatePickerMonth((date) => subMonths(date, 1))}
+            className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#262b33] dark:hover:text-white"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="text-center">
+            <p className="text-base font-bold text-gray-950 dark:text-gray-100">
+              {format(datePickerMonth, 'MMMM yyyy')}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Choose a day to jump to</p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-            {renderViewModeButtons()}
+          <button
+            type="button"
+            onClick={() => setDatePickerMonth((date) => addMonths(date, 1))}
+            className="rounded-full p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#262b33] dark:hover:text-white"
+            aria-label="Next month"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
 
-            <label className="flex items-center justify-center space-x-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-center transition-colors hover:bg-gray-100">
-              <input
-                type="checkbox"
-                checked={highlightUnlogged}
-                onChange={(e) => setHighlightUnlogged(e.target.checked)}
-                className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-700">Highlight Unlogged</span>
-            </label>
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {weekdayLabels.map((label) => (
+            <div key={label} className="py-1 text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {label}
+            </div>
+          ))}
+          {pickerDays.map((day) => {
+            const isSelected = isSameDay(day, currentDate);
+            const isOutsideMonth = day.getMonth() !== datePickerMonth.getMonth();
+            const isCurrentDay = isToday(day);
 
-            {onRefresh && (
+            return (
               <button
-                onClick={() => void onRefresh()}
-                className="flex items-center justify-center space-x-2 rounded-xl border border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-                title="Refresh calendar"
+                key={day.toISOString()}
+                type="button"
+                onClick={() => {
+                  setCurrentDate(day);
+                  setShowDatePicker(false);
+                  if (viewMode === 'list') setViewMode('day');
+                }}
+                className={`flex h-10 items-center justify-center rounded-xl text-sm font-semibold transition-colors ${
+                  isSelected
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : isCurrentDay
+                      ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:ring-blue-800'
+                      : isOutsideMonth
+                        ? 'text-gray-300 hover:bg-gray-50 hover:text-gray-500 dark:text-gray-600 dark:hover:bg-[#11141a] dark:hover:text-gray-300'
+                        : 'text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-[#262b33]'
+                }`}
               >
-                <RefreshCw className="h-4 w-4" />
-                <span>Refresh</span>
+                {format(day, 'd')}
               </button>
-            )}
+            );
+          })}
+        </div>
 
-            <button
-              onClick={onNewBooking}
-              className="flex items-center justify-center space-x-2 rounded-xl bg-blue-600 px-4 py-3 text-base font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:py-2.5 sm:text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              <span>New Booking</span>
-            </button>
+        <div className="mt-4 flex justify-between gap-2 border-t border-gray-100 pt-3 dark:border-[#2c2f36]">
+          <button
+            type="button"
+            onClick={() => {
+              const today = new Date();
+              setCurrentDate(today);
+              setDatePickerMonth(today);
+              setShowDatePicker(false);
+              if (viewMode === 'list') setViewMode('day');
+            }}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-100 dark:hover:bg-[#262b33]"
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowDatePicker(false)}
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-[#262b33] dark:hover:text-white"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStandardControls = () => (
+    <div className="space-y-2 sm:space-y-3">
+      <div className="grid min-w-0 items-center gap-2 sm:gap-3 xl:grid-cols-[190px_minmax(360px,1fr)_300px] 2xl:grid-cols-[220px_minmax(460px,1fr)_340px]">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="hidden text-xl font-bold tracking-tight text-gray-950 dark:text-gray-100 2xl:block">
+            Calendar
+          </h2>
+          <button
+            onClick={onNewBooking}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 sm:px-4"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New Booking</span>
+          </button>
+          <div className="min-w-0 flex-1 sm:hidden">
+            {renderViewModeButtons()}
           </div>
         </div>
 
-        {/* Resource selectors for week view */}
-        {viewMode === 'week' && (
-          <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            {renderResourceSelectors()}
-          </div>
-        )}
-
-        {/* Filters for day view */}
-        {viewMode === 'day' && (
-          <div className="hidden lg:flex items-center space-x-3">
-            {renderFilterControls()}
-          </div>
-        )}
-
-        {viewMode === 'day' && (
-          <div className="lg:hidden">
+        <div className="flex min-w-0 items-center justify-center gap-1.5 sm:gap-2">
+          <button
+            onClick={() => navigateDate('prev')}
+            className="rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#262b33] dark:hover:text-white"
+            aria-label="Previous date range"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="relative min-w-0 flex-1 max-w-xl">
             <button
-              onClick={() => setShowMobileFilters(!showMobileFilters)}
-              className="flex items-center space-x-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-gray-50"
+              type="button"
+              onClick={() => setShowDatePicker((value) => !value)}
+              className="flex min-h-11 w-full min-w-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-center text-sm font-bold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] sm:min-h-12 sm:text-base"
+              aria-expanded={showDatePicker}
+              aria-haspopup="dialog"
+              title="Choose date"
             >
-              <Filter className="h-4 w-4" />
-              <span>Filter</span>
+              <CalendarDays className="h-4 w-4 flex-shrink-0 text-blue-500" />
+              <span className="truncate">{getDateRangeText()}</span>
             </button>
+            {showDatePicker && renderDatePicker()}
           </div>
-        )}
+          <button
+            onClick={() => navigateDate('next')}
+            className="rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#262b33] dark:hover:text-white"
+            aria-label="Next date range"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
 
-        {showMobileFilters && viewMode === 'day' && (
-          <div className="lg:hidden mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            {renderFilterControls()}
-          </div>
-        )}
+        <div className="hidden min-w-0 justify-start overflow-x-auto sm:flex xl:justify-end">
+          {renderViewModeButtons()}
+        </div>
       </div>
 
-      {viewMode === 'day' && renderDayView()}
-      {viewMode === 'week' && renderWeekView()}
-      {viewMode === 'list' && renderListView()}
-      {viewMode === 'month' && (
+      <details className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a] sm:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-bold text-gray-800 dark:text-gray-100 [&::-webkit-details-marker]:hidden">
+          <span>Filters & options</span>
+          <ChevronDown className="h-4 w-4 text-gray-500" />
+        </summary>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {viewMode === 'day' && renderFilterControls()}
+          {viewMode === 'week' && <div className="w-full min-w-0">{renderResourceSelectors()}</div>}
+
+          <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]">
+            <input
+              type="checkbox"
+              checked={highlightUnlogged}
+              onChange={(e) => setHighlightUnlogged(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Highlight Unlogged</span>
+          </label>
+
+          {onRefresh && (
+            <button
+              onClick={() => void onRefresh()}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
+              title="Refresh calendar"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Refresh</span>
+            </button>
+          )}
+        </div>
+      </details>
+
+      <div className="hidden flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a] sm:flex">
+        {viewMode === 'day' && renderFilterControls()}
+        {viewMode === 'week' && <div className="w-full min-w-0 md:min-w-[28rem] md:flex-1">{renderResourceSelectors()}</div>}
+
+        <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]">
+          <input
+            type="checkbox"
+            checked={highlightUnlogged}
+            onChange={(e) => setHighlightUnlogged(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span>Highlight Unlogged</span>
+        </label>
+
+        {onRefresh && (
+          <button
+            onClick={() => void onRefresh()}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
+            title="Refresh calendar"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderKioskControls = () => (
+    <div className="space-y-3">
+      <div className="grid items-center gap-4 md:grid-cols-[210px_minmax(420px,1fr)_300px] xl:grid-cols-[240px_minmax(520px,1fr)_360px]">
+        <div className="flex justify-start">
+          <button
+            onClick={onNewBooking}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New Booking</span>
+          </button>
+        </div>
+
+        <div className="flex min-w-0 items-center justify-center gap-2">
+          <button
+            onClick={() => navigateDate('prev')}
+            className="rounded-full p-3 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#262b33] dark:hover:text-white"
+            aria-label="Previous date range"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+          <div className="relative min-w-0 flex-1 max-w-2xl">
+            <button
+              type="button"
+              onClick={() => setShowDatePicker((value) => !value)}
+              className="flex min-h-16 w-full min-w-0 items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white px-5 text-center text-xl font-bold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] xl:text-2xl"
+              aria-expanded={showDatePicker}
+              aria-haspopup="dialog"
+              title="Choose date"
+            >
+              <CalendarDays className="h-6 w-6 flex-shrink-0 text-blue-500" />
+              <span className="truncate">{getDateRangeText()}</span>
+            </button>
+            {showDatePicker && renderDatePicker()}
+          </div>
+          <button
+            onClick={() => navigateDate('next')}
+            className="rounded-full p-3 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#262b33] dark:hover:text-white"
+            aria-label="Next date range"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        </div>
+
+        <div className="flex justify-end overflow-x-auto">
+          {renderViewModeButtons()}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a]">
+        {viewMode === 'day' && renderFilterControls()}
+        {viewMode === 'week' && <div className="min-w-[28rem] flex-1">{renderResourceSelectors()}</div>}
+
+        <label className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]">
+          <input
+            type="checkbox"
+            checked={highlightUnlogged}
+            onChange={(e) => setHighlightUnlogged(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span>Highlight Unlogged</span>
+        </label>
+
+        {onRefresh && (
+          <button
+            onClick={() => void onRefresh()}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
+            title="Refresh calendar"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Refresh</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className={isKioskMode ? 'flex h-full min-h-0 select-none flex-col overflow-hidden bg-white dark:bg-[#0f1117]' : 'select-none overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]'}>
+      <div className={isKioskMode ? 'shrink-0 border-b border-gray-200 bg-white p-4 dark:border-[#2c2f36] dark:bg-[#0f1117]' : 'border-b border-gray-200 bg-white p-3 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-4'}>
+        {isKioskMode ? renderKioskControls() : renderStandardControls()}
+      </div>
+
+      <div className={isKioskMode ? 'min-h-0 flex-1 overflow-hidden' : undefined}>
+        {viewMode === 'day' && renderDayView()}
+        {viewMode === 'week' && renderWeekView()}
+        {viewMode === 'list' && renderListView()}
+        {viewMode === 'month' && (
         <MonthView
           currentDate={currentDate}
           bookings={bookings}
@@ -2825,7 +3599,8 @@ export const Calendar: React.FC<CalendarProps> = ({
           showWeekends={calendarSettings?.show_weekends ?? true}
           availableHours={availableCalendarHours}
         />
-      )}
+        )}
+      </div>
 
       {actionMenuBooking && (
         <div
@@ -2845,7 +3620,12 @@ export const Calendar: React.FC<CalendarProps> = ({
               return;
             }
             if (onEditBooking) {
-              onEditBooking(actionMenuBooking);
+              const bookingToEdit = actionMenuBooking;
+              const bookingDate = format(new Date(bookingToEdit.startTime), 'yyyy-MM-dd');
+              window.sessionStorage.setItem(selectedDateStorageKey, bookingDate);
+              setCurrentDate(new Date(`${bookingDate}T12:00:00`));
+              setActionMenuBooking(null);
+              window.setTimeout(() => onEditBooking(bookingToEdit), 0);
             }
           }}
           onLogFlight={() => {
@@ -2867,12 +3647,20 @@ export const Calendar: React.FC<CalendarProps> = ({
               return;
             }
             if (onDeleteBooking) {
-              void Promise.resolve(onDeleteBooking(actionMenuBooking.id)).then(refreshCalendarData);
+              void Promise.resolve(onDeleteBooking(actionMenuBooking.id));
             }
           }}
+          onViewHirerProfile={!isKioskMode && (actionMenuBooking.studentId || actionMenuBooking.pilotId)
+            ? () => {
+                const hirerId = actionMenuBooking.studentId || actionMenuBooking.pilotId;
+                if (!hirerId) return;
+                setActionMenuBooking(null);
+                navigate(`/students/${hirerId}`);
+              }
+            : undefined}
           onApprove={
             onApproveBooking && canApproveCalendarBooking(actionMenuBooking)
-              ? () => void Promise.resolve(onApproveBooking(actionMenuBooking.id)).then(refreshCalendarData)
+              ? () => void Promise.resolve(onApproveBooking(actionMenuBooking.id))
               : undefined
           }
           isFlightLogged={isBookingFlightLogged(actionMenuBooking)}
@@ -2896,7 +3684,6 @@ export const Calendar: React.FC<CalendarProps> = ({
             setShowFlightLogModal(false);
             setFlightLogBooking(null);
             setFlightLogMode('create');
-            refreshCalendarData();
           }}
         />
       )}

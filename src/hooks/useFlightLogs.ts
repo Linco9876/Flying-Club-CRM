@@ -265,7 +265,6 @@ export function useFlightLogs(userId?: string) {
       }
 
       await fetchFlightLogs();
-      window.dispatchEvent(new Event('calendar-data-changed'));
       return { data, error: null };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create flight log';
@@ -291,7 +290,6 @@ export function useFlightLogs(userId?: string) {
       if (updateError) throw updateError;
 
       await fetchFlightLogs();
-      window.dispatchEvent(new Event('calendar-data-changed'));
       return { error: null };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update flight log';
@@ -362,7 +360,6 @@ export function useFlightLogs(userId?: string) {
       }
 
       await fetchFlightLogs();
-      window.dispatchEvent(new Event('calendar-data-changed'));
       return { error: null };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete flight log';

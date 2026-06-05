@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 
 export const NotificationBell: React.FC = () => {
   const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
-  const { approveBooking, rejectBooking } = useBookings();
+  const { approveBooking, rejectBooking } = useBookings(false);
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);

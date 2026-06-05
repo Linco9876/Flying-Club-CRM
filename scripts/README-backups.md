@@ -45,6 +45,10 @@ Add these GitHub repository secrets:
 - `RCLONE_CONFIG`: the full contents of a working `rclone.conf` that contains a OneDrive remote.
 - `RCLONE_REMOTE`: the OneDrive remote name from `rclone.conf`, for example `onedrive`.
 - `ONEDRIVE_BACKUP_PATH`: the destination folder, for example `CRM Backups/Bendigo Flying Club Portal`.
+- `ALERT_WEBHOOK_URL`: optional webhook URL for failed backup/deploy alerts.
+- `ALERT_WEBHOOK_TYPE`: optional webhook payload type: `generic`, `slack`, `discord`, or `teams`.
+
+The `.github/workflows/actions-failure-monitor.yml` workflow watches the daily backup and GitHub Pages deploy workflows. If either workflow finishes with a failed, cancelled, or timed-out conclusion, it sends an alert to `ALERT_WEBHOOK_URL`.
 
 To create the OneDrive `rclone.conf` locally:
 
@@ -65,3 +69,20 @@ notepad "$env:APPDATA\rclone\rclone.conf"
 ```
 
 Copy the full contents into the GitHub secret named `RCLONE_CONFIG`.
+
+## Backup Failure Alerts
+
+Cloud backup and deploy alerts are sent by GitHub Actions when `ALERT_WEBHOOK_URL` is configured as a repository secret.
+
+GitHub Actions also creates an unread in-app `system` notification for every admin user when a watched workflow fails, is cancelled, or times out. The notification uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from GitHub repository secrets.
+
+Local Windows backup alerts use the same setting in `scripts/backup-crm.env`:
+
+```text
+ALERT_WEBHOOK_URL=https://example.com/webhook
+ALERT_WEBHOOK_TYPE=generic
+```
+
+The local backup wrapper also creates an unread in-app `system` notification for every admin user when the backup fails or completes with warnings.
+
+If no webhook is configured, failed jobs still appear in GitHub Actions, the Windows scheduled task log, and the admin notification bell, but no external alert is sent.

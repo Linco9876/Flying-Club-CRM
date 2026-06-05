@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import React, { Suspense, lazy, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -10,30 +10,75 @@ import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
 import { AppErrorBoundary } from './components/Layout/AppErrorBoundary';
 import { LoginForm } from './components/Auth/LoginForm';
-import { ResetPasswordPage } from './components/Auth/ResetPasswordPage';
-import { Dashboard } from './components/Dashboard/Dashboard';
-import { Calendar } from './components/Calendar/Calendar';
 import BookingForm from './components/Bookings/BookingForm';
-import { StudentList } from './components/Students/StudentList';
-import { StudentProfilePage } from './components/Students/StudentProfilePage';
-import { MyLogbookPage } from './components/Students/MyLogbookPage';
-import { AircraftList } from './components/Aircraft/AircraftList';
-import { AircraftFlightLogs } from './components/Aircraft/AircraftFlightLogs';
-import { AircraftProfilePage } from './components/Aircraft/AircraftProfilePage';
-import { MaintenanceBoard } from './components/Maintenance/MaintenanceBoard';
-import { BillingDashboard } from './components/Billing/BillingDashboard';
-import { ReportsDashboard } from './components/Reports/ReportsDashboard';
-import { SafetyDashboard } from './components/Safety/SafetyDashboard';
-import { SafetyLoginWarningModal } from './components/Safety/SafetyLoginWarningModal';
-import { TrainingRecordForm } from './components/Training/TrainingRecordForm';
-import { TrainingCourseCatalog } from './components/Training/TrainingCourseCatalog';
-import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuilder';
-import { OutstandingRecordsTab } from './components/Training/OutstandingRecordsTab';
-import { StudentAcknowledgementModal } from './components/Training/StudentAcknowledgementModal';
-import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import { format } from 'date-fns';
 import { usePortalUxSettings, useUserPreferences } from './hooks/useSettings';
 import { can, getAuthorizedMenuItems } from './utils/rbac';
+import { applyPortalTheme, getStoredPortalTheme, storePortalTheme } from './utils/theme';
+import { KioskLoginForm } from './components/Kiosk/KioskLoginForm';
+import { KioskCalendarShell } from './components/Kiosk/KioskCalendarShell';
+
+const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
+const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboard').then(module => ({ default: module.ProfileDashboard })));
+const Calendar = lazy(() => import('./components/Calendar/Calendar').then(module => ({ default: module.Calendar })));
+const StudentList = lazy(() => import('./components/Students/StudentList').then(module => ({ default: module.StudentList })));
+const StudentProfilePage = lazy(() => import('./components/Students/StudentProfilePage').then(module => ({ default: module.StudentProfilePage })));
+const MyLogbookPage = lazy(() => import('./components/Students/MyLogbookPage').then(module => ({ default: module.MyLogbookPage })));
+const AircraftList = lazy(() => import('./components/Aircraft/AircraftList').then(module => ({ default: module.AircraftList })));
+const AircraftFlightLogs = lazy(() => import('./components/Aircraft/AircraftFlightLogs').then(module => ({ default: module.AircraftFlightLogs })));
+const AircraftProfilePage = lazy(() => import('./components/Aircraft/AircraftProfilePage').then(module => ({ default: module.AircraftProfilePage })));
+const MaintenanceBoard = lazy(() => import('./components/Maintenance/MaintenanceBoard').then(module => ({ default: module.MaintenanceBoard })));
+const BillingDashboard = lazy(() => import('./components/Billing/BillingDashboard').then(module => ({ default: module.BillingDashboard })));
+const ReportsDashboard = lazy(() => import('./components/Reports/ReportsDashboard').then(module => ({ default: module.ReportsDashboard })));
+const SafetyDashboard = lazy(() => import('./components/Safety/SafetyDashboard').then(module => ({ default: module.SafetyDashboard })));
+const SafetyLoginWarningModal = lazy(() => import('./components/Safety/SafetyLoginWarningModal').then(module => ({ default: module.SafetyLoginWarningModal })));
+const TrainingRecordForm = lazy(() => import('./components/Training/TrainingRecordForm').then(module => ({ default: module.TrainingRecordForm })));
+const TrainingCourseCatalog = lazy(() => import('./components/Training/TrainingCourseCatalog').then(module => ({ default: module.TrainingCourseCatalog })));
+const TrainingModuleBuilder = lazy(() => import('./components/Training/TrainingModuleBuilder').then(module => ({ default: module.TrainingModuleBuilder })));
+const OutstandingRecordsTab = lazy(() => import('./components/Training/OutstandingRecordsTab').then(module => ({ default: module.OutstandingRecordsTab })));
+const StudentAcknowledgementModal = lazy(() => import('./components/Training/StudentAcknowledgementModal').then(module => ({ default: module.StudentAcknowledgementModal })));
+const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashboard').then(module => ({ default: module.SettingsDashboard })));
+const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
+
+const PageLoader = () => (
+  <div className="flex min-h-[18rem] items-center justify-center">
+    <div className="text-center">
+      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600" />
+      <p className="text-sm text-gray-500">Loading...</p>
+    </div>
+  </div>
+);
+
+const AppShell = ({
+  activeSidebarView,
+  children,
+  onViewChange,
+  backgroundColor,
+  mainClassName = 'min-w-0 flex-1 overflow-x-hidden lg:ml-0 ml-0',
+}: {
+  activeSidebarView: string;
+  children: React.ReactNode;
+  onViewChange: (view: string) => void;
+  backgroundColor: string;
+  mainClassName?: string;
+}) => (
+  <div className="relative min-h-screen bg-gray-50 dark:bg-[#0f1117]" style={{ backgroundColor }}>
+    <div className="relative z-10 min-h-screen">
+      <Header />
+      <div className="flex lg:ml-0 ml-0">
+        <Sidebar activeView={activeSidebarView} onViewChange={onViewChange} />
+        <main className={mainClassName}>
+          <Suspense fallback={<PageLoader />}>
+            {children}
+          </Suspense>
+        </main>
+      </div>
+      <Suspense fallback={null}>
+        <SafetyLoginWarningModal />
+      </Suspense>
+    </div>
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
@@ -53,9 +98,14 @@ const AppContent: React.FC = () => {
     new URLSearchParams(location.search).get('type') === 'recovery' ||
     new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'invite' ||
     new URLSearchParams(location.search).get('type') === 'invite';
+  const isKioskRoute = location.pathname.startsWith('/kiosk');
 
   if (isPasswordRecovery) {
-    return <ResetPasswordPage />;
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <ResetPasswordPage />
+      </Suspense>
+    );
   }
 
   if (isLoading) {
@@ -67,6 +117,24 @@ const AppContent: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  if (isKioskRoute) {
+    return (
+      <KioskRoute
+        user={user}
+        showBookingForm={showBookingForm}
+        setShowBookingForm={setShowBookingForm}
+        editingBooking={editingBooking}
+        setEditingBooking={setEditingBooking}
+        bookingFormData={bookingFormData}
+        setBookingFormData={setBookingFormData}
+      />
+    );
+  }
+
+  if (user && localStorage.getItem(KIOSK_SESSION_KEY) === 'true') {
+    return <Navigate to="/kiosk" replace />;
   }
 
   if (!user) {
@@ -86,6 +154,173 @@ const AppContent: React.FC = () => {
     bookingFormData={bookingFormData}
     setBookingFormData={setBookingFormData}
   />;
+};
+
+const KioskRoute: React.FC<{
+  user: any;
+  showBookingForm: boolean;
+  setShowBookingForm: (show: boolean) => void;
+  editingBooking: Booking | null;
+  setEditingBooking: (booking: Booking | null) => void;
+  bookingFormData: any;
+  setBookingFormData: (data: any) => void;
+}> = (props) => {
+  if (!props.user) {
+    return <KioskLoginForm sessionKey={KIOSK_SESSION_KEY} />;
+  }
+
+  return <KioskAuthenticatedRoute {...props} user={props.user} />;
+};
+
+const KioskAuthenticatedRoute: React.FC<{
+  user: any;
+  showBookingForm: boolean;
+  setShowBookingForm: (show: boolean) => void;
+  editingBooking: Booking | null;
+  setEditingBooking: (booking: Booking | null) => void;
+  bookingFormData: any;
+  setBookingFormData: (data: any) => void;
+}> = ({
+  user,
+  showBookingForm,
+  setShowBookingForm,
+  editingBooking,
+  setEditingBooking,
+  bookingFormData,
+  setBookingFormData,
+}) => {
+  const { logout } = useAuth();
+  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
+  const { settings: portalSettings } = usePortalUxSettings();
+
+  React.useEffect(() => {
+    localStorage.setItem(KIOSK_SESSION_KEY, 'true');
+  }, []);
+
+  const handleNewBooking = () => {
+    if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
+      toast.error('Student self-booking is disabled. Please contact the club.');
+      return;
+    }
+    setEditingBooking(null);
+    setBookingFormData({});
+    setShowBookingForm(true);
+  };
+
+  const handleNewBookingWithResource = (
+    date: Date,
+    startTime: string,
+    endTime?: string,
+    resourceId?: string,
+    resourceType?: 'aircraft' | 'instructor'
+  ) => {
+    if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
+      toast.error('Student self-booking is disabled. Please contact the club.');
+      return;
+    }
+
+    const formData: any = {
+      date: format(date, 'yyyy-MM-dd'),
+      startTime,
+      endTime,
+    };
+    if (resourceType === 'aircraft') {
+      formData.aircraftId = resourceId;
+    } else if (resourceType === 'instructor') {
+      formData.instructorId = resourceId;
+    }
+    setEditingBooking(null);
+    setBookingFormData(formData);
+    setShowBookingForm(true);
+  };
+
+  const handleBookingSubmit = async (bookingData: any) => {
+    const startTime = new Date(`${bookingData.date}T${bookingData.startTime}:00`);
+    const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
+
+    if (editingBooking) {
+      await updateBooking(editingBooking.id, {
+        studentId: bookingData.studentId,
+        instructorId: bookingData.instructorId || undefined,
+        aircraftId: bookingData.aircraftId,
+        startTime,
+        endTime,
+        paymentType: bookingData.paymentType,
+        notes: bookingData.notes,
+        status: editingBooking.status,
+        flightTypeId: bookingData.flightTypeId || undefined,
+      });
+    } else {
+      await addBooking({
+        studentId: bookingData.studentId,
+        instructorId: bookingData.instructorId || undefined,
+        aircraftId: bookingData.aircraftId,
+        startTime,
+        endTime,
+        paymentType: bookingData.paymentType,
+        notes: bookingData.notes,
+        status: 'confirmed' as const,
+        flightTypeId: bookingData.flightTypeId || undefined,
+      });
+    }
+  };
+
+  const handleExit = async () => {
+    localStorage.removeItem(KIOSK_SESSION_KEY);
+    await logout();
+  };
+
+  return (
+    <KioskCalendarShell onExit={handleExit}>
+      <Suspense fallback={<PageLoader />}>
+        <Calendar
+          bookings={bookings}
+          onNewBooking={handleNewBooking}
+          onNewBookingWithTime={handleNewBookingWithResource}
+          onEditBooking={(booking) => {
+            setEditingBooking(booking);
+            setBookingFormData({});
+            setShowBookingForm(true);
+          }}
+          onUpdateBooking={async (bookingId, updates, silent) => {
+            await updateBooking(bookingId, updates, silent);
+          }}
+          onDeleteBooking={async (bookingId) => {
+            try {
+              await deleteBooking(bookingId);
+            } catch (error) {
+              console.error('Error deleting booking:', error);
+            }
+          }}
+          onApproveBooking={async (bookingId) => {
+            try {
+              await approveBooking(bookingId);
+            } catch (error) {
+              console.error('Error approving booking:', error);
+              throw error;
+            }
+          }}
+          onRefresh={refetchBookings}
+          isKioskMode
+        />
+      </Suspense>
+
+      {showBookingForm && (
+        <BookingForm
+          isOpen={showBookingForm}
+          onClose={() => {
+            setShowBookingForm(false);
+            setBookingFormData({});
+            setEditingBooking(null);
+          }}
+          prefilledData={bookingFormData}
+          onSubmit={handleBookingSubmit}
+          booking={editingBooking}
+          isEdit={!!editingBooking}
+        />
+      )}
+    </KioskCalendarShell>
+  );
 };
 
 const AuthenticatedApp: React.FC<{
@@ -115,29 +350,24 @@ const AuthenticatedApp: React.FC<{
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings();
+  const activeView = getViewForPath(location.pathname);
+  const bookingsEnabled = activeView === 'calendar' || showBookingForm || showTrainingRecordForm || Boolean(editingBooking || selectedBookingForRecord);
+  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
   const { settings: portalSettings } = usePortalUxSettings();
   const { preferences: userPreferences } = useUserPreferences(user?.id || '');
-  const effectiveTheme = userPreferences?.theme || portalSettings.theme || 'auto';
+  const effectiveTheme = userPreferences?.theme || getStoredPortalTheme(user?.id) || getStoredPortalTheme() || portalSettings.theme || 'auto';
+  const backgroundColor = userPreferences?.background_color || '#f3f4f6';
 
   React.useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const applyTheme = () => {
-      const useDarkTheme =
-        effectiveTheme === 'dark' ||
-        effectiveTheme === 'semi-dark' ||
-        (effectiveTheme === 'auto' && media.matches);
-      document.documentElement.dataset.portalTheme = useDarkTheme ? 'dark' : 'light';
-      if (effectiveTheme === 'semi-dark') {
-        document.documentElement.dataset.portalVariant = 'semi-dark';
-      } else {
-        delete document.documentElement.dataset.portalVariant;
-      }
+      applyPortalTheme(effectiveTheme, media);
     };
     applyTheme();
+    storePortalTheme(effectiveTheme, user?.id);
     media.addEventListener('change', applyTheme);
     return () => media.removeEventListener('change', applyTheme);
-  }, [effectiveTheme]);
+  }, [effectiveTheme, user?.id]);
 
   const handleViewChange = (view: string) => {
     navigate(getPathForView(view));
@@ -210,6 +440,7 @@ const AuthenticatedApp: React.FC<{
       }
     } catch (error) {
       console.error('Error saving booking:', error);
+      throw error;
     }
   };
 
@@ -218,6 +449,7 @@ const AuthenticatedApp: React.FC<{
       await updateBooking(bookingId, updates, silent);
     } catch (error) {
       console.error('Error updating booking:', error);
+      throw error;
     }
   };
 
@@ -240,7 +472,6 @@ const AuthenticatedApp: React.FC<{
     setSelectedBookingForRecord(booking);
     setShowTrainingRecordForm(true);
   };
-  const activeView = getViewForPath(location.pathname);
   const requiredAction = getRequiredActionForView(activeView);
   const requiredResource = getRequiredResourceForView(activeView);
 
@@ -264,34 +495,38 @@ const AuthenticatedApp: React.FC<{
   const renderActiveView = (view: string) => {
     switch (view) {
       case 'dashboard':
-        return <Dashboard />;
+        return <ProfileDashboard />;
       case 'calendar':
-        return <Calendar
-          bookings={bookings}
-          onNewBooking={handleNewBooking}
-          onNewBookingWithTime={handleNewBookingWithResource}
-          onEditBooking={(booking) => {
-            setEditingBooking(booking);
-            setShowBookingForm(true);
-          }}
-          onUpdateBooking={handleUpdateBooking}
-          onDeleteBooking={async (bookingId) => {
-            try {
-              await deleteBooking(bookingId);
-            } catch (error) {
-              console.error('Error deleting booking:', error);
-            }
-          }}
-          onApproveBooking={async (bookingId) => {
-            try {
-              await approveBooking(bookingId);
-            } catch (error) {
-              console.error('Error approving booking:', error);
-              throw error;
-            }
-          }}
-          onRefresh={refetchBookings}
-        />;
+        return (
+          <div className="bg-transparent p-3 sm:p-6">
+            <Calendar
+              bookings={bookings}
+              onNewBooking={handleNewBooking}
+              onNewBookingWithTime={handleNewBookingWithResource}
+              onEditBooking={(booking) => {
+                setEditingBooking(booking);
+                setShowBookingForm(true);
+              }}
+              onUpdateBooking={handleUpdateBooking}
+              onDeleteBooking={async (bookingId) => {
+                try {
+                  await deleteBooking(bookingId);
+                } catch (error) {
+                  console.error('Error deleting booking:', error);
+                }
+              }}
+              onApproveBooking={async (bookingId) => {
+                try {
+                  await approveBooking(bookingId);
+                } catch (error) {
+                  console.error('Error approving booking:', error);
+                  throw error;
+                }
+              }}
+              onRefresh={refetchBookings}
+            />
+          </div>
+        );
       case 'students':
         return <StudentList />;
       case 'aircraft':
@@ -299,12 +534,17 @@ const AuthenticatedApp: React.FC<{
       case 'maintenance':
         return <MaintenanceBoard />;
       case 'billing':
-        return <BillingDashboard />;
+        return <BillingDashboard mode="own" />;
+      case 'financial-dashboard':
+        return <BillingDashboard mode="financial" />;
       case 'reports':
         return <ReportsDashboard />;
       case 'safety':
         return <SafetyDashboard />;
       case 'training':
+        if (user?.role === 'student' || user?.role === 'pilot') {
+          return <StudentProfilePage />;
+        }
         return <TrainingCourseCatalog />;
       case 'outstanding-records':
         return (
@@ -319,100 +559,80 @@ const AuthenticatedApp: React.FC<{
       case 'syllabus-management':
         return <TrainingModuleBuilder />;
       case 'profile':
-        return <StudentProfilePage />;
+        return <ProfileDashboard />;
       case 'mylogbook':
         return <MyLogbookPage />;
       case 'settings':
         return <SettingsDashboard />;
       default:
-        return <Dashboard />;
+        return <ProfileDashboard />;
     }
   };
 
   return (
     <Routes>
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense>} />
       <Route path="/students/:studentId" element={
         <RouteGuard requiredAction="view-students">
-          <div className="min-h-screen bg-gray-50">
-            <Header />
-            <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView="students" onViewChange={handleViewChange} />
-              <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-0 ml-0">
-                <StudentProfilePage />
-              </main>
-            </div>
-            <SafetyLoginWarningModal />
-          </div>
+          <AppShell activeSidebarView="students" onViewChange={handleViewChange} backgroundColor={backgroundColor}>
+            <StudentProfilePage />
+          </AppShell>
         </RouteGuard>
       } />
       <Route path="/aircraft/:aircraftId/logs" element={
         <RouteGuard requiredAction="view-maintenance">
-          <div className="min-h-screen bg-gray-50">
-            <Header />
-            <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView="aircraft" onViewChange={handleViewChange} />
-              <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:ml-0 ml-0">
-                <AircraftFlightLogs />
-              </main>
-            </div>
-            <SafetyLoginWarningModal />
-          </div>
+          <AppShell activeSidebarView="aircraft" onViewChange={handleViewChange} backgroundColor={backgroundColor} mainClassName="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:ml-0 ml-0">
+            <AircraftFlightLogs />
+          </AppShell>
         </RouteGuard>
       } />
       <Route path="*" element={
         <RouteGuard requiredAction={requiredAction} resource={requiredResource}>
-          <div className="min-h-screen bg-gray-50">
-            <Header />
-            <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView={activeView} onViewChange={handleViewChange} />
-              <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-0 ml-0">
-                <AppErrorBoundary key={activeView}>
-                  {renderActiveView(activeView)}
-                </AppErrorBoundary>
-              </main>
-            </div>
+          <AppShell activeSidebarView={activeView} onViewChange={handleViewChange} backgroundColor={backgroundColor}>
+            <AppErrorBoundary key={activeView}>
+              {renderActiveView(activeView)}
+            </AppErrorBoundary>
             
-            <BookingForm 
-              isOpen={showBookingForm} 
-              onClose={() => {
-                setShowBookingForm(false);
-                setBookingFormData({});
-                setEditingBooking(null);
-              }}
-              prefilledData={bookingFormData}
-              onSubmit={handleBookingSubmit}
-              booking={editingBooking}
-              isEdit={!!editingBooking}
-            />
+            {showBookingForm && (
+              <BookingForm
+                isOpen={showBookingForm}
+                onClose={() => {
+                  setShowBookingForm(false);
+                  setBookingFormData({});
+                  setEditingBooking(null);
+                }}
+                prefilledData={bookingFormData}
+                onSubmit={handleBookingSubmit}
+                booking={editingBooking}
+                isEdit={!!editingBooking}
+              />
+            )}
             
-            <TrainingRecordForm
-              isOpen={showTrainingRecordForm}
-              onClose={() => {
-                setShowTrainingRecordForm(false);
-                setSelectedBookingForRecord(null);
-              }}
-              onSubmit={handleTrainingRecordSubmit}
-              booking={selectedBookingForRecord || undefined}
-            />
+            {showTrainingRecordForm && (
+              <Suspense fallback={null}>
+                <TrainingRecordForm
+                  isOpen={showTrainingRecordForm}
+                  onClose={() => {
+                    setShowTrainingRecordForm(false);
+                    setSelectedBookingForRecord(null);
+                  }}
+                  onSubmit={handleTrainingRecordSubmit}
+                  booking={selectedBookingForRecord || undefined}
+                />
+              </Suspense>
+            )}
 
-            <StudentAcknowledgementModal />
-            <SafetyLoginWarningModal />
-          </div>
+            <Suspense fallback={null}>
+              <StudentAcknowledgementModal />
+            </Suspense>
+          </AppShell>
         </RouteGuard>
       } />
       <Route path="/aircraft/:aircraftId" element={
         <RouteGuard requiredAction="view-maintenance">
-          <div className="min-h-screen bg-gray-50">
-            <Header />
-            <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView="aircraft" onViewChange={handleViewChange} />
-              <main className="min-w-0 flex-1 overflow-x-hidden lg:ml-0 ml-0">
-                <AircraftProfilePage />
-              </main>
-            </div>
-            <SafetyLoginWarningModal />
-          </div>
+          <AppShell activeSidebarView="aircraft" onViewChange={handleViewChange} backgroundColor={backgroundColor}>
+            <AircraftProfilePage />
+          </AppShell>
         </RouteGuard>
       } />
     </Routes>
@@ -429,6 +649,7 @@ const viewPathMap: Record<string, string> = {
   'outstanding-records': '/training/outstanding-records',
   'syllabus-management': '/training/syllabus',
   billing: '/billing',
+  'financial-dashboard': '/financial-dashboard',
   reports: '/reports',
   safety: '/safety',
   profile: '/profile',
@@ -466,6 +687,7 @@ const getRequiredActionForView = (view: string) => {
     'outstanding-records': 'view-outstanding-records',
     'syllabus-management': 'edit-settings',
     'billing': 'view-billing',
+    'financial-dashboard': 'view-billing',
     'reports': 'view-reports',
     'safety': 'view-safety',
     'profile': 'edit-personal-settings',
@@ -478,7 +700,9 @@ const getRequiredActionForView = (view: string) => {
 const getRequiredResourceForView = (view: string) => {
   const resourceMap: Record<string, 'all' | 'own'> = {
     'billing': 'own',
+    'financial-dashboard': 'all',
     'profile': 'own',
+    'training': 'own',
     'mylogbook': 'own',
     'safety': 'own',
     'settings': 'own'

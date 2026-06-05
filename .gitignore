@@ -30,3 +30,7 @@ scripts/backup-crm.env
 
 # Local Netlify folder
 .netlify
+
+# Local Codex attachments and Supabase CLI cache
+.codex-remote-attachments
+supabase/.temp

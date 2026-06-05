@@ -107,7 +107,9 @@ const mapUserData = (userData: any): User => ({
     relationship: userData.emergency_contact_relationship || ''
   } : undefined,
   preferredAircraftId: userData.preferred_aircraft_id,
-  avatar: userData.avatar_url
+  avatar: userData.avatar_url,
+  coverPhoto: userData.cover_url,
+  isActive: userData.is_active ?? true
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -138,7 +140,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const userData = await fetchUserWithRetry(session.user.id);
 
             if (userData && mounted) {
-              setUser(mapUserData(userData));
+              if (userData.is_active === false) {
+                console.warn('Archived user session attempted to load:', session.user.id);
+                await supabase.auth.signOut();
+              } else {
+                setUser(mapUserData(userData));
+              }
             } else {
               console.warn('User session exists but no user record found after retries');
               await supabase.auth.signOut();
@@ -188,6 +195,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           try {
             const userData = await fetchUserWithRetry(session.user.id);
             if (userData && mounted) {
+              if (userData.is_active === false) {
+                await supabase.auth.signOut();
+                setUser(null);
+                return;
+              }
               setUser(prev => {
                 // Only update if we don't have this user already
                 if (prev?.id === userData.id) return prev;
@@ -227,6 +239,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userData = await fetchUserWithRetry(data.user.id);
 
           if (userData) {
+            if (userData.is_active === false) {
+              await supabase.auth.signOut();
+              setIsLoading(false);
+              return {
+                success: false,
+                error: 'This account has been archived. Please contact the club if you need access restored.'
+              };
+            }
             setUser(mapUserData(userData));
             setIsLoading(false);
             return { success: true };

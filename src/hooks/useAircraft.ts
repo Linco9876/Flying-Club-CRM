@@ -3,14 +3,64 @@ import { supabase } from '../lib/supabase';
 import { Aircraft, Defect } from '../types';
 import toast from 'react-hot-toast';
 
+let aircraftCache: Aircraft[] | null = null;
+
+const DEFECT_ATTACHMENT_BUCKET = 'defect-attachments';
+
+const getDefectAttachmentPath = (value: string) => {
+  if (!value) return value;
+
+  try {
+    const url = new URL(value);
+    const marker = `/storage/v1/object/public/${DEFECT_ATTACHMENT_BUCKET}/`;
+    const privateMarker = `/storage/v1/object/sign/${DEFECT_ATTACHMENT_BUCKET}/`;
+    const markerIndex = url.pathname.indexOf(marker);
+    const privateMarkerIndex = url.pathname.indexOf(privateMarker);
+
+    if (markerIndex >= 0) {
+      return decodeURIComponent(url.pathname.slice(markerIndex + marker.length));
+    }
+
+    if (privateMarkerIndex >= 0) {
+      return decodeURIComponent(url.pathname.slice(privateMarkerIndex + privateMarker.length));
+    }
+  } catch {
+    // Plain storage path, not a URL.
+  }
+
+  return value;
+};
+
+const getSignedDefectAttachmentUrls = async (photos?: string[] | null) => {
+  if (!photos?.length) return [];
+
+  return Promise.all(
+    photos.map(async (photo) => {
+      const path = getDefectAttachmentPath(photo);
+      const { data, error } = await supabase.storage
+        .from(DEFECT_ATTACHMENT_BUCKET)
+        .createSignedUrl(path, 60 * 60);
+
+      if (error) {
+        console.warn('Failed to sign defect attachment URL:', error);
+        return photo;
+      }
+
+      return data.signedUrl;
+    })
+  );
+};
+
 export const useAircraft = () => {
-  const [aircraft, setAircraft] = useState<Aircraft[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [aircraft, setAircraft] = useState<Aircraft[]>(() => aircraftCache || []);
+  const [loading, setLoading] = useState(() => !aircraftCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAircraft = async () => {
     try {
-      setLoading(true);
+      if (!aircraftCache) {
+        setLoading(true);
+      }
       const { data: aircraftData, error: aircraftError } = await supabase
         .from('aircraft')
         .select('*')
@@ -32,7 +82,12 @@ export const useAircraft = () => {
       if (ratesError) throw ratesError;
 
       const defectsMap = new Map<string, Defect[]>();
-      defectsData?.forEach(d => {
+      const hydratedDefects = await Promise.all((defectsData || []).map(async (d) => ({
+        ...d,
+        signedPhotos: await getSignedDefectAttachmentUrls(d.photos)
+      })));
+
+      hydratedDefects.forEach(d => {
         const aircraftDefects = defectsMap.get(d.aircraft_id) || [];
         aircraftDefects.push({
           id: d.id,
@@ -42,7 +97,7 @@ export const useAircraft = () => {
           summary: d.summary || undefined,
           description: d.description,
           status: d.status,
-          photos: d.photos,
+          photos: d.signedPhotos,
           melNotes: d.mel_notes,
           fixNotes: d.fix_notes,
           severity: d.severity,
@@ -115,6 +170,7 @@ export const useAircraft = () => {
         };
       });
 
+      aircraftCache = combinedAircraft;
       setAircraft(combinedAircraft);
       setError(null);
     } catch (err) {
@@ -587,8 +643,8 @@ export const useAircraft = () => {
         for (const photoPath of defect.photos) {
           try {
             const { error: storageError } = await supabase.storage
-              .from('defect-attachments')
-              .remove([photoPath]);
+              .from(DEFECT_ATTACHMENT_BUCKET)
+              .remove([getDefectAttachmentPath(photoPath)]);
 
             if (storageError) {
               console.warn('Error deleting photo from storage:', storageError);

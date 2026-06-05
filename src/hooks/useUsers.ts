@@ -13,14 +13,27 @@ const getPrimaryRoleFromRoles = (roles: UserRole[]): UserRole =>
 const hasStudentRoleConflict = (roles: UserRole[]) =>
   roles.includes('student') && roles.length > 1;
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+};
+
+let usersCache: User[] | null = null;
+
 export const useUsers = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<User[]>(() => usersCache || []);
+  const [loading, setLoading] = useState(() => !usersCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     try {
-      setLoading(true);
+      if (!usersCache) {
+        setLoading(true);
+      }
       const { data: usersData, error: fetchError } = await supabase
         .from('users')
         .select('*')
@@ -65,10 +78,13 @@ export const useUsers = () => {
           } : undefined,
           preferredAircraftId: u.preferred_aircraft_id,
           avatar: u.avatar_url,
+          coverPhoto: u.cover_url,
+          isActive: u.is_active ?? true,
           isSeniorInstructor: u.is_senior_instructor || false
         };
       });
 
+      usersCache = mappedUsers;
       setUsers(mappedUsers);
       setError(null);
     } catch (err) {
@@ -106,20 +122,26 @@ export const useUsers = () => {
       }
       if (updates.preferredAircraftId !== undefined) updateData.preferred_aircraft_id = updates.preferredAircraftId;
       if (updates.avatar !== undefined) updateData.avatar_url = updates.avatar;
+      if (updates.coverPhoto !== undefined) updateData.cover_url = updates.coverPhoto;
+      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
       if (updates.isSeniorInstructor !== undefined) updateData.is_senior_instructor = updates.isSeniorInstructor;
 
-      const { error: updateError } = await supabase
+      const { data: updatedUsers, error: updateError } = await supabase
         .from('users')
         .update(updateData)
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id');
 
       if (updateError) throw updateError;
+      if (!updatedUsers || updatedUsers.length === 0) {
+        throw new Error('You do not have permission to update this user.');
+      }
 
       await fetchUsers();
       toast.success('User updated successfully');
     } catch (err) {
       console.error('Error updating user:', err);
-      toast.error('Failed to update user');
+      toast.error(`Failed to update user: ${getErrorMessage(err, 'Unknown error')}`);
       throw err;
     }
   };

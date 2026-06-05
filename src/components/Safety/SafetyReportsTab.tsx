@@ -38,6 +38,29 @@ export const SafetyReportsTab: React.FC = () => {
       && (!typeFilter || report.reportType === typeFilter);
   });
 
+  const statusCounts = reports.reduce((counts, report) => {
+    counts[report.status] = (counts[report.status] ?? 0) + 1;
+    return counts;
+  }, {} as Record<SafetyReportStatus, number>);
+
+  const severityClass = (severity: string) => {
+    switch (severity) {
+      case 'critical': return 'bg-red-100 text-red-800 border-red-200';
+      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'medium': return 'bg-amber-100 text-amber-800 border-amber-200';
+      default: return 'bg-green-100 text-green-800 border-green-200';
+    }
+  };
+
+  const statusClass = (status: SafetyReportStatus) => {
+    switch (status) {
+      case 'open': return 'bg-red-50 text-red-700 border-red-200';
+      case 'under_review': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'closed': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      default: return 'bg-gray-50 text-gray-700 border-gray-200';
+    }
+  };
+
   const exportCsv = () => {
     const header = ['Report ID', 'Date', 'Type', 'Severity', 'Title', 'Reporter', 'Status', 'Assigned To'];
     const rows = filteredReports.map(report => [
@@ -82,38 +105,60 @@ export const SafetyReportsTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Safety Reports</h2>
           <p className="text-sm text-gray-600">
             {isStaff ? 'Manage club hazards, incidents and risk assessments' : 'Reports submitted by you or involving you'}
           </p>
         </div>
-        <button onClick={() => setShowReportForm(true)} className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+        <button onClick={() => setShowReportForm(true)} className="flex w-full items-center justify-center space-x-2 rounded-lg bg-blue-600 px-4 py-2.5 text-white hover:bg-blue-700 sm:w-auto sm:py-2">
           <Plus className="h-4 w-4" />
           <span>Add Report</span>
         </button>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="relative">
-            <Search className="h-4 w-4 absolute left-3 top-3 text-gray-400" />
-            <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md" placeholder="Search reports..." />
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Open', value: statusCounts.open ?? 0, className: 'border-red-200 bg-red-50 text-red-700' },
+          { label: 'Review', value: statusCounts.under_review ?? 0, className: 'border-blue-200 bg-blue-50 text-blue-700' },
+          { label: 'Closed', value: statusCounts.closed ?? 0, className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+        ].map(card => (
+          <div key={card.label} className={`rounded-xl border p-3 sm:p-4 ${card.className}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-75">{card.label}</p>
+            <p className="mt-1 text-2xl font-bold">{card.value}</p>
           </div>
-          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="px-3 py-2 border border-gray-300 rounded-md">
-            <option value="">All statuses</option>
-            <option value="open">Open</option>
-            <option value="under_review">Under Review</option>
-            <option value="closed">Closed</option>
-          </select>
-          <select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className="px-3 py-2 border border-gray-300 rounded-md">
-            <option value="">All types</option>
-            <option value="incident">Incident</option>
-            <option value="hazard">Hazard</option>
-            <option value="risk_assessment">Risk Assessment</option>
-          </select>
-          <button onClick={exportCsv} className="flex items-center justify-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+        ))}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(260px,1fr)_170px_180px_auto] md:items-end">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Search</span>
+            <span className="relative block">
+              <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+              <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Title, reporter or location" />
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Status</span>
+            <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">All statuses</option>
+              <option value="open">Open</option>
+              <option value="under_review">Under Review</option>
+              <option value="closed">Closed</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Type</span>
+            <select value={typeFilter} onChange={event => setTypeFilter(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">All types</option>
+              <option value="incident">Incident</option>
+              <option value="hazard">Hazard</option>
+              <option value="risk_assessment">Risk Assessment</option>
+            </select>
+          </label>
+          <button onClick={exportCsv} className="flex items-center justify-center space-x-2 rounded-lg bg-green-600 px-3 py-2.5 text-sm font-medium text-white hover:bg-green-700">
             <Download className="h-4 w-4" />
             <span>Export CSV</span>
           </button>
@@ -121,15 +166,39 @@ export const SafetyReportsTab: React.FC = () => {
         <p className="mt-4 text-sm text-gray-600">Showing {filteredReports.length} reports</p>
       </div>
 
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="space-y-3 p-4 md:hidden">
+          {loading && <p className="py-8 text-center text-sm text-gray-500">Loading safety reports...</p>}
+          {!loading && filteredReports.length === 0 && <p className="py-8 text-center text-sm text-gray-500">No safety reports found.</p>}
+          {!loading && filteredReports.map(report => (
+            <article key={report.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">SR-{report.id.slice(0, 8).toUpperCase()}</p>
+                  <h3 className="mt-1 line-clamp-2 text-base font-semibold text-gray-900">{report.title}</h3>
+                  <p className="mt-1 text-xs text-gray-500">{report.createdAt.toLocaleDateString()} - {report.reporterName}</p>
+                </div>
+                <button onClick={() => setSelectedReport(report)} className="shrink-0 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">
+                  View
+                </button>
+              </div>
+              <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-gray-600">{report.description}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">{labels[report.reportType]}</span>
+                <span className={`rounded-full border px-2 py-1 text-xs font-medium ${severityClass(report.severity)}`}>{report.severity}</span>
+                <span className={`rounded-full border px-2 py-1 text-xs font-medium ${statusClass(report.status)}`}>{labels[report.status]}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50"><tr>
               {['Report ID', 'Date', 'Type', 'Title', 'Reporter', 'Status', 'Actions'].map(label => <th key={label} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{label}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-gray-200">
               {filteredReports.map(report => (
-                <tr key={report.id}>
+                <tr key={report.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm font-medium">SR-{report.id.slice(0, 8).toUpperCase()}</td>
                   <td className="px-6 py-4 text-sm">{report.createdAt.toLocaleDateString()}</td>
                   <td className="px-6 py-4 text-sm">{labels[report.reportType]}</td>
@@ -142,8 +211,8 @@ export const SafetyReportsTab: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {!loading && filteredReports.length === 0 && <p className="text-center py-12 text-gray-500">No safety reports found.</p>}
-        {loading && <p className="text-center py-12 text-gray-500">Loading safety reports...</p>}
+        {!loading && filteredReports.length === 0 && <p className="hidden text-center py-12 text-gray-500 md:block">No safety reports found.</p>}
+        {loading && <p className="hidden text-center py-12 text-gray-500 md:block">Loading safety reports...</p>}
       </div>
 
       {showReportForm && (

@@ -89,6 +89,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         description: '',
         active: true,
         displayOrder: current.length + 1,
+        allowAccountTopup: true,
       },
     ]);
     onFormChange();
@@ -146,7 +147,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
               <CreditCard className="h-5 w-5 mr-2 text-blue-600" />
               Payment Methods
             </h3>
-            <p className="text-sm text-gray-500 mt-1">These appear in booking, top-up and mark-paid workflows.</p>
+            <p className="text-sm text-gray-500 mt-1">Control where each payment method appears for flight charges and account top-ups.</p>
           </div>
           {canEdit && (
             <button onClick={addPaymentMethod} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
@@ -183,6 +184,18 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <label className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={method.allowAccountTopup !== false}
+                    disabled={!canEdit}
+                    onChange={event => updatePaymentMethod(method.id, { allowAccountTopup: event.target.checked })}
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Allow for pilot account top-ups
+                </label>
               </div>
             </div>
           ))}

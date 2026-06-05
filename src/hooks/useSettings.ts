@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { storePortalTheme } from '../utils/theme';
 
 export interface OrganisationSettings {
   id: string;
@@ -93,6 +94,10 @@ export interface UserPreferences {
   show_upcoming_bookings: boolean;
   show_recent_activity: boolean;
   compact_view: boolean;
+  background_color: string;
+  background_image_url: string;
+  background_filter_color: string;
+  background_filter_opacity: number;
 }
 
 export const defaultUserPreferences = (userId: string): Omit<UserPreferences, 'id'> => ({
@@ -111,6 +116,10 @@ export const defaultUserPreferences = (userId: string): Omit<UserPreferences, 'i
   show_upcoming_bookings: true,
   show_recent_activity: true,
   compact_view: false,
+  background_color: '#f3f4f6',
+  background_image_url: '',
+  background_filter_color: '#0f172a',
+  background_filter_opacity: 72,
   preferences: {},
 });
 
@@ -526,6 +535,44 @@ export const useUserPreferences = (userId: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const buildPreferencesPayload = (nextPreferences: Omit<UserPreferences, 'id'> & { id?: string }) => ({
+    user_id: nextPreferences.user_id,
+    email_notifications: nextPreferences.email_notifications,
+    sms_notifications: nextPreferences.sms_notifications,
+    booking_reminders: nextPreferences.booking_reminders,
+    currency_alerts: nextPreferences.currency_alerts,
+    maintenance_alerts: nextPreferences.maintenance_alerts,
+    timezone: nextPreferences.timezone,
+    date_format: nextPreferences.date_format,
+    time_format: nextPreferences.time_format,
+    default_calendar_view: nextPreferences.default_calendar_view,
+    theme: nextPreferences.theme,
+    show_progress_dashboard: nextPreferences.show_progress_dashboard,
+    show_upcoming_bookings: nextPreferences.show_upcoming_bookings,
+    show_recent_activity: nextPreferences.show_recent_activity,
+    compact_view: nextPreferences.compact_view,
+    background_color: nextPreferences.background_color,
+    preferences: {
+      ...((nextPreferences.preferences as Record<string, unknown>) || {}),
+      email_notifications: nextPreferences.email_notifications,
+      sms_notifications: nextPreferences.sms_notifications,
+      booking_reminders: nextPreferences.booking_reminders,
+      currency_alerts: nextPreferences.currency_alerts,
+      maintenance_alerts: nextPreferences.maintenance_alerts,
+      timezone: nextPreferences.timezone,
+      date_format: nextPreferences.date_format,
+      time_format: nextPreferences.time_format,
+      default_calendar_view: nextPreferences.default_calendar_view,
+      theme: nextPreferences.theme,
+      show_progress_dashboard: nextPreferences.show_progress_dashboard,
+      show_upcoming_bookings: nextPreferences.show_upcoming_bookings,
+      show_recent_activity: nextPreferences.show_recent_activity,
+      compact_view: nextPreferences.compact_view,
+      background_color: nextPreferences.background_color,
+    },
+    updated_at: new Date().toISOString(),
+  });
+
   const normalizePreferences = (data: any): UserPreferences => {
     const jsonPreferences = data?.preferences && typeof data.preferences === 'object' ? data.preferences : {};
     const defaults = defaultUserPreferences(data?.user_id || userId);
@@ -548,6 +595,10 @@ export const useUserPreferences = (userId: string) => {
       show_upcoming_bookings: data?.show_upcoming_bookings ?? jsonPreferences.show_upcoming_bookings ?? defaults.show_upcoming_bookings,
       show_recent_activity: data?.show_recent_activity ?? jsonPreferences.show_recent_activity ?? defaults.show_recent_activity,
       compact_view: data?.compact_view ?? jsonPreferences.compact_view ?? defaults.compact_view,
+      background_color: data?.background_color ?? jsonPreferences.background_color ?? defaults.background_color,
+      background_image_url: data?.background_image_url ?? jsonPreferences.background_image_url ?? defaults.background_image_url,
+      background_filter_color: data?.background_filter_color ?? jsonPreferences.background_filter_color ?? defaults.background_filter_color,
+      background_filter_opacity: Number(data?.background_filter_opacity ?? jsonPreferences.background_filter_opacity ?? defaults.background_filter_opacity),
       preferences: jsonPreferences,
     };
   };
@@ -579,9 +630,13 @@ export const useUserPreferences = (userId: string) => {
           .single();
 
         if (insertError) throw insertError;
-        setPreferences(normalizePreferences(newData));
+        const normalizedPreferences = normalizePreferences(newData);
+        setPreferences(normalizedPreferences);
+        storePortalTheme(normalizedPreferences.theme, userId);
       } else {
-        setPreferences(normalizePreferences(data));
+        const normalizedPreferences = normalizePreferences(data);
+        setPreferences(normalizedPreferences);
+        storePortalTheme(normalizedPreferences.theme, userId);
       }
       setError(null);
     } catch (err: any) {
@@ -617,34 +672,20 @@ export const useUserPreferences = (userId: string) => {
         ...defaultUserPreferences(userId),
         ...(preferences || {}),
         ...updates,
+        preferences: {
+          ...((preferences?.preferences as Record<string, unknown>) || {}),
+          ...((updates.preferences as Record<string, unknown>) || {}),
+        },
       };
       delete (nextPreferences as any).id;
 
       const { error } = await supabase
         .from('user_preferences')
-        .upsert({
-          ...nextPreferences,
-          preferences: {
-            email_notifications: nextPreferences.email_notifications,
-            sms_notifications: nextPreferences.sms_notifications,
-            booking_reminders: nextPreferences.booking_reminders,
-            currency_alerts: nextPreferences.currency_alerts,
-            maintenance_alerts: nextPreferences.maintenance_alerts,
-            timezone: nextPreferences.timezone,
-            date_format: nextPreferences.date_format,
-            time_format: nextPreferences.time_format,
-            default_calendar_view: nextPreferences.default_calendar_view,
-            theme: nextPreferences.theme,
-            show_progress_dashboard: nextPreferences.show_progress_dashboard,
-            show_upcoming_bookings: nextPreferences.show_upcoming_bookings,
-            show_recent_activity: nextPreferences.show_recent_activity,
-            compact_view: nextPreferences.compact_view,
-          },
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
+        .upsert(buildPreferencesPayload(nextPreferences), { onConflict: 'user_id' });
 
       if (error) throw error;
 
+      storePortalTheme(nextPreferences.theme, userId);
       await fetchPreferences();
       window.dispatchEvent(new Event('user-preferences-updated'));
       toast.success('Preferences updated successfully');
@@ -655,11 +696,38 @@ export const useUserPreferences = (userId: string) => {
     }
   };
 
+  const updatePreferencesSilent = async (updates: Partial<UserPreferences>) => {
+    if (!userId) return;
+
+    const nextPreferences = {
+      ...defaultUserPreferences(userId),
+      ...(preferences || {}),
+      ...updates,
+      preferences: {
+        ...((preferences?.preferences as Record<string, unknown>) || {}),
+        ...((updates.preferences as Record<string, unknown>) || {}),
+      },
+    };
+    delete (nextPreferences as any).id;
+
+    const { error } = await supabase
+      .from('user_preferences')
+      .upsert(buildPreferencesPayload(nextPreferences), { onConflict: 'user_id' });
+
+    if (error) throw error;
+
+    const normalizedPreferences = normalizePreferences(nextPreferences);
+    setPreferences(normalizedPreferences);
+    storePortalTheme(normalizedPreferences.theme, userId);
+    window.dispatchEvent(new Event('user-preferences-updated'));
+  };
+
   return {
     preferences,
     loading,
     error,
     updatePreferences,
+    updatePreferencesSilent,
     refetch: fetchPreferences
   };
 };

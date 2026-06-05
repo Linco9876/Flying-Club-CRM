@@ -6,10 +6,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$ScriptPath = Join-Path $RepoRoot "scripts\backup-crm.mjs"
+$ScriptPath = Join-Path $RepoRoot "scripts\run-backup-with-alert.ps1"
 $EnvPath = Join-Path $RepoRoot "scripts\backup-crm.env"
 $LogDir = Join-Path $RepoRoot "tmp\backup-logs"
-$Node = (Get-Command node -ErrorAction Stop).Source
+$PowerShell = (Get-Command powershell -ErrorAction Stop).Source
 
 if (-not (Test-Path $EnvPath)) {
   throw "Missing $EnvPath. Copy scripts\backup-crm.env.example to scripts\backup-crm.env and add the Supabase service role key first."
@@ -18,8 +18,8 @@ if (-not (Test-Path $EnvPath)) {
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 $Action = New-ScheduledTaskAction `
-  -Execute $Node `
-  -Argument "`"$ScriptPath`" --env=`"$EnvPath`" > `"$LogDir\daily-backup.log`" 2>&1" `
+  -Execute $PowerShell `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -EnvPath `"$EnvPath`" > `"$LogDir\daily-backup.log`" 2>&1" `
   -WorkingDirectory $RepoRoot
 
 $Trigger = New-ScheduledTaskTrigger -Daily -At $Time

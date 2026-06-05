@@ -57,7 +57,7 @@ const getStatusIcon = (status: StatusOption) => {
   }
 };
 
-const isImageFile = (path: string) => /\.(jpe?g|png|gif|bmp|webp)$/i.test(path);
+const isImageFile = (path: string) => /\.(jpe?g|png|gif|bmp|webp)(?:$|[?#])/i.test(path);
 
 interface DefectDetailsModalProps {
   defect: BoardDefect;

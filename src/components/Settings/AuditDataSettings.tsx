@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Database, Download, FileJson, Loader2, RefreshCw, Search, Table } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 
 interface AuditDataSettingsProps {
   canEdit: boolean;
@@ -16,6 +17,9 @@ interface AuditLogEntry {
   resource: string;
   details: string;
   source: string;
+  tableName?: string;
+  recordId?: string;
+  changedFields?: string[];
 }
 
 interface ExportTable {
@@ -39,6 +43,7 @@ const exportTables: ExportTable[] = [
   { table: 'aircraft_rates', label: 'Aircraft rates', description: 'Aircraft billing rates' },
   { table: 'bookings', label: 'Bookings', description: 'Calendar bookings and waitlist records' },
   { table: 'flight_logs', label: 'Flight logs', description: 'Logged aircraft flights' },
+  { table: 'admin_audit_log', label: 'Admin audit log', description: 'Admin-only edits and deletes audit trail' },
   { table: 'training_records', label: 'Training records', description: 'Student training records and embedded audit history' },
   { table: 'training_sequence_results', label: 'Training results', description: 'Training criteria/result rows' },
   { table: 'training_courses', label: 'Training courses', description: 'Course and lesson library records' },
@@ -51,6 +56,56 @@ const exportTables: ExportTable[] = [
   { table: 'invoice_items', label: 'Invoice items', description: 'Invoice line items' },
   { table: 'account_transactions', label: 'Account transactions', description: 'Pilot account ledger transactions' },
 ];
+
+const sensitiveExportFields: Record<string, string[]> = {
+  users: [
+    'email',
+    'phone',
+    'mobile_phone',
+    'home_phone',
+    'work_phone',
+    'address',
+    'date_of_birth',
+    'emergency_contact_name',
+    'emergency_contact_phone',
+    'emergency_contact_relationship',
+    'avatar_url',
+  ],
+  students: [
+    'email',
+    'phone',
+    'alternate_phone',
+    'address',
+    'date_of_birth',
+    'emergency_contact_name',
+    'emergency_contact_phone',
+    'emergency_contact_relationship',
+    'raaus_id',
+    'casa_id',
+    'medical_type',
+    'medical_expiry',
+    'licence_expiry',
+    'last_flight_review',
+  ],
+  student_documents: ['file_path', 'filename', 'file_type', 'file_size'],
+  safety_reports: ['reporter_name', 'reporter_email', 'reporter_phone', 'involved_persons', 'witnesses', 'attachments'],
+  invoices: ['billing_address', 'customer_email', 'customer_phone'],
+  account_transactions: ['payment_reference', 'external_reference', 'notes'],
+};
+
+const sanitizeRowsForExport = (table: string, rows: unknown[]) => {
+  const sensitiveFields = new Set(sensitiveExportFields[table] || []);
+
+  return rows.map(row => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+
+    const sanitized = { ...(row as Record<string, unknown>) };
+    sensitiveFields.forEach(field => {
+      if (field in sanitized) sanitized[field] = '[redacted]';
+    });
+    return sanitized;
+  });
+};
 
 const formatDateTime = (date: Date) => date.toLocaleString('en-AU', {
   year: 'numeric',
@@ -85,11 +140,35 @@ const actionClass = (action: string) => {
   return 'bg-gray-100 text-gray-800';
 };
 
+const summarizeChanges = (entry: any) => {
+  const changedFields = Array.isArray(entry.changed_fields) ? entry.changed_fields : [];
+
+  if (entry.action === 'DELETE') return 'Record deleted';
+  if (changedFields.length === 0) return 'Record updated';
+
+  const oldData = entry.old_data || {};
+  const newData = entry.new_data || {};
+  const summary = changedFields.slice(0, 6).map((field: string) => {
+    const before = oldData[field];
+    const after = newData[field];
+    const beforeText = before === null || before === undefined ? 'blank' : JSON.stringify(before);
+    const afterText = after === null || after === undefined ? 'blank' : JSON.stringify(after);
+    return `${field}: ${beforeText} -> ${afterText}`;
+  });
+
+  if (changedFields.length > 6) summary.push(`+${changedFields.length - 6} more`);
+  return summary.join('; ');
+};
+
 export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
+  const { user } = useAuth();
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [tableSummaries, setTableSummaries] = useState<TableSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [showSensitiveConfirm, setShowSensitiveConfirm] = useState(false);
+  const [sensitiveConfirmText, setSensitiveConfirmText] = useState('');
+  const [sensitiveConfirmChecked, setSensitiveConfirmChecked] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [actionFilter, setActionFilter] = useState('');
@@ -98,7 +177,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
   const loadAuditData = useCallback(async () => {
     setLoading(true);
     try {
-      const [summaryResults, maintenanceResult, trainingResult, usersResult] = await Promise.all([
+      const [summaryResults, adminAuditResult, maintenanceResult, trainingResult, usersResult] = await Promise.all([
         Promise.all(exportTables.map(async table => {
           const { count, error } = await supabase
             .from(table.table)
@@ -111,6 +190,11 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
             error: error?.message,
           };
         })),
+        supabase
+          .from('admin_audit_log')
+          .select('*')
+          .order('occurred_at', { ascending: false })
+          .limit(500),
         supabase
           .from('maintenance_audit_log')
           .select('*')
@@ -145,6 +229,19 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         source: 'Maintenance',
       }));
 
+      const adminAuditEntries: AuditLogEntry[] = adminAuditResult.error ? [] : (adminAuditResult.data || []).map(row => ({
+        id: `admin-audit-${row.id}`,
+        timestamp: new Date(row.occurred_at),
+        userName: row.actor_id ? userMap.get(row.actor_id) || row.actor_id : 'System / service role',
+        action: row.action === 'DELETE' ? 'DELETE' : 'UPDATE',
+        resource: row.record_label || `${row.table_name} ${row.record_id}`,
+        details: summarizeChanges(row),
+        source: row.area || 'Admin Audit',
+        tableName: row.table_name,
+        recordId: row.record_id,
+        changedFields: Array.isArray(row.changed_fields) ? row.changed_fields : [],
+      }));
+
       const trainingEntries: AuditLogEntry[] = trainingResult.error ? [] : (trainingResult.data || []).flatMap(row => {
         const entries = Array.isArray(row.audit_log) ? row.audit_log : [];
         return entries.map((entry: any, index: number) => ({
@@ -158,9 +255,9 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         }));
       });
 
-      setAuditLog([...maintenanceEntries, ...trainingEntries].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
+      setAuditLog([...adminAuditEntries, ...maintenanceEntries, ...trainingEntries].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
 
-      if (maintenanceResult.error || trainingResult.error) {
+      if (adminAuditResult.error || maintenanceResult.error || trainingResult.error) {
         toast.error('Some audit sources could not be loaded');
       }
     } catch (err) {
@@ -182,7 +279,10 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
       || entry.action.toLowerCase().includes(query)
       || entry.resource.toLowerCase().includes(query)
       || entry.details.toLowerCase().includes(query)
-      || entry.source.toLowerCase().includes(query);
+      || entry.source.toLowerCase().includes(query)
+      || entry.tableName?.toLowerCase().includes(query)
+      || entry.recordId?.toLowerCase().includes(query)
+      || entry.changedFields?.some(field => field.toLowerCase().includes(query));
 
     const startDate = dateRange.start ? new Date(`${dateRange.start}T00:00:00`) : null;
     const endDate = dateRange.end ? new Date(`${dateRange.end}T23:59:59`) : null;
@@ -198,12 +298,52 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
   const availableTables = tableSummaries.filter(summary => summary.count !== null);
   const unavailableTables = tableSummaries.filter(summary => summary.error);
   const totalRows = availableTables.reduce((total, summary) => total + (summary.count || 0), 0);
+  const canExportSensitive = sensitiveConfirmChecked && sensitiveConfirmText.trim().toUpperCase() === 'EXPORT PRIVATE DATA';
 
-  const exportSystemJson = async () => {
+  const recordExportAudit = async (exportType: 'sanitized' | 'sensitive', rowCounts: Record<string, number | string>) => {
+    const timestamp = new Date();
+    const localEntry: AuditLogEntry = {
+      id: `data-export-${timestamp.toISOString()}-${exportType}`,
+      timestamp,
+      userName: user?.name || user?.email || 'Unknown admin',
+      action: exportType === 'sensitive' ? 'SENSITIVE_DATA_EXPORT' : 'SANITIZED_DATA_EXPORT',
+      resource: 'System data export',
+      details: JSON.stringify({
+        exportType,
+        rowCounts,
+        sensitiveDataIncluded: exportType === 'sensitive',
+      }),
+      source: 'Audit & Data',
+    };
+
+    setAuditLog(prev => [localEntry, ...prev]);
+
+    try {
+      const { error } = await supabase.from('maintenance_audit_log').insert({
+        action: localEntry.action,
+        performed_by: user?.id || null,
+        details: {
+          resource: localEntry.resource,
+          exportType,
+          rowCounts,
+          sensitiveDataIncluded: exportType === 'sensitive',
+        },
+      });
+
+      if (error) {
+        console.warn('Failed to persist export audit event:', error);
+      }
+    } catch (error) {
+      console.warn('Failed to persist export audit event:', error);
+    }
+  };
+
+  const exportSystemJson = async (includeSensitiveData = false) => {
     setExporting(true);
     try {
       const exportedAt = new Date().toISOString();
       const results: Record<string, unknown[] | { error: string }> = {};
+      const rowCounts: Record<string, number | string> = {};
 
       await Promise.all(exportTables.map(async table => {
         const { data, error } = await supabase
@@ -211,20 +351,37 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
           .select('*')
           .limit(10000);
 
-        results[table.table] = error ? { error: error.message } : data || [];
+        if (error) {
+          results[table.table] = { error: error.message };
+          rowCounts[table.table] = 'error';
+        } else {
+          const rows = data || [];
+          results[table.table] = includeSensitiveData ? rows : sanitizeRowsForExport(table.table, rows);
+          rowCounts[table.table] = rows.length;
+        }
       }));
 
       downloadFile(
-        `crm-system-export-${new Date().toISOString().slice(0, 10)}.json`,
-        JSON.stringify({ exportedAt, tables: results }, null, 2),
+        `crm-system-${includeSensitiveData ? 'private' : 'sanitized'}-export-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify({
+          exportedAt,
+          exportType: includeSensitiveData ? 'sensitive-private-data' : 'sanitized-default',
+          redactedByDefault: !includeSensitiveData,
+          redactedFields: includeSensitiveData ? {} : sensitiveExportFields,
+          tables: results,
+        }, null, 2),
         'application/json'
       );
-      toast.success('System data export downloaded');
+      await recordExportAudit(includeSensitiveData ? 'sensitive' : 'sanitized', rowCounts);
+      toast.success(includeSensitiveData ? 'Private system data export downloaded' : 'Sanitized system data export downloaded');
     } catch (err) {
       console.error('Failed to export system data:', err);
       toast.error('Failed to export system data');
     } finally {
       setExporting(false);
+      setShowSensitiveConfirm(false);
+      setSensitiveConfirmText('');
+      setSensitiveConfirmChecked(false);
     }
   };
 
@@ -249,13 +406,16 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
 
   const exportAuditCsv = () => {
     const rows = [
-      ['Timestamp', 'User', 'Action', 'Resource', 'Source', 'Details'],
+      ['Timestamp', 'User', 'Action', 'Resource', 'Source', 'Table', 'Record ID', 'Changed Fields', 'Details'],
       ...filteredAuditLog.map(entry => [
         entry.timestamp.toISOString(),
         entry.userName,
         entry.action,
         entry.resource,
         entry.source,
+        entry.tableName || '',
+        entry.recordId || '',
+        entry.changedFields?.join('; ') || '',
         entry.details,
       ]),
     ];
@@ -308,7 +468,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Audit events</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{auditLog.length}</p>
-          <p className="mt-1 text-xs text-gray-500">from maintenance and training record audit sources</p>
+          <p className="mt-1 text-xs text-gray-500">from admin audit, maintenance, and training sources</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Unavailable tables</p>
@@ -323,12 +483,24 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
           <p className="text-sm text-gray-500 mt-1">Exports are downloaded in your browser from data your current admin session can read.</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">Complete System Data</h4>
-            <p className="text-xs text-gray-600 mb-3">Downloads visible CRM tables as a structured JSON file.</p>
-            <button onClick={exportSystemJson} disabled={exporting} className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+            <h4 className="text-sm font-medium text-gray-900 mb-2">Safer System Data</h4>
+            <p className="text-xs text-gray-600 mb-3">Downloads CRM tables as JSON, redacting contact, emergency, medical and credential fields by default.</p>
+            <button onClick={() => exportSystemJson(false)} disabled={exporting} className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileJson className="h-4 w-4" />}
               JSON
+            </button>
+          </div>
+
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+            <h4 className="text-sm font-medium text-red-950 mb-2 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Complete Private Data
+            </h4>
+            <p className="text-xs text-red-800 mb-3">Contains private member, billing, emergency contact, medical and student record data. Use only for controlled admin recovery or legal/accounting export.</p>
+            <button onClick={() => setShowSensitiveConfirm(true)} disabled={exporting} className="inline-flex items-center gap-2 px-3 py-2 bg-red-700 text-white rounded-md hover:bg-red-800 disabled:opacity-50">
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileJson className="h-4 w-4" />}
+              Private JSON
             </button>
           </div>
 
@@ -357,6 +529,67 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
           </div>
         </div>
       </section>
+
+      {showSensitiveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-red-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-red-100 p-2 text-red-700">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Export complete private CRM data?</h3>
+                <p className="mt-2 text-sm text-gray-600">
+                  This download contains private member, billing, emergency contact, medical/compliance and student record data. The export action will be added to the audit trail.
+                </p>
+              </div>
+            </div>
+
+            <label className="mt-5 flex items-start gap-3 rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-900">
+              <input
+                type="checkbox"
+                checked={sensitiveConfirmChecked}
+                onChange={event => setSensitiveConfirmChecked(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-red-300 text-red-700 focus:ring-red-600"
+              />
+              I understand this file contains private CRM data and must be stored, shared and deleted carefully.
+            </label>
+
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Type EXPORT PRIVATE DATA to continue</label>
+              <input
+                value={sensitiveConfirmText}
+                onChange={event => setSensitiveConfirmText(event.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
+                placeholder="EXPORT PRIVATE DATA"
+              />
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSensitiveConfirm(false);
+                  setSensitiveConfirmText('');
+                  setSensitiveConfirmChecked(false);
+                }}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => exportSystemJson(true)}
+                disabled={!canExportSensitive || exporting}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-50"
+              >
+                {exporting && <Loader2 className="h-4 w-4 animate-spin" />}
+                Export private data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="space-y-4">
         <div>
@@ -387,7 +620,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
       <section className="space-y-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Audit Log</h3>
-          <p className="text-sm text-gray-500 mt-1">This combines real maintenance audit rows and embedded training record audit history.</p>
+          <p className="text-sm text-gray-500 mt-1">Admin-only audit trail for booking, flight log, billing, training, and member profile edits/deletes.</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -450,8 +683,9 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Resource</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Record</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Changed Fields</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
                   </tr>
                 </thead>
@@ -463,8 +697,29 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${actionClass(entry.action)}`}>{entry.action}</span>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{entry.resource}</td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{entry.source}</td>
+                      <td className="px-4 py-4 text-sm text-gray-900">
+                        <div className="max-w-xs">
+                          <p className="truncate font-medium" title={entry.resource}>{entry.resource}</p>
+                          {entry.tableName && (
+                            <p className="mt-1 truncate text-xs text-gray-500" title={`${entry.tableName} ${entry.recordId || ''}`}>
+                              {entry.tableName}{entry.recordId ? ` / ${entry.recordId}` : ''}
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
+                        {entry.changedFields?.length ? (
+                          <div className="flex max-w-xs flex-wrap gap-1">
+                            {entry.changedFields.slice(0, 5).map(field => (
+                              <span key={field} className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700">{field}</span>
+                            ))}
+                            {entry.changedFields.length > 5 && <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700">+{entry.changedFields.length - 5}</span>}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-4 text-sm text-gray-900 max-w-md truncate" title={entry.details}>{entry.details}</td>
                     </tr>
                   ))}

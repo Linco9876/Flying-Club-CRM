@@ -16,7 +16,7 @@ import toast from 'react-hot-toast';
 interface BookingFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (bookingData: any) => void;
+  onSubmit: (bookingData: any) => void | Promise<void>;
   booking?: Booking | null;
   isEdit?: boolean;
   prefilledData?: {
@@ -96,6 +96,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     pilotName: string;
     picHours: number;
   } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Rebuild the whole form every time it opens so stale values cannot leak between bookings.
   React.useEffect(() => {
@@ -103,6 +104,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setFormData(buildInitialFormData());
     setPendingSafetySubmit(null);
     setSafetyWarningState(null);
+    setIsSubmitting(false);
   }, [buildInitialFormData, isOpen]);
   const validateFormData = () => {
     const userRole = user?.role || 'student';
@@ -174,9 +176,16 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     return { startDateTime, endDateTime };
   };
 
-  const submitBookingData = (data: typeof formData) => {
-    onSubmit(data);
-    onClose();
+  const submitBookingData = async (data: typeof formData) => {
+    if (isSubmitting || isLoading) return;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(data);
+      onClose();
+    } catch (error) {
+      setIsSubmitting(false);
+      throw error;
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -203,7 +212,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       }
     }
 
-    submitBookingData(formData);
+    void submitBookingData(formData);
   };
 
   const availableAircraft = aircraft.filter(a => a.status === 'serviceable');
@@ -227,7 +236,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
   const handleConfirmSafetyWarning = () => {
     if (!pendingSafetySubmit || safetyWarningState?.blocking) return;
-    submitBookingData(pendingSafetySubmit);
+    void submitBookingData(pendingSafetySubmit);
     setPendingSafetySubmit(null);
     setSafetyWarningState(null);
   };
@@ -457,9 +466,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm"
+              disabled={isSubmitting || isLoading}
+              className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isEdit ? 'Update Booking' : 'Create Booking'}
+              {isSubmitting ? (isEdit ? 'Updating...' : 'Creating...') : (isEdit ? 'Update Booking' : 'Create Booking')}
             </button>
           </div>
         </form>

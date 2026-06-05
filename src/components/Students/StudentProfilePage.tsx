@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
 import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download } from 'lucide-react';
@@ -18,6 +18,8 @@ import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
+import { downloadStudentProgressVideoProps } from '../../utils/studentProgressVideoExport';
+import { StudentProgressVideoProps } from '../../types/studentProgressVideo';
 
 interface StudentInfoForm {
   name: string;
@@ -64,6 +66,15 @@ const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
 const toDateInputValue = (date?: Date) => date ? date.toISOString().slice(0, 10) : '';
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+};
+
 interface ProfileTimelineEvent {
   id: string;
   date: Date | null;
@@ -92,13 +103,30 @@ interface StudentInvoiceSummary {
   items: StudentInvoiceItem[];
 }
 
+type CourseProgressSummary = {
+  course: TrainingModule;
+  percentage: number;
+  isComplete: boolean;
+  completedLessons: number;
+  totalLessons: number;
+  criteriaProgress: Array<{
+    criterion: TrainingModule['assessmentCriteria'][number];
+    bestGrade: string;
+    bestScore: number;
+    isComplete: boolean;
+  }>;
+  hasCriteria: boolean;
+  recordsCount: number;
+};
+
 export const StudentProfilePage: React.FC = () => {
   const { studentId: routeStudentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const studentId = routeStudentId || user?.id;
-  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile'));
   const [showMatrixView, setShowMatrixView] = useState(true);
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
@@ -149,7 +177,12 @@ export const StudentProfilePage: React.FC = () => {
   });
 
   const { students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
-  const { trainingRecords, loading: trainingRecordsLoading, updateTrainingRecord } = useTrainingRecords();
+  const {
+    trainingRecords,
+    loading: trainingRecordsLoading,
+    updateTrainingRecord,
+    refetch: refetchTrainingRecords,
+  } = useTrainingRecords(studentId, { requireStudentId: true });
   const { users } = useUsers();
   const { modules: trainingCourses } = useTrainingModules();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -185,6 +218,20 @@ export const StudentProfilePage: React.FC = () => {
     () => safetyReports.filter(report => report.reporterId === studentId || report.involvedUserIds.includes(studentId || '')),
     [safetyReports, studentId]
   );
+  const courseProgressSummaries = useMemo(
+    () => calculateCourseProgress(trainingCourses, studentTrainingRecords, trainingSettings.courseCompletionRule),
+    [studentTrainingRecords, trainingCourses, trainingSettings.courseCompletionRule]
+  );
+  const mostAdvancedCourseProgress = useMemo(() => {
+    return courseProgressSummaries
+      .filter(progress => progress.recordsCount > 0 || progress.completedLessons > 0 || progress.percentage > 0)
+      .sort((a, b) =>
+        b.percentage - a.percentage ||
+        b.completedLessons - a.completedLessons ||
+        b.recordsCount - a.recordsCount ||
+        a.course.title.localeCompare(b.course.title)
+      )[0] ?? null;
+  }, [courseProgressSummaries]);
 
   useEffect(() => {
     if (trainingCourseOptions.length === 0) {
@@ -201,6 +248,11 @@ export const StudentProfilePage: React.FC = () => {
     const tab = searchParams.get('tab');
     if (tab) setActiveTab(tab);
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!studentId || !['profile', 'training', 'courses'].includes(activeTab)) return;
+    void refetchTrainingRecords();
+  }, [activeTab, refetchTrainingRecords, studentId]);
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
@@ -561,20 +613,21 @@ export const StudentProfilePage: React.FC = () => {
     setSavingInfo(true);
 
     try {
-      const { error: userError } = await supabase
+      const { data: updatedUsers, error: userError } = await supabase
         .from('users')
         .update({
           name: infoForm.name.trim() || student.name,
           phone: infoForm.phone.trim() || null,
         })
-        .eq('id', student.id);
+        .eq('id', student.id)
+        .select('id');
 
       if (userError) throw userError;
+      if (!updatedUsers || updatedUsers.length === 0) {
+        throw new Error('You do not have permission to update this member.');
+      }
 
-      const { error: studentError } = await supabase
-        .from('students')
-        .upsert({
-          id: student.id,
+      const studentPayload = {
           raaus_id: infoForm.raausId.trim() || null,
           licence_expiry: infoForm.membershipExpiry || null,
           medical_type: infoForm.medicalType.trim() || null,
@@ -584,16 +637,30 @@ export const StudentProfilePage: React.FC = () => {
           emergency_contact_name: infoForm.emergencyContactName.trim() || null,
           emergency_contact_phone: infoForm.emergencyContactPhone.trim() || null,
           emergency_contact_relationship: infoForm.emergencyContactRelationship.trim() || null,
-        }, { onConflict: 'id' });
+      };
 
-      if (studentError) throw studentError;
+      const { data: updatedStudentRows, error: studentUpdateError } = await supabase
+        .from('students')
+        .update(studentPayload)
+        .eq('id', student.id)
+        .select('id');
+
+      if (studentUpdateError) throw studentUpdateError;
+
+      if (!updatedStudentRows || updatedStudentRows.length === 0) {
+        const { error: studentInsertError } = await supabase
+          .from('students')
+          .insert({ id: student.id, ...studentPayload });
+
+        if (studentInsertError) throw studentInsertError;
+      }
 
       await refetchStudents();
       setShowInfoEditor(false);
       toast.success('Student information updated');
     } catch (error) {
       console.error('Failed to update student information:', error);
-      toast.error('Failed to update student information');
+      toast.error(`Failed to update student information: ${getErrorMessage(error, 'Unknown error')}`);
     } finally {
       setSavingInfo(false);
     }
@@ -774,9 +841,6 @@ export const StudentProfilePage: React.FC = () => {
     if ((record.nextLesson || '').trim() !== calculatedNextLesson.trim()) {
       changes.push(`Next lesson changed from "${record.nextLesson || 'Not set'}" to "${calculatedNextLesson || 'Not set'}"`);
     }
-    if (record.isFlightReview !== form.isFlightReview) {
-      changes.push(form.isFlightReview ? 'Marked as a flight review/test' : 'Removed flight review/test marking');
-    }
     if ((record.flightReviewResult || 'not_assessed') !== form.flightReviewResult) {
       changes.push(`Flight review result changed to ${form.flightReviewResult.replace('_', ' ')}`);
     }
@@ -855,6 +919,9 @@ export const StudentProfilePage: React.FC = () => {
     );
     const wasAcknowledged = editingTrainingRecord.studentAck && courseRequiresAck;
     const calculatedNextLesson = getNextLessonFromAssessment(editingTrainingRecord, trainingEditForm.criteriaGrades);
+    const isCourseDefinedTestFlight = Boolean(getRecordLesson(editingTrainingRecord)?.isFlightTest);
+    const keepLegacyFlightReview = Boolean(editingTrainingRecord.isFlightReview && !isCourseDefinedTestFlight);
+    const isFlightReviewRecord = isCourseDefinedTestFlight || keepLegacyFlightReview;
     const updatedAuditLog = [
       ...(editingTrainingRecord.auditLog || []),
       {
@@ -878,10 +945,10 @@ export const StudentProfilePage: React.FC = () => {
         formalBriefing: trainingEditForm.formalBriefing,
         nextLesson: calculatedNextLesson,
         criteriaGrades: trainingEditForm.criteriaGrades,
-        isFlightReview: trainingEditForm.isFlightReview,
-        flightReviewType: trainingEditForm.isFlightReview ? trainingEditForm.flightReviewType.trim() || 'Flight Review' : '',
-        flightReviewResult: trainingEditForm.isFlightReview ? trainingEditForm.flightReviewResult : undefined,
-        flightReviewNotes: trainingEditForm.isFlightReview ? trainingEditForm.flightReviewNotes.trim() : '',
+        isFlightReview: isFlightReviewRecord,
+        flightReviewType: isFlightReviewRecord ? (trainingEditForm.flightReviewType.trim() || (isCourseDefinedTestFlight ? 'Flight Test' : 'Flight Review')) : '',
+        flightReviewResult: isFlightReviewRecord ? trainingEditForm.flightReviewResult : undefined,
+        flightReviewNotes: isFlightReviewRecord ? trainingEditForm.flightReviewNotes.trim() : '',
         auditLog: updatedAuditLog,
         ...(wasAcknowledged ? {
           status: 'submitted' as const,
@@ -1572,9 +1639,11 @@ export const StudentProfilePage: React.FC = () => {
                 </div>
                 
                 <div className="bg-orange-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-orange-900">Progress to RPL</p>
+                  <p className="text-sm font-medium text-orange-900">
+                    {mostAdvancedCourseProgress ? `Progress to ${mostAdvancedCourseProgress.course.title}` : 'Course Progress'}
+                  </p>
                   <p className="text-2xl font-bold text-orange-600">
-                    {Math.min(100, Math.round((totalFlightTime / 60) / 20 * 100))}%
+                    {mostAdvancedCourseProgress?.percentage ?? 0}%
                   </p>
                 </div>
               </div>
@@ -1839,6 +1908,7 @@ export const StudentProfilePage: React.FC = () => {
           courses={trainingCourses}
           examResults={studentExamResults}
           users={users}
+          refetchStudents={refetchStudents}
         />
       )}
 
@@ -1901,7 +1971,7 @@ export const StudentProfilePage: React.FC = () => {
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Not selected</option>
-                    {paymentMethods.filter(method => method.active).map(method => (
+                    {paymentMethods.filter(method => method.active && method.allowAccountTopup !== false).map(method => (
                       <option key={method.id} value={method.id}>{method.name}</option>
                     ))}
                   </select>
@@ -2853,17 +2923,22 @@ export const StudentProfilePage: React.FC = () => {
                 />
               </label>
 
-              <section className="rounded-lg border border-orange-200 bg-orange-50 p-4">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={trainingEditForm.isFlightReview}
-                    onChange={event => setTrainingEditForm(form => form ? { ...form, isFlightReview: event.target.checked } : form)}
-                    className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
-                  />
-                  <span className="text-sm font-semibold text-orange-950">Add Flight Review / Flight Test outcome</span>
-                </label>
-                {trainingEditForm.isFlightReview && (
+              {(() => {
+                const isCourseDefinedTestFlight = Boolean(getRecordLesson(editingTrainingRecord)?.isFlightTest);
+                const isLegacyFlightReview = Boolean(editingTrainingRecord.isFlightReview && !isCourseDefinedTestFlight);
+                const showFlightOutcome = isCourseDefinedTestFlight || isLegacyFlightReview;
+                if (!showFlightOutcome) return null;
+                return (
+                  <section className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+                    <div className="flex items-center gap-2">
+                      <Award className="h-4 w-4 text-orange-700" />
+                      <span className="text-sm font-semibold text-orange-950">
+                        {isCourseDefinedTestFlight ? 'Course-defined test flight outcome' : 'Existing flight review/test outcome'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-orange-800">
+                      Test flights are now controlled from the course lesson setup, not selected on individual records.
+                    </p>
                   <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <label className="block">
                       <span className="block text-xs font-medium text-orange-800 mb-1">Review type</span>
@@ -2901,8 +2976,9 @@ export const StudentProfilePage: React.FC = () => {
                       </p>
                     )}
                   </div>
-                )}
-              </section>
+                  </section>
+                );
+              })()}
 
               {(() => {
                 const course = getRecordCourse(editingTrainingRecord);
@@ -3236,6 +3312,97 @@ function isGradeAtLeastTarget(grade: string, target: string, system: LessonGradi
   return gradeIndex >= 0 && targetIndex >= 0 && gradeIndex >= targetIndex;
 }
 
+function calculateCourseProgress(
+  courses: TrainingModule[],
+  trainingRecords: TrainingRecord[],
+  courseCompletionRule: string
+): CourseProgressSummary[] {
+  return courses.map((course) => {
+    const courseRecords = trainingRecords.filter(record => record.courseId === course.id);
+    const criteria = course.assessmentCriteria;
+    const lessons = course.lessons;
+
+    if (lessons.length === 0) return null;
+
+    const lessonsById = new Map(lessons.map(lesson => [lesson.id, lesson]));
+    const lessonsByCode = new Map(
+      lessons
+        .filter(lesson => lesson.sequenceCode)
+        .map(lesson => [lesson.sequenceCode, lesson])
+    );
+
+    const touchedLessons = new Set<string>();
+    for (const record of courseRecords) {
+      if (record.lessonId && lessonsById.has(record.lessonId)) {
+        touchedLessons.add(record.lessonId);
+        continue;
+      }
+
+      const fallbackLesson = record.lessonCodes
+        .map(code => lessonsByCode.get(code))
+        .find(Boolean);
+      if (fallbackLesson) touchedLessons.add(fallbackLesson.id);
+    }
+
+    const criteriaProgress = criteria.map((criterion) => {
+      let bestScore = 0;
+      let bestGrade = '';
+      let isComplete = false;
+
+      for (const record of courseRecords) {
+        const grade = record.criteriaGrades?.[criterion.id];
+        if (!grade || grade === '-') continue;
+
+        const lesson = record.lessonId ? lessonsById.get(record.lessonId) : undefined;
+        const passMarkForLesson = lesson?.passMarks?.[criterion.id] ?? criterion.passingGrade;
+        const system = criterion.gradingSystem;
+
+        const score = gradeScore(grade, system);
+        if (score > bestScore) {
+          bestScore = score;
+          bestGrade = grade;
+        }
+        if (isGradeAtLeastTarget(grade, passMarkForLesson, system)) {
+          isComplete = true;
+        }
+      }
+
+      return { criterion, bestGrade, bestScore, isComplete };
+    });
+
+    const completedLessons = touchedLessons.size;
+    const lessonPercentage = lessons.length > 0 ? (completedLessons / lessons.length) * 100 : 0;
+    const criteriaPercentage = criteriaProgress.length > 0
+      ? (criteriaProgress.reduce((sum, cp) => sum + cp.bestScore, 0) / criteriaProgress.length) * 100
+      : 0;
+
+    const percentage = criteriaProgress.length > 0
+      ? Math.min(100, Math.round((lessonPercentage + criteriaPercentage) / 2))
+      : Math.min(100, Math.round(lessonPercentage));
+
+    const criteriaComplete = criteriaProgress.length > 0 && criteriaProgress.every((cp) => cp.isComplete);
+    const lessonsComplete = completedLessons === lessons.length && lessons.length > 0;
+    const isComplete = courseCompletionRule === 'all_lessons_attempted'
+      ? lessonsComplete
+      : courseCompletionRule === 'criteria_or_lessons'
+        ? criteriaComplete || lessonsComplete
+        : criteriaProgress.length > 0
+          ? criteriaComplete
+          : lessonsComplete;
+
+    return {
+      course,
+      percentage,
+      isComplete,
+      completedLessons,
+      totalLessons: lessons.length,
+      criteriaProgress,
+      hasCriteria: criteria.length > 0,
+      recordsCount: courseRecords.length,
+    };
+  }).filter((progress): progress is CourseProgressSummary => Boolean(progress));
+}
+
 interface CourseProgressTabProps {
   studentId: string;
   student: Student | null;
@@ -3243,111 +3410,145 @@ interface CourseProgressTabProps {
   courses: TrainingModule[];
   examResults: StudentExamResult[];
   users: AppUser[];
+  refetchStudents: () => Promise<void>;
 }
 
-const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, trainingRecords, courses, examResults, users }) => {
+const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, trainingRecords, courses, examResults, users, refetchStudents }) => {
+  const { user } = useAuth();
   const { settings: trainingSettings } = useTrainingSettings();
   const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
-  const courseProgress = useMemo(() => {
-    return courses.map((course) => {
-      const courseRecords = trainingRecords.filter(record => record.courseId === course.id);
-      const criteria = course.assessmentCriteria;
-      const lessons = course.lessons;
-
-      if (lessons.length === 0) return null;
-
-      const lessonsById = new Map(lessons.map(lesson => [lesson.id, lesson]));
-      const lessonsByCode = new Map(
-        lessons
-          .filter(lesson => lesson.sequenceCode)
-          .map(lesson => [lesson.sequenceCode, lesson])
-      );
-
-      const touchedLessons = new Set<string>();
-      for (const record of courseRecords) {
-        if (record.lessonId && lessonsById.has(record.lessonId)) {
-          touchedLessons.add(record.lessonId);
-          continue;
-        }
-
-        const fallbackLesson = record.lessonCodes
-          .map(code => lessonsByCode.get(code))
-          .find(Boolean);
-        if (fallbackLesson) touchedLessons.add(fallbackLesson.id);
-      }
-
-      const criteriaProgress = criteria.map((criterion) => {
-        let bestScore = 0;
-        let bestGrade = '';
-        let isComplete = false;
-
-        for (const record of courseRecords) {
-          const grade = record.criteriaGrades?.[criterion.id];
-          if (!grade || grade === '-') continue;
-
-          const lesson = record.lessonId ? lessonsById.get(record.lessonId) : undefined;
-          const passMarkForLesson = lesson?.passMarks?.[criterion.id] ?? criterion.passingGrade;
-          const system = criterion.gradingSystem;
-
-          const score = gradeScore(grade, system);
-          if (score > bestScore) {
-            bestScore = score;
-            bestGrade = grade;
-          }
-          if (isGradeAtLeastTarget(grade, passMarkForLesson, system)) {
-            isComplete = true;
-          }
-        }
-
-        return { criterion, bestGrade, bestScore, isComplete };
-      });
-
-      const completedLessons = touchedLessons.size;
-      const lessonPercentage = lessons.length > 0 ? (completedLessons / lessons.length) * 100 : 0;
-      const criteriaPercentage = criteriaProgress.length > 0
-        ? (criteriaProgress.reduce((sum, cp) => sum + cp.bestScore, 0) / criteriaProgress.length) * 100
-        : 0;
-
-      const percentage = criteriaProgress.length > 0
-        ? Math.min(100, Math.round((lessonPercentage + criteriaPercentage) / 2))
-        : Math.min(100, Math.round(lessonPercentage));
-
-      const criteriaComplete = criteriaProgress.length > 0 && criteriaProgress.every((cp) => cp.isComplete);
-      const lessonsComplete = completedLessons === lessons.length && lessons.length > 0;
-      const isComplete = trainingSettings.courseCompletionRule === 'all_lessons_attempted'
-        ? lessonsComplete
-        : trainingSettings.courseCompletionRule === 'criteria_or_lessons'
-          ? criteriaComplete || lessonsComplete
-          : criteriaProgress.length > 0
-            ? criteriaComplete
-            : lessonsComplete;
-
-      return {
-        course,
-        percentage,
-        isComplete,
-        completedLessons,
-        totalLessons: lessons.length,
-        criteriaProgress,
-        hasCriteria: criteria.length > 0,
-        recordsCount: courseRecords.length,
-      };
-    }).filter(Boolean) as NonNullable<ReturnType<typeof courses['map']>[number]>[];
-  }, [courses, trainingRecords, trainingSettings.courseCompletionRule]);
+  const [grantingEndorsementCourseIds, setGrantingEndorsementCourseIds] = useState<Set<string>>(new Set());
+  const courseProgress = useMemo(
+    () => calculateCourseProgress(courses, trainingRecords, trainingSettings.courseCompletionRule),
+    [courses, trainingRecords, trainingSettings.courseCompletionRule]
+  );
 
   const enrolledCourses = courseProgress.filter((cp) => {
-    if (!cp) return false;
-    return (cp as any).recordsCount > 0 || (cp as any).completedLessons > 0 || (cp as any).percentage > 0;
-  }) as Array<{
-    course: TrainingModule;
-    percentage: number;
-    isComplete: boolean;
-    completedLessons: number;
-    totalLessons: number;
-    criteriaProgress: Array<{ criterion: any; bestGrade: string; bestScore: number; isComplete: boolean }>;
-    hasCriteria: boolean;
-    recordsCount: number;
-  }>;
+    return cp.recordsCount > 0 || cp.completedLessons > 0 || cp.percentage > 0;
+  });
+
+  const grantCompletionEndorsement = useCallback(async (course: TrainingModule) => {
+    if (!student || !user || !course.completionEndorsementEnabled || !course.completionEndorsementType?.trim()) return;
+    if (!hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])) return;
+
+    const endorsementType = course.completionEndorsementType.trim();
+    const alreadyActive = student.endorsements.some((endorsement) =>
+      endorsement.isActive && endorsement.type.trim().toLowerCase() === endorsementType.toLowerCase()
+    );
+    if (alreadyActive || grantingEndorsementCourseIds.has(course.id)) return;
+
+    setGrantingEndorsementCourseIds((current) => new Set(current).add(course.id));
+    try {
+      const obtained = new Date();
+      const expiryDate = course.completionEndorsementExpiryMonths
+        ? new Date(obtained.getFullYear(), obtained.getMonth() + course.completionEndorsementExpiryMonths, obtained.getDate())
+        : null;
+
+      const { error } = await supabase.from('endorsements').insert({
+        student_id: student.id,
+        type: endorsementType,
+        date_obtained: obtained.toISOString().slice(0, 10),
+        expiry_date: expiryDate ? expiryDate.toISOString().slice(0, 10) : null,
+        instructor_id: user.id,
+        is_active: true,
+      });
+
+      if (error) throw error;
+      await refetchStudents();
+      toast.success(`${endorsementType} endorsement granted for course completion`);
+    } catch (error) {
+      console.error('Failed to grant completion endorsement:', error);
+      toast.error('Failed to grant completion endorsement');
+    } finally {
+      setGrantingEndorsementCourseIds((current) => {
+        const next = new Set(current);
+        next.delete(course.id);
+        return next;
+      });
+    }
+  }, [grantingEndorsementCourseIds, refetchStudents, student, user]);
+
+  useEffect(() => {
+    if (!student || !user || !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])) return;
+    enrolledCourses.forEach(({ course, isComplete, percentage }) => {
+      if (isComplete && percentage >= 100 && course.completionEndorsementEnabled) {
+        void grantCompletionEndorsement(course);
+      }
+    });
+  }, [enrolledCourses, grantCompletionEndorsement, student, user]);
+
+  const handleExportProgressVideo = () => {
+    if (!student) {
+      toast.error('Student file is still loading');
+      return;
+    }
+
+    const sortedCourses = [...enrolledCourses].sort((a, b) => b.percentage - a.percentage);
+    const totalDualMinutes = trainingRecords.reduce((sum, record) => sum + record.dualTimeMin, 0);
+    const totalSoloMinutes = trainingRecords.reduce((sum, record) => sum + record.soloTimeMin, 0);
+    const competentSequences = trainingRecords.reduce(
+      (sum, record) => sum + record.sequences.filter(sequence => sequence.competence === 'C').length,
+      0
+    );
+    const recentActivity = [...trainingRecords]
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 6)
+      .map(record => {
+        const instructor = users.find(u => u.id === record.instructorId);
+        const minutes = record.dualTimeMin + record.soloTimeMin;
+        return {
+          date: record.date.toISOString(),
+          title: record.lessonCodes.length > 0 ? record.lessonCodes.join(', ') : 'Training flight',
+          detail: `${record.registration || record.aircraftType || 'Aircraft'} - ${formatDecimalTime(minutes)}h with ${instructor?.name || 'Instructor'}`,
+          status: record.status,
+        };
+      });
+
+    const videoProps: StudentProgressVideoProps = {
+      clubName: 'Bendigo Flying Club',
+      generatedAt: new Date().toISOString(),
+      student: {
+        name: student.name,
+        email: student.email,
+        role: student.roles?.includes('pilot') || student.role === 'pilot' ? 'Pilot' : 'Student',
+        raausId: student.raausId,
+        casaId: student.casaId,
+      },
+      stats: {
+        totalHours: Number(((totalDualMinutes + totalSoloMinutes) / 60).toFixed(1)),
+        dualHours: Number((totalDualMinutes / 60).toFixed(1)),
+        soloHours: Number((totalSoloMinutes / 60).toFixed(1)),
+        recordsCount: trainingRecords.length,
+        competentSequences,
+        examsPassed: examResults.filter(exam => exam.result === 'pass').length,
+        coursesCompleted: enrolledCourses.filter(course => course.isComplete).length,
+        coursesInProgress: enrolledCourses.filter(course => !course.isComplete).length,
+      },
+      courses: sortedCourses.slice(0, 5).map(({ course, percentage, completedLessons, totalLessons, isComplete }) => ({
+        title: course.title,
+        category: course.category,
+        percentage,
+        completedLessons,
+        totalLessons,
+        isComplete,
+      })),
+      recentActivity,
+      exams: examResults
+        .slice()
+        .sort((a, b) => b.examDate.getTime() - a.examDate.getTime())
+        .slice(0, 5)
+        .map(exam => ({
+          name: exam.examName,
+          score: exam.score,
+          passMark: exam.passMark,
+          result: exam.result,
+          date: exam.examDate.toISOString(),
+        })),
+    };
+
+    downloadStudentProgressVideoProps(videoProps);
+    toast.success('Video data exported. Run npm run render:student-progress -- --props=path-to-json --out=student-progress.mp4');
+  };
 
   const handleExportCourse = async (course: TrainingModule) => {
     if (!student) {
@@ -3387,6 +3588,21 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col gap-3 rounded-lg border border-blue-100 bg-blue-50 p-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-blue-950">Student Progress Export Video</h3>
+          <p className="mt-1 text-sm text-blue-800">Download render-ready Remotion data for a branded MP4 progress video.</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleExportProgressVideo}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+        >
+          <Download className="h-4 w-4" />
+          Export Video Data
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
           <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Courses In Progress</p>
@@ -3413,6 +3629,12 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
                       <CheckCircle className="h-3 w-3 mr-1" />
                       Completed
+                    </span>
+                  )}
+                  {course.completionEndorsementEnabled && course.completionEndorsementType && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                      <Award className="h-3 w-3 mr-1" />
+                      Grants {course.completionEndorsementType}
                     </span>
                   )}
                 </div>

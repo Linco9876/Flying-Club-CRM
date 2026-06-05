@@ -29,6 +29,7 @@ export const LoginForm: React.FC = () => {
         toast.error(result.error || 'Unable to sign in. Please check your details and try again.');
       } else {
         sessionStorage.removeItem('lastPasswordResetEmail');
+        localStorage.removeItem('bfc_kiosk_mode');
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -45,17 +46,41 @@ export const LoginForm: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
-            <Plane className="h-8 w-8 text-white" />
+    <div className="auth-light-surface min-h-screen bg-white lg:grid lg:grid-cols-2">
+      <div className="relative hidden min-h-screen overflow-hidden lg:flex">
+        <img
+          src="/auth-aircraft-sunset.png"
+          alt="Aircraft wing at sunset"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-black/35 via-black/15 to-black/45" />
+        <div className="relative z-10 flex w-full flex-col items-center justify-center px-12 text-center text-white">
+          <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-white/15 backdrop-blur">
+            <Plane className="h-7 w-7" />
           </div>
-          <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Bendigo Flying Club</h2>
-          <p className="text-gray-600">Flight Training Management System</p>
+          <h1 className="text-5xl font-extrabold tracking-tight">Bendigo Flying Club</h1>
+          <p className="mt-4 max-w-md text-base font-medium text-white/90">
+            Flight Training Management System
+          </p>
         </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow-xl p-8">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-10 sm:px-6 lg:bg-white lg:px-10">
+        <div className="w-full max-w-lg">
+          <div className="mb-8 text-center lg:hidden">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600">
+              <Plane className="h-8 w-8 text-white" />
+            </div>
+            <h2 className="text-3xl font-extrabold text-gray-900">Bendigo Flying Club</h2>
+            <p className="mt-2 text-gray-600">Flight Training Management System</p>
+          </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-xl">
+          <div className="mb-8 text-center">
+            <h2 className="text-3xl font-extrabold text-slate-950">Welcome back!</h2>
+            <p className="mt-2 text-sm text-gray-500">Go ahead and log in below</p>
+          </div>
+
           {email && sessionStorage.getItem('lastPasswordResetEmail') === email && (
             <div className="mb-5 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
               Use the new password for <span className="font-semibold">{email}</span>.
@@ -74,8 +99,8 @@ export const LoginForm: React.FC = () => {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Enter your email"
+                className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Type your email"
               />
             </div>
 
@@ -91,8 +116,8 @@ export const LoginForm: React.FC = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-3 pr-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter your password"
+                  className="w-full rounded-md border border-gray-300 px-3 py-3 pr-10 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Type your password"
                 />
                 <button
                   type="button"
@@ -121,7 +146,7 @@ export const LoginForm: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex w-full justify-center rounded-xl border border-transparent bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition-colors hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoading ? 'Signing in...' : 'Sign In'}
             </button>
@@ -135,6 +160,7 @@ export const LoginForm: React.FC = () => {
               Don't have an account? Sign up
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>

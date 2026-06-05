@@ -390,7 +390,7 @@ export const TrainingModuleBuilder: React.FC = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="min-w-0 space-y-6 p-3 sm:p-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Training Module Builder</h1>
@@ -418,8 +418,8 @@ export const TrainingModuleBuilder: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <aside className="space-y-4">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[280px_minmax(0,1fr)_320px]">
+        <aside className="min-w-0 space-y-4">
           <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 px-4 py-3">
               <h2 className="text-sm font-semibold text-gray-900">Modules</h2>
@@ -431,16 +431,16 @@ export const TrainingModuleBuilder: React.FC = () => {
                   <button
                     key={module.id}
                     onClick={() => handleSelectModule(module.id)}
-                    className={`w-full rounded-xl border p-4 text-left transition-all ${
+                  className={`w-full min-w-0 rounded-xl border p-4 text-left transition-all ${
                       isActive
                         ? 'border-blue-200 bg-blue-50 shadow-sm'
                         : 'border-transparent bg-gray-50 hover:border-blue-200 hover:bg-blue-50'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-gray-900">{module.title}</span>
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-sm font-semibold text-gray-900">{module.title}</span>
                       <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                           module.status === 'published'
                             ? 'bg-green-100 text-green-700'
                             : 'bg-amber-100 text-amber-700'
@@ -450,12 +450,12 @@ export const TrainingModuleBuilder: React.FC = () => {
                       </span>
                     </div>
                     <p className="mt-2 text-xs text-gray-600 line-clamp-2">{module.description}</p>
-                    <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                    <div className="mt-3 flex min-w-0 items-center justify-between gap-2 text-xs text-gray-500">
                       <span className="inline-flex items-center gap-1">
                         <Clock3 className="h-3.5 w-3.5" />
                         {module.estimatedDurationHours} hrs
                       </span>
-                      <span>
+                      <span className="min-w-0 truncate">
                         {formatDistanceToNow(new Date(module.lastUpdated), { addSuffix: true })}
                       </span>
                     </div>

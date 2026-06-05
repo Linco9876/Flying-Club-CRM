@@ -18,6 +18,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
+import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 
 interface PersonalPreferencesSettingsProps {
   canEdit: boolean;
@@ -35,6 +36,7 @@ interface ProfileFormData {
   name: string;
   email: string;
   avatarUrl: string;
+  coverUrl: string;
   birthdate: string;
   mobile: string;
   homePhone: string;
@@ -51,11 +53,20 @@ interface ProfileFormData {
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
 const AVATAR_BUCKET = 'user-avatars';
+const MAX_SOURCE_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_UPLOAD_IMAGE_BYTES = 5 * 1024 * 1024;
+
+const imageTargets = {
+  avatar: { width: 512, height: 512, quality: 0.84, fit: 'cover' as const },
+  cover: { width: 1600, height: 600, quality: 0.82, fit: 'cover' as const },
+  background: { width: 1920, height: 1080, quality: 0.78, fit: 'cover' as const },
+};
 
 const blankProfile: ProfileFormData = {
   name: '',
   email: '',
   avatarUrl: '',
+  coverUrl: '',
   birthdate: '',
   mobile: '',
   homePhone: '',
@@ -86,9 +97,12 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const [savedProfile, setSavedProfile] = useState<ProfileFormData>(blankProfile);
   const [profileLoading, setProfileLoading] = useState(true);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState('');
-  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [coverPreview, setCoverPreview] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
   const [preferenceForm, setPreferenceForm] = useState<PreferenceFormData>(() => {
     const { user_id, preferences: _preferences, ...defaults } = defaultUserPreferences(user?.id || '');
     return defaults;
@@ -137,6 +151,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         name: userData?.name || user.name || '',
         email: userData?.email || user.email || '',
         avatarUrl: userData?.avatar_url || user.avatar || '',
+        coverUrl: userData?.cover_url || user.coverPhoto || '',
         birthdate: userData?.date_of_birth || studentData?.date_of_birth || '',
         mobile: userData?.mobile_phone || userData?.phone || user.phone || '',
         homePhone: userData?.home_phone || '',
@@ -151,6 +166,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setProfileForm(nextProfile);
       setSavedProfile(nextProfile);
       setAvatarFile(null);
+      setCoverFile(null);
     } catch (err: any) {
       console.error('Failed to load account settings:', err);
       toast.error(err.message || 'Failed to load account settings');
@@ -181,6 +197,17 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   }, [avatarFile]);
 
   useEffect(() => {
+    if (!coverFile) {
+      setCoverPreview('');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(coverFile);
+    setCoverPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [coverFile]);
+
+  useEffect(() => {
     const globalSaveKey = `__${saveKey.replace(/-/g, '')}SettingsSave`;
     const globalCancelKey = `__${saveKey.replace(/-/g, '')}SettingsCancel`;
 
@@ -190,43 +217,95 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     (window as any)[globalCancelKey] = () => {
       setProfileForm(savedProfile);
       setAvatarFile(null);
+      setCoverFile(null);
       if (preferences) {
         const { id, user_id, preferences: _preferences, ...values } = preferences;
         setPreferenceForm(values);
+        applyPortalTheme(values.theme);
+        storePortalTheme(values.theme, user?.id);
       }
     };
     return () => {
       delete (window as any)[globalSaveKey];
       delete (window as any)[globalCancelKey];
     };
-  }, [profileForm, savedProfile, preferenceForm, preferences, updatePreferences, user?.id, saveKey, avatarFile]);
+  }, [profileForm, savedProfile, preferenceForm, preferences, updatePreferences, user?.id, saveKey, avatarFile, coverFile]);
 
-  const safeAvatarFilename = (filename: string) => filename
+  const safeImageFilename = (filename: string) => filename
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'avatar';
+    .replace(/^-+|-+$/g, '') || 'image';
 
-  const uploadAvatar = async () => {
-    if (!user?.id || !avatarFile) return profileForm.avatarUrl || null;
+  const compressImageForUpload = async (file: File, kind: 'avatar' | 'cover') => {
+    const target = imageTargets[kind];
+    const imageUrl = URL.createObjectURL(file);
 
-    if (!avatarFile.type.startsWith('image/')) {
-      toast.error('Avatar must be an image file');
-      throw new Error('Invalid avatar file type');
-    }
-
-    if (avatarFile.size > 5 * 1024 * 1024) {
-      toast.error('Avatar image must be smaller than 5 MB');
-      throw new Error('Avatar image too large');
-    }
-
-    setAvatarUploading(true);
     try {
-      const path = `${user.id}/avatar-${Date.now()}-${safeAvatarFilename(avatarFile.name)}`;
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = imageUrl;
+      try {
+        await image.decode();
+      } catch {
+        throw new Error('This image format could not be optimized. Please use JPG, PNG, or WebP.');
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = target.width;
+      canvas.height = target.height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Image compression is not available in this browser');
+
+      context.fillStyle = '#f3f4f6';
+      context.fillRect(0, 0, target.width, target.height);
+
+      const scale = target.fit === 'cover'
+        ? Math.max(target.width / image.naturalWidth, target.height / image.naturalHeight)
+        : Math.min(target.width / image.naturalWidth, target.height / image.naturalHeight, 1);
+      const drawWidth = Math.round(image.naturalWidth * scale);
+      const drawHeight = Math.round(image.naturalHeight * scale);
+      const drawX = Math.round((target.width - drawWidth) / 2);
+      const drawY = Math.round((target.height - drawHeight) / 2);
+
+      context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+
+      const blob = await new Promise<Blob | null>(resolve => {
+        canvas.toBlob(resolve, 'image/webp', target.quality);
+      });
+
+      if (!blob) throw new Error('Image compression failed');
+      if (blob.size > MAX_UPLOAD_IMAGE_BYTES) {
+        throw new Error('Compressed image is still larger than 5 MB');
+      }
+
+      return new File([blob], `${kind}-${Date.now()}.webp`, { type: 'image/webp' });
+    } finally {
+      URL.revokeObjectURL(imageUrl);
+    }
+  };
+
+  const uploadImage = async (file: File | null, kind: 'avatar' | 'cover') => {
+    if (!user?.id || !file) return null;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image file');
+      throw new Error('Invalid image file type');
+    }
+
+    if (file.size > MAX_SOURCE_IMAGE_BYTES) {
+      toast.error('Image must be smaller than 15 MB');
+      throw new Error('Image too large');
+    }
+
+    setImageUploading(true);
+    try {
+      const uploadFile = await compressImageForUpload(file, kind);
+      const path = `${user.id}/${kind}-${Date.now()}-${safeImageFilename(uploadFile.name)}`;
       const { error } = await supabase.storage
         .from(AVATAR_BUCKET)
-        .upload(path, avatarFile, {
+        .upload(path, uploadFile, {
           cacheControl: '3600',
-          contentType: avatarFile.type,
+          contentType: uploadFile.type,
           upsert: false,
         });
 
@@ -235,7 +314,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
       return data.publicUrl;
     } finally {
-      setAvatarUploading(false);
+      setImageUploading(false);
     }
   };
 
@@ -284,11 +363,13 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       toast.success('Verification email sent. Your login email will change after you confirm it.');
     }
 
-    const avatarUrl = avatarFile ? await uploadAvatar() : profileForm.avatarUrl.trim() || null;
+    const avatarUrl = avatarFile ? await uploadImage(avatarFile, 'avatar') : profileForm.avatarUrl.trim() || null;
+    const coverUrl = coverFile ? await uploadImage(coverFile, 'cover') : profileForm.coverUrl.trim() || null;
 
     const profileUpdates = {
       name: profileForm.name.trim(),
       avatar_url: avatarUrl,
+      cover_url: coverUrl,
       phone: profileForm.mobile.trim() || null,
       mobile_phone: profileForm.mobile.trim() || null,
       home_phone: profileForm.homePhone.trim() || null,
@@ -324,10 +405,14 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       if (studentError) throw studentError;
     }
 
-    await updatePreferences(preferenceForm);
+    await updatePreferences({
+      ...preferenceForm,
+      background_image_url: '',
+    });
     setProfileForm(prev => ({
       ...prev,
       avatarUrl: avatarUrl || '',
+      coverUrl: coverUrl || '',
       currentPassword: '',
       newPassword: '',
       confirmPassword: '',
@@ -343,17 +428,18 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     onFormChange();
   };
 
-  const handleAvatarChange = (file: File | undefined) => {
+  const handleImageChange = (file: File | undefined, kind: 'avatar' | 'cover') => {
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      toast.error('Choose an image file for your avatar');
+      toast.error('Choose an image file');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Avatar image must be smaller than 5 MB');
+    if (file.size > MAX_SOURCE_IMAGE_BYTES) {
+      toast.error('Image must be smaller than 15 MB');
       return;
     }
-    setAvatarFile(file);
+    if (kind === 'avatar') setAvatarFile(file);
+    if (kind === 'cover') setCoverFile(file);
     onFormChange();
   };
 
@@ -363,8 +449,18 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     if (avatarInputRef.current) avatarInputRef.current.value = '';
   };
 
-  const updatePreference = (field: PreferenceField, value: string | boolean) => {
+  const removeCover = () => {
+    setCoverFile(null);
+    updateProfile('coverUrl', '');
+    if (coverInputRef.current) coverInputRef.current.value = '';
+  };
+
+  const updatePreference = (field: PreferenceField, value: string | boolean | number) => {
     setPreferenceForm(prev => ({ ...prev, [field]: value }));
+    if (field === 'theme') {
+      applyPortalTheme(value);
+      storePortalTheme(value, user?.id);
+    }
     onFormChange();
   };
 
@@ -419,6 +515,77 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         placeholder={placeholder}
         className={inputClass}
       />
+    </div>
+  );
+
+  const ImageSetting = ({
+    label,
+    description,
+    preview,
+    file,
+    inputRef,
+    onChoose,
+    onRemove,
+    shape = 'rectangle',
+  }: {
+    label: string;
+    description: string;
+    preview: string;
+    file: File | null;
+    inputRef: React.RefObject<HTMLInputElement>;
+    onChoose: (file: File | undefined) => void;
+    onRemove: () => void;
+    shape?: 'avatar' | 'rectangle';
+  }) => (
+    <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-4">
+        <div className={`relative flex flex-shrink-0 items-center justify-center overflow-hidden bg-blue-600 text-white ${
+          shape === 'avatar' ? 'h-20 w-20 rounded-full ring-4 ring-blue-50' : 'h-20 w-32 rounded-lg border border-gray-200'
+        }`}>
+          {preview ? (
+            <img src={preview} alt="" className="h-full w-full object-cover" />
+          ) : shape === 'avatar' ? (
+            <User className="h-9 w-9" />
+          ) : (
+            <Camera className="h-8 w-8 text-white/80" />
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900">{label}</p>
+          <p className="mt-1 text-xs text-gray-500">{description}</p>
+          {file && <p className="mt-1 truncate text-xs text-blue-600">{file.name}</p>}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={event => onChoose(event.target.files?.[0])}
+          disabled={!canEdit || imageUploading}
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={!canEdit || imageUploading}
+          className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {imageUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+          Change
+        </button>
+        {(preview || file) && (
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={!canEdit || imageUploading}
+            className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            Remove
+          </button>
+        )}
+      </div>
     </div>
   );
 
@@ -483,56 +650,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         <div className="space-y-6">
           <section className="space-y-4">
             <h3 className="text-lg font-medium text-gray-900">Personal Details</h3>
-            <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-center gap-4">
-                <div className="relative flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-600 text-white ring-4 ring-blue-50">
-                  {avatarPreview || profileForm.avatarUrl ? (
-                    <img
-                      src={avatarPreview || profileForm.avatarUrl}
-                      alt={`${profileForm.name || 'User'} avatar`}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <User className="h-9 w-9" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">Profile photo</p>
-                  <p className="mt-1 text-xs text-gray-500">Shown in the header and user lists. JPG, PNG or WebP up to 5 MB.</p>
-                  {avatarFile && <p className="mt-1 truncate text-xs text-blue-600">{avatarFile.name}</p>}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={event => handleAvatarChange(event.target.files?.[0])}
-                  disabled={!canEdit || avatarUploading}
-                />
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  disabled={!canEdit || avatarUploading}
-                  className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-                  Change Photo
-                </button>
-                {(profileForm.avatarUrl || avatarFile) && (
-                  <button
-                    type="button"
-                    onClick={removeAvatar}
-                    disabled={!canEdit || avatarUploading}
-                    className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="Name" field="name" />
               <Field label="Email" field="email" type="email" />
@@ -655,6 +772,67 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </Select>
             <div className="flex items-end">
               <Toggle field="compact_view" label="Compact view" description="Use denser lists and tables where supported." />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <ImageSetting
+              label="Profile photo"
+              description="Shown in the header, members list and your profile card. Originals up to 15 MB are saved as a 512px WebP."
+              preview={avatarPreview || profileForm.avatarUrl}
+              file={avatarFile}
+              inputRef={avatarInputRef}
+              onChoose={file => handleImageChange(file, 'avatar')}
+              onRemove={removeAvatar}
+              shape="avatar"
+            />
+            <ImageSetting
+              label="Cover photo"
+              description="Shown across the top of your profile page. Saved as an optimized 1600 x 600 WebP."
+              preview={coverPreview || profileForm.coverUrl}
+              file={coverFile}
+              inputRef={coverInputRef}
+              onChoose={file => handleImageChange(file, 'cover')}
+              onRemove={removeCover}
+            />
+          </div>
+          <div className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 md:grid-cols-[1fr_220px] md:items-center">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Background colour</label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={preferenceForm.background_color || '#f3f4f6'}
+                    onChange={event => updatePreference('background_color', event.target.value)}
+                    disabled={!canEdit}
+                    className="h-10 w-14 rounded-md border border-gray-300 bg-white p-1 disabled:opacity-50"
+                  />
+                  <input
+                    type="text"
+                    value={preferenceForm.background_color || '#f3f4f6'}
+                    onChange={event => updatePreference('background_color', event.target.value)}
+                    disabled={!canEdit}
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updatePreference('background_color', '#f3f4f6')}
+                    disabled={!canEdit}
+                    className="whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Back to default
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-gray-500">Used behind the CRM shell. Keep it subtle so cards and tables remain easy to read.</p>
+              </div>
+            </div>
+            <div
+              className="relative h-32 overflow-hidden rounded-lg border border-gray-200"
+              style={{ backgroundColor: preferenceForm.background_color || '#f3f4f6' }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="rounded-md bg-white/90 px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-sm">Preview</span>
+              </div>
             </div>
           </div>
         </section>

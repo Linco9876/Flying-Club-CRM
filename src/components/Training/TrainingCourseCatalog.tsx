@@ -45,6 +45,9 @@ interface NewCourseState {
   description: string;
   estimatedDurationHours: number;
   requiresStudentAcknowledgement: boolean;
+  completionEndorsementEnabled: boolean;
+  completionEndorsementType: string;
+  completionEndorsementExpiryMonths: string;
   tags: string;
   objectives: string;
   evaluationFocus: string;
@@ -55,6 +58,7 @@ interface NewLessonState {
   objective: string;
   flightExercises: string;
   theory: string;
+  isFlightTest: boolean;
 }
 
 type CourseFormState = NewCourseState;
@@ -499,6 +503,7 @@ const pilotCertificateFlightTestTemplate: NewLessonState = {
   objective: 'Complete the RAAus Pilot Certificate Flight Test and record the result against the student file as the certificate flight review / test outcome.',
   flightExercises: '<ul><li>Pre-flight planning, aircraft documents and operational decision making.</li><li>Normal and abnormal handling across the RPC flight test profile.</li><li>Circuit, forced landing, training area, emergency and undesired-state management.</li><li>Post-flight debrief, result, limitations and next actions.</li></ul>',
   theory: '<p>Confirm Presolo, Radio, BAK and Pre Certificate Airlaw exam results are recorded before the certificate test result is finalised.</p>',
+  isFlightTest: true,
 };
 
 const normaliseKeyExercises = (content: string) =>
@@ -513,6 +518,9 @@ const emptyCourseForm = (): CourseFormState => ({
   description: '',
   estimatedDurationHours: 6,
   requiresStudentAcknowledgement: true,
+  completionEndorsementEnabled: false,
+  completionEndorsementType: '',
+  completionEndorsementExpiryMonths: '',
   tags: '',
   objectives: '',
   evaluationFocus: '',
@@ -557,7 +565,8 @@ export const TrainingCourseCatalog: React.FC = () => {
     name: '',
     objective: '',
     flightExercises: '',
-    theory: ''
+    theory: '',
+    isFlightTest: false
   });
   // Per-lesson pass marks: criterionId → passingGrade
   const [lessonPassMarks, setLessonPassMarks] = useState<Record<string, string>>({});
@@ -568,7 +577,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (modules.length === 0) {
       setSelectedModuleId(null);
       setShowLessonForm(false);
-      setNewLesson({ name: '', objective: '', flightExercises: '', theory: '' });
+      setNewLesson({ name: '', objective: '', flightExercises: '', theory: '', isFlightTest: false });
       setLessonPassMarks({});
       return;
     }
@@ -576,7 +585,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (!selectedModuleId || !modules.some((module) => module.id === selectedModuleId)) {
       setSelectedModuleId(modules[0].id);
       setShowLessonForm(false);
-      setNewLesson({ name: '', objective: '', flightExercises: '', theory: '' });
+      setNewLesson({ name: '', objective: '', flightExercises: '', theory: '', isFlightTest: false });
       setLessonPassMarks({});
     }
   }, [modules, selectedModuleId]);
@@ -688,7 +697,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   }, [selectedModule]);
 
   const resetLessonForm = () => {
-    setNewLesson({ name: '', objective: '', flightExercises: '', theory: '' });
+    setNewLesson({ name: '', objective: '', flightExercises: '', theory: '', isFlightTest: false });
     setLessonPassMarks({});
     setEditingLessonId(null);
   };
@@ -717,6 +726,9 @@ export const TrainingCourseCatalog: React.FC = () => {
       description: selectedModule.description,
       estimatedDurationHours: selectedModule.estimatedDurationHours,
       requiresStudentAcknowledgement: selectedModule.requiresStudentAcknowledgement ?? true,
+      completionEndorsementEnabled: selectedModule.completionEndorsementEnabled ?? false,
+      completionEndorsementType: selectedModule.completionEndorsementType ?? '',
+      completionEndorsementExpiryMonths: selectedModule.completionEndorsementExpiryMonths ? String(selectedModule.completionEndorsementExpiryMonths) : '',
       tags: selectedModule.tags.join(', '),
       objectives: selectedModule.objectives.join('\n'),
       evaluationFocus: selectedModule.evaluationCriteria.join('\n'),
@@ -733,6 +745,10 @@ export const TrainingCourseCatalog: React.FC = () => {
     const category = editCourse.category.trim();
     if (!title) { toast.error('Course title is required'); return; }
     if (!category) { toast.error('Category is required'); return; }
+    if (editCourse.completionEndorsementEnabled && !editCourse.completionEndorsementType.trim()) {
+      toast.error('Enter the endorsement name granted by this course');
+      return;
+    }
 
     // Validate criteria
     const criteria: LessonAssessmentCriterion[] = [];
@@ -770,6 +786,11 @@ export const TrainingCourseCatalog: React.FC = () => {
         description: editCourse.description.trim() || cur.description,
         estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
         requiresStudentAcknowledgement: editCourse.requiresStudentAcknowledgement,
+        completionEndorsementEnabled: editCourse.completionEndorsementEnabled,
+        completionEndorsementType: editCourse.completionEndorsementType.trim(),
+        completionEndorsementExpiryMonths: editCourse.completionEndorsementEnabled && editCourse.completionEndorsementExpiryMonths
+          ? Math.max(1, Number(editCourse.completionEndorsementExpiryMonths) || 1)
+          : null,
         tags: tags.length > 0 ? tags : cur.tags,
         objectives,
         evaluationCriteria,
@@ -798,6 +819,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       objective: lesson.objective,
       flightExercises: lesson.flightExercises,
       theory: lesson.theory,
+      isFlightTest: lesson.isFlightTest ?? false,
     });
     // Populate pass marks from existing lesson data
     setLessonPassMarks(lesson.passMarks ?? {});
@@ -878,6 +900,11 @@ export const TrainingCourseCatalog: React.FC = () => {
       return;
     }
 
+    if (newCourse.completionEndorsementEnabled && !newCourse.completionEndorsementType.trim()) {
+      toast.error('Enter the endorsement name granted by this course');
+      return;
+    }
+
     const tags = newCourse.tags
       .split(',')
       .map((tag) => tag.trim())
@@ -901,11 +928,17 @@ export const TrainingCourseCatalog: React.FC = () => {
       status: 'draft',
       estimatedDurationHours: Math.max(1, Number(newCourse.estimatedDurationHours) || 1),
       requiresStudentAcknowledgement: newCourse.requiresStudentAcknowledgement,
+      completionEndorsementEnabled: newCourse.completionEndorsementEnabled,
+      completionEndorsementType: newCourse.completionEndorsementType.trim(),
+      completionEndorsementExpiryMonths: newCourse.completionEndorsementEnabled && newCourse.completionEndorsementExpiryMonths
+        ? Math.max(1, Number(newCourse.completionEndorsementExpiryMonths) || 1)
+        : null,
       prerequisites: [],
       objectives,
       evaluationCriteria,
       tags: tags.length > 0 ? tags : ['draft'],
       assessmentCriteria: builtCriteria,
+      exams: [],
       lessons: [],
       resources: [],
       lastUpdated: new Date()
@@ -1023,6 +1056,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       instructorNotes: flightExercisesPlain,
       assessmentCriteria: [] as LessonAssessmentCriterion[],
       passMarks,
+      isFlightTest: newLesson.isFlightTest,
     };
 
     if (editingLessonId) {
@@ -1266,6 +1300,47 @@ export const TrainingCourseCatalog: React.FC = () => {
                 </span>
               </span>
             </label>
+            <div className="rounded-lg border border-emerald-200 bg-white p-4 text-sm text-emerald-950 md:col-span-2">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={newCourse.completionEndorsementEnabled}
+                  onChange={(event) => setNewCourse((prev) => ({ ...prev, completionEndorsementEnabled: event.target.checked }))}
+                  className="mt-1 h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span>
+                  <span className="block font-semibold">Grant an endorsement at 100% course completion</span>
+                  <span className="mt-1 block text-xs text-emerald-700">
+                    When enabled, staff can grant the configured endorsement once the course reaches 100%.
+                  </span>
+                </span>
+              </label>
+              {newCourse.completionEndorsementEnabled && (
+                <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                  <label className="flex flex-col text-xs font-medium text-emerald-950">
+                    Endorsement name
+                    <input
+                      type="text"
+                      value={newCourse.completionEndorsementType}
+                      onChange={(event) => setNewCourse((prev) => ({ ...prev, completionEndorsementType: event.target.value }))}
+                      placeholder="e.g. Flight Radio, Passenger, Pilot Certificate"
+                      className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+                  <label className="flex flex-col text-xs font-medium text-emerald-950">
+                    Expiry months
+                    <input
+                      type="number"
+                      min={1}
+                      value={newCourse.completionEndorsementExpiryMonths}
+                      onChange={(event) => setNewCourse((prev) => ({ ...prev, completionEndorsementExpiryMonths: event.target.value }))}
+                      placeholder="No expiry"
+                      className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
           {/* Assessment criteria for new course */}
           <div className="mt-6 rounded-lg border border-blue-200 bg-white p-4">
@@ -1343,6 +1418,11 @@ export const TrainingCourseCatalog: React.FC = () => {
                         }`}>
                           {(module.requiresStudentAcknowledgement ?? true) ? 'Student sign-off' : 'No sign-off'}
                         </span>
+                        {module.completionEndorsementEnabled && (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                            Completion endorsement
+                          </span>
+                        )}
                       </div>
                       <p className="mt-1 text-sm text-gray-600">{module.description}</p>
                     </div>
@@ -1468,6 +1548,14 @@ export const TrainingCourseCatalog: React.FC = () => {
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Student acknowledgement</dt>
                     <dd className="mt-1 text-sm text-gray-700">{(selectedModule.requiresStudentAcknowledgement ?? true) ? 'Required for this course' : 'Not required unless forced in settings'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Completion endorsement</dt>
+                    <dd className="mt-1 text-sm text-gray-700">
+                      {selectedModule.completionEndorsementEnabled
+                        ? `${selectedModule.completionEndorsementType || 'Endorsement'}${selectedModule.completionEndorsementExpiryMonths ? ` - expires after ${selectedModule.completionEndorsementExpiryMonths} months` : ''}`
+                        : 'None'}
+                    </dd>
                   </div>
                 </dl>
                 <p className="mt-4 text-xs text-gray-500">Last updated {formatDistanceToNow(selectedModule.lastUpdated, { addSuffix: true })}</p>
@@ -1611,6 +1699,47 @@ export const TrainingCourseCatalog: React.FC = () => {
                         </span>
                       </span>
                     </label>
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 md:col-span-2">
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={editCourse.completionEndorsementEnabled}
+                          onChange={(e) => setEditCourse((p) => ({ ...p, completionEndorsementEnabled: e.target.checked }))}
+                          className="mt-1 h-4 w-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>
+                          <span className="block font-semibold text-emerald-950">Grant an endorsement at 100% course completion</span>
+                          <span className="mt-1 block text-xs text-emerald-700">
+                            The endorsement is available once the student's course progress reaches 100%.
+                          </span>
+                        </span>
+                      </label>
+                      {editCourse.completionEndorsementEnabled && (
+                        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                          <label className="flex flex-col text-xs font-medium text-emerald-950">
+                            Endorsement name
+                            <input
+                              type="text"
+                              value={editCourse.completionEndorsementType}
+                              onChange={(e) => setEditCourse((p) => ({ ...p, completionEndorsementType: e.target.value }))}
+                              placeholder="e.g. Flight Radio, Passenger, Pilot Certificate"
+                              className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none"
+                            />
+                          </label>
+                          <label className="flex flex-col text-xs font-medium text-emerald-950">
+                            Expiry months
+                            <input
+                              type="number"
+                              min={1}
+                              value={editCourse.completionEndorsementExpiryMonths}
+                              onChange={(e) => setEditCourse((p) => ({ ...p, completionEndorsementExpiryMonths: e.target.value }))}
+                              placeholder="No expiry"
+                              className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none"
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {/* Assessment criteria editor */}
                   <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -1758,6 +1887,20 @@ export const TrainingCourseCatalog: React.FC = () => {
                       placeholder="Summarise the key theory discussion points, references or briefing sequence."
                     />
                   </div>
+                  <label className="mt-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-white p-4 text-sm text-amber-950">
+                    <input
+                      type="checkbox"
+                      checked={newLesson.isFlightTest}
+                      onChange={(event) => setNewLesson((prev) => ({ ...prev, isFlightTest: event.target.checked }))}
+                      className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span>
+                      <span className="block font-semibold">This lesson is a test flight</span>
+                      <span className="mt-1 block text-xs text-amber-700">
+                        Test flights are defined in the course, not selected later on individual flight records.
+                      </span>
+                    </span>
+                  </label>
                   <div className="mt-6 rounded-lg border border-blue-200 bg-white p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2 text-blue-900">
@@ -1892,6 +2035,12 @@ export const TrainingCourseCatalog: React.FC = () => {
                                   <h4 className="min-w-0 flex-1 text-base font-semibold text-gray-900">
                                     {lesson.name || lesson.sequenceTitle}
                                   </h4>
+                                  {lesson.isFlightTest && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                                      <Award className="h-3 w-3" />
+                                      Test flight
+                                    </span>
+                                  )}
                                 </div>
                                 <p className="mt-1 text-sm text-gray-600">
                                   {lesson.objective || 'Document the lesson objective for instructors.'}

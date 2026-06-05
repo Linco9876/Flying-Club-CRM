@@ -1,2 +1,5 @@
 [functions.invite-user]
 verify_jwt = false
+
+[functions.change-user-email]
+verify_jwt = false

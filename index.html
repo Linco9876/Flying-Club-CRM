@@ -5,6 +5,37 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bendigo Flying Club Flight Training Management System</title>
+    <script>
+      (function () {
+        try {
+          var currentUserId = '';
+          for (var i = 0; i < localStorage.length; i += 1) {
+            var key = localStorage.key(i);
+            if (!key || key.indexOf('sb-') !== 0 || key.indexOf('-auth-token') === -1) continue;
+            try {
+              var sessionValue = JSON.parse(localStorage.getItem(key) || '{}');
+              currentUserId =
+                (sessionValue.user && sessionValue.user.id) ||
+                (sessionValue.currentSession && sessionValue.currentSession.user && sessionValue.currentSession.user.id) ||
+                '';
+              if (currentUserId) break;
+            } catch (error) {}
+          }
+
+          var userThemeKey = currentUserId ? 'bfc.portal.theme.user.' + currentUserId : '';
+          var theme = (userThemeKey && localStorage.getItem(userThemeKey)) || localStorage.getItem('bfc.portal.theme') || 'auto';
+          if (!/^(light|semi-dark|dark|auto)$/.test(theme)) theme = 'auto';
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var useDark = theme === 'dark' || theme === 'semi-dark' || (theme === 'auto' && prefersDark);
+          document.documentElement.dataset.portalTheme = useDark ? 'dark' : 'light';
+          if (theme === 'semi-dark') {
+            document.documentElement.dataset.portalVariant = 'semi-dark';
+          }
+        } catch (error) {
+          document.documentElement.dataset.portalTheme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

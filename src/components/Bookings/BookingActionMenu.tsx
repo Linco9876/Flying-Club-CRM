@@ -1,5 +1,5 @@
 import React from 'react';
-import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon } from 'lucide-react';
+import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User } from 'lucide-react';
 import { Booking } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
@@ -11,6 +11,7 @@ interface BookingActionMenuProps {
   onEditFlightLog?: () => void;
   onDeleteFlightLog?: () => void;
   onDelete: () => void;
+  onViewHirerProfile?: () => void;
   onViewTrainingRecord?: () => void;
   onApprove?: () => void;
   onReject?: () => void;
@@ -29,6 +30,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   onEditFlightLog,
   onDeleteFlightLog,
   onDelete,
+  onViewHirerProfile,
   onViewTrainingRecord,
   onApprove,
   onReject,
@@ -84,12 +86,12 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   }, [isOpen, position, onClose]);
 
   const handleAction = (action: () => void) => {
-    action();
     if (position && onClose) {
       onClose();
     } else {
       setIsOpen(false);
     }
+    window.setTimeout(action, 0);
   };
 
   React.useLayoutEffect(() => {
@@ -109,6 +111,16 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
 
   const menuContent = (
     <>
+      {onViewHirerProfile && (
+        <button
+          onClick={() => handleAction(onViewHirerProfile)}
+          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+        >
+          <User className="h-4 w-4" />
+          <span>View Hirer Profile</span>
+        </button>
+      )}
+
       {!isFlightLogged && (
         <button
           onClick={() => handleAction(onEdit)}

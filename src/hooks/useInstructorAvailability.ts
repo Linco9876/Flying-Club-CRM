@@ -6,6 +6,10 @@ const AVAILABILITY_UPDATED_EVENT = 'instructor-availability-updated';
 
 const normalizeTime = (time?: string | null) => time ? time.slice(0, 5) : undefined;
 
+let weeklySchedulesCache: WeeklySchedule[] | null = null;
+let absencesCache: Absence[] | null = null;
+let scheduleChangesCache: ScheduleChange[] | null = null;
+
 export interface WeeklySchedule {
   id: string;
   userId: string;
@@ -39,14 +43,71 @@ export interface ScheduleChange {
   isAvailable: boolean;
 }
 
+const mapWeeklyScheduleRow = (s: any): WeeklySchedule => ({
+  id: s.id,
+  userId: s.user_id || s.instructor_id,
+  dayOfWeek: s.day_of_week,
+  startTime: normalizeTime(s.start_time) || '09:00',
+  endTime: normalizeTime(s.end_time) || '17:00',
+  afternoonStartTime: normalizeTime(s.afternoon_start_time || s.start_time_2),
+  afternoonEndTime: normalizeTime(s.afternoon_end_time || s.end_time_2),
+  isAvailable: s.is_available
+});
+
+const mapAbsenceRow = (a: any): Absence => ({
+  id: a.id,
+  userId: a.user_id || a.instructor_id,
+  startDate: a.start_date,
+  endDate: a.end_date,
+  startTime: normalizeTime(a.start_time),
+  endTime: normalizeTime(a.end_time),
+  reason: a.reason
+});
+
+const mapScheduleChangeRow = (c: any): ScheduleChange => ({
+  id: c.id,
+  userId: c.user_id || c.instructor_id,
+  effectiveFrom: c.effective_from || c.change_date,
+  dayOfWeek: c.day_of_week,
+  startTime: normalizeTime(c.start_time) || '09:00',
+  endTime: normalizeTime(c.end_time) || '17:00',
+  afternoonStartTime: normalizeTime(c.afternoon_start_time || c.start_time_2),
+  afternoonEndTime: normalizeTime(c.afternoon_end_time || c.end_time_2),
+  isAvailable: c.is_available
+});
+
 export const useInstructorAvailability = (instructorId?: string) => {
-  const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>([]);
-  const [absences, setAbsences] = useState<Absence[]>([]);
-  const [scheduleChanges, setScheduleChanges] = useState<ScheduleChange[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>(() => weeklySchedulesCache || []);
+  const [absences, setAbsences] = useState<Absence[]>(() => absencesCache || []);
+  const [scheduleChanges, setScheduleChanges] = useState<ScheduleChange[]>(() => scheduleChangesCache || []);
+  const [loading, setLoading] = useState(() => !weeklySchedulesCache || !absencesCache || !scheduleChangesCache);
 
   const notifyAvailabilityUpdated = () => {
     window.dispatchEvent(new Event(AVAILABILITY_UPDATED_EVENT));
+  };
+
+  const removeWeeklyScheduleFromState = (id: string) => {
+    setWeeklySchedules(prev => {
+      const next = prev.filter(schedule => schedule.id !== id);
+      if (!instructorId) weeklySchedulesCache = next;
+      return next;
+    });
+  };
+
+  const removeAbsenceFromState = (id: string) => {
+    setAbsences(prev => {
+      const next = prev.filter(absence => absence.id !== id);
+      if (!instructorId) absencesCache = next;
+      return next;
+    });
+  };
+
+  const removeScheduleChangeFromState = (id: string) => {
+    setScheduleChanges(prev => {
+      const next = prev.filter(change => change.id !== id);
+      if (!instructorId) scheduleChangesCache = next;
+      return next;
+    });
   };
 
   const fetchWeeklySchedules = async (userId?: string) => {
@@ -61,17 +122,11 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       if (error) throw error;
 
-      const schedules = (data || []).map(s => ({
-        id: s.id,
-        userId: s.user_id || s.instructor_id,
-        dayOfWeek: s.day_of_week,
-        startTime: normalizeTime(s.start_time) || '09:00',
-        endTime: normalizeTime(s.end_time) || '17:00',
-        afternoonStartTime: normalizeTime(s.afternoon_start_time || s.start_time_2),
-        afternoonEndTime: normalizeTime(s.afternoon_end_time || s.end_time_2),
-        isAvailable: s.is_available
-      }));
+      const schedules = (data || []).map(mapWeeklyScheduleRow);
 
+      if (!userId) {
+        weeklySchedulesCache = schedules;
+      }
       setWeeklySchedules(schedules);
     } catch (error) {
       console.error('Error fetching weekly schedules:', error);
@@ -91,16 +146,11 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       if (error) throw error;
 
-      const absencesList = (data || []).map(a => ({
-        id: a.id,
-        userId: a.user_id || a.instructor_id,
-        startDate: a.start_date,
-        endDate: a.end_date,
-        startTime: normalizeTime(a.start_time),
-        endTime: normalizeTime(a.end_time),
-        reason: a.reason
-      }));
+      const absencesList = (data || []).map(mapAbsenceRow);
 
+      if (!userId) {
+        absencesCache = absencesList;
+      }
       setAbsences(absencesList);
     } catch (error) {
       console.error('Error fetching absences:', error);
@@ -120,18 +170,11 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       if (error) throw error;
 
-      const changes = (data || []).map(c => ({
-        id: c.id,
-        userId: c.user_id || c.instructor_id,
-        effectiveFrom: c.effective_from || c.change_date,
-        dayOfWeek: c.day_of_week,
-        startTime: normalizeTime(c.start_time) || '09:00',
-        endTime: normalizeTime(c.end_time) || '17:00',
-        afternoonStartTime: normalizeTime(c.afternoon_start_time || c.start_time_2),
-        afternoonEndTime: normalizeTime(c.afternoon_end_time || c.end_time_2),
-        isAvailable: c.is_available
-      }));
+      const changes = (data || []).map(mapScheduleChangeRow);
 
+      if (!userId) {
+        scheduleChangesCache = changes;
+      }
       setScheduleChanges(changes);
     } catch (error) {
       console.error('Error fetching schedule changes:', error);
@@ -180,6 +223,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       if (error) throw error;
 
+      removeWeeklyScheduleFromState(id);
       await fetchWeeklySchedules(instructorId);
       notifyAvailabilityUpdated();
       toast.success('Schedule deleted');
@@ -252,6 +296,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       if (error) throw error;
 
+      removeAbsenceFromState(id);
       await fetchAbsences(instructorId);
       notifyAvailabilityUpdated();
       toast.success('Absence deleted');
@@ -302,6 +347,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
       if (error) throw error;
 
+      removeScheduleChangeFromState(id);
       await fetchScheduleChanges(instructorId);
       notifyAvailabilityUpdated();
       toast.success('Schedule change deleted');
@@ -314,7 +360,9 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
   useEffect(() => {
     const fetchAll = async () => {
-      setLoading(true);
+      if (!weeklySchedulesCache || !absencesCache || !scheduleChangesCache) {
+        setLoading(true);
+      }
       await Promise.all([
         fetchWeeklySchedules(instructorId),
         fetchAbsences(instructorId),
@@ -335,6 +383,120 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
     window.addEventListener(AVAILABILITY_UPDATED_EVENT, refreshAvailability);
     return () => window.removeEventListener(AVAILABILITY_UPDATED_EVENT, refreshAvailability);
+  }, [instructorId]);
+
+  useEffect(() => {
+    const rowMatchesInstructor = (row: any) => {
+      if (!instructorId) return true;
+      return (row?.user_id || row?.instructor_id) === instructorId;
+    };
+
+    const channel = supabase
+      .channel(`instructor_availability_${instructorId || 'all'}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'instructor_weekly_schedules' },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+
+          if (payload.eventType === 'DELETE') {
+            if (row?.id) {
+              removeWeeklyScheduleFromState(row.id);
+            } else {
+              void fetchWeeklySchedules(instructorId);
+            }
+            return;
+          }
+
+          if (!row?.id) return;
+
+          if (!rowMatchesInstructor(row)) {
+            removeWeeklyScheduleFromState(row.id);
+            return;
+          }
+
+          const schedule = mapWeeklyScheduleRow(row);
+          setWeeklySchedules(prev => {
+            const next = prev.some(existing => existing.id === schedule.id)
+              ? prev.map(existing => existing.id === schedule.id ? schedule : existing)
+              : [...prev, schedule];
+            const sorted = next.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+            if (!instructorId) weeklySchedulesCache = sorted;
+            return sorted;
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'instructor_absences' },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+
+          if (payload.eventType === 'DELETE') {
+            if (row?.id) {
+              removeAbsenceFromState(row.id);
+            } else {
+              void fetchAbsences(instructorId);
+            }
+            return;
+          }
+
+          if (!row?.id) return;
+
+          if (!rowMatchesInstructor(row)) {
+            removeAbsenceFromState(row.id);
+            return;
+          }
+
+          const absence = mapAbsenceRow(row);
+          setAbsences(prev => {
+            const next = prev.some(existing => existing.id === absence.id)
+              ? prev.map(existing => existing.id === absence.id ? absence : existing)
+              : [...prev, absence];
+            const sorted = next.sort((a, b) => b.startDate.localeCompare(a.startDate));
+            if (!instructorId) absencesCache = sorted;
+            return sorted;
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'instructor_schedule_changes' },
+        (payload) => {
+          const row = (payload.new || payload.old) as any;
+
+          if (payload.eventType === 'DELETE') {
+            if (row?.id) {
+              removeScheduleChangeFromState(row.id);
+            } else {
+              void fetchScheduleChanges(instructorId);
+            }
+            return;
+          }
+
+          if (!row?.id) return;
+
+          if (!rowMatchesInstructor(row)) {
+            removeScheduleChangeFromState(row.id);
+            return;
+          }
+
+          const change = mapScheduleChangeRow(row);
+          setScheduleChanges(prev => {
+            const next = prev.some(existing => existing.id === change.id)
+              ? prev.map(existing => existing.id === change.id ? change : existing)
+              : [...prev, change];
+            const sorted = next.sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+            if (!instructorId) scheduleChangesCache = sorted;
+            return sorted;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
   }, [instructorId]);
 
   return {

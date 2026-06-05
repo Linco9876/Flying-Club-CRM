@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
+﻿export type UserRole = 'admin' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
 
 export interface User {
   id: string;
@@ -19,8 +19,10 @@ export interface User {
   };
   preferredAircraftId?: string;
   avatar?: string;
+  coverPhoto?: string;
   isAvailable?: boolean;
   isSeniorInstructor?: boolean;
+  isActive?: boolean;
 }
 
 export interface Student extends User {
@@ -94,6 +96,7 @@ export interface Booking {
   notes?: string;
   status: 'confirmed' | 'cancelled' | 'completed' | 'no-show' | 'pending_approval';
   hasConflict?: boolean;
+  deletedAt?: Date;
   flightLog?: FlightLog;
   flight_logged?: boolean;
   flightTypeId?: string;
@@ -239,6 +242,7 @@ export interface TrainingLesson {
   assessmentCriteria: LessonAssessmentCriterion[];
   /** Map of course criterion id → passing grade for this specific lesson */
   passMarks: Record<string, string>;
+  isFlightTest?: boolean;
 }
 
 export interface TrainingModule {
@@ -257,6 +261,9 @@ export interface TrainingModule {
   assessmentCriteria: LessonAssessmentCriterion[];
   /** Whether this course normally asks students to acknowledge submitted lesson records */
   requiresStudentAcknowledgement?: boolean;
+  completionEndorsementEnabled?: boolean;
+  completionEndorsementType?: string;
+  completionEndorsementExpiryMonths?: number | null;
   exams?: TrainingExam[];
   lessons: TrainingLesson[];
   resources: TrainingResource[];

@@ -12,6 +12,7 @@
   body {
     overflow-x: hidden;
     -webkit-text-size-adjust: 100%;
+    scrollbar-gutter: stable;
   }
 
   button,
@@ -23,6 +24,33 @@
 }
 
 @layer components {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-sticky-header {
+    isolation: isolate;
+    contain: paint;
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+
+  .calendar-booking-interaction-active .app-sticky-header,
+  .calendar-booking-interaction-active .resource-calendar-grid {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  html.calendar-booking-interaction-active,
+  body.calendar-booking-interaction-active {
+    scrollbar-gutter: stable;
+  }
+
   .app-tab-scroller {
     margin-bottom: 1rem;
     overflow-x: auto;
@@ -242,6 +270,18 @@ html[data-portal-theme='dark'] textarea:disabled,
 html[data-portal-theme='dark'] .disabled\:bg-gray-50:disabled {
   background-color: var(--dark-panel-soft) !important;
   color: var(--dark-text-subtle) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface input,
+html[data-portal-theme='dark'] .kiosk-login-surface input {
+  background-color: rgb(255 255 255) !important;
+  border-color: rgb(209 213 219) !important;
+  color: rgb(17 24 39) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface input::placeholder,
+html[data-portal-theme='dark'] .kiosk-login-surface input::placeholder {
+  color: rgb(156 163 175) !important;
 }
 
 html[data-portal-theme='dark'] .shadow,
@@ -502,4 +542,79 @@ html[data-portal-theme='dark'] *::-webkit-scrollbar-thumb {
 
 html[data-portal-theme='dark'] *::-webkit-scrollbar-thumb:hover {
   background: rgb(113 113 122);
+}
+
+html[data-portal-theme='dark'] .auth-light-surface,
+html[data-portal-theme='dark'] .kiosk-login-surface {
+  color-scheme: light;
+  background-color: rgb(255 255 255) !important;
+  color: rgb(17 24 39) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface .bg-white,
+html[data-portal-theme='dark'] .kiosk-login-surface .bg-white {
+  background-color: rgb(255 255 255) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface .bg-slate-50,
+html[data-portal-theme='dark'] .auth-light-surface .bg-blue-50,
+html[data-portal-theme='dark'] .auth-light-surface .bg-indigo-50,
+html[data-portal-theme='dark'] .kiosk-login-surface .bg-slate-50,
+html[data-portal-theme='dark'] .kiosk-login-surface .bg-blue-50,
+html[data-portal-theme='dark'] .kiosk-login-surface .bg-indigo-50 {
+  background-color: rgb(248 250 252) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface .text-slate-950,
+html[data-portal-theme='dark'] .auth-light-surface .text-gray-950,
+html[data-portal-theme='dark'] .auth-light-surface .text-gray-900,
+html[data-portal-theme='dark'] .auth-light-surface .text-gray-800,
+html[data-portal-theme='dark'] .auth-light-surface .text-gray-700,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-slate-950,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-950,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-900,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-800,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-700 {
+  color: rgb(15 23 42) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface .text-gray-600,
+html[data-portal-theme='dark'] .auth-light-surface .text-gray-500,
+html[data-portal-theme='dark'] .auth-light-surface .text-gray-400,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-600,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-500,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-400 {
+  color: rgb(75 85 99) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface .text-blue-600,
+html[data-portal-theme='dark'] .auth-light-surface .hover\:text-blue-500:hover,
+html[data-portal-theme='dark'] .kiosk-login-surface .text-blue-600,
+html[data-portal-theme='dark'] .kiosk-login-surface .hover\:text-blue-500:hover {
+  color: rgb(37 99 235) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface .border-gray-200,
+html[data-portal-theme='dark'] .auth-light-surface .border-gray-300,
+html[data-portal-theme='dark'] .kiosk-login-surface .border-gray-200,
+html[data-portal-theme='dark'] .kiosk-login-surface .border-gray-300 {
+  border-color: rgb(209 213 219) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface input,
+html[data-portal-theme='dark'] .auth-light-surface select,
+html[data-portal-theme='dark'] .auth-light-surface textarea,
+html[data-portal-theme='dark'] .kiosk-login-surface input,
+html[data-portal-theme='dark'] .kiosk-login-surface select,
+html[data-portal-theme='dark'] .kiosk-login-surface textarea {
+  background-color: rgb(255 255 255) !important;
+  border-color: rgb(209 213 219) !important;
+  color: rgb(17 24 39) !important;
+}
+
+html[data-portal-theme='dark'] .auth-light-surface input::placeholder,
+html[data-portal-theme='dark'] .auth-light-surface textarea::placeholder,
+html[data-portal-theme='dark'] .kiosk-login-surface input::placeholder,
+html[data-portal-theme='dark'] .kiosk-login-surface textarea::placeholder {
+  color: rgb(156 163 175) !important;
 }

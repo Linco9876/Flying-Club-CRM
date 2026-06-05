@@ -267,7 +267,7 @@ export const useBillingAccounts = () => {
       // Fetch transaction to get amount and user
       const { data: tx, error: fetchError } = await supabase
         .from('account_transactions')
-        .select('amount, user_id')
+        .select('amount, user_id, verified_status')
         .eq('id', transactionId)
         .maybeSingle();
 
@@ -318,16 +318,6 @@ export const useBillingAccounts = () => {
       if (fetchError) throw fetchError;
       if (!tx) throw new Error('Transaction not found');
 
-      // Reverse balance on student record
-      const { data: student } = await supabase
-        .from('students')
-        .select('prepaid_balance')
-        .eq('id', tx.user_id)
-        .maybeSingle();
-
-      const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
-      const reversedBalance = currentBalance - parseFloat(tx.amount);
-
       const { error: rejectError } = await supabase
         .from('account_transactions')
         .update({ verified_status: 'rejected', rejection_notes: notes })
@@ -335,14 +325,26 @@ export const useBillingAccounts = () => {
 
       if (rejectError) throw rejectError;
 
-      const { error: balanceError } = await supabase
-        .from('students')
-        .update({ prepaid_balance: reversedBalance })
-        .eq('id', tx.user_id);
+      if (tx.verified_status === 'verified') {
+        // Pending top-ups have not touched the approved balance yet.
+        const { data: student } = await supabase
+          .from('students')
+          .select('prepaid_balance')
+          .eq('id', tx.user_id)
+          .maybeSingle();
 
-      if (balanceError) throw balanceError;
+        const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
+        const reversedBalance = currentBalance - parseFloat(tx.amount);
 
-      toast.success('Payment rejected and balance reversed');
+        const { error: balanceError } = await supabase
+          .from('students')
+          .update({ prepaid_balance: reversedBalance })
+          .eq('id', tx.user_id);
+
+        if (balanceError) throw balanceError;
+      }
+
+      toast.success(tx.verified_status === 'verified' ? 'Payment rejected and balance reversed' : 'Payment rejected');
       await fetchAll();
     } catch (err) {
       console.error('Error rejecting transaction:', err);

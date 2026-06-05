@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { X, User, Mail, Phone, Calendar, FileText, AlertTriangle, Save, Loader2 } from 'lucide-react';
+import { X, User, Phone, Save, Loader2, Shield, FileText } from 'lucide-react';
 import { Student, Endorsement } from '../../types';
 import toast from 'react-hot-toast';
+import { useAircraft } from '../../hooks/useAircraft';
 
 interface StudentFormProps {
   isOpen: boolean;
@@ -9,12 +10,17 @@ interface StudentFormProps {
   onSubmit: (student: Omit<Student, 'id'>) => Promise<void>;
   student?: Student;
   isEdit?: boolean;
+  canEditEmail?: boolean;
 }
 
 const buildFormData = (student?: Student) => ({
   email: student?.email || '',
   name: student?.name || '',
-  phone: student?.phone || '',
+  mobilePhone: student?.mobilePhone || student?.phone || '',
+  homePhone: student?.homePhone || '',
+  workPhone: student?.workPhone || '',
+  address: student?.address || '',
+  preferredAircraftId: student?.preferredAircraftId || '',
   raausId: student?.raausId || '',
   casaId: student?.casaId || '',
   dateOfBirth: student?.dateOfBirth?.toISOString().split('T')[0] || '',
@@ -38,9 +44,11 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   onClose,
   onSubmit,
   student,
-  isEdit = false
+  isEdit = false,
+  canEditEmail = true
 }) => {
   const [formData, setFormData] = useState(buildFormData(student));
+  const { aircraft } = useAircraft();
   const [customEndorsements, setCustomEndorsements] = useState<string[]>([]);
   const [isAddingNewType, setIsAddingNewType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
@@ -84,11 +92,6 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       return;
     }
 
-    if (formData.raausId && !formData.membershipExpiry) {
-      toast.error('Membership expiry is required when RAAus ID is provided');
-      return;
-    }
-
     if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
       toast.error('Please enter a valid email address');
       return;
@@ -97,6 +100,12 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     const studentData: Omit<Student, 'id'> = {
       ...formData,
       role: 'student' as const,
+      phone: formData.mobilePhone || undefined,
+      mobilePhone: formData.mobilePhone || undefined,
+      homePhone: formData.homePhone || undefined,
+      workPhone: formData.workPhone || undefined,
+      address: formData.address || undefined,
+      preferredAircraftId: formData.preferredAircraftId || undefined,
       dateOfBirth: formData.dateOfBirth ? new Date(formData.dateOfBirth) : undefined,
       medicalExpiry: formData.medicalExpiry ? new Date(formData.medicalExpiry) : undefined,
       licenceExpiry: formData.membershipExpiry ? new Date(formData.membershipExpiry) : undefined,
@@ -196,11 +205,11 @@ export const StudentForm: React.FC<StudentFormProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-8">
-          {/* Personal Information */}
+          {/* Personal Details */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
               <User className="h-5 w-5 mr-2" />
-              Personal Information
+              Personal Details
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -224,40 +233,25 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isEdit && !canEditEmail}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
                   required
                 />
+                {isEdit && canEditEmail && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Changing this sends a verification link. Login changes after the new email is verified.
+                  </p>
+                )}
+                {isEdit && !canEditEmail && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Only admins can change a member's login email.
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="+61 400 123 456"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Alternate Contact Number
-                </label>
-                <input
-                  type="tel"
-                  value={formData.alternatePhone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, alternatePhone: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="+61 400 123 456"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date of Birth
+                  Birthdate
                 </label>
                 <input
                   type="date"
@@ -269,85 +263,127 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Occupation
+                  Preferred Aircraft
                 </label>
-                <input
-                  type="text"
-                  value={formData.occupation}
-                  onChange={(e) => setFormData(prev => ({ ...prev, occupation: e.target.value }))}
+                <select
+                  value={formData.preferredAircraftId}
+                  onChange={(e) => setFormData(prev => ({ ...prev, preferredAircraftId: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Engineer, Teacher"
-                />
+                >
+                  <option value="">Use first available aircraft</option>
+                  {aircraft.map(a => (
+                    <option key={a.id} value={a.id}>{a.registration} - {a.make} {a.model}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
 
-          {/* Aviation Credentials */}
+          {/* Contact Details */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <Phone className="h-5 w-5 mr-2" />
+              Contact Details
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mobile
+                </label>
+                <input
+                  type="tel"
+                  value={formData.mobilePhone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, mobilePhone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="+61 400 123 456"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Home Number
+                </label>
+                <input
+                  type="tel"
+                  value={formData.homePhone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, homePhone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Work Number
+                </label>
+                <input
+                  type="tel"
+                  value={formData.workPhone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, workPhone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Address
+              </label>
+              <textarea
+                value={formData.address}
+                onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                rows={3}
+                className="w-full resize-none px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Aviation Details */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
               <FileText className="h-5 w-5 mr-2" />
-              Aviation Credentials
+              Aviation Details
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  RAAus ID
+                  RAAus Number
                 </label>
                 <input
                   type="text"
                   value={formData.raausId}
                   onChange={(e) => setFormData(prev => ({ ...prev, raausId: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="RA12345"
+                  placeholder="RAAus membership number"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Ra-Aus Membership Expiry
+                  RAAus Expiry
                 </label>
                 <input
                   type="date"
                   value={formData.membershipExpiry}
                   onChange={(e) => setFormData(prev => ({ ...prev, membershipExpiry: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required={!!formData.raausId}
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  CASA ID
+                  CASA Number
                 </label>
                 <input
                   type="text"
                   value={formData.casaId}
                   onChange={(e) => setFormData(prev => ({ ...prev, casaId: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="CASA123456"
+                  placeholder="CASA ARN"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Medical Certificate Type
-                </label>
-                <select
-                  value={formData.medicalType}
-                  onChange={(e) => setFormData(prev => ({ ...prev, medicalType: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select medical type</option>
-                  <option value="Class 1">Class 1</option>
-                  <option value="Class 2">Class 2</option>
-                  <option value="Basic Class 2">Basic Class 2</option>
-                  <option value="Recreational">Recreational</option>
-                  <option value="Student Pilot">Student Pilot</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Medical Certificate Expiry
+                  Medical Expiry
                 </label>
                 <input
                   type="date"
@@ -356,48 +392,13 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Last Flight Review
-                </label>
-                <input
-                  type="date"
-                  value={formData.lastFlightReview}
-                  onChange={(e) => setFormData(prev => ({ ...prev, lastFlightReview: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {formData.lastFlightReview && (() => {
-                  const reviewDate = new Date(formData.lastFlightReview);
-                  const twoYearsLater = new Date(reviewDate);
-                  twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
-                  const now = new Date();
-                  const threeMonthsBefore = new Date(twoYearsLater);
-                  threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
-
-                  if (now >= twoYearsLater) {
-                    return (
-                      <p className="mt-1 text-sm text-red-600">
-                        Flight review is overdue (due: {twoYearsLater.toLocaleDateString()})
-                      </p>
-                    );
-                  } else if (now >= threeMonthsBefore) {
-                    return (
-                      <p className="mt-1 text-sm text-yellow-600">
-                        Flight review due soon: {twoYearsLater.toLocaleDateString()}
-                      </p>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
             </div>
           </div>
 
           {/* Emergency Contact */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-              <AlertTriangle className="h-5 w-5 mr-2" />
+              <Shield className="h-5 w-5 mr-2" />
               Emergency Contact
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -451,31 +452,6 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   <option value="Friend">Friend</option>
                   <option value="Other">Other</option>
                 </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Financial Information */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Financial Information
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Initial Prepaid Balance
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-gray-500">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.prepaidBalance}
-                    onChange={(e) => setFormData(prev => ({ ...prev, prepaidBalance: parseFloat(e.target.value) || 0 }))}
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
               </div>
             </div>
           </div>

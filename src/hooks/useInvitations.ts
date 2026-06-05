@@ -19,6 +19,8 @@ export interface Invitation {
 export interface InviteUserResult {
   tempPassword?: string;
   emailSent?: boolean;
+  manualLink?: string;
+  pendingInviteExists?: boolean;
   message?: string;
 }
 
@@ -70,6 +72,7 @@ export const useInvitations = () => {
     name: string;
     phone?: string;
     roles?: UserRole[];
+    resend?: boolean;
   }): Promise<InviteUserResult | undefined> => {
     try {
       const roles = data.roles && data.roles.length > 0 ? data.roles : ['student'];
@@ -94,6 +97,7 @@ export const useInvitations = () => {
           name: data.name,
           phone: data.phone,
           roles,
+          resend: Boolean(data.resend),
           redirectTo: getInviteRedirectUrl(),
         }),
       });
@@ -103,6 +107,12 @@ export const useInvitations = () => {
       if (!response.ok) {
         const message = result.error || result.message || result.msg || 'Failed to invite user';
         toast.error(message);
+        if (response.status === 409 && String(message).toLowerCase().includes('pending invite')) {
+          return {
+            pendingInviteExists: true,
+            message,
+          };
+        }
         return;
       }
 
@@ -112,6 +122,8 @@ export const useInvitations = () => {
       return {
         tempPassword: result.tempPassword,
         emailSent: Boolean(result.emailSent),
+        manualLink: result.manualLink,
+        pendingInviteExists: Boolean(result.pendingInviteExists),
         message: result.message,
       };
     } catch (err) {

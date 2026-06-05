@@ -45,17 +45,36 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
-            <Plane className="h-8 w-8 text-white" />
+    <div className="auth-light-surface min-h-screen bg-white lg:grid lg:grid-cols-2">
+      <div className="relative hidden min-h-screen overflow-hidden lg:flex">
+        <img
+          src="/auth-aircraft-sunset.png"
+          alt="Aircraft wing at sunset"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-black/35 via-black/10 to-black/50" />
+        <div className="relative z-10 flex w-full flex-col items-center justify-center px-12 text-center text-white">
+          <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-white/15 backdrop-blur">
+            <Plane className="h-7 w-7" />
           </div>
-          <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Reset Password</h2>
-          <p className="text-gray-600">Enter your email to receive a password reset link</p>
+          <h1 className="text-5xl font-extrabold tracking-tight">Bendigo Flying Club</h1>
+          <p className="mt-4 max-w-md text-base font-medium text-white/90">
+            Get back into your flight training portal
+          </p>
         </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow-xl p-8">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-10 sm:px-6 lg:bg-white lg:px-10">
+        <div className="w-full max-w-lg">
+          <div className="mb-8 text-center lg:hidden">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600">
+              <Plane className="h-8 w-8 text-white" />
+            </div>
+            <h2 className="text-3xl font-extrabold text-gray-900">Bendigo Flying Club</h2>
+            <p className="mt-2 text-gray-600">Reset Password</p>
+          </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-xl">
           {emailSent ? (
             <div className="text-center space-y-4">
               <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
@@ -75,7 +94,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
               </div>
               <button
                 onClick={onBackToLogin}
-                className="w-full flex justify-center items-center py-3 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                className="flex w-full items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to Sign In
@@ -83,6 +102,11 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
             </div>
           ) : (
             <form className="space-y-6" onSubmit={handleSubmit}>
+              <div className="mb-8 text-center">
+                <h2 className="text-3xl font-extrabold text-slate-950">Reset password</h2>
+                <p className="mt-2 text-sm text-gray-500">Enter your email to receive a reset link</p>
+              </div>
+
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
                   Email Address
@@ -94,7 +118,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter your email address"
                 />
               </div>
@@ -102,7 +126,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex w-full justify-center rounded-xl border border-transparent bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition-colors hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isLoading ? 'Sending...' : 'Send Reset Link'}
               </button>
@@ -119,6 +143,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
               </div>
             </form>
           )}
+        </div>
         </div>
       </div>
     </div>

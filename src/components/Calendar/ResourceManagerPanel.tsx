@@ -15,6 +15,7 @@ interface ResourceManagerPanelProps {
   onHide: (id: string) => void;
   onShow: (id: string) => void;
   onReorder: (newOrder: string[]) => void;
+  compact?: boolean;
 }
 
 export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
@@ -24,6 +25,7 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
   onHide,
   onShow,
   onReorder,
+  compact = false,
 }) => {
   const [open, setOpen] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
@@ -81,14 +83,14 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center space-x-1.5 px-3 py-2 text-sm rounded-lg border transition-colors ${
+        className={`flex items-center space-x-1.5 rounded-lg border transition-colors ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'} ${
           open
             ? 'bg-gray-900 text-white border-gray-900'
             : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
         }`}
         title="Manage resources"
       >
-        <Settings2 className="h-4 w-4" />
+        <Settings2 className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
         <span className="hidden sm:inline">Resources</span>
         {hiddenCount > 0 && (
           <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${open ? 'bg-white text-gray-900' : 'bg-amber-100 text-amber-700'}`}>
@@ -103,10 +105,10 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
           {/* backdrop */}
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
 
-          <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-40 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-              <p className="text-sm font-semibold text-gray-900">Manage Resources</p>
-              <p className="text-xs text-gray-500 mt-0.5">Drag to reorder, click eye to hide</p>
+          <div className="fixed left-4 right-4 top-48 z-40 max-h-[calc(100vh-13rem)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 sm:max-h-none dark:border-[#363b45] dark:bg-[#171a21]">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 dark:border-[#2c2f36] dark:bg-[#11141a]">
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Manage Resources</p>
+              <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Drag to reorder, click eye to hide</p>
             </div>
 
             {/* Visible resources — draggable */}
@@ -124,10 +126,10 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
                   onDragEnd={handleDragEnd}
                   className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-grab active:cursor-grabbing select-none transition-colors ${
                     draggingId === resource.id
-                      ? 'opacity-40 bg-gray-100'
+                      ? 'opacity-40 bg-gray-100 dark:bg-[#262b33]'
                       : dragOverId === resource.id
-                      ? 'bg-blue-50 border border-blue-300'
-                      : 'hover:bg-gray-50 border border-transparent'
+                      ? 'bg-blue-50 border border-blue-300 dark:bg-blue-950/30 dark:border-blue-700'
+                      : 'hover:bg-gray-50 border border-transparent dark:hover:bg-[#262b33]'
                   }`}
                 >
                   <GripVertical className="h-4 w-4 text-gray-300 flex-shrink-0" />
@@ -137,13 +139,13 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
                       : <User className="h-3.5 w-3.5 text-emerald-600" />
                     }
                   </div>
-                  <span className="flex-1 text-sm text-gray-800 font-medium truncate">{resource.name}</span>
+                  <span className="flex-1 text-sm text-gray-800 font-medium truncate dark:text-gray-100">{resource.name}</span>
                   {resource.status && resource.status !== 'serviceable' && (
                     <span className="text-xs text-red-500 capitalize">{resource.status}</span>
                   )}
                   <button
                     onClick={() => onHide(resource.id)}
-                    className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                    className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors dark:hover:bg-[#11141a] dark:hover:text-gray-100"
                     title="Hide resource"
                   >
                     <EyeOff className="h-4 w-4" />
@@ -155,10 +157,10 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
             {/* Hidden resources section */}
             {hiddenCount > 0 && (
               <>
-                <div className="border-t border-gray-100">
+                <div className="border-t border-gray-100 dark:border-[#2c2f36]">
                   <button
                     onClick={() => setShowHidden(s => !s)}
-                    className="w-full flex items-center justify-between px-4 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center justify-between px-4 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors dark:text-gray-300 dark:hover:bg-[#262b33]"
                   >
                     <span className="flex items-center gap-1.5">
                       <EyeOff className="h-3.5 w-3.5" />
@@ -168,11 +170,11 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
                   </button>
 
                   {showHidden && (
-                    <div className="p-2 space-y-1 max-h-40 overflow-y-auto bg-gray-50">
+                    <div className="p-2 space-y-1 max-h-40 overflow-y-auto bg-gray-50 dark:bg-[#11141a]">
                       {hiddenResources.map(resource => (
                         <div
                           key={resource.id}
-                          className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white transition-colors border border-transparent"
+                          className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white transition-colors border border-transparent dark:hover:bg-[#262b33]"
                         >
                           <div className={`p-1 rounded ${resource.type === 'aircraft' ? 'bg-blue-100' : 'bg-emerald-100'} opacity-50`}>
                             {resource.type === 'aircraft'
@@ -183,7 +185,7 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
                           <span className="flex-1 text-sm text-gray-400 truncate">{resource.name}</span>
                           <button
                             onClick={() => onShow(resource.id)}
-                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600 transition-colors"
+                            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-600 transition-colors dark:hover:bg-[#171a21]"
                             title="Show resource"
                           >
                             <Eye className="h-4 w-4" />

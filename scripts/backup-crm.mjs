@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const defaultTables = [
   'account_transactions',
+  'admin_audit_log',
   'aircraft',
   'aircraft_documents',
   'aircraft_rates',

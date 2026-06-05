@@ -317,6 +317,45 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     );
   };
 
+  const rowActions = (row: typeof allRows[0], compact = false) => (
+    <>
+      {row.rowType === 'unpaid' && row.flightLogId && (
+        <button
+          onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}
+          className={`flex items-center justify-center gap-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${
+            compact ? 'w-full px-3 py-2' : 'px-2.5 py-1.5'
+          }`}
+        >
+          <CheckCircle className="h-3.5 w-3.5" />
+          Mark Paid
+        </button>
+      )}
+      {row.isTopup && row.verifiedStatus === 'pending' && (
+        <div className={`flex items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
+          <button
+            onClick={() => handleVerify(row.id)}
+            disabled={verifyingId === row.id}
+            className={`flex items-center justify-center gap-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors ${
+              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+            }`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {verifyingId === row.id ? '...' : 'Confirm'}
+          </button>
+          <button
+            onClick={() => setRejectingId(row.id)}
+            className={`flex items-center justify-center gap-1 text-xs font-medium bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors ${
+              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+            }`}
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Reject
+          </button>
+        </div>
+      )}
+    </>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
@@ -370,46 +409,58 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="relative">
-            <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(260px,1fr)_150px_150px_170px] md:items-end">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Search</span>
+            <span className="relative block">
+              <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                placeholder="Student or description"
+                className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">From</span>
             <input
-              type="text"
-              value={searchTerm}
-              onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-              placeholder="Search student or description..."
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              type="date"
+              value={dateStart}
+              onChange={e => { setDateStart(e.target.value); setCurrentPage(1); }}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-          </div>
-          <input
-            type="date"
-            value={dateStart}
-            onChange={e => { setDateStart(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <input
-            type="date"
-            value={dateEnd}
-            onChange={e => { setDateEnd(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={typeFilter}
-            onChange={e => { setTypeFilter(e.target.value as any); setCurrentPage(1); }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">All Types</option>
-            <option value="credit">Top-ups only</option>
-            <option value="debit">Payments only</option>
-            <option value="unpaid">Unpaid flights</option>
-          </select>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">To</span>
+            <input
+              type="date"
+              value={dateEnd}
+              onChange={e => { setDateEnd(e.target.value); setCurrentPage(1); }}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Type</span>
+            <select
+              value={typeFilter}
+              onChange={e => { setTypeFilter(e.target.value as any); setCurrentPage(1); }}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Types</option>
+              <option value="credit">Top-ups only</option>
+              <option value="debit">Charges only</option>
+              <option value="unpaid">Unpaid flights</option>
+            </select>
+          </label>
         </div>
-        <div className="flex items-center justify-between mt-4">
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-500">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</p>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            className="flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-medium bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors sm:w-auto sm:py-1.5"
           >
             <Download className="h-3.5 w-3.5" />
             Export CSV
@@ -419,7 +470,73 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-4 md:hidden">
+          {paginated.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-400">
+              No transactions found
+            </div>
+          ) : (
+            paginated.map(row => (
+              <article
+                key={row.id}
+                className={`rounded-xl border p-4 shadow-sm ${
+                  row.rowType === 'unpaid' ? 'border-amber-200 bg-amber-50/70' :
+                  row.isTopup && row.verifiedStatus === 'pending' ? 'border-amber-200 bg-amber-50/50' :
+                  row.isTopup && row.verifiedStatus === 'rejected' ? 'border-red-200 bg-red-50/50' :
+                  'border-gray-200 bg-white'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                      {format(parseISO(row.date), 'dd MMM yyyy')} - {format(parseISO(row.date), 'HH:mm')}
+                    </p>
+                    <h4 className="mt-1 truncate text-base font-semibold text-gray-900">{row.userName}</h4>
+                    <p className="truncate text-xs text-gray-500">{row.userEmail}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {row.amount != null ? (
+                      <p className={`text-base font-bold ${
+                        row.isTopup && row.verifiedStatus === 'rejected' ? 'text-red-400 line-through' :
+                        row.amount >= 0 ? 'text-green-600' :
+                        row.rowType === 'unpaid' ? 'text-amber-700' :
+                        'text-gray-900'
+                      }`}>
+                        {row.amount >= 0 ? '+' : '-'}${Math.abs(row.amount).toFixed(2)}
+                      </p>
+                    ) : (
+                      <p className="text-sm font-semibold italic text-gray-400">TBD</p>
+                    )}
+                    {row.balanceAfter != null && (
+                      <p className={`text-xs ${row.balanceAfter < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                        Balance ${row.balanceAfter.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <p className="mt-3 text-sm leading-relaxed text-gray-700">{row.description}</p>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {statusBadge(row)}
+                  {row.paymentMethod && (
+                    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                      {row.paymentMethod}
+                    </span>
+                  )}
+                </div>
+
+                {(row.rowType === 'unpaid' || (row.isTopup && row.verifiedStatus === 'pending')) && (
+                  <div className="mt-3">
+                    {rowActions(row, true)}
+                  </div>
+                )}
+              </article>
+            ))
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full divide-y divide-gray-100">
             <thead>
               <tr className="bg-gray-50">
@@ -495,34 +612,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
                       {statusBadge(row)}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      {row.rowType === 'unpaid' && row.flightLogId && (
-                        <button
-                          onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}
-                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                        >
-                          <CheckCircle className="h-3.5 w-3.5" />
-                          Mark Paid
-                        </button>
-                      )}
-                      {row.isTopup && row.verifiedStatus === 'pending' && (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => handleVerify(row.id)}
-                            disabled={verifyingId === row.id}
-                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
-                          >
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                            {verifyingId === row.id ? '...' : 'Confirm'}
-                          </button>
-                          <button
-                            onClick={() => setRejectingId(row.id)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                          >
-                            <XCircle className="h-3.5 w-3.5" />
-                            Reject
-                          </button>
-                        </div>
-                      )}
+                      {rowActions(row)}
                     </td>
                   </tr>
                 ))

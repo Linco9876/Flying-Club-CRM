@@ -16,6 +16,25 @@ const getPrimaryRole = (roles: string[]) =>
     : roles.includes("pilot") ? "pilot"
     : "student";
 
+const getLegacyUsersRole = (primaryRole: string) =>
+  primaryRole === "senior_instructor" ? "instructor"
+    : primaryRole === "pilot" ? "student"
+    : primaryRole;
+
+const generateSetupLink = async (
+  adminClient: ReturnType<typeof createClient>,
+  email: string,
+  redirectTo?: string,
+) => {
+  const { data, error } = await adminClient.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: redirectTo ? { redirectTo } : undefined,
+  });
+
+  return { actionLink: data?.properties?.action_link, error };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -50,7 +69,27 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { email, name, phone, roles, redirectTo } = await req.json();
+    const { data: callerRoles, error: callerRolesError } = await adminClient
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", callerUser.id);
+
+    if (callerRolesError) {
+      return new Response(JSON.stringify({ error: callerRolesError.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const isAdmin = (callerRoles || []).some((roleRow) => roleRow.role === "admin");
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: "Only admins can invite users" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { email, name, phone, roles, redirectTo, resend } = await req.json();
     const requestedRoles = Array.isArray(roles) && roles.length > 0 ? roles : ["student"];
     const userRoles = Array.from(new Set(requestedRoles))
       .map((role) => String(role).trim())
@@ -79,12 +118,52 @@ Deno.serve(async (req: Request) => {
 
     const { data: existingUser } = await adminClient
       .from("users")
-      .select("email")
+      .select("id,email")
       .eq("email", email)
       .maybeSingle();
 
     if (existingUser) {
-      return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
+      const { data: pendingInvite } = await adminClient
+        .from("invitations")
+        .select("id,status")
+        .eq("email", email)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      if (resend && pendingInvite) {
+        const cleanRedirectTo = typeof redirectTo === "string" && redirectTo.trim()
+          ? redirectTo.trim()
+          : undefined;
+        const { actionLink, error: linkError } = await generateSetupLink(adminClient, email, cleanRedirectTo);
+
+        if (linkError || !actionLink) {
+          return new Response(JSON.stringify({ error: linkError?.message || "Failed to generate invite link" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        await adminClient
+          .from("invitations")
+          .update({ invited_by: callerUser.id, invited_at: new Date().toISOString() })
+          .eq("id", pendingInvite.id);
+
+        return new Response(JSON.stringify({
+          emailSent: false,
+          manualLink: actionLink,
+          message: "Invite link generated. Send this setup link to the user if the email did not arrive.",
+          userId: existingUser.id,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        error: pendingInvite
+          ? "A pending invite already exists for this email. Use resend to generate a setup link."
+          : "A user with this email already exists",
+      }), {
         status: 409,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -124,7 +203,7 @@ Deno.serve(async (req: Request) => {
       email,
       name,
       phone: phone || null,
-      role: primaryRole,
+      role: getLegacyUsersRole(primaryRole),
     });
 
     if (userUpsertError) {

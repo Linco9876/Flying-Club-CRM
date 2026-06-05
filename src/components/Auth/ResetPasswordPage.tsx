@@ -30,7 +30,31 @@ export const ResetPasswordPage: React.FC = () => {
     const code = searchParams.get('code') || hashParams.get('code');
     const linkType = hashParams.get('type') || searchParams.get('type');
     const passwordSetupType = linkType === 'recovery' || linkType === 'invite';
+    const isNonPasswordVerification = Boolean(linkType && !passwordSetupType);
     const hasRecoveryLink = passwordSetupType || Boolean((accessToken && refreshToken) || code);
+
+    const completeNonPasswordVerification = async () => {
+      setVerificationMessage('Completing account verification...');
+
+      if (accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (error) throw error;
+      } else if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) throw error;
+      }
+
+      if (!cancelled) {
+        if (timeoutId) clearTimeout(timeoutId);
+        recoveryConfirmed = true;
+        toast.success(linkType?.startsWith('email_change') ? 'Email address verified.' : 'Account verified.');
+        window.history.replaceState(null, '', '/');
+        navigate('/', { replace: true });
+      }
+    };
 
     const markValid = (email?: string | null) => {
       if (!cancelled) {
@@ -43,6 +67,11 @@ export const ResetPasswordPage: React.FC = () => {
     };
 
     const prepareRecoverySession = async () => {
+      if (isNonPasswordVerification) {
+        await completeNonPasswordVerification();
+        return true;
+      }
+
       if (!hasRecoveryLink) {
         setVerificationMessage('This reset link is missing recovery details.');
         return false;
@@ -77,6 +106,14 @@ export const ResetPasswordPage: React.FC = () => {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (isNonPasswordVerification && event === 'SIGNED_IN' && session) {
+        if (timeoutId) clearTimeout(timeoutId);
+        recoveryConfirmed = true;
+        toast.success(linkType?.startsWith('email_change') ? 'Email address verified.' : 'Account verified.');
+        navigate('/', { replace: true });
+        return;
+      }
+
       if (event === 'PASSWORD_RECOVERY' && session) {
         markValid(session.user.email);
       }
@@ -167,7 +204,7 @@ export const ResetPasswordPage: React.FC = () => {
 
   if (!isValidToken) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="auth-light-surface min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
             <div className="mx-auto h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">
@@ -182,7 +219,7 @@ export const ResetPasswordPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="auth-light-surface min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <div className="mx-auto h-16 w-16 bg-blue-600 rounded-full flex items-center justify-center mb-4">

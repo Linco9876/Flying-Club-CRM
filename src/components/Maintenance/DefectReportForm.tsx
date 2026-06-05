@@ -80,8 +80,8 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
         return Number.isFinite(parsed) ? parsed : undefined;
       };
 
-      // Upload files to Supabase Storage and get URLs
-      const photoUrls: string[] = [];
+      // Upload files to private Supabase Storage and store object paths.
+      const photoPaths: string[] = [];
       if (uploadedFiles.length > 0) {
         toast.loading('Uploading attachments...', { id: 'upload' });
 
@@ -102,17 +102,12 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
             throw error;
           }
 
-          // Get public URL
-          const { data: { publicUrl } } = supabase.storage
-            .from('defect-attachments')
-            .getPublicUrl(filePath);
-
-          return publicUrl;
+          return data.path || filePath;
         });
 
         try {
-          const urls = await Promise.all(uploadPromises);
-          photoUrls.push(...urls);
+          const paths = await Promise.all(uploadPromises);
+          photoPaths.push(...paths);
           toast.success('Attachments uploaded successfully', { id: 'upload' });
         } catch (error) {
           console.error('Error uploading attachments:', error);
@@ -129,7 +124,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
         summary: formData.defectSummary,
         description: formData.detailedDescription,
         status: 'open',
-        photos: photoUrls,
+        photos: photoPaths,
         severity: formData.severity,
         location: formData.location.trim() || undefined,
         tachHours: parseOptionalNumber(formData.tachHours),

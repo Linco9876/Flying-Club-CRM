@@ -3,6 +3,20 @@ import { supabase } from '../lib/supabase';
 import { Student, Endorsement, UserRole } from '../types';
 import toast from 'react-hot-toast';
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+};
+
+const isSchemaCacheError = (error: unknown) => {
+  const message = getErrorMessage(error, '').toLowerCase();
+  return message.includes('schema cache') || message.includes('could not find');
+};
+
 export const useStudents = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,21 +27,27 @@ export const useStudents = () => {
     payload: Record<string, unknown>,
     id?: string
   ) => {
-    const runWrite = (nextPayload: Record<string, unknown>) => {
+    const runWrite = async (nextPayload: Record<string, unknown>) => {
       if (mode === 'insert') {
         return supabase.from('students').insert(nextPayload);
       }
-      return supabase.from('students').update(nextPayload).eq('id', id);
+
+      const updateResult = await supabase
+        .from('students')
+        .update(nextPayload)
+        .eq('id', id)
+        .select('id');
+
+      if (updateResult.error) return updateResult;
+      if (updateResult.data && updateResult.data.length > 0) return updateResult;
+
+      return supabase.from('students').insert({ id, ...nextPayload });
     };
 
     const result = await runWrite(payload);
-    if (
-      result.error &&
-      'last_flight_review' in payload &&
-      result.error.message?.includes('last_flight_review')
-    ) {
-      const { last_flight_review, ...fallbackPayload } = payload;
-      return runWrite(fallbackPayload);
+    if (result.error && isSchemaCacheError(result.error)) {
+      await new Promise(resolve => setTimeout(resolve, 750));
+      return runWrite(payload);
     }
 
     return result;
@@ -100,6 +120,7 @@ export const useStudents = () => {
           workPhone: user.work_phone,
           address: user.address,
           avatar: user.avatar_url,
+          coverPhoto: user.cover_url,
           raausId: studentData?.raaus_id,
           casaId: studentData?.casa_id,
           medicalType: studentData?.medical_type,
@@ -119,6 +140,7 @@ export const useStudents = () => {
           } : undefined,
           dateOfBirth: studentData?.date_of_birth ? new Date(studentData.date_of_birth) : user.date_of_birth ? new Date(user.date_of_birth) : undefined,
           preferredAircraftId: user.preferred_aircraft_id,
+          isActive: user.is_active ?? true,
           prepaidBalance: studentData?.prepaid_balance ? parseFloat(studentData.prepaid_balance) : 0,
           endorsements: endorsementsMap.get(user.id) || []
         };
@@ -179,7 +201,17 @@ export const useStudents = () => {
           name: studentData.name,
           role: 'student',
           phone: studentData.phone,
-          avatar_url: studentData.avatar
+          mobile_phone: studentData.mobilePhone,
+          home_phone: studentData.homePhone,
+          work_phone: studentData.workPhone,
+          address: studentData.address,
+          date_of_birth: studentData.dateOfBirth,
+          emergency_contact_name: studentData.emergencyContact?.name,
+          emergency_contact_phone: studentData.emergencyContact?.phone,
+          emergency_contact_relationship: studentData.emergencyContact?.relationship,
+          preferred_aircraft_id: studentData.preferredAircraftId,
+          avatar_url: studentData.avatar,
+          cover_url: studentData.coverPhoto
         });
 
       if (userError) throw userError;
@@ -211,13 +243,15 @@ export const useStudents = () => {
 
       if (studentError) throw studentError;
 
+      const { data: { user: currentAuthUser } } = await supabase.auth.getUser();
+
       if (studentData.endorsements && studentData.endorsements.length > 0) {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
           student_id: userData.id,
           type: e.type,
           date_obtained: e.dateObtained,
           expiry_date: e.expiryDate,
-          instructor_id: e.instructorId || null,
+          instructor_id: e.instructorId || currentAuthUser?.id || null,
           is_active: e.isActive
         }));
 
@@ -242,17 +276,75 @@ export const useStudents = () => {
 
   const updateStudent = async (id: string, studentData: Omit<Student, 'id'>) => {
     try {
-      const { error: userError } = await supabase
+      const { data: existingUser, error: existingUserError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', id)
+        .single();
+
+      if (existingUserError) throw existingUserError;
+
+      const currentEmail = String(existingUser?.email || '').trim().toLowerCase();
+      const nextEmail = String(studentData.email || '').trim().toLowerCase();
+      let emailChangeLink: string | undefined;
+      let emailChangeRequested = false;
+
+      if (nextEmail && nextEmail !== currentEmail) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+
+        const redirectOrigin = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN?.trim() || window.location.origin;
+        const redirectBase = redirectOrigin.replace(/\/$/, '');
+        const appBasePath = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN ? '/' : import.meta.env.BASE_URL;
+        const redirectTo = `${redirectBase}${appBasePath}`;
+
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/change-user-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+            Apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({
+            userId: id,
+            newEmail: nextEmail,
+            redirectTo,
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || result.message || 'Failed to request login email change');
+        }
+
+        emailChangeRequested = Boolean(result.changed);
+        emailChangeLink = result.manualLink;
+      }
+
+      const { data: updatedUsers, error: userError } = await supabase
         .from('users')
         .update({
-          email: studentData.email,
           name: studentData.name,
           phone: studentData.phone,
-          avatar_url: studentData.avatar
+          mobile_phone: studentData.mobilePhone,
+          home_phone: studentData.homePhone,
+          work_phone: studentData.workPhone,
+          address: studentData.address,
+          date_of_birth: studentData.dateOfBirth,
+          emergency_contact_name: studentData.emergencyContact?.name,
+          emergency_contact_phone: studentData.emergencyContact?.phone,
+          emergency_contact_relationship: studentData.emergencyContact?.relationship,
+          preferred_aircraft_id: studentData.preferredAircraftId,
+          avatar_url: studentData.avatar,
+          cover_url: studentData.coverPhoto
         })
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
       if (userError) throw userError;
+      if (!updatedUsers || updatedUsers.length === 0) {
+        throw new Error('You do not have permission to update this member.');
+      }
 
       const { error: studentError } = await writeStudentRow('update', {
         raaus_id: studentData.raausId,
@@ -264,7 +356,6 @@ export const useStudents = () => {
         occupation: studentData.occupation,
         alternate_phone: studentData.alternatePhone,
         date_of_birth: studentData.dateOfBirth,
-        prepaid_balance: studentData.prepaidBalance,
         emergency_contact_name: studentData.emergencyContact?.name,
         emergency_contact_phone: studentData.emergencyContact?.phone,
         emergency_contact_relationship: studentData.emergencyContact?.relationship
@@ -279,13 +370,15 @@ export const useStudents = () => {
 
       if (deleteEndorsementsError) throw deleteEndorsementsError;
 
+      const { data: { user: currentAuthUser } } = await supabase.auth.getUser();
+
       if (studentData.endorsements && studentData.endorsements.length > 0) {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
           student_id: id,
           type: e.type,
           date_obtained: e.dateObtained,
           expiry_date: e.expiryDate,
-          instructor_id: e.instructorId || null,
+          instructor_id: e.instructorId || currentAuthUser?.id || null,
           is_active: e.isActive
         }));
 
@@ -297,16 +390,30 @@ export const useStudents = () => {
       }
 
       await fetchStudents();
-      toast.success('User updated successfully');
+      if (emailChangeRequested) {
+        toast.success('User updated. Email change requires verification before login changes.');
+        if (emailChangeLink) {
+          window.prompt('Send this email verification link to the member if they did not receive the Supabase email:', emailChangeLink);
+        }
+      } else {
+        toast.success('User updated successfully');
+      }
     } catch (err) {
       console.error('Error updating student:', err);
-      toast.error('Failed to update user');
+      toast.error(`Failed to update user: ${getErrorMessage(err, 'Unknown error')}`);
       throw err;
     }
   };
 
   const deleteStudent = async (id: string) => {
     try {
+      const { error: rolesError } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('user_id', id);
+
+      if (rolesError) throw rolesError;
+
       const { error: endorsementsError } = await supabase
         .from('endorsements')
         .delete()
@@ -321,18 +428,45 @@ export const useStudents = () => {
 
       if (studentError) throw studentError;
 
-      const { error: userError } = await supabase
+      const { data: deletedUsers, error: userError } = await supabase
         .from('users')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
       if (userError) throw userError;
+      if (!deletedUsers || deletedUsers.length === 0) {
+        throw new Error('Member was not removed');
+      }
 
       await fetchStudents();
-      toast.success('Student deleted successfully');
+      toast.success('Member removed successfully');
     } catch (err) {
       console.error('Error deleting student:', err);
-      toast.error('Failed to delete student');
+      toast.error('Failed to remove member');
+      throw err;
+    }
+  };
+
+  const setStudentActive = async (id: string, isActive: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          is_active: isActive,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .select('id, is_active')
+        .single();
+
+      if (error) throw error;
+
+      await fetchStudents();
+      toast.success(isActive ? 'Member restored' : 'Member archived');
+    } catch (err) {
+      console.error('Error updating member active status:', err);
+      toast.error(isActive ? 'Failed to restore member' : 'Failed to archive member');
       throw err;
     }
   };
@@ -348,6 +482,7 @@ export const useStudents = () => {
     addStudent,
     updateStudent,
     deleteStudent,
+    setStudentActive,
     refetch: fetchStudents
   };
 };

@@ -259,7 +259,48 @@ export const AircraftStatisticsTab: React.FC = () => {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="space-y-3 p-4 md:hidden">
+          {sorted.map(s => (
+            <article key={s.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-gray-900">{s.registration}</h3>
+                  <p className="truncate text-xs text-gray-500">{s.makeModel}</p>
+                </div>
+                {s.status === 'serviceable' ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                    <CheckCircle className="h-3 w-3" />
+                    Serviceable
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                    <AlertTriangle className="h-3 w-3" />
+                    {s.status}
+                  </span>
+                )}
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-blue-50 p-2">
+                  <p className="text-xs text-blue-700">Bookings</p>
+                  <p className="font-bold text-blue-900">{s.totalBookings}</p>
+                </div>
+                <div className="rounded-lg bg-green-50 p-2">
+                  <p className="text-xs text-green-700">Hours</p>
+                  <p className="font-bold text-green-900">{s.totalHours.toFixed(1)}</p>
+                </div>
+                <div className="rounded-lg bg-amber-50 p-2">
+                  <p className="text-xs text-amber-700">Landings</p>
+                  <p className="font-bold text-amber-900">{s.totalLandings}</p>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
+                <span>{s.completedFlights} completed</span>
+                <span>{s.totalTakeoffs} takeoffs</span>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full divide-y divide-gray-100">
             <thead className="bg-gray-50">
               <tr>

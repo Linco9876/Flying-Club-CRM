@@ -19,6 +19,7 @@ export interface PaymentMethod {
   description: string;
   active: boolean;
   displayOrder: number;
+  allowAccountTopup: boolean;
 }
 
 export interface AircraftRate {
@@ -84,7 +85,8 @@ export const useBillingSettings = () => {
           name: pm.name,
           description: pm.description || '',
           active: pm.active !== false,
-          displayOrder: pm.display_order
+          displayOrder: pm.display_order,
+          allowAccountTopup: pm.allow_account_topup !== false
         })));
       }
     } catch (error) {
@@ -188,7 +190,8 @@ export const useBillingSettings = () => {
           name: data.name,
           description: data.description || '',
           active: data.active !== false,
-          displayOrder: data.display_order
+          displayOrder: data.display_order,
+          allowAccountTopup: data.allow_account_topup !== false
         }]);
         toast.success('Payment method added');
       }
@@ -205,6 +208,7 @@ export const useBillingSettings = () => {
       if (updates.description !== undefined) dbUpdates.description = updates.description;
       if (updates.active !== undefined) dbUpdates.active = updates.active;
       if (updates.displayOrder !== undefined) dbUpdates.display_order = updates.displayOrder;
+      if (updates.allowAccountTopup !== undefined) dbUpdates.allow_account_topup = updates.allowAccountTopup;
 
       const { error } = await supabase
         .from('payment_methods')
@@ -253,6 +257,7 @@ export const useBillingSettings = () => {
           name: method.name.trim(),
           description: method.description?.trim() || null,
           active: method.active,
+          allow_account_topup: method.allowAccountTopup !== false,
           display_order: index + 1,
           updated_at: new Date().toISOString(),
         };
