@@ -456,11 +456,23 @@ export const useStudents = () => {
           is_active: isActive,
           updated_at: new Date().toISOString()
         })
-        .eq('id', id)
-        .select('id, is_active')
-        .single();
+        .eq('id', id);
 
       if (error) throw error;
+
+      const { data: updatedMember, error: verifyError } = await supabase
+        .from('users')
+        .select('id, is_active')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (verifyError) throw verifyError;
+      if (!updatedMember || updatedMember.is_active !== isActive) {
+        throw new Error(isActive
+          ? 'Member restore was blocked or did not apply'
+          : 'Member archive was blocked or did not apply'
+        );
+      }
 
       await fetchStudents();
       toast.success(isActive ? 'Member restored' : 'Member archived');
