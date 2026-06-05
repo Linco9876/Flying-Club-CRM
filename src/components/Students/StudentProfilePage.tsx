@@ -1349,6 +1349,88 @@ export const StudentProfilePage: React.FC = () => {
     upcoming: sortedTimelineEvents.filter(event => event.isFuture).length,
   };
 
+  const handleExportProgressVideoData = () => {
+    if (!student) {
+      toast.error('Student file is still loading');
+      return;
+    }
+
+    const enrolledCourses = courseProgressSummaries.filter((course) =>
+      course.recordsCount > 0 || course.completedLessons > 0 || course.percentage > 0
+    );
+    if (enrolledCourses.length === 0 && studentTrainingRecords.length === 0 && studentExamResults.length === 0) {
+      toast.error('No student progress data to export yet');
+      return;
+    }
+
+    const sortedCourses = [...enrolledCourses].sort((a, b) => b.percentage - a.percentage);
+    const totalDualMinutes = studentTrainingRecords.reduce((sum, record) => sum + record.dualTimeMin, 0);
+    const totalSoloMinutes = studentTrainingRecords.reduce((sum, record) => sum + record.soloTimeMin, 0);
+    const competentSequences = studentTrainingRecords.reduce(
+      (sum, record) => sum + record.sequences.filter(sequence => sequence.competence === 'C').length,
+      0
+    );
+
+    const recentActivity = [...studentTrainingRecords]
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 6)
+      .map(record => {
+        const instructor = users.find(u => u.id === record.instructorId);
+        const minutes = record.dualTimeMin + record.soloTimeMin;
+        return {
+          date: record.date.toISOString(),
+          title: record.lessonCodes.length > 0 ? record.lessonCodes.join(', ') : 'Training flight',
+          detail: `${record.registration || record.aircraftType || 'Aircraft'} - ${formatDecimalTime(minutes)}h with ${instructor?.name || 'Instructor'}`,
+          status: record.status,
+        };
+      });
+
+    const videoProps: StudentProgressVideoProps = {
+      clubName: 'Bendigo Flying Club',
+      generatedAt: new Date().toISOString(),
+      student: {
+        name: student.name,
+        email: student.email,
+        role: student.roles?.includes('pilot') || student.role === 'pilot' ? 'Pilot' : 'Student',
+        raausId: student.raausId,
+        casaId: student.casaId,
+      },
+      stats: {
+        totalHours: Number(((totalDualMinutes + totalSoloMinutes) / 60).toFixed(1)),
+        dualHours: Number((totalDualMinutes / 60).toFixed(1)),
+        soloHours: Number((totalSoloMinutes / 60).toFixed(1)),
+        recordsCount: studentTrainingRecords.length,
+        competentSequences,
+        examsPassed: studentExamResults.filter(exam => exam.result === 'pass').length,
+        coursesCompleted: enrolledCourses.filter(course => course.isComplete).length,
+        coursesInProgress: enrolledCourses.filter(course => !course.isComplete).length,
+      },
+      courses: sortedCourses.slice(0, 5).map(({ course, percentage, completedLessons, totalLessons, isComplete }) => ({
+        title: course.title,
+        category: course.category,
+        percentage,
+        completedLessons,
+        totalLessons,
+        isComplete,
+      })),
+      recentActivity,
+      exams: studentExamResults
+        .slice()
+        .sort((a, b) => b.examDate.getTime() - a.examDate.getTime())
+        .slice(0, 5)
+        .map(exam => ({
+          name: exam.examName,
+          score: exam.score,
+          passMark: exam.passMark,
+          result: exam.result,
+          date: exam.examDate.toISOString(),
+        })),
+    };
+
+    downloadStudentProgressVideoProps(videoProps);
+    toast.success('Remotion video data exported');
+  };
+
   return (
     <div className="p-3 sm:p-6">
       {/* Header */}
@@ -2325,6 +2407,14 @@ export const StudentProfilePage: React.FC = () => {
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExportProgressVideoData}
+                    className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-700 transition-colors hover:bg-purple-100"
+                  >
+                    <Download className="h-4 w-4" />
+                    Remotion Video
+                  </button>
                   <div className="flex rounded-lg bg-gray-100 p-1">
                     <button
                       onClick={() => setShowMatrixView(false)}
