@@ -39,14 +39,19 @@ jobs:
         run: node ./scripts/backup-crm.mjs --env="$RUNNER_TEMP/backup-crm.env"
 
       - name: Configure OneDrive upload
+        env:
+          RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG }}
         run: |
           mkdir -p "$HOME/.config/rclone"
-          printf '%s' "${{ secrets.RCLONE_CONFIG }}" > "$HOME/.config/rclone/rclone.conf"
+          printf '%s' "$RCLONE_CONFIG_CONTENT" > "$HOME/.config/rclone/rclone.conf"
           chmod 600 "$HOME/.config/rclone/rclone.conf"
 
       - name: Upload backup to OneDrive
+        env:
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+          ONEDRIVE_BACKUP_PATH: ${{ secrets.ONEDRIVE_BACKUP_PATH }}
         run: |
-          rclone copy "$RUNNER_TEMP/crm-backup" "${{ secrets.RCLONE_REMOTE }}:${{ secrets.ONEDRIVE_BACKUP_PATH }}" --create-empty-src-dirs --fast-list
+          rclone copy "$RUNNER_TEMP/crm-backup" "$RCLONE_REMOTE:$ONEDRIVE_BACKUP_PATH" --create-empty-src-dirs --fast-list
 
       - name: Upload backup as GitHub artifact
         uses: actions/upload-artifact@v4
