@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { Player } from '@remotion/player';
 import { useAuth } from '../../context/AuthContext';
 import { Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
 import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download } from 'lucide-react';
@@ -18,8 +19,8 @@ import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
-import { downloadStudentProgressVideoProps } from '../../utils/studentProgressVideoExport';
 import { StudentProgressVideoProps } from '../../types/studentProgressVideo';
+import { StudentProgressVideo } from '../../remotion/StudentProgressVideo';
 
 interface StudentInfoForm {
   name: string;
@@ -128,6 +129,7 @@ export const StudentProfilePage: React.FC = () => {
   const studentId = routeStudentId || user?.id;
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile'));
   const [showMatrixView, setShowMatrixView] = useState(true);
+  const [previewVideoProps, setPreviewVideoProps] = useState<StudentProgressVideoProps | null>(null);
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
@@ -1349,7 +1351,7 @@ export const StudentProfilePage: React.FC = () => {
     upcoming: sortedTimelineEvents.filter(event => event.isFuture).length,
   };
 
-  const handleExportProgressVideoData = () => {
+  const handlePreviewProgressVideo = () => {
     if (!student) {
       toast.error('Student file is still loading');
       return;
@@ -1427,8 +1429,7 @@ export const StudentProfilePage: React.FC = () => {
         })),
     };
 
-    const filename = downloadStudentProgressVideoProps(videoProps);
-    toast.success(`Downloaded ${filename}. Render it with npm run render:student-progress.`);
+    setPreviewVideoProps(videoProps);
   };
 
   return (
@@ -2409,11 +2410,11 @@ export const StudentProfilePage: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleExportProgressVideoData}
+                    onClick={handlePreviewProgressVideo}
                     className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-700 transition-colors hover:bg-purple-100"
                   >
-                    <Download className="h-4 w-4" />
-                    Export Video Data
+                    <Plane className="h-4 w-4" />
+                    Preview Video
                   </button>
                   <div className="flex rounded-lg bg-gray-100 p-1">
                     <button
@@ -3366,11 +3367,69 @@ export const StudentProfilePage: React.FC = () => {
           </div>
         </div>
       )}
+      <StudentProgressVideoModal
+        props={previewVideoProps}
+        onClose={() => setPreviewVideoProps(null)}
+      />
     </div>
   );
 };
 
 // ---------- CourseProgressTab ----------
+
+const StudentProgressVideoModal: React.FC<{
+  props: StudentProgressVideoProps | null;
+  onClose: () => void;
+}> = ({ props, onClose }) => {
+  if (!props) return null;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-3 sm:p-6">
+      <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-gray-900 sm:text-lg">Student Progress Video</h2>
+            <p className="truncate text-xs text-gray-500 sm:text-sm">{props.student.name}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+            aria-label="Close video preview"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="bg-slate-950 p-2 sm:p-4">
+          <div className="mx-auto aspect-video w-full max-w-5xl overflow-hidden rounded-lg bg-black">
+            <Player
+              component={StudentProgressVideo}
+              inputProps={props}
+              durationInFrames={1500}
+              compositionWidth={1920}
+              compositionHeight={1080}
+              fps={30}
+              controls
+              autoPlay
+              loop
+              style={{ width: '100%', height: '100%' }}
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 text-xs text-gray-500 sm:px-5">
+          <span>This is an in-app preview. MP4 download can be added later with a server-side render worker.</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const GRADE_ORDER: Record<LessonGradingSystem, string[]> = {
   'NC/S/C/-': ['-', 'NC', 'S', 'C'],
@@ -3508,6 +3567,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
   const { settings: trainingSettings } = useTrainingSettings();
   const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
   const [grantingEndorsementCourseIds, setGrantingEndorsementCourseIds] = useState<Set<string>>(new Set());
+  const [previewVideoProps, setPreviewVideoProps] = useState<StudentProgressVideoProps | null>(null);
   const courseProgress = useMemo(
     () => calculateCourseProgress(courses, trainingRecords, trainingSettings.courseCompletionRule),
     [courses, trainingRecords, trainingSettings.courseCompletionRule]
@@ -3567,7 +3627,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
     });
   }, [enrolledCourses, grantCompletionEndorsement, student, user]);
 
-  const handleExportProgressVideo = () => {
+  const handlePreviewProgressVideo = () => {
     if (!student) {
       toast.error('Student file is still loading');
       return;
@@ -3636,8 +3696,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
         })),
     };
 
-    const filename = downloadStudentProgressVideoProps(videoProps);
-    toast.success(`Downloaded ${filename}. Render it with npm run render:student-progress.`);
+    setPreviewVideoProps(videoProps);
   };
 
   const handleExportCourse = async (course: TrainingModule) => {
@@ -3682,20 +3741,17 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
         <div>
           <h3 className="text-sm font-semibold text-blue-950">Student Progress Video</h3>
           <p className="mt-1 text-sm text-blue-800">
-            Download Remotion render data, then render the MP4 with the local Remotion script.
+            Preview a branded Remotion progress video from this student file.
           </p>
         </div>
         <button
           type="button"
-          onClick={handleExportProgressVideo}
+          onClick={handlePreviewProgressVideo}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
         >
-          <Download className="h-4 w-4" />
-          Export Video Data
+          <Plane className="h-4 w-4" />
+          Preview Video
         </button>
-        <p className="text-xs text-blue-700 md:basis-full">
-          MP4 render command: <span className="font-mono">npm run render:student-progress -- --props=&lt;downloaded-json&gt; --out=student-progress.mp4</span>
-        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3796,6 +3852,10 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
           </div>
         </div>
       ))}
+      <StudentProgressVideoModal
+        props={previewVideoProps}
+        onClose={() => setPreviewVideoProps(null)}
+      />
     </div>
   );
 };

@@ -1,14 +1,13 @@
-# Student Progress Video Export
+# Student Progress Video
 
-The CRM exports Remotion render data from a student profile. Remotion needs Node/Chromium to render an MP4, so the browser downloads a JSON file first.
+The CRM previews the Remotion student progress video directly inside a student profile popup.
 
 1. Open a student profile.
 2. Go to `Training Records` or `Courses`.
-3. Click `Export Video Data`.
-4. Render the MP4 locally:
+3. Click `Preview Video`.
+
+Remotion still needs Node/Chromium to render a downloadable MP4. If the app later needs true MP4 downloads, add a server-side render worker or use the local render script with a props JSON file:
 
 ```powershell
 npm run render:student-progress -- --props="C:\Path\To\student-progress-video.json" --out="student-progress.mp4"
 ```
-
-The MP4 will be written to the path passed in `--out`.
