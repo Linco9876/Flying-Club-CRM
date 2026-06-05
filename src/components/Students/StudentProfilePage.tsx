@@ -1427,8 +1427,8 @@ export const StudentProfilePage: React.FC = () => {
         })),
     };
 
-    downloadStudentProgressVideoProps(videoProps);
-    toast.success('Remotion video data exported');
+    const filename = downloadStudentProgressVideoProps(videoProps);
+    toast.success(`Downloaded ${filename}. Render it with npm run render:student-progress.`);
   };
 
   return (
@@ -2413,7 +2413,7 @@ export const StudentProfilePage: React.FC = () => {
                     className="inline-flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-700 transition-colors hover:bg-purple-100"
                   >
                     <Download className="h-4 w-4" />
-                    Remotion Video
+                    Export Video Data
                   </button>
                   <div className="flex rounded-lg bg-gray-100 p-1">
                     <button
@@ -3636,8 +3636,8 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
         })),
     };
 
-    downloadStudentProgressVideoProps(videoProps);
-    toast.success('Video data exported. Run npm run render:student-progress -- --props=path-to-json --out=student-progress.mp4');
+    const filename = downloadStudentProgressVideoProps(videoProps);
+    toast.success(`Downloaded ${filename}. Render it with npm run render:student-progress.`);
   };
 
   const handleExportCourse = async (course: TrainingModule) => {
@@ -3680,8 +3680,10 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
     <div className="space-y-6">
       <div className="flex flex-col gap-3 rounded-lg border border-blue-100 bg-blue-50 p-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-blue-950">Student Progress Export Video</h3>
-          <p className="mt-1 text-sm text-blue-800">Download render-ready Remotion data for a branded MP4 progress video.</p>
+          <h3 className="text-sm font-semibold text-blue-950">Student Progress Video</h3>
+          <p className="mt-1 text-sm text-blue-800">
+            Download Remotion render data, then render the MP4 with the local Remotion script.
+          </p>
         </div>
         <button
           type="button"
@@ -3691,6 +3693,9 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
           <Download className="h-4 w-4" />
           Export Video Data
         </button>
+        <p className="text-xs text-blue-700 md:basis-full">
+          MP4 render command: <span className="font-mono">npm run render:student-progress -- --props=&lt;downloaded-json&gt; --out=student-progress.mp4</span>
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
