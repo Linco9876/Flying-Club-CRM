@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { PilotStatisticsTab } from './PilotStatisticsTab';
 import { InstructorStatisticsTab } from './InstructorStatisticsTab';
 import { AircraftStatisticsTab } from './AircraftStatisticsTab';
-import { Dashboard } from '../Dashboard/Dashboard';
+import { ReportsOverviewTab } from './ReportsOverviewTab';
 import { BarChart3, Users, User, Plane, Download, Filter, Activity } from 'lucide-react';
 
 export const ReportsDashboard: React.FC = () => {
@@ -70,7 +70,7 @@ export const ReportsDashboard: React.FC = () => {
 
       {/* Tab Content */}
       <div>
-        {activeTab === 'overview' && <Dashboard />}
+        {activeTab === 'overview' && <ReportsOverviewTab />}
         {activeTab === 'pilot' && <PilotStatisticsTab />}
         {activeTab === 'instructor' && <InstructorStatisticsTab />}
         {activeTab === 'aircraft' && <AircraftStatisticsTab />}
