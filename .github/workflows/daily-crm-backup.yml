@@ -1,0 +1,57 @@
+name: Daily CRM backup
+
+on:
+  schedule:
+    # 2:15 AM Australia/Sydney during standard time. GitHub schedules are UTC.
+    - cron: "15 16 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
+
+      - name: Prepare backup environment
+        run: |
+          mkdir -p "$RUNNER_TEMP/crm-backup"
+          cat > "$RUNNER_TEMP/backup-crm.env" <<'EOF'
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BACKUP_ROOT=${{ runner.temp }}/crm-backup
+          RETENTION_DAYS=45
+          PAGE_SIZE=1000
+          EOF
+
+      - name: Run CRM backup
+        run: node ./scripts/backup-crm.mjs --env="$RUNNER_TEMP/backup-crm.env"
+
+      - name: Configure OneDrive upload
+        run: |
+          mkdir -p "$HOME/.config/rclone"
+          printf '%s' "${{ secrets.RCLONE_CONFIG }}" > "$HOME/.config/rclone/rclone.conf"
+          chmod 600 "$HOME/.config/rclone/rclone.conf"
+
+      - name: Upload backup to OneDrive
+        run: |
+          rclone copy "$RUNNER_TEMP/crm-backup" "${{ secrets.RCLONE_REMOTE }}:${{ secrets.ONEDRIVE_BACKUP_PATH }}" --create-empty-src-dirs --fast-list
+
+      - name: Upload backup as GitHub artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crm-backup-${{ github.run_id }}
+          path: ${{ runner.temp }}/crm-backup
+          retention-days: 7

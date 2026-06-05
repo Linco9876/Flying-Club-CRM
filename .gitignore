@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Local backup config/secrets
+scripts/backup-crm.env
+*.backup.local
+
+# Local Netlify folder
+.netlify
