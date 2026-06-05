@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSafetySettings } from './useSafetySettings';
 import toast from 'react-hot-toast';
 
-export type SafetyReportType = 'incident' | 'hazard' | 'risk_assessment';
+export type SafetyReportType = 'incident' | 'hazard' | 'risk_assessment' | 'near_miss' | 'accident';
 export type SafetyReportSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type SafetyReportStatus = 'open' | 'under_review' | 'closed';
 
@@ -14,15 +14,25 @@ export interface SafetyReport {
   reporterName: string;
   categoryId?: string;
   categoryName?: string;
+  aircraftId?: string;
+  aircraftRegistration?: string;
   reportType: SafetyReportType;
   severity: SafetyReportSeverity;
   title: string;
   description: string;
   location?: string;
+  occurrenceAt?: Date;
+  phaseOfFlight?: string;
+  witnesses?: string;
   immediateActions?: string;
+  correctiveAction?: string;
+  injuryReported: boolean;
+  damageReported: boolean;
+  reportableToAuthority: boolean;
   involvedUserIds: string[];
   status: SafetyReportStatus;
   assignedTo?: string;
+  closedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,7 +44,15 @@ export interface CreateSafetyReportData {
   title: string;
   description: string;
   location?: string;
+  occurrenceAt?: string;
+  aircraftId?: string;
+  phaseOfFlight?: string;
+  witnesses?: string;
   immediateActions?: string;
+  correctiveAction?: string;
+  injuryReported?: boolean;
+  damageReported?: boolean;
+  reportableToAuthority?: boolean;
   involvedUserIds?: string[];
 }
 
@@ -49,7 +67,8 @@ export const useSafetyReports = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('safety_reports')
-        .select('*, reporter:users!safety_reports_reporter_id_fkey(name), category:safety_report_categories(name)')
+        .select('*, reporter:users!safety_reports_reporter_id_fkey(name), category:safety_report_categories(name), aircraft:aircraft(registration)')
+        .order('occurrence_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -59,15 +78,25 @@ export const useSafetyReports = () => {
         reporterName: report.reporter?.name || 'Unknown',
         categoryId: report.category_id || undefined,
         categoryName: report.category?.name || undefined,
+        aircraftId: report.aircraft_id || undefined,
+        aircraftRegistration: report.aircraft?.registration || undefined,
         reportType: report.report_type,
         severity: report.severity,
         title: report.title,
         description: report.description,
         location: report.location || undefined,
+        occurrenceAt: report.occurrence_at ? new Date(report.occurrence_at) : undefined,
+        phaseOfFlight: report.phase_of_flight || undefined,
+        witnesses: report.witnesses || undefined,
         immediateActions: report.immediate_actions || undefined,
+        correctiveAction: report.corrective_action || undefined,
+        injuryReported: report.injury_reported ?? false,
+        damageReported: report.damage_reported ?? false,
+        reportableToAuthority: report.reportable_to_authority ?? false,
         involvedUserIds: report.involved_user_ids || [],
         status: report.status,
         assignedTo: report.assigned_to || undefined,
+        closedAt: report.closed_at ? new Date(report.closed_at) : undefined,
         createdAt: new Date(report.created_at),
         updatedAt: new Date(report.updated_at)
       }));
@@ -105,7 +134,15 @@ export const useSafetyReports = () => {
       title: report.title,
       description: report.description,
       location: report.location || null,
+      occurrence_at: report.occurrenceAt || null,
+      aircraft_id: report.aircraftId || null,
+      phase_of_flight: report.phaseOfFlight || null,
+      witnesses: report.witnesses || null,
       immediate_actions: report.immediateActions || null,
+      corrective_action: report.correctiveAction || null,
+      injury_reported: report.injuryReported ?? false,
+      damage_reported: report.damageReported ?? false,
+      reportable_to_authority: report.reportableToAuthority ?? false,
       involved_user_ids: report.involvedUserIds || [],
       assigned_to: assignedTo
     });
@@ -117,7 +154,11 @@ export const useSafetyReports = () => {
   const updateStatus = async (id: string, status: SafetyReportStatus) => {
     const { error } = await supabase
       .from('safety_reports')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update({
+        status,
+        closed_at: status === 'closed' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', id);
     if (error) throw error;
     await fetchReports();
