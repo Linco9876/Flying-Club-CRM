@@ -230,6 +230,11 @@ export const StudentProfilePage: React.FC = () => {
     () => trainingCourses.find(course => course.id === selectedTrainingCourseId) ?? null,
     [selectedTrainingCourseId, trainingCourses]
   );
+  const {
+    assessments: selectedMatrixAssessments,
+    requirements: selectedMatrixRequirements,
+    rowsById: selectedMatrixRowsById,
+  } = useSyllabusMatrix(selectedTrainingCourseId || undefined, studentId);
   const linkedSafetyReports = useMemo(
     () => safetyReports.filter(report => report.reporterId === studentId || report.involvedUserIds.includes(studentId || '')),
     [safetyReports, studentId]
@@ -1017,6 +1022,52 @@ export const StudentProfilePage: React.FC = () => {
   const sortedRecords = [...filteredRecords].sort((a, b) =>
     getBookingDateTime(b).getTime() - getBookingDateTime(a).getTime()
   );
+  const getRecordMatrixAssessmentSummary = useCallback((record: TrainingRecord) => {
+    const recordAssessments = selectedMatrixAssessments.filter(
+      assessment => assessment.trainingRecordId === record.id
+    );
+
+    if (recordAssessments.length === 0) {
+      return null;
+    }
+
+    const lessonCodes = new Set(record.lessonCodes || []);
+    const items = recordAssessments
+      .map(assessment => {
+        const row = selectedMatrixRowsById.get(assessment.matrixRowId);
+        const requirement = selectedMatrixRequirements.find(req =>
+          req.matrixRowId === assessment.matrixRowId &&
+          (
+            (assessment.lessonId && req.lessonId === assessment.lessonId) ||
+            (record.lessonId && req.lessonId === record.lessonId) ||
+            lessonCodes.has(req.lessonSequenceCode)
+          )
+        ) || selectedMatrixRequirements.find(req => req.matrixRowId === assessment.matrixRowId);
+
+        return {
+          assessment,
+          row,
+          requirement,
+          meetsRequirement: matrixStandardMeetsRequirement(assessment.achievedStandard, requirement?.requiredStandard),
+        };
+      })
+      .filter(item => item.row)
+      .sort((a, b) => (a.row?.sortOrder ?? 0) - (b.row?.sortOrder ?? 0));
+
+    if (items.length === 0) {
+      return null;
+    }
+
+    const metCount = items.filter(item => item.meetsRequirement).length;
+    const unassessedCount = items.filter(item => !item.assessment.achievedStandard).length;
+
+    return {
+      items,
+      metCount,
+      unassessedCount,
+      totalCount: items.length,
+    };
+  }, [selectedMatrixAssessments, selectedMatrixRequirements, selectedMatrixRowsById]);
   const filteredTotalMinutes = filteredRecords.reduce((sum, record) => sum + record.dualTimeMin + record.soloTimeMin, 0);
   const filteredPendingAck = filteredRecords.filter(record => record.status === 'submitted' && !record.studentAck).length;
   const latestFilteredBooking = sortedRecords[0] ? getBookingDateTime(sortedRecords[0]) : null;
@@ -2603,6 +2654,7 @@ export const StudentProfilePage: React.FC = () => {
                     const recordLesson = getRecordLesson(record);
                     const lessonTitle = recordLesson?.name || recordLesson?.sequenceTitle || record.nextLesson || 'Lesson not recorded';
                     const lessonCode = recordLesson?.sequenceCode || record.lessonCodes.join(', ');
+                    const matrixSummary = getRecordMatrixAssessmentSummary(record);
                     const latestRevision = [...(record.auditLog || [])]
                       .reverse()
                       .find(entry => entry.changes?.studentAcknowledgementRequired && Array.isArray(entry.changes?.summary));
@@ -2795,6 +2847,54 @@ export const StudentProfilePage: React.FC = () => {
                                   </section>
                                 );
                               })()}
+                              {matrixSummary && (
+                                <section className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <h4 className="text-xs font-semibold uppercase text-indigo-700">CASA Matrix Assessment</h4>
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                      <span className="rounded-full bg-white px-2 py-0.5 font-semibold text-indigo-800 border border-indigo-100">
+                                        {matrixSummary.metCount}/{matrixSummary.totalCount} met
+                                      </span>
+                                      {matrixSummary.unassessedCount > 0 && (
+                                        <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800 border border-amber-200">
+                                          {matrixSummary.unassessedCount} carried forward
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 space-y-2">
+                                    {matrixSummary.items.map(({ assessment, row, requirement, meetsRequirement }) => (
+                                      <div key={assessment.matrixRowId} className="rounded-md border border-white/80 bg-white px-3 py-2">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="min-w-0">
+                                            <p className="text-xs font-semibold text-gray-900">
+                                              {formatSyllabusMatrixText(row?.code)} {formatSyllabusMatrixText(row?.description)}
+                                            </p>
+                                            {assessment.comments && (
+                                              <p className="mt-1 text-xs leading-5 text-gray-600">{assessment.comments}</p>
+                                            )}
+                                          </div>
+                                          <div className="flex shrink-0 items-center gap-1 text-xs font-semibold">
+                                            <span className={`rounded-full border px-2 py-0.5 ${
+                                              meetsRequirement
+                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                                : assessment.achievedStandard
+                                                  ? 'border-amber-200 bg-amber-50 text-amber-800'
+                                                  : 'border-gray-200 bg-gray-50 text-gray-500'
+                                            }`}>
+                                              {matrixStandardShortLabel(assessment.achievedStandard)}
+                                            </span>
+                                            <span className="text-gray-400">/</span>
+                                            <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-indigo-700">
+                                              Req {matrixStandardShortLabel(requirement?.requiredStandard)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </section>
+                              )}
                               {record.isFlightReview && record.flightReviewNotes && (
                                 <section className="rounded-lg border border-orange-200 bg-orange-50 p-4">
                                   <h4 className="text-xs font-semibold uppercase text-orange-700">Flight Review Notes</h4>
