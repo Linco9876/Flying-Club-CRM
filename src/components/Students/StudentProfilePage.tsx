@@ -792,10 +792,70 @@ export const StudentProfilePage: React.FC = () => {
 
   const getRecordCourse = (record: TrainingRecord) => trainingCourses.find(course => course.id === record.courseId);
 
+  const normaliseLessonLookupText = (value?: string) =>
+    (value || '')
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
   const getRecordLesson = (record: TrainingRecord) => {
     const course = getRecordCourse(record);
-    return course?.lessons.find(lesson => lesson.id === record.lessonId)
-      ?? course?.lessons.find(lesson => record.lessonCodes.includes(lesson.sequenceCode));
+    if (!course) return undefined;
+
+    const byId = course.lessons.find(lesson => lesson.id === record.lessonId);
+    if (byId) return byId;
+
+    const recordCodes = record.lessonCodes || [];
+    const exactCode = course.lessons.find(lesson =>
+      recordCodes.some(code => code === lesson.sequenceCode)
+    );
+    if (exactCode) return exactCode;
+
+    const lookupValues = recordCodes.map(normaliseLessonLookupText).filter(Boolean);
+    const aliases: Record<string, string[]> = {
+      tif: ['trial instruction flight', 'trial instructional flight', 'trial flight'],
+      circuits: ['circuit introduction', 'circuits', 'circuits continued'],
+      'medium turns': ['turning', 'basic turning', 'medium turns'],
+      'climbing turns': ['turning', 'basic turning', 'climbing turns'],
+      'flight test': ['pilot certificate flight test', 'rpc flight test'],
+    };
+
+    return course.lessons.find(lesson => {
+      const lessonTexts = [
+        lesson.sequenceCode,
+        lesson.name,
+        lesson.sequenceTitle,
+      ].map(normaliseLessonLookupText).filter(Boolean);
+
+      return lookupValues.some(value => {
+        const expanded = [value, ...(aliases[value] || []).map(normaliseLessonLookupText)];
+        return expanded.some(candidate =>
+          lessonTexts.some(lessonText =>
+            lessonText === candidate ||
+            lessonText.includes(candidate) ||
+            candidate.includes(lessonText)
+          )
+        );
+      });
+    });
+  };
+
+  const getRecordLessonDisplay = (record: TrainingRecord) => {
+    const lesson = getRecordLesson(record);
+    if (lesson) {
+      return {
+        title: lesson.name || lesson.sequenceTitle || lesson.sequenceCode || 'Lesson not recorded',
+        code: lesson.sequenceCode || record.lessonCodes.join(', '),
+      };
+    }
+
+    const recordedLesson = (record.lessonCodes || []).filter(Boolean).join(', ');
+    return {
+      title: recordedLesson || 'Lesson not recorded',
+      code: recordedLesson,
+    };
   };
 
   const getNextLessonFromAssessment = (
@@ -2903,9 +2963,9 @@ export const StudentProfilePage: React.FC = () => {
                     const instructor = users.find(u => u.id === record.instructorId);
                     const totalTime = (record.dualTimeMin + record.soloTimeMin) / 60;
                     const recordCourse = trainingCourses.find(c => c.id === record.courseId);
-                    const recordLesson = getRecordLesson(record);
-                    const lessonTitle = recordLesson?.name || recordLesson?.sequenceTitle || record.nextLesson || 'Lesson not recorded';
-                    const lessonCode = recordLesson?.sequenceCode || record.lessonCodes.join(', ');
+                    const recordLessonDisplay = getRecordLessonDisplay(record);
+                    const lessonTitle = recordLessonDisplay.title;
+                    const lessonCode = recordLessonDisplay.code;
                     const matrixSummary = getRecordMatrixAssessmentSummary(record);
                     const isMatrixExpanded = expandedRecordMatrixIds.has(record.id);
                     const latestRevision = [...(record.auditLog || [])]
