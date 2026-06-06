@@ -72,6 +72,61 @@ const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
 const toDateInputValue = (date?: Date) => date ? date.toISOString().slice(0, 10) : '';
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const formatCourseRichText = (value?: string) => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  const html = /<\/?[a-z][\s\S]*>/i.test(trimmed)
+    ? trimmed
+    : escapeHtml(trimmed)
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br />')}</p>`)
+    .join('');
+  if (typeof DOMParser === 'undefined') return html;
+
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  const allowed = new Set(['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'a']);
+  const walk = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent || '');
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const element = node as Element;
+    const tag = element.tagName.toLowerCase();
+    const normalized = tag === 'b' ? 'strong' : tag === 'i' ? 'em' : tag;
+    const inner = Array.from(element.childNodes).map(walk).join('');
+    if (!allowed.has(normalized)) return inner;
+    if (normalized === 'br') return '<br />';
+    if (normalized === 'a') {
+      const href = element.getAttribute('href') || '';
+      return /^https?:\/\//i.test(href)
+        ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>`
+        : inner;
+    }
+    return `<${normalized}>${inner}</${normalized}>`;
+  };
+  return Array.from(doc.body.childNodes).map(walk).join('').trim();
+};
+
+const CourseRichText: React.FC<{ value?: string; fallback?: string }> = ({ value, fallback = 'Not recorded' }) => {
+  const html = formatCourseRichText(value);
+  if (!html) {
+    return <p className="mt-1 text-sm text-gray-500">{fallback}</p>;
+  }
+
+  return (
+    <div
+      className="mt-1 text-sm leading-6 text-gray-700 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+};
+
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error) return error.message;
   if (error && typeof error === 'object' && 'message' in error) {
@@ -4401,17 +4456,15 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                     <div className="grid gap-3 border-t border-gray-200 bg-white px-4 py-4 md:grid-cols-3">
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Objective</p>
-                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{lesson.objective || 'Not recorded'}</p>
+                        <CourseRichText value={lesson.objective} />
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Theory focus</p>
-                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{lesson.theory || lesson.studentPreparation || 'Not recorded'}</p>
+                        <CourseRichText value={lesson.theory || lesson.studentPreparation} />
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Flight exercises</p>
-                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
-                          {lesson.flightExercises || (lesson.keyExercises.length > 0 ? lesson.keyExercises.join(', ') : 'Not recorded')}
-                        </p>
+                        <CourseRichText value={lesson.flightExercises || (lesson.keyExercises.length > 0 ? lesson.keyExercises.map(item => `- ${item}`).join('\n') : '')} />
                       </div>
                     </div>
                   </details>
