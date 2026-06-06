@@ -56,6 +56,27 @@ type SaveAssessmentInput = {
   }>;
 };
 
+const fetchAllPages = async <T,>(
+  buildQuery: () => any,
+  pageSize = 1000
+): Promise<T[]> => {
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const page = data ?? [];
+    rows.push(...page);
+
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
+};
+
 export const matrixStandardLabel = (standard?: SyllabusMatrixStandard) => {
   if (standard === 1) return '1 - Qualification standard';
   if (standard === 2) return '2 - Supervised solo standard';
@@ -93,37 +114,36 @@ export const useSyllabusMatrix = (courseId?: string, studentId?: string) => {
 
     setLoading(true);
     try {
-      const [rowsResult, requirementsResult, assessmentsResult] = await Promise.all([
-        supabase
-          .from('syllabus_matrix_rows')
-          .select('*')
-          .eq('course_id', courseId)
-          .order('sort_order', { ascending: true })
-          .range(0, 4999),
-        supabase
-          .from('syllabus_matrix_requirements')
-          .select('*')
-          .eq('course_id', courseId)
-          .order('lesson_sequence_code', { ascending: true })
-          .range(0, 4999),
+      const [matrixRows, matrixRequirements, matrixAssessments] = await Promise.all([
+        fetchAllPages<any>(() =>
+          supabase
+            .from('syllabus_matrix_rows')
+            .select('*')
+            .eq('course_id', courseId)
+            .order('sort_order', { ascending: true })
+        ),
+        fetchAllPages<any>(() =>
+          supabase
+            .from('syllabus_matrix_requirements')
+            .select('*')
+            .eq('course_id', courseId)
+            .order('lesson_sequence_code', { ascending: true })
+        ),
         studentId
-          ? supabase
-              .from('student_matrix_assessments')
-              .select('*')
-              .eq('course_id', courseId)
-              .eq('student_id', studentId)
-              .order('assessed_at', { ascending: false })
-              .range(0, 4999)
-          : Promise.resolve({ data: [], error: null }),
+          ? fetchAllPages<any>(() =>
+              supabase
+                .from('student_matrix_assessments')
+                .select('*')
+                .eq('course_id', courseId)
+                .eq('student_id', studentId)
+                .order('assessed_at', { ascending: false })
+            )
+          : Promise.resolve([]),
       ]);
 
-      if (rowsResult.error) throw rowsResult.error;
-      if (requirementsResult.error) throw requirementsResult.error;
-      if (assessmentsResult.error) throw assessmentsResult.error;
-
-      setRows((rowsResult.data ?? []).map(toMatrixRow));
-      setRequirements((requirementsResult.data ?? []).map(toRequirement));
-      setAssessments((assessmentsResult.data ?? []).map(toAssessment));
+      setRows(matrixRows.map(toMatrixRow));
+      setRequirements(matrixRequirements.map(toRequirement));
+      setAssessments(matrixAssessments.map(toAssessment));
       setError(null);
     } catch (err) {
       console.error('Failed to load syllabus matrix:', err);

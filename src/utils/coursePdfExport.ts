@@ -67,6 +67,27 @@ const criterionCode = (name: string, index: number) => {
 
 const minutesToHours = (minutes: number) => (minutes / 60).toFixed(1);
 
+const fetchAllPages = async <T,>(
+  buildQuery: () => any,
+  pageSize = 1000
+): Promise<T[]> => {
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const page = data ?? [];
+    rows.push(...page);
+
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
+};
+
 const matrixGradeLabel = (grade: string, system?: string) => {
   if (!grade || grade === '-' || grade === '–' || grade.includes('â')) return '-';
   return system === 'Out of 100' ? `${grade}%` : grade;
@@ -248,33 +269,30 @@ export async function exportCoursePdf({
     ))
     .sort((a, b) => b.examDate.getTime() - a.examDate.getTime());
 
-  const [
-    { data: matrixRowsData },
-    { data: matrixRequirementsData },
-    { data: matrixAssessmentsData },
-  ] = await Promise.all([
-    supabase
-      .from('syllabus_matrix_rows')
-      .select('*')
-      .eq('course_id', course.id)
-      .order('sort_order', { ascending: true })
-      .range(0, 4999),
-    supabase
-      .from('syllabus_matrix_requirements')
-      .select('*')
-      .eq('course_id', course.id)
-      .range(0, 4999),
-    supabase
-      .from('student_matrix_assessments')
-      .select('*')
-      .eq('course_id', course.id)
-      .eq('student_id', student.id)
-      .range(0, 4999),
+  const [matrixRows, matrixRequirements, matrixAssessments] = await Promise.all([
+    fetchAllPages<any>(() =>
+      supabase
+        .from('syllabus_matrix_rows')
+        .select('*')
+        .eq('course_id', course.id)
+        .order('sort_order', { ascending: true })
+    ),
+    fetchAllPages<any>(() =>
+      supabase
+        .from('syllabus_matrix_requirements')
+        .select('*')
+        .eq('course_id', course.id)
+        .order('lesson_sequence_code', { ascending: true })
+    ),
+    fetchAllPages<any>(() =>
+      supabase
+        .from('student_matrix_assessments')
+        .select('*')
+        .eq('course_id', course.id)
+        .eq('student_id', student.id)
+    ),
   ]);
 
-  const matrixRows = matrixRowsData ?? [];
-  const matrixRequirements = matrixRequirementsData ?? [];
-  const matrixAssessments = matrixAssessmentsData ?? [];
   const matrixRowById = new Map(matrixRows.map((row: any) => [row.id, row]));
   const bestAssessmentByRow = new Map<string, any>();
   matrixAssessments.forEach((assessment: any) => {
