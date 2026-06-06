@@ -235,6 +235,7 @@ export const StudentProfilePage: React.FC = () => {
     assessments: selectedMatrixAssessments,
     requirements: selectedMatrixRequirements,
     rowsById: selectedMatrixRowsById,
+    bestAssessmentByRow: selectedBestMatrixAssessmentByRow,
   } = useSyllabusMatrix(selectedTrainingCourseId || undefined, studentId);
   const linkedSafetyReports = useMemo(
     () => safetyReports.filter(report => report.reporterId === studentId || report.involvedUserIds.includes(studentId || '')),
@@ -1023,6 +1024,69 @@ export const StudentProfilePage: React.FC = () => {
   const sortedRecords = [...filteredRecords].sort((a, b) =>
     getBookingDateTime(b).getTime() - getBookingDateTime(a).getTime()
   );
+  const selectedCourseHasSyllabusMatrix = selectedMatrixRequirements.length > 0;
+  const selectedCourseMatrixSummary = useMemo(() => {
+    if (!selectedCourseHasSyllabusMatrix) {
+      return null;
+    }
+
+    const items = selectedMatrixRequirements
+      .map(requirement => {
+        const row = selectedMatrixRowsById.get(requirement.matrixRowId);
+        const achieved = selectedBestMatrixAssessmentByRow.get(requirement.matrixRowId)?.achievedStandard;
+        const meetsRequirement = matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+        return { requirement, row, achieved, meetsRequirement };
+      })
+      .filter(item => item.row)
+      .sort((a, b) =>
+        a.requirement.lessonSequenceCode.localeCompare(b.requirement.lessonSequenceCode, undefined, { numeric: true }) ||
+        (a.row?.sortOrder ?? 0) - (b.row?.sortOrder ?? 0)
+      );
+
+    const metItems = items.filter(item => item.meetsRequirement);
+    const outstandingItems = items.filter(item => !item.meetsRequirement);
+    const standardOneOutstanding = outstandingItems.filter(item => item.requirement.requiredStandard === 1).length;
+    const byLesson = new Map<string, {
+      lessonCode: string;
+      lessonTitle: string;
+      total: number;
+      outstanding: number;
+      items: typeof outstandingItems;
+    }>();
+
+    items.forEach(item => {
+      const key = item.requirement.lessonSequenceCode;
+      const current = byLesson.get(key) ?? {
+        lessonCode: key,
+        lessonTitle: item.requirement.lessonColumnTitle,
+        total: 0,
+        outstanding: 0,
+        items: [],
+      };
+      current.total += 1;
+      if (!item.meetsRequirement) {
+        current.outstanding += 1;
+        current.items.push(item);
+      }
+      byLesson.set(key, current);
+    });
+
+    return {
+      totalCount: items.length,
+      metCount: metItems.length,
+      outstandingCount: outstandingItems.length,
+      standardOneOutstanding,
+      percentage: items.length > 0 ? Math.round((metItems.length / items.length) * 100) : 0,
+      byLesson: Array.from(byLesson.values())
+        .filter(group => group.outstanding > 0)
+        .sort((a, b) => b.outstanding - a.outstanding || a.lessonCode.localeCompare(b.lessonCode, undefined, { numeric: true })),
+    };
+  }, [
+    selectedBestMatrixAssessmentByRow,
+    selectedCourseHasSyllabusMatrix,
+    selectedMatrixRequirements,
+    selectedMatrixRowsById,
+  ]);
   const getRecordMatrixAssessmentSummary = useCallback((record: TrainingRecord) => {
     const recordAssessments = selectedMatrixAssessments.filter(
       assessment => assessment.trainingRecordId === record.id
@@ -2405,7 +2469,9 @@ export const StudentProfilePage: React.FC = () => {
                     Training Records
                   </h2>
                   <p className="text-sm text-gray-500 mt-1">
-                    Select a course first, then review its records or assessment matrix.
+                    {selectedCourseHasSyllabusMatrix
+                      ? 'Review CASA RPL lesson attempts, outstanding syllabus matrix items, and the full course matrix.'
+                      : 'Review lesson records, competency criteria, next lessons, and student acknowledgements.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2416,7 +2482,7 @@ export const StudentProfilePage: React.FC = () => {
                         !showMatrixView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
-                      Cards
+                      Records
                     </button>
                     <button
                       onClick={() => setShowMatrixView(true)}
@@ -2424,7 +2490,7 @@ export const StudentProfilePage: React.FC = () => {
                         showMatrixView ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
-                      Matrix
+                      {selectedCourseHasSyllabusMatrix ? 'CASA Matrix' : 'Criteria Matrix'}
                     </button>
                   </div>
                   {canAddRecord && (
@@ -2463,32 +2529,55 @@ export const StudentProfilePage: React.FC = () => {
                 </label>
                 {selectedTrainingCourse && (
                   <p className="mt-2 text-xs text-blue-700">
-                    Showing {selectedTrainingCourse.title}. Matrix columns use this course's assessment criteria and grading types.
+                    {selectedCourseHasSyllabusMatrix
+                      ? `Showing ${selectedTrainingCourse.title}. This course uses the CASA syllabus matrix plus lesson records.`
+                      : `Showing ${selectedTrainingCourse.title}. Matrix columns use this course's assessment criteria and grading types.`}
                   </p>
                 )}
               </div>
 
               <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-                  <p className="text-xs font-medium uppercase text-gray-500">Shown</p>
+                  <p className="text-xs font-medium uppercase text-gray-500">Records</p>
                   <p className="mt-1 text-2xl font-semibold text-gray-900">{filteredRecords.length}</p>
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
                   <p className="text-xs font-medium uppercase text-gray-500">Hours</p>
                   <p className="mt-1 text-2xl font-semibold text-blue-600">{formatDecimalTime(filteredTotalMinutes)}</p>
                 </div>
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-                  <p className="text-xs font-medium uppercase text-gray-500">Awaiting</p>
-                  <p className={`mt-1 text-2xl font-semibold ${filteredPendingAck > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    {filteredPendingAck}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-                  <p className="text-xs font-medium uppercase text-gray-500">Latest Booking</p>
-                  <p className="mt-1 text-sm font-semibold text-gray-900">
-                    {latestFilteredBooking ? latestFilteredBooking.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
-                  </p>
-                </div>
+                {selectedCourseHasSyllabusMatrix && selectedCourseMatrixSummary ? (
+                  <>
+                    <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase text-indigo-700">Matrix Met</p>
+                      <p className="mt-1 text-2xl font-semibold text-indigo-900">{selectedCourseMatrixSummary.percentage}%</p>
+                      <p className="mt-0.5 text-xs text-indigo-700">
+                        {selectedCourseMatrixSummary.metCount}/{selectedCourseMatrixSummary.totalCount} items
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase text-red-700">Needs Attention</p>
+                      <p className="mt-1 text-2xl font-semibold text-red-700">{selectedCourseMatrixSummary.outstandingCount}</p>
+                      <p className="mt-0.5 text-xs text-red-700">
+                        {selectedCourseMatrixSummary.standardOneOutstanding} final-standard
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase text-gray-500">Awaiting</p>
+                      <p className={`mt-1 text-2xl font-semibold ${filteredPendingAck > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        {filteredPendingAck}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase text-gray-500">Latest Booking</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900">
+                        {latestFilteredBooking ? latestFilteredBooking.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -2564,6 +2653,155 @@ export const StudentProfilePage: React.FC = () => {
             <>
               {/* Overview Matrix */}
               {showMatrixView && (() => {
+                if (selectedCourseHasSyllabusMatrix && selectedCourseMatrixSummary) {
+                  return (
+                    <div className="space-y-4">
+                      <div className="rounded-lg border border-indigo-100 bg-white shadow-sm overflow-hidden">
+                        <div className="border-b border-indigo-100 bg-indigo-50 p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <h3 className="text-lg font-semibold text-gray-900">CASA RPL Matrix Overview</h3>
+                              <p className="mt-1 text-sm text-indigo-900">
+                                Course-wide view of required CASA matrix items. Lesson cards show the exact result for each attempt.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-800">
+                                {selectedCourseMatrixSummary.metCount} met
+                              </span>
+                              <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-red-700">
+                                {selectedCourseMatrixSummary.outstandingCount} outstanding
+                              </span>
+                              <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-indigo-800">
+                                {selectedCourseMatrixSummary.percentage}% complete
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 p-4 md:grid-cols-3">
+                          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                            <p className="text-xs font-semibold uppercase text-gray-500">Required Items</p>
+                            <p className="mt-2 text-2xl font-semibold text-gray-900">{selectedCourseMatrixSummary.totalCount}</p>
+                          </div>
+                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                            <p className="text-xs font-semibold uppercase text-emerald-700">Meeting Standard</p>
+                            <p className="mt-2 text-2xl font-semibold text-emerald-800">{selectedCourseMatrixSummary.metCount}</p>
+                          </div>
+                          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                            <p className="text-xs font-semibold uppercase text-red-700">Needs Attention</p>
+                            <p className="mt-2 text-2xl font-semibold text-red-700">{selectedCourseMatrixSummary.outstandingCount}</p>
+                            <p className="mt-1 text-xs text-red-700">
+                              {selectedCourseMatrixSummary.standardOneOutstanding} required to final qualification standard
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                          <h4 className="text-sm font-semibold text-gray-900">Outstanding Matrix Items By Lesson</h4>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Start with the lessons that still have the most uncovered CASA requirements.
+                          </p>
+                          {selectedCourseMatrixSummary.byLesson.length === 0 ? (
+                            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">
+                              All CASA matrix requirements currently meet the required standard.
+                            </div>
+                          ) : (
+                            <div className="mt-4 space-y-3">
+                              {selectedCourseMatrixSummary.byLesson.slice(0, 8).map(group => (
+                                <div key={group.lessonCode} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">{group.lessonCode} {group.lessonTitle}</p>
+                                      <p className="mt-0.5 text-xs text-gray-500">{group.outstanding}/{group.total} still need evidence</p>
+                                    </div>
+                                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 border border-red-200">
+                                      {group.outstanding}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 space-y-1.5">
+                                    {group.items.slice(0, 3).map(item => (
+                                      <p key={item.requirement.id} className="text-xs text-gray-700">
+                                        <span className="font-semibold">{formatSyllabusMatrixText(item.row?.code)}</span>{' '}
+                                        {formatSyllabusMatrixText(item.row?.description)}
+                                      </p>
+                                    ))}
+                                    {group.items.length > 3 && (
+                                      <p className="text-xs font-medium text-gray-500">+ {group.items.length - 3} more</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+
+                        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                          <h4 className="text-sm font-semibold text-gray-900">Lesson Attempts</h4>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Each attempt links instructor comments with its CASA matrix result.
+                          </p>
+                          <div className="mt-4 space-y-3">
+                            {sortedRecords.map(record => {
+                              const summary = getRecordMatrixAssessmentSummary(record);
+                              const instructor = users.find(u => u.id === record.instructorId);
+                              const lesson = getRecordLesson(record);
+                              const lessonLabel = lesson?.name || lesson?.sequenceTitle || record.lessonCodes.join(', ') || 'Lesson';
+                              return (
+                                <div key={record.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">{lessonLabel}</p>
+                                      <p className="mt-0.5 text-xs text-gray-500">
+                                        {formatBookingDateTime(record)} | {record.registration || 'No aircraft'} | {instructor?.name || 'Unknown instructor'}
+                                      </p>
+                                    </div>
+                                    {summary ? (
+                                      <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
+                                        <span className="rounded-full border border-indigo-100 bg-white px-2 py-0.5 text-indigo-800">
+                                          {summary.metCount}/{summary.totalCount} met
+                                        </span>
+                                        {summary.notMetItems.length > 0 ? (
+                                          <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700">
+                                            {summary.notMetItems.length} need attention
+                                          </span>
+                                        ) : (
+                                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-800">
+                                            Clear
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs font-semibold text-gray-500">
+                                        No matrix recorded
+                                      </span>
+                                    )}
+                                  </div>
+                                  {summary?.notMetItems.length ? (
+                                    <div className="mt-2 rounded-md border border-red-100 bg-white p-2">
+                                      <p className="text-xs font-semibold uppercase text-red-700">Not yet met</p>
+                                      <div className="mt-1 space-y-1">
+                                        {summary.notMetItems.slice(0, 4).map(item => (
+                                          <p key={item.assessment.matrixRowId} className="text-xs text-red-900">
+                                            <span className="font-semibold">{formatSyllabusMatrixText(item.row?.code)}</span>{' '}
+                                            {formatSyllabusMatrixText(item.row?.description)}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const matrixCriteria = selectedTrainingCourse?.assessmentCriteria ?? [];
 
                 const getGrade = (record: TrainingRecord, critId: string) => {
