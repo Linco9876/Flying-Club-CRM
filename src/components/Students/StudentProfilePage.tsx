@@ -15,6 +15,7 @@ import { useSafetyReports } from '../../hooks/useSafetyReports';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { StudentCourseEnrolment, useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
@@ -188,6 +189,11 @@ export const StudentProfilePage: React.FC = () => {
   const { settings: trainingSettings } = useTrainingSettings();
   const billing = useBillingAccounts();
   const { paymentMethods } = useBillingSettings();
+  const {
+    enrolments: courseEnrolments,
+    loading: courseEnrolmentsLoading,
+    enrolInCourse,
+  } = useStudentCourseEnrolments(studentId);
   const isOwnStudentPortal = (user?.role === 'student' || user?.role === 'pilot') && studentId === user.id;
 
   const student = useMemo(() => {
@@ -205,9 +211,15 @@ export const StudentProfilePage: React.FC = () => {
   );
   const trainingCourseOptions = useMemo(() => {
     const courseIdsWithRecords = new Set(studentTrainingRecords.map(record => record.courseId).filter(Boolean));
-    const coursesWithRecords = trainingCourses.filter(course => courseIdsWithRecords.has(course.id));
-    return coursesWithRecords.length > 0 ? coursesWithRecords : trainingCourses;
-  }, [studentTrainingRecords, trainingCourses]);
+    const activeEnrolmentIds = new Set(
+      courseEnrolments
+        .filter(enrolment => enrolment.status === 'active')
+        .map(enrolment => enrolment.courseId)
+    );
+    const relevantCourseIds = new Set([...courseIdsWithRecords, ...activeEnrolmentIds]);
+    const relevantCourses = trainingCourses.filter(course => relevantCourseIds.has(course.id));
+    return relevantCourses.length > 0 ? relevantCourses : trainingCourses;
+  }, [courseEnrolments, studentTrainingRecords, trainingCourses]);
   const selectedTrainingCourse = useMemo(
     () => trainingCourses.find(course => course.id === selectedTrainingCourseId) ?? null,
     [selectedTrainingCourseId, trainingCourses]
@@ -1906,6 +1918,9 @@ export const StudentProfilePage: React.FC = () => {
           courses={trainingCourses}
           examResults={studentExamResults}
           users={users}
+          enrolments={courseEnrolments}
+          enrolmentsLoading={courseEnrolmentsLoading}
+          onEnrolCourse={enrolInCourse}
           refetchStudents={refetchStudents}
         />
       )}
@@ -3408,22 +3423,54 @@ interface CourseProgressTabProps {
   courses: TrainingModule[];
   examResults: StudentExamResult[];
   users: AppUser[];
+  enrolments: StudentCourseEnrolment[];
+  enrolmentsLoading: boolean;
+  onEnrolCourse: (courseId: string, enrolledBy?: string, notes?: string) => Promise<void>;
   refetchStudents: () => Promise<void>;
 }
 
-const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, trainingRecords, courses, examResults, users, refetchStudents }) => {
+const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
+  student,
+  trainingRecords,
+  courses,
+  examResults,
+  users,
+  enrolments,
+  enrolmentsLoading,
+  onEnrolCourse,
+  refetchStudents,
+}) => {
   const { user } = useAuth();
   const { settings: trainingSettings } = useTrainingSettings();
   const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
   const [grantingEndorsementCourseIds, setGrantingEndorsementCourseIds] = useState<Set<string>>(new Set());
+  const [selectedEnrolCourseId, setSelectedEnrolCourseId] = useState('');
+  const [enrolmentNotes, setEnrolmentNotes] = useState('');
+  const [enrollingCourse, setEnrollingCourse] = useState(false);
   const courseProgress = useMemo(
     () => calculateCourseProgress(courses, trainingRecords, trainingSettings.courseCompletionRule),
     [courses, trainingRecords, trainingSettings.courseCompletionRule]
   );
 
+  const activeEnrolmentCourseIds = useMemo(
+    () => new Set(enrolments.filter(enrolment => enrolment.status === 'active').map(enrolment => enrolment.courseId)),
+    [enrolments]
+  );
+  const courseIdsWithRecords = useMemo(
+    () => new Set(courseProgress
+      .filter(cp => cp.recordsCount > 0 || cp.completedLessons > 0 || cp.percentage > 0)
+      .map(cp => cp.course.id)),
+    [courseProgress]
+  );
   const enrolledCourses = courseProgress.filter((cp) => {
-    return cp.recordsCount > 0 || cp.completedLessons > 0 || cp.percentage > 0;
+    return activeEnrolmentCourseIds.has(cp.course.id) || courseIdsWithRecords.has(cp.course.id);
   });
+  const enrolmentChoices = courses.filter(course =>
+    course.status === 'published' &&
+    !activeEnrolmentCourseIds.has(course.id) &&
+    !courseIdsWithRecords.has(course.id)
+  );
+  const canManageCourseEnrolments = Boolean(student && user && hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']));
 
   const grantCompletionEndorsement = useCallback(async (course: TrainingModule) => {
     if (!student || !user || !course.completionEndorsementEnabled || !course.completionEndorsementType?.trim()) return;
@@ -3499,34 +3546,87 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
     }
   };
 
-  if (enrolledCourses.length === 0) {
-    return (
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-12 text-center">
-        <GraduationCap className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No course progress yet</h3>
-        <p className="text-gray-500 text-sm">
-          Course progress will appear here once training records with graded lessons are added.
-        </p>
-      </div>
-    );
-  }
+  const handleEnrolCourse = async () => {
+    if (!student || !user || !selectedEnrolCourseId) return;
+    setEnrollingCourse(true);
+    try {
+      await onEnrolCourse(selectedEnrolCourseId, user.id, enrolmentNotes);
+      setSelectedEnrolCourseId('');
+      setEnrolmentNotes('');
+    } finally {
+      setEnrollingCourse(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Courses In Progress</p>
-          <p className="text-3xl font-bold text-blue-600 mt-1">{enrolledCourses.filter(c => !c.isComplete).length}</p>
+      {canManageCourseEnrolments && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900">Course Enrolment</p>
+              <p className="text-xs text-gray-500 mt-1">Enrol this member before the first lesson is logged.</p>
+              <select
+                value={selectedEnrolCourseId}
+                onChange={(event) => setSelectedEnrolCourseId(event.target.value)}
+                disabled={enrolmentsLoading || enrolmentChoices.length === 0}
+                className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">
+                  {enrolmentChoices.length === 0 ? 'No published courses available to enrol' : 'Select a course'}
+                </option>
+                {enrolmentChoices.map(course => (
+                  <option key={course.id} value={course.id}>{course.title}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</label>
+              <input
+                type="text"
+                value={enrolmentNotes}
+                onChange={(event) => setEnrolmentNotes(event.target.value)}
+                placeholder="Optional enrolment note"
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleEnrolCourse}
+              disabled={!selectedEnrolCourseId || enrollingCourse}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {enrollingCourse ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Enrol
+            </button>
+          </div>
         </div>
-        <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
-          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Courses Completed</p>
-          <p className="text-3xl font-bold text-emerald-600 mt-1">{enrolledCourses.filter(c => c.isComplete).length}</p>
+      )}
+
+      {enrolledCourses.length === 0 ? (
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-12 text-center">
+          <GraduationCap className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No course enrolments yet</h3>
+          <p className="text-gray-500 text-sm">
+            Enrolled courses and progress will appear here, even before the first lesson is logged.
+          </p>
         </div>
-        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-          <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Enrolled</p>
-          <p className="text-3xl font-bold text-gray-700 mt-1">{enrolledCourses.length}</p>
-        </div>
-      </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Courses In Progress</p>
+              <p className="text-3xl font-bold text-blue-600 mt-1">{enrolledCourses.filter(c => !c.isComplete).length}</p>
+            </div>
+            <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+              <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Courses Completed</p>
+              <p className="text-3xl font-bold text-emerald-600 mt-1">{enrolledCourses.filter(c => c.isComplete).length}</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Enrolled</p>
+              <p className="text-3xl font-bold text-gray-700 mt-1">{enrolledCourses.length}</p>
+            </div>
+          </div>
 
       {enrolledCourses.map(({ course, percentage, isComplete, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => (
         <div key={course.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
@@ -3539,6 +3639,11 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
                       <CheckCircle className="h-3 w-3 mr-1" />
                       Completed
+                    </span>
+                  )}
+                  {activeEnrolmentCourseIds.has(course.id) && !isComplete && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                      Enrolled
                     </span>
                   )}
                   {course.completionEndorsementEnabled && course.completionEndorsementType && (
@@ -3608,9 +3713,51 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ student, training
                 </div>
               </div>
             )}
+
+            <div className="mt-5 border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Lessons</p>
+                <span className="text-xs text-gray-500">{course.lessons.length} lessons</span>
+              </div>
+              <div className="space-y-3">
+                {course.lessons.map((lesson, index) => (
+                  <details key={lesson.id} className="group rounded-lg border border-gray-200 bg-gray-50">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">
+                          {lesson.sequenceCode ? `${lesson.sequenceCode} - ` : `Lesson ${index + 1}: `}
+                          {lesson.name || lesson.sequenceTitle}
+                        </p>
+                        <p className="text-xs text-gray-500">{lesson.stage} &middot; {lesson.durationMinutes || 0} min</p>
+                      </div>
+                      <span className="text-xs font-semibold text-blue-600 group-open:hidden">View</span>
+                      <span className="hidden text-xs font-semibold text-gray-500 group-open:inline">Hide</span>
+                    </summary>
+                    <div className="grid gap-3 border-t border-gray-200 bg-white px-4 py-4 md:grid-cols-3">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Objective</p>
+                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{lesson.objective || 'Not recorded'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Theory focus</p>
+                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{lesson.theory || lesson.studentPreparation || 'Not recorded'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Flight exercises</p>
+                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
+                          {lesson.flightExercises || (lesson.keyExercises.length > 0 ? lesson.keyExercises.join(', ') : 'Not recorded')}
+                        </p>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       ))}
+        </>
+      )}
     </div>
   );
 };
