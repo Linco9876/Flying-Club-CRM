@@ -28,6 +28,7 @@ const toRequirement = (row: any): SyllabusMatrixRequirement => ({
   lessonSequenceCode: row.lesson_sequence_code,
   lessonColumnTitle: row.lesson_column_title,
   requiredStandard: row.required_standard,
+  assessmentCriterionId: row.assessment_criterion_id ?? undefined,
 });
 
 const toAssessment = (row: any): StudentMatrixAssessment => ({

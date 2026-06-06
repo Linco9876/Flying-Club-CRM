@@ -295,6 +295,7 @@ export interface SyllabusMatrixRequirement {
   lessonSequenceCode: string;
   lessonColumnTitle: string;
   requiredStandard: SyllabusMatrixStandard;
+  assessmentCriterionId?: string;
 }
 
 export interface StudentMatrixAssessment {

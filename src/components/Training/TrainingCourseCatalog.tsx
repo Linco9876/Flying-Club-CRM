@@ -648,6 +648,26 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
     }
   };
 
+  const handleUpdateRequirementCriterion = async (requirement: SyllabusMatrixRequirement, assessmentCriterionId: string) => {
+    if (!canEdit) return;
+    setSavingKey(`criterion-${requirement.id}`);
+    try {
+      const { error: updateError } = await supabase
+        .from('syllabus_matrix_requirements')
+        .update({ assessment_criterion_id: assessmentCriterionId || null })
+        .eq('id', requirement.id);
+      if (updateError) throw updateError;
+
+      await onMatrixChanged();
+      toast.success(assessmentCriterionId ? 'Assessment criterion linked' : 'Assessment criterion link removed');
+    } catch (err) {
+      console.error('Failed to link matrix requirement to criterion:', err);
+      toast.error('Failed to link assessment criterion');
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   const handleUpdateRowDescription = async (row: SyllabusMatrixRow, nextDescription: string) => {
     const trimmed = nextDescription.trim();
     if (!canEdit || !trimmed || trimmed === row.description) return;
@@ -684,6 +704,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
           lesson_sequence_code: lessonSequenceCode,
           lesson_column_title: selectedLesson.name || selectedLesson.sequenceTitle || lessonSequenceCode,
           required_standard: standard,
+          assessment_criterion_id: null,
         });
       if (insertError) throw insertError;
 
@@ -852,6 +873,29 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                         )}
                       </div>
                     </div>
+                    {course.assessmentCriteria.length > 0 && (
+                      <div className="mt-3">
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Contributes to assessment criterion
+                        </label>
+                        <select
+                          disabled={!canEdit || savingKey === `criterion-${requirement.id}`}
+                          value={requirement.assessmentCriterionId || ''}
+                          onChange={(event) => handleUpdateRequirementCriterion(requirement, event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500"
+                        >
+                          <option value="">No broad criterion link</option>
+                          {course.assessmentCriteria.map((criterion) => (
+                            <option key={criterion.id} value={criterion.id}>
+                              {criterion.name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-slate-500">
+                          If this matrix item is below its required standard, the linked criterion is treated as below pass for that lesson.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ))
               )}

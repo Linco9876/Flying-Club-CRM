@@ -83,6 +83,12 @@ function isGradeAtLeast(grade: string | undefined, passMark: string | undefined,
   return gradeRank(grade, system) >= gradeRank(passMark, system);
 }
 
+const matrixDerivedCriterionGrade = (passed: boolean, system: LessonGradingSystem) => {
+  if (system === 'Pass or Fail') return passed ? 'Pass' : 'Fail';
+  if (system === 'Out of 100') return passed ? '100' : '0';
+  return passed ? 'C' : 'NC';
+};
+
 function bestGrade(current: string | undefined, next: string | undefined, system: LessonGradingSystem = 'NC/S/C/-') {
   return gradeRank(next, system) > gradeRank(current, system) ? next : current;
 }
@@ -189,6 +195,47 @@ export const OutstandingRecordsTab: React.FC = () => {
       return isGradeAtLeast(grade, passMark, criterion.gradingSystem);
     });
   }, [activeCriteria, activeMatrixRequirements, form.criteriaGrades, form.matrixGrades, hasMatrixAssessment, selectedLesson]);
+
+  const matrixCriterionOutcomes = useMemo(() => {
+    if (!hasMatrixAssessment || activeCriteria.length === 0) return [];
+
+    return activeCriteria
+      .map((criterion) => {
+        const linkedRequirements = activeMatrixRequirements.filter(
+          requirement => requirement.assessmentCriterionId === criterion.id
+        );
+        if (linkedRequirements.length === 0) return null;
+
+        const failedRequirements = linkedRequirements.filter(requirement => {
+          const rawGrade = form.matrixGrades[requirement.matrixRowId];
+          const achieved = rawGrade ? Number(rawGrade) as SyllabusMatrixStandard : undefined;
+          return !matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+        });
+        const passed = failedRequirements.length === 0;
+
+        return {
+          criterion,
+          linkedRequirements,
+          failedRequirements,
+          passed,
+          grade: matrixDerivedCriterionGrade(passed, criterion.gradingSystem),
+        };
+      })
+      .filter(Boolean) as Array<{
+        criterion: LessonAssessmentCriterion;
+        linkedRequirements: typeof activeMatrixRequirements;
+        failedRequirements: typeof activeMatrixRequirements;
+        passed: boolean;
+        grade: string;
+      }>;
+  }, [activeCriteria, activeMatrixRequirements, form.matrixGrades, hasMatrixAssessment]);
+
+  const matrixDerivedCriteriaGrades = useMemo(() => {
+    return matrixCriterionOutcomes.reduce<Record<string, string>>((acc, outcome) => {
+      acc[outcome.criterion.id] = outcome.grade;
+      return acc;
+    }, {});
+  }, [matrixCriterionOutcomes]);
 
   const nextLessonForRecord = lessonPassed
     ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
@@ -325,7 +372,9 @@ export const OutstandingRecordsTab: React.FC = () => {
         comments: form.flightComments,
         briefingComments: form.briefingComments,
         formalBriefing: form.formalBriefing,
-        criteriaGrades: form.criteriaGrades,
+        criteriaGrades: hasMatrixAssessment
+          ? { ...form.criteriaGrades, ...matrixDerivedCriteriaGrades }
+          : form.criteriaGrades,
         lessonCodes: selectedLesson ? [selectedLesson.sequenceCode].filter(Boolean) : [],
         nextLesson: nextLessonForRecord,
         status: selectedCourseRequiresAck ? 'submitted' : 'locked',
@@ -793,6 +842,57 @@ export const OutstandingRecordsTab: React.FC = () => {
                   )}
 
                   {/* Assessment Criteria */}
+                  {hasMatrixAssessment && matrixCriterionOutcomes.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-800 mb-3">Matrix-linked competency outcomes</label>
+                      <div className="space-y-3">
+                        {matrixCriterionOutcomes.map((outcome) => (
+                          <div
+                            key={outcome.criterion.id}
+                            className={`rounded-lg border p-4 ${
+                              outcome.passed
+                                ? 'border-emerald-200 bg-emerald-50'
+                                : 'border-red-200 bg-red-50'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900">{outcome.criterion.name}</p>
+                                <p className="mt-1 text-xs text-gray-600">
+                                  {outcome.linkedRequirements.length} linked matrix item{outcome.linkedRequirements.length === 1 ? '' : 's'}.
+                                </p>
+                              </div>
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                outcome.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                              }`}>
+                                {outcome.grade} - {outcome.passed ? 'Pass' : 'Below pass'}
+                              </span>
+                            </div>
+                            {outcome.failedRequirements.length > 0 && (
+                              <div className="mt-3 space-y-2">
+                                {outcome.failedRequirements.slice(0, 4).map((requirement) => {
+                                  const row = rowsById.get(requirement.matrixRowId);
+                                  const achieved = form.matrixGrades[requirement.matrixRowId] || '-';
+                                  return (
+                                    <p key={requirement.id} className="text-xs text-red-800">
+                                      {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}: achieved {achieved}, required {requirement.requiredStandard}
+                                      {row?.description ? ` - ${formatSyllabusMatrixText(row.description)}` : ''}
+                                    </p>
+                                  );
+                                })}
+                                {outcome.failedRequirements.length > 4 && (
+                                  <p className="text-xs text-red-700">
+                                    Plus {outcome.failedRequirements.length - 4} more linked item{outcome.failedRequirements.length - 4 === 1 ? '' : 's'} below pass.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {!hasMatrixAssessment && activeCriteria.length > 0 && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-800 mb-3">Competency Assessment</label>
