@@ -115,6 +115,8 @@ export const OutstandingRecordsTab: React.FC = () => {
     [selectedCourse, form.lessonId]
   );
 
+  const selectedLessonIsFlightTest = Boolean(selectedLesson?.isFlightTest);
+
   const {
     requirementsByLesson,
     rowsById,
@@ -255,7 +257,16 @@ export const OutstandingRecordsTab: React.FC = () => {
         defaults[crit.id] = trainingSettings.prefillHighestGrades ? (highestByCriterion[crit.id] ?? '-') : '-';
       }
     }
-    setForm(f => ({ ...f, lessonId, criteriaGrades: defaults, matrixGrades: {} }));
+    setForm(f => ({
+      ...f,
+      lessonId,
+      criteriaGrades: defaults,
+      matrixGrades: {},
+      isFlightReview: Boolean(lesson?.isFlightTest),
+      flightReviewType: lesson?.isFlightTest ? 'Flight Test' : 'Flight Review',
+      flightReviewResult: 'not_assessed',
+      flightReviewNotes: '',
+    }));
     setStep('form');
   }
 
@@ -296,6 +307,7 @@ export const OutstandingRecordsTab: React.FC = () => {
 
     setSubmitting(true);
     try {
+      const isCourseDefinedFlightTest = Boolean(selectedLesson?.isFlightTest);
       const createdRecord = await addTrainingRecord({
         studentId: activeLog.student_id,
         flightLogId: activeLog.id,
@@ -319,10 +331,10 @@ export const OutstandingRecordsTab: React.FC = () => {
         studentAck: false,
         studentComments: '',
         attachments: [],
-        isFlightReview: form.isFlightReview,
-        flightReviewType: form.isFlightReview ? form.flightReviewType || 'Flight Review' : undefined,
-        flightReviewResult: form.isFlightReview ? form.flightReviewResult : undefined,
-        flightReviewNotes: form.isFlightReview ? form.flightReviewNotes : undefined,
+        isFlightReview: isCourseDefinedFlightTest,
+        flightReviewType: isCourseDefinedFlightTest ? (form.flightReviewType || 'Flight Test') : undefined,
+        flightReviewResult: isCourseDefinedFlightTest ? form.flightReviewResult : undefined,
+        flightReviewNotes: isCourseDefinedFlightTest ? form.flightReviewNotes : undefined,
       });
 
       if (hasMatrixAssessment && createdRecord?.id) {
@@ -884,24 +896,21 @@ export const OutstandingRecordsTab: React.FC = () => {
                     </p>
                   </div>
 
-                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={form.isFlightReview}
-                        onChange={event => setForm(f => ({ ...f, isFlightReview: event.target.checked }))}
-                        className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm font-semibold text-orange-950">This record is a flight review / flight test</span>
-                    </label>
-                    {form.isFlightReview && (
+                  {selectedLessonIsFlightTest && (
+                    <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+                      <div>
+                        <p className="text-sm font-semibold text-orange-950">Course-defined flight test outcome</p>
+                        <p className="mt-1 text-xs text-orange-800">
+                          This lesson is marked as a flight test in the course setup.
+                        </p>
+                      </div>
                       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <label className="block">
-                          <span className="block text-xs font-medium text-orange-800 mb-1">Review type</span>
+                          <span className="block text-xs font-medium text-orange-800 mb-1">Test type</span>
                           <input
                             value={form.flightReviewType}
                             onChange={event => setForm(f => ({ ...f, flightReviewType: event.target.value }))}
-                            placeholder="Flight Test, Flight Review, RPC Test"
+                            placeholder="Flight Test, RPC Test"
                             className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                           />
                         </label>
@@ -932,8 +941,8 @@ export const OutstandingRecordsTab: React.FC = () => {
                           </p>
                         )}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Submit */}
                   <div className="pt-2 border-t border-gray-100">
