@@ -47,7 +47,7 @@ function SettingToggle({
 export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> = ({ canEdit, onFormChange }) => {
   const { settings, loading, updateSettings } = useTrainingSettings();
   const [formData, setFormData] = useState<TrainingSyllabusSettingsData>(settings);
-  const [pilotEndorsementInput, setPilotEndorsementInput] = useState('');
+  const [endorsementInput, setEndorsementInput] = useState('');
 
   useEffect(() => {
     setFormData(settings);
@@ -67,18 +67,36 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
     onFormChange();
   };
 
-  const addPilotStatusEndorsement = () => {
-    const next = uniqueEndorsementTypes([...formData.pilotStatusEndorsementTypes, pilotEndorsementInput]);
-    if (next.length === formData.pilotStatusEndorsementTypes.length) return;
-    setField('pilotStatusEndorsementTypes', next);
-    setPilotEndorsementInput('');
+  const setEndorsementState = (endorsementTypes: string[], pilotStatusEndorsementTypes: string[]) => {
+    setFormData(current => ({
+      ...current,
+      endorsementTypes: uniqueEndorsementTypes(endorsementTypes),
+      pilotStatusEndorsementTypes: uniqueEndorsementTypes(pilotStatusEndorsementTypes)
+        .filter(type => endorsementTypes.some(item => item.trim().toLowerCase() === type.trim().toLowerCase())),
+    }));
+    onFormChange();
   };
 
-  const removePilotStatusEndorsement = (type: string) => {
-    setField(
-      'pilotStatusEndorsementTypes',
-      formData.pilotStatusEndorsementTypes.filter(item => item.trim().toLowerCase() !== type.trim().toLowerCase())
+  const addEndorsement = () => {
+    const next = uniqueEndorsementTypes([...formData.endorsementTypes, endorsementInput]);
+    if (next.length === formData.endorsementTypes.length) return;
+    setEndorsementState(next, formData.pilotStatusEndorsementTypes);
+    setEndorsementInput('');
+  };
+
+  const removeEndorsement = (type: string) => {
+    const keep = (item: string) => item.trim().toLowerCase() !== type.trim().toLowerCase();
+    setEndorsementState(
+      formData.endorsementTypes.filter(keep),
+      formData.pilotStatusEndorsementTypes.filter(keep)
     );
+  };
+
+  const togglePilotStatusEndorsement = (type: string, checked: boolean) => {
+    const nextPilotTypes = checked
+      ? uniqueEndorsementTypes([...formData.pilotStatusEndorsementTypes, type])
+      : formData.pilotStatusEndorsementTypes.filter(item => item.trim().toLowerCase() !== type.trim().toLowerCase());
+    setEndorsementState(formData.endorsementTypes, nextPilotTypes);
   };
 
   if (loading) {
@@ -263,54 +281,98 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
       <section className="space-y-4">
         <h3 className="text-lg font-medium text-gray-900 flex items-center">
           <Award className="h-5 w-5 mr-2 text-blue-600" />
-          Pilot Status Endorsements
+          Endorsements
         </h3>
-        <div className="rounded-lg border border-gray-200 p-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-sm text-gray-600">
-            A student becomes a Pilot when they hold an active, unexpired endorsement listed here. Staff and admin roles are left unchanged.
+            This is the organisation endorsement list used by courses and member profiles. Tick Pilot status for endorsements that should automatically turn a student into a Pilot when they hold an active, unexpired copy.
           </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {formData.pilotStatusEndorsementTypes.length > 0 ? formData.pilotStatusEndorsementTypes.map(type => (
-              <span key={type} className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-900">
-                {type}
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => removePilotStatusEndorsement(type)}
-                    className="rounded-full p-0.5 text-orange-700 hover:bg-orange-100"
-                    aria-label={`Remove ${type}`}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </span>
-            )) : (
-              <span className="text-sm text-gray-500">No endorsements currently grant Pilot status.</span>
+
+          <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
+            <div className="grid grid-cols-[minmax(0,1fr)_120px_44px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <span>Endorsement</span>
+              <span className="text-center">Pilot status</span>
+              <span />
+            </div>
+            {formData.endorsementTypes.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {formData.endorsementTypes.map(type => {
+                  const grantsPilot = formData.pilotStatusEndorsementTypes.some(item => item.trim().toLowerCase() === type.trim().toLowerCase());
+                  return (
+                    <div key={type} className="grid grid-cols-[minmax(0,1fr)_120px_44px] items-center gap-3 px-3 py-3">
+                      <div>
+                        <p className="truncate text-sm font-medium text-gray-900">{type}</p>
+                        {grantsPilot && (
+                          <p className="text-xs text-orange-700">Active endorsement grants Pilot status</p>
+                        )}
+                      </div>
+                      <label className="flex justify-center">
+                        <input
+                          type="checkbox"
+                          disabled={!canEdit}
+                          checked={grantsPilot}
+                          onChange={event => togglePilotStatusEndorsement(type, event.target.checked)}
+                          className={toggleClass}
+                          aria-label={`${type} grants Pilot status`}
+                        />
+                      </label>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => removeEndorsement(type)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          aria-label={`Remove ${type}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="px-3 py-6 text-center text-sm text-gray-500">No endorsements have been added yet.</div>
             )}
           </div>
+
           {canEdit && (
             <div className="mt-4 flex flex-col gap-3 sm:flex-row">
               <input
                 type="text"
-                value={pilotEndorsementInput}
-                onChange={event => setPilotEndorsementInput(event.target.value)}
+                value={endorsementInput}
+                onChange={event => setEndorsementInput(event.target.value)}
                 onKeyDown={event => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    addPilotStatusEndorsement();
+                    addEndorsement();
                   }
                 }}
-                placeholder="Endorsement name, e.g. Pilot Certificate"
+                placeholder="Endorsement name, e.g. Passenger Carrying"
                 className={inputClass}
               />
               <button
                 type="button"
-                onClick={addPilotStatusEndorsement}
+                onClick={addEndorsement}
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
               >
                 <Plus className="h-4 w-4" />
-                Add
+                Add endorsement
               </button>
+            </div>
+          )}
+
+          {formData.pilotStatusEndorsementTypes.length > 0 && (
+            <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-orange-800">Currently grants Pilot status</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {formData.pilotStatusEndorsementTypes.map(type => (
+                  <span key={type} className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-orange-900 ring-1 ring-orange-200">
+                    {type}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>

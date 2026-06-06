@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { LessonGradingSystem } from '../types';
 import toast from 'react-hot-toast';
-import { DEFAULT_PILOT_STATUS_ENDORSEMENTS, reconcileAllPilotStatuses, uniqueEndorsementTypes } from '../utils/pilotStatus';
+import { DEFAULT_ENDORSEMENT_TYPES, DEFAULT_PILOT_STATUS_ENDORSEMENTS, reconcileAllPilotStatuses, uniqueEndorsementTypes } from '../utils/pilotStatus';
 
 export type NextLessonRule = 'advance_on_pass' | 'always_advance' | 'manual';
 export type CourseCompletionRule = 'all_required_criteria' | 'all_lessons_attempted' | 'criteria_or_lessons';
@@ -24,6 +24,7 @@ export interface TrainingSyllabusSettingsData {
   courseCompletionRule: CourseCompletionRule;
   showPassMarkGuidance: boolean;
   showBestGradeGuidance: boolean;
+  endorsementTypes: string[];
   pilotStatusEndorsementTypes: string[];
 }
 
@@ -43,6 +44,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
   courseCompletionRule: 'all_required_criteria',
   showPassMarkGuidance: true,
   showBestGradeGuidance: true,
+  endorsementTypes: DEFAULT_ENDORSEMENT_TYPES,
   pilotStatusEndorsementTypes: DEFAULT_PILOT_STATUS_ENDORSEMENTS,
 };
 
@@ -68,10 +70,18 @@ const mapRow = (row: any): TrainingSyllabusSettingsData => ({
   courseCompletionRule: row.course_completion_rule ?? DEFAULT_TRAINING_SETTINGS.courseCompletionRule,
   showPassMarkGuidance: row.show_pass_mark_guidance ?? DEFAULT_TRAINING_SETTINGS.showPassMarkGuidance,
   showBestGradeGuidance: row.show_best_grade_guidance ?? DEFAULT_TRAINING_SETTINGS.showBestGradeGuidance,
+  endorsementTypes: uniqueEndorsementTypes([
+    ...(row.endorsement_types || DEFAULT_TRAINING_SETTINGS.endorsementTypes),
+    ...(row.pilot_status_endorsement_types || []),
+  ]),
   pilotStatusEndorsementTypes: uniqueEndorsementTypes(row.pilot_status_endorsement_types || DEFAULT_TRAINING_SETTINGS.pilotStatusEndorsementTypes),
 });
 
 const toRow = (settings: TrainingSyllabusSettingsData) => ({
+  endorsement_types: uniqueEndorsementTypes([
+    ...settings.endorsementTypes,
+    ...settings.pilotStatusEndorsementTypes,
+  ]),
   default_grading_system: settings.defaultGradingSystem,
   force_student_acknowledgement_for_all_courses: settings.forceStudentAcknowledgementForAllCourses,
   require_student_acknowledgement: settings.requireStudentAcknowledgement,

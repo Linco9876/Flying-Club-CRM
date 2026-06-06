@@ -7,6 +7,16 @@ export const DEFAULT_PILOT_STATUS_ENDORSEMENTS = [
   'RPL(A) Aeroplane Category Rating',
 ];
 
+export const DEFAULT_ENDORSEMENT_TYPES = [
+  ...DEFAULT_PILOT_STATUS_ENDORSEMENTS,
+  'Passenger Carrying',
+  'Flight Radio',
+  'Cross Country',
+  'Low Level',
+  'Formation',
+  'Tailwheel',
+];
+
 const STAFF_ROLES: UserRole[] = ['admin', 'senior_instructor', 'instructor'];
 
 export const normaliseEndorsementType = (value: string) => value.trim().toLowerCase();

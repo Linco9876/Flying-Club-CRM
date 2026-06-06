@@ -1013,6 +1013,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
   const { settings: trainingSettings } = useTrainingSettings();
   const { user } = useAuth();
+  const endorsementTypes = trainingSettings.endorsementTypes || [];
   const editCourseFormRef = useRef<HTMLDivElement | null>(null);
   const lessonFormRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<'edit-course' | 'lesson' | null>(null);
@@ -1277,7 +1278,11 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (!title) { toast.error('Course title is required'); return; }
     if (!category) { toast.error('Category is required'); return; }
     if (editCourse.completionEndorsementEnabled && !editCourse.completionEndorsementType.trim()) {
-      toast.error('Enter the endorsement name granted by this course');
+      toast.error('Select the endorsement granted by this course');
+      return;
+    }
+    if (editCourse.completionEndorsementEnabled && endorsementTypes.length === 0) {
+      toast.error('Add endorsement options in Training / Syllabus Settings first');
       return;
     }
 
@@ -1432,7 +1437,11 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
 
     if (newCourse.completionEndorsementEnabled && !newCourse.completionEndorsementType.trim()) {
-      toast.error('Enter the endorsement name granted by this course');
+      toast.error('Select the endorsement granted by this course');
+      return;
+    }
+    if (newCourse.completionEndorsementEnabled && endorsementTypes.length === 0) {
+      toast.error('Add endorsement options in Training / Syllabus Settings first');
       return;
     }
 
@@ -1869,13 +1878,19 @@ export const TrainingCourseCatalog: React.FC = () => {
                 <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                   <label className="flex flex-col text-xs font-medium text-emerald-950">
                     Endorsement name
-                    <input
-                      type="text"
+                    <select
                       value={newCourse.completionEndorsementType}
                       onChange={(event) => setNewCourse((prev) => ({ ...prev, completionEndorsementType: event.target.value }))}
-                      placeholder="e.g. Flight Radio, Passenger, Pilot Certificate"
                       className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                    />
+                    >
+                      <option value="">Select endorsement</option>
+                      {endorsementTypes.map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                    <span className="mt-1 text-[11px] font-normal text-emerald-700">
+                      Add or rename endorsement options in Training / Syllabus Settings.
+                    </span>
                   </label>
                   <label className="flex flex-col text-xs font-medium text-emerald-950">
                     Expiry months
@@ -2342,13 +2357,19 @@ export const TrainingCourseCatalog: React.FC = () => {
                         <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                           <label className="flex flex-col text-xs font-medium text-emerald-950">
                             Endorsement name
-                            <input
-                              type="text"
+                            <select
                               value={editCourse.completionEndorsementType}
                               onChange={(e) => setEditCourse((p) => ({ ...p, completionEndorsementType: e.target.value }))}
-                              placeholder="e.g. Flight Radio, Passenger, Pilot Certificate"
                               className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none"
-                            />
+                            >
+                              <option value="">Select endorsement</option>
+                              {endorsementTypes.map((type) => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                            <span className="mt-1 text-[11px] font-normal text-emerald-700">
+                              Add or rename endorsement options in Training / Syllabus Settings.
+                            </span>
                           </label>
                           <label className="flex flex-col text-xs font-medium text-emerald-950">
                             Expiry months
