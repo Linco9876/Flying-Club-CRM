@@ -30,6 +30,14 @@ const createAuditId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+const isUnder18 = (dateOfBirth?: Date) => {
+  if (!dateOfBirth) return false;
+  const today = new Date();
+  const eighteenthBirthday = new Date(dateOfBirth);
+  eighteenthBirthday.setFullYear(eighteenthBirthday.getFullYear() + 18);
+  return today < eighteenthBirthday;
+};
+
 export const StudentAcknowledgementModal: React.FC = () => {
   const { user } = useAuth();
   const { modules } = useTrainingModules();
@@ -46,6 +54,11 @@ export const StudentAcknowledgementModal: React.FC = () => {
   const [signingDeclarationId, setSigningDeclarationId] = useState<string | null>(null);
   const [declarationSignatureName, setDeclarationSignatureName] = useState('');
   const [declarationMemberNumber, setDeclarationMemberNumber] = useState('');
+  const [guardianSignatureName, setGuardianSignatureName] = useState('');
+  const [guardianRelationship, setGuardianRelationship] = useState('');
+  const [guardianEmail, setGuardianEmail] = useState('');
+  const [guardianPhone, setGuardianPhone] = useState('');
+  const [guardianConsentChecked, setGuardianConsentChecked] = useState(false);
 
   const isStudentLike = Boolean(user && (user.role === 'student' || user.role === 'pilot' || user.roles?.some(role => role === 'student' || role === 'pilot')));
 
@@ -70,11 +83,16 @@ export const StudentAcknowledgementModal: React.FC = () => {
         if (!course?.requiresFlyingDeclaration || !course.flyingDeclarationText?.trim()) return null;
         const requiredVersion = course.flyingDeclarationVersion ?? 1;
         const signedVersion = enrolment.declarationVersion ?? 0;
-        const needsSignature = !enrolment.declarationSignedAt || signedVersion < requiredVersion;
+        const studentIsMinor = isUnder18(user.dateOfBirth);
+        const guardianRequired = studentIsMinor && (course.requiresGuardianDeclarationForMinors ?? true) && Boolean(course.guardianDeclarationText?.trim());
+        const guardianSignedVersion = enrolment.guardianDeclarationVersion ?? 0;
+        const needsStudentSignature = !enrolment.declarationSignedAt || signedVersion < requiredVersion;
+        const needsGuardianSignature = guardianRequired && (!enrolment.guardianDeclarationSignedAt || guardianSignedVersion < requiredVersion);
+        const needsSignature = needsStudentSignature || needsGuardianSignature;
         if (!needsSignature) return null;
-        return { enrolment, course };
+        return { enrolment, course, guardianRequired, needsStudentSignature, needsGuardianSignature };
       })
-      .filter((item): item is { enrolment: typeof enrolments[number]; course: TrainingModule } => Boolean(item))
+      .filter((item): item is { enrolment: typeof enrolments[number]; course: TrainingModule; guardianRequired: boolean; needsStudentSignature: boolean; needsGuardianSignature: boolean } => Boolean(item))
       .sort((a, b) => a.course.title.localeCompare(b.course.title));
   }, [enrolments, isStudentLike, modules, user]);
 
@@ -84,6 +102,11 @@ export const StudentAcknowledgementModal: React.FC = () => {
     if (!activeDeclaration || !user) return;
     setDeclarationSignatureName(activeDeclaration.enrolment.declarationSignedName || user.name || user.email || '');
     setDeclarationMemberNumber(activeDeclaration.enrolment.declarationMemberNumber || '');
+    setGuardianSignatureName(activeDeclaration.enrolment.guardianDeclarationSignedName || '');
+    setGuardianRelationship(activeDeclaration.enrolment.guardianDeclarationRelationship || '');
+    setGuardianEmail(activeDeclaration.enrolment.guardianDeclarationEmail || '');
+    setGuardianPhone(activeDeclaration.enrolment.guardianDeclarationPhone || '');
+    setGuardianConsentChecked(false);
   }, [activeDeclaration?.enrolment.id, activeDeclaration?.enrolment.declarationSignedName, activeDeclaration?.enrolment.declarationMemberNumber, user]);
 
   const lessonNameForRecord = (record: TrainingRecord) => {
@@ -153,19 +176,39 @@ export const StudentAcknowledgementModal: React.FC = () => {
 
   const handleSignDeclaration = async () => {
     if (!activeDeclaration) return;
-    if (!declarationSignatureName.trim()) {
+    if (activeDeclaration.needsStudentSignature && !declarationSignatureName.trim()) {
       toast.error('Type your full name to sign the declaration');
       return;
+    }
+    if (activeDeclaration.needsGuardianSignature) {
+      if (!guardianSignatureName.trim()) {
+        toast.error('Type the parent/guardian full name');
+        return;
+      }
+      if (!guardianRelationship.trim()) {
+        toast.error('Add the parent/guardian relationship');
+        return;
+      }
+      if (!guardianConsentChecked) {
+        toast.error('Confirm the parent/guardian consents to signing electronically');
+        return;
+      }
     }
 
     setSigningDeclarationId(activeDeclaration.enrolment.id);
     try {
       await signCourseDeclaration({
         enrolmentId: activeDeclaration.enrolment.id,
-        signatureName: declarationSignatureName,
-        memberNumber: declarationMemberNumber,
+        signatureName: declarationSignatureName || activeDeclaration.enrolment.declarationSignedName || user?.name || user?.email || '',
+        memberNumber: declarationMemberNumber || activeDeclaration.enrolment.declarationMemberNumber || '',
         declarationText: activeDeclaration.course.flyingDeclarationText || '',
         declarationVersion: activeDeclaration.course.flyingDeclarationVersion ?? 1,
+        guardianSignatureName: activeDeclaration.needsGuardianSignature ? guardianSignatureName : undefined,
+        guardianRelationship: activeDeclaration.needsGuardianSignature ? guardianRelationship : undefined,
+        guardianEmail: activeDeclaration.needsGuardianSignature ? guardianEmail : undefined,
+        guardianPhone: activeDeclaration.needsGuardianSignature ? guardianPhone : undefined,
+        guardianDeclarationText: activeDeclaration.needsGuardianSignature ? activeDeclaration.course.guardianDeclarationText : undefined,
+        guardianDeclarationVersion: activeDeclaration.needsGuardianSignature ? activeDeclaration.course.flyingDeclarationVersion ?? 1 : undefined,
       });
     } finally {
       setSigningDeclarationId(null);
@@ -191,7 +234,7 @@ export const StudentAcknowledgementModal: React.FC = () => {
               {course.flyingDeclarationTitle || 'Flying Declaration'}
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              You are enrolled in {course.title}. Please read and digitally sign this declaration before continuing your course records.
+              You are enrolled in {course.title}. Please read and digitally sign the required declaration before continuing your course records.
             </p>
           </div>
 
@@ -202,30 +245,97 @@ export const StudentAcknowledgementModal: React.FC = () => {
               </p>
             </div>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="flex flex-col text-sm font-medium text-gray-700">
-                Full name electronic signature
-                <input
-                  type="text"
-                  value={declarationSignatureName}
-                  onChange={(event) => setDeclarationSignatureName(event.target.value)}
-                  className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
-              <label className="flex flex-col text-sm font-medium text-gray-700">
-                Member number
-                <input
-                  type="text"
-                  value={declarationMemberNumber}
-                  onChange={(event) => setDeclarationMemberNumber(event.target.value)}
-                  placeholder="RAAus or club member number"
-                  className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                />
-              </label>
-            </div>
+            {activeDeclaration.needsStudentSignature ? (
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col text-sm font-medium text-gray-700">
+                  Student full name electronic signature
+                  <input
+                    type="text"
+                    value={declarationSignatureName}
+                    onChange={(event) => setDeclarationSignatureName(event.target.value)}
+                    className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
+                <label className="flex flex-col text-sm font-medium text-gray-700">
+                  Member number
+                  <input
+                    type="text"
+                    value={declarationMemberNumber}
+                    onChange={(event) => setDeclarationMemberNumber(event.target.value)}
+                    placeholder="RAAus or club member number"
+                    className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                Student declaration already signed by {activeDeclaration.enrolment.declarationSignedName || 'student'} on {activeDeclaration.enrolment.declarationSignedAt?.toLocaleDateString('en-AU') || 'date recorded'}.
+              </div>
+            )}
+
+            {activeDeclaration.needsGuardianSignature && (
+              <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <h3 className="text-sm font-semibold text-blue-950">
+                  {course.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration'}
+                </h3>
+                <p className="mt-3 whitespace-pre-line text-sm leading-6 text-gray-900">
+                  {course.guardianDeclarationText}
+                </p>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <label className="flex flex-col text-sm font-medium text-gray-700">
+                    Parent/guardian full name electronic signature
+                    <input
+                      type="text"
+                      value={guardianSignatureName}
+                      onChange={(event) => setGuardianSignatureName(event.target.value)}
+                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
+                  <label className="flex flex-col text-sm font-medium text-gray-700">
+                    Relationship to student
+                    <input
+                      type="text"
+                      value={guardianRelationship}
+                      onChange={(event) => setGuardianRelationship(event.target.value)}
+                      placeholder="Parent, legal guardian, carer"
+                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
+                  <label className="flex flex-col text-sm font-medium text-gray-700">
+                    Parent/guardian email
+                    <input
+                      type="email"
+                      value={guardianEmail}
+                      onChange={(event) => setGuardianEmail(event.target.value)}
+                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
+                  <label className="flex flex-col text-sm font-medium text-gray-700">
+                    Parent/guardian phone
+                    <input
+                      type="tel"
+                      value={guardianPhone}
+                      onChange={(event) => setGuardianPhone(event.target.value)}
+                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                  </label>
+                </div>
+                <label className="mt-4 flex items-start gap-3 rounded-md border border-blue-200 bg-white p-3 text-sm text-blue-950">
+                  <input
+                    type="checkbox"
+                    checked={guardianConsentChecked}
+                    onChange={(event) => setGuardianConsentChecked(event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>
+                    I am the parent or legal guardian named above, I consent to signing this declaration electronically, and I intend my typed name to be my electronic signature.
+                  </span>
+                </label>
+              </div>
+            )}
 
             <p className="mt-4 text-xs leading-5 text-gray-500">
-              By selecting Sign declaration, the CRM records your typed name, member number, date and the exact declaration wording shown above.
+              By selecting Sign declaration, the CRM records the typed signature name, member/contact details, date, declaration version and exact declaration wording shown above.
               Declaration version {course.flyingDeclarationVersion ?? 1}.
             </p>
           </div>

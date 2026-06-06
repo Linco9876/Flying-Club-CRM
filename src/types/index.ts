@@ -265,6 +265,9 @@ export interface TrainingModule {
   flyingDeclarationTitle?: string;
   flyingDeclarationText?: string;
   flyingDeclarationVersion?: number;
+  requiresGuardianDeclarationForMinors?: boolean;
+  guardianDeclarationTitle?: string;
+  guardianDeclarationText?: string;
   completionEndorsementEnabled?: boolean;
   completionEndorsementType?: string;
   completionEndorsementExpiryMonths?: number | null;

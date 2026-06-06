@@ -30,6 +30,13 @@ const formatShortDate = (date?: Date) => {
   return date.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 };
 
+const isUnder18 = (dateOfBirth?: Date) => {
+  if (!dateOfBirth) return false;
+  const eighteenthBirthday = new Date(dateOfBirth);
+  eighteenthBirthday.setFullYear(eighteenthBirthday.getFullYear() + 18);
+  return new Date() < eighteenthBirthday;
+};
+
 const abbreviateName = (name: string) => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length <= 1) return name.slice(0, 16);
@@ -563,6 +570,11 @@ export async function exportCoursePdf({
     courseEnrolment?.declarationSignedAt &&
     (courseEnrolment.declarationVersion ?? 0) >= (course.flyingDeclarationVersion ?? 1)
   );
+  const guardianDeclarationRequired = Boolean(course.requiresFlyingDeclaration && isUnder18(student.dateOfBirth) && (course.requiresGuardianDeclarationForMinors ?? true));
+  const guardianDeclarationSigned = Boolean(
+    courseEnrolment?.guardianDeclarationSignedAt &&
+    (courseEnrolment.guardianDeclarationVersion ?? 0) >= (course.flyingDeclarationVersion ?? 1)
+  );
 
   page.drawRectangle({ x: 0, y: height - 86, width, height: 86, color: dark });
   page.drawText(student.name, { x: margin, y: height - 38, size: 22, font: bold, color: rgb(1, 1, 1) });
@@ -606,6 +618,23 @@ export async function exportCoursePdf({
     const declarationWording = courseEnrolment?.declarationTextSnapshot || course.flyingDeclarationText || '';
     if (declarationWording.trim()) {
       drawParagraphBlock('Signed declaration wording', declarationWording, 10);
+    }
+
+    if (guardianDeclarationRequired) {
+      drawSectionTitle(course.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration');
+      const guardianRows: Array<[string, string]> = [
+        ['Required', 'Yes - student under 18'],
+        ['Status', guardianDeclarationSigned ? 'Signed' : 'Not signed'],
+        ['Signed by', courseEnrolment?.guardianDeclarationSignedName || 'Not recorded'],
+        ['Relationship', courseEnrolment?.guardianDeclarationRelationship || 'Not recorded'],
+        ['Signed date', formatDate(courseEnrolment?.guardianDeclarationSignedAt)],
+        ['Contact', [courseEnrolment?.guardianDeclarationEmail, courseEnrolment?.guardianDeclarationPhone].filter(Boolean).join(' / ') || 'Not recorded'],
+      ];
+      drawLabelValueGrid(guardianRows, { columns: 3, rowHeight: 30, valueSize: 8 });
+      const guardianWording = courseEnrolment?.guardianDeclarationTextSnapshot || course.guardianDeclarationText || '';
+      if (guardianWording.trim()) {
+        drawParagraphBlock('Signed parent/guardian declaration wording', guardianWording, 10);
+      }
     }
   }
 

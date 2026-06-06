@@ -52,6 +52,9 @@ interface NewCourseState {
   requiresFlyingDeclaration: boolean;
   flyingDeclarationTitle: string;
   flyingDeclarationText: string;
+  requiresGuardianDeclarationForMinors: boolean;
+  guardianDeclarationTitle: string;
+  guardianDeclarationText: string;
   completionEndorsementEnabled: boolean;
   completionEndorsementType: string;
   completionEndorsementExpiryMonths: string;
@@ -521,6 +524,13 @@ const defaultFlyingDeclarationText = [
   'I, ________________________________, Member Number: __________________ declare that I am aware of and understand the risks involved in recreational flying training.',
 ].join('\n\n');
 
+const defaultGuardianDeclarationText = [
+  'I, ____________________________________ (the parent or legal guardian of the applicant named above) declare that I am aware of and understand the risks involved in recreational flying training.',
+  'I give consent for the above applicant to undertake such training. I am aware RAAus has a policy in place for working with children and vulnerable people. This policy is available from RAAus on request.',
+  'Parent/Guardian Signature: ______________________________, Date: _______________________',
+  '*Only required to be filled in when member is under the age of 18 years.',
+].join('\n\n');
+
 const createEmptyExam = (): EditableExam => ({
   id: `exam-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   name: '',
@@ -550,6 +560,9 @@ const emptyCourseForm = (): CourseFormState => ({
   requiresFlyingDeclaration: false,
   flyingDeclarationTitle: 'Flying Declaration',
   flyingDeclarationText: defaultFlyingDeclarationText,
+  requiresGuardianDeclarationForMinors: true,
+  guardianDeclarationTitle: 'Under 18 Years - Parent/Guardian Declaration',
+  guardianDeclarationText: defaultGuardianDeclarationText,
   completionEndorsementEnabled: false,
   completionEndorsementType: '',
   completionEndorsementExpiryMonths: '',
@@ -1391,6 +1404,9 @@ export const TrainingCourseCatalog: React.FC = () => {
       requiresFlyingDeclaration: selectedModule.requiresFlyingDeclaration ?? false,
       flyingDeclarationTitle: selectedModule.flyingDeclarationTitle || 'Flying Declaration',
       flyingDeclarationText: selectedModule.flyingDeclarationText || defaultFlyingDeclarationText,
+      requiresGuardianDeclarationForMinors: selectedModule.requiresGuardianDeclarationForMinors ?? true,
+      guardianDeclarationTitle: selectedModule.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration',
+      guardianDeclarationText: selectedModule.guardianDeclarationText || defaultGuardianDeclarationText,
       completionEndorsementEnabled: selectedModule.completionEndorsementEnabled ?? false,
       completionEndorsementType: selectedModule.completionEndorsementType ?? '',
       completionEndorsementExpiryMonths: selectedModule.completionEndorsementExpiryMonths ? String(selectedModule.completionEndorsementExpiryMonths) : '',
@@ -1430,6 +1446,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       toast.error('Add the flying declaration wording, or turn off the declaration requirement');
       return;
     }
+    if (editCourse.requiresFlyingDeclaration && editCourse.requiresGuardianDeclarationForMinors && !editCourse.guardianDeclarationText.trim()) {
+      toast.error('Add the parent/guardian declaration wording, or turn off the minor declaration requirement');
+      return;
+    }
 
     const tags = editCourse.tags.split(',').map((t) => t.trim()).filter(Boolean);
     const objectives = parseListLines(editCourse.objectives);
@@ -1455,7 +1475,9 @@ export const TrainingCourseCatalog: React.FC = () => {
     try {
       const declarationChanged =
         (selectedModule.flyingDeclarationTitle || 'Flying Declaration') !== (editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration') ||
-        (selectedModule.flyingDeclarationText || '') !== editCourse.flyingDeclarationText.trim();
+        (selectedModule.flyingDeclarationText || '') !== editCourse.flyingDeclarationText.trim() ||
+        (selectedModule.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration') !== (editCourse.guardianDeclarationTitle.trim() || 'Under 18 Years - Parent/Guardian Declaration') ||
+        (selectedModule.guardianDeclarationText || '') !== editCourse.guardianDeclarationText.trim();
 
       await updateModule(selectedModule.id, (cur) => ({
         ...cur,
@@ -1468,6 +1490,9 @@ export const TrainingCourseCatalog: React.FC = () => {
         flyingDeclarationTitle: editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
         flyingDeclarationText: editCourse.flyingDeclarationText.trim(),
         flyingDeclarationVersion: declarationChanged ? (cur.flyingDeclarationVersion ?? 1) + 1 : (cur.flyingDeclarationVersion ?? 1),
+        requiresGuardianDeclarationForMinors: editCourse.requiresGuardianDeclarationForMinors,
+        guardianDeclarationTitle: editCourse.guardianDeclarationTitle.trim() || 'Under 18 Years - Parent/Guardian Declaration',
+        guardianDeclarationText: editCourse.guardianDeclarationText.trim(),
         completionEndorsementEnabled: editCourse.completionEndorsementEnabled,
         completionEndorsementType: editCourse.completionEndorsementType.trim(),
         completionEndorsementExpiryMonths: editCourse.completionEndorsementEnabled && editCourse.completionEndorsementExpiryMonths
@@ -1623,6 +1648,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       toast.error('Add the flying declaration wording, or turn off the declaration requirement');
       return;
     }
+    if (newCourse.requiresFlyingDeclaration && newCourse.requiresGuardianDeclarationForMinors && !newCourse.guardianDeclarationText.trim()) {
+      toast.error('Add the parent/guardian declaration wording, or turn off the minor declaration requirement');
+      return;
+    }
 
     const tags = newCourse.tags
       .split(',')
@@ -1651,6 +1680,9 @@ export const TrainingCourseCatalog: React.FC = () => {
       flyingDeclarationTitle: newCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
       flyingDeclarationText: newCourse.flyingDeclarationText.trim(),
       flyingDeclarationVersion: 1,
+      requiresGuardianDeclarationForMinors: newCourse.requiresGuardianDeclarationForMinors,
+      guardianDeclarationTitle: newCourse.guardianDeclarationTitle.trim() || 'Under 18 Years - Parent/Guardian Declaration',
+      guardianDeclarationText: newCourse.guardianDeclarationText.trim(),
       completionEndorsementEnabled: newCourse.completionEndorsementEnabled,
       completionEndorsementType: newCourse.completionEndorsementType.trim(),
       completionEndorsementExpiryMonths: newCourse.completionEndorsementEnabled && newCourse.completionEndorsementExpiryMonths
@@ -2117,6 +2149,42 @@ export const TrainingCourseCatalog: React.FC = () => {
                       The typed student name, member number and date are saved with the exact wording shown here.
                     </span>
                   </label>
+                  <label className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950">
+                    <input
+                      type="checkbox"
+                      checked={newCourse.requiresGuardianDeclarationForMinors}
+                      onChange={(event) => setNewCourse((prev) => ({ ...prev, requiresGuardianDeclarationForMinors: event.target.checked }))}
+                      className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span>
+                      <span className="block font-semibold">Require parent/guardian declaration if student is under 18</span>
+                      <span className="mt-1 block text-amber-700">
+                        The CRM checks the student's date of birth and asks for a parent/legal guardian electronic signature when required.
+                      </span>
+                    </span>
+                  </label>
+                  {newCourse.requiresGuardianDeclarationForMinors && (
+                    <>
+                      <label className="flex flex-col text-xs font-medium text-amber-950">
+                        Parent/guardian declaration title
+                        <input
+                          type="text"
+                          value={newCourse.guardianDeclarationTitle}
+                          onChange={(event) => setNewCourse((prev) => ({ ...prev, guardianDeclarationTitle: event.target.value }))}
+                          className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                        />
+                      </label>
+                      <label className="flex flex-col text-xs font-medium text-amber-950">
+                        Parent/guardian declaration wording
+                        <textarea
+                          rows={7}
+                          value={newCourse.guardianDeclarationText}
+                          onChange={(event) => setNewCourse((prev) => ({ ...prev, guardianDeclarationText: event.target.value }))}
+                          className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                        />
+                      </label>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -2649,6 +2717,42 @@ export const TrainingCourseCatalog: React.FC = () => {
                               Signed enrolments store a snapshot of this wording, the student's typed name, member number and signing date.
                             </span>
                           </label>
+                          <label className="flex items-start gap-3 rounded-md border border-amber-200 bg-white/70 p-3 text-xs text-amber-950">
+                            <input
+                              type="checkbox"
+                              checked={editCourse.requiresGuardianDeclarationForMinors}
+                              onChange={(e) => setEditCourse((p) => ({ ...p, requiresGuardianDeclarationForMinors: e.target.checked }))}
+                              className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span>
+                              <span className="block font-semibold">Require parent/guardian declaration if student is under 18</span>
+                              <span className="mt-1 block text-amber-700">
+                                Uses the student's date of birth to request a parent/legal guardian electronic signature.
+                              </span>
+                            </span>
+                          </label>
+                          {editCourse.requiresGuardianDeclarationForMinors && (
+                            <>
+                              <label className="flex flex-col text-xs font-medium text-amber-950">
+                                Parent/guardian declaration title
+                                <input
+                                  type="text"
+                                  value={editCourse.guardianDeclarationTitle}
+                                  onChange={(e) => setEditCourse((p) => ({ ...p, guardianDeclarationTitle: e.target.value }))}
+                                  className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none"
+                                />
+                              </label>
+                              <label className="flex flex-col text-xs font-medium text-amber-950">
+                                Parent/guardian declaration wording
+                                <textarea
+                                  rows={7}
+                                  value={editCourse.guardianDeclarationText}
+                                  onChange={(e) => setEditCourse((p) => ({ ...p, guardianDeclarationText: e.target.value }))}
+                                  className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none"
+                                />
+                              </label>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

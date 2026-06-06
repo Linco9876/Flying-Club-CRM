@@ -14,6 +14,13 @@ export interface StudentCourseEnrolment {
   declarationMemberNumber?: string;
   declarationTextSnapshot?: string;
   declarationVersion?: number;
+  guardianDeclarationSignedAt?: Date;
+  guardianDeclarationSignedName?: string;
+  guardianDeclarationRelationship?: string;
+  guardianDeclarationEmail?: string;
+  guardianDeclarationPhone?: string;
+  guardianDeclarationTextSnapshot?: string;
+  guardianDeclarationVersion?: number;
   enrolledAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +58,13 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
         declarationMemberNumber: row.declaration_member_number || undefined,
         declarationTextSnapshot: row.declaration_text_snapshot || undefined,
         declarationVersion: row.declaration_version ?? undefined,
+        guardianDeclarationSignedAt: row.guardian_declaration_signed_at ? new Date(row.guardian_declaration_signed_at) : undefined,
+        guardianDeclarationSignedName: row.guardian_declaration_signed_name || undefined,
+        guardianDeclarationRelationship: row.guardian_declaration_relationship || undefined,
+        guardianDeclarationEmail: row.guardian_declaration_email || undefined,
+        guardianDeclarationPhone: row.guardian_declaration_phone || undefined,
+        guardianDeclarationTextSnapshot: row.guardian_declaration_text_snapshot || undefined,
+        guardianDeclarationVersion: row.guardian_declaration_version ?? undefined,
         enrolledAt: row.enrolled_at ? new Date(row.enrolled_at) : new Date(),
         updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
       })));
@@ -113,24 +127,48 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
     memberNumber,
     declarationText,
     declarationVersion,
+    guardianSignatureName,
+    guardianRelationship,
+    guardianEmail,
+    guardianPhone,
+    guardianDeclarationText,
+    guardianDeclarationVersion,
   }: {
     enrolmentId: string;
     signatureName: string;
     memberNumber: string;
     declarationText: string;
     declarationVersion: number;
+    guardianSignatureName?: string;
+    guardianRelationship?: string;
+    guardianEmail?: string;
+    guardianPhone?: string;
+    guardianDeclarationText?: string;
+    guardianDeclarationVersion?: number;
   }) => {
     const signedAt = new Date();
+    const updateData: Record<string, unknown> = {
+      declaration_signed_at: signedAt.toISOString(),
+      declaration_signed_name: signatureName.trim(),
+      declaration_member_number: memberNumber.trim() || null,
+      declaration_text_snapshot: declarationText,
+      declaration_version: declarationVersion,
+      updated_at: signedAt.toISOString(),
+    };
+
+    if (guardianSignatureName?.trim() && guardianDeclarationText?.trim()) {
+      updateData.guardian_declaration_signed_at = signedAt.toISOString();
+      updateData.guardian_declaration_signed_name = guardianSignatureName.trim();
+      updateData.guardian_declaration_relationship = guardianRelationship?.trim() || null;
+      updateData.guardian_declaration_email = guardianEmail?.trim() || null;
+      updateData.guardian_declaration_phone = guardianPhone?.trim() || null;
+      updateData.guardian_declaration_text_snapshot = guardianDeclarationText;
+      updateData.guardian_declaration_version = guardianDeclarationVersion ?? declarationVersion;
+    }
+
     const { error } = await supabase
       .from('student_course_enrolments')
-      .update({
-        declaration_signed_at: signedAt.toISOString(),
-        declaration_signed_name: signatureName.trim(),
-        declaration_member_number: memberNumber.trim() || null,
-        declaration_text_snapshot: declarationText,
-        declaration_version: declarationVersion,
-        updated_at: signedAt.toISOString(),
-      })
+      .update(updateData)
       .eq('id', enrolmentId);
 
     if (error) {

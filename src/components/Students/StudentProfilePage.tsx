@@ -4244,6 +4244,16 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
           enrolment?.declarationSignedAt &&
           (enrolment.declarationVersion ?? 0) >= (course.flyingDeclarationVersion ?? 1)
         );
+        const studentIsMinor = Boolean(student?.dateOfBirth && new Date() < new Date(
+          student.dateOfBirth.getFullYear() + 18,
+          student.dateOfBirth.getMonth(),
+          student.dateOfBirth.getDate()
+        ));
+        const guardianRequired = declarationRequired && studentIsMinor && (course.requiresGuardianDeclarationForMinors ?? true);
+        const guardianDeclarationSigned = Boolean(
+          enrolment?.guardianDeclarationSignedAt &&
+          (enrolment.guardianDeclarationVersion ?? 0) >= (course.flyingDeclarationVersion ?? 1)
+        );
 
         return (
         <div key={course.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
@@ -4271,12 +4281,12 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                   )}
                   {declarationRequired && (
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border shrink-0 ${
-                      declarationSigned
+                      declarationSigned && (!guardianRequired || guardianDeclarationSigned)
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : 'bg-amber-50 text-amber-800 border-amber-200'
                     }`}>
                       <Shield className="h-3 w-3 mr-1" />
-                      {declarationSigned ? 'Declaration signed' : 'Declaration required'}
+                      {declarationSigned && (!guardianRequired || guardianDeclarationSigned) ? 'Declaration signed' : 'Declaration required'}
                     </span>
                   )}
                 </div>
@@ -4302,17 +4312,26 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
             {declarationRequired && (
               <div className={`mb-4 rounded-lg border p-3 text-sm ${
-                declarationSigned
+                declarationSigned && (!guardianRequired || guardianDeclarationSigned)
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
                   : 'border-amber-200 bg-amber-50 text-amber-900'
               }`}>
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <p className="font-semibold">{course.flyingDeclarationTitle || 'Flying Declaration'}</p>
-                  <p className="text-xs">
-                    {declarationSigned
-                      ? `Signed ${enrolment?.declarationSignedAt?.toLocaleDateString('en-AU') || 'date not recorded'} by ${enrolment?.declarationSignedName || student?.name || 'student'}${enrolment?.declarationMemberNumber ? `, member ${enrolment.declarationMemberNumber}` : ''}`
-                      : `Awaiting student signature for version ${course.flyingDeclarationVersion ?? 1}`}
-                  </p>
+                  <div className="space-y-1 text-xs sm:text-right">
+                    <p>
+                      {declarationSigned
+                        ? `Student signed ${enrolment?.declarationSignedAt?.toLocaleDateString('en-AU') || 'date not recorded'} by ${enrolment?.declarationSignedName || student?.name || 'student'}${enrolment?.declarationMemberNumber ? `, member ${enrolment.declarationMemberNumber}` : ''}`
+                        : `Awaiting student signature for version ${course.flyingDeclarationVersion ?? 1}`}
+                    </p>
+                    {guardianRequired && (
+                      <p>
+                        {guardianDeclarationSigned
+                          ? `Parent/guardian signed ${enrolment?.guardianDeclarationSignedAt?.toLocaleDateString('en-AU') || 'date not recorded'} by ${enrolment?.guardianDeclarationSignedName || 'guardian'}${enrolment?.guardianDeclarationRelationship ? ` (${enrolment.guardianDeclarationRelationship})` : ''}`
+                          : 'Awaiting parent/guardian signature'}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

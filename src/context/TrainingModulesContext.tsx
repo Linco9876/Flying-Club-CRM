@@ -40,6 +40,11 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     flyingDeclarationTitle: (row.flying_declaration_title as string) ?? 'Flying Declaration',
     flyingDeclarationText: (row.flying_declaration_text as string) ?? '',
     flyingDeclarationVersion: Number(row.flying_declaration_version ?? 1),
+    requiresGuardianDeclarationForMinors: row.requires_guardian_declaration_for_minors === undefined || row.requires_guardian_declaration_for_minors === null
+      ? true
+      : Boolean(row.requires_guardian_declaration_for_minors),
+    guardianDeclarationTitle: (row.guardian_declaration_title as string) ?? 'Under 18 Years - Parent/Guardian Declaration',
+    guardianDeclarationText: (row.guardian_declaration_text as string) ?? '',
     completionEndorsementEnabled: Boolean(row.completion_endorsement_enabled),
     completionEndorsementType: (row.completion_endorsement_type as string) ?? '',
     completionEndorsementExpiryMonths: row.completion_endorsement_expiry_months === null || row.completion_endorsement_expiry_months === undefined
@@ -97,6 +102,9 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     flying_declaration_title: module.flyingDeclarationTitle || 'Flying Declaration',
     flying_declaration_text: module.flyingDeclarationText || '',
     flying_declaration_version: module.flyingDeclarationVersion ?? 1,
+    requires_guardian_declaration_for_minors: module.requiresGuardianDeclarationForMinors ?? true,
+    guardian_declaration_title: module.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration',
+    guardian_declaration_text: module.guardianDeclarationText || '',
     completion_endorsement_enabled: module.completionEndorsementEnabled ?? false,
     completion_endorsement_type: module.completionEndorsementEnabled ? (module.completionEndorsementType || null) : null,
     completion_endorsement_expiry_months: module.completionEndorsementEnabled && module.completionEndorsementExpiryMonths
@@ -214,6 +222,9 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       flyingDeclarationTitle: 'Flying Declaration',
       flyingDeclarationText: '',
       flyingDeclarationVersion: 1,
+      requiresGuardianDeclarationForMinors: true,
+      guardianDeclarationTitle: 'Under 18 Years - Parent/Guardian Declaration',
+      guardianDeclarationText: '',
       completionEndorsementEnabled: false,
       completionEndorsementType: '',
       completionEndorsementExpiryMonths: null,
