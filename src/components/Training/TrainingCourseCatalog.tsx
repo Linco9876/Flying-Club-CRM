@@ -31,6 +31,8 @@ import toast from 'react-hot-toast';
 import {
   LessonAssessmentCriterion,
   LessonGradingSystem,
+  SyllabusMatrixRequirement,
+  SyllabusMatrixRow,
   TrainingExam,
   TrainingLesson,
   TrainingModule
@@ -38,6 +40,7 @@ import {
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
+import { matrixStandardLabel, useSyllabusMatrix } from '../../hooks/useSyllabusMatrix';
 
 interface NewCourseState {
   title: string;
@@ -532,6 +535,224 @@ const parseListLines = (value: string) =>
     .map((line) => line.replace(/^[-*]\s*/, '').trim())
     .filter(Boolean);
 
+const matrixCellClass = (standard?: number) => {
+  if (standard === 1) return 'bg-emerald-100 text-emerald-800 ring-emerald-200';
+  if (standard === 2) return 'bg-blue-100 text-blue-800 ring-blue-200';
+  if (standard === 3) return 'bg-amber-100 text-amber-800 ring-amber-200';
+  return 'bg-transparent text-slate-300';
+};
+
+interface CourseMatrixPanelProps {
+  course: TrainingModule;
+  rows: SyllabusMatrixRow[];
+  requirements: SyllabusMatrixRequirement[];
+  loading: boolean;
+  error: string | null;
+}
+
+const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
+  course,
+  rows,
+  requirements,
+  loading,
+  error,
+}) => {
+  const [selectedLessonId, setSelectedLessonId] = useState(course.lessons[0]?.id ?? '');
+
+  useEffect(() => {
+    if (!course.lessons.some((lesson) => lesson.id === selectedLessonId)) {
+      setSelectedLessonId(course.lessons[0]?.id ?? '');
+    }
+  }, [course.lessons, selectedLessonId]);
+
+  const requirementByRowAndLesson = useMemo(() => {
+    const map = new Map<string, SyllabusMatrixRequirement>();
+    requirements.forEach((requirement) => {
+      map.set(`${requirement.matrixRowId}:${requirement.lessonId || requirement.lessonSequenceCode}`, requirement);
+    });
+    return map;
+  }, [requirements]);
+
+  const selectedLesson = course.lessons.find((lesson) => lesson.id === selectedLessonId) ?? course.lessons[0];
+  const selectedLessonRequirements = selectedLesson
+    ? requirements
+        .filter((requirement) =>
+          requirement.lessonId === selectedLesson.id ||
+          requirement.lessonSequenceCode === selectedLesson.sequenceCode
+        )
+        .map((requirement) => ({
+          requirement,
+          row: rows.find((item) => item.id === requirement.matrixRowId),
+        }))
+        .filter((item): item is { requirement: SyllabusMatrixRequirement; row: SyllabusMatrixRow } => Boolean(item.row))
+        .sort((a, b) => a.row.sortOrder - b.row.sortOrder)
+    : [];
+
+  const standardCounts = requirements.reduce<Record<number, number>>((acc, requirement) => {
+    acc[requirement.requiredStandard] = (acc[requirement.requiredStandard] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="h-40 animate-pulse rounded-xl border border-slate-200 bg-slate-100" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          Matrix could not load: {error}
+        </div>
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="p-6">
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+          No CASA planning matrix is attached to this course yet.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 p-5 sm:p-6">
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Matrix rows</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-950">{rows.length}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lesson checks</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-950">{requirements.length}</p>
+        </div>
+        {[3, 2].map((standard) => (
+          <div key={standard} className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Standard {standard}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-950">{standardCounts[standard] ?? 0}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
+        <p className="font-semibold">CASA standard key</p>
+        <div className="mt-2 grid gap-2 md:grid-cols-3">
+          {[3, 2, 1].map((standard) => (
+            <span key={standard} className={`rounded-lg px-3 py-2 text-xs font-semibold ring-1 ${matrixCellClass(standard)}`}>
+              {matrixStandardLabel(standard as 1 | 2 | 3)}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="lg:hidden">
+        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">View lesson requirements</label>
+        <select
+          value={selectedLesson?.id ?? ''}
+          onChange={(event) => setSelectedLessonId(event.target.value)}
+          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800"
+        >
+          {course.lessons.map((lesson, index) => (
+            <option key={lesson.id} value={lesson.id}>
+              {index + 1}. {lesson.name || lesson.sequenceTitle}
+            </option>
+          ))}
+        </select>
+        <div className="mt-4 space-y-3">
+          {selectedLessonRequirements.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+              No matrix requirements are attached to this lesson.
+            </div>
+          ) : (
+            selectedLessonRequirements.map(({ row, requirement }) => (
+              <div key={requirement.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {row.elementCode || row.unitCode || row.code}
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{row.description}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold ring-1 ${matrixCellClass(requirement.requiredStandard)}`}>
+                    {requirement.requiredStandard}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white lg:block">
+        <div className="overflow-auto">
+          <table className="min-w-[1280px] border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100 text-slate-600">
+                <th className="sticky left-0 z-20 w-24 border-b border-r border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">Code</th>
+                <th className="sticky left-24 z-20 w-80 border-b border-r border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">Requirement</th>
+                {course.lessons.map((lesson, index) => (
+                  <th key={lesson.id} className="w-20 border-b border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                    <span className="block text-[11px] text-slate-400">{index + 1}</span>
+                    <span className="block truncate" title={lesson.name || lesson.sequenceTitle}>
+                      {lesson.sequenceCode || lesson.name || `L${index + 1}`}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                if (row.rowType !== 'criterion') {
+                  return (
+                    <tr key={row.id} className={row.rowType === 'unit' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}>
+                      <td className="sticky left-0 z-10 border-b border-r border-slate-200 px-3 py-2 font-bold">{row.code}</td>
+                      <td className="sticky left-24 z-10 border-b border-r border-slate-200 px-3 py-2 font-semibold" colSpan={course.lessons.length + 1}>
+                        {row.description}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return (
+                  <tr key={row.id} className="hover:bg-blue-50/40">
+                    <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-3 py-2 font-medium text-slate-600">
+                      {row.parentCode}
+                    </td>
+                    <td className="sticky left-24 z-10 border-b border-r border-slate-200 bg-white px-3 py-2 text-slate-800">
+                      {row.description}
+                    </td>
+                    {course.lessons.map((lesson) => {
+                      const requirement = requirementByRowAndLesson.get(`${row.id}:${lesson.id}`)
+                        ?? requirementByRowAndLesson.get(`${row.id}:${lesson.sequenceCode}`);
+                      return (
+                        <td key={lesson.id} className="border-b border-r border-slate-200 px-2 py-1 text-center">
+                          <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 font-bold ring-1 ${matrixCellClass(requirement?.requiredStandard)}`}>
+                            {requirement?.requiredStandard ?? ''}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-500">
+        This matrix is imported from 00_RPL(A) Planning Matrix.DOCX and is used by CASA RPL(A) lesson records.
+      </p>
+    </div>
+  );
+};
+
 export const TrainingCourseCatalog: React.FC = () => {
   const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
   const { settings: trainingSettings } = useTrainingSettings();
@@ -542,6 +763,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
+  const [courseDetailTab, setCourseDetailTab] = useState<'overview' | 'matrix'>('overview');
 
   // Create course form
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -638,6 +860,12 @@ export const TrainingCourseCatalog: React.FC = () => {
   }, [availableTags, selectedTagFilters]);
 
   const selectedModule = modules.find((module) => module.id === selectedModuleId) ?? null;
+  const {
+    rows: selectedMatrixRows,
+    requirements: selectedMatrixRequirements,
+    loading: selectedMatrixLoading,
+    error: selectedMatrixError,
+  } = useSyllabusMatrix(selectedModule?.id);
   const courseStats = useMemo(() => {
     const published = modules.filter((module) => module.status === 'published').length;
     const draft = modules.length - published;
@@ -726,6 +954,7 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   const handleModuleSelect = (moduleId: string) => {
     setSelectedModuleId(moduleId);
+    setCourseDetailTab('overview');
     setShowLessonForm(false);
     setShowEditCourseForm(false);
     setShowDeleteCourseConfirm(false);
@@ -1581,6 +1810,29 @@ export const TrainingCourseCatalog: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="border-b border-slate-100 bg-white px-5 pt-4 sm:px-6">
+                  <div className="inline-flex rounded-xl bg-slate-100 p-1">
+                    {[
+                      { id: 'overview' as const, label: 'Overview' },
+                      { id: 'matrix' as const, label: 'Matrix' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setCourseDetailTab(tab.id)}
+                        className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                          courseDetailTab === tab.id
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {courseDetailTab === 'overview' ? (
                 <div className="p-5 sm:p-6">
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -1713,6 +1965,15 @@ export const TrainingCourseCatalog: React.FC = () => {
                     </aside>
                   </div>
                 </div>
+                ) : (
+                  <CourseMatrixPanel
+                    course={selectedModule}
+                    rows={selectedMatrixRows}
+                    requirements={selectedMatrixRequirements}
+                    loading={selectedMatrixLoading}
+                    error={selectedMatrixError}
+                  />
+                )}
               </div>
 
               {/* ── Edit course form ── */}

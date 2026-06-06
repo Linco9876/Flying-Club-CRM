@@ -94,6 +94,11 @@ const safeFilename = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'course-export';
 
+const achievedMeetsRequired = (achieved?: number, required?: number) => {
+  if (!achieved || !required) return false;
+  return achieved <= required;
+};
+
 const wrapText = (text: string, font: any, size: number, maxWidth: number) => {
   const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   const lines: string[] = [];
@@ -243,6 +248,65 @@ export async function exportCoursePdf({
     ))
     .sort((a, b) => b.examDate.getTime() - a.examDate.getTime());
 
+  const [
+    { data: matrixRowsData },
+    { data: matrixRequirementsData },
+    { data: matrixAssessmentsData },
+  ] = await Promise.all([
+    supabase
+      .from('syllabus_matrix_rows')
+      .select('*')
+      .eq('course_id', course.id)
+      .order('sort_order', { ascending: true })
+      .range(0, 4999),
+    supabase
+      .from('syllabus_matrix_requirements')
+      .select('*')
+      .eq('course_id', course.id)
+      .range(0, 4999),
+    supabase
+      .from('student_matrix_assessments')
+      .select('*')
+      .eq('course_id', course.id)
+      .eq('student_id', student.id)
+      .range(0, 4999),
+  ]);
+
+  const matrixRows = matrixRowsData ?? [];
+  const matrixRequirements = matrixRequirementsData ?? [];
+  const matrixAssessments = matrixAssessmentsData ?? [];
+  const matrixRowById = new Map(matrixRows.map((row: any) => [row.id, row]));
+  const bestAssessmentByRow = new Map<string, any>();
+  matrixAssessments.forEach((assessment: any) => {
+    const current = bestAssessmentByRow.get(assessment.matrix_row_id);
+    if (!current || (
+      assessment.achieved_standard &&
+      (!current.achieved_standard || assessment.achieved_standard < current.achieved_standard)
+    )) {
+      bestAssessmentByRow.set(assessment.matrix_row_id, assessment);
+    }
+  });
+  const metMatrixRequirements = matrixRequirements.filter((requirement: any) =>
+    achievedMeetsRequired(
+      bestAssessmentByRow.get(requirement.matrix_row_id)?.achieved_standard,
+      requirement.required_standard
+    )
+  );
+  const remainingMatrixRequirements = matrixRequirements
+    .filter((requirement: any) =>
+      !achievedMeetsRequired(
+        bestAssessmentByRow.get(requirement.matrix_row_id)?.achieved_standard,
+        requirement.required_standard
+      )
+    )
+    .map((requirement: any) => ({
+      requirement,
+      row: matrixRowById.get(requirement.matrix_row_id),
+      achieved: bestAssessmentByRow.get(requirement.matrix_row_id)?.achieved_standard,
+    }))
+    .filter((item: any) => item.row)
+    .sort((a: any, b: any) => (a.row.sort_order ?? 0) - (b.row.sort_order ?? 0));
+
   const dualMinutes = courseRecords.reduce((sum, record) => sum + (record.dualTimeMin || 0), 0);
   const soloMinutes = courseRecords.reduce((sum, record) => sum + (record.soloTimeMin || 0), 0);
   const latestRecord = courseRecords[0];
@@ -316,6 +380,38 @@ export async function exportCoursePdf({
       cursor -= 18;
     }
     cursor -= 12;
+  }
+
+  if (matrixRequirements.length > 0) {
+    drawSectionTitle('CASA Planning Matrix Summary');
+    const matrixPercentage = Math.round((metMatrixRequirements.length / matrixRequirements.length) * 100);
+    const finalStandardRemaining = remainingMatrixRequirements.filter((item: any) => item.requirement.required_standard === 1).length;
+    ensureSpace(70);
+    const matrixBoxWidth = (width - margin * 2 - 16) / 3;
+    drawInfoBox('Matrix progress', `${matrixPercentage}%`, margin, cursor, matrixBoxWidth, 42);
+    drawInfoBox('Items met', `${metMatrixRequirements.length} / ${matrixRequirements.length}`, margin + matrixBoxWidth + 8, cursor, matrixBoxWidth, 42);
+    drawInfoBox('Final standard remaining', String(finalStandardRemaining), margin + (matrixBoxWidth + 8) * 2, cursor, matrixBoxWidth, 42);
+    cursor -= 56;
+
+    if (remainingMatrixRequirements.length > 0) {
+      ensureSpace(32);
+      page.drawText('Highest priority remaining items', { x: margin, y: cursor, size: 9, font: bold, color: dark });
+      cursor -= 14;
+      for (const item of remainingMatrixRequirements.slice(0, 12)) {
+        ensureSpace(22);
+        const row = item.row;
+        const achieved = item.achieved ? String(item.achieved) : '-';
+        const required = String(item.requirement.required_standard);
+        const label = `${row.element_code || row.unit_code || row.code} ${achieved}/${required}`;
+        page.drawText(label.slice(0, 24), { x: margin, y: cursor - 8, size: 7, font: bold, color: amber });
+        drawText(String(row.description || '').slice(0, 150), { x: margin + 88, y: cursor - 8 }, { size: 7, color: dark, maxWidth: width - margin * 2 - 98, lineHeight: 8 });
+        cursor -= 18;
+      }
+      cursor -= 8;
+    } else {
+      drawText('All matrix requirements recorded for this course currently meet the required standards.', { x: margin, y: cursor }, { size: 9, color: green });
+      cursor -= 18;
+    }
   }
 
   drawSectionTitle('Course Progress Matrix');

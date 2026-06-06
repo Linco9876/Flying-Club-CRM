@@ -1,0 +1,213 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import {
+  StudentMatrixAssessment,
+  SyllabusMatrixRequirement,
+  SyllabusMatrixRow,
+  SyllabusMatrixStandard,
+} from '../types';
+
+const toMatrixRow = (row: any): SyllabusMatrixRow => ({
+  id: row.id,
+  courseId: row.course_id,
+  code: row.code,
+  rowType: row.row_type,
+  unitCode: row.unit_code ?? undefined,
+  elementCode: row.element_code ?? undefined,
+  parentCode: row.parent_code ?? undefined,
+  description: row.description,
+  sourceRowNumber: row.source_row_number ?? undefined,
+  sortOrder: row.sort_order,
+});
+
+const toRequirement = (row: any): SyllabusMatrixRequirement => ({
+  id: row.id,
+  courseId: row.course_id,
+  lessonId: row.lesson_id ?? undefined,
+  matrixRowId: row.matrix_row_id,
+  lessonSequenceCode: row.lesson_sequence_code,
+  lessonColumnTitle: row.lesson_column_title,
+  requiredStandard: row.required_standard,
+});
+
+const toAssessment = (row: any): StudentMatrixAssessment => ({
+  id: row.id,
+  studentId: row.student_id,
+  courseId: row.course_id,
+  lessonId: row.lesson_id ?? undefined,
+  trainingRecordId: row.training_record_id ?? undefined,
+  matrixRowId: row.matrix_row_id,
+  achievedStandard: row.achieved_standard ?? undefined,
+  comments: row.comments ?? '',
+  instructorId: row.instructor_id ?? undefined,
+  assessedAt: row.assessed_at ? new Date(row.assessed_at) : new Date(row.created_at),
+});
+
+type SaveAssessmentInput = {
+  studentId: string;
+  courseId: string;
+  lessonId?: string;
+  trainingRecordId?: string;
+  instructorId?: string;
+  assessments: Array<{
+    matrixRowId: string;
+    achievedStandard?: SyllabusMatrixStandard;
+    comments?: string;
+  }>;
+};
+
+export const matrixStandardLabel = (standard?: SyllabusMatrixStandard) => {
+  if (standard === 1) return '1 - Qualification standard';
+  if (standard === 2) return '2 - Supervised solo standard';
+  if (standard === 3) return '3 - Training received';
+  return 'Not assessed';
+};
+
+export const matrixStandardShortLabel = (standard?: SyllabusMatrixStandard) =>
+  standard ? String(standard) : '-';
+
+export const matrixStandardMeetsRequirement = (
+  achieved?: SyllabusMatrixStandard,
+  required?: SyllabusMatrixStandard
+) => {
+  if (!achieved || !required) return false;
+  return achieved <= required;
+};
+
+export const useSyllabusMatrix = (courseId?: string, studentId?: string) => {
+  const [rows, setRows] = useState<SyllabusMatrixRow[]>([]);
+  const [requirements, setRequirements] = useState<SyllabusMatrixRequirement[]>([]);
+  const [assessments, setAssessments] = useState<StudentMatrixAssessment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchMatrix = useCallback(async () => {
+    if (!courseId) {
+      setRows([]);
+      setRequirements([]);
+      setAssessments([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const [rowsResult, requirementsResult, assessmentsResult] = await Promise.all([
+        supabase
+          .from('syllabus_matrix_rows')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('sort_order', { ascending: true })
+          .range(0, 4999),
+        supabase
+          .from('syllabus_matrix_requirements')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('lesson_sequence_code', { ascending: true })
+          .range(0, 4999),
+        studentId
+          ? supabase
+              .from('student_matrix_assessments')
+              .select('*')
+              .eq('course_id', courseId)
+              .eq('student_id', studentId)
+              .order('assessed_at', { ascending: false })
+              .range(0, 4999)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (rowsResult.error) throw rowsResult.error;
+      if (requirementsResult.error) throw requirementsResult.error;
+      if (assessmentsResult.error) throw assessmentsResult.error;
+
+      setRows((rowsResult.data ?? []).map(toMatrixRow));
+      setRequirements((requirementsResult.data ?? []).map(toRequirement));
+      setAssessments((assessmentsResult.data ?? []).map(toAssessment));
+      setError(null);
+    } catch (err) {
+      console.error('Failed to load syllabus matrix:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load syllabus matrix');
+    } finally {
+      setLoading(false);
+    }
+  }, [courseId, studentId]);
+
+  useEffect(() => {
+    void fetchMatrix();
+  }, [fetchMatrix]);
+
+  const requirementsByLesson = useMemo(() => {
+    const grouped = new Map<string, SyllabusMatrixRequirement[]>();
+    requirements.forEach((requirement) => {
+      const key = requirement.lessonId || requirement.lessonSequenceCode;
+      grouped.set(key, [...(grouped.get(key) ?? []), requirement]);
+    });
+    return grouped;
+  }, [requirements]);
+
+  const rowsById = useMemo(
+    () => new Map(rows.map((row) => [row.id, row])),
+    [rows]
+  );
+
+  const bestAssessmentByRow = useMemo(() => {
+    const best = new Map<string, StudentMatrixAssessment>();
+    assessments.forEach((assessment) => {
+      const current = best.get(assessment.matrixRowId);
+      if (!current || (
+        assessment.achievedStandard &&
+        (!current.achievedStandard || assessment.achievedStandard < current.achievedStandard)
+      )) {
+        best.set(assessment.matrixRowId, assessment);
+      }
+    });
+    return best;
+  }, [assessments]);
+
+  const saveAssessments = useCallback(async ({
+    studentId: saveStudentId,
+    courseId: saveCourseId,
+    lessonId,
+    trainingRecordId,
+    instructorId,
+    assessments: assessmentRows,
+  }: SaveAssessmentInput) => {
+    const rowsToSave = assessmentRows
+      .filter((assessment) => assessment.achievedStandard)
+      .map((assessment) => ({
+        student_id: saveStudentId,
+        course_id: saveCourseId,
+        lesson_id: lessonId ?? null,
+        training_record_id: trainingRecordId ?? null,
+        matrix_row_id: assessment.matrixRowId,
+        achieved_standard: assessment.achievedStandard,
+        comments: assessment.comments ?? '',
+        instructor_id: instructorId ?? null,
+        assessed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+
+    if (rowsToSave.length === 0) return;
+
+    const { error } = await supabase
+      .from('student_matrix_assessments')
+      .upsert(rowsToSave, { onConflict: 'training_record_id,matrix_row_id' });
+
+    if (error) throw error;
+    await fetchMatrix();
+  }, [fetchMatrix]);
+
+  return {
+    rows,
+    requirements,
+    assessments,
+    requirementsByLesson,
+    rowsById,
+    bestAssessmentByRow,
+    loading,
+    error,
+    refetch: fetchMatrix,
+    saveAssessments,
+  };
+};

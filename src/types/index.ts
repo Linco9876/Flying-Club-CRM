@@ -271,6 +271,45 @@ export interface TrainingModule {
   createdBy?: string;
 }
 
+export type SyllabusMatrixRowType = 'unit' | 'element' | 'criterion';
+export type SyllabusMatrixStandard = 1 | 2 | 3;
+
+export interface SyllabusMatrixRow {
+  id: string;
+  courseId: string;
+  code: string;
+  rowType: SyllabusMatrixRowType;
+  unitCode?: string;
+  elementCode?: string;
+  parentCode?: string;
+  description: string;
+  sourceRowNumber?: number;
+  sortOrder: number;
+}
+
+export interface SyllabusMatrixRequirement {
+  id: string;
+  courseId: string;
+  lessonId?: string;
+  matrixRowId: string;
+  lessonSequenceCode: string;
+  lessonColumnTitle: string;
+  requiredStandard: SyllabusMatrixStandard;
+}
+
+export interface StudentMatrixAssessment {
+  id: string;
+  studentId: string;
+  courseId: string;
+  lessonId?: string;
+  trainingRecordId?: string;
+  matrixRowId: string;
+  achievedStandard?: SyllabusMatrixStandard;
+  comments: string;
+  instructorId?: string;
+  assessedAt: Date;
+}
+
 export interface TrainingAuditEntry {
   id: string;
   timestamp: Date;

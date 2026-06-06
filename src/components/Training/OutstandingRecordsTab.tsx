@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -7,10 +7,16 @@ import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
-import { LessonAssessmentCriterion, LessonGradingSystem } from '../../types';
+import { LessonAssessmentCriterion, LessonGradingSystem, SyllabusMatrixStandard } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
+import {
+  matrixStandardLabel,
+  matrixStandardMeetsRequirement,
+  matrixStandardShortLabel,
+  useSyllabusMatrix,
+} from '../../hooks/useSyllabusMatrix';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 
@@ -21,6 +27,7 @@ interface RecordFormState {
   briefingComments: string;
   flightComments: string;
   criteriaGrades: Record<string, string>;
+  matrixGrades: Record<string, string>;
   isFlightReview: boolean;
   flightReviewType: string;
   flightReviewResult: 'pass' | 'fail' | 'not_assessed';
@@ -35,6 +42,7 @@ function emptyForm(): RecordFormState {
     briefingComments: '',
     flightComments: '',
     criteriaGrades: {},
+    matrixGrades: {},
     isFlightReview: false,
     flightReviewType: 'Flight Review',
     flightReviewResult: 'not_assessed',
@@ -107,8 +115,33 @@ export const OutstandingRecordsTab: React.FC = () => {
     [selectedCourse, form.lessonId]
   );
 
+  const {
+    requirementsByLesson,
+    rowsById,
+    bestAssessmentByRow,
+    loading: matrixLoading,
+    saveAssessments: saveMatrixAssessments,
+  } = useSyllabusMatrix(form.courseId || undefined, activeLog?.student_id);
+
   // Criteria come from the course level, pass marks from the lesson
   const activeCriteria: LessonAssessmentCriterion[] = selectedCourse?.assessmentCriteria ?? [];
+
+  const activeMatrixRequirements = useMemo(() => {
+    if (!selectedLesson) return [];
+    const byId = requirementsByLesson.get(selectedLesson.id) ?? [];
+    const byCode = selectedLesson.sequenceCode
+      ? requirementsByLesson.get(selectedLesson.sequenceCode) ?? []
+      : [];
+    const combined = [...byId, ...byCode];
+    return Array.from(new Map(combined.map((requirement) => [requirement.id, requirement])).values())
+      .sort((a, b) => {
+        const rowA = rowsById.get(a.matrixRowId);
+        const rowB = rowsById.get(b.matrixRowId);
+        return (rowA?.sortOrder ?? 0) - (rowB?.sortOrder ?? 0);
+      });
+  }, [requirementsByLesson, rowsById, selectedLesson]);
+
+  const hasMatrixAssessment = activeMatrixRequirements.length > 0;
 
   const selectedLessonIndex = useMemo(
     () => selectedCourse?.lessons.findIndex(l => l.id === form.lessonId) ?? -1,
@@ -135,14 +168,24 @@ export const OutstandingRecordsTab: React.FC = () => {
   }, [activeLog, selectedCourse, trainingRecords]);
 
   const lessonPassed = useMemo(() => {
-    if (!selectedLesson || activeCriteria.length === 0) return false;
+    if (!selectedLesson) return false;
+
+    if (hasMatrixAssessment) {
+      return activeMatrixRequirements.every(requirement => {
+        const rawGrade = form.matrixGrades[requirement.matrixRowId];
+        const achieved = rawGrade ? Number(rawGrade) as SyllabusMatrixStandard : undefined;
+        return matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+      });
+    }
+
+    if (activeCriteria.length === 0) return false;
 
     return activeCriteria.every(criterion => {
       const passMark = selectedLesson.passMarks?.[criterion.id] ?? '-';
       const grade = form.criteriaGrades[criterion.id] ?? '-';
       return isGradeAtLeast(grade, passMark, criterion.gradingSystem);
     });
-  }, [activeCriteria, form.criteriaGrades, selectedLesson]);
+  }, [activeCriteria, activeMatrixRequirements, form.criteriaGrades, form.matrixGrades, hasMatrixAssessment, selectedLesson]);
 
   const nextLessonForRecord = lessonPassed
     ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
@@ -186,7 +229,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   }
 
   function handleSelectCourse(courseId: string) {
-    setForm(f => ({ ...f, courseId, lessonId: '', criteriaGrades: {} }));
+    setForm(f => ({ ...f, courseId, lessonId: '', criteriaGrades: {}, matrixGrades: {} }));
     setStep('lesson');
   }
 
@@ -212,9 +255,26 @@ export const OutstandingRecordsTab: React.FC = () => {
         defaults[crit.id] = trainingSettings.prefillHighestGrades ? (highestByCriterion[crit.id] ?? '-') : '-';
       }
     }
-    setForm(f => ({ ...f, lessonId, criteriaGrades: defaults }));
+    setForm(f => ({ ...f, lessonId, criteriaGrades: defaults, matrixGrades: {} }));
     setStep('form');
   }
+
+  useEffect(() => {
+    if (!selectedLesson || activeMatrixRequirements.length === 0) return;
+    setForm(current => {
+      if (current.lessonId !== selectedLesson.id) return current;
+      const defaults: Record<string, string> = {};
+      activeMatrixRequirements.forEach(requirement => {
+        const best = bestAssessmentByRow.get(requirement.matrixRowId);
+        defaults[requirement.matrixRowId] = best?.achievedStandard ? String(best.achievedStandard) : '';
+      });
+
+      const hasSameKeys = Object.keys(defaults).length === Object.keys(current.matrixGrades).length
+        && Object.keys(defaults).every(key => current.matrixGrades[key] !== undefined);
+      if (hasSameKeys) return current;
+      return { ...current, matrixGrades: defaults };
+    });
+  }, [activeMatrixRequirements, bestAssessmentByRow, selectedLesson]);
 
   async function handleSubmit() {
     if (!activeLog || !user) return;
@@ -236,7 +296,7 @@ export const OutstandingRecordsTab: React.FC = () => {
 
     setSubmitting(true);
     try {
-      await addTrainingRecord({
+      const createdRecord = await addTrainingRecord({
         studentId: activeLog.student_id,
         flightLogId: activeLog.id,
         bookingId: activeLog.booking_id,
@@ -264,6 +324,22 @@ export const OutstandingRecordsTab: React.FC = () => {
         flightReviewResult: form.isFlightReview ? form.flightReviewResult : undefined,
         flightReviewNotes: form.isFlightReview ? form.flightReviewNotes : undefined,
       });
+
+      if (hasMatrixAssessment && createdRecord?.id) {
+        await saveMatrixAssessments({
+          studentId: activeLog.student_id,
+          courseId: form.courseId,
+          lessonId: form.lessonId,
+          trainingRecordId: createdRecord.id,
+          instructorId: user.id,
+          assessments: activeMatrixRequirements.map(requirement => ({
+            matrixRowId: requirement.matrixRowId,
+            achievedStandard: form.matrixGrades[requirement.matrixRowId]
+              ? Number(form.matrixGrades[requirement.matrixRowId]) as SyllabusMatrixStandard
+              : undefined,
+          })),
+        });
+      }
 
       if (trainingSettings.autoMarkFlightLogRecorded) {
         await markRecorded(activeLog.id);
@@ -608,8 +684,103 @@ export const OutstandingRecordsTab: React.FC = () => {
                     />
                   </div>
 
+                  {/* CASA Matrix Assessment */}
+                  {hasMatrixAssessment && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-800 mb-3">CASA Matrix Assessment</label>
+                      <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+                        <p className="font-semibold">Only the matrix rows attached to this lesson are shown.</p>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                          {[3, 2, 1].map(standard => (
+                            <span key={standard} className="rounded-md bg-white px-2 py-1 ring-1 ring-blue-100">
+                              {matrixStandardLabel(standard as SyllabusMatrixStandard)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {matrixLoading ? (
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                          Loading matrix requirements...
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {activeMatrixRequirements.map(requirement => {
+                            const row = rowsById.get(requirement.matrixRowId);
+                            const current = form.matrixGrades[requirement.matrixRowId] ?? '';
+                            const achieved = current ? Number(current) as SyllabusMatrixStandard : undefined;
+                            const best = bestAssessmentByRow.get(requirement.matrixRowId);
+                            const passed = matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+
+                            return (
+                              <div key={requirement.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                      {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}
+                                    </p>
+                                    <p className="mt-1 text-sm font-medium text-gray-900">{row?.description || 'Matrix row'}</p>
+                                  </div>
+                                  <div className="flex flex-wrap justify-end gap-2">
+                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                      {passed ? 'Pass' : 'Below pass'}
+                                    </span>
+                                    <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-700">
+                                      Required: {requirement.requiredStandard}
+                                    </span>
+                                    {best?.achievedStandard && (
+                                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                                        Best to date: {matrixStandardShortLabel(best.achievedStandard)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setForm(f => ({
+                                      ...f,
+                                      matrixGrades: { ...f.matrixGrades, [requirement.matrixRowId]: '' }
+                                    }))}
+                                    className={`rounded-lg border-2 px-3 py-1.5 text-sm font-semibold transition ${
+                                      current === ''
+                                        ? 'border-gray-400 bg-gray-200 text-gray-700'
+                                        : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                    }`}
+                                  >
+                                    -
+                                  </button>
+                                  {[3, 2, 1].map(standard => (
+                                    <button
+                                      key={standard}
+                                      type="button"
+                                      onClick={() => setForm(f => ({
+                                        ...f,
+                                        matrixGrades: { ...f.matrixGrades, [requirement.matrixRowId]: String(standard) }
+                                      }))}
+                                      className={`rounded-lg border-2 px-3 py-1.5 text-sm font-semibold transition ${
+                                        current === String(standard)
+                                          ? standard === 1
+                                            ? 'border-emerald-500 bg-emerald-100 text-emerald-800'
+                                            : standard === 2
+                                            ? 'border-blue-500 bg-blue-100 text-blue-800'
+                                            : 'border-amber-500 bg-amber-100 text-amber-800'
+                                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                      }`}
+                                    >
+                                      {standard}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Assessment Criteria */}
-                  {activeCriteria.length > 0 && (
+                  {!hasMatrixAssessment && activeCriteria.length > 0 && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-800 mb-3">Competency Assessment</label>
                       <div className="mb-3 grid gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 sm:grid-cols-2">

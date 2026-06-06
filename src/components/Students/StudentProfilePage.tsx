@@ -16,6 +16,11 @@ import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { StudentCourseEnrolment, useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
+import {
+  matrixStandardMeetsRequirement,
+  matrixStandardShortLabel,
+  useSyllabusMatrix,
+} from '../../hooks/useSyllabusMatrix';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
@@ -3429,6 +3434,83 @@ interface CourseProgressTabProps {
   refetchStudents: () => Promise<void>;
 }
 
+const MatrixProgressSummaryCard: React.FC<{ course: TrainingModule; studentId: string }> = ({ course, studentId }) => {
+  const { rowsById, requirements, bestAssessmentByRow, loading } = useSyllabusMatrix(course.id, studentId);
+
+  const summary = useMemo(() => {
+    const met = requirements.filter((requirement) => {
+      const achieved = bestAssessmentByRow.get(requirement.matrixRowId)?.achievedStandard;
+      return matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+    });
+    const remaining = requirements
+      .filter((requirement) => {
+        const achieved = bestAssessmentByRow.get(requirement.matrixRowId)?.achievedStandard;
+        return !matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+      })
+      .map((requirement) => ({
+        requirement,
+        row: rowsById.get(requirement.matrixRowId),
+        achieved: bestAssessmentByRow.get(requirement.matrixRowId)?.achievedStandard,
+      }))
+      .filter((item) => item.row)
+      .sort((a, b) => (a.row?.sortOrder ?? 0) - (b.row?.sortOrder ?? 0));
+
+    return {
+      metCount: met.length,
+      totalCount: requirements.length,
+      percentage: requirements.length > 0 ? Math.round((met.length / requirements.length) * 100) : 0,
+      standardOneRemaining: remaining.filter((item) => item.requirement.requiredStandard === 1).length,
+      remaining: remaining.slice(0, 6),
+    };
+  }, [bestAssessmentByRow, requirements, rowsById]);
+
+  if (loading) {
+    return <div className="mt-4 h-24 animate-pulse rounded-xl border border-slate-200 bg-slate-100" />;
+  }
+
+  if (requirements.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">CASA Matrix Readiness</p>
+          <p className="mt-1 text-sm text-blue-950">
+            {summary.metCount} of {summary.totalCount} required matrix items meet the lesson standards recorded so far.
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-bold text-blue-700">{summary.percentage}%</p>
+          <p className="text-xs font-medium text-blue-600">{summary.standardOneRemaining} final-standard items remaining</p>
+        </div>
+      </div>
+      <div className="mt-3 h-2 rounded-full bg-blue-100">
+        <div className="h-2 rounded-full bg-blue-600 transition-all" style={{ width: `${summary.percentage}%` }} />
+      </div>
+      {summary.remaining.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Next gaps to close</p>
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            {summary.remaining.map(({ requirement, row, achieved }) => (
+              <div key={requirement.id} className="rounded-lg bg-white p-3 text-xs ring-1 ring-blue-100">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-slate-900">{row?.elementCode || row?.unitCode || row?.code}</p>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+                    {matrixStandardShortLabel(achieved)} / {requirement.requiredStandard}
+                  </span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-slate-600">{row?.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
   student,
   trainingRecords,
@@ -3713,6 +3795,8 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                 </div>
               </div>
             )}
+
+            {student && <MatrixProgressSummaryCard course={course} studentId={student.id} />}
 
             <div className="mt-5 border-t border-gray-100 pt-4">
               <div className="flex items-center justify-between gap-3 mb-3">
