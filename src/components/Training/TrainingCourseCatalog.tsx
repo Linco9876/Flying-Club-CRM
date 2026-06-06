@@ -1101,6 +1101,29 @@ export const TrainingCourseCatalog: React.FC = () => {
       criteria: selectedModule.assessmentCriteria.length,
     };
   }, [selectedModule]);
+  const selectedMatrixRowsById = useMemo(
+    () => new Map(selectedMatrixRows.map((row) => [row.id, row])),
+    [selectedMatrixRows]
+  );
+  const getLessonMatrixRequirements = useCallback((lesson?: TrainingLesson | null) => {
+    if (!lesson) return [];
+    return selectedMatrixRequirements
+      .filter((requirement) =>
+        requirement.lessonId === lesson.id ||
+        requirement.lessonSequenceCode === lesson.sequenceCode
+      )
+      .map((requirement) => ({
+        requirement,
+        row: selectedMatrixRowsById.get(requirement.matrixRowId),
+      }))
+      .filter((item): item is { requirement: SyllabusMatrixRequirement; row: SyllabusMatrixRow } => Boolean(item.row))
+      .sort((a, b) => a.row.sortOrder - b.row.sortOrder);
+  }, [selectedMatrixRequirements, selectedMatrixRowsById]);
+  const getMatrixStandardCounts = (items: Array<{ requirement: SyllabusMatrixRequirement }>) =>
+    items.reduce<Record<number, number>>((acc, item) => {
+      acc[item.requirement.requiredStandard] = (acc[item.requirement.requiredStandard] ?? 0) + 1;
+      return acc;
+    }, {});
 
   const queueFormScroll = (target: 'edit-course' | 'lesson') => {
     pendingScrollTargetRef.current = target;
@@ -2458,6 +2481,84 @@ export const TrainingCourseCatalog: React.FC = () => {
                       </span>
                     </span>
                   </label>
+                  {(() => {
+                    const editingLesson = editingLessonId
+                      ? selectedModule.lessons.find((lesson) => lesson.id === editingLessonId)
+                      : null;
+                    const lessonMatrix = getLessonMatrixRequirements(editingLesson);
+                    const standardCounts = getMatrixStandardCounts(lessonMatrix);
+                    return (
+                      <div className="mt-6 rounded-lg border border-indigo-200 bg-indigo-50/60 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="flex items-start gap-2 text-indigo-950">
+                            <ClipboardList className="mt-0.5 h-5 w-5 text-indigo-600" />
+                            <div>
+                              <h4 className="text-sm font-semibold">RPL matrix pass requirements</h4>
+                              <p className="mt-1 text-xs leading-5 text-indigo-800">
+                                For CASA RPL lessons, pass/fail is determined by the lesson matrix. Every attached row must be assessed at, or better than, its required standard.
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCourseDetailTab('matrix')}
+                            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                          >
+                            Edit matrix
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        {!editingLesson ? (
+                          <p className="mt-3 rounded-lg border border-dashed border-indigo-200 bg-white/70 p-3 text-xs text-indigo-700">
+                            Save the lesson first, then use the Matrix tab to attach its CASA rows and required standards.
+                          </p>
+                        ) : selectedMatrixLoading ? (
+                          <p className="mt-3 text-xs text-indigo-700">Loading lesson matrix...</p>
+                        ) : lessonMatrix.length === 0 ? (
+                          <div className="mt-3 rounded-lg border border-dashed border-indigo-200 bg-white/70 p-3 text-xs text-indigo-700">
+                            No matrix rows are attached to this lesson yet. Open the Matrix tab, select this lesson, then add the required CASA rows.
+                          </div>
+                        ) : (
+                          <div className="mt-3 space-y-3">
+                            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                              {[3, 2, 1].map((standard) => (
+                                <span key={standard} className={`rounded-lg px-2.5 py-1 ring-1 ${matrixCellClass(standard)}`}>
+                                  Standard {standard}: {standardCounts[standard] ?? 0}
+                                </span>
+                              ))}
+                              <span className="rounded-lg bg-white px-2.5 py-1 text-indigo-800 ring-1 ring-indigo-100">
+                                {lessonMatrix.length} total rows
+                              </span>
+                            </div>
+                            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                              {lessonMatrix.slice(0, 12).map(({ row, requirement }) => (
+                                <div key={requirement.id} className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-indigo-950">
+                                        {row.elementCode || row.unitCode || row.code}
+                                      </p>
+                                      <p className="mt-1 text-xs leading-5 text-slate-700">
+                                        {formatSyllabusMatrixText(row.description)}
+                                      </p>
+                                    </div>
+                                    <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold ring-1 ${matrixCellClass(requirement.requiredStandard)}`}>
+                                      Req {requirement.requiredStandard}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                              {lessonMatrix.length > 12 && (
+                                <p className="px-1 text-xs font-medium text-indigo-700">
+                                  + {lessonMatrix.length - 12} more rows in the Matrix tab
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="mt-6 rounded-lg border border-blue-200 bg-white p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2 text-blue-900">
@@ -2465,6 +2566,11 @@ export const TrainingCourseCatalog: React.FC = () => {
                         <h4 className="text-sm font-semibold">Pass mark per criterion</h4>
                       </div>
                     </div>
+                    {selectedMatrixRequirements.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">
+                        This section is for generic course criteria. The RPL lesson pass mark is controlled by the CASA matrix requirements above.
+                      </div>
+                    )}
                     {selectedModule.assessmentCriteria.length === 0 ? (
                       <p className="mt-3 text-xs text-gray-500">No assessment criteria defined for this course yet. Add them via "Edit course".</p>
                     ) : (
@@ -2729,6 +2835,78 @@ export const TrainingCourseCatalog: React.FC = () => {
                                   );
                                 })()}
                               </div>
+                              {(() => {
+                                const lessonMatrix = getLessonMatrixRequirements(lesson);
+                                if (selectedMatrixRows.length === 0 && selectedMatrixRequirements.length === 0) return null;
+                                const standardCounts = getMatrixStandardCounts(lessonMatrix);
+                                return (
+                                  <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>
+                                        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                          RPL lesson matrix pass rules
+                                        </h5>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          The lesson passes when each attached CASA row is assessed at, or better than, its required standard.
+                                        </p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setCourseDetailTab('matrix');
+                                          setShowLessonForm(false);
+                                        }}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                                      >
+                                        Edit matrix
+                                        <ChevronRight className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                    {lessonMatrix.length === 0 ? (
+                                      <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-500">
+                                        No CASA matrix rows are attached to this lesson yet.
+                                      </p>
+                                    ) : (
+                                      <div className="mt-3 space-y-3">
+                                        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                                          {[3, 2, 1].map((standard) => (
+                                            <span key={standard} className={`rounded-lg px-2.5 py-1 ring-1 ${matrixCellClass(standard)}`}>
+                                              Standard {standard}: {standardCounts[standard] ?? 0}
+                                            </span>
+                                          ))}
+                                          <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-slate-700 ring-1 ring-slate-200">
+                                            {lessonMatrix.length} total rows
+                                          </span>
+                                        </div>
+                                        <div className="grid gap-2 md:grid-cols-2">
+                                          {lessonMatrix.slice(0, 8).map(({ row, requirement }) => (
+                                            <div key={requirement.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                                              <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                                    {row.elementCode || row.unitCode || row.code}
+                                                  </p>
+                                                  <p className="mt-1 line-clamp-2 text-sm font-medium text-slate-900">
+                                                    {formatSyllabusMatrixText(row.description)}
+                                                  </p>
+                                                </div>
+                                                <span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold ring-1 ${matrixCellClass(requirement.requiredStandard)}`}>
+                                                  Req {requirement.requiredStandard}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        {lessonMatrix.length > 8 && (
+                                          <p className="text-xs font-medium text-slate-500">
+                                            + {lessonMatrix.length - 8} more rows in the Matrix tab
+                                          </p>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </>
                           )}
                         </article>
