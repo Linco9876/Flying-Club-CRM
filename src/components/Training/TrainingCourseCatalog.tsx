@@ -57,6 +57,8 @@ interface NewCourseState {
   evaluationFocus: string;
 }
 
+type CourseBuildMode = 'simple' | 'advanced';
+
 interface NewLessonState {
   name: string;
   objective: string;
@@ -496,6 +498,19 @@ const createEmptyCriterion = (system: LessonGradingSystem = 'NC/S/C/-'): Editabl
   passingGrade: getDefaultPassingGrade(system)
 });
 
+const createAdvancedCriterion = (name: string): EditableCriterion => ({
+  id: `criterion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  name,
+  gradingSystem: 'Pass or Fail',
+  passingGrade: 'Pass',
+});
+
+const defaultAdvancedCriteria = () => [
+  createAdvancedCriterion('Practical flying standard'),
+  createAdvancedCriterion('Airmanship, human factors and decision making'),
+  createAdvancedCriterion('Knowledge and preparation'),
+];
+
 const createEmptyExam = (): EditableExam => ({
   id: `exam-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   name: '',
@@ -566,6 +581,12 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
   const [rowSearch, setRowSearch] = useState('');
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [expandedOverview, setExpandedOverview] = useState(false);
+  const [newMatrixRow, setNewMatrixRow] = useState({
+    code: '',
+    unitCode: '',
+    elementCode: '',
+    description: '',
+  });
 
   useEffect(() => {
     if (!course.lessons.some((lesson) => lesson.id === selectedLessonId)) {
@@ -691,7 +712,11 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
   };
 
   const handleAddRequirement = async (row: SyllabusMatrixRow, standard: 1 | 2 | 3 = 3) => {
-    if (!canEdit || !selectedLesson) return;
+    if (!canEdit) return;
+    if (!selectedLesson) {
+      toast.error('Add at least one lesson before linking matrix requirements');
+      return;
+    }
     setSavingKey(`add-${row.id}`);
     try {
       const lessonSequenceCode = selectedLesson.sequenceCode || selectedLesson.id;
@@ -719,6 +744,94 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
     }
   };
 
+  const handleAddMatrixRow = async () => {
+    if (!canEdit) return;
+    const description = newMatrixRow.description.trim();
+    if (!description) {
+      toast.error('Add matrix wording first');
+      return;
+    }
+
+    const code = newMatrixRow.code.trim() || `M${rows.length + 1}`;
+    const unitCode = newMatrixRow.unitCode.trim() || null;
+    const elementCode = newMatrixRow.elementCode.trim() || unitCode || code;
+    setSavingKey('new-matrix-row');
+    try {
+      const { error: insertError } = await supabase
+        .from('syllabus_matrix_rows')
+        .insert({
+          course_id: course.id,
+          code,
+          row_type: 'criterion',
+          unit_code: unitCode,
+          element_code: elementCode,
+          parent_code: elementCode,
+          description,
+          source_row_number: rows.length + 1,
+          sort_order: rows.reduce((max, row) => Math.max(max, row.sortOrder ?? 0), 0) + 1,
+        });
+      if (insertError) throw insertError;
+
+      setNewMatrixRow({ code: '', unitCode: '', elementCode: '', description: '' });
+      await onMatrixChanged();
+      toast.success('Matrix row added');
+    } catch (err) {
+      console.error('Failed to add matrix row:', err);
+      toast.error('Failed to add matrix row');
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const matrixRowCreator = canEdit ? (
+    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-indigo-950">Add matrix item</p>
+          <p className="mt-1 text-xs text-indigo-700">
+            Use this for advanced syllabus courses. Add each competency item once, then attach it to the lessons where it must be assessed.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-[120px_120px_140px_minmax(0,1fr)_auto]">
+        <input
+          value={newMatrixRow.code}
+          onChange={(event) => setNewMatrixRow((current) => ({ ...current, code: event.target.value }))}
+          placeholder="Code"
+          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+        />
+        <input
+          value={newMatrixRow.unitCode}
+          onChange={(event) => setNewMatrixRow((current) => ({ ...current, unitCode: event.target.value }))}
+          placeholder="Unit"
+          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+        />
+        <input
+          value={newMatrixRow.elementCode}
+          onChange={(event) => setNewMatrixRow((current) => ({ ...current, elementCode: event.target.value }))}
+          placeholder="Element"
+          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+        />
+        <textarea
+          value={newMatrixRow.description}
+          onChange={(event) => setNewMatrixRow((current) => ({ ...current, description: event.target.value }))}
+          placeholder="Plain-English competency wording"
+          rows={2}
+          className="min-h-10 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+        />
+        <button
+          type="button"
+          disabled={savingKey === 'new-matrix-row'}
+          onClick={handleAddMatrixRow}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Plus className="h-4 w-4" />
+          Add
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   if (loading) {
     return (
       <div className="p-6">
@@ -739,16 +852,19 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
 
   if (rows.length === 0) {
     return (
-      <div className="p-6">
+      <div className="space-y-4 p-6">
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-          No CASA planning matrix is attached to this course yet.
+          No syllabus matrix is attached to this course yet. Add matrix items below, then attach them to lessons with the required pass standard.
         </div>
+        {matrixRowCreator}
       </div>
     );
   }
 
   return (
     <div className="space-y-5 p-5 sm:p-6">
+      {matrixRowCreator}
+
       <div className="grid gap-3 md:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Matrix rows</p>
@@ -1024,6 +1140,7 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   // Create course form
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newCourseMode, setNewCourseMode] = useState<CourseBuildMode>('simple');
   const [newCourse, setNewCourse] = useState<CourseFormState>(emptyCourseForm);
   // Course-level criteria (shared across all lessons)
   const [courseCriteria, setCourseCriteria] = useState<EditableCriterion[]>([]);
@@ -1421,6 +1538,35 @@ export const TrainingCourseCatalog: React.FC = () => {
       ? selectedModule.lessons.every((lesson) => expandedLessons[lesson.id])
       : false;
 
+  const handleCourseModeChange = (mode: CourseBuildMode) => {
+    setNewCourseMode(mode);
+    if (mode === 'advanced') {
+      setCourseCriteria((current) => current.length > 0 ? current : defaultAdvancedCriteria());
+      setNewCourse((current) => ({
+        ...current,
+        category: current.category || 'Advanced Matrix',
+        tags: current.tags || 'advanced, matrix',
+        description: current.description || 'A structured syllabus course where individual matrix items are assessed against each lesson.',
+        objectives: current.objectives || [
+          'Track lesson progress against detailed syllabus matrix items.',
+          'Show clearly which items have been met and which need to be carried forward.',
+          'Use pass/fail broad criteria backed by detailed matrix evidence.',
+        ].join('\n'),
+        evaluationFocus: current.evaluationFocus || [
+          'Has each required matrix item been assessed at the required standard?',
+          'Are any not-yet-met items clearly carried forward?',
+          'Does the student meet the broad course criteria for this lesson?',
+        ].join('\n'),
+      }));
+    } else {
+      setCourseCriteria((current) => current.length > 0 ? current : [createEmptyCriterion(trainingSettings.defaultGradingSystem)]);
+      setNewCourse((current) => ({
+        ...current,
+        category: current.category === 'Advanced Matrix' ? '' : current.category,
+      }));
+    }
+  };
+
   const handleCreateCourse = async () => {
     const title = newCourse.title.trim();
     const description = newCourse.description.trim();
@@ -1487,8 +1633,10 @@ export const TrainingCourseCatalog: React.FC = () => {
     try {
       const createdModule = await addModule(module);
       setSelectedModuleId(createdModule.id);
+      setCourseDetailTab(newCourseMode === 'advanced' ? 'matrix' : 'overview');
       setShowCreateForm(false);
       setNewCourse(emptyCourseForm());
+      setNewCourseMode('simple');
       setCourseCriteria([]);
       toast.success('New course created');
     } catch {
@@ -1499,6 +1647,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const handleCancelCreate = () => {
     setShowCreateForm(false);
     setNewCourse(emptyCourseForm());
+    setNewCourseMode('simple');
     setCourseCriteria([]);
   };
 
@@ -1775,6 +1924,40 @@ export const TrainingCourseCatalog: React.FC = () => {
             <BookOpenCheck className="h-5 w-5" />
             <h2 className="text-lg font-semibold">Create new course</h2>
           </div>
+          <div className="mb-5 grid gap-3 md:grid-cols-2">
+            {[
+              {
+                id: 'simple' as const,
+                title: 'Simple course',
+                body: 'Best for RAAus RPC-style courses. Lessons use broad assessment criteria such as NC/S/C, Pass/Fail or percentages.',
+              },
+              {
+                id: 'advanced' as const,
+                title: 'Advanced matrix course',
+                body: 'Best for CASA RPL-style syllabuses. Build detailed matrix items, link them to lessons, and let the matrix drive pass/fail outcomes.',
+              },
+            ].map((option) => {
+              const selected = newCourseMode === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleCourseModeChange(option.id)}
+                  className={`rounded-xl border p-4 text-left transition ${
+                    selected
+                      ? 'border-blue-500 bg-white shadow-sm ring-2 ring-blue-200'
+                      : 'border-blue-200 bg-blue-100/50 hover:bg-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold text-blue-950">
+                    {option.id === 'advanced' ? <ClipboardList className="h-4 w-4" /> : <BookOpenCheck className="h-4 w-4" />}
+                    {option.title}
+                  </span>
+                  <span className="mt-2 block text-xs leading-5 text-blue-800">{option.body}</span>
+                </button>
+              );
+            })}
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex flex-col text-sm font-medium text-blue-900">
               Course title
@@ -1918,7 +2101,11 @@ export const TrainingCourseCatalog: React.FC = () => {
                 <Plus className="h-3.5 w-3.5" />Add criterion
               </button>
             </div>
-            <p className="text-xs text-gray-500 mb-3">Define what will be assessed across all lessons in this course. You can set a pass mark per lesson later.</p>
+            <p className="text-xs text-gray-500 mb-3">
+              {newCourseMode === 'advanced'
+                ? 'These are the broad outcomes shown on records. Detailed matrix items can be linked to these after the course is created.'
+                : 'Define what will be assessed across all lessons in this course. You can set a pass mark per lesson later.'}
+            </p>
             <div className="space-y-3">
               {courseCriteria.map((criterion) => (
                 <div key={criterion.id} className="flex flex-wrap items-center gap-3 rounded-md border border-blue-100 px-3 py-2.5">
