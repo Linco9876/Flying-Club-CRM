@@ -1147,6 +1147,17 @@ export const StudentProfilePage: React.FC = () => {
     selectedMatrixRequirements,
     selectedMatrixRowsById,
   ]);
+
+  const matrixAssessmentMeetsRequirement = useCallback((
+    achieved?: number,
+    required?: number
+  ) => {
+    if (!required) {
+      return Boolean(achieved);
+    }
+    return matrixStandardMeetsRequirement(achieved as 1 | 2 | 3 | undefined, required as 1 | 2 | 3 | undefined);
+  }, []);
+
   const getRecordMatrixAssessmentSummary = useCallback((record: TrainingRecord) => {
     const recordAssessments = selectedMatrixAssessments.filter(
       assessment => assessment.trainingRecordId === record.id
@@ -1168,12 +1179,21 @@ export const StudentProfilePage: React.FC = () => {
             lessonCodes.has(req.lessonSequenceCode)
           )
         ) || selectedMatrixRequirements.find(req => req.matrixRowId === assessment.matrixRowId);
+        const currentBestAssessment = selectedBestMatrixAssessmentByRow.get(assessment.matrixRowId);
+        const attemptMeetsRequirement = matrixAssessmentMeetsRequirement(assessment.achievedStandard, requirement?.requiredStandard);
+        const currentMeetsRequirement = matrixAssessmentMeetsRequirement(currentBestAssessment?.achievedStandard, requirement?.requiredStandard);
 
         return {
           assessment,
           row,
           requirement,
-          meetsRequirement: matrixStandardMeetsRequirement(assessment.achievedStandard, requirement?.requiredStandard),
+          currentBestAssessment,
+          attemptMeetsRequirement,
+          meetsRequirement: currentMeetsRequirement,
+          resolvedLater: !attemptMeetsRequirement &&
+            currentMeetsRequirement &&
+            Boolean(currentBestAssessment?.trainingRecordId) &&
+            currentBestAssessment?.trainingRecordId !== record.id,
         };
       })
       .filter(item => item.row)
@@ -1184,17 +1204,25 @@ export const StudentProfilePage: React.FC = () => {
     }
 
     const metCount = items.filter(item => item.meetsRequirement).length;
+    const attemptMetCount = items.filter(item => item.attemptMeetsRequirement).length;
     const notMetItems = items.filter(item => !item.meetsRequirement);
-    const unassessedCount = items.filter(item => !item.assessment.achievedStandard).length;
+    const attemptNotMetItems = items.filter(item => !item.attemptMeetsRequirement);
+    const resolvedLaterItems = items.filter(item => item.resolvedLater);
+    const unassessedCount = items.filter(item => !item.currentBestAssessment?.achievedStandard).length;
+    const attemptUnassessedCount = items.filter(item => !item.assessment.achievedStandard).length;
 
     return {
       items,
       notMetItems,
+      attemptNotMetItems,
+      resolvedLaterItems,
       metCount,
+      attemptMetCount,
       unassessedCount,
+      attemptUnassessedCount,
       totalCount: items.length,
     };
-  }, [selectedMatrixAssessments, selectedMatrixRequirements, selectedMatrixRowsById]);
+  }, [matrixAssessmentMeetsRequirement, selectedBestMatrixAssessmentByRow, selectedMatrixAssessments, selectedMatrixRequirements, selectedMatrixRowsById]);
   const toggleRecordMatrix = useCallback((recordId: string) => {
     setExpandedRecordMatrixIds(current => {
       const next = new Set(current);
@@ -2821,7 +2849,7 @@ export const StudentProfilePage: React.FC = () => {
                                     {summary ? (
                                       <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
                                         <span className="rounded-full border border-indigo-100 bg-white px-2 py-0.5 text-indigo-800">
-                                          {summary.metCount}/{summary.totalCount} met
+                                          {summary.metCount}/{summary.totalCount} currently met
                                         </span>
                                         {summary.notMetItems.length > 0 ? (
                                           <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-700">
@@ -2830,6 +2858,11 @@ export const StudentProfilePage: React.FC = () => {
                                         ) : (
                                           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-800">
                                             Clear
+                                          </span>
+                                        )}
+                                        {summary.resolvedLaterItems.length > 0 && (
+                                          <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                                            {summary.resolvedLaterItems.length} resolved later
                                           </span>
                                         )}
                                       </div>
@@ -3166,16 +3199,21 @@ export const StudentProfilePage: React.FC = () => {
                                     <div>
                                       <h4 className="text-xs font-semibold uppercase text-indigo-700">Lesson Matrix</h4>
                                       <p className="mt-1 text-xs text-indigo-900">
-                                        CASA matrix result for this lesson attempt.
+                                        Current status for the CASA matrix items assessed in this lesson. Historical attempt results are shown in the detail view.
                                       </p>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2 text-xs">
                                       <span className="rounded-full bg-white px-2 py-0.5 font-semibold text-indigo-800 border border-indigo-100">
-                                        {matrixSummary.metCount}/{matrixSummary.totalCount} met
+                                        {matrixSummary.metCount}/{matrixSummary.totalCount} currently met
                                       </span>
                                       {matrixSummary.notMetItems.length > 0 && (
                                         <span className="rounded-full bg-red-50 px-2 py-0.5 font-semibold text-red-700 border border-red-200">
                                           {matrixSummary.notMetItems.length} need attention
+                                        </span>
+                                      )}
+                                      {matrixSummary.resolvedLaterItems.length > 0 && (
+                                        <span className="rounded-full bg-blue-50 px-2 py-0.5 font-semibold text-blue-700 border border-blue-200">
+                                          {matrixSummary.resolvedLaterItems.length} resolved later
                                         </span>
                                       )}
                                       {matrixSummary.unassessedCount > 0 && (
@@ -3207,7 +3245,9 @@ export const StudentProfilePage: React.FC = () => {
                                                 </span>
                                                 <span className="text-red-300">/</span>
                                                 <span className="rounded-full border border-red-200 bg-white px-2 py-0.5 text-red-700">
-                                                  Req {matrixStandardShortLabel(requirement?.requiredStandard)}
+                                                  {requirement?.requiredStandard
+                                                    ? `Req ${matrixStandardShortLabel(requirement.requiredStandard)}`
+                                                    : 'Req not set'}
                                                 </span>
                                               </div>
                                             </div>
@@ -3217,7 +3257,17 @@ export const StudentProfilePage: React.FC = () => {
                                     </div>
                                   ) : (
                                     <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
-                                      <p className="text-xs font-semibold text-emerald-800">All matrix items met for this lesson attempt.</p>
+                                      <p className="text-xs font-semibold text-emerald-800">
+                                        All matrix items from this attempt now meet the required standard.
+                                        {matrixSummary.resolvedLaterItems.length > 0
+                                          ? ` ${matrixSummary.resolvedLaterItems.length} were resolved in a later repeat or follow-up lesson.`
+                                          : ''}
+                                      </p>
+                                      {matrixSummary.attemptNotMetItems.length > 0 && (
+                                        <p className="mt-1 text-xs text-emerald-700">
+                                          Original attempt result: {matrixSummary.attemptMetCount}/{matrixSummary.totalCount} met.
+                                        </p>
+                                      )}
                                     </div>
                                   )}
 
@@ -3232,30 +3282,45 @@ export const StudentProfilePage: React.FC = () => {
 
                                   {isMatrixExpanded && (
                                     <div className="mt-3 space-y-2">
-                                      {matrixSummary.items.map(({ assessment, row, requirement, meetsRequirement }) => (
+                                      {matrixSummary.items.map(({ assessment, row, requirement, meetsRequirement, currentBestAssessment, attemptMeetsRequirement, resolvedLater }) => (
                                       <div key={assessment.matrixRowId} className="rounded-md border border-white/80 bg-white px-3 py-2">
                                         <div className="flex items-start justify-between gap-3">
                                           <div className="min-w-0">
                                             <p className="text-xs font-semibold text-gray-900">
                                               {formatSyllabusMatrixText(row?.code)} {formatSyllabusMatrixText(row?.description)}
                                             </p>
+                                            {resolvedLater && (
+                                              <p className="mt-1 text-xs leading-5 text-blue-700">
+                                                This item was not met on this attempt, but it has since been resolved.
+                                              </p>
+                                            )}
                                             {assessment.comments && (
                                               <p className="mt-1 text-xs leading-5 text-gray-600">{assessment.comments}</p>
                                             )}
                                           </div>
                                           <div className="flex shrink-0 items-center gap-1 text-xs font-semibold">
                                             <span className={`rounded-full border px-2 py-0.5 ${
-                                              meetsRequirement
+                                              attemptMeetsRequirement
                                                 ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                                                 : assessment.achievedStandard
                                                   ? 'border-amber-200 bg-amber-50 text-amber-800'
                                                   : 'border-gray-200 bg-gray-50 text-gray-500'
                                             }`}>
-                                              {matrixStandardShortLabel(assessment.achievedStandard)}
+                                              Attempt {matrixStandardShortLabel(assessment.achievedStandard)}
                                             </span>
                                             <span className="text-gray-400">/</span>
                                             <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-indigo-700">
-                                              Req {matrixStandardShortLabel(requirement?.requiredStandard)}
+                                              {requirement?.requiredStandard
+                                                ? `Req ${matrixStandardShortLabel(requirement.requiredStandard)}`
+                                                : 'Req not set'}
+                                            </span>
+                                            <span className="text-gray-400">/</span>
+                                            <span className={`rounded-full border px-2 py-0.5 ${
+                                              meetsRequirement
+                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                                : 'border-red-200 bg-red-50 text-red-700'
+                                            }`}>
+                                              Current {matrixStandardShortLabel(currentBestAssessment?.achievedStandard)}
                                             </span>
                                           </div>
                                         </div>
