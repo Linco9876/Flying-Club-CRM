@@ -19,9 +19,9 @@ BEGIN
     RETURN;
   END IF;
 
-  DELETE FROM public.student_matrix_assessments WHERE course_id = target_course_id;
+  -- Requirements are derived from the planning matrix and can be rebuilt safely.
+  -- Student assessment history references matrix rows, so rows are upserted and never bulk-deleted here.
   DELETE FROM public.syllabus_matrix_requirements WHERE course_id = target_course_id;
-  DELETE FROM public.syllabus_matrix_rows WHERE course_id = target_course_id;
 
   FOR row_item IN SELECT * FROM jsonb_array_elements(row_data)
   LOOP
@@ -39,13 +39,21 @@ BEGIN
       target_course_id,
       row_item->>'code',
       row_item->>'row_type',
-      NULLIF(row_item->>'unit_code', 'null'),
-      NULLIF(row_item->>'element_code', 'null'),
-      NULLIF(row_item->>'parent_code', 'null'),
+      row_item->>'unit_code',
+      row_item->>'element_code',
+      row_item->>'parent_code',
       row_item->>'description',
       (row_item->>'source_row_number')::integer,
       (row_item->>'sort_order')::integer
-    );
+    )
+    ON CONFLICT (course_id, code) DO UPDATE SET
+      row_type = EXCLUDED.row_type,
+      unit_code = EXCLUDED.unit_code,
+      element_code = EXCLUDED.element_code,
+      parent_code = EXCLUDED.parent_code,
+      description = EXCLUDED.description,
+      source_row_number = EXCLUDED.source_row_number,
+      sort_order = EXCLUDED.sort_order;
   END LOOP;
 
   FOR req_item IN SELECT * FROM jsonb_array_elements(requirement_data)
@@ -62,20 +70,26 @@ BEGIN
     ORDER BY sort_order
     LIMIT 1;
 
-    INSERT INTO public.syllabus_matrix_requirements (
-      course_id,
-      lesson_id,
-      matrix_row_id,
-      lesson_sequence_code,
-      lesson_column_title,
-      required_standard
-    ) VALUES (
-      target_course_id,
-      lesson_uuid,
-      inserted_row_id,
-      req_item->>'lesson_sequence_code',
-      req_item->>'lesson_column_title',
-      (req_item->>'required_standard')::integer
-    );
+    IF inserted_row_id IS NOT NULL THEN
+      INSERT INTO public.syllabus_matrix_requirements (
+        course_id,
+        lesson_id,
+        matrix_row_id,
+        lesson_sequence_code,
+        lesson_column_title,
+        required_standard
+      ) VALUES (
+        target_course_id,
+        lesson_uuid,
+        inserted_row_id,
+        req_item->>'lesson_sequence_code',
+        req_item->>'lesson_column_title',
+        (req_item->>'required_standard')::integer
+      )
+      ON CONFLICT (course_id, lesson_sequence_code, matrix_row_id) DO UPDATE SET
+        lesson_id = EXCLUDED.lesson_id,
+        lesson_column_title = EXCLUDED.lesson_column_title,
+        required_standard = EXCLUDED.required_standard;
+    END IF;
   END LOOP;
 END $$;
