@@ -4143,6 +4143,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         records: trainingRecords,
         exams: examResults,
         users,
+        exportedBy: user,
       });
       toast.success('Course PDF exported');
     } catch (error) {

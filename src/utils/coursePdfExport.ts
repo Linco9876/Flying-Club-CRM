@@ -10,6 +10,7 @@ type ExportCoursePdfInput = {
   records: TrainingRecord[];
   exams: StudentExamResult[];
   users: User[];
+  exportedBy?: User | null;
 };
 
 type Point = { x: number; y: number };
@@ -171,6 +172,7 @@ export async function exportCoursePdf({
   records,
   exams,
   users,
+  exportedBy,
 }: ExportCoursePdfInput) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const dark = rgb(0.12, 0.13, 0.15);
@@ -288,6 +290,94 @@ export async function exportCoursePdf({
       page.drawText(label, { x, y: cursor - 38, size: 7, font: bold, color: grey });
     });
     cursor -= 52;
+  };
+
+  const drawDigitalSignatureBox = (
+    title: string,
+    signatureName: string,
+    dateText: string,
+    detail: string,
+    x: number,
+    y: number,
+    boxWidth: number,
+    boxHeight = 72
+  ) => {
+    page.drawRectangle({
+      x,
+      y: y - boxHeight,
+      width: boxWidth,
+      height: boxHeight,
+      color: rgb(1, 1, 1),
+      borderColor: borderGrey,
+      borderWidth: 0.7,
+    });
+    page.drawText(title, { x: x + 10, y: y - 14, size: 7, font: bold, color: grey });
+    page.drawText(signatureName || 'Not digitally signed', {
+      x: x + 10,
+      y: y - 36,
+      size: signatureName ? 16 : 10,
+      font: signatureName ? bold : regular,
+      color: signatureName ? dark : grey,
+    });
+    page.drawText(`Date: ${dateText || 'Not recorded'}`, { x: x + 10, y: y - 52, size: 8, font: regular, color: dark });
+    drawText(detail, { x: x + 10, y: y - 64 }, { size: 6.5, color: grey, maxWidth: boxWidth - 20, lineHeight: 7 });
+  };
+
+  const drawDigitalSignatureCertification = () => {
+    const requiredLessonIds = new Set(course.lessons.filter((lesson) => !lesson.isFlightTest).map((lesson) => lesson.id));
+    const acknowledgedCourseRecords = chronologicalCourseRecords.filter((record) => record.studentAck);
+    const acknowledgedLessonIds = new Set(
+      acknowledgedCourseRecords.flatMap((record) => [
+        record.lessonId,
+        ...record.lessonCodes.map((code) => lessonsByCode.get(code)?.id),
+      ]).filter(Boolean) as string[]
+    );
+    const allLessonsAcknowledged = requiredLessonIds.size > 0
+      ? [...requiredLessonIds].every((lessonId) => acknowledgedLessonIds.has(lessonId))
+      : chronologicalCourseRecords.length > 0 && chronologicalCourseRecords.every((record) => record.studentAck);
+    const latestStudentAck = acknowledgedCourseRecords
+      .map((record) => record.studentAckTimestamp)
+      .filter(Boolean)
+      .sort((a, b) => (b as Date).getTime() - (a as Date).getTime())[0];
+    const instructorName = exportedBy?.name || exportedBy?.email || 'Exporting instructor/admin';
+    const studentSignatureName = allLessonsAcknowledged
+      ? chronologicalCourseRecords.find((record) => record.studentAckName)?.studentAckName || student.name
+      : '';
+    const boxGap = 12;
+    const boxWidth = (width - margin * 2 - boxGap) / 2;
+    const boxHeight = 78;
+    ensureSpace(boxHeight + 58);
+
+    drawDigitalSignatureBox(
+      'Instructor / exporter digital signature',
+      instructorName,
+      formatDate(new Date()),
+      'Generated from the authenticated CRM user who exported this course pack.',
+      margin,
+      cursor,
+      boxWidth,
+      boxHeight
+    );
+    drawDigitalSignatureBox(
+      'Student digital signature',
+      studentSignatureName,
+      allLessonsAcknowledged ? formatDate(latestStudentAck as Date | undefined) : 'Not added',
+      allLessonsAcknowledged
+        ? 'Generated because every lesson record in this course has been acknowledged by the student in the CRM.'
+        : 'Not generated because not every lesson record in this course has been acknowledged by the student.',
+      margin + boxWidth + boxGap,
+      cursor,
+      boxWidth,
+      boxHeight
+    );
+    cursor -= boxHeight + 12;
+
+    drawText(
+      'Digital signature note: These signatures are system-generated electronic signature labels. The instructor/exporter signature is based on the signed-in CRM user who created the export. The student signature is only added when the CRM shows every lesson record for this course has been acknowledged by the student; the displayed date is the latest acknowledgement date.',
+      { x: margin, y: cursor },
+      { size: 7.5, color: grey, maxWidth: width - margin * 2, lineHeight: 10 }
+    );
+    cursor -= 34;
   };
 
   const courseRecords = records
@@ -862,7 +952,7 @@ export async function exportCoursePdf({
       { size: 8, color: grey, maxWidth: width - margin * 2, lineHeight: 10 }
     );
     cursor -= 26;
-    drawSignatureLines(['Instructor / Head of Operations', 'Student / Trainee', 'Date']);
+    drawDigitalSignatureCertification();
   }
 
   addFooter();
