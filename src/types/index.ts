@@ -261,6 +261,10 @@ export interface TrainingModule {
   assessmentCriteria: LessonAssessmentCriterion[];
   /** Whether this course normally asks students to acknowledge submitted lesson records */
   requiresStudentAcknowledgement?: boolean;
+  requiresFlyingDeclaration?: boolean;
+  flyingDeclarationTitle?: string;
+  flyingDeclarationText?: string;
+  flyingDeclarationVersion?: number;
   completionEndorsementEnabled?: boolean;
   completionEndorsementType?: string;
   completionEndorsementExpiryMonths?: number | null;

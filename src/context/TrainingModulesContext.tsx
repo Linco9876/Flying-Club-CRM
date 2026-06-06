@@ -36,6 +36,10 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     requiresStudentAcknowledgement: row.requires_student_acknowledgement === undefined || row.requires_student_acknowledgement === null
       ? true
       : Boolean(row.requires_student_acknowledgement),
+    requiresFlyingDeclaration: Boolean(row.requires_flying_declaration),
+    flyingDeclarationTitle: (row.flying_declaration_title as string) ?? 'Flying Declaration',
+    flyingDeclarationText: (row.flying_declaration_text as string) ?? '',
+    flyingDeclarationVersion: Number(row.flying_declaration_version ?? 1),
     completionEndorsementEnabled: Boolean(row.completion_endorsement_enabled),
     completionEndorsementType: (row.completion_endorsement_type as string) ?? '',
     completionEndorsementExpiryMonths: row.completion_endorsement_expiry_months === null || row.completion_endorsement_expiry_months === undefined
@@ -89,6 +93,10 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     tags: module.tags,
     assessment_criteria: module.assessmentCriteria,
     requires_student_acknowledgement: module.requiresStudentAcknowledgement ?? true,
+    requires_flying_declaration: module.requiresFlyingDeclaration ?? false,
+    flying_declaration_title: module.flyingDeclarationTitle || 'Flying Declaration',
+    flying_declaration_text: module.flyingDeclarationText || '',
+    flying_declaration_version: module.flyingDeclarationVersion ?? 1,
     completion_endorsement_enabled: module.completionEndorsementEnabled ?? false,
     completion_endorsement_type: module.completionEndorsementEnabled ? (module.completionEndorsementType || null) : null,
     completion_endorsement_expiry_months: module.completionEndorsementEnabled && module.completionEndorsementExpiryMonths
@@ -202,6 +210,10 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       tags: ['draft'],
       assessmentCriteria: [],
       requiresStudentAcknowledgement: true,
+      requiresFlyingDeclaration: false,
+      flyingDeclarationTitle: 'Flying Declaration',
+      flyingDeclarationText: '',
+      flyingDeclarationVersion: 1,
       completionEndorsementEnabled: false,
       completionEndorsementType: '',
       completionEndorsementExpiryMonths: null,

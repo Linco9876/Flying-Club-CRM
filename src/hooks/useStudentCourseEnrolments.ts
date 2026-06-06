@@ -9,6 +9,11 @@ export interface StudentCourseEnrolment {
   enrolledBy: string | null;
   status: 'active' | 'completed' | 'withdrawn';
   notes: string;
+  declarationSignedAt?: Date;
+  declarationSignedName?: string;
+  declarationMemberNumber?: string;
+  declarationTextSnapshot?: string;
+  declarationVersion?: number;
   enrolledAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +46,11 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
         enrolledBy: row.enrolled_by,
         status: row.status || 'active',
         notes: row.notes || '',
+        declarationSignedAt: row.declaration_signed_at ? new Date(row.declaration_signed_at) : undefined,
+        declarationSignedName: row.declaration_signed_name || undefined,
+        declarationMemberNumber: row.declaration_member_number || undefined,
+        declarationTextSnapshot: row.declaration_text_snapshot || undefined,
+        declarationVersion: row.declaration_version ?? undefined,
         enrolledAt: row.enrolled_at ? new Date(row.enrolled_at) : new Date(),
         updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
       })));
@@ -97,11 +107,48 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
     toast.success('Course enrolment updated');
   };
 
+  const signCourseDeclaration = async ({
+    enrolmentId,
+    signatureName,
+    memberNumber,
+    declarationText,
+    declarationVersion,
+  }: {
+    enrolmentId: string;
+    signatureName: string;
+    memberNumber: string;
+    declarationText: string;
+    declarationVersion: number;
+  }) => {
+    const signedAt = new Date();
+    const { error } = await supabase
+      .from('student_course_enrolments')
+      .update({
+        declaration_signed_at: signedAt.toISOString(),
+        declaration_signed_name: signatureName.trim(),
+        declaration_member_number: memberNumber.trim() || null,
+        declaration_text_snapshot: declarationText,
+        declaration_version: declarationVersion,
+        updated_at: signedAt.toISOString(),
+      })
+      .eq('id', enrolmentId);
+
+    if (error) {
+      console.error('Failed to sign course declaration:', error);
+      toast.error('Failed to save declaration signature');
+      throw error;
+    }
+
+    await fetchEnrolments();
+    toast.success('Flying declaration signed');
+  };
+
   return {
     enrolments,
     loading,
     enrolInCourse,
     updateEnrolmentStatus,
+    signCourseDeclaration,
     refetch: fetchEnrolments,
   };
 };

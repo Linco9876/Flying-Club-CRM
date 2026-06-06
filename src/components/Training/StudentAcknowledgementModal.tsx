@@ -4,9 +4,10 @@ import { AlertTriangle, CheckCircle, FileText, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
-import { TrainingRecord } from '../../types';
+import { TrainingModule, TrainingRecord } from '../../types';
 
 const stripHtml = (value: string) =>
   String(value || '')
@@ -33,10 +34,18 @@ export const StudentAcknowledgementModal: React.FC = () => {
   const { user } = useAuth();
   const { modules } = useTrainingModules();
   const { trainingRecords, loading, updateTrainingRecord } = useTrainingRecords();
+  const {
+    enrolments,
+    loading: enrolmentsLoading,
+    signCourseDeclaration,
+  } = useStudentCourseEnrolments(user?.id);
   const { settings } = useTrainingSettings();
   const [dismissed, setDismissed] = useState(false);
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
   const [acknowledgingAll, setAcknowledgingAll] = useState(false);
+  const [signingDeclarationId, setSigningDeclarationId] = useState<string | null>(null);
+  const [declarationSignatureName, setDeclarationSignatureName] = useState('');
+  const [declarationMemberNumber, setDeclarationMemberNumber] = useState('');
 
   const isStudentLike = Boolean(user && (user.role === 'student' || user.role === 'pilot' || user.roles?.some(role => role === 'student' || role === 'pilot')));
 
@@ -51,6 +60,31 @@ export const StudentAcknowledgementModal: React.FC = () => {
       })
       .sort((a, b) => (b.bookingStartTime || b.date).getTime() - (a.bookingStartTime || a.date).getTime());
   }, [isStudentLike, modules, settings.forceStudentAcknowledgementForAllCourses, trainingRecords, user]);
+
+  const pendingDeclarations = useMemo(() => {
+    if (!user || !isStudentLike) return [];
+    return enrolments
+      .filter(enrolment => enrolment.studentId === user.id && enrolment.status === 'active')
+      .map(enrolment => {
+        const course = modules.find(module => module.id === enrolment.courseId);
+        if (!course?.requiresFlyingDeclaration || !course.flyingDeclarationText?.trim()) return null;
+        const requiredVersion = course.flyingDeclarationVersion ?? 1;
+        const signedVersion = enrolment.declarationVersion ?? 0;
+        const needsSignature = !enrolment.declarationSignedAt || signedVersion < requiredVersion;
+        if (!needsSignature) return null;
+        return { enrolment, course };
+      })
+      .filter((item): item is { enrolment: typeof enrolments[number]; course: TrainingModule } => Boolean(item))
+      .sort((a, b) => a.course.title.localeCompare(b.course.title));
+  }, [enrolments, isStudentLike, modules, user]);
+
+  const activeDeclaration = pendingDeclarations[0];
+
+  React.useEffect(() => {
+    if (!activeDeclaration || !user) return;
+    setDeclarationSignatureName(activeDeclaration.enrolment.declarationSignedName || user.name || user.email || '');
+    setDeclarationMemberNumber(activeDeclaration.enrolment.declarationMemberNumber || '');
+  }, [activeDeclaration?.enrolment.id, activeDeclaration?.enrolment.declarationSignedName, activeDeclaration?.enrolment.declarationMemberNumber, user]);
 
   const lessonNameForRecord = (record: TrainingRecord) => {
     const course = modules.find(module => module.id === record.courseId);
@@ -117,8 +151,102 @@ export const StudentAcknowledgementModal: React.FC = () => {
     }
   };
 
-  if (!isStudentLike || loading || dismissed || pendingRecords.length === 0) {
+  const handleSignDeclaration = async () => {
+    if (!activeDeclaration) return;
+    if (!declarationSignatureName.trim()) {
+      toast.error('Type your full name to sign the declaration');
+      return;
+    }
+
+    setSigningDeclarationId(activeDeclaration.enrolment.id);
+    try {
+      await signCourseDeclaration({
+        enrolmentId: activeDeclaration.enrolment.id,
+        signatureName: declarationSignatureName,
+        memberNumber: declarationMemberNumber,
+        declarationText: activeDeclaration.course.flyingDeclarationText || '',
+        declarationVersion: activeDeclaration.course.flyingDeclarationVersion ?? 1,
+      });
+    } finally {
+      setSigningDeclarationId(null);
+    }
+  };
+
+  if (!isStudentLike || loading || enrolmentsLoading || dismissed || (pendingDeclarations.length === 0 && pendingRecords.length === 0)) {
     return null;
+  }
+
+  if (activeDeclaration) {
+    const course = activeDeclaration.course;
+    const isSigning = signingDeclarationId === activeDeclaration.enrolment.id;
+    return (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+        <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+          <div className="border-b border-gray-200 px-6 py-5">
+            <div className="flex items-center gap-2 text-amber-700">
+              <AlertTriangle className="h-5 w-5" />
+              <p className="text-sm font-semibold uppercase tracking-wide">Flying declaration required</p>
+            </div>
+            <h2 className="mt-1 text-xl font-semibold text-gray-900">
+              {course.flyingDeclarationTitle || 'Flying Declaration'}
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              You are enrolled in {course.title}. Please read and digitally sign this declaration before continuing your course records.
+            </p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <p className="whitespace-pre-line text-sm leading-6 text-gray-900">
+                {course.flyingDeclarationText}
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col text-sm font-medium text-gray-700">
+                Full name electronic signature
+                <input
+                  type="text"
+                  value={declarationSignatureName}
+                  onChange={(event) => setDeclarationSignatureName(event.target.value)}
+                  className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <label className="flex flex-col text-sm font-medium text-gray-700">
+                Member number
+                <input
+                  type="text"
+                  value={declarationMemberNumber}
+                  onChange={(event) => setDeclarationMemberNumber(event.target.value)}
+                  placeholder="RAAus or club member number"
+                  className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+            </div>
+
+            <p className="mt-4 text-xs leading-5 text-gray-500">
+              By selecting Sign declaration, the CRM records your typed name, member number, date and the exact declaration wording shown above.
+              Declaration version {course.flyingDeclarationVersion ?? 1}.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-gray-500">
+              {pendingDeclarations.length > 1 ? `${pendingDeclarations.length - 1} more declaration${pendingDeclarations.length - 1 === 1 ? '' : 's'} will appear after this one.` : 'This declaration will stop appearing once signed.'}
+            </p>
+            <button
+              type="button"
+              onClick={handleSignDeclaration}
+              disabled={isSigning}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {isSigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              Sign declaration
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

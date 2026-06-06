@@ -4144,6 +4144,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         exams: examResults,
         users,
         exportedBy: user,
+        courseEnrolments: enrolments,
       });
       toast.success('Course PDF exported');
     } catch (error) {
@@ -4236,7 +4237,15 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
             </div>
           </div>
 
-      {enrolledCourses.map(({ course, percentage, isComplete, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => (
+      {enrolledCourses.map(({ course, percentage, isComplete, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => {
+        const enrolment = enrolments.find(item => item.courseId === course.id && item.status === 'active');
+        const declarationRequired = Boolean(course.requiresFlyingDeclaration);
+        const declarationSigned = Boolean(
+          enrolment?.declarationSignedAt &&
+          (enrolment.declarationVersion ?? 0) >= (course.flyingDeclarationVersion ?? 1)
+        );
+
+        return (
         <div key={course.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
           <div className="p-6">
             <div className="flex items-start justify-between mb-4">
@@ -4260,6 +4269,16 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                       Grants {course.completionEndorsementType}
                     </span>
                   )}
+                  {declarationRequired && (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border shrink-0 ${
+                      declarationSigned
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                    }`}>
+                      <Shield className="h-3 w-3 mr-1" />
+                      {declarationSigned ? 'Declaration signed' : 'Declaration required'}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-gray-500">{course.category} &middot; v{course.version}</p>
               </div>
@@ -4280,6 +4299,23 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                 </div>
               </div>
             </div>
+
+            {declarationRequired && (
+              <div className={`mb-4 rounded-lg border p-3 text-sm ${
+                declarationSigned
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  : 'border-amber-200 bg-amber-50 text-amber-900'
+              }`}>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="font-semibold">{course.flyingDeclarationTitle || 'Flying Declaration'}</p>
+                  <p className="text-xs">
+                    {declarationSigned
+                      ? `Signed ${enrolment?.declarationSignedAt?.toLocaleDateString('en-AU') || 'date not recorded'} by ${enrolment?.declarationSignedName || student?.name || 'student'}${enrolment?.declarationMemberNumber ? `, member ${enrolment.declarationMemberNumber}` : ''}`
+                      : `Awaiting student signature for version ${course.flyingDeclarationVersion ?? 1}`}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Progress bar */}
             <div className="mb-4">
@@ -4365,7 +4401,8 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
             </div>
           </div>
         </div>
-      ))}
+        );
+      })}
         </>
       )}
     </div>

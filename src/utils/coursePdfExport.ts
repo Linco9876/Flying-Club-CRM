@@ -1,6 +1,7 @@
 import { Student, StudentExamResult, TrainingModule, TrainingRecord, User } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatSyllabusMatrixText } from '../hooks/useSyllabusMatrix';
+import type { StudentCourseEnrolment } from '../hooks/useStudentCourseEnrolments';
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
@@ -11,6 +12,7 @@ type ExportCoursePdfInput = {
   exams: StudentExamResult[];
   users: User[];
   exportedBy?: User | null;
+  courseEnrolments?: StudentCourseEnrolment[];
 };
 
 type Point = { x: number; y: number };
@@ -173,6 +175,7 @@ export async function exportCoursePdf({
   exams,
   users,
   exportedBy,
+  courseEnrolments = [],
 }: ExportCoursePdfInput) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const dark = rgb(0.12, 0.13, 0.15);
@@ -554,6 +557,12 @@ export async function exportCoursePdf({
   const dualMinutes = courseRecords.reduce((sum, record) => sum + (record.dualTimeMin || 0), 0);
   const soloMinutes = courseRecords.reduce((sum, record) => sum + (record.soloTimeMin || 0), 0);
   const latestRecord = courseRecords[0];
+  const courseEnrolment = courseEnrolments.find((enrolment) => enrolment.courseId === course.id && enrolment.status === 'active')
+    ?? courseEnrolments.find((enrolment) => enrolment.courseId === course.id);
+  const declarationSigned = Boolean(
+    courseEnrolment?.declarationSignedAt &&
+    (courseEnrolment.declarationVersion ?? 0) >= (course.flyingDeclarationVersion ?? 1)
+  );
 
   page.drawRectangle({ x: 0, y: height - 86, width, height: 86, color: dark });
   page.drawText(student.name, { x: margin, y: height - 38, size: 22, font: bold, color: rgb(1, 1, 1) });
@@ -582,6 +591,23 @@ export async function exportCoursePdf({
     ['Emergency Contact', student.emergencyContact ? `${student.emergencyContact.name} - ${student.emergencyContact.phone}` : 'Not recorded'],
   ];
   drawLabelValueGrid(detailRows, { columns: 4, rowHeight: 36, valueSize: 8.5 });
+
+  if (course.requiresFlyingDeclaration) {
+    drawSectionTitle(course.flyingDeclarationTitle || 'Flying Declaration');
+    const declarationRows: Array<[string, string]> = [
+      ['Required', 'Yes'],
+      ['Status', declarationSigned ? 'Signed' : 'Not signed'],
+      ['Signed by', courseEnrolment?.declarationSignedName || 'Not recorded'],
+      ['Signed date', formatDate(courseEnrolment?.declarationSignedAt)],
+      ['Member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
+      ['Declaration version', String(courseEnrolment?.declarationVersion ?? course.flyingDeclarationVersion ?? 1)],
+    ];
+    drawLabelValueGrid(declarationRows, { columns: 3, rowHeight: 30, valueSize: 8 });
+    const declarationWording = courseEnrolment?.declarationTextSnapshot || course.flyingDeclarationText || '';
+    if (declarationWording.trim()) {
+      drawParagraphBlock('Signed declaration wording', declarationWording, 10);
+    }
+  }
 
   if (isRplSyllabusCourse) {
     drawSectionTitle('RPL(A) Syllabus Overview');

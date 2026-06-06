@@ -49,6 +49,9 @@ interface NewCourseState {
   description: string;
   estimatedDurationHours: number;
   requiresStudentAcknowledgement: boolean;
+  requiresFlyingDeclaration: boolean;
+  flyingDeclarationTitle: string;
+  flyingDeclarationText: string;
   completionEndorsementEnabled: boolean;
   completionEndorsementType: string;
   completionEndorsementExpiryMonths: string;
@@ -511,6 +514,13 @@ const defaultAdvancedCriteria = () => [
   createAdvancedCriterion('Knowledge and preparation'),
 ];
 
+const defaultFlyingDeclarationText = [
+  'Persons undertaking flying training and other types of flying in recreational aircraft are advised that there are risks involved.',
+  'These risks cannot be specifically quantified; however, recreational aircraft used for pilot training and private flight are constructed, operated and maintained under exemptions from the regulations.',
+  'These exemptions are from the regulations that apply to CASA registered aircraft. Whilst similar rule sets apply to our organisation and replace those that we are exempt from, it must be accepted that the overall safety of recreational flying is generally below the well-known commercial air transport standards in Australia.',
+  'I, ________________________________, Member Number: __________________ declare that I am aware of and understand the risks involved in recreational flying training.',
+].join('\n\n');
+
 const createEmptyExam = (): EditableExam => ({
   id: `exam-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   name: '',
@@ -537,6 +547,9 @@ const emptyCourseForm = (): CourseFormState => ({
   description: '',
   estimatedDurationHours: 6,
   requiresStudentAcknowledgement: true,
+  requiresFlyingDeclaration: false,
+  flyingDeclarationTitle: 'Flying Declaration',
+  flyingDeclarationText: defaultFlyingDeclarationText,
   completionEndorsementEnabled: false,
   completionEndorsementType: '',
   completionEndorsementExpiryMonths: '',
@@ -1375,6 +1388,9 @@ export const TrainingCourseCatalog: React.FC = () => {
       description: selectedModule.description,
       estimatedDurationHours: selectedModule.estimatedDurationHours,
       requiresStudentAcknowledgement: selectedModule.requiresStudentAcknowledgement ?? true,
+      requiresFlyingDeclaration: selectedModule.requiresFlyingDeclaration ?? false,
+      flyingDeclarationTitle: selectedModule.flyingDeclarationTitle || 'Flying Declaration',
+      flyingDeclarationText: selectedModule.flyingDeclarationText || defaultFlyingDeclarationText,
       completionEndorsementEnabled: selectedModule.completionEndorsementEnabled ?? false,
       completionEndorsementType: selectedModule.completionEndorsementType ?? '',
       completionEndorsementExpiryMonths: selectedModule.completionEndorsementExpiryMonths ? String(selectedModule.completionEndorsementExpiryMonths) : '',
@@ -1410,6 +1426,11 @@ export const TrainingCourseCatalog: React.FC = () => {
       criteria.push({ id: c.id, name: c.name.trim(), gradingSystem: c.gradingSystem, passingGrade: c.passingGrade });
     }
 
+    if (editCourse.requiresFlyingDeclaration && !editCourse.flyingDeclarationText.trim()) {
+      toast.error('Add the flying declaration wording, or turn off the declaration requirement');
+      return;
+    }
+
     const tags = editCourse.tags.split(',').map((t) => t.trim()).filter(Boolean);
     const objectives = parseListLines(editCourse.objectives);
     const evaluationCriteria = parseListLines(editCourse.evaluationFocus);
@@ -1432,6 +1453,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       });
     }
     try {
+      const declarationChanged =
+        (selectedModule.flyingDeclarationTitle || 'Flying Declaration') !== (editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration') ||
+        (selectedModule.flyingDeclarationText || '') !== editCourse.flyingDeclarationText.trim();
+
       await updateModule(selectedModule.id, (cur) => ({
         ...cur,
         title,
@@ -1439,6 +1464,10 @@ export const TrainingCourseCatalog: React.FC = () => {
         description: editCourse.description.trim() || cur.description,
         estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
         requiresStudentAcknowledgement: editCourse.requiresStudentAcknowledgement,
+        requiresFlyingDeclaration: editCourse.requiresFlyingDeclaration,
+        flyingDeclarationTitle: editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
+        flyingDeclarationText: editCourse.flyingDeclarationText.trim(),
+        flyingDeclarationVersion: declarationChanged ? (cur.flyingDeclarationVersion ?? 1) + 1 : (cur.flyingDeclarationVersion ?? 1),
         completionEndorsementEnabled: editCourse.completionEndorsementEnabled,
         completionEndorsementType: editCourse.completionEndorsementType.trim(),
         completionEndorsementExpiryMonths: editCourse.completionEndorsementEnabled && editCourse.completionEndorsementExpiryMonths
@@ -1590,6 +1619,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       toast.error('Add endorsement options in Training / Syllabus Settings first');
       return;
     }
+    if (newCourse.requiresFlyingDeclaration && !newCourse.flyingDeclarationText.trim()) {
+      toast.error('Add the flying declaration wording, or turn off the declaration requirement');
+      return;
+    }
 
     const tags = newCourse.tags
       .split(',')
@@ -1614,6 +1647,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       status: 'draft',
       estimatedDurationHours: Math.max(1, Number(newCourse.estimatedDurationHours) || 1),
       requiresStudentAcknowledgement: newCourse.requiresStudentAcknowledgement,
+      requiresFlyingDeclaration: newCourse.requiresFlyingDeclaration,
+      flyingDeclarationTitle: newCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
+      flyingDeclarationText: newCourse.flyingDeclarationText.trim(),
+      flyingDeclarationVersion: 1,
       completionEndorsementEnabled: newCourse.completionEndorsementEnabled,
       completionEndorsementType: newCourse.completionEndorsementType.trim(),
       completionEndorsementExpiryMonths: newCourse.completionEndorsementEnabled && newCourse.completionEndorsementExpiryMonths
@@ -2042,6 +2079,47 @@ export const TrainingCourseCatalog: React.FC = () => {
                 </span>
               </span>
             </label>
+            <div className="rounded-lg border border-amber-200 bg-white p-4 text-sm text-amber-950 md:col-span-2">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={newCourse.requiresFlyingDeclaration}
+                  onChange={(event) => setNewCourse((prev) => ({ ...prev, requiresFlyingDeclaration: event.target.checked }))}
+                  className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span>
+                  <span className="block font-semibold">Require a flying declaration before training</span>
+                  <span className="mt-1 block text-xs text-amber-700">
+                    Students enrolled in this course will be asked to digitally sign this declaration when they log in until it has been signed.
+                  </span>
+                </span>
+              </label>
+              {newCourse.requiresFlyingDeclaration && (
+                <div className="mt-4 grid gap-3">
+                  <label className="flex flex-col text-xs font-medium text-amber-950">
+                    Declaration title
+                    <input
+                      type="text"
+                      value={newCourse.flyingDeclarationTitle}
+                      onChange={(event) => setNewCourse((prev) => ({ ...prev, flyingDeclarationTitle: event.target.value }))}
+                      className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                    />
+                  </label>
+                  <label className="flex flex-col text-xs font-medium text-amber-950">
+                    Declaration wording
+                    <textarea
+                      rows={8}
+                      value={newCourse.flyingDeclarationText}
+                      onChange={(event) => setNewCourse((prev) => ({ ...prev, flyingDeclarationText: event.target.value }))}
+                      className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                    />
+                    <span className="mt-1 text-[11px] font-normal text-amber-700">
+                      The typed student name, member number and date are saved with the exact wording shown here.
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
             <div className="rounded-lg border border-emerald-200 bg-white p-4 text-sm text-emerald-950 md:col-span-2">
               <label className="flex items-start gap-3">
                 <input
@@ -2394,6 +2472,14 @@ export const TrainingCourseCatalog: React.FC = () => {
                             <dd className="mt-1 text-slate-700">{(selectedModule.requiresStudentAcknowledgement ?? true) ? 'Required for this course' : 'Not required unless forced in settings'}</dd>
                           </div>
                           <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Flying declaration</dt>
+                            <dd className="mt-1 text-slate-700">
+                              {selectedModule.requiresFlyingDeclaration
+                                ? `${selectedModule.flyingDeclarationTitle || 'Flying Declaration'} v${selectedModule.flyingDeclarationVersion ?? 1}`
+                                : 'Not required'}
+                            </dd>
+                          </div>
+                          <div>
                             <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Completion endorsement</dt>
                             <dd className="mt-1 text-slate-700">
                               {selectedModule.completionEndorsementEnabled
@@ -2525,6 +2611,47 @@ export const TrainingCourseCatalog: React.FC = () => {
                         </span>
                       </span>
                     </label>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 md:col-span-2">
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={editCourse.requiresFlyingDeclaration}
+                          onChange={(e) => setEditCourse((p) => ({ ...p, requiresFlyingDeclaration: e.target.checked }))}
+                          className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <span>
+                          <span className="block font-semibold text-amber-950">Require a flying declaration before training</span>
+                          <span className="mt-1 block text-xs text-amber-700">
+                            Active enrolled students must digitally sign this course declaration. Updating the wording creates a new declaration version.
+                          </span>
+                        </span>
+                      </label>
+                      {editCourse.requiresFlyingDeclaration && (
+                        <div className="mt-4 grid gap-3">
+                          <label className="flex flex-col text-xs font-medium text-amber-950">
+                            Declaration title
+                            <input
+                              type="text"
+                              value={editCourse.flyingDeclarationTitle}
+                              onChange={(e) => setEditCourse((p) => ({ ...p, flyingDeclarationTitle: e.target.value }))}
+                              className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none"
+                            />
+                          </label>
+                          <label className="flex flex-col text-xs font-medium text-amber-950">
+                            Declaration wording
+                            <textarea
+                              rows={8}
+                              value={editCourse.flyingDeclarationText}
+                              onChange={(e) => setEditCourse((p) => ({ ...p, flyingDeclarationText: e.target.value }))}
+                              className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none"
+                            />
+                            <span className="mt-1 text-[11px] font-normal text-amber-700">
+                              Signed enrolments store a snapshot of this wording, the student's typed name, member number and signing date.
+                            </span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
                     <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 md:col-span-2">
                       <label className="flex items-start gap-3">
                         <input
