@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plane, Save, Upload, Plus, Trash2, DollarSign } from 'lucide-react';
+import { X, Plane, Save, Upload, Plus, Trash2, DollarSign, ShieldCheck } from 'lucide-react';
 import { Aircraft, AircraftRate } from '../../types';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useAircraftRates } from '../../hooks/useAircraftRates';
 import { useResourceSettings } from '../../hooks/useResourceSettings';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -53,12 +54,14 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     maxWeight: aircraft?.maxWeight || 0,
     seatCapacity: aircraft?.seatCapacity || 2,
     status: aircraft?.status || 'serviceable' as const,
-    totalHours: isEdit ? (aircraft?.totalHours || 0) : 0
+    totalHours: isEdit ? (aircraft?.totalHours || 0) : 0,
+    requiredEndorsementType: aircraft?.requiredEndorsementType || ''
   });
 
   const { flightTypes, paymentMethods, loading: billingLoading } = useBillingSettings();
   const { rates: existingRates, loading: ratesLoading, refetch: refetchRates } = useAircraftRates(aircraft?.id);
   const { aircraftFields, documentTypes } = useResourceSettings();
+  const { settings: trainingSettings } = useTrainingSettings();
 
   const [aircraftRates, setAircraftRates] = useState<Partial<AircraftRate>[]>([]);
 
@@ -171,7 +174,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         maxWeight: aircraft.maxWeight || 0,
         seatCapacity: aircraft.seatCapacity || 2,
         status: aircraft.status,
-        totalHours: isEdit ? (aircraft.totalHours || 0) : 0
+        totalHours: isEdit ? (aircraft.totalHours || 0) : 0,
+        requiredEndorsementType: aircraft.requiredEndorsementType || ''
       });
       setCostStructure({
         aircraft: {
@@ -197,7 +201,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         maxWeight: 0,
         seatCapacity: 2,
         status: 'serviceable',
-        totalHours: 0
+        totalHours: 0,
+        requiredEndorsementType: ''
       });
       setCostStructure({
         aircraft: { prepaid: 0, payg: 0, account: 0 },
@@ -260,6 +265,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       emptyWeight: formData.emptyWeight,
       maxWeight: formData.maxWeight,
       tachStart: formData.tachStart,
+      requiredEndorsementType: formData.requiredEndorsementType || null,
       lastMaintenance: aircraft?.lastMaintenance,
       nextMaintenance: aircraft?.nextMaintenance,
       // Send ALL rates (not_used included) — hook will delete+reinsert non-not_used
@@ -333,11 +339,21 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            {isEdit ? 'Edit Aircraft' : isDuplicate ? 'Duplicate Aircraft' : 'Add New Aircraft'}
-          </h2>
+      <div className="bg-slate-50 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="sticky top-0 z-10 flex justify-between items-start gap-4 p-4 sm:p-6 border-b border-gray-200 bg-white">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-blue-50 p-3 text-blue-700">
+              <Plane className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                {isEdit ? 'Edit Aircraft' : isDuplicate ? 'Duplicate Aircraft' : 'Add Aircraft'}
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Set the aircraft details, hire eligibility, documents, maintenance, and pricing in one place.
+              </p>
+            </div>
+          </div>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -346,14 +362,14 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-8">
+        <form onSubmit={handleSubmit} className="overflow-y-auto p-4 sm:p-6 space-y-5">
           {/* Basic Information */}
-          <div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
             <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
               <Plane className="h-5 w-5 mr-2" />
               Basic Information
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Registration *
@@ -450,9 +466,9 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           </div>
 
           {/* Specifications */}
-          <div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Specifications</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {isFieldVisible('fuelCapacity') && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Fuel Capacity (L) {isFieldRequired('fuelCapacity') && '*'}
@@ -494,8 +510,44 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
             </div>
           </div>
 
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
+            <h3 className="text-lg font-medium text-gray-900 mb-2 flex items-center">
+              <ShieldCheck className="h-5 w-5 mr-2 text-emerald-700" />
+              Hire Eligibility
+            </h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Use this when an aircraft needs a specific endorsement before a pilot can hire it solo.
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.7fr)] gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Required endorsement for solo hire
+                </label>
+                <select
+                  value={formData.requiredEndorsementType}
+                  onChange={(e) => setFormData(prev => ({ ...prev, requiredEndorsementType: e.target.value }))}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">No endorsement required</option>
+                  {trainingSettings.endorsementTypes.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-gray-500">
+                  Pilots without this endorsement can still request the aircraft, but the booking will become pending approval.
+                </p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-semibold">Instructor bookings are allowed.</p>
+                <p className="mt-1">
+                  If an instructor is selected, the endorsement rule does not block the booking because the flight is supervised.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Cost Structure by Flight Type */}
-          <div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
             <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
               <DollarSign className="h-5 w-5 mr-2" />
               Cost Structure by Flight Type
@@ -665,7 +717,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           </div>
 
           {/* Maintenance Milestones */}
-          <div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Maintenance Milestones</h3>
             
             {/* Add New Milestone */}
@@ -736,7 +788,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           </div>
 
           {/* Document Upload */}
-          <div>
+          <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Documents</h3>
             <div className="space-y-4">
               <div>
@@ -793,17 +845,17 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+          <div className="sticky bottom-0 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-3 border-t border-gray-200 bg-white/95 px-4 py-4 sm:px-6">
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              className="px-6 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center space-x-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold shadow-sm"
             >
               <Save className="h-4 w-4" />
               <span>{isEdit ? 'Update Aircraft' : isDuplicate ? 'Add Duplicate' : 'Add Aircraft'}</span>

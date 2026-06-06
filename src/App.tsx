@@ -259,7 +259,7 @@ const KioskAuthenticatedRoute: React.FC<{
         endTime,
         paymentType: bookingData.paymentType,
         notes: bookingData.notes,
-        status: 'confirmed' as const,
+        status: bookingData.status || 'confirmed' as const,
         flightTypeId: bookingData.flightTypeId || undefined,
       });
     }
@@ -434,7 +434,7 @@ const AuthenticatedApp: React.FC<{
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
-          status: 'confirmed' as const,
+          status: bookingData.status || 'confirmed' as const,
           flightTypeId: bookingData.flightTypeId || undefined,
         });
       }

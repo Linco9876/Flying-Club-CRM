@@ -69,6 +69,7 @@ export interface Aircraft {
   emptyWeight?: number;
   maxWeight?: number;
   tachStart?: number;
+  requiredEndorsementType?: string | null;
   isAvailable?: boolean;
   defects: Defect[];
   rates?: AircraftRate[];

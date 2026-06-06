@@ -163,6 +163,7 @@ export const useAircraft = () => {
           emptyWeight: a.empty_weight ? parseFloat(a.empty_weight) : undefined,
           maxWeight: a.max_weight ? parseFloat(a.max_weight) : undefined,
           tachStart: a.total_hours ? parseFloat(a.total_hours) : 0,
+          requiredEndorsementType: a.required_endorsement_type || null,
           defects: defectsMap.get(a.id) || [],
           rates: rates?.rows || [],
           aircraftRates: rates?.aircraft,
@@ -441,7 +442,8 @@ export const useAircraft = () => {
           seat_capacity: aircraftData.seatCapacity || 2,
           fuel_capacity: aircraftData.fuelCapacity || null,
           empty_weight: aircraftData.emptyWeight || null,
-          max_weight: aircraftData.maxWeight || null
+          max_weight: aircraftData.maxWeight || null,
+          required_endorsement_type: aircraftData.requiredEndorsementType || null
         })
         .select()
         .single();
@@ -530,6 +532,7 @@ export const useAircraft = () => {
       if (aircraftData.fuelCapacity !== undefined) updateData.fuel_capacity = aircraftData.fuelCapacity;
       if (aircraftData.emptyWeight !== undefined) updateData.empty_weight = aircraftData.emptyWeight;
       if (aircraftData.maxWeight !== undefined) updateData.max_weight = aircraftData.maxWeight;
+      if (aircraftData.requiredEndorsementType !== undefined) updateData.required_endorsement_type = aircraftData.requiredEndorsementType || null;
 
       const { error } = await supabase
         .from('aircraft')

@@ -96,6 +96,12 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     pilotName: string;
     picHours: number;
   } | null>(null);
+  const [pendingEndorsementSubmit, setPendingEndorsementSubmit] = useState<(typeof formData & { status?: Booking['status'] }) | null>(null);
+  const [endorsementWarningState, setEndorsementWarningState] = useState<{
+    aircraftName: string;
+    pilotName: string;
+    endorsementType: string;
+  } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Rebuild the whole form every time it opens so stale values cannot leak between bookings.
@@ -104,6 +110,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setFormData(buildInitialFormData());
     setPendingSafetySubmit(null);
     setSafetyWarningState(null);
+    setPendingEndorsementSubmit(null);
+    setEndorsementWarningState(null);
     setIsSubmitting(false);
   }, [buildInitialFormData, isOpen]);
   const validateFormData = () => {
@@ -176,7 +184,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     return { startDateTime, endDateTime };
   };
 
-  const submitBookingData = async (data: typeof formData) => {
+  const submitBookingData = async (data: typeof formData & { status?: Booking['status'] }) => {
     if (isSubmitting || isLoading) return;
     setIsSubmitting(true);
     try {
@@ -188,15 +196,34 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const validation = validateFormData();
-    if (!validation) return;
+  const getEndorsementWarning = (data: typeof formData) => {
+    if (data.instructorId) return null;
 
-    const selectedPerson = students.find((student) => student.id === formData.studentId);
+    const selectedAircraft = aircraft.find(a => a.id === data.aircraftId);
+    const requiredEndorsement = selectedAircraft?.requiredEndorsementType?.trim();
+    if (!selectedAircraft || !requiredEndorsement) return null;
+
+    const selectedPerson = students.find((student) => student.id === data.studentId);
+    const now = new Date();
+    const hasRequiredEndorsement = selectedPerson?.endorsements?.some((endorsement) => {
+      if (!endorsement.isActive || endorsement.type !== requiredEndorsement) return false;
+      return !endorsement.expiryDate || new Date(endorsement.expiryDate) >= now;
+    });
+
+    if (hasRequiredEndorsement) return null;
+
+    return {
+      aircraftName: `${selectedAircraft.registration} ${selectedAircraft.make} ${selectedAircraft.model}`.trim(),
+      pilotName: selectedPerson?.name || users.find(u => u.id === data.studentId)?.name || 'This pilot',
+      endorsementType: requiredEndorsement,
+    };
+  };
+
+  const runSafetyCheckOrSubmit = (data: typeof formData & { status?: Booking['status'] }) => {
+    const selectedPerson = students.find((student) => student.id === data.studentId);
     if (selectedPerson) {
       const compliance = buildSafetyComplianceSummary(selectedPerson, safetySettings, flightLogs, {
-        hasInstructor: Boolean(formData.instructorId)
+        hasInstructor: Boolean(data.instructorId)
       });
       const concerns = compliance.concerns;
 
@@ -207,12 +234,27 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           pilotName: selectedPerson.name,
           picHours: compliance.picHours
         });
-        setPendingSafetySubmit(formData);
+        setPendingSafetySubmit(data);
         return;
       }
     }
 
-    void submitBookingData(formData);
+    void submitBookingData(data);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const validation = validateFormData();
+    if (!validation) return;
+
+    const endorsementWarning = getEndorsementWarning(formData);
+    if (endorsementWarning) {
+      setEndorsementWarningState(endorsementWarning);
+      setPendingEndorsementSubmit({ ...formData, status: 'pending_approval' });
+      return;
+    }
+
+    runSafetyCheckOrSubmit(formData);
   };
 
   const availableAircraft = aircraft.filter(a => a.status === 'serviceable');
@@ -244,6 +286,19 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const handleCloseSafetyWarning = () => {
     setSafetyWarningState(null);
     setPendingSafetySubmit(null);
+  };
+
+  const handleConfirmEndorsementWarning = () => {
+    if (!pendingEndorsementSubmit) return;
+    const data = pendingEndorsementSubmit;
+    setEndorsementWarningState(null);
+    setPendingEndorsementSubmit(null);
+    runSafetyCheckOrSubmit(data);
+  };
+
+  const handleCloseEndorsementWarning = () => {
+    setEndorsementWarningState(null);
+    setPendingEndorsementSubmit(null);
   };
 
   if (!isOpen) return null;
@@ -531,6 +586,52 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 I acknowledge and continue
               </button>
             )}
+          </div>
+        </div>
+      </div>
+    )}
+    {endorsementWarningState && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+        <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+          <div className="flex items-start gap-3 border-b border-gray-200 px-5 py-4">
+            <div className="rounded-full bg-amber-100 p-2 text-amber-700">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">
+                Endorsement approval required
+              </h3>
+              <p className="mt-1 text-sm text-gray-600">
+                {endorsementWarningState.aircraftName} requires a current {endorsementWarningState.endorsementType} endorsement for solo hire.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-3 px-5 py-4 text-sm text-gray-700">
+            <p>
+              {endorsementWarningState.pilotName} does not appear to have that endorsement recorded in this CRM.
+            </p>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
+              Once acknowledged, the booking will be created as pending approval and shown in yellow until an instructor or admin approves it.
+            </div>
+            <p className="text-xs text-gray-500">
+              Add an instructor to this booking if the aircraft hire will be supervised instead.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
+            <button
+              type="button"
+              onClick={handleCloseEndorsementWarning}
+              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Go back
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmEndorsementWarning}
+              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+            >
+              Acknowledge and request approval
+            </button>
           </div>
         </div>
       </div>
