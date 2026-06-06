@@ -243,9 +243,59 @@ export async function exportCoursePdf({
     drawText(value || 'Not recorded', { x: x + 8, y: y - 29 }, { size: 10, font: bold, maxWidth: boxWidth - 16, lineHeight: 11 });
   };
 
+  const drawLabelValueGrid = (
+    rows: Array<[string, string]>,
+    options: { columns?: number; labelWidth?: number; rowHeight?: number; valueSize?: number } = {}
+  ) => {
+    const columns = options.columns ?? 2;
+    const rowHeight = options.rowHeight ?? 24;
+    const valueSize = options.valueSize ?? 8;
+    const columnWidth = (width - margin * 2) / columns;
+    const rowCount = Math.ceil(rows.length / columns);
+    ensureSpace(rowCount * rowHeight + 8);
+
+    rows.forEach(([label, value], index) => {
+      const row = Math.floor(index / columns);
+      const col = index % columns;
+      const x = margin + col * columnWidth;
+      const y = cursor - row * rowHeight;
+      drawText(label, { x, y }, { size: 7, font: bold, color: grey, maxWidth: columnWidth - 10 });
+      drawText(value || 'Not recorded', { x, y: y - 11 }, { size: valueSize, color: dark, maxWidth: columnWidth - 10, lineHeight: valueSize + 2 });
+    });
+    cursor -= rowCount * rowHeight + 8;
+  };
+
+  const drawParagraphBlock = (title: string, value: string, maxLines = 7) => {
+    const text = stripHtml(value);
+    if (!text) return;
+    const lines = wrapText(text, regular, 8, width - margin * 2 - 20).slice(0, maxLines);
+    ensureSpace(18 + lines.length * 10);
+    page.drawText(title, { x: margin, y: cursor, size: 8, font: bold, color: grey });
+    cursor -= 12;
+    lines.forEach((line) => {
+      page.drawText(line, { x: margin, y: cursor, size: 8, font: regular, color: dark });
+      cursor -= 10;
+    });
+    cursor -= 4;
+  };
+
+  const drawSignatureLines = (labels: string[]) => {
+    ensureSpace(48);
+    const columnWidth = (width - margin * 2 - 16) / labels.length;
+    labels.forEach((label, index) => {
+      const x = margin + index * (columnWidth + 8);
+      page.drawLine({ start: { x, y: cursor - 24 }, end: { x: x + columnWidth, y: cursor - 24 }, thickness: 0.6, color: borderGrey });
+      page.drawText(label, { x, y: cursor - 38, size: 7, font: bold, color: grey });
+    });
+    cursor -= 52;
+  };
+
   const courseRecords = records
     .filter((record) => record.courseId === course.id)
     .sort((a, b) => (b.bookingStartTime || b.date).getTime() - (a.bookingStartTime || a.date).getTime());
+  const chronologicalCourseRecords = [...courseRecords].sort((a, b) =>
+    (a.bookingStartTime || a.date).getTime() - (b.bookingStartTime || b.date).getTime()
+  );
   const lessonsById = new Map(course.lessons.map((lesson) => [lesson.id, lesson]));
   const lessonsByCode = new Map(
     course.lessons
@@ -257,7 +307,14 @@ export async function exportCoursePdf({
     const fallbackLesson = record.lessonCodes
       .map((code) => lessonsByCode.get(code))
       .find(Boolean);
-    return lesson?.name || fallbackLesson?.name || record.lessonCodes[0] || record.registration || 'Flight';
+    const recordedCode = record.lessonCodes[0];
+    const byName = recordedCode
+      ? course.lessons.find((item) =>
+          item.name.trim().toLowerCase() === recordedCode.trim().toLowerCase() ||
+          `${item.sequenceCode} ${item.name}`.trim().toLowerCase() === recordedCode.trim().toLowerCase()
+        )
+      : undefined;
+    return lesson?.name || fallbackLesson?.name || byName?.name || recordedCode || record.registration || 'Flight';
   };
   const courseExamDefinitions = course.exams || [];
   const courseExams = exams
@@ -326,6 +383,55 @@ export async function exportCoursePdf({
     .filter((item: any) => item.row)
     .sort((a: any, b: any) => (a.row.sort_order ?? 0) - (b.row.sort_order ?? 0));
 
+  const isRplSyllabusCourse = matrixRequirements.length > 0 || /rpl|casa/i.test(`${course.title} ${course.category}`);
+  const assessmentsByTrainingRecord = new Map<string, any[]>();
+  matrixAssessments.forEach((assessment: any) => {
+    if (!assessment.training_record_id) return;
+    assessmentsByTrainingRecord.set(assessment.training_record_id, [
+      ...(assessmentsByTrainingRecord.get(assessment.training_record_id) ?? []),
+      assessment,
+    ]);
+  });
+  const requirementsByLessonKey = new Map<string, any[]>();
+  matrixRequirements.forEach((requirement: any) => {
+    [requirement.lesson_id, requirement.lesson_sequence_code]
+      .filter(Boolean)
+      .forEach((key) => {
+        requirementsByLessonKey.set(key, [
+          ...(requirementsByLessonKey.get(key) ?? []),
+          requirement,
+        ]);
+      });
+  });
+  const getRecordMatrixSummary = (record: TrainingRecord) => {
+    const assessments = assessmentsByTrainingRecord.get(record.id) ?? [];
+    const lessonKeys = [record.lessonId, ...record.lessonCodes].filter(Boolean) as string[];
+    const lessonRequirements = lessonKeys.flatMap((key) => requirementsByLessonKey.get(key) ?? []);
+    const requirementByRow = new Map<string, any>();
+    lessonRequirements.forEach((requirement: any) => {
+      const current = requirementByRow.get(requirement.matrix_row_id);
+      if (!current || requirement.required_standard < current.required_standard) {
+        requirementByRow.set(requirement.matrix_row_id, requirement);
+      }
+    });
+
+    const notMet = assessments
+      .map((assessment: any) => {
+        const requirement = requirementByRow.get(assessment.matrix_row_id);
+        const row = matrixRowById.get(assessment.matrix_row_id);
+        const achieved = assessment.achieved_standard;
+        if (!row || !requirement || achievedMeetsRequired(achieved, requirement.required_standard)) return null;
+        return { assessment, requirement, row };
+      })
+      .filter(Boolean);
+
+    return {
+      assessed: assessments.length,
+      met: assessments.length - notMet.length,
+      notMet,
+    };
+  };
+
   const dualMinutes = courseRecords.reduce((sum, record) => sum + (record.dualTimeMin || 0), 0);
   const soloMinutes = courseRecords.reduce((sum, record) => sum + (record.soloTimeMin || 0), 0);
   const latestRecord = courseRecords[0];
@@ -333,7 +439,7 @@ export async function exportCoursePdf({
   page.drawRectangle({ x: 0, y: height - 86, width, height: 86, color: dark });
   page.drawText(student.name, { x: margin, y: height - 38, size: 22, font: bold, color: rgb(1, 1, 1) });
   page.drawText(course.title, { x: margin, y: height - 60, size: 12, font: regular, color: rgb(0.88, 0.91, 0.95) });
-  page.drawText('Student course file export', { x: width - 190, y: height - 38, size: 10, font: bold, color: rgb(1, 1, 1) });
+  page.drawText(isRplSyllabusCourse ? 'RPL(A) syllabus completion pack' : 'Student course file export', { x: width - 226, y: height - 38, size: 10, font: bold, color: rgb(1, 1, 1) });
   page.drawText(`Status: ${course.status}`, { x: width - 190, y: height - 56, size: 9, font: regular, color: rgb(0.88, 0.91, 0.95) });
   cursor = height - 112;
 
@@ -345,7 +451,7 @@ export async function exportCoursePdf({
   drawInfoBox('Latest', latestRecord ? formatDate(latestRecord.bookingStartTime || latestRecord.date) : 'No flights', margin + (boxWidth + 8) * 4, cursor, boxWidth);
   cursor -= 70;
 
-  drawSectionTitle('Details');
+  drawSectionTitle(isRplSyllabusCourse ? 'Student and Course Details' : 'Details');
   const detailRows = [
     ['RAAus Number', student.raausId || 'Not recorded'],
     ['RAAus Expiry', formatDate(student.licenceExpiry)],
@@ -356,14 +462,90 @@ export async function exportCoursePdf({
     ['Date of Birth', formatDate(student.dateOfBirth)],
     ['Emergency Contact', student.emergencyContact ? `${student.emergencyContact.name} - ${student.emergencyContact.phone}` : 'Not recorded'],
   ];
-  const colW = (width - margin * 2) / 4;
-  detailRows.forEach(([label, value], index) => {
-    const row = Math.floor(index / 4);
-    const col = index % 4;
-    drawText(label, { x: margin + col * colW, y: cursor - row * 36 }, { size: 7, font: bold, color: grey });
-    drawText(value, { x: margin + col * colW, y: cursor - 14 - row * 36 }, { size: 8.5, maxWidth: colW - 8, lineHeight: 10 });
-  });
-  cursor -= 82;
+  drawLabelValueGrid(detailRows, { columns: 4, rowHeight: 36, valueSize: 8.5 });
+
+  if (isRplSyllabusCourse) {
+    drawSectionTitle('RPL(A) Syllabus Overview');
+    drawParagraphBlock('Course description', course.description, 5);
+    if (course.prerequisites.length > 0 || course.objectives.length > 0 || course.evaluationCriteria.length > 0) {
+      const overviewRows: Array<[string, string]> = [
+        ['Prerequisites', course.prerequisites.length > 0 ? course.prerequisites.join(', ') : 'No mandatory prerequisites recorded'],
+        ['Objectives', course.objectives.length > 0 ? course.objectives.join('; ') : 'Objectives are managed in the course lesson library'],
+        ['Evaluation focus', course.evaluationCriteria.length > 0 ? course.evaluationCriteria.join('; ') : 'Evaluation is recorded against the CASA planning matrix'],
+        ['Course resources', course.resources.length > 0 ? course.resources.map((resource) => resource.title).join(', ') : 'Aircraft, briefing material and flight training records'],
+      ];
+      drawLabelValueGrid(overviewRows, { columns: 2, rowHeight: 34, valueSize: 8 });
+    }
+
+    drawSectionTitle('Performance Standard Key');
+    ensureSpace(54);
+    const standardWidth = (width - margin * 2 - 16) / 3;
+    [
+      ['3', 'Training received', 'Has received training in the element but is not yet consistently competent.'],
+      ['2', 'Supervised solo standard', 'Developing proficiency and considered safe for supervised solo practice.'],
+      ['1', 'Qualification standard', 'Competent to the standard required for qualification issue.'],
+    ].forEach(([standard, title, description], index) => {
+      const x = margin + index * (standardWidth + 8);
+      page.drawRectangle({ x, y: cursor - 48, width: standardWidth, height: 48, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.8 });
+      page.drawText(standard, { x: x + 9, y: cursor - 20, size: 16, font: bold, color: blue });
+      page.drawText(title, { x: x + 30, y: cursor - 16, size: 8, font: bold, color: dark });
+      drawText(description, { x: x + 30, y: cursor - 28 }, { size: 7, color: grey, maxWidth: standardWidth - 38, lineHeight: 8 });
+    });
+    cursor -= 62;
+
+    drawSectionTitle('Flight Training and Theory Summary');
+    const lessonSummaryColumns = [74, 188, 42, 42, 52, 52, 86, 112];
+    const lessonHeader = ['Lesson #', 'Lesson description', 'Dual', 'Solo', 'Prog dual', 'Prog solo', 'Matrix', 'Records'];
+    let x = margin;
+    page.drawRectangle({ x: margin, y: cursor - 20, width: width - margin * 2, height: 20, color: lightGrey, borderColor: borderGrey, borderWidth: 0.5 });
+    lessonHeader.forEach((header, index) => {
+      page.drawText(header, { x: x + 4, y: cursor - 13, size: 7, font: bold, color: dark });
+      x += lessonSummaryColumns[index];
+    });
+    cursor -= 20;
+
+    let progressiveDual = 0;
+    let progressiveSolo = 0;
+    for (const lesson of course.lessons) {
+      ensureSpace(18);
+      const lessonRecords = chronologicalCourseRecords.filter((record) =>
+        record.lessonId === lesson.id ||
+        record.lessonCodes.includes(lesson.sequenceCode) ||
+        record.lessonCodes.some((code) => code.trim().toLowerCase() === lesson.name.trim().toLowerCase())
+      );
+      const lessonDual = lessonRecords.reduce((sum, record) => sum + (record.dualTimeMin || 0), 0);
+      const lessonSolo = lessonRecords.reduce((sum, record) => sum + (record.soloTimeMin || 0), 0);
+      progressiveDual += lessonDual;
+      progressiveSolo += lessonSolo;
+      const lessonRequirements = [
+        ...(requirementsByLessonKey.get(lesson.id) ?? []),
+        ...(requirementsByLessonKey.get(lesson.sequenceCode) ?? []),
+      ];
+      const lessonMet = lessonRequirements.filter((requirement: any) =>
+        achievedMeetsRequired(
+          bestAssessmentByRow.get(requirement.matrix_row_id)?.achieved_standard,
+          requirement.required_standard
+        )
+      ).length;
+      x = margin;
+      page.drawRectangle({ x: margin, y: cursor - 18, width: width - margin * 2, height: 18, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.35 });
+      [
+        lesson.sequenceCode || lesson.sequenceTitle || '',
+        lesson.name,
+        lessonDual ? minutesToHours(lessonDual) : '-',
+        lessonSolo ? minutesToHours(lessonSolo) : '-',
+        minutesToHours(progressiveDual),
+        minutesToHours(progressiveSolo),
+        lessonRequirements.length > 0 ? `${lessonMet}/${lessonRequirements.length}` : '-',
+        lessonRecords.length ? `${lessonRecords.length} attempt${lessonRecords.length === 1 ? '' : 's'}` : 'Not yet logged',
+      ].forEach((value, index) => {
+        page.drawText(String(value).slice(0, index === 1 ? 34 : 18), { x: x + 4, y: cursor - 12, size: 7, font: index === 0 || index === 1 ? bold : regular, color: dark });
+        x += lessonSummaryColumns[index];
+      });
+      cursor -= 18;
+    }
+    cursor -= 12;
+  }
 
   drawSectionTitle('Exams');
   if (courseExams.length === 0) {
@@ -476,7 +658,7 @@ export async function exportCoursePdf({
     page.drawText('Solo', { x: width - margin - 24, y: cursor - headerHeight + 8, size: 7, font: bold, color: dark });
     cursor -= headerHeight;
 
-    for (const record of courseRecords) {
+    for (const record of chronologicalCourseRecords) {
       ensureSpace(rowHeight + 24);
       x = margin;
       const instructor = users.find((u) => u.id === record.instructorId)?.name || 'Unknown';
@@ -504,21 +686,94 @@ export async function exportCoursePdf({
     }
   }
 
-  drawSectionTitle('Lesson Notes and Record Cards');
+  if (isRplSyllabusCourse && course.lessons.length > 0) {
+    drawSectionTitle('Lesson Syllabus Reference');
+    for (const lesson of course.lessons) {
+      const contentBlocks = [
+        ['Lesson overview', lesson.objective],
+        ['Pre-flight knowledge / theory focus', lesson.theory || lesson.studentPreparation],
+        ['Flight training exercises', lesson.flightExercises || lesson.keyExercises.join('; ')],
+        ['Instructor notes', lesson.instructorNotes],
+      ].filter(([, value]) => stripHtml(value).length > 0);
+      const estimatedLines = contentBlocks.reduce((sum, [, value]) => sum + Math.min(wrapText(stripHtml(value), regular, 7.2, width - margin * 2 - 24).length, 3), 0);
+      const cardHeight = 42 + estimatedLines * 8 + contentBlocks.length * 12;
+      ensureSpace(Math.min(cardHeight, height - margin * 2));
+      const cardTop = cursor;
+      page.drawRectangle({
+        x: margin,
+        y: cardTop - cardHeight,
+        width: width - margin * 2,
+        height: cardHeight,
+        color: rgb(1, 1, 1),
+        borderColor: borderGrey,
+        borderWidth: 0.6,
+      });
+      page.drawRectangle({
+        x: margin,
+        y: cardTop - 25,
+        width: width - margin * 2,
+        height: 25,
+        color: lightGrey,
+      });
+      page.drawText(`${lesson.sequenceCode || lesson.sequenceTitle || 'Lesson'} - ${lesson.name}`.slice(0, 110), {
+        x: margin + 10,
+        y: cardTop - 16,
+        size: 9,
+        font: bold,
+        color: dark,
+      });
+      page.drawText(`${lesson.durationMinutes || 0} min`, {
+        x: width - margin - 58,
+        y: cardTop - 16,
+        size: 7,
+        font: bold,
+        color: grey,
+      });
+
+      let y = cardTop - 39;
+      contentBlocks.forEach(([label, value]) => {
+        page.drawText(label, { x: margin + 10, y, size: 7, font: bold, color: grey });
+        y -= 9;
+        wrapText(stripHtml(value), regular, 7.2, width - margin * 2 - 24).slice(0, 3).forEach((line) => {
+          page.drawText(line, { x: margin + 10, y, size: 7.2, font: regular, color: dark });
+          y -= 8;
+        });
+        y -= 4;
+      });
+      cursor -= cardHeight + 8;
+    }
+  }
+
+  drawSectionTitle(isRplSyllabusCourse ? 'Training Record Evidence and Comments' : 'Lesson Notes and Record Cards');
   if (courseRecords.length === 0) {
     drawText('No lesson comments recorded for this course.', { x: margin, y: cursor }, { size: 9, color: grey });
   } else {
-    for (const record of courseRecords) {
+    for (const record of chronologicalCourseRecords) {
       const instructor = users.find((u) => u.id === record.instructorId)?.name || 'Unknown';
       const lessonName = resolveLessonName(record);
       const comments = stripHtml(record.comments);
       const briefing = stripHtml(record.briefingComments);
       const reviewNotes = stripHtml(record.flightReviewNotes || '');
+      const matrixSummary = getRecordMatrixSummary(record);
       const cardHeightBase = 74;
       const commentsLines = comments ? wrapText(comments, regular, 8, width - margin * 2 - 24).slice(0, 7) : [];
       const briefingLines = briefing ? wrapText(briefing, regular, 8, width - margin * 2 - 24).slice(0, 4) : [];
       const reviewLines = reviewNotes ? wrapText(reviewNotes, regular, 8, width - margin * 2 - 24).slice(0, 4) : [];
-      const cardHeight = cardHeightBase + (commentsLines.length + briefingLines.length + reviewLines.length) * 10 + (briefingLines.length ? 18 : 0) + (reviewLines.length ? 18 : 0);
+      const matrixLines = isRplSyllabusCourse && matrixSummary.assessed > 0
+        ? [
+            `CASA matrix: ${matrixSummary.met}/${matrixSummary.assessed} assessed items met for this lesson attempt.`,
+            ...matrixSummary.notMet.slice(0, 4).map((item: any) => {
+              const row = item.row;
+              return `${row.element_code || row.unit_code || row.code}: achieved ${item.assessment.achieved_standard}, required ${item.requirement.required_standard} - ${formatSyllabusMatrixText(row.description)}`;
+            }),
+          ]
+        : [];
+      const cardHeight = cardHeightBase
+        + (commentsLines.length + briefingLines.length + reviewLines.length) * 10
+        + matrixLines.length * 10
+        + (briefingLines.length ? 18 : 0)
+        + (reviewLines.length ? 18 : 0)
+        + (matrixLines.length ? 18 : 0);
 
       ensureSpace(Math.min(cardHeight, height - margin * 2));
       const cardTop = cursor;
@@ -548,6 +803,7 @@ export async function exportCoursePdf({
         `Dual: ${minutesToHours(record.dualTimeMin)} hr`,
         `Solo: ${minutesToHours(record.soloTimeMin)} hr`,
         `Briefing: ${record.formalBriefing ? 'Yes' : 'No'}`,
+        `Student ack: ${record.studentAck ? formatDate(record.studentAckTimestamp) : 'No'}`,
       ].join('   ');
       drawText(meta, { x: margin + 10, y }, { size: 7.5, color: grey, maxWidth: width - margin * 2 - 20, lineHeight: 9 });
       y -= 18;
@@ -584,8 +840,42 @@ export async function exportCoursePdf({
         });
       }
 
+      if (matrixLines.length > 0) {
+        y -= 4;
+        page.drawText('CASA matrix evidence', { x: margin + 10, y, size: 7, font: bold, color: grey });
+        y -= 11;
+        matrixLines.forEach((line, index) => {
+          page.drawText(line.slice(0, index === 0 ? 150 : 132), {
+            x: margin + 10,
+            y,
+            size: 7.4,
+            font: index === 0 ? bold : regular,
+            color: index === 0 ? green : amber,
+          });
+          y -= 10;
+        });
+      }
+
       cursor -= cardHeight + 10;
     }
+  }
+
+  if (isRplSyllabusCourse) {
+    drawSectionTitle('Certification and Completion');
+    const completionRows: Array<[string, string]> = [
+      ['Matrix completion', matrixRequirements.length > 0 ? `${metMatrixRequirements.length} of ${matrixRequirements.length} required items met` : 'No CASA matrix configured'],
+      ['Remaining items', remainingMatrixRequirements.length > 0 ? String(remainingMatrixRequirements.length) : 'None recorded'],
+      ['Flight test lesson', course.lessons.find((lesson) => lesson.isFlightTest)?.name || 'Not designated in course editor'],
+      ['Course endorsement', course.completionEndorsementEnabled && course.completionEndorsementType ? course.completionEndorsementType : 'No automatic endorsement configured'],
+    ];
+    drawLabelValueGrid(completionRows, { columns: 4, rowHeight: 30, valueSize: 8 });
+    drawText(
+      'This export summarises the CRM record for the student course, including lesson records, comments, CASA matrix assessments and uploaded exam evidence available at the time of export.',
+      { x: margin, y: cursor },
+      { size: 8, color: grey, maxWidth: width - margin * 2, lineHeight: 10 }
+    );
+    cursor -= 26;
+    drawSignatureLines(['Instructor / Head of Operations', 'Student / Trainee', 'Date']);
   }
 
   addFooter();
