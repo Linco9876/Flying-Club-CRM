@@ -415,20 +415,49 @@ export async function exportCoursePdf({
       }
     });
 
-    const notMet = assessments
-      .map((assessment: any) => {
-        const requirement = requirementByRow.get(assessment.matrix_row_id);
-        const row = matrixRowById.get(assessment.matrix_row_id);
-        const achieved = assessment.achieved_standard;
-        if (!row || !requirement || achievedMeetsRequired(achieved, requirement.required_standard)) return null;
-        return { assessment, requirement, row };
+    const assessmentByRow = new Map<string, any>();
+    assessments.forEach((assessment: any) => {
+      assessmentByRow.set(assessment.matrix_row_id, assessment);
+    });
+
+    const items = [...requirementByRow.values()]
+      .map((requirement: any) => {
+        const assessment = assessmentByRow.get(requirement.matrix_row_id);
+        const bestAssessment = bestAssessmentByRow.get(requirement.matrix_row_id);
+        const row = matrixRowById.get(requirement.matrix_row_id);
+        if (!row) return null;
+
+        const attemptMeetsRequirement = achievedMeetsRequired(assessment?.achieved_standard, requirement.required_standard);
+        const currentMeetsRequirement = achievedMeetsRequired(bestAssessment?.achieved_standard, requirement.required_standard);
+        const carriedForward = !attemptMeetsRequirement;
+        const resolvedLater = carriedForward && currentMeetsRequirement;
+
+        return {
+          assessment,
+          bestAssessment,
+          requirement,
+          row,
+          attemptMeetsRequirement,
+          currentMeetsRequirement,
+          carriedForward,
+          resolvedLater,
+        };
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .sort((a: any, b: any) => (a.row.sort_order ?? 0) - (b.row.sort_order ?? 0));
+
+    const assessedItems = items.filter((item: any) => item.assessment?.achieved_standard);
 
     return {
-      assessed: assessments.length,
-      met: assessments.length - notMet.length,
-      notMet,
+      total: items.length,
+      assessed: assessedItems.length,
+      met: items.filter((item: any) => item.attemptMeetsRequirement).length,
+      notMet: items.filter((item: any) => item.assessment?.achieved_standard && !item.attemptMeetsRequirement),
+      unassessed: items.filter((item: any) => !item.assessment?.achieved_standard),
+      carriedForward: items.filter((item: any) => item.carriedForward),
+      resolvedLater: items.filter((item: any) => item.resolvedLater),
+      stillOutstanding: items.filter((item: any) => item.carriedForward && !item.currentMeetsRequirement),
+      items,
     };
   };
 
@@ -686,64 +715,6 @@ export async function exportCoursePdf({
     }
   }
 
-  if (isRplSyllabusCourse && course.lessons.length > 0) {
-    drawSectionTitle('Lesson Syllabus Reference');
-    for (const lesson of course.lessons) {
-      const contentBlocks = [
-        ['Lesson overview', lesson.objective],
-        ['Pre-flight knowledge / theory focus', lesson.theory || lesson.studentPreparation],
-        ['Flight training exercises', lesson.flightExercises || lesson.keyExercises.join('; ')],
-        ['Instructor notes', lesson.instructorNotes],
-      ].filter(([, value]) => stripHtml(value).length > 0);
-      const estimatedLines = contentBlocks.reduce((sum, [, value]) => sum + Math.min(wrapText(stripHtml(value), regular, 7.2, width - margin * 2 - 24).length, 3), 0);
-      const cardHeight = 42 + estimatedLines * 8 + contentBlocks.length * 12;
-      ensureSpace(Math.min(cardHeight, height - margin * 2));
-      const cardTop = cursor;
-      page.drawRectangle({
-        x: margin,
-        y: cardTop - cardHeight,
-        width: width - margin * 2,
-        height: cardHeight,
-        color: rgb(1, 1, 1),
-        borderColor: borderGrey,
-        borderWidth: 0.6,
-      });
-      page.drawRectangle({
-        x: margin,
-        y: cardTop - 25,
-        width: width - margin * 2,
-        height: 25,
-        color: lightGrey,
-      });
-      page.drawText(`${lesson.sequenceCode || lesson.sequenceTitle || 'Lesson'} - ${lesson.name}`.slice(0, 110), {
-        x: margin + 10,
-        y: cardTop - 16,
-        size: 9,
-        font: bold,
-        color: dark,
-      });
-      page.drawText(`${lesson.durationMinutes || 0} min`, {
-        x: width - margin - 58,
-        y: cardTop - 16,
-        size: 7,
-        font: bold,
-        color: grey,
-      });
-
-      let y = cardTop - 39;
-      contentBlocks.forEach(([label, value]) => {
-        page.drawText(label, { x: margin + 10, y, size: 7, font: bold, color: grey });
-        y -= 9;
-        wrapText(stripHtml(value), regular, 7.2, width - margin * 2 - 24).slice(0, 3).forEach((line) => {
-          page.drawText(line, { x: margin + 10, y, size: 7.2, font: regular, color: dark });
-          y -= 8;
-        });
-        y -= 4;
-      });
-      cursor -= cardHeight + 8;
-    }
-  }
-
   drawSectionTitle(isRplSyllabusCourse ? 'Training Record Evidence and Comments' : 'Lesson Notes and Record Cards');
   if (courseRecords.length === 0) {
     drawText('No lesson comments recorded for this course.', { x: margin, y: cursor }, { size: 9, color: grey });
@@ -759,13 +730,29 @@ export async function exportCoursePdf({
       const commentsLines = comments ? wrapText(comments, regular, 8, width - margin * 2 - 24).slice(0, 7) : [];
       const briefingLines = briefing ? wrapText(briefing, regular, 8, width - margin * 2 - 24).slice(0, 4) : [];
       const reviewLines = reviewNotes ? wrapText(reviewNotes, regular, 8, width - margin * 2 - 24).slice(0, 4) : [];
-      const matrixLines = isRplSyllabusCourse && matrixSummary.assessed > 0
+      const matrixLines = isRplSyllabusCourse && matrixSummary.total > 0
         ? [
-            `CASA matrix: ${matrixSummary.met}/${matrixSummary.assessed} assessed items met for this lesson attempt.`,
-            ...matrixSummary.notMet.slice(0, 4).map((item: any) => {
+            {
+              text: `CASA matrix: ${matrixSummary.met}/${matrixSummary.total} lesson requirements met on this attempt. ${matrixSummary.carriedForward.length} carried forward${record.nextLesson ? ` to ${record.nextLesson}` : ''}.`,
+              color: matrixSummary.carriedForward.length > 0 ? amber : green,
+              font: bold,
+            },
+            ...matrixSummary.carriedForward.slice(0, 7).map((item: any) => {
               const row = item.row;
-              return `${row.element_code || row.unit_code || row.code}: achieved ${item.assessment.achieved_standard}, required ${item.requirement.required_standard} - ${formatSyllabusMatrixText(row.description)}`;
+              const prefix = item.assessment?.achieved_standard ? 'Not met' : 'Not assessed';
+              const later = item.resolvedLater ? ' - resolved in a later lesson' : ' - moved forward';
+              const achieved = item.assessment?.achieved_standard || '-';
+              return {
+                text: `${prefix}: ${row.element_code || row.unit_code || row.code} achieved ${achieved}, required ${item.requirement.required_standard}${later} - ${formatSyllabusMatrixText(row.description)}`,
+                color: item.resolvedLater ? green : amber,
+                font: regular,
+              };
             }),
+            ...(matrixSummary.carriedForward.length > 7 ? [{
+              text: `Plus ${matrixSummary.carriedForward.length - 7} more matrix item${matrixSummary.carriedForward.length - 7 === 1 ? '' : 's'} carried forward.`,
+              color: grey,
+              font: regular,
+            }] : []),
           ]
         : [];
       const cardHeight = cardHeightBase
@@ -845,12 +832,12 @@ export async function exportCoursePdf({
         page.drawText('CASA matrix evidence', { x: margin + 10, y, size: 7, font: bold, color: grey });
         y -= 11;
         matrixLines.forEach((line, index) => {
-          page.drawText(line.slice(0, index === 0 ? 150 : 132), {
+          page.drawText(line.text.slice(0, index === 0 ? 150 : 132), {
             x: margin + 10,
             y,
             size: 7.4,
-            font: index === 0 ? bold : regular,
-            color: index === 0 ? green : amber,
+            font: line.font,
+            color: line.color,
           });
           y -= 10;
         });
