@@ -638,6 +638,28 @@ export const TrainingCourseCatalog: React.FC = () => {
   }, [availableTags, selectedTagFilters]);
 
   const selectedModule = modules.find((module) => module.id === selectedModuleId) ?? null;
+  const courseStats = useMemo(() => {
+    const published = modules.filter((module) => module.status === 'published').length;
+    const draft = modules.length - published;
+    const lessonCount = modules.reduce((sum, module) => sum + module.lessons.length, 0);
+    const testFlightCount = modules.reduce(
+      (sum, module) => sum + module.lessons.filter((lesson) => lesson.isFlightTest).length,
+      0
+    );
+
+    return { published, draft, lessonCount, testFlightCount };
+  }, [modules]);
+  const selectedLessonStats = useMemo(() => {
+    if (!selectedModule) {
+      return { flightTests: 0, exams: 0, criteria: 0 };
+    }
+
+    return {
+      flightTests: selectedModule.lessons.filter((lesson) => lesson.isFlightTest).length,
+      exams: (selectedModule.exams || []).length,
+      criteria: selectedModule.assessmentCriteria.length,
+    };
+  }, [selectedModule]);
 
   const queueFormScroll = (target: 'edit-course' | 'lesson') => {
     pendingScrollTargetRef.current = target;
@@ -1135,77 +1157,96 @@ export const TrainingCourseCatalog: React.FC = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Training Courses</h1>
-          <p className="text-gray-600">
-            Review published training syllabi, monitor drafts and create new course shells for instructors.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          New Course
-        </button>
-      </div>
-
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="flex items-center rounded-lg border border-gray-200 px-3 py-2 shadow-sm">
-              <Search className="mr-2 h-4 w-4 text-gray-400" />
-              <input
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search courses by name, category or tag"
-                className="w-full border-none bg-transparent text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none"
-              />
+    <div className="space-y-6 p-4 sm:p-6">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-5 py-6 text-white sm:px-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-100">
+                <BookOpenCheck className="h-3.5 w-3.5" />
+                Syllabus library
+              </div>
+              <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Training Courses</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-200">
+                Build the course structure students see, set lesson pass marks, manage exams, and keep instructors working from the same syllabus.
+              </p>
             </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 shadow-sm">
-              <Tag className="mr-2 h-4 w-4 text-gray-400" />
-              <span className="text-sm font-medium text-gray-600">Tags</span>
-              {availableTags.length === 0 ? (
-                <span className="text-sm text-gray-400">No tags</span>
-              ) : (
-                availableTags.map((tag) => {
-                  const isSelected = selectedTagFilters.some((selectedTag) => selectedTag.toLowerCase() === tag.toLowerCase());
-                  return (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => toggleTagFilter(tag)}
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition ${
-                        isSelected
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {tag}
-                    </button>
-                  );
-                })
-              )}
-              {selectedTagFilters.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedTagFilters([])}
-                  className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-500 ring-1 ring-gray-200 hover:bg-gray-50"
-                >
-                  <X className="h-3 w-3" />
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="hidden text-sm text-gray-500 md:block">
-              {filteredModules.length} course{filteredModules.length === 1 ? '' : 's'} found
-            </div>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Course
+            </button>
           </div>
-          <div className="text-sm text-gray-500 md:hidden">
-            {filteredModules.length} course{filteredModules.length === 1 ? '' : 's'} found
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: 'Published', value: courseStats.published, icon: CheckCircle2 },
+              { label: 'Drafts', value: courseStats.draft, icon: Pencil },
+              { label: 'Lessons', value: courseStats.lessonCount, icon: ClipboardList },
+              { label: 'Test flights', value: courseStats.testFlightCount, icon: Award },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 backdrop-blur">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">{label}</p>
+                  <Icon className="h-4 w-4 text-blue-200" />
+                </div>
+                <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 bg-slate-50 px-5 py-4 sm:px-6 lg:grid-cols-[minmax(260px,420px)_minmax(0,1fr)] lg:items-start">
+          <div className="flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <Search className="mr-2 h-4 w-4 text-slate-400" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search by course, category or tag"
+              className="w-full border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+            />
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <Tag className="h-3.5 w-3.5" />
+              Tags
+            </span>
+            {availableTags.length === 0 ? (
+              <span className="text-sm text-slate-400">No tags yet</span>
+            ) : (
+              availableTags.map((tag) => {
+                const isSelected = selectedTagFilters.some((selectedTag) => selectedTag.toLowerCase() === tag.toLowerCase());
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTagFilter(tag)}
+                    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold transition ${
+                      isSelected
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })
+            )}
+            {selectedTagFilters.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedTagFilters([])}
+                className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 hover:bg-slate-100"
+              >
+                <X className="h-3 w-3" />
+                Clear
+              </button>
+            )}
+            <span className="ml-auto text-sm font-medium text-slate-500">
+              {filteredModules.length} course{filteredModules.length === 1 ? '' : 's'} found
+            </span>
           </div>
         </div>
       </div>
@@ -1379,8 +1420,14 @@ export const TrainingCourseCatalog: React.FC = () => {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="space-y-4">
+      <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="space-y-3 lg:sticky lg:top-4">
+          <div className="flex items-center justify-between px-1">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Courses</h2>
+              <p className="text-xs text-slate-400">Select a course to review or edit.</p>
+            </div>
+          </div>
           {filteredModules.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
               No courses match your filters. Try adjusting your search or create a new course.
@@ -1394,67 +1441,73 @@ export const TrainingCourseCatalog: React.FC = () => {
                   onClick={() => handleModuleSelect(module.id)}
                   className={`w-full text-left transition ${
                     isActive
-                      ? 'border-blue-300 bg-blue-50 shadow-md'
-                      : 'border-gray-200 bg-white hover:border-blue-200 hover:shadow-sm'
-                  } rounded-xl border p-5`}
+                      ? 'border-blue-300 bg-blue-50 shadow-md ring-2 ring-blue-100'
+                      : 'border-slate-200 bg-white hover:border-blue-200 hover:shadow-sm'
+                  } rounded-xl border p-4`}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-semibold text-gray-900">{module.title}</h3>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            module.status === 'published'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-amber-50 text-amber-700'
-                          }`}
-                        >
-                          {module.status === 'published' ? 'Published' : 'Draft'}
-                        </span>
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          module.requiresStudentAcknowledgement ?? true
-                            ? 'bg-blue-50 text-blue-700'
-                            : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {(module.requiresStudentAcknowledgement ?? true) ? 'Student sign-off' : 'No sign-off'}
-                        </span>
-                        {module.completionEndorsementEnabled && (
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                            Completion endorsement
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm text-gray-600">{module.description}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-semibold text-slate-950">{module.title}</h3>
+                      <p className="mt-0.5 truncate text-sm text-slate-500">{module.category || 'Uncategorised'} · v{module.version}</p>
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-gray-500">
-                      <span className="inline-flex items-center gap-1">
-                        <Clock3 className="h-4 w-4" />
-                        {module.estimatedDurationHours}h
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Layers className="h-4 w-4" />
-                        {module.lessons.length} lessons
-                      </span>
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        module.status === 'published'
+                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                          : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                      }`}
+                    >
+                      {module.status === 'published' ? 'Live' : 'Draft'}
+                    </span>
+                  </div>
+                  <p className="mt-3 line-clamp-2 text-sm leading-5 text-slate-600">
+                    {module.description || 'No course overview has been recorded yet.'}
+                  </p>
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Lessons</p>
+                      <p className="mt-0.5 text-sm font-semibold text-slate-800">{module.lessons.length}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Hours</p>
+                      <p className="mt-0.5 text-sm font-semibold text-slate-800">{module.estimatedDurationHours}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Exams</p>
+                      <p className="mt-0.5 text-sm font-semibold text-slate-800">{(module.exams || []).length}</p>
                     </div>
                   </div>
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <span className="text-xs uppercase tracking-wide text-gray-400">Tags:</span>
-                    {module.tags.length === 0 ? (
-                      <span className="text-xs text-gray-500">No tags</span>
-                    ) : (
-                      module.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700"
-                        >
-                          <Tag className="mr-1 h-3 w-3 text-gray-400" />
-                          {tag}
-                        </span>
-                      ))
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      module.requiresStudentAcknowledgement ?? true
+                        ? 'bg-blue-50 text-blue-700'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {(module.requiresStudentAcknowledgement ?? true) ? 'Sign-off' : 'No sign-off'}
+                    </span>
+                    {module.completionEndorsementEnabled && (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                        Endorsement
+                      </span>
+                    )}
+                    {module.lessons.some((lesson) => lesson.isFlightTest) && (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        Flight test
+                      </span>
                     )}
                   </div>
-                  <div className="mt-3 text-xs text-gray-500">
-                    Updated {formatDistanceToNow(module.lastUpdated, { addSuffix: true })}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {module.tags.slice(0, 3).map((tag) => (
+                      <span key={tag} className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-xs text-slate-600 ring-1 ring-slate-200">
+                        {tag}
+                      </span>
+                    ))}
+                    {module.tags.length > 3 && (
+                      <span className="text-xs font-medium text-slate-400">+{module.tags.length - 3}</span>
+                    )}
+                    <span className="ml-auto text-xs text-slate-400">
+                      {formatDistanceToNow(module.lastUpdated, { addSuffix: true })}
+                    </span>
                   </div>
                 </button>
               );
@@ -1464,10 +1517,10 @@ export const TrainingCourseCatalog: React.FC = () => {
         <div className="space-y-6">
           {selectedModule ? (
             <>
-              <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 {/* Delete course confirmation */}
                 {showDeleteCourseConfirm && (
-                  <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                  <div className="m-5 mb-0 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
                     <p className="text-sm text-red-700">Permanently delete this course and all its lessons? Student completion records are not affected.</p>
                     <div className="flex shrink-0 gap-2">
                       <button type="button" onClick={() => setShowDeleteCourseConfirm(false)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
@@ -1476,162 +1529,190 @@ export const TrainingCourseCatalog: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <BookOpenCheck className="h-5 w-5 text-blue-600" />
-                      <h2 className="text-xl font-semibold text-gray-900">{selectedModule.title}</h2>
+                <div className="border-b border-slate-100 bg-slate-50 px-5 py-5 sm:px-6">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <BookOpenCheck className="h-5 w-5 text-blue-600" />
+                        <h2 className="text-2xl font-semibold tracking-tight text-slate-950">{selectedModule.title}</h2>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedModule.status === 'published' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' : 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'}`}>
+                          {selectedModule.status === 'published' ? 'Published' : 'Draft'}
+                        </span>
+                      </div>
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                        {selectedModule.description || 'No course overview has been recorded yet.'}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span>{selectedModule.category || 'Uncategorised'}</span>
+                        <span>-</span>
+                        <span>Version {selectedModule.version}</span>
+                        <span>-</span>
+                        <span>Updated {formatDistanceToNow(selectedModule.lastUpdated, { addSuffix: true })}</span>
+                      </div>
                     </div>
-                    <p className="mt-2 text-sm text-gray-600">{selectedModule.description}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedModule.status === 'published' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                      {selectedModule.status === 'published' ? 'Published' : 'Draft'}
-                    </span>
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${(selectedModule.requiresStudentAcknowledgement ?? true) ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {(selectedModule.requiresStudentAcknowledgement ?? true) ? 'Student acknowledgement required' : 'Student acknowledgement optional'}
-                    </span>
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="flex flex-wrap gap-2 xl:justify-end">
                       {selectedModule.status !== 'published' && (
-                        <button onClick={handlePublishCourse} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
+                        <button onClick={handlePublishCourse} className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100">
                           <CheckCircle2 className="h-4 w-4" />
                           Publish
                         </button>
                       )}
                       {canManageCourse(selectedModule) && (
                         <>
-                          <button onClick={handleOpenEditCourse} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50">
+                          <button onClick={handleOpenEditCourse} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
                             <Pencil className="h-4 w-4" />
                             Edit course
                           </button>
-                          <button onClick={() => setShowDeleteCourseConfirm(true)} className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 transition hover:bg-red-50">
+                          <button onClick={() => setShowDeleteCourseConfirm(true)} className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50">
                             <Trash2 className="h-4 w-4" />
                             Delete
                           </button>
                         </>
                       )}
-                      <button onClick={handleOpenLessonForm} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100">
+                      <button onClick={handleOpenLessonForm} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100">
                         <FilePlus className="h-4 w-4" />
                         New lesson
                       </button>
-                      <button onClick={handleOpenFlightTestLessonForm} className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 transition hover:bg-amber-100">
+                      <button onClick={handleOpenFlightTestLessonForm} className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100">
                         <Award className="h-4 w-4" />
                         Add flight test
                       </button>
                     </div>
                   </div>
                 </div>
-                <dl className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Category</dt>
-                    <dd className="mt-1 text-sm text-gray-700">{selectedModule.category}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Estimated duration</dt>
-                    <dd className="mt-1 inline-flex items-center gap-1 text-sm text-gray-700">
-                      <Clock3 className="h-4 w-4 text-gray-400" />
-                      {selectedModule.estimatedDurationHours} hours
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Lessons</dt>
-                    <dd className="mt-1 text-sm text-gray-700">{selectedModule.lessons.length}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Assessment criteria</dt>
-                    <dd className="mt-1 text-sm text-gray-700">{selectedModule.assessmentCriteria.length} defined</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Course exams</dt>
-                    <dd className="mt-1 text-sm text-gray-700">{(selectedModule.exams || []).length} defined</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Student acknowledgement</dt>
-                    <dd className="mt-1 text-sm text-gray-700">{(selectedModule.requiresStudentAcknowledgement ?? true) ? 'Required for this course' : 'Not required unless forced in settings'}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500">Completion endorsement</dt>
-                    <dd className="mt-1 text-sm text-gray-700">
-                      {selectedModule.completionEndorsementEnabled
-                        ? `${selectedModule.completionEndorsementType || 'Endorsement'}${selectedModule.completionEndorsementExpiryMonths ? ` - expires after ${selectedModule.completionEndorsementExpiryMonths} months` : ''}`
-                        : 'None'}
-                    </dd>
-                  </div>
-                </dl>
-                <p className="mt-4 text-xs text-gray-500">Last updated {formatDistanceToNow(selectedModule.lastUpdated, { addSuffix: true })}</p>
-                {/* Course-level criteria display */}
-                {selectedModule.assessmentCriteria.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Course criteria</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedModule.assessmentCriteria.map((c) => (
-                        <span key={c.id} className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-800">
-                          <ClipboardList className="h-3 w-3" />
-                          {c.name}
-                          <span className="text-blue-500">·</span>
-                          <span className="text-blue-600">{c.gradingSystem}</span>
-                        </span>
-                      ))}
+
+                <div className="p-5 sm:p-6">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Course length</p>
+                      <p className="mt-2 flex items-center gap-2 text-2xl font-semibold text-slate-950">
+                        <Clock3 className="h-5 w-5 text-blue-500" />
+                        {selectedModule.estimatedDurationHours}h
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lessons</p>
+                      <p className="mt-2 flex items-center gap-2 text-2xl font-semibold text-slate-950">
+                        <Layers className="h-5 w-5 text-blue-500" />
+                        {selectedModule.lessons.length}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Criteria</p>
+                      <p className="mt-2 flex items-center gap-2 text-2xl font-semibold text-slate-950">
+                        <ClipboardList className="h-5 w-5 text-blue-500" />
+                        {selectedLessonStats.criteria}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Exams / Tests</p>
+                      <p className="mt-2 flex items-center gap-2 text-2xl font-semibold text-slate-950">
+                        <Award className="h-5 w-5 text-amber-500" />
+                        {selectedLessonStats.exams + selectedLessonStats.flightTests}
+                      </p>
                     </div>
                   </div>
-                )}
-                {selectedModule.tags.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {selectedModule.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
-                      >
-                        <Tag className="mr-1 h-3 w-3" />
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(selectedModule.exams || []).length > 0 && (
-                  <div className="mt-6">
-                    <h3 className="text-sm font-semibold text-gray-900">Course exams</h3>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                      {(selectedModule.exams || []).map((exam) => (
-                        <div key={exam.id} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                          <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium text-amber-950">
-                            <Award className="h-4 w-4 shrink-0 text-amber-700" />
-                            <span className="truncate">{exam.name}</span>
-                          </span>
-                          <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-amber-800">
-                            {exam.passMark}% pass
-                          </span>
+
+                  <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="space-y-5">
+                      {(selectedModule.objectives.length > 0 || selectedModule.evaluationCriteria.length > 0) ? (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {selectedModule.objectives.length > 0 && (
+                            <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                              <h3 className="text-sm font-semibold text-slate-950">Objectives</h3>
+                              <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                                {selectedModule.objectives.map((objective) => (
+                                  <li key={objective} className="flex items-start gap-2">
+                                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+                                    <span>{objective}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </section>
+                          )}
+                          {selectedModule.evaluationCriteria.length > 0 && (
+                            <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                              <h3 className="text-sm font-semibold text-slate-950">Evaluation focus</h3>
+                              <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                                {selectedModule.evaluationCriteria.map((criteria) => (
+                                  <li key={criteria} className="flex items-start gap-2">
+                                    <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
+                                    <span>{criteria}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </section>
+                          )}
                         </div>
-                      ))}
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+                          Add objectives and evaluation focus from Edit course so instructors and students understand the intent of this syllabus.
+                        </div>
+                      )}
                     </div>
+
+                    <aside className="space-y-4">
+                      <div className="rounded-xl border border-slate-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-slate-950">Course rules</h3>
+                        <dl className="mt-3 space-y-3 text-sm">
+                          <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Student acknowledgement</dt>
+                            <dd className="mt-1 text-slate-700">{(selectedModule.requiresStudentAcknowledgement ?? true) ? 'Required for this course' : 'Not required unless forced in settings'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Completion endorsement</dt>
+                            <dd className="mt-1 text-slate-700">
+                              {selectedModule.completionEndorsementEnabled
+                                ? `${selectedModule.completionEndorsementType || 'Endorsement'}${selectedModule.completionEndorsementExpiryMonths ? ` - expires after ${selectedModule.completionEndorsementExpiryMonths} months` : ''}`
+                                : 'None'}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+
+                      {selectedModule.assessmentCriteria.length > 0 && (
+                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                          <h3 className="text-sm font-semibold text-blue-950">Assessment criteria</h3>
+                          <div className="mt-3 space-y-2">
+                            {selectedModule.assessmentCriteria.map((c) => (
+                              <div key={c.id} className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-blue-100">
+                                <div className="font-semibold text-slate-900">{c.name}</div>
+                                <div className="mt-0.5 text-xs text-slate-500">{c.gradingSystem} - pass mark {c.passingGrade}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {(selectedModule.exams || []).length > 0 && (
+                        <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                          <h3 className="text-sm font-semibold text-amber-950">Course exams</h3>
+                          <div className="mt-3 space-y-2">
+                            {(selectedModule.exams || []).map((exam) => (
+                              <div key={exam.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 ring-1 ring-amber-100">
+                                <span className="min-w-0 truncate text-sm font-medium text-amber-950">{exam.name}</span>
+                                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                                  {exam.passMark}% pass
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedModule.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {selectedModule.tags.map((tag) => (
+                            <span key={tag} className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                              <Tag className="mr-1 h-3 w-3" />
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </aside>
                   </div>
-                )}
-                {selectedModule.objectives.length > 0 && (
-                  <div className="mt-6">
-                    <h3 className="text-sm font-semibold text-gray-900">Objectives</h3>
-                    <ul className="mt-2 space-y-1 text-sm text-gray-700">
-                      {selectedModule.objectives.map((objective) => (
-                        <li key={objective} className="flex items-start gap-2">
-                          <span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-blue-500" />
-                          <span>{objective}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {selectedModule.evaluationCriteria.length > 0 && (
-                  <div className="mt-6">
-                    <h3 className="text-sm font-semibold text-gray-900">Evaluation focus</h3>
-                    <ul className="mt-2 space-y-1 text-sm text-gray-700">
-                      {selectedModule.evaluationCriteria.map((criteria) => (
-                        <li key={criteria} className="flex items-start gap-2">
-                          <span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-indigo-500" />
-                          <span>{criteria}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                </div>
               </div>
 
               {/* ── Edit course form ── */}
@@ -1960,16 +2041,19 @@ export const TrainingCourseCatalog: React.FC = () => {
                 </div>
               )}
 
-              <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-gray-900">
-                    <ClipboardList className="h-5 w-5 text-blue-600" />
-                    <h3 className="text-lg font-semibold">Lesson library</h3>
+                  <div>
+                    <div className="flex items-center gap-2 text-slate-950">
+                      <ClipboardList className="h-5 w-5 text-blue-600" />
+                      <h3 className="text-lg font-semibold">Lesson library</h3>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-500">Open a lesson to review what the student will brief, fly, and be assessed against.</p>
                   </div>
                   {selectedModule.lessons.length > 0 && (
                     <button
                       onClick={() => handleExpandCollapseAll(!allLessonsExpanded)}
-                      className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-100"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                     >
                       {allLessonsExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
                       {allLessonsExpanded ? 'Collapse all' : 'Expand all'}
@@ -1992,7 +2076,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                       return (
                         <article
                           key={lesson.id}
-                          className="rounded-lg border border-gray-200 bg-gray-50 p-5 shadow-sm"
+                          className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
                         >
                           {/* Delete confirmation banner */}
                           {deletingLessonId === lesson.id && (
@@ -2017,22 +2101,22 @@ export const TrainingCourseCatalog: React.FC = () => {
                             </div>
                           )}
 
-                          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                          <div className="grid gap-3 bg-slate-50 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                             <div className="flex min-w-0 items-start gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleToggleLessonExpansion(lesson.id)}
-                                className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-600 transition hover:bg-gray-100"
+                                className="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100"
                                 aria-label={isExpanded ? 'Collapse lesson details' : 'Expand lesson details'}
                               >
                                 {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                               </button>
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md bg-blue-100 px-2 text-xs font-semibold text-blue-700">
-                                    {lessonIndex + 1}
+                                  <span className="inline-flex items-center rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white">
+                                    Lesson {lessonIndex + 1}
                                   </span>
-                                  <h4 className="min-w-0 flex-1 text-base font-semibold text-gray-900">
+                                  <h4 className="min-w-0 flex-1 text-base font-semibold text-slate-950">
                                     {lesson.name || lesson.sequenceTitle}
                                   </h4>
                                   {lesson.isFlightTest && (
@@ -2042,18 +2126,18 @@ export const TrainingCourseCatalog: React.FC = () => {
                                     </span>
                                   )}
                                 </div>
-                                <p className="mt-1 text-sm text-gray-600">
+                                <p className="mt-2 text-sm leading-5 text-slate-600">
                                   {lesson.objective || 'Document the lesson objective for instructors.'}
                                 </p>
                               </div>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 lg:justify-end">
-                              <div className="inline-flex rounded-md border border-gray-200 bg-white">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 lg:justify-end">
+                              <div className="inline-flex rounded-lg border border-slate-200 bg-white">
                                 <button
                                   type="button"
                                   onClick={() => handleMoveLesson(lesson.id, 'up')}
                                   disabled={isFirstLesson}
-                                  className="inline-flex h-7 w-8 items-center justify-center rounded-l-md text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-white"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-l-lg text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white"
                                   title="Move lesson up"
                                   aria-label="Move lesson up"
                                 >
@@ -2063,7 +2147,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                   type="button"
                                   onClick={() => handleMoveLesson(lesson.id, 'down')}
                                   disabled={isLastLesson}
-                                  className="inline-flex h-7 w-8 items-center justify-center rounded-r-md border-l border-gray-200 text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-white"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-r-lg border-l border-slate-200 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-white"
                                   title="Move lesson down"
                                   aria-label="Move lesson down"
                                 >
@@ -2073,7 +2157,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => handleToggleLessonExpansion(lesson.id)}
-                                className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100"
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
                               >
                                 {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
                                 {isExpanded ? 'Collapse' : 'Expand'}
@@ -2081,7 +2165,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => handleEditLesson(lesson)}
-                                className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100"
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                                 Edit
@@ -2089,7 +2173,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => setDeletingLessonId(deletingLessonId === lesson.id ? null : lesson.id)}
-                                className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50"
+                                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-50"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                                 Delete
@@ -2098,40 +2182,40 @@ export const TrainingCourseCatalog: React.FC = () => {
                           </div>
                           {isExpanded && (
                             <>
-                              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                              <div className="grid gap-4 border-t border-slate-100 p-4 lg:grid-cols-2">
                                 <div>
-                                  <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                  <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     Flight exercises
                                   </h5>
-                                  <div className="mt-2 rounded-md border border-blue-100 bg-white p-3">
+                                  <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
                                     {flightExercisesContent ? (
                                       <div
-                                        className="text-sm text-gray-700 [&_li]:mb-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5"
+                                        className="text-sm leading-6 text-slate-700 [&_li]:mb-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5"
                                         dangerouslySetInnerHTML={{ __html: flightExercisesContent }}
                                       />
                                     ) : (
-                                      <p className="text-sm text-gray-500">Describe the flight exercises to be flown.</p>
+                                      <p className="text-sm text-slate-500">Describe the flight exercises to be flown.</p>
                                     )}
                                   </div>
                                 </div>
                                 <div>
-                                  <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                  <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     Theory focus
                                   </h5>
-                                  <div className="mt-2 rounded-md border border-blue-100 bg-white p-3">
+                                  <div className="mt-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
                                     {theoryContent ? (
                                       <div
-                                        className="text-sm text-gray-700 [&_li]:mb-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5"
+                                        className="text-sm leading-6 text-slate-700 [&_li]:mb-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5"
                                         dangerouslySetInnerHTML={{ __html: theoryContent }}
                                       />
                                     ) : (
-                                      <p className="text-sm text-gray-500">Outline the theory elements that support this lesson.</p>
+                                      <p className="text-sm text-slate-500">Outline the theory elements that support this lesson.</p>
                                     )}
                                   </div>
                                 </div>
                               </div>
-                              <div className="mt-4">
-                                <h5 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                              <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                                <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                   Assessment criteria
                                 </h5>
                                 {(() => {
@@ -2143,19 +2227,19 @@ export const TrainingCourseCatalog: React.FC = () => {
                                       : lesson.assessmentCriteria;
 
                                   return relevantCriteria.length > 0 ? (
-                                  <div className="mt-2 space-y-2">
+                                  <div className="mt-2 grid gap-2 md:grid-cols-2">
                                     {relevantCriteria.map((criterion) => (
                                       <div
                                         key={criterion.id}
-                                        className="rounded-md border border-gray-200 bg-white p-3 text-sm"
+                                        className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"
                                       >
                                         <div className="flex flex-wrap items-center justify-between gap-2">
-                                          <span className="font-medium text-gray-900">{criterion.name}</span>
-                                          <span className="text-xs text-gray-500">{criterion.gradingSystem}</span>
+                                          <span className="font-medium text-slate-900">{criterion.name}</span>
+                                          <span className="text-xs text-slate-500">{criterion.gradingSystem}</span>
                                         </div>
-                                        <p className="mt-1 text-xs text-gray-500">
+                                        <p className="mt-1 text-xs text-slate-500">
                                           {lesson.passMarks?.[criterion.id] === '-' ? 'Not assessed' : 'Passing grade'}{' '}
-                                          <span className="font-medium text-gray-700">
+                                          <span className="font-medium text-slate-700">
                                             {lesson.passMarks?.[criterion.id] ?? criterion.passingGrade}
                                           </span>
                                         </p>
@@ -2163,7 +2247,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                                     ))}
                                   </div>
                                   ) : (
-                                  <p className="mt-2 text-sm text-gray-500">
+                                  <p className="mt-2 text-sm text-slate-500">
                                     No assessment criteria recorded for this lesson yet.
                                   </p>
                                   );
