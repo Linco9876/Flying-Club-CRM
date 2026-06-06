@@ -15,6 +15,7 @@ import {
   matrixStandardLabel,
   matrixStandardMeetsRequirement,
   matrixStandardShortLabel,
+  formatSyllabusMatrixText,
   useSyllabusMatrix,
 } from '../../hooks/useSyllabusMatrix';
 
@@ -730,7 +731,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                                       {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}
                                     </p>
-                                    <p className="mt-1 text-sm font-medium text-gray-900">{row?.description || 'Matrix row'}</p>
+                                    <p className="mt-1 text-sm font-medium text-gray-900">{formatSyllabusMatrixText(row?.description) || 'Matrix row'}</p>
                                   </div>
                                   <div className="flex flex-wrap justify-end gap-2">
                                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>

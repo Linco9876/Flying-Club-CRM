@@ -87,6 +87,13 @@ export const matrixStandardLabel = (standard?: SyllabusMatrixStandard) => {
 export const matrixStandardShortLabel = (standard?: SyllabusMatrixStandard) =>
   standard ? String(standard) : '-';
 
+export const formatSyllabusMatrixText = (value?: string) => {
+  const text = (value ?? '').trim();
+  if (!text) return '';
+
+  return text.replace(/[A-Za-z]/, (letter) => letter.toUpperCase());
+};
+
 export const matrixStandardMeetsRequirement = (
   achieved?: SyllabusMatrixStandard,
   required?: SyllabusMatrixStandard

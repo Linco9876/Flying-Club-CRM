@@ -17,6 +17,7 @@ import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { StudentCourseEnrolment, useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import {
+  formatSyllabusMatrixText,
   matrixStandardMeetsRequirement,
   matrixStandardShortLabel,
   useSyllabusMatrix,
@@ -3501,7 +3502,7 @@ const MatrixProgressSummaryCard: React.FC<{ course: TrainingModule; studentId: s
                     {matrixStandardShortLabel(achieved)} / {requirement.requiredStandard}
                   </span>
                 </div>
-                <p className="mt-1 line-clamp-2 text-slate-600">{row?.description}</p>
+                <p className="mt-1 line-clamp-2 text-slate-600">{formatSyllabusMatrixText(row?.description)}</p>
               </div>
             ))}
           </div>

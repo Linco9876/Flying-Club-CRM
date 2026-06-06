@@ -1,5 +1,6 @@
 import { Student, StudentExamResult, TrainingModule, TrainingRecord, User } from '../types';
 import { supabase } from '../lib/supabase';
+import { formatSyllabusMatrixText } from '../hooks/useSyllabusMatrix';
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
@@ -422,7 +423,7 @@ export async function exportCoursePdf({
         const required = String(item.requirement.required_standard);
         const label = `${row.element_code || row.unit_code || row.code} ${achieved}/${required}`;
         page.drawText(label.slice(0, 24), { x: margin, y: cursor - 8, size: 7, font: bold, color: amber });
-        drawText(String(row.description || '').slice(0, 150), { x: margin + 88, y: cursor - 8 }, { size: 7, color: dark, maxWidth: width - margin * 2 - 98, lineHeight: 8 });
+        drawText(formatSyllabusMatrixText(row.description).slice(0, 150), { x: margin + 88, y: cursor - 8 }, { size: 7, color: dark, maxWidth: width - margin * 2 - 98, lineHeight: 8 });
         cursor -= 18;
       }
       cursor -= 8;

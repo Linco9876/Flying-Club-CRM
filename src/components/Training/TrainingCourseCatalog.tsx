@@ -40,7 +40,7 @@ import {
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
-import { matrixStandardLabel, useSyllabusMatrix } from '../../hooks/useSyllabusMatrix';
+import { formatSyllabusMatrixText, matrixStandardLabel, useSyllabusMatrix } from '../../hooks/useSyllabusMatrix';
 
 interface NewCourseState {
   title: string;
@@ -677,7 +677,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                       {row.elementCode || row.unitCode || row.code}
                     </p>
-                    <p className="mt-1 text-sm font-medium text-slate-900">{row.description}</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{formatSyllabusMatrixText(row.description)}</p>
                   </div>
                   <span className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold ring-1 ${matrixCellClass(requirement.requiredStandard)}`}>
                     {requirement.requiredStandard}
@@ -713,7 +713,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                     <tr key={row.id} className={row.rowType === 'unit' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}>
                       <td className="sticky left-0 z-10 border-b border-r border-slate-200 px-3 py-2 font-bold">{row.code}</td>
                       <td className="sticky left-24 z-10 border-b border-r border-slate-200 px-3 py-2 font-semibold" colSpan={course.lessons.length + 1}>
-                        {row.description}
+                        {formatSyllabusMatrixText(row.description)}
                       </td>
                     </tr>
                   );
@@ -725,7 +725,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                       {row.parentCode}
                     </td>
                     <td className="sticky left-24 z-10 border-b border-r border-slate-200 bg-white px-3 py-2 text-slate-800">
-                      {row.description}
+                      {formatSyllabusMatrixText(row.description)}
                     </td>
                     {course.lessons.map((lesson) => {
                       const requirement = requirementByRowAndLesson.get(`${row.id}:${lesson.id}`)
