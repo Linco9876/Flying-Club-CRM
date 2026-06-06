@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { LessonGradingSystem } from '../types';
 import toast from 'react-hot-toast';
+import { DEFAULT_PILOT_STATUS_ENDORSEMENTS, reconcileAllPilotStatuses, uniqueEndorsementTypes } from '../utils/pilotStatus';
 
 export type NextLessonRule = 'advance_on_pass' | 'always_advance' | 'manual';
 export type CourseCompletionRule = 'all_required_criteria' | 'all_lessons_attempted' | 'criteria_or_lessons';
@@ -23,6 +24,7 @@ export interface TrainingSyllabusSettingsData {
   courseCompletionRule: CourseCompletionRule;
   showPassMarkGuidance: boolean;
   showBestGradeGuidance: boolean;
+  pilotStatusEndorsementTypes: string[];
 }
 
 export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
@@ -41,6 +43,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
   courseCompletionRule: 'all_required_criteria',
   showPassMarkGuidance: true,
   showBestGradeGuidance: true,
+  pilotStatusEndorsementTypes: DEFAULT_PILOT_STATUS_ENDORSEMENTS,
 };
 
 const TRAINING_SETTINGS_UPDATED_EVENT = 'training-syllabus-settings-updated';
@@ -65,6 +68,7 @@ const mapRow = (row: any): TrainingSyllabusSettingsData => ({
   courseCompletionRule: row.course_completion_rule ?? DEFAULT_TRAINING_SETTINGS.courseCompletionRule,
   showPassMarkGuidance: row.show_pass_mark_guidance ?? DEFAULT_TRAINING_SETTINGS.showPassMarkGuidance,
   showBestGradeGuidance: row.show_best_grade_guidance ?? DEFAULT_TRAINING_SETTINGS.showBestGradeGuidance,
+  pilotStatusEndorsementTypes: uniqueEndorsementTypes(row.pilot_status_endorsement_types || DEFAULT_TRAINING_SETTINGS.pilotStatusEndorsementTypes),
 });
 
 const toRow = (settings: TrainingSyllabusSettingsData) => ({
@@ -83,6 +87,7 @@ const toRow = (settings: TrainingSyllabusSettingsData) => ({
   course_completion_rule: settings.courseCompletionRule,
   show_pass_mark_guidance: settings.showPassMarkGuidance,
   show_best_grade_guidance: settings.showBestGradeGuidance,
+  pilot_status_endorsement_types: uniqueEndorsementTypes(settings.pilotStatusEndorsementTypes),
 });
 
 export function useTrainingSettings() {
@@ -115,6 +120,7 @@ export function useTrainingSettings() {
 
   const updateSettings = async (updates: Partial<TrainingSyllabusSettingsData>) => {
     const next = { ...settings, ...updates };
+    const shouldReconcilePilotStatus = updates.pilotStatusEndorsementTypes !== undefined;
     const { data: userData } = await supabase.auth.getUser();
     const payload = {
       ...toRow(next),
@@ -129,6 +135,18 @@ export function useTrainingSettings() {
     if (result.error) {
       toast.error('Failed to save training settings');
       throw result.error;
+    }
+
+    if (shouldReconcilePilotStatus) {
+      try {
+        const changedCount = await reconcileAllPilotStatuses(uniqueEndorsementTypes(next.pilotStatusEndorsementTypes));
+        if (changedCount > 0) {
+          toast.success(`${changedCount} member${changedCount === 1 ? '' : 's'} updated from Pilot status endorsement rules`);
+        }
+      } catch (error) {
+        console.error('Failed to reconcile pilot statuses from endorsement settings:', error);
+        toast.error('Settings saved, but existing Pilot statuses could not be updated');
+      }
     }
 
     await fetchSettings();

@@ -25,6 +25,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
+import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 
 interface StudentInfoForm {
   name: string;
@@ -295,7 +296,6 @@ export const StudentProfilePage: React.FC = () => {
     }
   }, [studentsLoading, routeStudentId, student, navigate]);
 
-  const canManagePilotStatus = hasAnyRole(user, ['admin']);
   const isPilot = Boolean(student?.roles?.includes('pilot') || student?.role === 'pilot');
 
   const fetchStudentExamResults = useCallback(async () => {
@@ -389,36 +389,6 @@ export const StudentProfilePage: React.FC = () => {
   const createExamStoragePath = (file: File, ownerStudentId: string) => {
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'exam-upload';
     return `${ownerStudentId}/${Date.now()}-${safeFileName}`;
-  };
-
-  const markStudentAsPilot = async () => {
-    if (!student || !canManagePilotStatus) return;
-    try {
-      const { error: removeStudentRoleError } = await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', student.id)
-        .eq('role', 'student');
-
-      if (removeStudentRoleError) throw removeStudentRoleError;
-
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert({ user_id: student.id, role: 'pilot' });
-
-      if (roleError && roleError.code !== '23505') throw roleError;
-
-      await supabase
-        .from('users')
-        .update({ role: 'pilot' })
-        .eq('id', student.id);
-
-      await refetchStudents();
-      toast.success(`${student.name} is now marked as a pilot`);
-    } catch (error) {
-      console.error('Failed to mark pilot:', error);
-      toast.error('Failed to mark this user as a pilot');
-    }
   };
 
   const handleLogExam = async () => {
@@ -1604,15 +1574,6 @@ export const StudentProfilePage: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
-        {canManagePilotStatus && !isPilot && (
-          <button
-            onClick={markStudentAsPilot}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
-          >
-            <Award className="h-4 w-4" />
-            Mark as Pilot
-          </button>
-        )}
         {canEditStudentInfo && (
           <button
             onClick={openInfoEditor}
@@ -3511,7 +3472,7 @@ export const StudentProfilePage: React.FC = () => {
                         className="w-full px-3 py-2 border border-orange-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                       >
                         <option value="not_assessed">Not assessed</option>
-                        <option value="pass">Pass - mark as pilot</option>
+                        <option value="pass">Pass</option>
                         <option value="fail">Fail</option>
                       </select>
                     </label>
@@ -3526,7 +3487,7 @@ export const StudentProfilePage: React.FC = () => {
                     </label>
                     {trainingEditForm.flightReviewResult === 'pass' && (
                       <p className="text-xs text-orange-800 md:col-span-3">
-                        Saving a passed review automatically records the flight review date and grants the Pilot role.
+                        Saving a passed review records the flight review date. Pilot status is granted through configured endorsements.
                       </p>
                     )}
                   </div>
@@ -4117,8 +4078,36 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
       });
 
       if (error) throw error;
+      let pilotRoleGranted = false;
+      try {
+        const reconciled = await reconcilePilotStatusForUser({
+          userId: student.id,
+          endorsements: [
+            ...student.endorsements,
+            {
+              id: 'new',
+              type: endorsementType,
+              dateObtained: obtained,
+              expiryDate: expiryDate || undefined,
+              instructorId: user.id,
+              isActive: true,
+            },
+          ],
+          pilotStatusEndorsementTypes: trainingSettings.pilotStatusEndorsementTypes,
+          currentRole: student.role,
+          currentRoles: student.roles,
+        });
+        pilotRoleGranted = reconciled.changed && reconciled.role === 'pilot';
+      } catch (roleError) {
+        console.error('Failed to reconcile pilot status after endorsement:', roleError);
+        toast.error('Endorsement saved, but Pilot status could not be updated');
+      }
       await refetchStudents();
-      toast.success(`${endorsementType} endorsement granted for course completion`);
+      toast.success(
+        pilotRoleGranted
+          ? `${endorsementType} endorsement granted. ${student.name} is now a pilot.`
+          : `${endorsementType} endorsement granted for course completion`
+      );
     } catch (error) {
       console.error('Failed to grant completion endorsement:', error);
       toast.error('Failed to grant completion endorsement');
@@ -4129,7 +4118,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         return next;
       });
     }
-  }, [grantingEndorsementCourseIds, refetchStudents, student, user]);
+  }, [grantingEndorsementCourseIds, refetchStudents, student, trainingSettings.pilotStatusEndorsementTypes, user]);
 
   useEffect(() => {
     if (!student || !user || !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])) return;

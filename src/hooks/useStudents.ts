@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Student, Endorsement, UserRole } from '../types';
 import toast from 'react-hot-toast';
+import { fetchPilotStatusEndorsementTypes, reconcilePilotStatusForUser } from '../utils/pilotStatus';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error) return error.message;
@@ -244,6 +245,7 @@ export const useStudents = () => {
       if (studentError) throw studentError;
 
       const { data: { user: currentAuthUser } } = await supabase.auth.getUser();
+      const pilotStatusEndorsementTypes = await fetchPilotStatusEndorsementTypes();
 
       if (studentData.endorsements && studentData.endorsements.length > 0) {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
@@ -261,6 +263,14 @@ export const useStudents = () => {
 
         if (endorsementsError) throw endorsementsError;
       }
+
+      await reconcilePilotStatusForUser({
+        userId: userData.id,
+        endorsements: studentData.endorsements || [],
+        pilotStatusEndorsementTypes,
+        currentRole: 'student',
+        currentRoles: ['student'],
+      });
 
       await fetchStudents();
       toast.success('User added successfully');
@@ -371,6 +381,7 @@ export const useStudents = () => {
       if (deleteEndorsementsError) throw deleteEndorsementsError;
 
       const { data: { user: currentAuthUser } } = await supabase.auth.getUser();
+      const pilotStatusEndorsementTypes = await fetchPilotStatusEndorsementTypes();
 
       if (studentData.endorsements && studentData.endorsements.length > 0) {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
@@ -388,6 +399,14 @@ export const useStudents = () => {
 
         if (endorsementsError) throw endorsementsError;
       }
+
+      await reconcilePilotStatusForUser({
+        userId: id,
+        endorsements: studentData.endorsements || [],
+        pilotStatusEndorsementTypes,
+        currentRole: studentData.role,
+        currentRoles: studentData.roles,
+      });
 
       await fetchStudents();
       if (emailChangeRequested) {

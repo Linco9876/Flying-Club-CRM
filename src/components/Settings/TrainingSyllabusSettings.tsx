@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare } from 'lucide-react';
+import { Award, BookOpen, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Plus, X } from 'lucide-react';
 import { TrainingSyllabusSettingsData, useTrainingSettings } from '../../hooks/useTrainingSettings';
+import { uniqueEndorsementTypes } from '../../utils/pilotStatus';
 
 interface TrainingSyllabusSettingsProps {
   canEdit: boolean;
@@ -46,6 +47,7 @@ function SettingToggle({
 export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> = ({ canEdit, onFormChange }) => {
   const { settings, loading, updateSettings } = useTrainingSettings();
   const [formData, setFormData] = useState<TrainingSyllabusSettingsData>(settings);
+  const [pilotEndorsementInput, setPilotEndorsementInput] = useState('');
 
   useEffect(() => {
     setFormData(settings);
@@ -63,6 +65,20 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
   const setField = <K extends keyof TrainingSyllabusSettingsData>(field: K, value: TrainingSyllabusSettingsData[K]) => {
     setFormData(current => ({ ...current, [field]: value }));
     onFormChange();
+  };
+
+  const addPilotStatusEndorsement = () => {
+    const next = uniqueEndorsementTypes([...formData.pilotStatusEndorsementTypes, pilotEndorsementInput]);
+    if (next.length === formData.pilotStatusEndorsementTypes.length) return;
+    setField('pilotStatusEndorsementTypes', next);
+    setPilotEndorsementInput('');
+  };
+
+  const removePilotStatusEndorsement = (type: string) => {
+    setField(
+      'pilotStatusEndorsementTypes',
+      formData.pilotStatusEndorsementTypes.filter(item => item.trim().toLowerCase() !== type.trim().toLowerCase())
+    );
   };
 
   if (loading) {
@@ -241,6 +257,62 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
             disabled={!canEdit}
             onChange={value => setField('autoMarkFlightLogRecorded', value)}
           />
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="text-lg font-medium text-gray-900 flex items-center">
+          <Award className="h-5 w-5 mr-2 text-blue-600" />
+          Pilot Status Endorsements
+        </h3>
+        <div className="rounded-lg border border-gray-200 p-4">
+          <p className="text-sm text-gray-600">
+            A student becomes a Pilot when they hold an active, unexpired endorsement listed here. Staff and admin roles are left unchanged.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {formData.pilotStatusEndorsementTypes.length > 0 ? formData.pilotStatusEndorsementTypes.map(type => (
+              <span key={type} className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-900">
+                {type}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => removePilotStatusEndorsement(type)}
+                    className="rounded-full p-0.5 text-orange-700 hover:bg-orange-100"
+                    aria-label={`Remove ${type}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </span>
+            )) : (
+              <span className="text-sm text-gray-500">No endorsements currently grant Pilot status.</span>
+            )}
+          </div>
+          {canEdit && (
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <input
+                type="text"
+                value={pilotEndorsementInput}
+                onChange={event => setPilotEndorsementInput(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addPilotStatusEndorsement();
+                  }
+                }}
+                placeholder="Endorsement name, e.g. Pilot Certificate"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={addPilotStatusEndorsement}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                <Plus className="h-4 w-4" />
+                Add
+              </button>
+            </div>
+          )}
         </div>
       </section>
 

@@ -923,7 +923,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                             className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
                           >
                             <option value="not_assessed">Not assessed</option>
-                            <option value="pass">Pass - mark as pilot</option>
+                            <option value="pass">Pass</option>
                             <option value="fail">Fail</option>
                           </select>
                         </label>
@@ -938,7 +938,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                         </label>
                         {form.flightReviewResult === 'pass' && (
                           <p className="text-xs text-orange-800 sm:col-span-2">
-                            On submit, the student will be marked as a pilot and their flight review date will be updated.
+                            On submit, the student's flight review date will be updated. Pilot status is granted through configured endorsements.
                           </p>
                         )}
                       </div>
