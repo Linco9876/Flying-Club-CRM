@@ -2,7 +2,7 @@
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -133,6 +133,7 @@ export const StudentProfilePage: React.FC = () => {
   const studentId = routeStudentId || user?.id;
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile'));
   const [showMatrixView, setShowMatrixView] = useState(true);
+  const [expandedRecordMatrixIds, setExpandedRecordMatrixIds] = useState<Set<string>>(new Set());
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
@@ -1059,15 +1060,28 @@ export const StudentProfilePage: React.FC = () => {
     }
 
     const metCount = items.filter(item => item.meetsRequirement).length;
+    const notMetItems = items.filter(item => !item.meetsRequirement);
     const unassessedCount = items.filter(item => !item.assessment.achievedStandard).length;
 
     return {
       items,
+      notMetItems,
       metCount,
       unassessedCount,
       totalCount: items.length,
     };
   }, [selectedMatrixAssessments, selectedMatrixRequirements, selectedMatrixRowsById]);
+  const toggleRecordMatrix = useCallback((recordId: string) => {
+    setExpandedRecordMatrixIds(current => {
+      const next = new Set(current);
+      if (next.has(recordId)) {
+        next.delete(recordId);
+      } else {
+        next.add(recordId);
+      }
+      return next;
+    });
+  }, []);
   const filteredTotalMinutes = filteredRecords.reduce((sum, record) => sum + record.dualTimeMin + record.soloTimeMin, 0);
   const filteredPendingAck = filteredRecords.filter(record => record.status === 'submitted' && !record.studentAck).length;
   const latestFilteredBooking = sortedRecords[0] ? getBookingDateTime(sortedRecords[0]) : null;
@@ -2655,6 +2669,7 @@ export const StudentProfilePage: React.FC = () => {
                     const lessonTitle = recordLesson?.name || recordLesson?.sequenceTitle || record.nextLesson || 'Lesson not recorded';
                     const lessonCode = recordLesson?.sequenceCode || record.lessonCodes.join(', ');
                     const matrixSummary = getRecordMatrixAssessmentSummary(record);
+                    const isMatrixExpanded = expandedRecordMatrixIds.has(record.id);
                     const latestRevision = [...(record.auditLog || [])]
                       .reverse()
                       .find(entry => entry.changes?.studentAcknowledgementRequired && Array.isArray(entry.changes?.summary));
@@ -2850,11 +2865,21 @@ export const StudentProfilePage: React.FC = () => {
                               {matrixSummary && (
                                 <section className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <h4 className="text-xs font-semibold uppercase text-indigo-700">CASA Matrix Assessment</h4>
+                                    <div>
+                                      <h4 className="text-xs font-semibold uppercase text-indigo-700">Lesson Matrix</h4>
+                                      <p className="mt-1 text-xs text-indigo-900">
+                                        CASA matrix result for this lesson attempt.
+                                      </p>
+                                    </div>
                                     <div className="flex flex-wrap items-center gap-2 text-xs">
                                       <span className="rounded-full bg-white px-2 py-0.5 font-semibold text-indigo-800 border border-indigo-100">
                                         {matrixSummary.metCount}/{matrixSummary.totalCount} met
                                       </span>
+                                      {matrixSummary.notMetItems.length > 0 && (
+                                        <span className="rounded-full bg-red-50 px-2 py-0.5 font-semibold text-red-700 border border-red-200">
+                                          {matrixSummary.notMetItems.length} need attention
+                                        </span>
+                                      )}
                                       {matrixSummary.unassessedCount > 0 && (
                                         <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800 border border-amber-200">
                                           {matrixSummary.unassessedCount} carried forward
@@ -2862,8 +2887,54 @@ export const StudentProfilePage: React.FC = () => {
                                       )}
                                     </div>
                                   </div>
-                                  <div className="mt-3 space-y-2">
-                                    {matrixSummary.items.map(({ assessment, row, requirement, meetsRequirement }) => (
+
+                                  {matrixSummary.notMetItems.length > 0 ? (
+                                    <div className="mt-3 rounded-lg border border-red-100 bg-white p-3">
+                                      <p className="text-xs font-semibold uppercase text-red-700">Needs attention</p>
+                                      <div className="mt-2 space-y-2">
+                                        {matrixSummary.notMetItems.map(({ assessment, row, requirement }) => (
+                                          <div key={assessment.matrixRowId} className="rounded-md border border-red-100 bg-red-50/70 px-3 py-2">
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="min-w-0">
+                                                <p className="text-xs font-semibold text-red-950">
+                                                  {formatSyllabusMatrixText(row?.code)} {formatSyllabusMatrixText(row?.description)}
+                                                </p>
+                                                <p className="mt-1 text-xs leading-5 text-red-800">
+                                                  {assessment.comments || 'This matrix item was not recorded as meeting the required standard for this lesson.'}
+                                                </p>
+                                              </div>
+                                              <div className="flex shrink-0 items-center gap-1 text-xs font-semibold">
+                                                <span className="rounded-full border border-red-200 bg-white px-2 py-0.5 text-red-700">
+                                                  {matrixStandardShortLabel(assessment.achievedStandard)}
+                                                </span>
+                                                <span className="text-red-300">/</span>
+                                                <span className="rounded-full border border-red-200 bg-white px-2 py-0.5 text-red-700">
+                                                  Req {matrixStandardShortLabel(requirement?.requiredStandard)}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2">
+                                      <p className="text-xs font-semibold text-emerald-800">All matrix items met for this lesson attempt.</p>
+                                    </div>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleRecordMatrix(record.id)}
+                                    className="mt-3 inline-flex w-full items-center justify-between rounded-lg border border-indigo-100 bg-white px-3 py-2 text-sm font-medium text-indigo-800 hover:bg-indigo-50"
+                                  >
+                                    <span>{isMatrixExpanded ? 'Hide full lesson matrix' : 'View full lesson matrix'}</span>
+                                    <ChevronDown className={`h-4 w-4 transition-transform ${isMatrixExpanded ? 'rotate-180' : ''}`} />
+                                  </button>
+
+                                  {isMatrixExpanded && (
+                                    <div className="mt-3 space-y-2">
+                                      {matrixSummary.items.map(({ assessment, row, requirement, meetsRequirement }) => (
                                       <div key={assessment.matrixRowId} className="rounded-md border border-white/80 bg-white px-3 py-2">
                                         <div className="flex items-start justify-between gap-3">
                                           <div className="min-w-0">
@@ -2891,8 +2962,9 @@ export const StudentProfilePage: React.FC = () => {
                                           </div>
                                         </div>
                                       </div>
-                                    ))}
-                                  </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </section>
                               )}
                               {record.isFlightReview && record.flightReviewNotes && (
