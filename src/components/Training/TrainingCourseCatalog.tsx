@@ -41,6 +41,7 @@ import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { formatSyllabusMatrixText, matrixStandardLabel, useSyllabusMatrix } from '../../hooks/useSyllabusMatrix';
+import { supabase } from '../../lib/supabase';
 
 interface NewCourseState {
   title: string;
@@ -548,6 +549,8 @@ interface CourseMatrixPanelProps {
   requirements: SyllabusMatrixRequirement[];
   loading: boolean;
   error: string | null;
+  canEdit: boolean;
+  onMatrixChanged: () => Promise<void>;
 }
 
 const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
@@ -556,22 +559,19 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
   requirements,
   loading,
   error,
+  canEdit,
+  onMatrixChanged,
 }) => {
   const [selectedLessonId, setSelectedLessonId] = useState(course.lessons[0]?.id ?? '');
+  const [rowSearch, setRowSearch] = useState('');
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [expandedOverview, setExpandedOverview] = useState(false);
 
   useEffect(() => {
     if (!course.lessons.some((lesson) => lesson.id === selectedLessonId)) {
       setSelectedLessonId(course.lessons[0]?.id ?? '');
     }
   }, [course.lessons, selectedLessonId]);
-
-  const requirementByRowAndLesson = useMemo(() => {
-    const map = new Map<string, SyllabusMatrixRequirement>();
-    requirements.forEach((requirement) => {
-      map.set(`${requirement.matrixRowId}:${requirement.lessonId || requirement.lessonSequenceCode}`, requirement);
-    });
-    return map;
-  }, [requirements]);
 
   const selectedLesson = course.lessons.find((lesson) => lesson.id === selectedLessonId) ?? course.lessons[0];
   const selectedLessonRequirements = selectedLesson
@@ -588,10 +588,115 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
         .sort((a, b) => a.row.sortOrder - b.row.sortOrder)
     : [];
 
+  const selectedRequirementRowIds = new Set(selectedLessonRequirements.map(({ row }) => row.id));
+  const addableRows = rows
+    .filter((row) => row.rowType === 'criterion' && !selectedRequirementRowIds.has(row.id))
+    .filter((row) => {
+      const term = rowSearch.trim().toLowerCase();
+      if (!term) return true;
+      return [
+        row.code,
+        row.parentCode,
+        row.unitCode,
+        row.elementCode,
+        row.description,
+      ].filter(Boolean).join(' ').toLowerCase().includes(term);
+    })
+    .slice(0, 25);
+
   const standardCounts = requirements.reduce<Record<number, number>>((acc, requirement) => {
     acc[requirement.requiredStandard] = (acc[requirement.requiredStandard] ?? 0) + 1;
     return acc;
   }, {});
+
+  const lessonRequirementCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    course.lessons.forEach((lesson) => {
+      const count = requirements.filter((requirement) =>
+        requirement.lessonId === lesson.id ||
+        requirement.lessonSequenceCode === lesson.sequenceCode
+      ).length;
+      counts.set(lesson.id, count);
+    });
+    return counts;
+  }, [course.lessons, requirements]);
+
+  const handleUpdateRequirementStandard = async (requirement: SyllabusMatrixRequirement, standard?: 1 | 2 | 3) => {
+    if (!canEdit) return;
+    setSavingKey(`req-${requirement.id}`);
+    try {
+      if (!standard) {
+        const { error: deleteError } = await supabase
+          .from('syllabus_matrix_requirements')
+          .delete()
+          .eq('id', requirement.id);
+        if (deleteError) throw deleteError;
+      } else {
+        const { error: updateError } = await supabase
+          .from('syllabus_matrix_requirements')
+          .update({ required_standard: standard })
+          .eq('id', requirement.id);
+        if (updateError) throw updateError;
+      }
+      await onMatrixChanged();
+      toast.success(standard ? 'Matrix standard updated' : 'Requirement removed from lesson');
+    } catch (err) {
+      console.error('Failed to update matrix requirement:', err);
+      toast.error('Failed to update matrix requirement');
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const handleUpdateRowDescription = async (row: SyllabusMatrixRow, nextDescription: string) => {
+    const trimmed = nextDescription.trim();
+    if (!canEdit || !trimmed || trimmed === row.description) return;
+
+    setSavingKey(`row-${row.id}`);
+    try {
+      const { error: updateError } = await supabase
+        .from('syllabus_matrix_rows')
+        .update({ description: trimmed })
+        .eq('id', row.id);
+      if (updateError) throw updateError;
+
+      await onMatrixChanged();
+      toast.success('Matrix wording updated');
+    } catch (err) {
+      console.error('Failed to update matrix row:', err);
+      toast.error('Failed to update matrix wording');
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const handleAddRequirement = async (row: SyllabusMatrixRow, standard: 1 | 2 | 3 = 3) => {
+    if (!canEdit || !selectedLesson) return;
+    setSavingKey(`add-${row.id}`);
+    try {
+      const lessonSequenceCode = selectedLesson.sequenceCode || selectedLesson.id;
+      const { error: insertError } = await supabase
+        .from('syllabus_matrix_requirements')
+        .insert({
+          course_id: course.id,
+          lesson_id: selectedLesson.id,
+          matrix_row_id: row.id,
+          lesson_sequence_code: lessonSequenceCode,
+          lesson_column_title: selectedLesson.name || selectedLesson.sequenceTitle || lessonSequenceCode,
+          required_standard: standard,
+        });
+      if (insertError) throw insertError;
+
+      setRowSearch('');
+      await onMatrixChanged();
+      toast.success('Requirement added to lesson');
+    } catch (err) {
+      console.error('Failed to add matrix requirement:', err);
+      toast.error('Failed to add matrix requirement');
+    } finally {
+      setSavingKey(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -651,99 +756,206 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
         </div>
       </div>
 
-      <div className="lg:hidden">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">View lesson requirements</label>
-        <select
-          value={selectedLesson?.id ?? ''}
-          onChange={(event) => setSelectedLessonId(event.target.value)}
-          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800"
-        >
-          {course.lessons.map((lesson, index) => (
-            <option key={lesson.id} value={lesson.id}>
-              {index + 1}. {lesson.name || lesson.sequenceTitle}
-            </option>
-          ))}
-        </select>
-        <div className="mt-4 space-y-3">
-          {selectedLessonRequirements.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
-              No matrix requirements are attached to this lesson.
-            </div>
-          ) : (
-            selectedLessonRequirements.map(({ row, requirement }) => (
-              <div key={requirement.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {row.elementCode || row.unitCode || row.code}
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-900">{formatSyllabusMatrixText(row.description)}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold ring-1 ${matrixCellClass(requirement.requiredStandard)}`}>
-                    {requirement.requiredStandard}
+      <div className="grid gap-4 xl:grid-cols-[18rem_minmax(0,1fr)]">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Lessons</p>
+          <div className="max-h-[36rem] space-y-1 overflow-y-auto pr-1">
+            {course.lessons.map((lesson, index) => {
+              const isActive = lesson.id === selectedLesson?.id;
+              return (
+                <button
+                  key={lesson.id}
+                  type="button"
+                  onClick={() => setSelectedLessonId(lesson.id)}
+                  className={`w-full rounded-lg px-3 py-2 text-left transition ${
+                    isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="block text-xs font-semibold opacity-80">{index + 1}. {lesson.sequenceCode || 'Lesson'}</span>
+                  <span className="mt-0.5 block truncate text-sm font-semibold">{lesson.name || lesson.sequenceTitle}</span>
+                  <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    {lessonRequirementCounts.get(lesson.id) ?? 0} checks
                   </span>
-                </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="min-w-0 space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Editing lesson</p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-950">{selectedLesson?.name || selectedLesson?.sequenceTitle || 'Select a lesson'}</h3>
+                <p className="mt-1 text-sm text-slate-500">{selectedLessonRequirements.length} matrix requirements attached to this lesson</p>
               </div>
-            ))
+              {!canEdit && (
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                  Read only
+                </span>
+              )}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {selectedLessonRequirements.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
+                  No matrix requirements are attached to this lesson yet.
+                </div>
+              ) : (
+                selectedLessonRequirements.map(({ row, requirement }) => (
+                  <div key={requirement.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {row.elementCode || row.unitCode || row.code}
+                        </p>
+                        {canEdit ? (
+                          <textarea
+                            defaultValue={formatSyllabusMatrixText(row.description)}
+                            onBlur={(event) => handleUpdateRowDescription(row, event.target.value)}
+                            rows={2}
+                            className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-5 text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                          />
+                        ) : (
+                          <p className="mt-1 text-sm font-medium text-slate-900">{formatSyllabusMatrixText(row.description)}</p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {[3, 2, 1].map((standard) => (
+                          <button
+                            key={standard}
+                            type="button"
+                            disabled={!canEdit || savingKey === `req-${requirement.id}`}
+                            onClick={() => handleUpdateRequirementStandard(requirement, standard as 1 | 2 | 3)}
+                            className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-3 text-sm font-bold ring-1 transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                              requirement.requiredStandard === standard
+                                ? matrixCellClass(standard)
+                                : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-100'
+                            }`}
+                            title={matrixStandardLabel(standard as 1 | 2 | 3)}
+                          >
+                            {standard}
+                          </button>
+                        ))}
+                        {canEdit && (
+                          <button
+                            type="button"
+                            disabled={savingKey === `req-${requirement.id}`}
+                            onClick={() => handleUpdateRequirementStandard(requirement, undefined)}
+                            className="inline-flex h-9 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {canEdit && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">Add matrix requirement</p>
+                  <p className="mt-1 text-xs text-slate-500">Search unused CASA rows and attach them to the selected lesson.</p>
+                </div>
+                <input
+                  value={rowSearch}
+                  onChange={(event) => setRowSearch(event.target.value)}
+                  placeholder="Search code or wording"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 sm:w-72"
+                />
+              </div>
+              {rowSearch.trim() && (
+                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                  {addableRows.length === 0 ? (
+                    <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">No matching unused matrix rows.</p>
+                  ) : (
+                    addableRows.map((row) => (
+                      <div key={row.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            {row.elementCode || row.unitCode || row.code}
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-slate-900">{formatSyllabusMatrixText(row.description)}</p>
+                        </div>
+                        <div className="flex gap-1">
+                          {[3, 2, 1].map((standard) => (
+                            <button
+                              key={standard}
+                              type="button"
+                              disabled={savingKey === `add-${row.id}`}
+                              onClick={() => handleAddRequirement(row, standard as 1 | 2 | 3)}
+                              className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-bold ring-1 disabled:cursor-not-allowed disabled:opacity-60 ${matrixCellClass(standard)}`}
+                              title={`Add as ${matrixStandardLabel(standard as 1 | 2 | 3)}`}
+                            >
+                              {standard}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white lg:block">
-        <div className="overflow-auto">
-          <table className="min-w-[1280px] border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-100 text-slate-600">
-                <th className="sticky left-0 z-20 w-24 border-b border-r border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">Code</th>
-                <th className="sticky left-24 z-20 w-80 border-b border-r border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">Requirement</th>
-                {course.lessons.map((lesson, index) => (
-                  <th key={lesson.id} className="w-20 border-b border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    <span className="block text-[11px] text-slate-400">{index + 1}</span>
-                    <span className="block truncate" title={lesson.name || lesson.sequenceTitle}>
-                      {lesson.sequenceCode || lesson.name || `L${index + 1}`}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <button
+          type="button"
+          onClick={() => setExpandedOverview((value) => !value)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <div>
+            <p className="text-sm font-semibold text-slate-950">Course coverage overview</p>
+            <p className="mt-1 text-xs text-slate-500">Compact reference by lesson. Use the editor above for changes.</p>
+          </div>
+          {expandedOverview ? <ChevronDown className="h-5 w-5 text-slate-500" /> : <ChevronRight className="h-5 w-5 text-slate-500" />}
+        </button>
+        {expandedOverview && (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {course.lessons.map((lesson, index) => {
+              const lessonRequirements = requirements.filter((requirement) =>
+                requirement.lessonId === lesson.id ||
+                requirement.lessonSequenceCode === lesson.sequenceCode
+              );
+              return (
+                <button
+                  key={lesson.id}
+                  type="button"
+                  onClick={() => setSelectedLessonId(lesson.id)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-left hover:border-blue-200 hover:bg-blue-50"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-500">{index + 1}. {lesson.sequenceCode || 'Lesson'}</p>
+                      <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">{lesson.name || lesson.sequenceTitle}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                      {lessonRequirements.length}
                     </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                if (row.rowType !== 'criterion') {
-                  return (
-                    <tr key={row.id} className={row.rowType === 'unit' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}>
-                      <td className="sticky left-0 z-10 border-b border-r border-slate-200 px-3 py-2 font-bold">{row.code}</td>
-                      <td className="sticky left-24 z-10 border-b border-r border-slate-200 px-3 py-2 font-semibold" colSpan={course.lessons.length + 1}>
-                        {formatSyllabusMatrixText(row.description)}
-                      </td>
-                    </tr>
-                  );
-                }
-
-                return (
-                  <tr key={row.id} className="hover:bg-blue-50/40">
-                    <td className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-3 py-2 font-medium text-slate-600">
-                      {row.parentCode}
-                    </td>
-                    <td className="sticky left-24 z-10 border-b border-r border-slate-200 bg-white px-3 py-2 text-slate-800">
-                      {formatSyllabusMatrixText(row.description)}
-                    </td>
-                    {course.lessons.map((lesson) => {
-                      const requirement = requirementByRowAndLesson.get(`${row.id}:${lesson.id}`)
-                        ?? requirementByRowAndLesson.get(`${row.id}:${lesson.sequenceCode}`);
-                      return (
-                        <td key={lesson.id} className="border-b border-r border-slate-200 px-2 py-1 text-center">
-                          <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 font-bold ring-1 ${matrixCellClass(requirement?.requiredStandard)}`}>
-                            {requirement?.requiredStandard ?? ''}
-                          </span>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {[3, 2, 1].map((standard) => (
+                      <span key={standard} className={`rounded px-1.5 py-0.5 text-[11px] font-bold ring-1 ${matrixCellClass(standard)}`}>
+                        {standard}: {lessonRequirements.filter((requirement) => requirement.requiredStandard === standard).length}
+                      </span>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <p className="text-xs text-slate-500">
@@ -865,6 +1077,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     requirements: selectedMatrixRequirements,
     loading: selectedMatrixLoading,
     error: selectedMatrixError,
+    refetch: refetchSelectedMatrix,
   } = useSyllabusMatrix(selectedModule?.id);
   const courseStats = useMemo(() => {
     const published = modules.filter((module) => module.status === 'published').length;
@@ -1972,6 +2185,8 @@ export const TrainingCourseCatalog: React.FC = () => {
                     requirements={selectedMatrixRequirements}
                     loading={selectedMatrixLoading}
                     error={selectedMatrixError}
+                    canEdit={user?.role === 'admin' || user?.role === 'instructor'}
+                    onMatrixChanged={refetchSelectedMatrix}
                   />
                 )}
               </div>
