@@ -131,6 +131,14 @@ const achievedMeetsRequired = (achieved?: number, required?: number) => {
   return achieved <= required;
 };
 
+const matrixEvidenceLabel = (item: any) => {
+  const row = item.row;
+  const achieved = item.assessment?.achieved_standard || '-';
+  const required = item.requirement.required_standard;
+  const code = row.element_code || row.unit_code || row.code;
+  return `${code} ${achieved}/${required} - ${formatSyllabusMatrixText(row.description)}`;
+};
+
 const wrapText = (text: string, font: any, size: number, maxWidth: number) => {
   const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   const lines: string[] = [];
@@ -878,23 +886,41 @@ export async function exportCoursePdf({
       const matrixLines = isRplSyllabusCourse && matrixSummary.total > 0
         ? [
             {
-              text: `CASA matrix: ${matrixSummary.met}/${matrixSummary.total} lesson requirements met on this attempt. ${matrixSummary.carriedForward.length} carried forward${record.nextLesson ? ` to ${record.nextLesson}` : ''}.`,
+              text: `CASA matrix: ${matrixSummary.met}/${matrixSummary.total} lesson requirements satisfactory on this attempt. ${matrixSummary.carriedForward.length} unsatisfactory or carried forward${record.nextLesson ? ` to ${record.nextLesson}` : ''}.`,
               color: matrixSummary.carriedForward.length > 0 ? amber : green,
               font: bold,
             },
-            ...matrixSummary.carriedForward.slice(0, 7).map((item: any) => {
-              const row = item.row;
+            ...(matrixSummary.met > 0 ? [{
+              text: `Satisfactory matrix items (${matrixSummary.met})`,
+              color: green,
+              font: bold,
+            }] : []),
+            ...matrixSummary.items.filter((item: any) => item.attemptMeetsRequirement).slice(0, 6).map((item: any) => ({
+              text: `Met: ${matrixEvidenceLabel(item)}`,
+              color: green,
+              font: regular,
+            })),
+            ...(matrixSummary.met > 6 ? [{
+              text: `Plus ${matrixSummary.met - 6} more satisfactory matrix item${matrixSummary.met - 6 === 1 ? '' : 's'}.`,
+              color: grey,
+              font: regular,
+            }] : []),
+            ...(matrixSummary.carriedForward.length > 0 ? [{
+              text: `Unsatisfactory / carried forward matrix items (${matrixSummary.carriedForward.length})`,
+              color: amber,
+              font: bold,
+            }] : []),
+            ...matrixSummary.carriedForward.slice(0, 8).map((item: any) => {
               const prefix = item.assessment?.achieved_standard ? 'Not met' : 'Not assessed';
               const later = item.resolvedLater ? ' - resolved in a later lesson' : ' - moved forward';
-              const achieved = item.assessment?.achieved_standard || '-';
               return {
-                text: `${prefix}: ${row.element_code || row.unit_code || row.code} achieved ${achieved}, required ${item.requirement.required_standard}${later} - ${formatSyllabusMatrixText(row.description)}`,
+                text: `${prefix}: ${matrixEvidenceLabel(item)}${later}`,
                 color: item.resolvedLater ? green : amber,
                 font: regular,
               };
             }),
-            ...(matrixSummary.carriedForward.length > 7 ? [{
-              text: `Plus ${matrixSummary.carriedForward.length - 7} more matrix item${matrixSummary.carriedForward.length - 7 === 1 ? '' : 's'} carried forward.`,
+            ...(matrixSummary.carriedForward.length > 8 ? [{
+              text: `Plus ${matrixSummary.carriedForward.length - 8} more unsatisfactory/carried-forward matrix item${matrixSummary.carriedForward.length - 8 === 1 ? '' : 's'}.`,
               color: grey,
               font: regular,
             }] : []),
