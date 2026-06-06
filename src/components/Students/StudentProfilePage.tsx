@@ -132,7 +132,7 @@ export const StudentProfilePage: React.FC = () => {
   const { user } = useAuth();
   const studentId = routeStudentId || user?.id;
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile'));
-  const [showMatrixView, setShowMatrixView] = useState(true);
+  const [showMatrixView, setShowMatrixView] = useState(false);
   const [expandedRecordMatrixIds, setExpandedRecordMatrixIds] = useState<Set<string>>(new Set());
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
