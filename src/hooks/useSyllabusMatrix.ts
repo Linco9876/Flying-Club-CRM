@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   StudentMatrixAssessment,
@@ -108,8 +108,12 @@ export const useSyllabusMatrix = (courseId?: string, studentId?: string) => {
   const [assessments, setAssessments] = useState<StudentMatrixAssessment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const fetchMatrix = useCallback(async () => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
     if (!courseId) {
       setRows([]);
       setRequirements([]);
@@ -119,6 +123,10 @@ export const useSyllabusMatrix = (courseId?: string, studentId?: string) => {
       return;
     }
 
+    setRows([]);
+    setRequirements([]);
+    setAssessments([]);
+    setError(null);
     setLoading(true);
     try {
       const [matrixRows, matrixRequirements, matrixAssessments] = await Promise.all([
@@ -148,15 +156,19 @@ export const useSyllabusMatrix = (courseId?: string, studentId?: string) => {
           : Promise.resolve([]),
       ]);
 
+      if (requestId !== requestIdRef.current) return;
       setRows(matrixRows.map(toMatrixRow));
       setRequirements(matrixRequirements.map(toRequirement));
       setAssessments(matrixAssessments.map(toAssessment));
       setError(null);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       console.error('Failed to load syllabus matrix:', err);
       setError(err instanceof Error ? err.message : 'Failed to load syllabus matrix');
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [courseId, studentId]);
 
