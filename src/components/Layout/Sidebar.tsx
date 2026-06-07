@@ -80,14 +80,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
       {/* Mobile Menu Button */}
       <button
         onClick={() => setIsMobileMenuOpen(true)}
-        className="fixed left-4 top-4 z-50 rounded-lg border border-gray-200 bg-white p-2 shadow-md lg:hidden"
+        className="app-mobile-menu-button fixed left-4 top-4 z-50 rounded-lg border border-gray-200 bg-white p-2 shadow-md lg:hidden"
         aria-label="Open navigation menu"
       >
         <Menu className="h-6 w-6 text-gray-600" />
       </button>
 
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:block bg-white shadow-md border-r border-gray-200 w-64 min-h-screen">
+      <aside className="app-sidebar hidden lg:block bg-white shadow-md border-r border-gray-200 w-64 min-h-screen">
         <nav className="mt-8 px-4">
           {renderMenuItems()}
         </nav>
@@ -103,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
           />
           
           {/* Sidebar */}
-          <div className="relative flex min-h-screen w-[min(18rem,85vw)] flex-col bg-white shadow-xl">
+          <div className="app-sidebar relative flex min-h-screen w-[min(18rem,85vw)] flex-col bg-white shadow-xl">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Menu</h2>
               <button

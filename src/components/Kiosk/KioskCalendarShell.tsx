@@ -21,7 +21,7 @@ export const KioskCalendarShell: React.FC<KioskCalendarShellProps> = ({
   }, [onExit]);
 
   return (
-    <div className="h-screen overflow-hidden bg-gray-100 text-gray-950 dark:bg-[#0f1117] dark:text-gray-100">
+    <div className="kiosk-app-surface h-screen overflow-hidden bg-gray-100 text-gray-950 dark:bg-gray-100 dark:text-gray-950">
       <main className="h-full">
         {children}
       </main>

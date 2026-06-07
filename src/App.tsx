@@ -63,7 +63,7 @@ const AppShell = ({
   backgroundColor: string;
   mainClassName?: string;
 }) => (
-  <div className="relative min-h-screen bg-gray-50 dark:bg-[#0f1117]" style={{ backgroundColor }}>
+  <div className="portal-app-shell relative min-h-screen bg-gray-50 dark:bg-[#0f1117]" style={{ backgroundColor }}>
     <div className="relative z-10 min-h-screen">
       <Header />
       <div className="flex lg:ml-0 ml-0">
