@@ -1650,29 +1650,29 @@ export const StudentProfilePage: React.FC = () => {
   return (
     <div className="p-3 sm:p-6">
       {/* Header */}
-      <div className="mb-4 flex flex-col gap-3 sm:mb-6 lg:flex-row lg:items-center lg:justify-between">
+      <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-800 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-4 py-4 text-white shadow-sm sm:mb-6 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center space-x-3 sm:space-x-4">
           <button
             onClick={() => navigate('/students')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="rounded-lg p-2 text-blue-100 transition-colors hover:bg-white/10 hover:text-white"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="min-w-0 truncate text-xl font-bold text-gray-900 sm:text-2xl">{student.name}</h1>
-              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${isPilot ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'}`}>
+              <h1 className="min-w-0 truncate text-xl font-bold text-white sm:text-2xl">{student.name}</h1>
+              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${isPilot ? 'border-amber-300/30 bg-amber-400/15 text-amber-100' : 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100'}`}>
                 {isPilot ? 'Pilot' : 'Student'}
               </span>
             </div>
-            <p className="text-gray-600">{isPilot ? 'Pilot File' : 'Student File'}</p>
+            <p className="text-blue-100/80">{isPilot ? 'Pilot File' : 'Student File'}</p>
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
         {canEditStudentInfo && (
           <button
             onClick={openInfoEditor}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-slate-950 shadow-sm transition-colors hover:bg-blue-50"
           >
             <Edit className="h-4 w-4" />
             Edit Info

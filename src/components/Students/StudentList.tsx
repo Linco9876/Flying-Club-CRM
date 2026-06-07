@@ -462,19 +462,19 @@ export const StudentList: React.FC = () => {
   return (
     <div className="min-h-full bg-transparent p-3 sm:p-6">
       <div className="mx-auto max-w-6xl">
-        <section className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <section className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-4 py-4 text-white sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
-              <h2 className="text-2xl font-bold leading-tight text-gray-900 sm:text-xl">Members</h2>
-              <p className="text-sm text-gray-500">{visibleMembers.length} shown from {memberStatusCounts.total}</p>
+              <h2 className="text-2xl font-bold leading-tight text-white sm:text-xl">Members</h2>
+              <p className="text-sm text-blue-100/80">{visibleMembers.length} shown from {memberStatusCounts.total}</p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="hidden gap-2 overflow-x-auto sm:flex">
                 {[
-                  { label: 'Active', value: memberStatusCounts.active, tone: 'text-green-700 bg-green-50 border-green-200' },
-                  { label: 'Archived', value: memberStatusCounts.archived, tone: 'text-gray-700 bg-gray-50 border-gray-200' },
-                  { label: 'Instructors', value: memberStatusCounts.roles.instructor, tone: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
-                  { label: 'Students', value: memberStatusCounts.roles.student, tone: 'text-blue-700 bg-blue-50 border-blue-200' }
+                  { label: 'Active', value: memberStatusCounts.active, tone: 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100' },
+                  { label: 'Archived', value: memberStatusCounts.archived, tone: 'border-white/20 bg-white/10 text-slate-100' },
+                  { label: 'Instructors', value: memberStatusCounts.roles.instructor, tone: 'border-indigo-300/30 bg-indigo-400/15 text-indigo-100' },
+                  { label: 'Students', value: memberStatusCounts.roles.student, tone: 'border-blue-300/30 bg-blue-400/15 text-blue-100' }
                 ].map(item => (
                   <div key={item.label} className={`flex flex-shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${item.tone}`}>
                     <span>{item.label}</span>
@@ -485,7 +485,7 @@ export const StudentList: React.FC = () => {
               {canManageMembers && (
                 <button
                   onClick={() => setShowInviteModal(true)}
-                  className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 sm:self-auto sm:px-3"
+                  className="inline-flex self-start items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm transition-colors hover:bg-blue-50 sm:self-auto sm:px-3"
                 >
                   <UserPlus className="h-4 w-4" />
                   Invite
@@ -629,7 +629,7 @@ export const StudentList: React.FC = () => {
               key={student.id}
               className="overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm"
             >
-              <div className="flex items-start gap-3 px-3 py-3">
+              <div className="flex items-start gap-3 rounded-t-xl bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-3 py-3 text-white">
                 <button
                   type="button"
                   onClick={() => openViewDetails(student)}
@@ -638,14 +638,14 @@ export const StudentList: React.FC = () => {
                   {renderAvatar(student, 'h-10 w-10', 'h-4 w-4')}
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <h2 className="truncate text-sm font-semibold text-gray-900">{student.name}</h2>
+                      <h2 className="truncate text-sm font-semibold text-white">{student.name}</h2>
                       {isArchived && (
-                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
+                        <span className="flex-shrink-0 rounded-full border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-100">
                           Archived
                         </span>
                       )}
                     </div>
-                    <p className="truncate text-xs text-gray-500">{student.email}</p>
+                    <p className="truncate text-xs text-blue-100/80">{student.email}</p>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {memberRoles.slice(0, 3).map(role => (
                         <span key={role} className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${roleBadgeClass(role)}`}>
