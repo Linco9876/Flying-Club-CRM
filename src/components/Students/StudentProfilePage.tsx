@@ -4540,26 +4540,15 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                           </button>
                         )}
                         {guardianRequired && !guardianDeclarationSigned && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleSendDeclarationLink(enrolment, 'guardian', 'email')}
-                              disabled={sendingDeclarationKey === `${enrolment.id}-guardian-email`}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60"
-                            >
-                              {sendingDeclarationKey === `${enrolment.id}-guardian-email` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                              Send parent email
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSendDeclarationLink(enrolment, 'guardian', 'sms')}
-                              disabled={sendingDeclarationKey === `${enrolment.id}-guardian-sms`}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60"
-                            >
-                              {sendingDeclarationKey === `${enrolment.id}-guardian-sms` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Phone className="h-3.5 w-3.5" />}
-                              Send parent SMS
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            onClick={() => handleSendDeclarationLink(enrolment, 'guardian', 'email')}
+                            disabled={sendingDeclarationKey === `${enrolment.id}-guardian-email`}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                          >
+                            {sendingDeclarationKey === `${enrolment.id}-guardian-email` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                            Send parent email
+                          </button>
                         )}
                       </div>
                     )}

@@ -231,12 +231,22 @@ Deno.serve(async (req: Request) => {
         : (typeof guardianEmail === "string" && guardianEmail.trim()
           ? guardianEmail.trim()
           : enrolment.guardian_declaration_email);
+      const explicitGuardianPhone = typeof guardianPhone === "string" && guardianPhone.trim()
+        ? guardianPhone.trim()
+        : null;
+      const fallbackGuardianPhone = enrolment.guardian_declaration_phone || student?.emergency_contact_phone || studentExtra?.emergency_contact_phone || null;
       const recipientPhone = recipient === "student"
         ? null
-        : (typeof guardianPhone === "string" && guardianPhone.trim()
-          ? guardianPhone.trim()
-          : enrolment.guardian_declaration_phone || student?.emergency_contact_phone || studentExtra?.emergency_contact_phone);
-      const resolvedDelivery = deliveryMethod === "sms" ? "sms" : recipientEmail ? "email" : recipientPhone ? "sms" : "manual";
+        : deliveryMethod === "sms"
+          ? explicitGuardianPhone || fallbackGuardianPhone
+          : explicitGuardianPhone;
+      const resolvedDelivery = deliveryMethod === "sms"
+        ? (recipientPhone ? "sms" : "manual")
+        : recipientEmail
+          ? "email"
+          : recipientPhone
+            ? "sms"
+            : "manual";
 
       const { data: tokenRow, error: tokenError } = await adminClient
         .from("declaration_signing_tokens")
