@@ -360,6 +360,65 @@ export async function exportCoursePdf({
     drawText(detail, { x: x + 10, y: y - 64 }, { size: 6.5, color: grey, maxWidth: boxWidth - 20, lineHeight: 7 });
   };
 
+  const drawDeclarationSignatureRecord = (
+    title: string,
+    isSigned: boolean,
+    signatureName: string | undefined,
+    signedAt: Date | undefined,
+    rows: Array<[string, string]>,
+    detail: string
+  ) => {
+    const boxHeight = 94;
+    ensureSpace(boxHeight + 22);
+    page.drawRectangle({
+      x: margin,
+      y: cursor - boxHeight,
+      width: width - margin * 2,
+      height: boxHeight,
+      color: isSigned ? rgb(0.94, 0.99, 0.96) : rgb(1, 0.97, 0.94),
+      borderColor: isSigned ? green : amber,
+      borderWidth: 1.2,
+    });
+    page.drawRectangle({
+      x: margin,
+      y: cursor - 24,
+      width: width - margin * 2,
+      height: 24,
+      color: isSigned ? green : amber,
+    });
+    page.drawText(`${isSigned ? 'SIGNED ELECTRONICALLY' : 'NOT SIGNED'} - ${title}`, {
+      x: margin + 10,
+      y: cursor - 16,
+      size: 9,
+      font: bold,
+      color: rgb(1, 1, 1),
+    });
+    page.drawText(isSigned ? (signatureName || 'Signature name not recorded') : 'Awaiting electronic signature', {
+      x: margin + 10,
+      y: cursor - 45,
+      size: 16,
+      font: bold,
+      color: isSigned ? dark : amber,
+    });
+    page.drawText(`Signed date: ${isSigned ? formatDate(signedAt) : 'Not signed'}`, {
+      x: margin + 10,
+      y: cursor - 62,
+      size: 8.5,
+      font: regular,
+      color: dark,
+    });
+
+    const rightX = margin + 322;
+    rows.slice(0, 4).forEach(([label, value], index) => {
+      const y = cursor - 42 - index * 14;
+      page.drawText(label, { x: rightX, y, size: 7, font: bold, color: grey });
+      drawText(value || 'Not recorded', { x: rightX + 92, y }, { size: 8, color: dark, maxWidth: width - rightX - 112, lineHeight: 9 });
+    });
+
+    drawText(detail, { x: margin + 10, y: cursor - 80 }, { size: 7, color: grey, maxWidth: width - margin * 2 - 20, lineHeight: 8 });
+    cursor -= boxHeight + 12;
+  };
+
   const drawDigitalSignatureCertification = () => {
     const requiredLessonIds = new Set(course.lessons.filter((lesson) => !lesson.isFlightTest).map((lesson) => lesson.id));
     const acknowledgedCourseRecords = chronologicalCourseRecords.filter((record) => record.studentAck);
@@ -635,34 +694,63 @@ export async function exportCoursePdf({
 
   if (course.requiresFlyingDeclaration) {
     drawSectionTitle(course.flyingDeclarationTitle || 'Flying Declaration');
+    drawDeclarationSignatureRecord(
+      'Student flying declaration',
+      declarationSigned,
+      courseEnrolment?.declarationSignedName,
+      courseEnrolment?.declarationSignedAt,
+      [
+        ['Required', 'Yes'],
+        ['Member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
+        ['Version', String(courseEnrolment?.declarationVersion ?? course.flyingDeclarationVersion ?? 1)],
+        ['Record source', courseEnrolment?.declarationSignedAt ? 'CRM electronic declaration' : 'Awaiting CRM signature'],
+      ],
+      declarationSigned
+        ? 'This declaration was signed electronically in the CRM. The declaration wording below is the signed wording snapshot stored with the course enrolment.'
+        : 'This course requires a student flying declaration, but the CRM does not show a current signed declaration for this course enrolment.'
+    );
     const declarationRows: Array<[string, string]> = [
-      ['Required', 'Yes'],
-      ['Status', declarationSigned ? 'Signed' : 'Not signed'],
+      ['Status', declarationSigned ? 'Signed electronically' : 'Not signed'],
       ['Signed by', courseEnrolment?.declarationSignedName || 'Not recorded'],
       ['Signed date', formatDate(courseEnrolment?.declarationSignedAt)],
       ['Member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
       ['Declaration version', String(courseEnrolment?.declarationVersion ?? course.flyingDeclarationVersion ?? 1)],
     ];
-    drawLabelValueGrid(declarationRows, { columns: 3, rowHeight: 30, valueSize: 8 });
+    drawLabelValueGrid(declarationRows, { columns: 3, rowHeight: 28, valueSize: 8 });
     const declarationWording = courseEnrolment?.declarationTextSnapshot || course.flyingDeclarationText || '';
     if (declarationWording.trim()) {
-      drawParagraphBlock('Signed declaration wording', declarationWording, 10);
+      drawParagraphBlock(declarationSigned ? 'Signed declaration wording' : 'Declaration wording awaiting signature', declarationWording, 10);
     }
 
     if (guardianDeclarationRequired) {
       drawSectionTitle(course.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration');
+      drawDeclarationSignatureRecord(
+        'Parent/guardian declaration',
+        guardianDeclarationSigned,
+        courseEnrolment?.guardianDeclarationSignedName,
+        courseEnrolment?.guardianDeclarationSignedAt,
+        [
+          ['Required', 'Yes - student under 18'],
+          ['Relationship', courseEnrolment?.guardianDeclarationRelationship || 'Not recorded'],
+          ['Contact', [courseEnrolment?.guardianDeclarationEmail, courseEnrolment?.guardianDeclarationPhone].filter(Boolean).join(' / ') || 'Not recorded'],
+          ['Version', String(courseEnrolment?.guardianDeclarationVersion ?? course.flyingDeclarationVersion ?? 1)],
+        ],
+        guardianDeclarationSigned
+          ? 'This parent/guardian declaration was signed electronically using a secure one-time CRM signing link.'
+          : 'The CRM does not show a current parent/guardian declaration signature for this under-18 student.'
+      );
       const guardianRows: Array<[string, string]> = [
         ['Required', 'Yes - student under 18'],
-        ['Status', guardianDeclarationSigned ? 'Signed' : 'Not signed'],
+        ['Status', guardianDeclarationSigned ? 'Signed electronically' : 'Not signed'],
         ['Signed by', courseEnrolment?.guardianDeclarationSignedName || 'Not recorded'],
         ['Relationship', courseEnrolment?.guardianDeclarationRelationship || 'Not recorded'],
         ['Signed date', formatDate(courseEnrolment?.guardianDeclarationSignedAt)],
         ['Contact', [courseEnrolment?.guardianDeclarationEmail, courseEnrolment?.guardianDeclarationPhone].filter(Boolean).join(' / ') || 'Not recorded'],
       ];
-      drawLabelValueGrid(guardianRows, { columns: 3, rowHeight: 30, valueSize: 8 });
+      drawLabelValueGrid(guardianRows, { columns: 3, rowHeight: 28, valueSize: 8 });
       const guardianWording = courseEnrolment?.guardianDeclarationTextSnapshot || course.guardianDeclarationText || '';
       if (guardianWording.trim()) {
-        drawParagraphBlock('Signed parent/guardian declaration wording', guardianWording, 10);
+        drawParagraphBlock(guardianDeclarationSigned ? 'Signed parent/guardian declaration wording' : 'Parent/guardian declaration wording awaiting signature', guardianWording, 10);
       }
     }
   }
