@@ -46,15 +46,16 @@ export const LoginForm: React.FC = () => {
   }
 
   return (
-    <div className="auth-light-surface min-h-screen bg-white lg:grid lg:grid-cols-2">
-      <div className="relative hidden min-h-screen overflow-hidden lg:flex">
-        <img
-          src="/auth-aircraft-sunset.png"
-          alt="Aircraft wing at sunset"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-black/35 via-black/15 to-black/45" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-48 bg-gradient-to-r from-transparent via-white/25 to-white" />
+    <div className="auth-light-surface relative min-h-screen overflow-hidden bg-[#f8fbff] lg:grid lg:grid-cols-2">
+      <img
+        src="/auth-aircraft-sunset.png"
+        alt="Aircraft wing at sunset"
+        className="auth-hero-image absolute inset-0 h-full w-full object-cover object-left-center"
+      />
+      <div className="auth-hero-shade absolute inset-0 bg-gradient-to-br from-black/45 via-black/15 to-black/35" />
+      <div className="auth-login-wash pointer-events-none absolute inset-0" />
+
+      <div className="relative hidden min-h-screen lg:flex">
         <div className="relative z-10 flex w-full flex-col items-center justify-center px-12 text-center text-white">
           <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-white/15 backdrop-blur">
             <Plane className="h-7 w-7" />
@@ -66,14 +67,14 @@ export const LoginForm: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-10 sm:px-6 lg:bg-white lg:px-10">
-        <div className="w-full max-w-lg">
+      <div className="relative flex min-h-screen items-center justify-center bg-transparent px-4 py-10 sm:px-6 lg:-ml-px lg:px-10">
+        <div className="relative z-20 w-full max-w-lg">
           <div className="mb-8 text-center lg:hidden">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-600">
               <Plane className="h-8 w-8 text-white" />
             </div>
-            <h2 className="text-3xl font-extrabold text-gray-900">Bendigo Flying Club</h2>
-            <p className="mt-2 text-gray-600">Members Flight Management System</p>
+            <h2 className="text-3xl font-extrabold text-white drop-shadow">Bendigo Flying Club</h2>
+            <p className="mt-2 text-white/90 drop-shadow">Members Flight Management System</p>
           </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-xl">

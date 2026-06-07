@@ -40,6 +40,98 @@
     backface-visibility: hidden;
   }
 
+  .auth-hero-image,
+  .auth-hero-shade {
+    transform: translateZ(0);
+  }
+
+  .auth-login-wash {
+    background:
+      radial-gradient(34rem 26rem at 82% 16%, rgb(248 251 255 / 0.86), rgb(248 251 255 / 0.28) 56%, transparent 74%),
+      radial-gradient(38rem 30rem at 84% 84%, rgb(248 251 255 / 0.78), rgb(248 251 255 / 0.24) 58%, transparent 78%),
+      linear-gradient(100deg, transparent 0%, transparent 42%, rgb(248 251 255 / 0.18) 55%, rgb(248 251 255 / 0.72) 76%, #f8fbff 100%);
+  }
+
+  .auth-cloud-transition {
+    --auth-cloud-surface: #f8fbff;
+    overflow: hidden;
+    mix-blend-mode: normal;
+    -webkit-mask-image:
+      radial-gradient(22rem 22rem at 36% 50%, #000 0 36%, transparent 82%),
+      linear-gradient(103deg, transparent 0%, #000 20%, #000 54%, transparent 100%);
+    mask-image:
+      radial-gradient(22rem 22rem at 36% 50%, #000 0 36%, transparent 82%),
+      linear-gradient(103deg, transparent 0%, #000 20%, #000 54%, transparent 100%);
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+    background:
+      radial-gradient(18rem 15rem at 30% 18%, rgb(248 251 255 / 0.16) 0 38%, transparent 78%),
+      radial-gradient(22rem 18rem at 40% 55%, rgb(248 251 255 / 0.2) 0 36%, transparent 80%),
+      radial-gradient(18rem 15rem at 30% 86%, rgb(248 251 255 / 0.16) 0 38%, transparent 78%);
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    opacity: 0.3;
+    transform: translateX(-6px);
+  }
+
+  .auth-cloud-transition::before,
+  .auth-cloud-transition::after {
+    position: absolute;
+    inset: -6% 0;
+    content: '';
+    background-repeat: repeat-y;
+    background-size: 100% 260px;
+    filter: blur(18px);
+    will-change: transform;
+  }
+
+  .auth-cloud-transition::before {
+    background-image:
+      radial-gradient(82px 54px at 45% 8%, rgb(255 255 255 / 0.62) 0 48%, rgb(255 255 255 / 0) 72%),
+      radial-gradient(118px 74px at 68% 24%, rgb(255 255 255 / 0.9) 0 46%, rgb(255 255 255 / 0) 74%),
+      radial-gradient(94px 64px at 48% 44%, rgb(255 255 255 / 0.72) 0 44%, rgb(255 255 255 / 0) 72%),
+      radial-gradient(124px 78px at 70% 64%, rgb(255 255 255 / 0.92) 0 45%, rgb(255 255 255 / 0) 74%),
+      radial-gradient(86px 58px at 50% 88%, rgb(255 255 255 / 0.68) 0 46%, rgb(255 255 255 / 0) 72%);
+    opacity: 0.22;
+    animation: auth-cloud-drift 18s ease-in-out infinite alternate;
+  }
+
+  .auth-cloud-transition::after {
+    background-image:
+      radial-gradient(92px 56px at 56% 4%, rgb(248 251 255 / 0.52) 0 42%, rgb(248 251 255 / 0) 70%),
+      radial-gradient(120px 76px at 40% 28%, rgb(248 251 255 / 0.72) 0 44%, rgb(248 251 255 / 0) 72%),
+      radial-gradient(110px 72px at 58% 54%, rgb(248 251 255 / 0.66) 0 43%, rgb(248 251 255 / 0) 72%),
+      radial-gradient(128px 78px at 42% 82%, rgb(248 251 255 / 0.74) 0 44%, rgb(248 251 255 / 0) 72%);
+    opacity: 0.18;
+    transform: translateX(-12px);
+    animation: auth-cloud-drift-reverse 24s ease-in-out infinite alternate;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .auth-cloud-transition::before,
+    .auth-cloud-transition::after {
+      animation: none;
+    }
+  }
+
+  @keyframes auth-cloud-drift {
+    from {
+      transform: translate3d(-8px, -10px, 0) scaleX(1.02);
+    }
+    to {
+      transform: translate3d(8px, 14px, 0) scaleX(1.08);
+    }
+  }
+
+  @keyframes auth-cloud-drift-reverse {
+    from {
+      transform: translate3d(10px, 12px, 0) scaleX(1.04);
+    }
+    to {
+      transform: translate3d(-10px, -16px, 0) scaleX(1.08);
+    }
+  }
+
   .calendar-booking-interaction-active .app-sticky-header,
   .calendar-booking-interaction-active .resource-calendar-grid {
     transform: translateZ(0);
