@@ -1950,10 +1950,10 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const renderViewModeGroup = () => (
     <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+      {renderTodayButton()}
       <div className="min-w-0 flex-1 sm:flex-none">
         {renderViewModeButtons()}
       </div>
-      {renderTodayButton()}
     </div>
   );
 
@@ -3459,7 +3459,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           </button>
         </div>
 
-        <div className="hidden min-w-0 justify-start overflow-x-auto sm:flex xl:justify-end">
+        <div className="hidden min-w-0 justify-start sm:flex xl:justify-end">
           {renderViewModeGroup()}
         </div>
       </div>
@@ -3568,7 +3568,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           </button>
         </div>
 
-        <div className="flex justify-end overflow-x-auto">
+        <div className="flex min-w-0 justify-end">
           {renderViewModeGroup()}
         </div>
       </div>
