@@ -53,6 +53,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({ onBackTo
           className="absolute inset-0 h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-br from-black/35 via-black/10 to-black/50" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-48 bg-gradient-to-r from-transparent via-white/25 to-white" />
         <div className="relative z-10 flex w-full flex-col items-center justify-center px-12 text-center text-white">
           <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-full bg-white/15 backdrop-blur">
             <Plane className="h-7 w-7" />
