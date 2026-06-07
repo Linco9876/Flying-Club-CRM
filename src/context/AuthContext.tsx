@@ -89,6 +89,14 @@ const getPrimaryRoleFromRoles = (roles: UserRole[]): UserRole =>
     : roles.includes('pilot') ? 'pilot'
     : 'student';
 
+const isPasswordRecoveryRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const searchParams = new URLSearchParams(window.location.search);
+  const linkType = hashParams.get('type') || searchParams.get('type');
+  return window.location.pathname === '/reset-password' || linkType === 'recovery' || linkType === 'invite';
+};
+
 const mapUserData = (userData: any): User => ({
   id: userData.id,
   email: userData.email,
@@ -136,6 +144,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const session = sessionResult.data.session;
 
         if (session?.user && mounted) {
+          if (isPasswordRecoveryRoute()) {
+            setIsLoading(false);
+            return;
+          }
+
           try {
             const userData = await fetchUserWithRetry(session.user.id);
 
@@ -180,6 +193,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsLoading(false);
+        return;
+      }
+
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setIsLoading(false);
@@ -189,6 +207,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Only respond to a genuine new sign-in (e.g. from the login form)
       // If initAuth already set the user for this session, skip to avoid a double-load flash
       if (event === 'SIGNED_IN' && session?.user) {
+        if (isPasswordRecoveryRoute()) {
+          setIsLoading(false);
+          return;
+        }
+
         (async () => {
           // Use a ref-free check: if user state is null it means initAuth hasn't finished
           // or this is a fresh login. Either way, fetch without flashing isLoading.

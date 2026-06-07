@@ -33,6 +33,26 @@ export const ResetPasswordPage: React.FC = () => {
     const isNonPasswordVerification = Boolean(linkType && !passwordSetupType);
     const hasRecoveryLink = passwordSetupType || Boolean((accessToken && refreshToken) || code);
 
+    const markValid = (email?: string | null) => {
+      if (!cancelled) {
+        recoveryConfirmed = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        setIsValidToken(true);
+        setRecoveryEmail(email || null);
+        setVerificationMessage('Please enter your new password.');
+      }
+    };
+
+    const markExistingSessionValid = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      if (data.session?.user) {
+        markValid(data.session.user.email);
+        return true;
+      }
+      return false;
+    };
+
     const completeNonPasswordVerification = async () => {
       setVerificationMessage('Completing account verification...');
 
@@ -56,16 +76,6 @@ export const ResetPasswordPage: React.FC = () => {
       }
     };
 
-    const markValid = (email?: string | null) => {
-      if (!cancelled) {
-        recoveryConfirmed = true;
-        if (timeoutId) clearTimeout(timeoutId);
-        setIsValidToken(true);
-        setRecoveryEmail(email || null);
-        setVerificationMessage('Please enter your new password.');
-      }
-    };
-
     const prepareRecoverySession = async () => {
       if (isNonPasswordVerification) {
         await completeNonPasswordVerification();
@@ -73,6 +83,7 @@ export const ResetPasswordPage: React.FC = () => {
       }
 
       if (!hasRecoveryLink) {
+        if (passwordSetupType && await markExistingSessionValid()) return true;
         setVerificationMessage('This reset link is missing recovery details.');
         return false;
       }
@@ -85,7 +96,11 @@ export const ResetPasswordPage: React.FC = () => {
           refresh_token: refreshToken,
         });
 
-        if (error) throw error;
+        if (error) {
+          if (passwordSetupType && await markExistingSessionValid()) return true;
+          throw error;
+        }
+
         if (data.session) {
           markValid(data.session.user.email);
           return true;
@@ -95,14 +110,18 @@ export const ResetPasswordPage: React.FC = () => {
       if (code) {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-        if (error) throw error;
+        if (error) {
+          if (passwordSetupType && await markExistingSessionValid()) return true;
+          throw error;
+        }
+
         if (data.session) {
           markValid(data.session.user.email);
           return true;
         }
       }
 
-      return false;
+      return passwordSetupType ? markExistingSessionValid() : false;
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -124,16 +143,36 @@ export const ResetPasswordPage: React.FC = () => {
       setVerificationMessage('Waiting for the reset link session...');
     }).catch((error) => {
       console.error('Password recovery session error:', error);
-      if (!cancelled) {
-        toast.error(error.message || 'Invalid or expired reset link');
-        navigate('/', { replace: true });
+      if (!cancelled && !recoveryConfirmed) {
+        const sessionFallback = passwordSetupType ? markExistingSessionValid() : Promise.resolve(false);
+
+        sessionFallback.then((hasSession) => {
+          if (!hasSession && !cancelled) {
+            toast.error(error.message || 'Invalid or expired reset link');
+            navigate('/', { replace: true });
+          }
+        }).catch(() => {
+          if (!cancelled) {
+            toast.error(error.message || 'Invalid or expired reset link');
+            navigate('/', { replace: true });
+          }
+        });
       }
     });
 
     timeoutId = setTimeout(async () => {
       if (cancelled || recoveryConfirmed) return;
-      toast.error('Invalid or expired reset link');
-      navigate('/', { replace: true });
+
+      try {
+        if (passwordSetupType && await markExistingSessionValid()) return;
+      } catch (error) {
+        console.error('Password recovery timeout session check failed:', error);
+      }
+
+      if (!cancelled && !recoveryConfirmed) {
+        toast.error('Invalid or expired reset link');
+        navigate('/', { replace: true });
+      }
     }, 8000);
 
     return () => {
