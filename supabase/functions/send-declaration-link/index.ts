@@ -133,7 +133,15 @@ Deno.serve(async (req: Request) => {
       .select("role")
       .eq("user_id", callerUser.id);
     if (rolesError) return jsonResponse({ error: rolesError.message }, 500);
-    if (!(callerRoles || []).some((row) => isStaffRole(String(row.role)))) {
+    const { data: callerProfile, error: profileError } = await adminClient
+      .from("users")
+      .select("role")
+      .eq("id", callerUser.id)
+      .maybeSingle();
+    if (profileError) return jsonResponse({ error: profileError.message }, 500);
+    const callerIsStaff = isStaffRole(String(callerProfile?.role || "")) ||
+      (callerRoles || []).some((row) => isStaffRole(String(row.role)));
+    if (!callerIsStaff) {
       return jsonResponse({ error: "Only instructors or admins can send declaration links" }, 403);
     }
 

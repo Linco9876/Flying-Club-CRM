@@ -4341,6 +4341,15 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         showToast: false,
       });
       const activeResult = result.results?.find(item => item.recipientType === recipientType);
+      if (!activeResult) {
+        toast.error('No declaration link response was returned');
+        return;
+      }
+
+      if (activeResult.sendError) {
+        toast.error(activeResult.sendError);
+        return;
+      }
 
       if (activeResult?.emailSent || activeResult?.smsSent) {
         toast.success(`${recipientType === 'student' ? 'Student' : 'Parent/guardian'} declaration link sent`);
@@ -4348,8 +4357,13 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
       }
 
       if (activeResult?.manualLink) {
-        await navigator.clipboard?.writeText(activeResult.manualLink);
-        toast.success('Signing link generated and copied');
+        try {
+          await navigator.clipboard?.writeText(activeResult.manualLink);
+          toast.success('Signing link generated and copied');
+        } catch {
+          window.prompt('Signing link generated. Copy this link:', activeResult.manualLink);
+          toast.success('Signing link generated');
+        }
         return;
       }
 
