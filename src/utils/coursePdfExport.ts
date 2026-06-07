@@ -491,7 +491,9 @@ export async function exportCoursePdf({
     .filter((item: any) => item.row)
     .sort((a: any, b: any) => (a.row.sort_order ?? 0) - (b.row.sort_order ?? 0));
 
-  const isRplSyllabusCourse = matrixRequirements.length > 0 || /rpl|casa/i.test(`${course.title} ${course.category}`);
+  const hasMatrixRows = matrixRows.length > 0;
+  const hasMatrixRequirements = matrixRequirements.length > 0;
+  const isRplSyllabusCourse = hasMatrixRequirements || hasMatrixRows || /rpl|casa/i.test(`${course.title} ${course.category}`);
   const assessmentsByTrainingRecord = new Map<string, any[]>();
   matrixAssessments.forEach((assessment: any) => {
     if (!assessment.training_record_id) return;
@@ -765,7 +767,7 @@ export async function exportCoursePdf({
     cursor -= 12;
   }
 
-  if (matrixRequirements.length > 0) {
+  if (hasMatrixRequirements) {
     drawSectionTitle('CASA Planning Matrix Summary');
     const matrixPercentage = Math.round((metMatrixRequirements.length / matrixRequirements.length) * 100);
     const finalStandardRemaining = remainingMatrixRequirements.filter((item: any) => item.requirement.required_standard === 1).length;
@@ -795,6 +797,14 @@ export async function exportCoursePdf({
       drawText('All matrix requirements recorded for this course currently meet the required standards.', { x: margin, y: cursor }, { size: 9, color: green });
       cursor -= 18;
     }
+  } else if (hasMatrixRows) {
+    drawSectionTitle('CASA Planning Matrix Summary');
+    drawText(
+      'CASA matrix rows are configured for this course, but no lesson pass requirements are linked. The export cannot calculate lesson matrix completion until the lesson requirement links are restored.',
+      { x: margin, y: cursor },
+      { size: 9, color: amber, maxWidth: width - margin * 2, lineHeight: 11 }
+    );
+    cursor -= 34;
   }
 
   drawSectionTitle('Course Progress Matrix');
@@ -1021,8 +1031,8 @@ export async function exportCoursePdf({
   if (isRplSyllabusCourse) {
     drawSectionTitle('Certification and Completion');
     const completionRows: Array<[string, string]> = [
-      ['Matrix completion', matrixRequirements.length > 0 ? `${metMatrixRequirements.length} of ${matrixRequirements.length} required items met` : 'No CASA matrix configured'],
-      ['Remaining items', remainingMatrixRequirements.length > 0 ? String(remainingMatrixRequirements.length) : 'None recorded'],
+      ['Matrix completion', hasMatrixRequirements ? `${metMatrixRequirements.length} of ${matrixRequirements.length} required items met` : hasMatrixRows ? 'Matrix rows configured, lesson requirements missing' : 'No CASA matrix configured'],
+      ['Remaining items', hasMatrixRequirements ? (remainingMatrixRequirements.length > 0 ? String(remainingMatrixRequirements.length) : 'None recorded') : hasMatrixRows ? 'Cannot calculate until lesson requirements are linked' : 'None recorded'],
       ['Flight test lesson', course.lessons.find((lesson) => lesson.isFlightTest)?.name || 'Not designated in course editor'],
       ['Course endorsement', course.completionEndorsementEnabled && course.completionEndorsementType ? course.completionEndorsementType : 'No automatic endorsement configured'],
     ];
