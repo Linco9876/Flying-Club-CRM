@@ -629,7 +629,7 @@ export const StudentList: React.FC = () => {
               key={student.id}
               className="overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm"
             >
-              <div className="flex items-start gap-3 rounded-t-xl bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-3 py-3 text-white">
+              <div className="flex items-start gap-3 px-3 py-3">
                 <button
                   type="button"
                   onClick={() => openViewDetails(student)}
@@ -638,14 +638,14 @@ export const StudentList: React.FC = () => {
                   {renderAvatar(student, 'h-10 w-10', 'h-4 w-4')}
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <h2 className="truncate text-sm font-semibold text-white">{student.name}</h2>
+                      <h2 className="truncate text-sm font-semibold text-gray-900">{student.name}</h2>
                       {isArchived && (
-                        <span className="flex-shrink-0 rounded-full border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-100">
+                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
                           Archived
                         </span>
                       )}
                     </div>
-                    <p className="truncate text-xs text-blue-100/80">{student.email}</p>
+                    <p className="truncate text-xs text-gray-500">{student.email}</p>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {memberRoles.slice(0, 3).map(role => (
                         <span key={role} className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${roleBadgeClass(role)}`}>
