@@ -81,7 +81,7 @@ export const Header: React.FC = () => {
             )}
             <div className="min-w-0">
               <h1 className="max-w-[11rem] truncate text-base font-bold leading-tight text-gray-950 dark:text-gray-100 sm:max-w-none sm:text-xl">{businessName}</h1>
-              <p className="hidden text-xs text-gray-500 dark:text-gray-400 sm:block">Flight Training Management System</p>
+              <p className="hidden text-xs text-gray-500 dark:text-gray-400 sm:block">Members Flight Management System</p>
             </div>
           </div>
 

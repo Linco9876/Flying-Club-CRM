@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Award, BookOpen, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Plus, X } from 'lucide-react';
+import { Award, BookOpen, Check, CheckCircle, GraduationCap, Loader2, Lock, MessageSquare, Pencil, Plus, X } from 'lucide-react';
 import { TrainingSyllabusSettingsData, useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { uniqueEndorsementTypes } from '../../utils/pilotStatus';
 
@@ -45,22 +45,39 @@ function SettingToggle({
 }
 
 export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings } = useTrainingSettings();
+  const { settings, loading, updateSettings, renameEndorsementReferences } = useTrainingSettings();
   const [formData, setFormData] = useState<TrainingSyllabusSettingsData>(settings);
   const [endorsementInput, setEndorsementInput] = useState('');
+  const [editingEndorsement, setEditingEndorsement] = useState<string | null>(null);
+  const [editingEndorsementName, setEditingEndorsementName] = useState('');
+  const [endorsementRenames, setEndorsementRenames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setFormData(settings);
+    setEditingEndorsement(null);
+    setEditingEndorsementName('');
+    setEndorsementRenames({});
   }, [settings]);
 
   useEffect(() => {
-    (window as any).__trainingSettingsSave = async () => updateSettings(formData);
-    (window as any).__trainingSettingsCancel = () => setFormData(settings);
+    (window as any).__trainingSettingsSave = async () => {
+      await renameEndorsementReferences(
+        Object.entries(endorsementRenames).map(([from, to]) => ({ from, to }))
+      );
+      await updateSettings(formData);
+      setEndorsementRenames({});
+    };
+    (window as any).__trainingSettingsCancel = () => {
+      setFormData(settings);
+      setEditingEndorsement(null);
+      setEditingEndorsementName('');
+      setEndorsementRenames({});
+    };
     return () => {
       delete (window as any).__trainingSettingsSave;
       delete (window as any).__trainingSettingsCancel;
     };
-  }, [formData, settings]);
+  }, [endorsementRenames, formData, renameEndorsementReferences, settings, updateSettings]);
 
   const setField = <K extends keyof TrainingSyllabusSettingsData>(field: K, value: TrainingSyllabusSettingsData[K]) => {
     setFormData(current => ({ ...current, [field]: value }));
@@ -90,6 +107,38 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
       formData.endorsementTypes.filter(keep),
       formData.pilotStatusEndorsementTypes.filter(keep)
     );
+  };
+
+  const startEditingEndorsement = (type: string) => {
+    setEditingEndorsement(type);
+    setEditingEndorsementName(type);
+  };
+
+  const cancelEditingEndorsement = () => {
+    setEditingEndorsement(null);
+    setEditingEndorsementName('');
+  };
+
+  const saveEndorsementRename = (oldType: string) => {
+    const nextName = editingEndorsementName.trim();
+    if (!nextName) return;
+    const oldKey = oldType.trim().toLowerCase();
+    const nextKey = nextName.trim().toLowerCase();
+    if (oldKey === nextKey) {
+      cancelEditingEndorsement();
+      return;
+    }
+    const duplicate = formData.endorsementTypes.some(type =>
+      type.trim().toLowerCase() === nextKey && type.trim().toLowerCase() !== oldKey
+    );
+    if (duplicate) return;
+
+    setEndorsementState(
+      formData.endorsementTypes.map(type => type.trim().toLowerCase() === oldKey ? nextName : type),
+      formData.pilotStatusEndorsementTypes.map(type => type.trim().toLowerCase() === oldKey ? nextName : type)
+    );
+    setEndorsementRenames(current => ({ ...current, [oldType]: nextName }));
+    cancelEditingEndorsement();
   };
 
   const togglePilotStatusEndorsement = (type: string, checked: boolean) => {
@@ -289,27 +338,63 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
           </p>
 
           <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
-            <div className="grid grid-cols-[minmax(0,1fr)_120px_44px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_120px_96px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <span>Endorsement</span>
               <span className="text-center">Pilot status</span>
-              <span />
+              <span className="text-right">Actions</span>
             </div>
             {formData.endorsementTypes.length > 0 ? (
               <div className="divide-y divide-gray-100">
                 {formData.endorsementTypes.map(type => {
                   const grantsPilot = formData.pilotStatusEndorsementTypes.some(item => item.trim().toLowerCase() === type.trim().toLowerCase());
+                  const isEditing = editingEndorsement === type;
+                  const editDuplicate = isEditing && formData.endorsementTypes.some(item =>
+                    item.trim().toLowerCase() === editingEndorsementName.trim().toLowerCase() &&
+                    item.trim().toLowerCase() !== type.trim().toLowerCase()
+                  );
                   return (
-                    <div key={type} className="grid grid-cols-[minmax(0,1fr)_120px_44px] items-center gap-3 px-3 py-3">
-                      <div>
-                        <p className="truncate text-sm font-medium text-gray-900">{type}</p>
-                        {grantsPilot && (
-                          <p className="text-xs text-orange-700">Active endorsement grants Pilot status</p>
+                    <div key={type} className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_120px_96px] sm:items-center">
+                      <div className="min-w-0">
+                        {isEditing ? (
+                          <div className="space-y-1">
+                            <input
+                              type="text"
+                              value={editingEndorsementName}
+                              onChange={event => setEditingEndorsementName(event.target.value)}
+                              onKeyDown={event => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault();
+                                  saveEndorsementRename(type);
+                                }
+                                if (event.key === 'Escape') {
+                                  event.preventDefault();
+                                  cancelEditingEndorsement();
+                                }
+                              }}
+                              className={inputClass}
+                              autoFocus
+                            />
+                            {editDuplicate && (
+                              <p className="text-xs text-red-600">An endorsement with this name already exists.</p>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <p className="truncate text-sm font-medium text-gray-900">{type}</p>
+                            {endorsementRenames[type] && (
+                              <p className="text-xs text-blue-700">Rename will update member, course, and aircraft records on save.</p>
+                            )}
+                            {grantsPilot && (
+                              <p className="text-xs text-orange-700">Active endorsement grants Pilot status</p>
+                            )}
+                          </>
                         )}
                       </div>
-                      <label className="flex justify-center">
+                      <label className="flex items-center justify-between gap-3 sm:justify-center">
+                        <span className="text-sm font-medium text-gray-700 sm:hidden">Pilot status</span>
                         <input
                           type="checkbox"
-                          disabled={!canEdit}
+                          disabled={!canEdit || isEditing}
                           checked={grantsPilot}
                           onChange={event => togglePilotStatusEndorsement(type, event.target.checked)}
                           className={toggleClass}
@@ -317,14 +402,48 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                         />
                       </label>
                       {canEdit ? (
-                        <button
-                          type="button"
-                          onClick={() => removeEndorsement(type)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600"
-                          aria-label={`Remove ${type}`}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        <div className="flex justify-end gap-1">
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => saveEndorsementRename(type)}
+                                disabled={!editingEndorsementName.trim() || editDuplicate}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label={`Save ${type} rename`}
+                              >
+                                <Check className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEditingEndorsement}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+                                aria-label={`Cancel ${type} rename`}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => startEditingEndorsement(type)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-blue-50 hover:text-blue-700"
+                                aria-label={`Rename ${type}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeEndorsement(type)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600"
+                                aria-label={`Remove ${type}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       ) : (
                         <span />
                       )}

@@ -2,7 +2,7 @@
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, Sparkles, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -26,6 +26,7 @@ import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
 import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
+import { cleanupInstructorComment } from '../../utils/commentCleanup';
 
 interface StudentInfoForm {
   name: string;
@@ -211,6 +212,8 @@ export const StudentProfilePage: React.FC = () => {
   });
   const [editingTrainingRecord, setEditingTrainingRecord] = useState<TrainingRecord | null>(null);
   const [trainingEditForm, setTrainingEditForm] = useState<TrainingRecordEditForm | null>(null);
+  const [commentCleanupLoading, setCommentCleanupLoading] = useState(false);
+  const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
   const [savingTrainingRecord, setSavingTrainingRecord] = useState(false);
   const [studentExamResults, setStudentExamResults] = useState<StudentExamResult[]>([]);
   const [loadingExams, setLoadingExams] = useState(false);
@@ -916,6 +919,7 @@ export const StudentProfilePage: React.FC = () => {
   const openTrainingRecordEditor = (record: TrainingRecord) => {
     if (!canEditRecord(record)) return;
     setEditingTrainingRecord(record);
+    setCommentCleanupOriginal(null);
     setTrainingEditForm({
       comments: record.comments || '',
       briefingComments: record.briefingComments || '',
@@ -927,6 +931,41 @@ export const StudentProfilePage: React.FC = () => {
       flightReviewResult: record.flightReviewResult || 'not_assessed',
       flightReviewNotes: record.flightReviewNotes || '',
     });
+  };
+
+  const handleCleanupTrainingEditComments = async () => {
+    if (!editingTrainingRecord || !trainingEditForm) return;
+    if (!trainingEditForm.comments.trim()) {
+      toast.error('Write lesson comments before using AI cleanup');
+      return;
+    }
+
+    setCommentCleanupLoading(true);
+    try {
+      const lesson = getRecordLesson(editingTrainingRecord);
+      const course = getRecordCourse(editingTrainingRecord);
+      const rewritten = await cleanupInstructorComment(trainingEditForm.comments, {
+        studentName: student?.name,
+        lessonName: lesson?.name || lesson?.sequenceTitle,
+        lessonCode: lesson?.sequenceCode || editingTrainingRecord.lessonCodes.join(', '),
+        courseName: course?.title,
+        aircraft: editingTrainingRecord.registration,
+        date: formatBookingDateTime(editingTrainingRecord),
+      });
+      setCommentCleanupOriginal(trainingEditForm.comments);
+      setTrainingEditForm(form => form ? { ...form, comments: rewritten } : form);
+      toast.success('Lesson comments cleaned up');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
+    } finally {
+      setCommentCleanupLoading(false);
+    }
+  };
+
+  const handleRevertTrainingEditComments = () => {
+    if (commentCleanupOriginal === null) return;
+    setTrainingEditForm(form => form ? { ...form, comments: commentCleanupOriginal } : form);
+    setCommentCleanupOriginal(null);
   };
 
   const describeTrainingRecordChanges = (
@@ -3474,7 +3513,31 @@ export const StudentProfilePage: React.FC = () => {
               </div>
 
               <label className="block">
-                <span className="block text-sm font-medium text-gray-700 mb-1">Lesson Comments</span>
+                <span className="mb-1 flex items-center justify-between gap-3">
+                  <span className="block text-sm font-medium text-gray-700">Lesson Comments</span>
+                  <span className="flex items-center gap-2">
+                    {commentCleanupOriginal !== null && (
+                      <button
+                        type="button"
+                        onClick={handleRevertTrainingEditComments}
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        title="Revert to your original comments"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        Revert
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCleanupTrainingEditComments}
+                      disabled={commentCleanupLoading || !trainingEditForm.comments.trim()}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Clean up comments with AI"
+                    >
+                      {commentCleanupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    </button>
+                  </span>
+                </span>
                 <textarea
                   value={trainingEditForm.comments}
                   onChange={event => setTrainingEditForm(form => form ? { ...form, comments: event.target.value } : form)}

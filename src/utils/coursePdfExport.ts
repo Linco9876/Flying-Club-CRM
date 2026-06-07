@@ -268,21 +268,40 @@ export async function exportCoursePdf({
     options: { columns?: number; labelWidth?: number; rowHeight?: number; valueSize?: number } = {}
   ) => {
     const columns = options.columns ?? 2;
-    const rowHeight = options.rowHeight ?? 24;
+    const minRowHeight = options.rowHeight ?? 24;
     const valueSize = options.valueSize ?? 8;
     const columnWidth = (width - margin * 2) / columns;
     const rowCount = Math.ceil(rows.length / columns);
-    ensureSpace(rowCount * rowHeight + 8);
-
-    rows.forEach(([label, value], index) => {
-      const row = Math.floor(index / columns);
-      const col = index % columns;
-      const x = margin + col * columnWidth;
-      const y = cursor - row * rowHeight;
-      drawText(label, { x, y }, { size: 7, font: bold, color: grey, maxWidth: columnWidth - 10 });
-      drawText(value || 'Not recorded', { x, y: y - 11 }, { size: valueSize, color: dark, maxWidth: columnWidth - 10, lineHeight: valueSize + 2 });
+    const valueLineHeight = valueSize + 2;
+    const gridRows = Array.from({ length: rowCount }, (_, rowIndex) => {
+      const cells = rows.slice(rowIndex * columns, rowIndex * columns + columns).map(([label, value]) => {
+        const labelLines = wrapText(label, bold, 7, columnWidth - 10);
+        const valueLines = wrapText(value || 'Not recorded', regular, valueSize, columnWidth - 10);
+        return {
+          label,
+          value: value || 'Not recorded',
+          height: Math.max(minRowHeight, labelLines.length * 9 + 4 + valueLines.length * valueLineHeight + 8),
+        };
+      });
+      return {
+        cells,
+        height: Math.max(minRowHeight, ...cells.map((cell) => cell.height)),
+      };
     });
-    cursor -= rowCount * rowHeight + 8;
+    const totalHeight = gridRows.reduce((sum, row) => sum + row.height, 0);
+    ensureSpace(totalHeight + 8);
+
+    let yOffset = 0;
+    gridRows.forEach((gridRow) => {
+      gridRow.cells.forEach((cell, col) => {
+        const x = margin + col * columnWidth;
+        const y = cursor - yOffset;
+        drawText(cell.label, { x, y }, { size: 7, font: bold, color: grey, maxWidth: columnWidth - 10 });
+        drawText(cell.value, { x, y: y - 11 }, { size: valueSize, color: dark, maxWidth: columnWidth - 10, lineHeight: valueLineHeight });
+      });
+      yOffset += gridRow.height;
+    });
+    cursor -= totalHeight + 8;
   };
 
   const drawParagraphBlock = (title: string, value: string, maxLines = 7) => {
@@ -652,13 +671,15 @@ export async function exportCoursePdf({
     drawSectionTitle('RPL(A) Syllabus Overview');
     drawParagraphBlock('Course description', course.description, 5);
     if (course.prerequisites.length > 0 || course.objectives.length > 0 || course.evaluationCriteria.length > 0) {
-      const overviewRows: Array<[string, string]> = [
-        ['Prerequisites', course.prerequisites.length > 0 ? course.prerequisites.join(', ') : 'No mandatory prerequisites recorded'],
-        ['Objectives', course.objectives.length > 0 ? course.objectives.join('; ') : 'Objectives are managed in the course lesson library'],
-        ['Evaluation focus', course.evaluationCriteria.length > 0 ? course.evaluationCriteria.join('; ') : 'Evaluation is recorded against the CASA planning matrix'],
-        ['Course resources', course.resources.length > 0 ? course.resources.map((resource) => resource.title).join(', ') : 'Aircraft, briefing material and flight training records'],
+      const overviewBlocks: Array<[string, string, number]> = [
+        ['Prerequisites', course.prerequisites.length > 0 ? course.prerequisites.join(', ') : 'No mandatory prerequisites recorded', 4],
+        ['Objectives', course.objectives.length > 0 ? course.objectives.join('; ') : 'Objectives are managed in the course lesson library', 6],
+        ['Evaluation focus', course.evaluationCriteria.length > 0 ? course.evaluationCriteria.join('; ') : 'Evaluation is recorded against the CASA planning matrix', 6],
+        ['Course resources', course.resources.length > 0 ? course.resources.map((resource) => resource.title).join(', ') : 'Aircraft, briefing material and flight training records', 4],
       ];
-      drawLabelValueGrid(overviewRows, { columns: 2, rowHeight: 34, valueSize: 8 });
+      overviewBlocks.forEach(([title, value, maxLines]) => {
+        drawParagraphBlock(title, value, maxLines);
+      });
     }
 
     drawSectionTitle('Performance Standard Key');

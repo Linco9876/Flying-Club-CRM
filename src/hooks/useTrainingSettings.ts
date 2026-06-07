@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { LessonGradingSystem } from '../types';
 import toast from 'react-hot-toast';
-import { DEFAULT_ENDORSEMENT_TYPES, DEFAULT_PILOT_STATUS_ENDORSEMENTS, reconcileAllPilotStatuses, uniqueEndorsementTypes } from '../utils/pilotStatus';
+import { DEFAULT_ENDORSEMENT_TYPES, DEFAULT_PILOT_STATUS_ENDORSEMENTS, normaliseEndorsementType, reconcileAllPilotStatuses, uniqueEndorsementTypes } from '../utils/pilotStatus';
 
 export type NextLessonRule = 'advance_on_pass' | 'always_advance' | 'manual';
 export type CourseCompletionRule = 'all_required_criteria' | 'all_lessons_attempted' | 'criteria_or_lessons';
@@ -164,5 +164,27 @@ export function useTrainingSettings() {
     toast.success('Training settings saved');
   };
 
-  return { settings, loading, updateSettings, refetch: fetchSettings };
+  const renameEndorsementReferences = async (renames: Array<{ from: string; to: string }>) => {
+    const cleanRenames = renames
+      .map(rename => ({ from: rename.from.trim(), to: rename.to.trim() }))
+      .filter(rename => rename.from && rename.to && normaliseEndorsementType(rename.from) !== normaliseEndorsementType(rename.to));
+
+    for (const rename of cleanRenames) {
+      const [
+        endorsementsResult,
+        coursesResult,
+        aircraftResult,
+      ] = await Promise.all([
+        supabase.from('endorsements').update({ type: rename.to }).eq('type', rename.from),
+        supabase.from('training_courses').update({ completion_endorsement_type: rename.to }).eq('completion_endorsement_type', rename.from),
+        supabase.from('aircraft').update({ required_endorsement_type: rename.to }).eq('required_endorsement_type', rename.from),
+      ]);
+
+      if (endorsementsResult.error) throw endorsementsResult.error;
+      if (coursesResult.error) throw coursesResult.error;
+      if (aircraftResult.error) throw aircraftResult.error;
+    }
+  };
+
+  return { settings, loading, updateSettings, renameEndorsementReferences, refetch: fetchSettings };
 }

@@ -60,7 +60,7 @@ export const LoginForm: React.FC = () => {
           </div>
           <h1 className="text-5xl font-extrabold tracking-tight">Bendigo Flying Club</h1>
           <p className="mt-4 max-w-md text-base font-medium text-white/90">
-            Flight Training Management System
+            Members Flight Management System
           </p>
         </div>
       </div>
@@ -72,7 +72,7 @@ export const LoginForm: React.FC = () => {
               <Plane className="h-8 w-8 text-white" />
             </div>
             <h2 className="text-3xl font-extrabold text-gray-900">Bendigo Flying Club</h2>
-            <p className="mt-2 text-gray-600">Flight Training Management System</p>
+            <p className="mt-2 text-gray-600">Members Flight Management System</p>
           </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-xl">

@@ -1,2 +1,10 @@
 name = "bendigo-flying-club-portal"
+compatibility_date = "2026-06-07"
 pages_build_output_dir = "dist"
+
+[vars]
+SUPABASE_URL = "https://joarmzswpufrduectjse.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_bV5KJ5tICL7ltGvPWxrqJQ_BH6MqNez"
+
+[ai]
+binding = "AI"

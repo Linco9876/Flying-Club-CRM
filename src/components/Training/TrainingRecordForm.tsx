@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Send, Clock, User, Plane, FileText, Upload, FileSignature as Signature, Check, Plus, Search } from 'lucide-react';
+import { X, Save, Send, Clock, User, Plane, FileText, Upload, FileSignature as Signature, Check, Plus, Search, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { mockAircraft, mockStudents, mockSyllabusSequences } from '../../data/mockData';
 import { Booking, TrainingRecord, SyllabusSequence, TrainingSequenceResult } from '../../types';
 import toast from 'react-hot-toast';
+import { cleanupInstructorComment } from '../../utils/commentCleanup';
 
 interface TrainingRecordFormProps {
   isOpen: boolean;
@@ -49,6 +50,8 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
   const [showSequenceSearch, setShowSequenceSearch] = useState(false);
   const [instructorSignature, setInstructorSignature] = useState('');
   const [studentAckName, setStudentAckName] = useState('');
+  const [commentCleanupLoading, setCommentCleanupLoading] = useState(false);
+  const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
 
   // Get aircraft and student info from booking
   const aircraft = booking ? mockAircraft.find(a => a.id === booking.aircraftId) : null;
@@ -193,6 +196,36 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
   const calculateTotalTime = () => {
     const totalHours = formData.dualTime + formData.soloTime;
     return totalHours.toFixed(1);
+  };
+
+  const handleCleanupLessonComments = async () => {
+    if (!formData.lessonComments.trim()) {
+      toast.error('Write lesson comments before using AI cleanup');
+      return;
+    }
+    setCommentCleanupLoading(true);
+    try {
+      const rewritten = await cleanupInstructorComment(formData.lessonComments, {
+        studentName: student?.name,
+        lessonCode: formData.lessonCode,
+        lessonName: lessonCodes.find(lesson => lesson.value === formData.lessonCode)?.label,
+        aircraft: formData.aircraftRegistration,
+        date: formData.date,
+      });
+      setCommentCleanupOriginal(formData.lessonComments);
+      setFormData(prev => ({ ...prev, lessonComments: rewritten }));
+      toast.success('Lesson comments cleaned up');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
+    } finally {
+      setCommentCleanupLoading(false);
+    }
+  };
+
+  const handleRevertLessonComments = () => {
+    if (commentCleanupOriginal === null) return;
+    setFormData(prev => ({ ...prev, lessonComments: commentCleanupOriginal }));
+    setCommentCleanupOriginal(null);
   };
 
   const validateForm = () => {
@@ -581,9 +614,33 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Lesson Comments *
-                </label>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Lesson Comments *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {commentCleanupOriginal !== null && (
+                      <button
+                        type="button"
+                        onClick={handleRevertLessonComments}
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        title="Revert to your original comments"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        Revert
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCleanupLessonComments}
+                      disabled={commentCleanupLoading || !formData.lessonComments.trim()}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Clean up comments with AI"
+                    >
+                      {commentCleanupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
                 <textarea
                   value={formData.lessonComments}
                   onChange={(e) => setFormData(prev => ({ ...prev, lessonComments: e.target.value }))}
