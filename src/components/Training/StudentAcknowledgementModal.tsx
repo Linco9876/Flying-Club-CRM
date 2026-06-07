@@ -54,11 +54,6 @@ export const StudentAcknowledgementModal: React.FC = () => {
   const [signingDeclarationId, setSigningDeclarationId] = useState<string | null>(null);
   const [declarationSignatureName, setDeclarationSignatureName] = useState('');
   const [declarationMemberNumber, setDeclarationMemberNumber] = useState('');
-  const [guardianSignatureName, setGuardianSignatureName] = useState('');
-  const [guardianRelationship, setGuardianRelationship] = useState('');
-  const [guardianEmail, setGuardianEmail] = useState('');
-  const [guardianPhone, setGuardianPhone] = useState('');
-  const [guardianConsentChecked, setGuardianConsentChecked] = useState(false);
 
   const isStudentLike = Boolean(user && (user.role === 'student' || user.role === 'pilot' || user.roles?.some(role => role === 'student' || role === 'pilot')));
 
@@ -102,11 +97,6 @@ export const StudentAcknowledgementModal: React.FC = () => {
     if (!activeDeclaration || !user) return;
     setDeclarationSignatureName(activeDeclaration.enrolment.declarationSignedName || user.name || user.email || '');
     setDeclarationMemberNumber(activeDeclaration.enrolment.declarationMemberNumber || '');
-    setGuardianSignatureName(activeDeclaration.enrolment.guardianDeclarationSignedName || '');
-    setGuardianRelationship(activeDeclaration.enrolment.guardianDeclarationRelationship || '');
-    setGuardianEmail(activeDeclaration.enrolment.guardianDeclarationEmail || '');
-    setGuardianPhone(activeDeclaration.enrolment.guardianDeclarationPhone || '');
-    setGuardianConsentChecked(false);
   }, [activeDeclaration?.enrolment.id, activeDeclaration?.enrolment.declarationSignedName, activeDeclaration?.enrolment.declarationMemberNumber, user]);
 
   const lessonNameForRecord = (record: TrainingRecord) => {
@@ -180,19 +170,9 @@ export const StudentAcknowledgementModal: React.FC = () => {
       toast.error('Type your full name to sign the declaration');
       return;
     }
-    if (activeDeclaration.needsGuardianSignature) {
-      if (!guardianSignatureName.trim()) {
-        toast.error('Type the parent/guardian full name');
-        return;
-      }
-      if (!guardianRelationship.trim()) {
-        toast.error('Add the parent/guardian relationship');
-        return;
-      }
-      if (!guardianConsentChecked) {
-        toast.error('Confirm the parent/guardian consents to signing electronically');
-        return;
-      }
+    if (!activeDeclaration.needsStudentSignature && activeDeclaration.needsGuardianSignature) {
+      toast.error('A parent/guardian must sign using their one-time signing link');
+      return;
     }
 
     setSigningDeclarationId(activeDeclaration.enrolment.id);
@@ -203,12 +183,6 @@ export const StudentAcknowledgementModal: React.FC = () => {
         memberNumber: declarationMemberNumber || activeDeclaration.enrolment.declarationMemberNumber || '',
         declarationText: activeDeclaration.course.flyingDeclarationText || '',
         declarationVersion: activeDeclaration.course.flyingDeclarationVersion ?? 1,
-        guardianSignatureName: activeDeclaration.needsGuardianSignature ? guardianSignatureName : undefined,
-        guardianRelationship: activeDeclaration.needsGuardianSignature ? guardianRelationship : undefined,
-        guardianEmail: activeDeclaration.needsGuardianSignature ? guardianEmail : undefined,
-        guardianPhone: activeDeclaration.needsGuardianSignature ? guardianPhone : undefined,
-        guardianDeclarationText: activeDeclaration.needsGuardianSignature ? activeDeclaration.course.guardianDeclarationText : undefined,
-        guardianDeclarationVersion: activeDeclaration.needsGuardianSignature ? activeDeclaration.course.flyingDeclarationVersion ?? 1 : undefined,
       });
     } finally {
       setSigningDeclarationId(null);
@@ -278,59 +252,10 @@ export const StudentAcknowledgementModal: React.FC = () => {
                 <h3 className="text-sm font-semibold text-blue-950">
                   {course.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration'}
                 </h3>
-                <p className="mt-3 whitespace-pre-line text-sm leading-6 text-gray-900">
-                  {course.guardianDeclarationText}
+                <p className="mt-2 text-sm leading-6 text-blue-950">
+                  A parent or legal guardian must sign this declaration using their own one-time signing link.
+                  If they have not received it, ask an instructor or admin to resend the parent/guardian link from your course enrolment card.
                 </p>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col text-sm font-medium text-gray-700">
-                    Parent/guardian full name electronic signature
-                    <input
-                      type="text"
-                      value={guardianSignatureName}
-                      onChange={(event) => setGuardianSignatureName(event.target.value)}
-                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </label>
-                  <label className="flex flex-col text-sm font-medium text-gray-700">
-                    Relationship to student
-                    <input
-                      type="text"
-                      value={guardianRelationship}
-                      onChange={(event) => setGuardianRelationship(event.target.value)}
-                      placeholder="Parent, legal guardian, carer"
-                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </label>
-                  <label className="flex flex-col text-sm font-medium text-gray-700">
-                    Parent/guardian email
-                    <input
-                      type="email"
-                      value={guardianEmail}
-                      onChange={(event) => setGuardianEmail(event.target.value)}
-                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </label>
-                  <label className="flex flex-col text-sm font-medium text-gray-700">
-                    Parent/guardian phone
-                    <input
-                      type="tel"
-                      value={guardianPhone}
-                      onChange={(event) => setGuardianPhone(event.target.value)}
-                      className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                    />
-                  </label>
-                </div>
-                <label className="mt-4 flex items-start gap-3 rounded-md border border-blue-200 bg-white p-3 text-sm text-blue-950">
-                  <input
-                    type="checkbox"
-                    checked={guardianConsentChecked}
-                    onChange={(event) => setGuardianConsentChecked(event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span>
-                    I am the parent or legal guardian named above, I consent to signing this declaration electronically, and I intend my typed name to be my electronic signature.
-                  </span>
-                </label>
               </div>
             )}
 
@@ -347,11 +272,11 @@ export const StudentAcknowledgementModal: React.FC = () => {
             <button
               type="button"
               onClick={handleSignDeclaration}
-              disabled={isSigning}
+              disabled={isSigning || !activeDeclaration.needsStudentSignature}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
             >
               {isSigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-              Sign declaration
+              {activeDeclaration.needsStudentSignature ? 'Sign declaration' : 'Waiting for parent/guardian'}
             </button>
           </div>
         </div>

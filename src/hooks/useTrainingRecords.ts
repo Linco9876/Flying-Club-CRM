@@ -182,12 +182,29 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
     }, 250);
   }, [fetchTrainingRecords]);
 
+  const sendDeclarationLinksForEnrolment = async (enrolmentId?: string) => {
+    if (!enrolmentId) return;
+
+    const { error } = await supabase.functions.invoke('send-declaration-link', {
+      body: {
+        enrolmentId,
+        recipientType: 'both',
+        deliveryMethod: 'email',
+        redirectOrigin: window.location.origin,
+      },
+    });
+
+    if (error) {
+      console.error('Failed to send declaration signing links:', error);
+    }
+  };
+
   const ensureStudentCourseEnrolment = async (studentId?: string, courseId?: string | null) => {
-    if (!studentId || !courseId) return;
+    if (!studentId || !courseId) return undefined;
 
     const { data: authData } = await supabase.auth.getUser();
     const now = new Date().toISOString();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('student_course_enrolments')
       .upsert({
         student_id: studentId,
@@ -195,12 +212,17 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
         enrolled_by: authData.user?.id || null,
         status: 'active',
         updated_at: now,
-      }, { onConflict: 'student_id,course_id' });
+      }, { onConflict: 'student_id,course_id' })
+      .select('id')
+      .single();
 
     if (error) {
       console.error('Failed to ensure student course enrolment:', error);
       toast.error('Training record saved, but the course enrolment could not be updated');
+      return undefined;
     }
+
+    return data?.id as string | undefined;
   };
 
   const addTrainingRecord = async (recordData: Omit<TrainingRecord, 'id' | 'sequences' | 'auditLog'> & { sequences?: TrainingSequenceResult[] }) => {
@@ -245,7 +267,8 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
       if (error) throw error;
 
-      await ensureStudentCourseEnrolment(recordData.studentId, recordData.courseId);
+      const enrolmentId = await ensureStudentCourseEnrolment(recordData.studentId, recordData.courseId);
+      void sendDeclarationLinksForEnrolment(enrolmentId);
 
       const sequenceRows = recordData.sequences
         ?.filter(sequence => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sequence.sequenceId))
@@ -327,10 +350,11 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
       if (recordData.studentId || recordData.courseId) {
         const existingRecord = trainingRecords.find(record => record.id === id);
-        await ensureStudentCourseEnrolment(
+        const enrolmentId = await ensureStudentCourseEnrolment(
           recordData.studentId || existingRecord?.studentId,
           recordData.courseId || existingRecord?.courseId
         );
+        void sendDeclarationLinksForEnrolment(enrolmentId);
       }
 
       await fetchTrainingRecords(true);

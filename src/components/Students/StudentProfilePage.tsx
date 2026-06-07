@@ -259,6 +259,7 @@ export const StudentProfilePage: React.FC = () => {
     enrolments: courseEnrolments,
     loading: courseEnrolmentsLoading,
     enrolInCourse,
+    sendDeclarationLinks,
   } = useStudentCourseEnrolments(studentId);
   const isOwnStudentPortal = (user?.role === 'student' || user?.role === 'pilot') && studentId === user.id;
 
@@ -2199,6 +2200,7 @@ export const StudentProfilePage: React.FC = () => {
           enrolments={courseEnrolments}
           enrolmentsLoading={courseEnrolmentsLoading}
           onEnrolCourse={enrolInCourse}
+          onSendDeclarationLinks={sendDeclarationLinks}
           refetchStudents={refetchStudents}
         />
       )}
@@ -4046,6 +4048,27 @@ interface CourseProgressTabProps {
   enrolments: StudentCourseEnrolment[];
   enrolmentsLoading: boolean;
   onEnrolCourse: (courseId: string, enrolledBy?: string, notes?: string) => Promise<void>;
+  onSendDeclarationLinks: (
+    enrolmentId: string,
+    options?: {
+      recipientType?: 'student' | 'guardian' | 'both';
+      deliveryMethod?: 'email' | 'sms';
+      guardianEmail?: string;
+      guardianPhone?: string;
+      showToast?: boolean;
+    }
+  ) => Promise<{
+    results?: Array<{
+      recipientType: 'student' | 'guardian';
+      deliveryMethod?: 'email' | 'sms' | 'manual';
+      emailSent?: boolean;
+      smsSent?: boolean;
+      sendError?: string | null;
+      manualLink?: string;
+      skipped?: boolean;
+      reason?: string;
+    }>;
+  }>;
   refetchStudents: () => Promise<void>;
 }
 
@@ -4135,6 +4158,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
   enrolments,
   enrolmentsLoading,
   onEnrolCourse,
+  onSendDeclarationLinks,
   refetchStudents,
 }) => {
   const { user } = useAuth();
@@ -4144,6 +4168,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
   const [selectedEnrolCourseId, setSelectedEnrolCourseId] = useState('');
   const [enrolmentNotes, setEnrolmentNotes] = useState('');
   const [enrollingCourse, setEnrollingCourse] = useState(false);
+  const [sendingDeclarationKey, setSendingDeclarationKey] = useState<string | null>(null);
   const courseProgress = useMemo(
     () => calculateCourseProgress(courses, trainingRecords, trainingSettings.courseCompletionRule),
     [courses, trainingRecords, trainingSettings.courseCompletionRule]
@@ -4282,6 +4307,58 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
       setEnrolmentNotes('');
     } finally {
       setEnrollingCourse(false);
+    }
+  };
+
+  const handleSendDeclarationLink = async (
+    enrolment: StudentCourseEnrolment,
+    recipientType: 'student' | 'guardian',
+    deliveryMethod: 'email' | 'sms' = 'email'
+  ) => {
+    const actionKey = `${enrolment.id}-${recipientType}-${deliveryMethod}`;
+    setSendingDeclarationKey(actionKey);
+    try {
+      let guardianEmail: string | undefined;
+      let guardianPhone: string | undefined;
+
+      if (recipientType === 'guardian' && deliveryMethod === 'email') {
+        const current = enrolment.guardianDeclarationEmail || '';
+        guardianEmail = window.prompt('Parent/guardian email address', current) || undefined;
+        if (!guardianEmail?.trim()) return;
+      }
+
+      if (recipientType === 'guardian' && deliveryMethod === 'sms') {
+        const current = enrolment.guardianDeclarationPhone || student?.emergencyContact?.phone || '';
+        guardianPhone = window.prompt('Parent/guardian mobile number for SMS', current) || undefined;
+        if (!guardianPhone?.trim()) return;
+      }
+
+      const result = await onSendDeclarationLinks(enrolment.id, {
+        recipientType,
+        deliveryMethod,
+        guardianEmail,
+        guardianPhone,
+        showToast: false,
+      });
+      const activeResult = result.results?.find(item => item.recipientType === recipientType);
+
+      if (activeResult?.emailSent || activeResult?.smsSent) {
+        toast.success(`${recipientType === 'student' ? 'Student' : 'Parent/guardian'} declaration link sent`);
+        return;
+      }
+
+      if (activeResult?.manualLink) {
+        await navigator.clipboard?.writeText(activeResult.manualLink);
+        toast.success('Signing link generated and copied');
+        return;
+      }
+
+      toast.success(activeResult?.reason || 'No declaration link needed');
+    } catch (error) {
+      console.error('Failed to send declaration signing link:', error);
+      toast.error('Failed to send declaration signing link');
+    } finally {
+      setSendingDeclarationKey(null);
     }
   };
 
@@ -4436,7 +4513,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
               }`}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <p className="font-semibold">{course.flyingDeclarationTitle || 'Flying Declaration'}</p>
-                  <div className="space-y-1 text-xs sm:text-right">
+                  <div className="space-y-2 text-xs sm:text-right">
                     <p>
                       {declarationSigned
                         ? `Student signed ${enrolment?.declarationSignedAt?.toLocaleDateString('en-AU') || 'date not recorded'} by ${enrolment?.declarationSignedName || student?.name || 'student'}${enrolment?.declarationMemberNumber ? `, member ${enrolment.declarationMemberNumber}` : ''}`
@@ -4448,6 +4525,43 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                           ? `Parent/guardian signed ${enrolment?.guardianDeclarationSignedAt?.toLocaleDateString('en-AU') || 'date not recorded'} by ${enrolment?.guardianDeclarationSignedName || 'guardian'}${enrolment?.guardianDeclarationRelationship ? ` (${enrolment.guardianDeclarationRelationship})` : ''}`
                           : 'Awaiting parent/guardian signature'}
                       </p>
+                    )}
+                    {canManageCourseEnrolments && enrolment && (!declarationSigned || (guardianRequired && !guardianDeclarationSigned)) && (
+                      <div className="flex flex-wrap justify-start gap-2 pt-1 sm:justify-end">
+                        {!declarationSigned && (
+                          <button
+                            type="button"
+                            onClick={() => handleSendDeclarationLink(enrolment, 'student', 'email')}
+                            disabled={sendingDeclarationKey === `${enrolment.id}-student-email`}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60"
+                          >
+                            {sendingDeclarationKey === `${enrolment.id}-student-email` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                            Send student link
+                          </button>
+                        )}
+                        {guardianRequired && !guardianDeclarationSigned && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleSendDeclarationLink(enrolment, 'guardian', 'email')}
+                              disabled={sendingDeclarationKey === `${enrolment.id}-guardian-email`}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                            >
+                              {sendingDeclarationKey === `${enrolment.id}-guardian-email` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                              Send parent email
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSendDeclarationLink(enrolment, 'guardian', 'sms')}
+                              disabled={sendingDeclarationKey === `${enrolment.id}-guardian-sms`}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                            >
+                              {sendingDeclarationKey === `${enrolment.id}-guardian-sms` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Phone className="h-3.5 w-3.5" />}
+                              Send parent SMS
+                            </button>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

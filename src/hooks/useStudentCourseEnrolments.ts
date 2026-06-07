@@ -84,7 +84,7 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
   const enrolInCourse = async (courseId: string, enrolledBy?: string, notes = '') => {
     if (!studentId) throw new Error('Student is not loaded');
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('student_course_enrolments')
       .upsert({
         student_id: studentId,
@@ -93,7 +93,9 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
         status: 'active',
         notes: notes.trim() || null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'student_id,course_id' });
+      }, { onConflict: 'student_id,course_id' })
+      .select('id')
+      .single();
 
     if (error) {
       console.error('Failed to enrol student in course:', error);
@@ -101,8 +103,67 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
       throw error;
     }
 
+    if (data?.id) {
+      void sendDeclarationLinks(data.id, { recipientType: 'both' });
+    }
+
     await fetchEnrolments();
     toast.success('Student enrolled in course');
+  };
+
+  const sendDeclarationLinks = async (
+    enrolmentId: string,
+    options: {
+      recipientType?: 'student' | 'guardian' | 'both';
+      deliveryMethod?: 'email' | 'sms';
+      guardianEmail?: string;
+      guardianPhone?: string;
+      showToast?: boolean;
+    } = {}
+  ) => {
+    const { data, error } = await supabase.functions.invoke('send-declaration-link', {
+      body: {
+        enrolmentId,
+        recipientType: options.recipientType || 'both',
+        deliveryMethod: options.deliveryMethod || 'email',
+        guardianEmail: options.guardianEmail,
+        guardianPhone: options.guardianPhone,
+        redirectOrigin: window.location.origin,
+      },
+    });
+
+    if (error) {
+      console.error('Failed to send declaration link:', error);
+      if (options.showToast !== false) toast.error('Failed to send declaration link');
+      throw error;
+    }
+
+    if (options.showToast !== false) {
+      const results = Array.isArray(data?.results) ? data.results : [];
+      const sentCount = results.filter((result: any) => result.emailSent || result.smsSent).length;
+      const manualCount = results.filter((result: any) => result.manualLink && !result.emailSent && !result.smsSent && !result.skipped).length;
+
+      if (sentCount > 0) {
+        toast.success('Declaration link sent');
+      } else if (manualCount > 0) {
+        toast.success('Declaration link generated');
+      } else {
+        toast.success('No declaration link needed');
+      }
+    }
+
+    return data as {
+      results?: Array<{
+        recipientType: 'student' | 'guardian';
+        deliveryMethod?: 'email' | 'sms' | 'manual';
+        emailSent?: boolean;
+        smsSent?: boolean;
+        sendError?: string | null;
+        manualLink?: string;
+        skipped?: boolean;
+        reason?: string;
+      }>;
+    };
   };
 
   const updateEnrolmentStatus = async (id: string, status: StudentCourseEnrolment['status']) => {
@@ -187,6 +248,7 @@ export const useStudentCourseEnrolments = (studentId?: string) => {
     enrolInCourse,
     updateEnrolmentStatus,
     signCourseDeclaration,
+    sendDeclarationLinks,
     refetch: fetchEnrolments,
   };
 };

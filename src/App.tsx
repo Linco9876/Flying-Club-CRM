@@ -37,6 +37,7 @@ const TrainingCourseCatalog = lazy(() => import('./components/Training/TrainingC
 const TrainingModuleBuilder = lazy(() => import('./components/Training/TrainingModuleBuilder').then(module => ({ default: module.TrainingModuleBuilder })));
 const OutstandingRecordsTab = lazy(() => import('./components/Training/OutstandingRecordsTab').then(module => ({ default: module.OutstandingRecordsTab })));
 const StudentAcknowledgementModal = lazy(() => import('./components/Training/StudentAcknowledgementModal').then(module => ({ default: module.StudentAcknowledgementModal })));
+const DeclarationSigningPage = lazy(() => import('./components/Training/DeclarationSigningPage').then(module => ({ default: module.DeclarationSigningPage })));
 const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashboard').then(module => ({ default: module.SettingsDashboard })));
 const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
 
@@ -99,6 +100,14 @@ const AppContent: React.FC = () => {
     new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'invite' ||
     new URLSearchParams(location.search).get('type') === 'invite';
   const isKioskRoute = location.pathname.startsWith('/kiosk');
+
+  if (location.pathname === '/declaration-sign') {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <DeclarationSigningPage />
+      </Suspense>
+    );
+  }
 
   if (isPasswordRecovery) {
     return (
