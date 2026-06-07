@@ -540,6 +540,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
+  const goToToday = () => {
+    const today = new Date();
+    setCurrentDate(today);
+    setDatePickerMonth(today);
+    setShowDatePicker(false);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('date', format(today, 'yyyy-MM-dd'));
+      return next;
+    });
+  };
+
   const getWeekDays = () => {
     const weekStartsOn = calendarSettings?.week_starts_on === 'sunday' ? 0 : 1;
     const start = startOfWeek(currentDate, { weekStartsOn });
@@ -1890,6 +1902,18 @@ export const Calendar: React.FC<CalendarProps> = ({
     return slot >= minSlot && slot <= maxSlot;
   };
 
+  const renderTodayButton = () => (
+    <button
+      type="button"
+      onClick={goToToday}
+      className={`inline-flex shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white font-bold text-gray-700 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:border-blue-400/50 dark:hover:bg-[#262b33] dark:hover:text-blue-200 ${
+        isKioskMode ? 'min-h-11 px-4 text-sm' : 'min-h-10 px-3 text-sm'
+      }`}
+    >
+      Today
+    </button>
+  );
+
   const renderViewModeButtons = () => (
     <div className={`grid w-full min-w-0 grid-cols-4 rounded-xl bg-gray-100 p-1 dark:bg-[#11141a] ${isKioskMode ? '' : 'sm:w-auto sm:min-w-[17rem] sm:flex'}`}>
         {(['day', 'week', 'month', 'list'] as ViewMode[]).map((mode) => (
@@ -1923,6 +1947,15 @@ export const Calendar: React.FC<CalendarProps> = ({
         ))}
       </div>
     );
+
+  const renderViewModeGroup = () => (
+    <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+      <div className="min-w-0 flex-1 sm:flex-none">
+        {renderViewModeButtons()}
+      </div>
+      {renderTodayButton()}
+    </div>
+  );
 
   const renderResourceSelectors = () => (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -3359,13 +3392,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         <div className="mt-4 flex justify-between gap-2 border-t border-gray-100 pt-3 dark:border-[#2c2f36]">
           <button
             type="button"
-            onClick={() => {
-              const today = new Date();
-              setCurrentDate(today);
-              setDatePickerMonth(today);
-              setShowDatePicker(false);
-              if (viewMode === 'list') setViewMode('day');
-            }}
+            onClick={goToToday}
             className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-100 dark:hover:bg-[#262b33]"
           >
             Today
@@ -3385,19 +3412,19 @@ export const Calendar: React.FC<CalendarProps> = ({
   const renderStandardControls = () => (
     <div className="space-y-2 sm:space-y-3">
       <div className="grid min-w-0 items-center gap-2 sm:gap-3 xl:grid-cols-[190px_minmax(360px,1fr)_300px] 2xl:grid-cols-[220px_minmax(460px,1fr)_340px]">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="grid min-w-0 gap-2 sm:flex sm:items-center">
           <h2 className="hidden text-xl font-bold tracking-tight text-gray-950 dark:text-gray-100 2xl:block">
             Calendar
           </h2>
           <button
             onClick={onNewBooking}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 sm:px-4"
+            className="inline-flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 sm:w-auto sm:gap-2 sm:px-4"
           >
-            <Plus className="h-4 w-4" />
-            <span>New Booking</span>
+            <Plus className="h-4 w-4 shrink-0" />
+            <span className="whitespace-nowrap">New Booking</span>
           </button>
-          <div className="min-w-0 flex-1 sm:hidden">
-            {renderViewModeButtons()}
+          <div className="min-w-0 sm:hidden">
+            {renderViewModeGroup()}
           </div>
         </div>
 
@@ -3433,7 +3460,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
 
         <div className="hidden min-w-0 justify-start overflow-x-auto sm:flex xl:justify-end">
-          {renderViewModeButtons()}
+          {renderViewModeGroup()}
         </div>
       </div>
 
@@ -3503,10 +3530,10 @@ export const Calendar: React.FC<CalendarProps> = ({
         <div className="flex justify-start">
           <button
             onClick={onNewBooking}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
           >
-            <Plus className="h-4 w-4" />
-            <span>New Booking</span>
+            <Plus className="h-4 w-4 shrink-0" />
+            <span className="whitespace-nowrap">New Booking</span>
           </button>
         </div>
 
@@ -3542,7 +3569,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         </div>
 
         <div className="flex justify-end overflow-x-auto">
-          {renderViewModeButtons()}
+          {renderViewModeGroup()}
         </div>
       </div>
 
