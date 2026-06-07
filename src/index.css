@@ -741,6 +741,74 @@ html[data-portal-theme='dark'] .resource-calendar-grid .calendar-slot-selected {
   background-color: var(--calendar-slot-selected) !important;
 }
 
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card {
+  color: rgb(248 250 252) !important;
+  text-shadow: 0 1px 1px rgb(2 6 23 / 0.35);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    0 8px 18px rgb(2 6 23 / 0.38);
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card .bg-white\/70,
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card .bg-white\/55 {
+  background-color: rgb(255 255 255 / 0.18) !important;
+  color: rgb(248 250 252) !important;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-blue-100\/90 {
+  background-color: rgb(30 64 175 / 0.74) !important;
+  border-color: rgb(147 197 253) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-blue-100\/90:hover {
+  background-color: rgb(37 99 235 / 0.86) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-emerald-100\/90 {
+  background-color: rgb(6 95 70 / 0.76) !important;
+  border-color: rgb(110 231 183) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-emerald-100\/90:hover {
+  background-color: rgb(5 150 105 / 0.86) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/90,
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/80 {
+  background-color: rgb(127 29 29 / 0.78) !important;
+  border-color: rgb(248 113 113) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/90:hover,
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/80:hover {
+  background-color: rgb(185 28 28 / 0.88) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-amber-100\/90 {
+  background-color: rgb(146 64 14 / 0.8) !important;
+  border-color: rgb(251 191 36) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-amber-100\/90:hover {
+  background-color: rgb(180 83 9 / 0.9) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-gray-100\/90 {
+  background-color: rgb(51 65 85 / 0.82) !important;
+  border-color: rgb(148 163 184) !important;
+  color: rgb(226 232 240) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-gray-100\/90:hover {
+  background-color: rgb(71 85 105 / 0.9) !important;
+}
+
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.ring-red-300 {
+  --tw-ring-color: rgb(248 113 113 / 0.76) !important;
+  --tw-ring-offset-color: rgb(7 15 29) !important;
+}
+
 html[data-portal-theme='dark'] .portal-app-shell .app-sticky-header {
   border-color: rgb(96 165 250 / 0.24) !important;
 }

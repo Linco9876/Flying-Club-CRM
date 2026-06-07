@@ -829,7 +829,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             y: Math.min(event.clientY || 160, window.innerHeight - 20),
           });
         }}
-        className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} block w-full rounded-xl border-2 p-3 text-left shadow-sm transition-transform active:scale-[0.99]`}
+        className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card block w-full rounded-xl border-2 p-3 text-left shadow-sm transition-transform active:scale-[0.99]`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -2306,7 +2306,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   <div
                     key={`${booking.id}-${resource.id}`}
                     data-booking-element
-                    className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
+                    className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
                       isBeingDragged
                         ? 'opacity-30 pointer-events-none'
                         : ''
@@ -2935,7 +2935,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     <div
                       key={`${booking.id}-${dayIndex}-aircraft`}
                       data-booking-element
-                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
+                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
@@ -3014,7 +3014,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                     <div
                       key={`${booking.id}-${dayIndex}-instructor`}
                       data-booking-element
-                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
+                      className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card relative text-xs ${getBookingCardPadding(bookingCardDensity)} rounded-md shadow-sm overflow-hidden cursor-move transition-colors z-10 border-2 ${
                         isBeingDragged ? 'opacity-30 pointer-events-none' : ''
                       } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
