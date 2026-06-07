@@ -182,6 +182,27 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
     }, 250);
   }, [fetchTrainingRecords]);
 
+  const ensureStudentCourseEnrolment = async (studentId?: string, courseId?: string | null) => {
+    if (!studentId || !courseId) return;
+
+    const { data: authData } = await supabase.auth.getUser();
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('student_course_enrolments')
+      .upsert({
+        student_id: studentId,
+        course_id: courseId,
+        enrolled_by: authData.user?.id || null,
+        status: 'active',
+        updated_at: now,
+      }, { onConflict: 'student_id,course_id' });
+
+    if (error) {
+      console.error('Failed to ensure student course enrolment:', error);
+      toast.error('Training record saved, but the course enrolment could not be updated');
+    }
+  };
+
   const addTrainingRecord = async (recordData: Omit<TrainingRecord, 'id' | 'sequences' | 'auditLog'> & { sequences?: TrainingSequenceResult[] }) => {
     try {
       const { data, error } = await supabase
@@ -223,6 +244,8 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
         .single();
 
       if (error) throw error;
+
+      await ensureStudentCourseEnrolment(recordData.studentId, recordData.courseId);
 
       const sequenceRows = recordData.sequences
         ?.filter(sequence => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sequence.sequenceId))
@@ -301,6 +324,14 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
         .eq('id', id);
 
       if (error) throw error;
+
+      if (recordData.studentId || recordData.courseId) {
+        const existingRecord = trainingRecords.find(record => record.id === id);
+        await ensureStudentCourseEnrolment(
+          recordData.studentId || existingRecord?.studentId,
+          recordData.courseId || existingRecord?.courseId
+        );
+      }
 
       await fetchTrainingRecords(true);
     } catch (err) {
