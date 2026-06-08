@@ -46,6 +46,7 @@ export const StudentList: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'instructor' | 'pilot' | 'student'>('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
   const [sortBy, setSortBy] = useState<'name' | 'role' | 'hours' | 'lastFlight' | 'balance'>('name');
+  const [viewMode, setViewMode] = useState<'detailed' | 'slim'>('detailed');
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const canManageMembers = user?.role === 'admin' || user?.roles?.includes('admin');
 
@@ -213,6 +214,9 @@ export const StudentList: React.FC = () => {
         return 'bg-blue-100 text-blue-800';
     }
   };
+
+  const getPrimaryPhone = (student: Student) =>
+    student.mobilePhone || student.phone || student.homePhone || student.workPhone || student.alternatePhone || 'No number';
 
   const renderAvatar = (student: Student, sizeClass: string, iconClass: string) => (
     <div className={`${sizeClass} flex-shrink-0 overflow-hidden rounded-full bg-blue-600 shadow-sm ring-2 ring-white`}>
@@ -494,7 +498,7 @@ export const StudentList: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[minmax(280px,1fr)_auto_auto] xl:items-center">
+          <div className="grid gap-3 p-4 sm:p-5 xl:grid-cols-[minmax(280px,1fr)_auto_auto_auto] xl:items-center">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
@@ -588,6 +592,26 @@ export const StudentList: React.FC = () => {
               Reset
             </button>
           </div>
+
+          <div className="flex rounded-xl bg-gray-100 p-1 sm:w-fit xl:justify-self-end">
+            {([
+              { id: 'detailed', label: 'Detailed' },
+              { id: 'slim', label: 'Slim' }
+            ] as const).map(option => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setViewMode(option.id)}
+                className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-colors sm:flex-none ${
+                  viewMode === option.id
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           </div>
 
           <div className="hidden border-t border-gray-100 px-4 pb-4 sm:block sm:px-5 sm:pb-5">
@@ -613,6 +637,68 @@ export const StudentList: React.FC = () => {
           </div>
         </section>
 
+      {viewMode === 'slim' ? (
+        <div className="overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="hidden grid-cols-[minmax(180px,1.2fr)_minmax(180px,1.4fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_auto] gap-3 border-b border-gray-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-gray-500 md:grid">
+            <span>Name</span>
+            <span>Email</span>
+            <span>Number</span>
+            <span>Role</span>
+            <span className="sr-only">Actions</span>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {visibleMembers.map(student => {
+              const memberRoles = getMemberRoles(student);
+              const isArchived = student.isActive === false;
+
+              return (
+                <div
+                  key={student.id}
+                  className="relative grid gap-2 px-3 py-3 pr-14 transition-colors hover:bg-gray-50 md:grid-cols-[minmax(180px,1.2fr)_minmax(180px,1.4fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_auto] md:items-center md:gap-3 md:px-4"
+                >
+                  <button
+                    type="button"
+                    onClick={() => openViewDetails(student)}
+                    className="min-w-0 text-left"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-gray-900">{student.name}</p>
+                      {isArchived && (
+                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
+                          Archived
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openViewDetails(student)}
+                    className="truncate text-left text-sm text-gray-600"
+                  >
+                    {student.email}
+                  </button>
+                  <p className="truncate text-sm text-gray-700">{getPrimaryPhone(student)}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {memberRoles.map(role => (
+                      <span key={role} className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClass(role)}`}>
+                        {roleLabels[role]}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="absolute right-3 top-3 md:static">
+                    {renderActionsMenu(student, 'desktop')}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {visibleMembers.length === 0 && (
+            <div className="p-8 text-center text-sm text-gray-500">
+              No members match your filters.
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="grid gap-2 lg:grid-cols-2">
         {visibleMembers.map(student => {
           const stats = getStudentStats(student.id);
@@ -725,6 +811,7 @@ export const StudentList: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       </div>
 
