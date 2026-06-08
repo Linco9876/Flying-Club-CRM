@@ -66,6 +66,16 @@ const cleanContext = (value) =>
     .trim()
     .slice(0, 240);
 
+const normaliseForLength = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+const originalWordCount = (value) => normaliseForLength(value).split(/\s+/).filter(Boolean).length;
+
+const cleanedRewrite = (value) =>
+  String(value || '')
+    .replace(/^["']|["']$/g, '')
+    .replace(/^rewritten comment:\s*/i, '')
+    .trim();
+
 export const onRequestOptions = async () =>
   new Response(null, {
     status: 204,
@@ -98,12 +108,28 @@ export const onRequestPost = async ({ request, env }) => {
       .map(([label, value]) => `${label}: ${cleanContext(value) || 'Not supplied'}`)
       .join('\n');
 
+    const sourceWordCount = originalWordCount(comment);
+    const targetWordLimit = Math.max(sourceWordCount + 10, Math.ceil(sourceWordCount * 1.35));
+
     const prompt = [
-      'You are assisting a Bendigo Flying Club flight instructor writing student training record comments.',
-      'Rewrite the instructor comment so it is clear, professional, plain-English, and useful for a student file.',
-      'Keep the original aviation meaning. Do not invent events, grades, exercises, incidents, achievements, risks, or medical details.',
-      'Keep constructive critique, next steps, safety/airmanship points, and any stated weaknesses.',
-      'Use Australian English. Return only the rewritten comment, with no heading, markdown, or explanation.',
+      'You are assisting a Bendigo Flying Club flight instructor by lightly copy-editing student training record comments.',
+      'This is a cleanup task, not an assessment-writing task.',
+      '',
+      'Strict rules:',
+      '- Stay very close to the original wording and meaning.',
+      '- Keep it concise. Do not make it longer unless needed for grammar.',
+      `- Maximum ${targetWordLimit} words.`,
+      '- Do not add examples, causes, consequences, recommendations, new weaknesses, new strengths, exercises, grades, safety concerns, or deviations unless they are explicitly stated in the original comment.',
+      '- Do not turn praise into criticism.',
+      '- Do not add “however”, “to improve”, “should focus”, or similar coaching unless the original comment already says that.',
+      '- Fix grammar, spelling, punctuation, flow, and professional tone only.',
+      '- Use Australian English.',
+      '- Return only the rewritten comment, with no heading, markdown, or explanation.',
+      '',
+      'Example:',
+      'Original: Very light on controls and had a great understanding of the fundamentals of flight',
+      'Good rewrite: Very light on the controls and showed a great understanding of the fundamentals of flight.',
+      'Bad rewrite: Any version that invents minor deviations, pitch/roll problems, or extra next steps.',
       '',
       'Training context:',
       contextLines,
@@ -116,18 +142,30 @@ export const onRequestPost = async ({ request, env }) => {
       messages: [
         {
           role: 'system',
-          content: 'You rewrite flight training comments for a CRM. You preserve facts and never add unmentioned information.',
+          content: 'You are a conservative copy editor for flight training comments. Preserve facts exactly. Never add unmentioned issues, recommendations, or details.',
         },
         { role: 'user', content: prompt },
       ],
-      max_tokens: 700,
+      max_tokens: 180,
+      temperature: 0.1,
     });
 
-    const rewritten = String(result?.response || result?.result?.response || result?.text || '').trim();
+    const rewritten = cleanedRewrite(result?.response || result?.result?.response || result?.text || '');
     if (!rewritten) return json({ error: 'AI did not return a usable comment. Please try again.' }, 502);
 
+    const rewrittenWordCount = originalWordCount(rewritten);
+    const tooLong = rewrittenWordCount > targetWordLimit + 5;
+    const inventedCoaching = /\b(however|to improve|should focus|minor deviations|desired flight path|pitch and roll|more stable|controlled flight path)\b/i.test(rewritten)
+      && !/\b(however|to improve|should focus|minor deviations|desired flight path|pitch and roll|more stable|controlled flight path)\b/i.test(comment);
+
+    if (tooLong || inventedCoaching) {
+      return json({
+        error: 'AI rewrite changed the meaning too much. Please try a shorter comment or edit manually.',
+      }, 422);
+    }
+
     return json({
-      rewrittenComment: rewritten.replace(/^["']|["']$/g, '').trim(),
+      rewrittenComment: rewritten,
       model: MODEL,
     });
   } catch (error) {
