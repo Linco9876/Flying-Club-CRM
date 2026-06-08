@@ -191,6 +191,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [pendingSubmits, setPendingSubmits] = useState<QueuedTrainingRecordSubmit[]>(() => readQueuedSubmits());
   const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
+  const [proceedWithCarryForward, setProceedWithCarryForward] = useState(false);
 
   const selectedCourse = useMemo(
     () => courses.find(c => c.id === form.courseId) ?? null,
@@ -206,6 +207,7 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   const {
     requirementsByLesson,
+    requirements: matrixRequirements,
     rowsById,
     bestAssessmentByRow,
     loading: matrixLoading,
@@ -215,7 +217,29 @@ export const OutstandingRecordsTab: React.FC = () => {
   // Criteria come from the course level, pass marks from the lesson
   const activeCriteria: LessonAssessmentCriterion[] = selectedCourse?.assessmentCriteria ?? [];
 
-  const activeMatrixRequirements = useMemo(() => {
+  const lessonOrderByKey = useMemo(() => {
+    const order = new Map<string, number>();
+    selectedCourse?.lessons.forEach((lesson, index) => {
+      [
+        lesson.id,
+        lesson.sequenceCode,
+        lesson.name,
+        lesson.sequenceTitle,
+        normaliseSyllabusLessonKey(lesson.name),
+        normaliseSyllabusLessonKey(lesson.sequenceTitle),
+      ]
+        .filter(Boolean)
+        .forEach(key => order.set(key, index));
+    });
+    return order;
+  }, [selectedCourse]);
+
+  const selectedLessonIndex = useMemo(
+    () => selectedCourse?.lessons.findIndex(l => l.id === form.lessonId) ?? -1,
+    [selectedCourse, form.lessonId]
+  );
+
+  const lessonMatrixRequirements = useMemo(() => {
     if (!selectedLesson) return [];
     const lessonKeys = [
       selectedLesson.id,
@@ -235,12 +259,58 @@ export const OutstandingRecordsTab: React.FC = () => {
       });
   }, [requirementsByLesson, rowsById, selectedLesson]);
 
-  const hasMatrixAssessment = activeMatrixRequirements.length > 0;
+  const carriedForwardMatrixRequirements = useMemo(() => {
+    if (!selectedLesson || selectedLessonIndex <= 0) return [];
+    const currentRequirementIds = new Set(lessonMatrixRequirements.map(requirement => requirement.id));
 
-  const selectedLessonIndex = useMemo(
-    () => selectedCourse?.lessons.findIndex(l => l.id === form.lessonId) ?? -1,
-    [selectedCourse, form.lessonId]
+    return matrixRequirements
+      .filter(requirement => {
+        if (currentRequirementIds.has(requirement.id)) return false;
+        const requirementOrder = lessonOrderByKey.get(requirement.lessonId || '')
+          ?? lessonOrderByKey.get(requirement.lessonSequenceCode || '')
+          ?? lessonOrderByKey.get(requirement.lessonColumnTitle || '')
+          ?? lessonOrderByKey.get(normaliseSyllabusLessonKey(requirement.lessonColumnTitle));
+        if (requirementOrder === undefined || requirementOrder >= selectedLessonIndex) return false;
+
+        const best = bestAssessmentByRow.get(requirement.matrixRowId);
+        return Boolean(best?.achievedStandard) && !matrixStandardMeetsRequirement(best?.achievedStandard, requirement.requiredStandard);
+      })
+      .sort((a, b) => {
+        const orderA = lessonOrderByKey.get(a.lessonId || '')
+          ?? lessonOrderByKey.get(a.lessonSequenceCode || '')
+          ?? lessonOrderByKey.get(a.lessonColumnTitle || '')
+          ?? 0;
+        const orderB = lessonOrderByKey.get(b.lessonId || '')
+          ?? lessonOrderByKey.get(b.lessonSequenceCode || '')
+          ?? lessonOrderByKey.get(b.lessonColumnTitle || '')
+          ?? 0;
+        if (orderA !== orderB) return orderA - orderB;
+        const rowA = rowsById.get(a.matrixRowId);
+        const rowB = rowsById.get(b.matrixRowId);
+        return (rowA?.sortOrder ?? 0) - (rowB?.sortOrder ?? 0);
+      });
+  }, [
+    bestAssessmentByRow,
+    lessonMatrixRequirements,
+    lessonOrderByKey,
+    matrixRequirements,
+    rowsById,
+    selectedLesson,
+    selectedLessonIndex,
+  ]);
+
+  const activeMatrixRequirements = useMemo(() => {
+    return Array.from(
+      new Map([...lessonMatrixRequirements, ...carriedForwardMatrixRequirements].map(requirement => [requirement.id, requirement])).values()
+    );
+  }, [carriedForwardMatrixRequirements, lessonMatrixRequirements]);
+
+  const carriedForwardRequirementIds = useMemo(
+    () => new Set(carriedForwardMatrixRequirements.map(requirement => requirement.id)),
+    [carriedForwardMatrixRequirements]
   );
+
+  const hasMatrixAssessment = activeMatrixRequirements.length > 0;
 
   const nextLessonAfterSelected = useMemo(() => {
     if (!selectedCourse || selectedLessonIndex < 0) return null;
@@ -280,6 +350,14 @@ export const OutstandingRecordsTab: React.FC = () => {
       return isGradeAtLeast(grade, passMark, criterion.gradingSystem);
     });
   }, [activeCriteria, activeMatrixRequirements, form.criteriaGrades, form.matrixGrades, hasMatrixAssessment, selectedLesson]);
+
+  const canProceedWithCarryForward = Boolean(
+    hasMatrixAssessment &&
+    !lessonPassed &&
+    nextLessonAfterSelected
+  );
+
+  const lessonWillProceed = lessonPassed || (canProceedWithCarryForward && proceedWithCarryForward);
 
   const matrixCriterionOutcomes = useMemo(() => {
     if (!hasMatrixAssessment || activeCriteria.length === 0) return [];
@@ -322,7 +400,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     }, {});
   }, [matrixCriterionOutcomes]);
 
-  const nextLessonForRecord = lessonPassed
+  const nextLessonForRecord = lessonWillProceed
     ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
     : selectedLesson
       ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
@@ -449,15 +527,18 @@ export const OutstandingRecordsTab: React.FC = () => {
         const parsed = JSON.parse(savedDraft) as { form?: RecordFormState; step?: Step; savedAt?: string };
         setForm(parsed.form || { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
         setStep(parsed.step || (parsed.form?.lessonId ? 'form' : parsed.form?.courseId ? 'lesson' : 'course'));
+        setProceedWithCarryForward(Boolean((parsed as { proceedWithCarryForward?: boolean }).proceedWithCarryForward));
         setDraftSavedAt(parsed.savedAt ? new Date(parsed.savedAt) : null);
         toast.success('Recovered saved training record draft');
       } catch {
         setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
         setStep('course');
+        setProceedWithCarryForward(false);
       }
     } else {
       setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
       setStep('course');
+      setProceedWithCarryForward(false);
       setDraftSavedAt(null);
     }
     setCommentCleanupOriginal(null);
@@ -468,6 +549,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     setStep('action');
     setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
     setCommentCleanupOriginal(null);
+    setProceedWithCarryForward(false);
   }
 
   function toggleExpand(id: string) {
@@ -491,6 +573,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   function handleSelectCourse(courseId: string) {
     setForm(f => ({ ...f, courseId, lessonId: '', criteriaGrades: {}, matrixGrades: {} }));
     setCommentCleanupOriginal(null);
+    setProceedWithCarryForward(false);
     setStep('lesson');
   }
 
@@ -527,6 +610,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       flightReviewNotes: '',
     }));
     setCommentCleanupOriginal(null);
+    setProceedWithCarryForward(false);
     setStep('form');
   }
 
@@ -609,13 +693,14 @@ export const OutstandingRecordsTab: React.FC = () => {
       window.localStorage.setItem(key, JSON.stringify({
         form,
         step,
+        proceedWithCarryForward,
         savedAt: savedAt.toISOString(),
       }));
       setDraftSavedAt(savedAt);
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [activeLog, form, step, user]);
+  }, [activeLog, form, proceedWithCarryForward, step, user]);
 
   const buildSubmitJob = (): QueuedTrainingRecordSubmit | null => {
     if (!activeLog || !user || !selectedLesson) return null;
@@ -1113,6 +1198,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                             {activeMatrixRequirements.length} items
                           </span>
                         </div>
+                        {carriedForwardMatrixRequirements.length > 0 && (
+                          <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-amber-800 ring-1 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-400/20">
+                            {carriedForwardMatrixRequirements.length} carried-forward item{carriedForwardMatrixRequirements.length === 1 ? '' : 's'} from earlier lessons.
+                          </p>
+                        )}
                         <div className="mt-2 grid grid-cols-3 gap-1.5">
                           {[
                             { standard: 3, label: 'Training' },
@@ -1138,6 +1228,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                             const achieved = current ? Number(current) as SyllabusMatrixStandard : undefined;
                             const best = bestAssessmentByRow.get(requirement.matrixRowId);
                             const passed = matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+                            const isCarriedForward = carriedForwardRequirementIds.has(requirement.id);
                             const statusClass = passed
                               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
                               : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200';
@@ -1146,10 +1237,22 @@ export const OutstandingRecordsTab: React.FC = () => {
                               <div key={requirement.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-[#2c2f36] dark:bg-[#0f172a] sm:p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                      {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}
-                                    </p>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}
+                                      </p>
+                                      {isCarriedForward && (
+                                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+                                          Carry-forward
+                                        </span>
+                                      )}
+                                    </div>
                                     <p className="mt-1 text-sm font-semibold leading-5 text-gray-900 dark:text-gray-100 sm:text-base sm:leading-6">{formatSyllabusMatrixText(row?.description) || 'Matrix row'}</p>
+                                    {isCarriedForward && (
+                                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-200">
+                                        From {requirement.lessonColumnTitle || requirement.lessonSequenceCode || 'an earlier lesson'}
+                                      </p>
+                                    )}
                                   </div>
                                   <div className="flex shrink-0 flex-col items-end gap-1">
                                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}>
@@ -1262,6 +1365,25 @@ export const OutstandingRecordsTab: React.FC = () => {
                     </div>
                   )}
 
+                  {canProceedWithCarryForward && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/25 dark:text-amber-100 sm:p-4">
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={proceedWithCarryForward}
+                          onChange={event => setProceedWithCarryForward(event.target.checked)}
+                          className="mt-1 h-4 w-4 rounded border-amber-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>
+                          <span className="block font-semibold">Proceed to the next lesson and carry forward below-standard matrix items</span>
+                          <span className="mt-1 block text-xs leading-5 text-amber-800 dark:text-amber-200">
+                            The lesson record will show the next lesson as {nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle}. Any matrix item not meeting its required standard will appear again in later RPL records until it is marked competent.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
                   {!hasMatrixAssessment && activeCriteria.length > 0 && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Competency Assessment</label>
@@ -1360,12 +1482,28 @@ export const OutstandingRecordsTab: React.FC = () => {
                   )}
 
                   <div className={`rounded-lg border px-4 py-3 text-sm ${
-                    lessonPassed ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'
+                    lessonPassed
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : lessonWillProceed
+                        ? 'border-blue-200 bg-blue-50'
+                        : 'border-amber-200 bg-amber-50'
                   }`}>
-                    <p className={`font-semibold ${lessonPassed ? 'text-emerald-800' : 'text-amber-800'}`}>
-                      {lessonPassed ? 'Lesson pass achieved' : 'Lesson not passed yet'}
+                    <p className={`font-semibold ${
+                      lessonPassed
+                        ? 'text-emerald-800'
+                        : lessonWillProceed
+                          ? 'text-blue-800'
+                          : 'text-amber-800'
+                    }`}>
+                      {lessonPassed ? 'Lesson pass achieved' : lessonWillProceed ? 'Lesson proceeding with carry-forward items' : 'Lesson not passed yet'}
                     </p>
-                    <p className={`mt-1 text-xs ${lessonPassed ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    <p className={`mt-1 text-xs ${
+                      lessonPassed
+                        ? 'text-emerald-700'
+                        : lessonWillProceed
+                          ? 'text-blue-700'
+                          : 'text-amber-700'
+                    }`}>
                       Next lesson on record: {nextLessonForRecord || 'Not set'}
                     </p>
                   </div>
