@@ -311,6 +311,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   );
 
   const hasMatrixAssessment = activeMatrixRequirements.length > 0;
+  const matrixAssessmentLoading = Boolean(selectedLesson && matrixLoading);
 
   const nextLessonAfterSelected = useMemo(() => {
     if (!selectedCourse || selectedLessonIndex < 0) return null;
@@ -1200,7 +1201,13 @@ export const OutstandingRecordsTab: React.FC = () => {
                   </div>
 
                   {/* CASA Matrix Assessment */}
-                  {hasMatrixAssessment && (
+                  {matrixAssessmentLoading && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-400/30 dark:bg-blue-950/25 dark:text-blue-100">
+                      Loading lesson-specific assessment rows...
+                    </div>
+                  )}
+
+                  {!matrixAssessmentLoading && hasMatrixAssessment && (
                     <div>
                       <label className="mb-3 block text-sm font-semibold text-gray-800 dark:text-gray-100">Lesson Matrix Assessment</label>
                       <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/25 dark:text-blue-100">
@@ -1396,7 +1403,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                     </div>
                   )}
 
-                  {!hasMatrixAssessment && activeCriteria.length > 0 && (
+                  {!matrixAssessmentLoading && !hasMatrixAssessment && activeCriteria.length > 0 && (
                     <div>
                       <label className="block text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Competency Assessment</label>
                       <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-[#2c2f36] dark:bg-[#0f172a] dark:text-gray-300 sm:grid-cols-4">
