@@ -969,12 +969,12 @@ export const OutstandingRecordsTab: React.FC = () => {
 
                   {!hasMatrixAssessment && activeCriteria.length > 0 && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-3">Competency Assessment</label>
-                      <div className="mb-3 grid gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 sm:grid-cols-2">
-                        <div><span className="font-semibold text-gray-800">-</span> = Not assessed</div>
-                        <div><span className="font-semibold text-red-700">NC</span> = Not competent</div>
-                        <div><span className="font-semibold text-amber-700">S</span> = Solo Ready</div>
-                        <div><span className="font-semibold text-emerald-700">C</span> = Pilot Ready</div>
+                      <label className="block text-sm font-semibold text-gray-800 mb-3 dark:text-gray-100">Competency Assessment</label>
+                      <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-[#2c2f36] dark:bg-[#0f172a] dark:text-gray-300 sm:grid-cols-4">
+                        <div className="rounded-lg bg-white px-2 py-2 dark:bg-[#171a21]"><span className="font-semibold text-gray-800 dark:text-gray-100">-</span> Not assessed</div>
+                        <div className="rounded-lg bg-white px-2 py-2 dark:bg-[#171a21]"><span className="font-semibold text-red-700 dark:text-red-300">NC</span> Not competent</div>
+                        <div className="rounded-lg bg-white px-2 py-2 dark:bg-[#171a21]"><span className="font-semibold text-amber-700 dark:text-amber-300">S</span> Solo Ready</div>
+                        <div className="rounded-lg bg-white px-2 py-2 dark:bg-[#171a21]"><span className="font-semibold text-emerald-700 dark:text-emerald-300">C</span> Pilot Ready</div>
                       </div>
                       <div className="space-y-3">
                         {activeCriteria.map(criterion => {
@@ -987,30 +987,34 @@ export const OutstandingRecordsTab: React.FC = () => {
                           const hasPassedCriterion = isGradeAtLeast(currentGrade, passMarkForLesson ?? '-');
 
                           return (
-                            <div key={criterion.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                              <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                                <p className="text-sm font-medium text-gray-800">{criterion.name}</p>
-                                <div className="flex flex-wrap justify-end gap-2">
-                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                    hasPassedCriterion ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                            <div key={criterion.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-[#2c2f36] dark:bg-[#111827] sm:p-4">
+                              <div className="mb-3 space-y-2">
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="min-w-0 text-sm font-semibold text-gray-900 dark:text-gray-100">{criterion.name}</p>
+                                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    hasPassedCriterion ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200'
                                   }`}>
                                     {hasPassedCriterion ? 'Pass' : 'Below pass'}
                                   </span>
+                                </div>
+                                <div className="grid gap-2 text-xs sm:grid-cols-2">
                                   {trainingSettings.showPassMarkGuidance && passMarkForLesson && (
-                                    <span className="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
-                                      Pass mark: {passMarkForLesson} {GRADE_LABELS[passMarkForLesson] ? `(${GRADE_LABELS[passMarkForLesson]})` : ''}
-                                    </span>
+                                    <div className="rounded-lg bg-white px-3 py-2 text-gray-600 ring-1 ring-gray-200 dark:bg-[#171a21] dark:text-gray-300 dark:ring-[#363b45]">
+                                      <span className="font-semibold text-gray-800 dark:text-gray-100">Pass mark:</span> {passMarkForLesson}
+                                      {GRADE_LABELS[passMarkForLesson] ? ` (${GRADE_LABELS[passMarkForLesson]})` : ''}
+                                    </div>
                                   )}
                                   {trainingSettings.showBestGradeGuidance && (
-                                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                                      Best to date: {highestGrade} {GRADE_LABELS[highestGrade] ? `(${GRADE_LABELS[highestGrade]})` : ''}
-                                    </span>
+                                    <div className="rounded-lg bg-blue-50 px-3 py-2 text-blue-700 ring-1 ring-blue-100 dark:bg-blue-950/30 dark:text-blue-200 dark:ring-blue-400/20">
+                                      <span className="font-semibold">Best to date:</span> {highestGrade}
+                                      {GRADE_LABELS[highestGrade] ? ` (${GRADE_LABELS[highestGrade]})` : ''}
+                                    </div>
                                   )}
                                 </div>
                               </div>
 
                               {gradeOptions ? (
-                                <div className="flex gap-2 flex-wrap">
+                                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                                   {gradeOptions.map(grade => (
                                     <button
                                       key={grade}
@@ -1018,21 +1022,21 @@ export const OutstandingRecordsTab: React.FC = () => {
                                         ...f,
                                         criteriaGrades: { ...f.criteriaGrades, [criterion.id]: grade }
                                       }))}
-                                      className={`min-w-12 flex-1 px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-all sm:flex-none sm:px-4 ${
+                                      className={`flex min-h-14 flex-col items-center justify-center rounded-xl border-2 px-2 py-2 text-sm font-semibold leading-tight transition-all sm:min-h-10 sm:flex-none sm:flex-row sm:px-4 sm:py-1.5 ${
                                         currentGrade === grade
                                           ? grade === 'C' || grade === 'Pass'
-                                            ? 'border-emerald-500 bg-emerald-100 text-emerald-800'
+                                            ? 'border-emerald-500 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-100'
                                             : grade === 'S'
-                                            ? 'border-amber-400 bg-amber-100 text-amber-800'
+                                            ? 'border-amber-400 bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-100'
                                             : grade === 'NC' || grade === 'Fail'
-                                            ? 'border-red-400 bg-red-100 text-red-800'
-                                            : 'border-gray-400 bg-gray-200 text-gray-700'
-                                          : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
+                                            ? 'border-red-400 bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-100'
+                                            : 'border-gray-400 bg-gray-200 text-gray-700 dark:bg-[#2c2f36] dark:text-gray-100'
+                                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-300 dark:hover:border-[#4b5563]'
                                       }`}
                                     >
                                       {grade}
                                       {GRADE_LABELS[grade] && (
-                                        <span className="ml-1 text-xs font-medium opacity-80">
+                                        <span className="mt-0.5 text-center text-[10px] font-medium opacity-80 sm:ml-1 sm:mt-0 sm:text-xs">
                                           {GRADE_LABELS[grade]}
                                         </span>
                                       )}
