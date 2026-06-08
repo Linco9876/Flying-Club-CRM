@@ -17,6 +17,7 @@ import {
   matrixStandardMeetsRequirement,
   matrixStandardShortLabel,
   formatSyllabusMatrixText,
+  normaliseSyllabusLessonKey,
   useSyllabusMatrix,
 } from '../../hooks/useSyllabusMatrix';
 
@@ -140,11 +141,16 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   const activeMatrixRequirements = useMemo(() => {
     if (!selectedLesson) return [];
-    const byId = requirementsByLesson.get(selectedLesson.id) ?? [];
-    const byCode = selectedLesson.sequenceCode
-      ? requirementsByLesson.get(selectedLesson.sequenceCode) ?? []
-      : [];
-    const combined = [...byId, ...byCode];
+    const lessonKeys = [
+      selectedLesson.id,
+      selectedLesson.sequenceCode,
+      selectedLesson.name,
+      selectedLesson.sequenceTitle,
+      normaliseSyllabusLessonKey(selectedLesson.name),
+      normaliseSyllabusLessonKey(selectedLesson.sequenceTitle),
+    ].filter(Boolean);
+
+    const combined = lessonKeys.flatMap(key => requirementsByLesson.get(key) ?? []);
     return Array.from(new Map(combined.map((requirement) => [requirement.id, requirement])).values())
       .sort((a, b) => {
         const rowA = rowsById.get(a.matrixRowId);
@@ -823,19 +829,19 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {/* CASA Matrix Assessment */}
                   {hasMatrixAssessment && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-3">CASA Matrix Assessment</label>
-                      <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+                      <label className="mb-3 block text-sm font-semibold text-gray-800 dark:text-gray-100">Lesson Matrix Assessment</label>
+                      <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-100">
                         <p className="font-semibold">Only the matrix rows attached to this lesson are shown.</p>
                         <div className="mt-2 grid gap-2 sm:grid-cols-3">
                           {[3, 2, 1].map(standard => (
-                            <span key={standard} className="rounded-md bg-white px-2 py-1 ring-1 ring-blue-100">
+                            <span key={standard} className="rounded-md bg-white px-2 py-1 ring-1 ring-blue-100 dark:bg-[#111827] dark:ring-blue-400/20">
                               {matrixStandardLabel(standard as SyllabusMatrixStandard)}
                             </span>
                           ))}
                         </div>
                       </div>
                       {matrixLoading ? (
-                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-300">
                           Loading matrix requirements...
                         </div>
                       ) : (
@@ -848,13 +854,13 @@ export const OutstandingRecordsTab: React.FC = () => {
                             const passed = matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
 
                             return (
-                              <div key={requirement.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                              <div key={requirement.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-[#2c2f36] dark:bg-[#111827]">
                                 <div className="flex flex-wrap items-start justify-between gap-2">
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                       {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}
                                     </p>
-                                    <p className="mt-1 text-sm font-medium text-gray-900">{formatSyllabusMatrixText(row?.description) || 'Matrix row'}</p>
+                                    <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">{formatSyllabusMatrixText(row?.description) || 'Matrix row'}</p>
                                   </div>
                                   <div className="flex flex-wrap justify-end gap-2">
                                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -864,7 +870,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                                       Required: {requirement.requiredStandard}
                                     </span>
                                     {best?.achievedStandard && (
-                                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-950/50 dark:text-blue-200">
                                         Best to date: {matrixStandardShortLabel(best.achievedStandard)}
                                       </span>
                                     )}
@@ -879,8 +885,8 @@ export const OutstandingRecordsTab: React.FC = () => {
                                     }))}
                                     className={`rounded-lg border-2 px-3 py-1.5 text-sm font-semibold transition ${
                                       current === ''
-                                        ? 'border-gray-400 bg-gray-200 text-gray-700'
-                                        : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                        ? 'border-gray-400 bg-gray-200 text-gray-700 dark:bg-[#2c2f36] dark:text-gray-100'
+                                        : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-300'
                                     }`}
                                   >
                                     -
@@ -900,7 +906,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                                             : standard === 2
                                             ? 'border-blue-500 bg-blue-100 text-blue-800'
                                             : 'border-amber-500 bg-amber-100 text-amber-800'
-                                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-300'
                                       }`}
                                     >
                                       {standard}

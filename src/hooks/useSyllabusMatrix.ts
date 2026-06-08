@@ -78,6 +78,29 @@ const fetchAllPages = async <T,>(
   return rows;
 };
 
+const normaliseLessonKey = (value?: string) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const addRequirementGroup = (
+  grouped: Map<string, SyllabusMatrixRequirement[]>,
+  key: string | undefined,
+  requirement: SyllabusMatrixRequirement
+) => {
+  const rawKey = String(key || '').trim();
+  if (!rawKey) return;
+
+  const keys = new Set([rawKey, normaliseLessonKey(rawKey)].filter(Boolean));
+  keys.forEach((groupKey) => {
+    const current = grouped.get(groupKey) ?? [];
+    if (!current.some((item) => item.id === requirement.id)) {
+      grouped.set(groupKey, [...current, requirement]);
+    }
+  });
+};
+
 export const matrixStandardLabel = (standard?: SyllabusMatrixStandard) => {
   if (standard === 1) return '1 - Qualification standard';
   if (standard === 2) return '2 - Supervised solo standard';
@@ -180,8 +203,9 @@ export const useSyllabusMatrix = (courseId?: string, studentId?: string) => {
   const requirementsByLesson = useMemo(() => {
     const grouped = new Map<string, SyllabusMatrixRequirement[]>();
     requirements.forEach((requirement) => {
-      const key = requirement.lessonId || requirement.lessonSequenceCode;
-      grouped.set(key, [...(grouped.get(key) ?? []), requirement]);
+      addRequirementGroup(grouped, requirement.lessonId, requirement);
+      addRequirementGroup(grouped, requirement.lessonSequenceCode, requirement);
+      addRequirementGroup(grouped, requirement.lessonColumnTitle, requirement);
     });
     return grouped;
   }, [requirements]);
@@ -251,3 +275,5 @@ export const useSyllabusMatrix = (courseId?: string, studentId?: string) => {
     saveAssessments,
   };
 };
+
+export const normaliseSyllabusLessonKey = normaliseLessonKey;
