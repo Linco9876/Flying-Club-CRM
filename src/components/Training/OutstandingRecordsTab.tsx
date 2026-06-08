@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +23,9 @@ import {
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 
+const TRAINING_RECORD_DRAFT_PREFIX = 'bfc_training_record_draft_v1';
+const TRAINING_RECORD_QUEUE_KEY = 'bfc_training_record_submit_queue_v1';
+
 interface RecordFormState {
   courseId: string;
   lessonId: string;
@@ -35,6 +38,52 @@ interface RecordFormState {
   flightReviewType: string;
   flightReviewResult: 'pass' | 'fail' | 'not_assessed';
   flightReviewNotes: string;
+}
+
+interface QueuedTrainingRecordSubmit {
+  id: string;
+  queuedAt: string;
+  instructorId: string;
+  instructorName?: string;
+  studentName?: string;
+  courseTitle?: string;
+  lessonTitle?: string;
+  flightLogId: string;
+  recordData: {
+    studentId: string;
+    flightLogId: string;
+    bookingId?: string;
+    courseId: string;
+    lessonId: string;
+    date: string;
+    aircraftId: string;
+    aircraftType: string;
+    registration: string;
+    instructorId: string;
+    dualTimeMin: number;
+    soloTimeMin: number;
+    comments: string;
+    briefingComments: string;
+    formalBriefing: boolean;
+    criteriaGrades: Record<string, string>;
+    lessonCodes: string[];
+    nextLesson: string;
+    status: 'submitted' | 'locked';
+    studentAck: boolean;
+    studentComments: string;
+    attachments: unknown[];
+    isFlightReview: boolean;
+    flightReviewType?: string;
+    flightReviewResult?: 'pass' | 'fail' | 'not_assessed';
+    flightReviewNotes?: string;
+  };
+  matrixAssessments: Array<{
+    matrixRowId: string;
+    achievedStandard?: SyllabusMatrixStandard;
+  }>;
+  shouldMarkRecorded: boolean;
+  shouldNotifyStudent: boolean;
+  requiresAck: boolean;
 }
 
 function emptyForm(): RecordFormState {
@@ -52,6 +101,29 @@ function emptyForm(): RecordFormState {
     flightReviewNotes: '',
   };
 }
+
+const getDraftKey = (userId?: string, flightLogId?: string) =>
+  userId && flightLogId ? `${TRAINING_RECORD_DRAFT_PREFIX}:${userId}:${flightLogId}` : '';
+
+const readQueuedSubmits = (): QueuedTrainingRecordSubmit[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(TRAINING_RECORD_QUEUE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeQueuedSubmits = (queue: QueuedTrainingRecordSubmit[]) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(TRAINING_RECORD_QUEUE_KEY, JSON.stringify(queue));
+};
+
+const isNetworkLikeError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return !navigator.onLine || /failed to fetch|network|timeout|abort|load failed|fetch/i.test(message);
+};
 
 const GRADE_OPTIONS: Record<string, string[]> = {
   'NC/S/C/-': ['-', 'NC', 'S', 'C'],
@@ -115,6 +187,10 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
   const [commentCleanupLoading, setCommentCleanupLoading] = useState(false);
   const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
+  const [pendingSubmits, setPendingSubmits] = useState<QueuedTrainingRecordSubmit[]>(() => readQueuedSubmits());
+  const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
 
   const selectedCourse = useMemo(
     () => courses.find(c => c.id === form.courseId) ?? null,
@@ -257,10 +333,133 @@ export const OutstandingRecordsTab: React.FC = () => {
     selectedCourse?.requiresStudentAcknowledgement
   );
 
+  const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
+    setPendingSubmits(current => {
+      const withoutDuplicate = current.filter(item => item.id !== job.id && item.flightLogId !== job.flightLogId);
+      const next = [...withoutDuplicate, job];
+      writeQueuedSubmits(next);
+      return next;
+    });
+  }, []);
+
+  const clearDraft = useCallback((flightLogId?: string) => {
+    const key = getDraftKey(user?.id, flightLogId);
+    if (key && typeof window !== 'undefined') {
+      window.localStorage.removeItem(key);
+    }
+    setDraftSavedAt(null);
+  }, [user?.id]);
+
+  const submitQueuedJob = useCallback(async (job: QueuedTrainingRecordSubmit) => {
+    const recordDate = new Date(job.recordData.date);
+    let trainingRecordId: string | undefined;
+
+    const { data: existingRecord, error: existingError } = await supabase
+      .from('training_records')
+      .select('id')
+      .eq('flight_log_id', job.recordData.flightLogId)
+      .eq('course_id', job.recordData.courseId)
+      .eq('lesson_id', job.recordData.lessonId)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+
+    if (existingRecord?.id) {
+      trainingRecordId = existingRecord.id;
+    } else {
+      const createdRecord = await addTrainingRecord({
+        ...job.recordData,
+        date: recordDate,
+      });
+      trainingRecordId = createdRecord?.id;
+    }
+
+    if (trainingRecordId && job.matrixAssessments.length > 0) {
+      await saveMatrixAssessments({
+        studentId: job.recordData.studentId,
+        courseId: job.recordData.courseId,
+        lessonId: job.recordData.lessonId,
+        trainingRecordId,
+        instructorId: job.recordData.instructorId,
+        assessments: job.matrixAssessments,
+      });
+    }
+
+    if (job.shouldMarkRecorded) {
+      await markRecorded(job.flightLogId);
+    }
+
+    if (job.shouldNotifyStudent) {
+      await supabase.from('notifications').insert({
+        user_id: job.recordData.studentId,
+        type: 'training_record',
+        title: 'Lesson record requires your sign-off',
+        message: `${job.instructorName || 'Your instructor'} has submitted a training record for your flight on ${format(recordDate, 'd MMM yyyy')}. Please review and acknowledge it.`,
+        is_read: false,
+        metadata: { student_id: job.recordData.studentId },
+      });
+    }
+  }, [addTrainingRecord, markRecorded, saveMatrixAssessments]);
+
+  const syncPendingSubmits = useCallback(async () => {
+    const queue = readQueuedSubmits();
+    if (queue.length === 0 || syncingOfflineQueue || !navigator.onLine) return;
+
+    setSyncingOfflineQueue(true);
+    try {
+      const remaining: QueuedTrainingRecordSubmit[] = [];
+      let syncedCount = 0;
+
+      for (let index = 0; index < queue.length; index += 1) {
+        const job = queue[index];
+        try {
+          await submitQueuedJob(job);
+          clearDraft(job.flightLogId);
+          syncedCount += 1;
+        } catch (error) {
+          remaining.push(...queue.slice(index));
+          if (!isNetworkLikeError(error)) {
+            console.error('Queued training record failed:', error);
+          }
+          break;
+        }
+      }
+
+      writeQueuedSubmits(remaining);
+      setPendingSubmits(remaining);
+
+      if (syncedCount > 0) {
+        toast.success(`${syncedCount} queued training record${syncedCount === 1 ? '' : 's'} synced`);
+        void refetch();
+      }
+    } finally {
+      setSyncingOfflineQueue(false);
+    }
+  }, [clearDraft, refetch, submitQueuedJob, syncingOfflineQueue]);
+
   function openLog(log: OutstandingFlightLog) {
     setActiveLog(log);
-    setStep('course');
-    setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+    const draftKey = getDraftKey(user?.id, log.id);
+    const savedDraft = draftKey && typeof window !== 'undefined'
+      ? window.localStorage.getItem(draftKey)
+      : null;
+
+    if (savedDraft) {
+      try {
+        const parsed = JSON.parse(savedDraft) as { form?: RecordFormState; step?: Step; savedAt?: string };
+        setForm(parsed.form || { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+        setStep(parsed.step || (parsed.form?.lessonId ? 'form' : parsed.form?.courseId ? 'lesson' : 'course'));
+        setDraftSavedAt(parsed.savedAt ? new Date(parsed.savedAt) : null);
+        toast.success('Recovered saved training record draft');
+      } catch {
+        setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+        setStep('course');
+      }
+    } else {
+      setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+      setStep('course');
+      setDraftSavedAt(null);
+    }
     setCommentCleanupOriginal(null);
   }
 
@@ -378,6 +577,106 @@ export const OutstandingRecordsTab: React.FC = () => {
     });
   }, [activeMatrixRequirements, bestAssessmentByRow, selectedLesson]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOnline = () => {
+      setIsOnline(true);
+      void syncPendingSubmits();
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [syncPendingSubmits]);
+
+  useEffect(() => {
+    if (isOnline && pendingSubmits.length > 0) {
+      void syncPendingSubmits();
+    }
+  }, [isOnline, pendingSubmits.length, syncPendingSubmits]);
+
+  useEffect(() => {
+    if (!activeLog || !user || step === 'action' || typeof window === 'undefined') return;
+    const key = getDraftKey(user.id, activeLog.id);
+    if (!key) return;
+
+    const timeout = window.setTimeout(() => {
+      const savedAt = new Date();
+      window.localStorage.setItem(key, JSON.stringify({
+        form,
+        step,
+        savedAt: savedAt.toISOString(),
+      }));
+      setDraftSavedAt(savedAt);
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeLog, form, step, user]);
+
+  const buildSubmitJob = (): QueuedTrainingRecordSubmit | null => {
+    if (!activeLog || !user || !selectedLesson) return null;
+
+    const aircraft = aircraftList.find(a => a.id === activeLog.aircraft_id);
+    const isCourseDefinedFlightTest = Boolean(selectedLesson.isFlightTest);
+    const criteriaGrades = hasMatrixAssessment
+      ? { ...form.criteriaGrades, ...matrixDerivedCriteriaGrades }
+      : form.criteriaGrades;
+
+    return {
+      id: `${activeLog.id}:${form.courseId}:${form.lessonId}`,
+      queuedAt: new Date().toISOString(),
+      instructorId: user.id,
+      instructorName: user.name,
+      studentName: activeLog.student_name,
+      courseTitle: selectedCourse?.title,
+      lessonTitle: selectedLesson.name || selectedLesson.sequenceTitle,
+      flightLogId: activeLog.id,
+      recordData: {
+        studentId: activeLog.student_id,
+        flightLogId: activeLog.id,
+        bookingId: activeLog.booking_id,
+        courseId: form.courseId,
+        lessonId: form.lessonId,
+        date: new Date(activeLog.start_time).toISOString(),
+        aircraftId: activeLog.aircraft_id,
+        aircraftType: aircraft?.type ?? 'single-engine',
+        registration: aircraft?.registration ?? activeLog.aircraft_registration ?? '',
+        instructorId: user.id,
+        dualTimeMin: Math.round((activeLog.dual_time ?? 0) * 60),
+        soloTimeMin: Math.round((activeLog.solo_time ?? 0) * 60),
+        comments: form.flightComments,
+        briefingComments: form.briefingComments,
+        formalBriefing: form.formalBriefing,
+        criteriaGrades,
+        lessonCodes: selectedLesson.sequenceCode ? [selectedLesson.sequenceCode] : [],
+        nextLesson: nextLessonForRecord,
+        status: selectedCourseRequiresAck ? 'submitted' : 'locked',
+        studentAck: false,
+        studentComments: '',
+        attachments: [],
+        isFlightReview: isCourseDefinedFlightTest,
+        flightReviewType: isCourseDefinedFlightTest ? (form.flightReviewType || 'Flight Test') : undefined,
+        flightReviewResult: isCourseDefinedFlightTest ? form.flightReviewResult : undefined,
+        flightReviewNotes: isCourseDefinedFlightTest ? form.flightReviewNotes : undefined,
+      },
+      matrixAssessments: hasMatrixAssessment
+        ? activeMatrixRequirements.map(requirement => ({
+            matrixRowId: requirement.matrixRowId,
+            achievedStandard: form.matrixGrades[requirement.matrixRowId]
+              ? Number(form.matrixGrades[requirement.matrixRowId]) as SyllabusMatrixStandard
+              : undefined,
+          }))
+        : [],
+      shouldMarkRecorded: trainingSettings.autoMarkFlightLogRecorded,
+      shouldNotifyStudent: selectedCourseRequiresAck && trainingSettings.autoNotifyStudentOnSubmit,
+      requiresAck: selectedCourseRequiresAck,
+    };
+  };
+
   async function handleSubmit() {
     if (!activeLog || !user) return;
     if (!form.courseId || !form.lessonId) {
@@ -393,81 +692,37 @@ export const OutstandingRecordsTab: React.FC = () => {
       return;
     }
 
-    const aircraft = aircraftList.find(a => a.id === activeLog.aircraft_id);
     const student = users.find(u => u.id === activeLog.student_id);
+    const submitJob = buildSubmitJob();
+    if (!submitJob) {
+      toast.error('Could not prepare this training record');
+      return;
+    }
 
     setSubmitting(true);
     try {
-      const isCourseDefinedFlightTest = Boolean(selectedLesson?.isFlightTest);
-      const createdRecord = await addTrainingRecord({
-        studentId: activeLog.student_id,
-        flightLogId: activeLog.id,
-        bookingId: activeLog.booking_id,
-        courseId: form.courseId,
-        lessonId: form.lessonId,
-        date: new Date(activeLog.start_time),
-        aircraftId: activeLog.aircraft_id,
-        aircraftType: aircraft?.type ?? 'single-engine',
-        registration: aircraft?.registration ?? '',
-        instructorId: user.id,
-        dualTimeMin: Math.round((activeLog.dual_time ?? 0) * 60),
-        soloTimeMin: Math.round((activeLog.solo_time ?? 0) * 60),
-        comments: form.flightComments,
-        briefingComments: form.briefingComments,
-        formalBriefing: form.formalBriefing,
-        criteriaGrades: hasMatrixAssessment
-          ? { ...form.criteriaGrades, ...matrixDerivedCriteriaGrades }
-          : form.criteriaGrades,
-        lessonCodes: selectedLesson ? [selectedLesson.sequenceCode].filter(Boolean) : [],
-        nextLesson: nextLessonForRecord,
-        status: selectedCourseRequiresAck ? 'submitted' : 'locked',
-        studentAck: false,
-        studentComments: '',
-        attachments: [],
-        isFlightReview: isCourseDefinedFlightTest,
-        flightReviewType: isCourseDefinedFlightTest ? (form.flightReviewType || 'Flight Test') : undefined,
-        flightReviewResult: isCourseDefinedFlightTest ? form.flightReviewResult : undefined,
-        flightReviewNotes: isCourseDefinedFlightTest ? form.flightReviewNotes : undefined,
-      });
-
-      if (hasMatrixAssessment && createdRecord?.id) {
-        await saveMatrixAssessments({
-          studentId: activeLog.student_id,
-          courseId: form.courseId,
-          lessonId: form.lessonId,
-          trainingRecordId: createdRecord.id,
-          instructorId: user.id,
-          assessments: activeMatrixRequirements.map(requirement => ({
-            matrixRowId: requirement.matrixRowId,
-            achievedStandard: form.matrixGrades[requirement.matrixRowId]
-              ? Number(form.matrixGrades[requirement.matrixRowId]) as SyllabusMatrixStandard
-              : undefined,
-          })),
-        });
+      if (!navigator.onLine) {
+        queueSubmit(submitJob);
+        toast.success('Training record saved on this device. It will sync when signal returns.');
+        closePanel();
+        return;
       }
 
-      if (trainingSettings.autoMarkFlightLogRecorded) {
-        await markRecorded(activeLog.id);
-      }
-
-      // Notify the student they have a lesson record to sign off
-      if (selectedCourseRequiresAck && trainingSettings.autoNotifyStudentOnSubmit) {
-        await supabase.from('notifications').insert({
-          user_id: activeLog.student_id,
-          type: 'training_record',
-          title: 'Lesson record requires your sign-off',
-          message: `${user.name} has submitted a training record for your flight on ${format(new Date(activeLog.start_time), 'd MMM yyyy')}. Please review and acknowledge it.`,
-          is_read: false,
-          metadata: { student_id: activeLog.student_id },
-        });
-      }
+      await submitQueuedJob(submitJob);
+      clearDraft(activeLog.id);
 
       toast.success(selectedCourseRequiresAck
         ? `Training record submitted - ${student?.name ?? 'student'} has been notified`
         : 'Training record submitted and locked');
       closePanel();
-    } catch {
-      // error already toasted
+    } catch (error) {
+      if (isNetworkLikeError(error)) {
+        queueSubmit(submitJob);
+        toast.success('Signal dropped. Training record saved on this device and will sync automatically.');
+        closePanel();
+      } else {
+        toast.error('Failed to submit training record');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -736,6 +991,27 @@ export const OutstandingRecordsTab: React.FC = () => {
                   >
                     <ChevronRight className="h-3 w-3 rotate-180" /> Back to lessons
                   </button>
+
+                  <div className={`rounded-xl border px-3 py-2 text-xs ${
+                    isOnline
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-950/30 dark:text-emerald-200'
+                      : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200'
+                  }`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold">
+                        {isOnline ? 'Online - autosaving locally as backup' : 'Offline - keep writing, submit will queue'}
+                      </span>
+                      {draftSavedAt && (
+                        <span>Draft saved {format(draftSavedAt, 'HH:mm')}</span>
+                      )}
+                    </div>
+                    {pendingSubmits.length > 0 && (
+                      <p className="mt-1">
+                        {pendingSubmits.length} training record{pendingSubmits.length === 1 ? '' : 's'} waiting to sync.
+                        {syncingOfflineQueue ? ' Syncing now...' : ' They will submit automatically when signal returns.'}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Selected context */}
                   <div className="bg-blue-50 rounded-lg px-4 py-3 border border-blue-100 text-sm">
