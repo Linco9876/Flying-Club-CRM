@@ -29,6 +29,27 @@ const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => 
   ]);
 };
 
+const NETWORK_LOGIN_ERROR = 'No internet connection detected. Please check your connection and try signing in again.';
+const CONNECTION_LOGIN_ERROR = 'The CRM could not reach the login server. Please check your internet connection and try again.';
+
+const isNetworkError = (error: unknown) => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+
+  const name = error && typeof error === 'object' && 'name' in error ? String((error as { name?: unknown }).name || '') : '';
+  const message = error instanceof Error ? error.message : String(error || '');
+  const status = error && typeof error === 'object' && 'status' in error ? Number((error as { status?: unknown }).status) : undefined;
+
+  return status === 0
+    || /fetch|network|offline|internet|failed to fetch|load failed|networkerror|operation timed out|timeout/i.test(`${name} ${message}`);
+};
+
+const loginConnectionMessage = (error?: unknown) =>
+  typeof navigator !== 'undefined' && navigator.onLine === false
+    ? NETWORK_LOGIN_ERROR
+    : isNetworkError(error)
+      ? CONNECTION_LOGIN_ERROR
+      : null;
+
 const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): Promise<any> => {
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -246,6 +267,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     try {
+      const offlineMessage = loginConnectionMessage();
+      if (offlineMessage) {
+        setIsLoading(false);
+        return { success: false, error: offlineMessage };
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password
@@ -254,6 +281,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         console.error('Login error:', error.message);
         setIsLoading(false);
+        const connectionMessage = loginConnectionMessage(error);
+        if (connectionMessage) {
+          return { success: false, error: connectionMessage };
+        }
         return { success: false, error: 'Invalid email or password. Please check your credentials and try again.' };
       }
 
@@ -286,6 +317,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.error('Error fetching user profile:', error);
           await supabase.auth.signOut();
           setIsLoading(false);
+          const connectionMessage = loginConnectionMessage(error);
+          if (connectionMessage) {
+            return {
+              success: false,
+              error: 'Password accepted, but the CRM profile could not be loaded because the internet connection dropped. Please reconnect and try again.'
+            };
+          }
           return {
             success: false,
             error: 'Password accepted, but the CRM profile could not be loaded. Please try again or ask an admin to check this user profile.'
@@ -298,7 +336,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Login error:', error);
       setIsLoading(false);
-      return { success: false, error: 'An error occurred during login. Please try again.' };
+      const connectionMessage = loginConnectionMessage(error);
+      return { success: false, error: connectionMessage || 'An error occurred during login. Please try again.' };
     }
   };
 
