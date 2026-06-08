@@ -444,12 +444,12 @@ export const OutstandingRecordsTab: React.FC = () => {
   }
 
   return (
-    <div className="flex h-full gap-6 p-6">
+    <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6 lg:flex-row lg:gap-6">
       {/* Left: list of outstanding flights */}
-      <div className={`flex flex-col gap-4 ${activeLog ? 'w-[30%] min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
-        <div className="flex items-center justify-between">
+      <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'lg:w-[30%] lg:min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Outstanding Records</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Outstanding Records</h2>
             <p className="text-sm text-gray-500 mt-0.5">
               {isAdmin ? 'All instructors — flights awaiting a training record' : 'Flights awaiting a training record'}
             </p>
@@ -477,31 +477,31 @@ export const OutstandingRecordsTab: React.FC = () => {
             return (
               <div
                 key={log.id}
-                className={`bg-white rounded-xl border transition-all duration-200 ${
+                className={`bg-white rounded-xl border transition-all duration-200 dark:bg-[#171a21] ${
                   isActive
-                    ? 'border-blue-400 shadow-md ring-1 ring-blue-200'
-                    : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                    ? 'border-blue-400 shadow-md ring-1 ring-blue-200 dark:ring-blue-400/30'
+                    : 'border-gray-200 hover:border-gray-300 hover:shadow-sm dark:border-[#2c2f36] dark:hover:border-[#4b5563]'
                 }`}
               >
-                <div className="p-5">
+                <div className="p-4 sm:p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 mt-0.5">
                         <AlertCircle className="h-5 w-5 text-amber-600" />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm truncate">
+                        <p className="font-semibold text-gray-900 text-sm truncate dark:text-gray-100">
                           {log.student_name ?? 'Unknown Student'}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {format(flightDate, 'EEE d MMM yyyy')} &middot; {format(flightDate, 'h:mm a')}
                         </p>
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1 text-xs text-gray-600">
+                          <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
                             <Plane className="h-3 w-3" />
                             {log.aircraft_registration ?? '–'}
                           </span>
-                          <span className="inline-flex items-center gap-1 text-xs text-gray-600">
+                          <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300">
                             <Clock className="h-3 w-3" />
                             {durationH}h
                           </span>
@@ -525,10 +525,10 @@ export const OutstandingRecordsTab: React.FC = () => {
                   </div>
 
                   {expanded && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 flex gap-3">
+                    <div className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4 dark:border-[#2c2f36] sm:flex-row sm:gap-3">
                       <button
                         onClick={() => handleDismiss(log)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors dark:border-[#363b45] dark:text-gray-100 dark:hover:bg-[#262b33]"
                       >
                         <XCircle className="h-4 w-4 text-gray-400" />
                         No Record Needed
@@ -552,12 +552,12 @@ export const OutstandingRecordsTab: React.FC = () => {
 
       {/* Right: record entry panel */}
       {activeLog && (
-        <div className="w-[70%] min-w-0">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col">
+        <div className="min-w-0 lg:w-[70%]">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col dark:border-[#2c2f36] dark:bg-[#171a21]">
             {/* Panel header */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Training Record</h3>
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Training Record</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {activeLog.student_name} &middot; {format(new Date(activeLog.start_time), 'd MMM yyyy')}
                 </p>
@@ -571,8 +571,8 @@ export const OutstandingRecordsTab: React.FC = () => {
             </div>
 
             {/* Step progress */}
-            <div className="px-6 py-3 border-b border-gray-100 bg-white">
-              <div className="flex items-center gap-1 text-xs">
+            <div className="border-b border-gray-100 bg-white px-4 py-3 dark:border-[#2c2f36] dark:bg-[#171a21] sm:px-6">
+              <div className="flex flex-wrap items-center gap-1 text-xs">
                 {(['course', 'lesson', 'form'] as Step[]).map((s, i) => {
                   const labels: Record<Step, string> = { action: '', course: 'Select Course', lesson: 'Select Lesson', form: 'Fill Details' };
                   const idx: Record<Step, number> = { action: 0, course: 0, lesson: 1, form: 2 };
@@ -581,9 +581,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                   const active = step === s;
                   return (
                     <React.Fragment key={s}>
-                      {i > 0 && <div className={`flex-1 h-px ${done ? 'bg-blue-400' : 'bg-gray-200'}`} />}
+                      {i > 0 && <div className={`hidden h-px min-w-8 flex-1 sm:block ${done ? 'bg-blue-400' : 'bg-gray-200 dark:bg-[#363b45]'}`} />}
                       <div className={`flex items-center gap-1 px-2 py-1 rounded-full font-medium transition-colors ${
-                        active ? 'bg-blue-100 text-blue-700' : done ? 'text-emerald-600' : 'text-gray-400'
+                        active ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200' : done ? 'text-emerald-600 dark:text-emerald-300' : 'text-gray-400'
                       }`}>
                         {done && <CheckCircle className="h-3 w-3" />}
                         {labels[s]}
@@ -594,15 +594,21 @@ export const OutstandingRecordsTab: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/30 dark:text-blue-100 lg:hidden">
+                <p className="font-semibold">{activeLog.student_name ?? 'Unknown Student'}</p>
+                <p className="mt-1 text-xs text-blue-700 dark:text-blue-200">
+                  {format(new Date(activeLog.start_time), 'EEE d MMM yyyy')} &middot; {format(new Date(activeLog.start_time), 'h:mm a')} &middot; {activeLog.aircraft_registration ?? '-'}
+                </p>
+              </div>
               {/* Step: action — shouldn't normally render, just in case */}
               {step === 'action' && (
                 <div className="flex flex-col gap-4">
                   <button
                     onClick={() => setStep('course')}
-                    className="w-full flex items-center justify-between px-5 py-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+                    className="w-full flex items-center justify-between gap-3 px-4 py-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors text-left sm:px-5"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <BookOpen className="h-5 w-5 text-blue-600" />
                       <div>
                         <p className="font-semibold text-blue-900 text-sm">Add Record</p>
@@ -629,13 +635,13 @@ export const OutstandingRecordsTab: React.FC = () => {
                         <button
                           key={course.id}
                           onClick={() => handleSelectCourse(course.id)}
-                          className="w-full flex items-start gap-4 p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left group"
+                          className="w-full flex items-start gap-3 p-3 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left group sm:gap-4 sm:p-4"
                         >
                           <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-blue-200 transition-colors">
                             <BookOpen className="h-4 w-4 text-blue-600" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-900 text-sm">{course.title}</p>
+                            <p className="font-semibold text-gray-900 text-sm break-words">{course.title}</p>
                             <p className="text-xs text-gray-500 mt-0.5">{course.category} &middot; {course.lessons.length} lessons</p>
                           </div>
                           <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-400 mt-1 shrink-0 transition-colors" />
@@ -662,13 +668,13 @@ export const OutstandingRecordsTab: React.FC = () => {
                       <button
                         key={lesson.id}
                         onClick={() => handleSelectLesson(lesson.id)}
-                        className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left group"
+                        className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left group sm:gap-4 sm:p-4"
                       >
                         <span className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 shrink-0 group-hover:bg-blue-100 group-hover:text-blue-700 transition-colors">
                           {idx + 1}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 text-sm truncate">{lesson.name || lesson.sequenceTitle || `Lesson ${idx + 1}`}</p>
+                          <p className="font-medium text-gray-900 text-sm break-words">{lesson.name || lesson.sequenceTitle || `Lesson ${idx + 1}`}</p>
                           {lesson.objective && <p className="text-xs text-gray-400 mt-0.5 truncate">{lesson.objective}</p>}
                         </div>
                         <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-400 shrink-0 transition-colors" />
@@ -944,7 +950,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                                         ...f,
                                         criteriaGrades: { ...f.criteriaGrades, [criterion.id]: grade }
                                       }))}
-                                      className={`px-4 py-1.5 rounded-lg text-sm font-semibold border-2 transition-all ${
+                                      className={`min-w-12 flex-1 px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-all sm:flex-none sm:px-4 ${
                                         currentGrade === grade
                                           ? grade === 'C' || grade === 'Pass'
                                             ? 'border-emerald-500 bg-emerald-100 text-emerald-800'
