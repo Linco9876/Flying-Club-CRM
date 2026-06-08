@@ -1106,12 +1106,22 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {hasMatrixAssessment && (
                     <div>
                       <label className="mb-3 block text-sm font-semibold text-gray-800 dark:text-gray-100">Lesson Matrix Assessment</label>
-                      <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-100">
-                        <p className="font-semibold">Only the matrix rows attached to this lesson are shown.</p>
-                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                          {[3, 2, 1].map(standard => (
-                            <span key={standard} className="rounded-md bg-white px-2 py-1 ring-1 ring-blue-100 dark:bg-[#111827] dark:ring-blue-400/20">
-                              {matrixStandardLabel(standard as SyllabusMatrixStandard)}
+                      <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/25 dark:text-blue-100">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold">Lesson-specific matrix rows</p>
+                          <span className="rounded-full bg-white/80 px-2 py-0.5 font-semibold text-blue-700 ring-1 ring-blue-100 dark:bg-[#111827] dark:text-blue-200 dark:ring-blue-400/20">
+                            {activeMatrixRequirements.length} items
+                          </span>
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-1.5">
+                          {[
+                            { standard: 3, label: 'Training' },
+                            { standard: 2, label: 'Solo' },
+                            { standard: 1, label: 'Qual.' },
+                          ].map(({ standard, label }) => (
+                            <span key={standard} className="rounded-lg bg-white px-2 py-1.5 text-center ring-1 ring-blue-100 dark:bg-[#111827] dark:ring-blue-400/20">
+                              <span className="block text-sm font-bold">{standard}</span>
+                              <span className="block truncate text-[10px] font-medium opacity-80">{label}</span>
                             </span>
                           ))}
                         </div>
@@ -1128,41 +1138,44 @@ export const OutstandingRecordsTab: React.FC = () => {
                             const achieved = current ? Number(current) as SyllabusMatrixStandard : undefined;
                             const best = bestAssessmentByRow.get(requirement.matrixRowId);
                             const passed = matrixStandardMeetsRequirement(achieved, requirement.requiredStandard);
+                            const statusClass = passed
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200';
 
                             return (
-                              <div key={requirement.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-[#2c2f36] dark:bg-[#111827]">
-                                <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div key={requirement.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-[#2c2f36] dark:bg-[#0f172a] sm:p-4">
+                                <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                       {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}
                                     </p>
-                                    <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">{formatSyllabusMatrixText(row?.description) || 'Matrix row'}</p>
+                                    <p className="mt-1 text-sm font-semibold leading-5 text-gray-900 dark:text-gray-100 sm:text-base sm:leading-6">{formatSyllabusMatrixText(row?.description) || 'Matrix row'}</p>
                                   </div>
-                                  <div className="flex flex-wrap justify-end gap-2">
-                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                  <div className="flex shrink-0 flex-col items-end gap-1">
+                                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusClass}`}>
                                       {passed ? 'Pass' : 'Below pass'}
                                     </span>
-                                    <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-700">
-                                      Required: {requirement.requiredStandard}
+                                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 dark:bg-[#202938] dark:text-gray-200">
+                                      Req {requirement.requiredStandard}
                                     </span>
-                                    {best?.achievedStandard && (
-                                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-950/50 dark:text-blue-200">
-                                        Best to date: {matrixStandardShortLabel(best.achievedStandard)}
-                                      </span>
-                                    )}
                                   </div>
                                 </div>
-                                <div className="mt-3 flex flex-wrap gap-2">
+                                {best?.achievedStandard && (
+                                  <div className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-200">
+                                    Best to date: {matrixStandardShortLabel(best.achievedStandard)}
+                                  </div>
+                                )}
+                                <div className="mt-3 grid grid-cols-4 gap-2">
                                   <button
                                     type="button"
                                     onClick={() => setForm(f => ({
                                       ...f,
                                       matrixGrades: { ...f.matrixGrades, [requirement.matrixRowId]: '' }
                                     }))}
-                                    className={`rounded-lg border-2 px-3 py-1.5 text-sm font-semibold transition ${
+                                    className={`min-h-12 rounded-xl border-2 px-2 py-2 text-sm font-bold transition sm:min-h-10 sm:px-3 sm:py-1.5 ${
                                       current === ''
-                                        ? 'border-gray-400 bg-gray-200 text-gray-700 dark:bg-[#2c2f36] dark:text-gray-100'
-                                        : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-300'
+                                        ? 'border-gray-400 bg-gray-200 text-gray-800 dark:bg-[#2c2f36] dark:text-gray-100'
+                                        : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-300'
                                     }`}
                                   >
                                     -
@@ -1175,14 +1188,14 @@ export const OutstandingRecordsTab: React.FC = () => {
                                         ...f,
                                         matrixGrades: { ...f.matrixGrades, [requirement.matrixRowId]: String(standard) }
                                       }))}
-                                      className={`rounded-lg border-2 px-3 py-1.5 text-sm font-semibold transition ${
+                                      className={`min-h-12 rounded-xl border-2 px-2 py-2 text-sm font-bold transition sm:min-h-10 sm:px-3 sm:py-1.5 ${
                                         current === String(standard)
                                           ? standard === 1
                                             ? 'border-emerald-500 bg-emerald-100 text-emerald-800'
                                             : standard === 2
                                             ? 'border-blue-500 bg-blue-100 text-blue-800'
                                             : 'border-amber-500 bg-amber-100 text-amber-800'
-                                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-300'
+                                          : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-300'
                                       }`}
                                     >
                                       {standard}
@@ -1200,21 +1213,21 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {/* Assessment Criteria */}
                   {hasMatrixAssessment && matrixCriterionOutcomes.length > 0 && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-800 mb-3">Matrix-linked competency outcomes</label>
+                      <label className="mb-3 block text-sm font-semibold text-gray-800 dark:text-gray-100">Matrix-linked competency outcomes</label>
                       <div className="space-y-3">
                         {matrixCriterionOutcomes.map((outcome) => (
                           <div
                             key={outcome.criterion.id}
-                            className={`rounded-lg border p-4 ${
+                            className={`rounded-xl border p-3 sm:p-4 ${
                               outcome.passed
-                                ? 'border-emerald-200 bg-emerald-50'
-                                : 'border-red-200 bg-red-50'
+                                ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-400/30 dark:bg-emerald-950/20'
+                                : 'border-red-200 bg-red-50 dark:border-red-400/30 dark:bg-red-950/20'
                             }`}
                           >
                             <div className="flex flex-wrap items-start justify-between gap-2">
                               <div>
-                                <p className="text-sm font-semibold text-gray-900">{outcome.criterion.name}</p>
-                                <p className="mt-1 text-xs text-gray-600">
+                                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{outcome.criterion.name}</p>
+                                <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
                                   {outcome.linkedRequirements.length} linked matrix item{outcome.linkedRequirements.length === 1 ? '' : 's'}.
                                 </p>
                               </div>
@@ -1230,14 +1243,14 @@ export const OutstandingRecordsTab: React.FC = () => {
                                   const row = rowsById.get(requirement.matrixRowId);
                                   const achieved = form.matrixGrades[requirement.matrixRowId] || '-';
                                   return (
-                                    <p key={requirement.id} className="text-xs text-red-800">
+                                    <p key={requirement.id} className="rounded-lg bg-white/70 px-2 py-1.5 text-xs text-red-800 dark:bg-[#111827]/70 dark:text-red-200">
                                       {row?.elementCode || row?.unitCode || row?.code || 'Matrix item'}: achieved {achieved}, required {requirement.requiredStandard}
                                       {row?.description ? ` - ${formatSyllabusMatrixText(row.description)}` : ''}
                                     </p>
                                   );
                                 })}
                                 {outcome.failedRequirements.length > 4 && (
-                                  <p className="text-xs text-red-700">
+                                  <p className="text-xs text-red-700 dark:text-red-200">
                                     Plus {outcome.failedRequirements.length - 4} more linked item{outcome.failedRequirements.length - 4 === 1 ? '' : 's'} below pass.
                                   </p>
                                 )}
