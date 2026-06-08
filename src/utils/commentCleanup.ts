@@ -9,9 +9,12 @@ export interface CommentCleanupContext {
   date?: string;
 }
 
+export type CommentCleanupMode = 'grammar' | 'readability';
+
 export const cleanupInstructorComment = async (
   comment: string,
-  context: CommentCleanupContext = {}
+  context: CommentCleanupContext = {},
+  mode: CommentCleanupMode = 'grammar'
 ) => {
   const endpoint = import.meta.env.VITE_COMMENT_CLEANUP_ENDPOINT || '/api/instructor-comment-cleanup';
   const { data } = await supabase.auth.getSession();
@@ -26,7 +29,7 @@ export const cleanupInstructorComment = async (
       'content-type': 'application/json',
       authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ comment, context }),
+    body: JSON.stringify({ comment, context, mode }),
   });
 
   const payload = await response.json().catch(() => ({}));

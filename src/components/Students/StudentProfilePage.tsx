@@ -26,7 +26,7 @@ import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
 import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
-import { cleanupInstructorComment } from '../../utils/commentCleanup';
+import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 
 interface StudentInfoForm {
   name: string;
@@ -212,7 +212,7 @@ export const StudentProfilePage: React.FC = () => {
   });
   const [editingTrainingRecord, setEditingTrainingRecord] = useState<TrainingRecord | null>(null);
   const [trainingEditForm, setTrainingEditForm] = useState<TrainingRecordEditForm | null>(null);
-  const [commentCleanupLoading, setCommentCleanupLoading] = useState(false);
+  const [commentCleanupLoading, setCommentCleanupLoading] = useState<CommentCleanupMode | null>(null);
   const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
   const [savingTrainingRecord, setSavingTrainingRecord] = useState(false);
   const [studentExamResults, setStudentExamResults] = useState<StudentExamResult[]>([]);
@@ -934,14 +934,14 @@ export const StudentProfilePage: React.FC = () => {
     });
   };
 
-  const handleCleanupTrainingEditComments = async () => {
+  const handleCleanupTrainingEditComments = async (mode: CommentCleanupMode) => {
     if (!editingTrainingRecord || !trainingEditForm) return;
     if (!trainingEditForm.comments.trim()) {
       toast.error('Write lesson comments before using AI cleanup');
       return;
     }
 
-    setCommentCleanupLoading(true);
+    setCommentCleanupLoading(mode);
     try {
       const lesson = getRecordLesson(editingTrainingRecord);
       const course = getRecordCourse(editingTrainingRecord);
@@ -952,14 +952,14 @@ export const StudentProfilePage: React.FC = () => {
         courseName: course?.title,
         aircraft: editingTrainingRecord.registration,
         date: formatBookingDateTime(editingTrainingRecord),
-      });
+      }, mode);
       setCommentCleanupOriginal(trainingEditForm.comments);
       setTrainingEditForm(form => form ? { ...form, comments: rewritten } : form);
-      toast.success('Lesson comments cleaned up');
+      toast.success(mode === 'readability' ? 'Lesson comments rewritten for readability' : 'Lesson comments grammar cleaned up');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
     } finally {
-      setCommentCleanupLoading(false);
+      setCommentCleanupLoading(null);
     }
   };
 
@@ -3531,12 +3531,23 @@ export const StudentProfilePage: React.FC = () => {
                     )}
                     <button
                       type="button"
-                      onClick={handleCleanupTrainingEditComments}
-                      disabled={commentCleanupLoading || !trainingEditForm.comments.trim()}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      title="Clean up comments with AI"
+                      onClick={() => handleCleanupTrainingEditComments('grammar')}
+                      disabled={commentCleanupLoading !== null || !trainingEditForm.comments.trim()}
+                      className="inline-flex h-8 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Fix grammar with AI"
                     >
-                      {commentCleanupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {commentCleanupLoading === 'grammar' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      Grammar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCleanupTrainingEditComments('readability')}
+                      disabled={commentCleanupLoading !== null || !trainingEditForm.comments.trim()}
+                      className="inline-flex h-8 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Rewrite for readability without adding facts"
+                    >
+                      {commentCleanupLoading === 'readability' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
+                      Rewrite
                     </button>
                   </span>
                 </span>

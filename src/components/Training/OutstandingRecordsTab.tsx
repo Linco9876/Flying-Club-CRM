@@ -11,7 +11,7 @@ import { LessonAssessmentCriterion, LessonGradingSystem, SyllabusMatrixStandard 
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
-import { cleanupInstructorComment } from '../../utils/commentCleanup';
+import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import {
   matrixStandardLabel,
   matrixStandardMeetsRequirement,
@@ -185,7 +185,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [form, setForm] = useState<RecordFormState>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
-  const [commentCleanupLoading, setCommentCleanupLoading] = useState(false);
+  const [commentCleanupLoading, setCommentCleanupLoading] = useState<CommentCleanupMode | null>(null);
   const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [pendingSubmits, setPendingSubmits] = useState<QueuedTrainingRecordSubmit[]>(() => readQueuedSubmits());
@@ -614,12 +614,12 @@ export const OutstandingRecordsTab: React.FC = () => {
     setStep('form');
   }
 
-  async function handleCleanupFlightComments() {
+  async function handleCleanupFlightComments(mode: CommentCleanupMode) {
     if (!form.flightComments.trim()) {
       toast.error('Write flight comments before using AI cleanup');
       return;
     }
-    setCommentCleanupLoading(true);
+    setCommentCleanupLoading(mode);
     try {
       const rewritten = await cleanupInstructorComment(form.flightComments, {
         studentName: activeLog?.student_name,
@@ -627,14 +627,14 @@ export const OutstandingRecordsTab: React.FC = () => {
         courseName: selectedCourse?.title,
         aircraft: activeLog?.aircraft_registration,
         date: activeLog?.start_time ? format(new Date(activeLog.start_time), 'yyyy-MM-dd') : undefined,
-      });
+      }, mode);
       setCommentCleanupOriginal(form.flightComments);
       setForm(current => ({ ...current, flightComments: rewritten }));
-      toast.success('Flight comments cleaned up');
+      toast.success(mode === 'readability' ? 'Flight comments rewritten for readability' : 'Flight comments grammar cleaned up');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
     } finally {
-      setCommentCleanupLoading(false);
+      setCommentCleanupLoading(null);
     }
   }
 
@@ -1162,13 +1162,25 @@ export const OutstandingRecordsTab: React.FC = () => {
                         )}
                         <button
                           type="button"
-                          onClick={handleCleanupFlightComments}
-                          disabled={commentCleanupLoading || !form.flightComments.trim()}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-400/40 dark:bg-blue-950/50 dark:text-blue-200 dark:hover:bg-blue-900/60"
-                          title="Clean up comments with AI"
-                          aria-label="Clean up flight comments with AI"
+                          onClick={() => handleCleanupFlightComments('grammar')}
+                          disabled={commentCleanupLoading !== null || !form.flightComments.trim()}
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-400/40 dark:bg-blue-950/50 dark:text-blue-200 dark:hover:bg-blue-900/60"
+                          title="Fix grammar with AI"
+                          aria-label="Fix flight comment grammar with AI"
                         >
-                          {commentCleanupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                          {commentCleanupLoading === 'grammar' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                          Grammar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCleanupFlightComments('readability')}
+                          disabled={commentCleanupLoading !== null || !form.flightComments.trim()}
+                          className="inline-flex h-8 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-400/40 dark:bg-emerald-950/50 dark:text-emerald-200 dark:hover:bg-emerald-900/60"
+                          title="Rewrite for readability without adding facts"
+                          aria-label="Rewrite flight comments for readability with AI"
+                        >
+                          {commentCleanupLoading === 'readability' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
+                          Rewrite
                         </button>
                       </div>
                     </div>
@@ -1183,7 +1195,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:border-[#363b45] dark:bg-[#0f172a] dark:text-gray-100 dark:placeholder:text-gray-500"
                     />
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Use the sparkle button to clean up wording while keeping the instructor's meaning.
+                      Use Grammar for light fixes, or Rewrite for a clearer version without adding facts.
                     </p>
                   </div>
 

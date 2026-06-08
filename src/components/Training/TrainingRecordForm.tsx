@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { mockAircraft, mockStudents, mockSyllabusSequences } from '../../data/mockData';
 import { Booking, TrainingRecord, SyllabusSequence, TrainingSequenceResult } from '../../types';
 import toast from 'react-hot-toast';
-import { cleanupInstructorComment } from '../../utils/commentCleanup';
+import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 
 interface TrainingRecordFormProps {
   isOpen: boolean;
@@ -50,7 +50,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
   const [showSequenceSearch, setShowSequenceSearch] = useState(false);
   const [instructorSignature, setInstructorSignature] = useState('');
   const [studentAckName, setStudentAckName] = useState('');
-  const [commentCleanupLoading, setCommentCleanupLoading] = useState(false);
+  const [commentCleanupLoading, setCommentCleanupLoading] = useState<CommentCleanupMode | null>(null);
   const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
 
   // Get aircraft and student info from booking
@@ -198,12 +198,12 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
     return totalHours.toFixed(1);
   };
 
-  const handleCleanupLessonComments = async () => {
+  const handleCleanupLessonComments = async (mode: CommentCleanupMode) => {
     if (!formData.lessonComments.trim()) {
       toast.error('Write lesson comments before using AI cleanup');
       return;
     }
-    setCommentCleanupLoading(true);
+    setCommentCleanupLoading(mode);
     try {
       const rewritten = await cleanupInstructorComment(formData.lessonComments, {
         studentName: student?.name,
@@ -211,14 +211,14 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
         lessonName: lessonCodes.find(lesson => lesson.value === formData.lessonCode)?.label,
         aircraft: formData.aircraftRegistration,
         date: formData.date,
-      });
+      }, mode);
       setCommentCleanupOriginal(formData.lessonComments);
       setFormData(prev => ({ ...prev, lessonComments: rewritten }));
-      toast.success('Lesson comments cleaned up');
+      toast.success(mode === 'readability' ? 'Lesson comments rewritten for readability' : 'Lesson comments grammar cleaned up');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
     } finally {
-      setCommentCleanupLoading(false);
+      setCommentCleanupLoading(null);
     }
   };
 
@@ -632,12 +632,23 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                     )}
                     <button
                       type="button"
-                      onClick={handleCleanupLessonComments}
-                      disabled={commentCleanupLoading || !formData.lessonComments.trim()}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      title="Clean up comments with AI"
+                      onClick={() => handleCleanupLessonComments('grammar')}
+                      disabled={commentCleanupLoading !== null || !formData.lessonComments.trim()}
+                      className="inline-flex h-8 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Fix grammar with AI"
                     >
-                      {commentCleanupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {commentCleanupLoading === 'grammar' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      Grammar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCleanupLessonComments('readability')}
+                      disabled={commentCleanupLoading !== null || !formData.lessonComments.trim()}
+                      className="inline-flex h-8 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Rewrite for readability without adding facts"
+                    >
+                      {commentCleanupLoading === 'readability' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                      Rewrite
                     </button>
                   </div>
                 </div>
@@ -650,7 +661,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Include sequences practiced and detailed critique of student performance
+                  Use Grammar for light fixes, or Rewrite for a clearer version without adding facts.
                 </p>
               </div>
             </div>

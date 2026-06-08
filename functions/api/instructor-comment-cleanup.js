@@ -76,6 +76,55 @@ const cleanedRewrite = (value) =>
     .replace(/^rewritten comment:\s*/i, '')
     .trim();
 
+const normaliseMode = (value) => value === 'readability' ? 'readability' : 'grammar';
+
+const buildPrompt = ({ mode, targetWordLimit, contextLines, comment }) => {
+  const isReadability = mode === 'readability';
+  const taskLine = isReadability
+    ? 'Rewrite the comment so it is easier and nicer to read while staying short.'
+    : 'Lightly copy-edit the comment for grammar, spelling, punctuation, flow, and professional tone only.';
+  const modeRules = isReadability
+    ? [
+        '- You may lightly restructure the sentence for clarity.',
+        '- Do not add a second sentence unless the original needs it to read clearly.',
+        '- If the original is already clear, make only small improvements.',
+      ]
+    : [
+        '- Stay very close to the original wording and sentence structure.',
+        '- Do not rewrite style unless needed for grammar or clarity.',
+      ];
+
+  return [
+    'You are assisting a Bendigo Flying Club flight instructor with student training record comments.',
+    'This is a comment editing task, not an assessment-writing task.',
+    taskLine,
+    '',
+    'Strict rules:',
+    '- Preserve the original meaning exactly.',
+    '- Keep it concise. Do not bloat the comment.',
+    `- Maximum ${targetWordLimit} words.`,
+    '- Do not invent or infer examples, causes, consequences, recommendations, new weaknesses, new strengths, exercises, grades, safety concerns, deviations, or next steps.',
+    '- Do not turn praise into criticism.',
+    '- Do not add "however", "to improve", "should focus", or similar coaching unless the original comment already says that.',
+    '- Use Australian English.',
+    '- Return only the rewritten comment, with no heading, markdown, or explanation.',
+    ...modeRules,
+    '',
+    'Example:',
+    'Original: Very light on controls and had a great understanding of the fundamentals of flight',
+    isReadability
+      ? 'Good rewrite: Lincoln had a great understanding of the fundamentals of flight and was very light on the controls.'
+      : 'Good rewrite: Very light on the controls and showed a great understanding of the fundamentals of flight.',
+    'Bad rewrite: Any version that invents minor deviations, pitch/roll problems, or extra next steps.',
+    '',
+    'Training context:',
+    contextLines,
+    '',
+    'Original instructor comment:',
+    comment,
+  ].join('\n');
+};
+
 export const onRequestOptions = async () =>
   new Response(null, {
     status: 204,
@@ -98,6 +147,7 @@ export const onRequestPost = async ({ request, env }) => {
     if (comment.length > 4000) return json({ error: 'Comment is too long for a quick cleanup. Please shorten it first.' }, 400);
 
     const context = body?.context || {};
+    const mode = normaliseMode(body?.mode);
     const contextLines = [
       ['Student', context.studentName],
       ['Lesson', context.lessonName || context.lessonCode],
@@ -109,34 +159,10 @@ export const onRequestPost = async ({ request, env }) => {
       .join('\n');
 
     const sourceWordCount = originalWordCount(comment);
-    const targetWordLimit = Math.max(sourceWordCount + 10, Math.ceil(sourceWordCount * 1.35));
-
-    const prompt = [
-      'You are assisting a Bendigo Flying Club flight instructor by lightly copy-editing student training record comments.',
-      'This is a cleanup task, not an assessment-writing task.',
-      '',
-      'Strict rules:',
-      '- Stay very close to the original wording and meaning.',
-      '- Keep it concise. Do not make it longer unless needed for grammar.',
-      `- Maximum ${targetWordLimit} words.`,
-      '- Do not add examples, causes, consequences, recommendations, new weaknesses, new strengths, exercises, grades, safety concerns, or deviations unless they are explicitly stated in the original comment.',
-      '- Do not turn praise into criticism.',
-      '- Do not add “however”, “to improve”, “should focus”, or similar coaching unless the original comment already says that.',
-      '- Fix grammar, spelling, punctuation, flow, and professional tone only.',
-      '- Use Australian English.',
-      '- Return only the rewritten comment, with no heading, markdown, or explanation.',
-      '',
-      'Example:',
-      'Original: Very light on controls and had a great understanding of the fundamentals of flight',
-      'Good rewrite: Very light on the controls and showed a great understanding of the fundamentals of flight.',
-      'Bad rewrite: Any version that invents minor deviations, pitch/roll problems, or extra next steps.',
-      '',
-      'Training context:',
-      contextLines,
-      '',
-      'Original instructor comment:',
-      comment,
-    ].join('\n');
+    const targetWordLimit = mode === 'readability'
+      ? Math.max(sourceWordCount + 8, Math.ceil(sourceWordCount * 1.3))
+      : Math.max(sourceWordCount + 10, Math.ceil(sourceWordCount * 1.35));
+    const prompt = buildPrompt({ mode, targetWordLimit, contextLines, comment });
 
     const result = await env.AI.run(MODEL, {
       messages: [
@@ -147,7 +173,7 @@ export const onRequestPost = async ({ request, env }) => {
         { role: 'user', content: prompt },
       ],
       max_tokens: 180,
-      temperature: 0.1,
+      temperature: mode === 'readability' ? 0.15 : 0.1,
     });
 
     const rewritten = cleanedRewrite(result?.response || result?.result?.response || result?.text || '');
@@ -167,6 +193,7 @@ export const onRequestPost = async ({ request, env }) => {
     return json({
       rewrittenComment: rewritten,
       model: MODEL,
+      mode,
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Comment cleanup failed' }, 500);
