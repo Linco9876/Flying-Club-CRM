@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useOutstandingRecords, OutstandingFlightLog } from '../../hooks/useOutstandingRecords';
@@ -11,6 +11,7 @@ import { LessonAssessmentCriterion, LessonGradingSystem, SyllabusMatrixStandard 
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
+import { cleanupInstructorComment } from '../../utils/commentCleanup';
 import {
   matrixStandardLabel,
   matrixStandardMeetsRequirement,
@@ -111,6 +112,8 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [form, setForm] = useState<RecordFormState>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
+  const [commentCleanupLoading, setCommentCleanupLoading] = useState(false);
+  const [commentCleanupOriginal, setCommentCleanupOriginal] = useState<string | null>(null);
 
   const selectedCourse = useMemo(
     () => courses.find(c => c.id === form.courseId) ?? null,
@@ -252,12 +255,14 @@ export const OutstandingRecordsTab: React.FC = () => {
     setActiveLog(log);
     setStep('course');
     setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+    setCommentCleanupOriginal(null);
   }
 
   function closePanel() {
     setActiveLog(null);
     setStep('action');
     setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+    setCommentCleanupOriginal(null);
   }
 
   function toggleExpand(id: string) {
@@ -280,6 +285,7 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   function handleSelectCourse(courseId: string) {
     setForm(f => ({ ...f, courseId, lessonId: '', criteriaGrades: {}, matrixGrades: {} }));
+    setCommentCleanupOriginal(null);
     setStep('lesson');
   }
 
@@ -315,7 +321,38 @@ export const OutstandingRecordsTab: React.FC = () => {
       flightReviewResult: 'not_assessed',
       flightReviewNotes: '',
     }));
+    setCommentCleanupOriginal(null);
     setStep('form');
+  }
+
+  async function handleCleanupFlightComments() {
+    if (!form.flightComments.trim()) {
+      toast.error('Write flight comments before using AI cleanup');
+      return;
+    }
+    setCommentCleanupLoading(true);
+    try {
+      const rewritten = await cleanupInstructorComment(form.flightComments, {
+        studentName: activeLog?.student_name,
+        lessonName: selectedLesson?.name || selectedLesson?.sequenceTitle,
+        courseName: selectedCourse?.title,
+        aircraft: activeLog?.aircraft_registration,
+        date: activeLog?.start_time ? format(new Date(activeLog.start_time), 'yyyy-MM-dd') : undefined,
+      });
+      setCommentCleanupOriginal(form.flightComments);
+      setForm(current => ({ ...current, flightComments: rewritten }));
+      toast.success('Flight comments cleaned up');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'AI comment cleanup failed');
+    } finally {
+      setCommentCleanupLoading(false);
+    }
+  }
+
+  function handleRevertFlightComments() {
+    if (commentCleanupOriginal === null) return;
+    setForm(current => ({ ...current, flightComments: commentCleanupOriginal }));
+    setCommentCleanupOriginal(null);
   }
 
   useEffect(() => {
@@ -447,7 +484,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6 lg:flex-row lg:gap-6">
       {/* Left: list of outstanding flights */}
       <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'lg:w-[30%] lg:min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
-        <div className="flex items-start justify-between gap-3">
+        <div className="hidden items-start justify-between gap-3 sm:flex">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Outstanding Records</h2>
             <p className="text-sm text-gray-500 mt-0.5">
@@ -742,14 +779,45 @@ export const OutstandingRecordsTab: React.FC = () => {
 
                   {/* Flight Comments */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-800 mb-2">Flight Comments</label>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">Flight Comments</label>
+                      <div className="flex items-center gap-2">
+                        {commentCleanupOriginal !== null && (
+                          <button
+                            type="button"
+                            onClick={handleRevertFlightComments}
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#262b33]"
+                            title="Revert to your original comments"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            Revert
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleCleanupFlightComments}
+                          disabled={commentCleanupLoading || !form.flightComments.trim()}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-400/40 dark:bg-blue-950/50 dark:text-blue-200 dark:hover:bg-blue-900/60"
+                          title="Clean up comments with AI"
+                          aria-label="Clean up flight comments with AI"
+                        >
+                          {commentCleanupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
                     <textarea
                       rows={4}
                       value={form.flightComments}
-                      onChange={e => setForm(f => ({ ...f, flightComments: e.target.value }))}
+                      onChange={e => {
+                        setForm(f => ({ ...f, flightComments: e.target.value }));
+                        if (commentCleanupOriginal !== null) setCommentCleanupOriginal(null);
+                      }}
                       placeholder="Record observations, progress, and any areas requiring further attention..."
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:border-[#363b45] dark:bg-[#0f172a] dark:text-gray-100 dark:placeholder:text-gray-500"
                     />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Use the sparkle button to clean up wording while keeping the instructor's meaning.
+                    </p>
                   </div>
 
                   {/* CASA Matrix Assessment */}

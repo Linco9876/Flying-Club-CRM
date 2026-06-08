@@ -559,8 +559,8 @@ const AuthenticatedApp: React.FC<{
         return (
           <div className="p-0">
             <div className="px-4 pt-4 pb-2 sm:px-6 sm:pt-6">
-              <h1 className="text-2xl font-bold text-gray-900">Outstanding Records</h1>
-              <p className="text-gray-600 mt-1 text-sm">Flights awaiting a training record entry</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Outstanding Records</h1>
+              <p className="text-gray-600 mt-1 text-sm dark:text-gray-400">Flights awaiting a training record entry</p>
             </div>
             <OutstandingRecordsTab />
           </div>
