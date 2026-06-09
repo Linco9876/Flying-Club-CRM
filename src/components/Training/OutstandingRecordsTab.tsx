@@ -176,7 +176,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     isAdmin
   );
   const { trainingRecords, addTrainingRecord } = useTrainingRecords();
-  const { modules: courses } = useTrainingModules();
+  const { modules: courses, loading: coursesLoading } = useTrainingModules();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
 
@@ -410,6 +410,10 @@ export const OutstandingRecordsTab: React.FC = () => {
   const selectedCourseRequiresAck = Boolean(
     trainingSettings.forceStudentAcknowledgementForAllCourses ||
     selectedCourse?.requiresStudentAcknowledgement
+  );
+  const coursesWithLessons = useMemo(
+    () => courses.filter(course => course.status === 'published' && course.lessons.length > 0),
+    [courses]
   );
 
   const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
@@ -1008,14 +1012,20 @@ export const OutstandingRecordsTab: React.FC = () => {
               {step === 'course' && (
                 <div>
                   <p className="text-sm font-medium text-gray-700 mb-4">Which course was this flight for?</p>
-                  {courses.filter(c => c.status === 'published' || c.lessons.length > 0).length === 0 ? (
+                  {coursesLoading ? (
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 p-6 text-center text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/30 dark:text-blue-100">
+                      <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />
+                      <p className="text-sm font-semibold">Loading training courses...</p>
+                      <p className="mt-1 text-xs text-blue-700 dark:text-blue-200">The record form will appear as soon as the syllabus data is ready.</p>
+                    </div>
+                  ) : coursesWithLessons.length === 0 ? (
                     <div className="text-center py-10 text-gray-400">
                       <BookOpen className="h-10 w-10 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">No courses available. Create a course in Syllabus Management first.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {courses.filter(c => c.lessons.length > 0).map(course => (
+                      {coursesWithLessons.map(course => (
                         <button
                           key={course.id}
                           onClick={() => handleSelectCourse(course.id)}

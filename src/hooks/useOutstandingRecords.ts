@@ -36,17 +36,41 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
       let query = supabase
         .from('flight_logs')
         .select('id, booking_id, aircraft_id, student_id, instructor_id, start_time, end_time, dual_time, solo_time, training_record_status')
-        .eq('training_record_status', 'pending')
         .not('instructor_id', 'is', null)
-        .order('start_time', { ascending: true });
+        .neq('training_record_status', 'dismissed')
+        .order('start_time', { ascending: true })
+        .limit(1000);
 
       if (!fetchAll && instructorId) {
         query = query.eq('instructor_id', instructorId);
       }
 
-      const { data: logs, error } = await query;
+      const { data: candidateLogs, error } = await query;
 
       if (error) throw error;
+
+      const candidateLogIds = [...new Set((candidateLogs ?? []).map(l => l.id).filter(Boolean))];
+      const candidateBookingIds = [...new Set((candidateLogs ?? []).map(l => l.booking_id).filter(Boolean))];
+
+      const { data: linkedRecords, error: recordsError } =
+        candidateLogIds.length > 0 || candidateBookingIds.length > 0
+          ? await supabase
+              .from('training_records')
+              .select('flight_log_id, booking_id')
+              .or([
+                candidateLogIds.length > 0 ? `flight_log_id.in.(${candidateLogIds.join(',')})` : '',
+                candidateBookingIds.length > 0 ? `booking_id.in.(${candidateBookingIds.join(',')})` : '',
+              ].filter(Boolean).join(','))
+          : { data: [], error: null };
+
+      if (recordsError) throw recordsError;
+
+      const recordedFlightLogIds = new Set((linkedRecords ?? []).map(record => record.flight_log_id).filter(Boolean));
+      const recordedBookingIds = new Set((linkedRecords ?? []).map(record => record.booking_id).filter(Boolean));
+      const logs = (candidateLogs ?? []).filter(log =>
+        !recordedFlightLogIds.has(log.id) &&
+        !(log.booking_id && recordedBookingIds.has(log.booking_id))
+      );
 
       if (!logs || logs.length === 0) {
         setOutstandingLogs([]);
