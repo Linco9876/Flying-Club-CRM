@@ -72,8 +72,24 @@ const criterionCode = (name: string, index: number) => {
     ['practice flight test', 'PF'],
     ['consolidation', 'CN'],
     ['flight test', 'FT'],
+    ['circuits', 'CIR'],
+    ['circuit', 'CIR'],
+    ['medium turns', 'MT'],
+    ['climbing turns', 'CT'],
   ];
-  return known.find(([needle]) => lower.includes(needle))?.[1] || `C${index + 1}`;
+  const knownCode = known.find(([needle]) => lower.includes(needle))?.[1];
+  if (knownCode) return knownCode;
+
+  const words = name
+    .replace(/&/g, ' and ')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 0 && !['and', 'the', 'of', 'in', 'to', 'for'].includes(word.toLowerCase()));
+
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
+  if (words.length > 1) return words.map((word) => word[0]).join('').slice(0, 4).toUpperCase();
+
+  return `CR${index + 1}`;
 };
 
 const minutesToHours = (minutes: number) => (minutes / 60).toFixed(1);

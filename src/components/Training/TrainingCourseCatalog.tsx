@@ -511,6 +511,46 @@ const createAdvancedCriterion = (name: string): EditableCriterion => ({
   passingGrade: 'Pass',
 });
 
+const criterionIdFromName = (name: string) =>
+  name
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 56) || `criterion-${Date.now()}`;
+
+const makeUniqueCriterionId = (name: string, usedIds: Set<string>) => {
+  const base = criterionIdFromName(name);
+  let candidate = base;
+  let suffix = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  usedIds.add(candidate);
+  return candidate;
+};
+
+const buildCriteriaForSave = (
+  editableCriteria: EditableCriterion[],
+  options: { preserveIds?: Set<string> } = {}
+) => {
+  const usedIds = new Set(options.preserveIds ?? []);
+  return editableCriteria.map((criterion) => {
+    const name = criterion.name.trim();
+    const shouldPreserveId = Boolean(options.preserveIds?.has(criterion.id));
+    const id = shouldPreserveId ? criterion.id : makeUniqueCriterionId(name, usedIds);
+    if (shouldPreserveId) usedIds.add(id);
+    return {
+      id,
+      name,
+      gradingSystem: criterion.gradingSystem,
+      passingGrade: criterion.passingGrade
+    };
+  });
+};
+
 const defaultAdvancedCriteria = () => [
   createAdvancedCriterion('Practical flying standard'),
   createAdvancedCriterion('Airmanship, human factors and decision making'),
@@ -1436,11 +1476,11 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
 
     // Validate criteria
-    const criteria: LessonAssessmentCriterion[] = [];
     for (const c of editCourseCriteria) {
       if (!c.name.trim()) { toast.error('Each criterion needs a name'); return; }
-      criteria.push({ id: c.id, name: c.name.trim(), gradingSystem: c.gradingSystem, passingGrade: c.passingGrade });
     }
+    const existingCriterionIds = new Set(selectedModule.assessmentCriteria.map((criterion) => criterion.id));
+    const criteria: LessonAssessmentCriterion[] = buildCriteriaForSave(editCourseCriteria, { preserveIds: existingCriterionIds });
 
     if (editCourse.requiresFlyingDeclaration && !editCourse.flyingDeclarationText.trim()) {
       toast.error('Add the flying declaration wording, or turn off the declaration requirement');
@@ -1689,11 +1729,10 @@ export const TrainingCourseCatalog: React.FC = () => {
     const evaluationCriteria = parseListLines(newCourse.evaluationFocus);
 
     // Validate course criteria
-    const builtCriteria: LessonAssessmentCriterion[] = [];
     for (const c of courseCriteria) {
       if (!c.name.trim()) { toast.error('Each criterion needs a name'); return; }
-      builtCriteria.push({ id: c.id, name: c.name.trim(), gradingSystem: c.gradingSystem, passingGrade: c.passingGrade });
     }
+    const builtCriteria: LessonAssessmentCriterion[] = buildCriteriaForSave(courseCriteria);
 
     const module: TrainingModule = {
       id: '',
