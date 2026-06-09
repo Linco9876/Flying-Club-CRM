@@ -53,6 +53,7 @@ interface CalendarProps {
     resourceType?: 'aircraft' | 'instructor'
   ) => void;
   onEditBooking?: (booking: Booking) => void;
+  onCopyBooking?: (booking: Booking) => void;
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => void;
   onDeleteBooking?: (bookingId: string) => Promise<void> | void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
@@ -108,6 +109,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   onNewBooking,
   onNewBookingWithTime,
   onEditBooking,
+  onCopyBooking,
   onUpdateBooking,
   onDeleteBooking,
   onApproveBooking,
@@ -3653,6 +3655,16 @@ export const Calendar: React.FC<CalendarProps> = ({
               setCurrentDate(new Date(`${bookingDate}T12:00:00`));
               setActionMenuBooking(null);
               window.setTimeout(() => onEditBooking(bookingToEdit), 0);
+            }
+          }}
+          onCopy={() => {
+            if (onCopyBooking) {
+              const bookingToCopy = actionMenuBooking;
+              const bookingDate = format(new Date(bookingToCopy.startTime), 'yyyy-MM-dd');
+              window.sessionStorage.setItem(selectedDateStorageKey, bookingDate);
+              setCurrentDate(new Date(`${bookingDate}T12:00:00`));
+              setActionMenuBooking(null);
+              window.setTimeout(() => onCopyBooking(bookingToCopy), 0);
             }
           }}
           onLogFlight={() => {

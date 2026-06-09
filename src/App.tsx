@@ -11,7 +11,7 @@ import { Sidebar } from './components/Layout/Sidebar';
 import { AppErrorBoundary } from './components/Layout/AppErrorBoundary';
 import { LoginForm } from './components/Auth/LoginForm';
 import BookingForm from './components/Bookings/BookingForm';
-import { format } from 'date-fns';
+import { format, addDays, addWeeks, addMonths } from 'date-fns';
 import { usePortalUxSettings, useUserPreferences } from './hooks/useSettings';
 import { can, getAuthorizedMenuItems } from './utils/rbac';
 import { applyPortalTheme, getStoredPortalTheme, storePortalTheme } from './utils/theme';
@@ -40,6 +40,26 @@ const StudentAcknowledgementModal = lazy(() => import('./components/Training/Stu
 const DeclarationSigningPage = lazy(() => import('./components/Training/DeclarationSigningPage').then(module => ({ default: module.DeclarationSigningPage })));
 const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashboard').then(module => ({ default: module.SettingsDashboard })));
 const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
+
+const buildCopiedBookingFormData = (booking: Booking) => ({
+  date: format(new Date(booking.startTime), 'yyyy-MM-dd'),
+  endDate: format(new Date(booking.endTime), 'yyyy-MM-dd'),
+  startTime: format(new Date(booking.startTime), 'HH:mm'),
+  endTime: format(new Date(booking.endTime), 'HH:mm'),
+  studentId: booking.studentId || '',
+  aircraftId: booking.aircraftId || '',
+  instructorId: booking.instructorId || '',
+  paymentType: booking.paymentType || '',
+  flightTypeId: booking.flightTypeId || '',
+  notes: booking.notes || '',
+  copiedFromBookingId: booking.id,
+});
+
+const getRecurringDateOffset = (date: Date, frequency: string, index: number) => {
+  if (frequency === 'daily') return addDays(date, index);
+  if (frequency === 'monthly') return addMonths(date, index);
+  return addWeeks(date, index);
+};
 
 const PageLoader = () => (
   <div className="flex min-h-[18rem] items-center justify-center">
@@ -260,17 +280,29 @@ const KioskAuthenticatedRoute: React.FC<{
         flightTypeId: bookingData.flightTypeId || undefined,
       });
     } else {
-      await addBooking({
-        studentId: bookingData.studentId,
-        instructorId: bookingData.instructorId || undefined,
-        aircraftId: bookingData.aircraftId,
-        startTime,
-        endTime,
-        paymentType: bookingData.paymentType,
-        notes: bookingData.notes,
-        status: bookingData.status || 'confirmed' as const,
-        flightTypeId: bookingData.flightTypeId || undefined,
-      });
+      const recurrence = bookingData.recurrence;
+      const occurrenceCount = recurrence?.enabled ? Math.max(1, Math.min(Number(recurrence.count) || 1, 52)) : 1;
+      const durationMs = endTime.getTime() - startTime.getTime();
+
+      for (let index = 0; index < occurrenceCount; index += 1) {
+        const occurrenceStart = getRecurringDateOffset(startTime, recurrence?.frequency, index);
+        const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+        await addBooking({
+          studentId: bookingData.studentId,
+          instructorId: bookingData.instructorId || undefined,
+          aircraftId: bookingData.aircraftId,
+          startTime: occurrenceStart,
+          endTime: occurrenceEnd,
+          paymentType: bookingData.paymentType,
+          notes: bookingData.notes,
+          status: bookingData.status || 'confirmed' as const,
+          flightTypeId: bookingData.flightTypeId || undefined,
+        }, { silent: occurrenceCount > 1 });
+      }
+
+      if (occurrenceCount > 1) {
+        toast.success(`${occurrenceCount} recurring bookings created`);
+      }
     }
   };
 
@@ -289,6 +321,11 @@ const KioskAuthenticatedRoute: React.FC<{
           onEditBooking={(booking) => {
             setEditingBooking(booking);
             setBookingFormData({});
+            setShowBookingForm(true);
+          }}
+          onCopyBooking={(booking) => {
+            setEditingBooking(null);
+            setBookingFormData(buildCopiedBookingFormData(booking));
             setShowBookingForm(true);
           }}
           onUpdateBooking={async (bookingId, updates, silent) => {
@@ -435,17 +472,29 @@ const AuthenticatedApp: React.FC<{
           flightTypeId: bookingData.flightTypeId || undefined,
         });
       } else {
-        await addBooking({
-          studentId: bookingData.studentId,
-          instructorId: bookingData.instructorId || undefined,
-          aircraftId: bookingData.aircraftId,
-          startTime,
-          endTime,
-          paymentType: bookingData.paymentType,
-          notes: bookingData.notes,
-          status: bookingData.status || 'confirmed' as const,
-          flightTypeId: bookingData.flightTypeId || undefined,
-        });
+        const recurrence = bookingData.recurrence;
+        const occurrenceCount = recurrence?.enabled ? Math.max(1, Math.min(Number(recurrence.count) || 1, 52)) : 1;
+        const durationMs = endTime.getTime() - startTime.getTime();
+
+        for (let index = 0; index < occurrenceCount; index += 1) {
+          const occurrenceStart = getRecurringDateOffset(startTime, recurrence?.frequency, index);
+          const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+          await addBooking({
+            studentId: bookingData.studentId,
+            instructorId: bookingData.instructorId || undefined,
+            aircraftId: bookingData.aircraftId,
+            startTime: occurrenceStart,
+            endTime: occurrenceEnd,
+            paymentType: bookingData.paymentType,
+            notes: bookingData.notes,
+            status: bookingData.status || 'confirmed' as const,
+            flightTypeId: bookingData.flightTypeId || undefined,
+          }, { silent: occurrenceCount > 1 });
+        }
+
+        if (occurrenceCount > 1) {
+          toast.success(`${occurrenceCount} recurring bookings created`);
+        }
       }
     } catch (error) {
       console.error('Error saving booking:', error);
@@ -514,6 +563,12 @@ const AuthenticatedApp: React.FC<{
               onNewBookingWithTime={handleNewBookingWithResource}
               onEditBooking={(booking) => {
                 setEditingBooking(booking);
+                setBookingFormData({});
+                setShowBookingForm(true);
+              }}
+              onCopyBooking={(booking) => {
+                setEditingBooking(null);
+                setBookingFormData(buildCopiedBookingFormData(booking));
                 setShowBookingForm(true);
               }}
               onUpdateBooking={handleUpdateBooking}

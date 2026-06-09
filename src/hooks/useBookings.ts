@@ -290,7 +290,7 @@ export const useBookings = (enabled = true) => {
     }
   };
 
-  const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>) => {
+  const addBooking = async (bookingData: Omit<Booking, 'id' | 'flightLog'>, options: { silent?: boolean } = {}) => {
     try {
       console.log('Creating booking with data:', bookingData);
 
@@ -306,7 +306,7 @@ export const useBookings = (enabled = true) => {
       }
 
       validateTimingRules(bookingData.startTime, bookingData.endTime);
-      if (bookingData.startTime.getTime() < Date.now()) {
+      if (!options.silent && bookingData.startTime.getTime() < Date.now()) {
         toast('Warning: this booking is being created in the past.');
       }
 
@@ -388,6 +388,10 @@ export const useBookings = (enabled = true) => {
         if (notifyError) {
           console.error('Error sending approval notifications:', notifyError);
         }
+      }
+
+      if (options.silent) {
+        return;
       }
 
       if (isWaitlisted) {

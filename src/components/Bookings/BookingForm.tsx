@@ -23,8 +23,14 @@ interface BookingFormProps {
     date?: string;
     startTime?: string;
     endTime?: string;
+    endDate?: string;
+    studentId?: string;
     aircraftId?: string;
     instructorId?: string;
+    paymentType?: string;
+    flightTypeId?: string;
+    notes?: string;
+    copiedFromBookingId?: string;
   };
 }
 
@@ -40,6 +46,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { settings: portalSettings } = usePortalUxSettings();
   const { settings: bookingRules } = useBookingRulesSettings();
   const { settings: organisationSettings } = useOrganisationSettings();
+  const isCopiedBooking = Boolean(prefilledData?.copiedFromBookingId && !isEdit);
   const buildInitialFormData = React.useCallback(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -59,16 +66,16 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
 
     return {
-      studentId: user?.id || '',
-      date: prefilledData?.date || today,
-      endDate: prefilledData?.date || today,
+        studentId: prefilledData?.studentId || user?.id || '',
+        date: prefilledData?.date || today,
+      endDate: prefilledData?.endDate || prefilledData?.date || today,
       startTime: normalizeToQuarterHour(prefilledData?.startTime) || '09:00',
       endTime: normalizeToQuarterHour(prefilledData?.endTime) || '11:00',
       aircraftId: prefilledData?.aircraftId || '',
       instructorId: prefilledData?.instructorId || '',
-      paymentType: '',
-      flightTypeId: '',
-      notes: '',
+      paymentType: prefilledData?.paymentType || '',
+      flightTypeId: prefilledData?.flightTypeId || '',
+      notes: prefilledData?.notes || '',
     };
   }, [
     booking?.id,
@@ -81,14 +88,24 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     booking?.startTime,
     booking?.endTime,
     prefilledData?.date,
+    prefilledData?.endDate,
     prefilledData?.startTime,
     prefilledData?.endTime,
+    prefilledData?.studentId,
     prefilledData?.aircraftId,
     prefilledData?.instructorId,
+    prefilledData?.paymentType,
+    prefilledData?.flightTypeId,
+    prefilledData?.notes,
     user?.id,
   ]);
 
   const [formData, setFormData] = useState(buildInitialFormData);
+  const [recurrence, setRecurrence] = useState({
+    enabled: false,
+    frequency: 'weekly' as 'daily' | 'weekly' | 'monthly',
+    count: 2,
+  });
   const [pendingSafetySubmit, setPendingSafetySubmit] = useState<typeof formData | null>(null);
   const [safetyWarningState, setSafetyWarningState] = useState<{
     concerns: SafetyConcern[];
@@ -112,6 +129,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setSafetyWarningState(null);
     setPendingEndorsementSubmit(null);
     setEndorsementWarningState(null);
+    setRecurrence({ enabled: false, frequency: 'weekly', count: 2 });
     setIsSubmitting(false);
   }, [buildInitialFormData, isOpen]);
   const validateFormData = () => {
@@ -188,7 +206,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (isSubmitting || isLoading) return;
     setIsSubmitting(true);
     try {
-      await onSubmit(data);
+      await onSubmit({
+        ...data,
+        recurrence: !isEdit && recurrence.enabled ? recurrence : undefined,
+      });
       onClose();
     } catch (error) {
       setIsSubmitting(false);
@@ -309,7 +330,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex justify-between items-center px-4 py-3 border-b border-gray-200 bg-gray-50">
           <h2 className="text-base font-semibold text-gray-900">
-            {isEdit ? 'Edit Booking' : 'New Booking'}
+            {isEdit ? 'Edit Booking' : isCopiedBooking ? 'Copy Booking' : 'New Booking'}
           </h2>
           <button
             onClick={onClose}
@@ -509,6 +530,59 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             />
           </div>
           )}
+
+          {!isLoading && !isEdit && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <label className="flex items-start gap-2 text-sm font-semibold text-gray-800">
+                <input
+                  type="checkbox"
+                  checked={recurrence.enabled}
+                  onChange={(event) => setRecurrence(prev => ({ ...prev, enabled: event.target.checked }))}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  Recurring booking
+                  <span className="block text-xs font-normal text-gray-500">
+                    Create repeats using the same pilot, aircraft, instructor, flight type and notes.
+                  </span>
+                </span>
+              </label>
+
+              {recurrence.enabled && (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Repeat</label>
+                    <select
+                      value={recurrence.frequency}
+                      onChange={(event) => setRecurrence(prev => ({ ...prev, frequency: event.target.value as typeof recurrence.frequency }))}
+                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">Total bookings</label>
+                    <input
+                      type="number"
+                      min={2}
+                      max={52}
+                      value={recurrence.count}
+                      onChange={(event) => setRecurrence(prev => ({
+                        ...prev,
+                        count: Math.max(2, Math.min(52, Number(event.target.value) || 2)),
+                      }))}
+                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <p className="col-span-2 text-xs text-gray-500">
+                    Includes the first booking shown above. Each repeat is checked against conflicts, approvals, instructor downtime and booking rules.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
           </div>
 
           <div className="flex justify-end space-x-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
@@ -524,7 +598,9 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               disabled={isSubmitting || isLoading}
               className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? (isEdit ? 'Updating...' : 'Creating...') : (isEdit ? 'Update Booking' : 'Create Booking')}
+              {isSubmitting
+                ? (isEdit ? 'Updating...' : recurrence.enabled ? 'Creating series...' : 'Creating...')
+                : (isEdit ? 'Update Booking' : recurrence.enabled ? 'Create Series' : 'Create Booking')}
             </button>
           </div>
         </form>

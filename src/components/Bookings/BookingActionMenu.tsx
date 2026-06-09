@@ -1,5 +1,5 @@
 import React from 'react';
-import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User } from 'lucide-react';
+import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy } from 'lucide-react';
 import { Booking } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
@@ -7,6 +7,7 @@ import { usePortalUxSettings } from '../../hooks/useSettings';
 interface BookingActionMenuProps {
   booking: Booking;
   onEdit: () => void;
+  onCopy?: () => void;
   onLogFlight: () => void;
   onEditFlightLog?: () => void;
   onDeleteFlightLog?: () => void;
@@ -26,6 +27,7 @@ interface BookingActionMenuProps {
 export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   booking,
   onEdit,
+  onCopy,
   onLogFlight,
   onEditFlightLog,
   onDeleteFlightLog,
@@ -128,6 +130,16 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
         >
           <Edit className="h-4 w-4" />
           <span>Edit Booking</span>
+        </button>
+      )}
+
+      {onCopy && (
+        <button
+          onClick={() => handleAction(onCopy)}
+          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+        >
+          <Copy className="h-4 w-4" />
+          <span>Copy Booking</span>
         </button>
       )}
 
