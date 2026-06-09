@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { TrainingExam, TrainingLesson, TrainingModule } from '../types';
+import { useAuth } from './AuthContext';
 
 type TrainingModulesContextValue = {
   modules: TrainingModule[];
@@ -141,11 +142,13 @@ function lessonToDbRow(lesson: TrainingLesson, courseId: string, sortOrder: numb
 // ---- Provider ---------------------------------------------------------------
 
 export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isLoading: authLoading } = useAuth();
   const [modules, setModules] = useState<TrainingModule[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchModules = useCallback(async () => {
     try {
+      setLoading(true);
       const { data: courses, error: coursesErr } = await supabase
         .from('training_courses')
         .select('*')
@@ -180,8 +183,14 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setModules([]);
+      setLoading(false);
+      return;
+    }
     fetchModules();
-  }, [fetchModules]);
+  }, [authLoading, fetchModules, user?.id]);
 
   const addModule = useCallback(async (module: TrainingModule): Promise<TrainingModule> => {
     const { data: { user } } = await supabase.auth.getUser();
