@@ -11,12 +11,26 @@ export interface CommentCleanupContext {
 
 export type CommentCleanupMode = 'grammar' | 'readability';
 
+const getCommentCleanupEndpoint = () => {
+  const configuredEndpoint = import.meta.env.VITE_COMMENT_CLEANUP_ENDPOINT;
+  if (configuredEndpoint) return configuredEndpoint;
+
+  if (
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname)
+  ) {
+    return 'https://portal.bendigoflyingclub.com.au/api/instructor-comment-cleanup';
+  }
+
+  return '/api/instructor-comment-cleanup';
+};
+
 export const cleanupInstructorComment = async (
   comment: string,
   context: CommentCleanupContext = {},
   mode: CommentCleanupMode = 'grammar'
 ) => {
-  const endpoint = import.meta.env.VITE_COMMENT_CLEANUP_ENDPOINT || '/api/instructor-comment-cleanup';
+  const endpoint = getCommentCleanupEndpoint();
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
@@ -32,9 +46,17 @@ export const cleanupInstructorComment = async (
     body: JSON.stringify({ comment, context, mode }),
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const responseText = await response.text();
+  let payload: { error?: string; rewrittenComment?: string } = {};
+  try {
+    payload = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    payload = {};
+  }
+
   if (!response.ok) {
-    throw new Error(payload.error || 'AI comment cleanup failed.');
+    const detail = payload.error || responseText.trim();
+    throw new Error(detail || `AI comment cleanup failed (${response.status}).`);
   }
 
   return String(payload.rewrittenComment || '').trim();
