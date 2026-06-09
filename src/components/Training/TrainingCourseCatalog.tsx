@@ -1571,6 +1571,34 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
   };
 
+  const handleMoveEditCourseCriterion = (criterionId: string, direction: 'up' | 'down') => {
+    setEditCourseCriteria((current) => {
+      const currentIndex = current.findIndex((criterion) => criterion.id === criterionId);
+      if (currentIndex === -1) return current;
+
+      const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+
+      const next = [...current];
+      [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
+      return next;
+    });
+  };
+
+  const handleMoveNewCourseCriterion = (criterionId: string, direction: 'up' | 'down') => {
+    setCourseCriteria((current) => {
+      const currentIndex = current.findIndex((criterion) => criterion.id === criterionId);
+      if (currentIndex === -1) return current;
+
+      const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+
+      const next = [...current];
+      [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
+      return next;
+    });
+  };
+
   const handleToggleLessonExpansion = (lessonId: string) => {
     setExpandedLessons((prev) => ({
       ...prev,
@@ -2253,8 +2281,30 @@ export const TrainingCourseCatalog: React.FC = () => {
                 : 'Define what will be assessed across all lessons in this course. You can set a pass mark per lesson later.'}
             </p>
             <div className="space-y-3">
-              {courseCriteria.map((criterion) => (
+              {courseCriteria.map((criterion, index) => (
                 <div key={criterion.id} className="flex flex-wrap items-center gap-3 rounded-md border border-blue-100 px-3 py-2.5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleMoveNewCourseCriterion(criterion.id, 'up')}
+                      disabled={index === 0}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Move criterion up"
+                      aria-label="Move criterion up"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveNewCourseCriterion(criterion.id, 'down')}
+                      disabled={index === courseCriteria.length - 1}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                      title="Move criterion down"
+                      aria-label="Move criterion down"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <input type="text" placeholder="e.g. Airmanship" value={criterion.name}
                     onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, name: e.target.value } : c))}
                     className="flex-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
@@ -2817,8 +2867,30 @@ export const TrainingCourseCatalog: React.FC = () => {
                     </div>
                     {editCourseCriteria.length === 0 && <p className="text-xs text-gray-500">No criteria yet. Add at least one to track student progress against this course.</p>}
                     <div className="space-y-3">
-                      {editCourseCriteria.map((criterion) => (
+                      {editCourseCriteria.map((criterion, index) => (
                         <div key={criterion.id} className="flex flex-wrap items-center gap-3 rounded-md border border-gray-200 bg-white px-4 py-3">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveEditCourseCriterion(criterion.id, 'up')}
+                              disabled={index === 0}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                              title="Move criterion up"
+                              aria-label="Move criterion up"
+                            >
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveEditCourseCriterion(criterion.id, 'down')}
+                              disabled={index === editCourseCriteria.length - 1}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                              title="Move criterion down"
+                              aria-label="Move criterion down"
+                            >
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                           <input type="text" placeholder="Criterion name" value={criterion.name}
                             onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, name: e.target.value } : c))}
                             className="flex-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
