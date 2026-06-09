@@ -22,6 +22,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Settings2,
   Tag,
   Trash2,
   Underline,
@@ -35,7 +36,8 @@ import {
   SyllabusMatrixRow,
   TrainingExam,
   TrainingLesson,
-  TrainingModule
+  TrainingModule,
+  TrainingResource
 } from '../../types';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAuth } from '../../context/AuthContext';
@@ -47,7 +49,10 @@ interface NewCourseState {
   title: string;
   category: string;
   description: string;
+  version: string;
+  status: TrainingModule['status'];
   estimatedDurationHours: number;
+  prerequisites: string;
   requiresStudentAcknowledgement: boolean;
   requiresFlyingDeclaration: boolean;
   flyingDeclarationTitle: string;
@@ -70,6 +75,15 @@ interface NewLessonState {
   objective: string;
   flightExercises: string;
   theory: string;
+  sequenceId: string;
+  sequenceCode: string;
+  sequenceTitle: string;
+  stage: TrainingLesson['stage'];
+  durationMinutes: string;
+  minCompetency: TrainingLesson['minCompetency'];
+  keyExercises: string;
+  studentPreparation: string;
+  instructorNotes: string;
   isFlightTest: boolean;
 }
 
@@ -83,6 +97,7 @@ type EditableCriterion = {
 };
 
 type EditableExam = TrainingExam;
+type EditableResource = TrainingResource;
 
 const escapeHtml = (value: string) =>
   value
@@ -485,6 +500,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
 };
 
 const gradingOptions: LessonGradingSystem[] = ['NC/S/C/-', 'Pass or Fail', 'Out of 100'];
+const resourceTypeOptions: TrainingResource['type'][] = ['document', 'video', 'link', 'checklist'];
 
 const getDefaultPassingGrade = (system: LessonGradingSystem) => {
   switch (system) {
@@ -532,6 +548,20 @@ const makeUniqueCriterionId = (name: string, usedIds: Set<string>) => {
   return candidate;
 };
 
+const normaliseCriterionPassingGrade = (system: LessonGradingSystem, value: string) => {
+  const trimmed = value.trim();
+  if (system === 'Out of 100') {
+    const numeric = Number(trimmed);
+    if (Number.isNaN(numeric) || numeric < 0 || numeric > 100) {
+      return getDefaultPassingGrade(system);
+    }
+    return String(Math.round(numeric));
+  }
+
+  const allowed = getPassingGradeOptions(system);
+  return allowed.includes(trimmed) ? trimmed : getDefaultPassingGrade(system);
+};
+
 const buildCriteriaForSave = (
   editableCriteria: EditableCriterion[],
   options: { preserveIds?: Set<string> } = {}
@@ -546,7 +576,7 @@ const buildCriteriaForSave = (
       id,
       name,
       gradingSystem: criterion.gradingSystem,
-      passingGrade: criterion.passingGrade
+      passingGrade: normaliseCriterionPassingGrade(criterion.gradingSystem, criterion.passingGrade)
     };
   });
 };
@@ -577,11 +607,33 @@ const createEmptyExam = (): EditableExam => ({
   passMark: 80
 });
 
+const createEmptyResource = (): EditableResource => ({
+  id: `resource-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  type: 'document',
+  title: '',
+  url: '',
+  notes: ''
+});
+
 const pilotCertificateFlightTestTemplate: NewLessonState = {
   name: 'Pilot Certificate Flight Test',
   objective: 'Complete the RAAus Pilot Certificate Flight Test and record the result against the student file as the certificate flight review / test outcome.',
   flightExercises: '<ul><li>Pre-flight planning, aircraft documents and operational decision making.</li><li>Normal and abnormal handling across the RPC flight test profile.</li><li>Circuit, forced landing, training area, emergency and undesired-state management.</li><li>Post-flight debrief, result, limitations and next actions.</li></ul>',
   theory: '<p>Confirm Presolo, Radio, BAK and Pre Certificate Airlaw exam results are recorded before the certificate test result is finalised.</p>',
+  sequenceId: 'rpc-flight-test',
+  sequenceCode: 'RPC-FLT-TEST',
+  sequenceTitle: 'Pilot Certificate Flight Test',
+  stage: 'flight',
+  durationMinutes: '90',
+  minCompetency: 'Assess',
+  keyExercises: [
+    'Pre-flight planning and aircraft documents',
+    'Normal and abnormal handling',
+    'Circuit, forced landing and emergency management',
+    'Post-flight debrief and result'
+  ].join('\n'),
+  studentPreparation: 'Confirm required exams and student file items are complete before the test.',
+  instructorNotes: 'Record the flight test result, limitations and next actions clearly.',
   isFlightTest: true,
 };
 
@@ -595,7 +647,10 @@ const emptyCourseForm = (): CourseFormState => ({
   title: '',
   category: '',
   description: '',
+  version: '1.0',
+  status: 'draft',
   estimatedDurationHours: 6,
+  prerequisites: '',
   requiresStudentAcknowledgement: true,
   requiresFlyingDeclaration: false,
   flyingDeclarationTitle: 'Flying Declaration',
@@ -611,11 +666,49 @@ const emptyCourseForm = (): CourseFormState => ({
   evaluationFocus: '',
 });
 
+const emptyLessonForm = (): NewLessonState => ({
+  name: '',
+  objective: '',
+  flightExercises: '',
+  theory: '',
+  sequenceId: '',
+  sequenceCode: '',
+  sequenceTitle: '',
+  stage: 'flight',
+  durationMinutes: '60',
+  minCompetency: 'Introduce',
+  keyExercises: '',
+  studentPreparation: '',
+  instructorNotes: '',
+  isFlightTest: false
+});
+
 const parseListLines = (value: string) =>
   value
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*]\s*/, '').trim())
     .filter(Boolean);
+
+const buildResourcesForSave = (resources: EditableResource[]) => {
+  const built: TrainingResource[] = [];
+  for (const resource of resources) {
+    const title = resource.title.trim();
+    const url = resource.url?.trim() ?? '';
+    const notes = resource.notes?.trim() ?? '';
+    if (!title && !url && !notes) continue;
+    if (!title) {
+      throw new Error('Each course resource needs a title');
+    }
+    built.push({
+      id: resource.id || `resource-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: resource.type,
+      title,
+      url: url || undefined,
+      notes: notes || undefined,
+    });
+  }
+  return built;
+};
 
 const matrixCellClass = (standard?: number) => {
   if (standard === 1) return 'bg-emerald-100 text-emerald-800 ring-emerald-200';
@@ -1210,12 +1303,14 @@ export const TrainingCourseCatalog: React.FC = () => {
   const [newCourse, setNewCourse] = useState<CourseFormState>(emptyCourseForm);
   // Course-level criteria (shared across all lessons)
   const [courseCriteria, setCourseCriteria] = useState<EditableCriterion[]>([]);
+  const [courseResources, setCourseResources] = useState<EditableResource[]>([]);
 
   // Edit course form
   const [showEditCourseForm, setShowEditCourseForm] = useState(false);
   const [editCourse, setEditCourse] = useState<CourseFormState>(emptyCourseForm);
   const [editCourseCriteria, setEditCourseCriteria] = useState<EditableCriterion[]>([]);
   const [editCourseExams, setEditCourseExams] = useState<EditableExam[]>([]);
+  const [editCourseResources, setEditCourseResources] = useState<EditableResource[]>([]);
 
   // Delete course confirm
   const [showDeleteCourseConfirm, setShowDeleteCourseConfirm] = useState(false);
@@ -1223,13 +1318,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   // Lesson form
   const [showLessonForm, setShowLessonForm] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
-  const [newLesson, setNewLesson] = useState<NewLessonState>({
-    name: '',
-    objective: '',
-    flightExercises: '',
-    theory: '',
-    isFlightTest: false
-  });
+  const [newLesson, setNewLesson] = useState<NewLessonState>(emptyLessonForm);
   // Per-lesson pass marks: criterionId → passingGrade
   const [lessonPassMarks, setLessonPassMarks] = useState<Record<string, string>>({});
   const [expandedLessons, setExpandedLessons] = useState<Record<string, boolean>>({});
@@ -1239,7 +1328,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (modules.length === 0) {
       setSelectedModuleId(null);
       setShowLessonForm(false);
-      setNewLesson({ name: '', objective: '', flightExercises: '', theory: '', isFlightTest: false });
+      setNewLesson(emptyLessonForm());
       setLessonPassMarks({});
       return;
     }
@@ -1247,7 +1336,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (!selectedModuleId || !modules.some((module) => module.id === selectedModuleId)) {
       setSelectedModuleId(modules[0].id);
       setShowLessonForm(false);
-      setNewLesson({ name: '', objective: '', flightExercises: '', theory: '', isFlightTest: false });
+      setNewLesson(emptyLessonForm());
       setLessonPassMarks({});
     }
   }, [modules, selectedModuleId]);
@@ -1411,7 +1500,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   }, [selectedModule]);
 
   const resetLessonForm = () => {
-    setNewLesson({ name: '', objective: '', flightExercises: '', theory: '', isFlightTest: false });
+    setNewLesson(emptyLessonForm());
     setLessonPassMarks({});
     setEditingLessonId(null);
   };
@@ -1439,7 +1528,10 @@ export const TrainingCourseCatalog: React.FC = () => {
       title: selectedModule.title,
       category: selectedModule.category,
       description: selectedModule.description,
+      version: selectedModule.version || '1.0',
+      status: selectedModule.status || 'draft',
       estimatedDurationHours: selectedModule.estimatedDurationHours,
+      prerequisites: selectedModule.prerequisites.join('\n'),
       requiresStudentAcknowledgement: selectedModule.requiresStudentAcknowledgement ?? true,
       requiresFlyingDeclaration: selectedModule.requiresFlyingDeclaration ?? false,
       flyingDeclarationTitle: selectedModule.flyingDeclarationTitle || 'Flying Declaration',
@@ -1456,6 +1548,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     });
     setEditCourseCriteria(selectedModule.assessmentCriteria.map((c) => ({ ...c })));
     setEditCourseExams((selectedModule.exams || []).map((exam) => ({ ...exam })));
+    setEditCourseResources((selectedModule.resources || []).map((resource) => ({ ...resource })));
     setShowEditCourseForm(true);
     setShowLessonForm(false);
   };
@@ -1464,8 +1557,10 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (!selectedModule) return;
     const title = editCourse.title.trim();
     const category = editCourse.category.trim();
+    const version = editCourse.version.trim();
     if (!title) { toast.error('Course title is required'); return; }
     if (!category) { toast.error('Category is required'); return; }
+    if (!version) { toast.error('Course version is required'); return; }
     if (editCourse.completionEndorsementEnabled && !editCourse.completionEndorsementType.trim()) {
       toast.error('Select the endorsement granted by this course');
       return;
@@ -1478,6 +1573,13 @@ export const TrainingCourseCatalog: React.FC = () => {
     // Validate criteria
     for (const c of editCourseCriteria) {
       if (!c.name.trim()) { toast.error('Each criterion needs a name'); return; }
+      if (c.gradingSystem === 'Out of 100') {
+        const mark = Number(c.passingGrade);
+        if (Number.isNaN(mark) || mark < 0 || mark > 100) {
+          toast.error(`Course target for "${c.name}" must be 0-100`);
+          return;
+        }
+      }
     }
     const existingCriterionIds = new Set(selectedModule.assessmentCriteria.map((criterion) => criterion.id));
     const criteria: LessonAssessmentCriterion[] = buildCriteriaForSave(editCourseCriteria, { preserveIds: existingCriterionIds });
@@ -1494,6 +1596,14 @@ export const TrainingCourseCatalog: React.FC = () => {
     const tags = editCourse.tags.split(',').map((t) => t.trim()).filter(Boolean);
     const objectives = parseListLines(editCourse.objectives);
     const evaluationCriteria = parseListLines(editCourse.evaluationFocus);
+    const prerequisites = parseListLines(editCourse.prerequisites);
+    let resources: TrainingResource[] = [];
+    try {
+      resources = buildResourcesForSave(editCourseResources);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Check course resources');
+      return;
+    }
     const exams: TrainingExam[] = [];
     for (const exam of editCourseExams) {
       const name = exam.name.trim();
@@ -1524,7 +1634,10 @@ export const TrainingCourseCatalog: React.FC = () => {
         title,
         category,
         description: editCourse.description.trim() || cur.description,
+        version,
+        status: editCourse.status,
         estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
+        prerequisites,
         requiresStudentAcknowledgement: editCourse.requiresStudentAcknowledgement,
         requiresFlyingDeclaration: editCourse.requiresFlyingDeclaration,
         flyingDeclarationTitle: editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
@@ -1543,6 +1656,7 @@ export const TrainingCourseCatalog: React.FC = () => {
         evaluationCriteria,
         assessmentCriteria: criteria,
         exams,
+        resources,
         lastUpdated: new Date(),
       }));
       toast.success('Course updated');
@@ -1566,6 +1680,15 @@ export const TrainingCourseCatalog: React.FC = () => {
       objective: lesson.objective,
       flightExercises: lesson.flightExercises,
       theory: lesson.theory,
+      sequenceId: lesson.sequenceId || '',
+      sequenceCode: lesson.sequenceCode || '',
+      sequenceTitle: lesson.sequenceTitle || lesson.name,
+      stage: lesson.stage || 'flight',
+      durationMinutes: String(lesson.durationMinutes || 60),
+      minCompetency: lesson.minCompetency || 'Introduce',
+      keyExercises: (lesson.keyExercises || []).join('\n'),
+      studentPreparation: lesson.studentPreparation || '',
+      instructorNotes: lesson.instructorNotes || '',
       isFlightTest: lesson.isFlightTest ?? false,
     });
     // Populate pass marks from existing lesson data
@@ -1693,6 +1816,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     const title = newCourse.title.trim();
     const description = newCourse.description.trim();
     const category = newCourse.category.trim();
+    const version = newCourse.version.trim();
 
     if (!title) {
       toast.error('Please provide a course title');
@@ -1701,6 +1825,11 @@ export const TrainingCourseCatalog: React.FC = () => {
 
     if (!category) {
       toast.error('Please assign the course to a category');
+      return;
+    }
+
+    if (!version) {
+      toast.error('Please provide a course version');
       return;
     }
 
@@ -1727,10 +1856,25 @@ export const TrainingCourseCatalog: React.FC = () => {
       .filter(Boolean);
     const objectives = parseListLines(newCourse.objectives);
     const evaluationCriteria = parseListLines(newCourse.evaluationFocus);
+    const prerequisites = parseListLines(newCourse.prerequisites);
+    let resources: TrainingResource[] = [];
+    try {
+      resources = buildResourcesForSave(courseResources);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Check course resources');
+      return;
+    }
 
     // Validate course criteria
     for (const c of courseCriteria) {
       if (!c.name.trim()) { toast.error('Each criterion needs a name'); return; }
+      if (c.gradingSystem === 'Out of 100') {
+        const mark = Number(c.passingGrade);
+        if (Number.isNaN(mark) || mark < 0 || mark > 100) {
+          toast.error(`Course target for "${c.name}" must be 0-100`);
+          return;
+        }
+      }
     }
     const builtCriteria: LessonAssessmentCriterion[] = buildCriteriaForSave(courseCriteria);
 
@@ -1739,8 +1883,8 @@ export const TrainingCourseCatalog: React.FC = () => {
       title,
       description: description || 'Add a course overview for instructors and students.',
       category: category || 'Custom',
-      version: '1.0',
-      status: 'draft',
+      version,
+      status: newCourse.status,
       estimatedDurationHours: Math.max(1, Number(newCourse.estimatedDurationHours) || 1),
       requiresStudentAcknowledgement: newCourse.requiresStudentAcknowledgement,
       requiresFlyingDeclaration: newCourse.requiresFlyingDeclaration,
@@ -1755,14 +1899,14 @@ export const TrainingCourseCatalog: React.FC = () => {
       completionEndorsementExpiryMonths: newCourse.completionEndorsementEnabled && newCourse.completionEndorsementExpiryMonths
         ? Math.max(1, Number(newCourse.completionEndorsementExpiryMonths) || 1)
         : null,
-      prerequisites: [],
+      prerequisites,
       objectives,
       evaluationCriteria,
       tags: tags.length > 0 ? tags : ['draft'],
       assessmentCriteria: builtCriteria,
       exams: [],
       lessons: [],
-      resources: [],
+      resources,
       lastUpdated: new Date()
     };
 
@@ -1774,6 +1918,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setNewCourse(emptyCourseForm());
       setNewCourseMode('simple');
       setCourseCriteria([]);
+      setCourseResources([]);
       toast.success('New course created');
     } catch {
       // error toast handled in context
@@ -1785,6 +1930,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     setNewCourse(emptyCourseForm());
     setNewCourseMode('simple');
     setCourseCriteria([]);
+    setCourseResources([]);
   };
 
   const handleOpenLessonForm = () => {
@@ -1847,11 +1993,22 @@ export const TrainingCourseCatalog: React.FC = () => {
     const theoryHtml = sanitizeRichText(newLesson.theory);
     const flightExercisesPlain = richTextToPlainText(flightExercisesHtml);
     const theoryPlain = richTextToPlainText(theoryHtml);
+    const durationMinutes = Number(newLesson.durationMinutes);
+    const sequenceId = newLesson.sequenceId.trim();
+    const sequenceCode = newLesson.sequenceCode.trim();
+    const sequenceTitle = newLesson.sequenceTitle.trim() || name;
+    const keyExercises = parseListLines(newLesson.keyExercises);
+    const studentPreparation = newLesson.studentPreparation.trim();
+    const instructorNotes = newLesson.instructorNotes.trim();
 
     if (!name) { toast.error('Please provide a lesson name'); return; }
     if (!objective) { toast.error('Please provide a lesson objective'); return; }
     if (!flightExercisesPlain) { toast.error('Please outline the flight exercises for this lesson'); return; }
     if (!theoryPlain) { toast.error('Please describe the supporting theory content'); return; }
+    if (Number.isNaN(durationMinutes) || durationMinutes < 1) {
+      toast.error('Lesson duration must be at least 1 minute');
+      return;
+    }
 
     // Validate pass marks for course criteria
     const passMarks: Record<string, string> = {};
@@ -1876,9 +2033,15 @@ export const TrainingCourseCatalog: React.FC = () => {
       objective,
       flightExercises: flightExercisesHtml,
       theory: theoryHtml,
-      keyExercises: normaliseKeyExercises(flightExercisesHtml || flightExercisesPlain),
-      studentPreparation: theoryPlain,
-      instructorNotes: flightExercisesPlain,
+      sequenceId,
+      sequenceCode,
+      sequenceTitle,
+      stage: newLesson.stage,
+      durationMinutes: Math.round(durationMinutes),
+      minCompetency: newLesson.minCompetency,
+      keyExercises: keyExercises.length > 0 ? keyExercises : normaliseKeyExercises(flightExercisesHtml || flightExercisesPlain),
+      studentPreparation: studentPreparation || theoryPlain,
+      instructorNotes: instructorNotes || flightExercisesPlain,
       assessmentCriteria: [] as LessonAssessmentCriterion[],
       passMarks,
       isFlightTest: newLesson.isFlightTest,
@@ -1905,12 +2068,12 @@ export const TrainingCourseCatalog: React.FC = () => {
     const timestamp = Date.now();
     const lesson: TrainingLesson = {
       id: `lesson-${timestamp}`,
-      sequenceId: `custom-${timestamp}`,
-      sequenceCode: '',
-      sequenceTitle: name,
-      stage: 'flight',
-      durationMinutes: 60,
-      minCompetency: 'Introduce',
+      sequenceId: sequenceId || `custom-${timestamp}`,
+      sequenceCode,
+      sequenceTitle,
+      stage: newLesson.stage,
+      durationMinutes: Math.round(durationMinutes),
+      minCompetency: newLesson.minCompetency,
       ...lessonBase,
     };
 
@@ -2113,12 +2276,42 @@ export const TrainingCourseCatalog: React.FC = () => {
                 className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
+            <label className="flex flex-col text-sm font-medium text-blue-900">
+              Version
+              <input
+                type="text"
+                value={newCourse.version}
+                onChange={(event) => setNewCourse((prev) => ({ ...prev, version: event.target.value }))}
+                className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+            <label className="flex flex-col text-sm font-medium text-blue-900">
+              Status
+              <select
+                value={newCourse.status}
+                onChange={(event) => setNewCourse((prev) => ({ ...prev, status: event.target.value as TrainingModule['status'] }))}
+                className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+              </select>
+            </label>
             <label className="flex flex-col text-sm font-medium text-blue-900 md:col-span-2">
               Course overview
               <textarea
                 value={newCourse.description}
                 onChange={(event) => setNewCourse((prev) => ({ ...prev, description: event.target.value }))}
                 rows={3}
+                className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+            <label className="flex flex-col text-sm font-medium text-blue-900 md:col-span-2">
+              Prerequisites
+              <textarea
+                value={newCourse.prerequisites}
+                onChange={(event) => setNewCourse((prev) => ({ ...prev, prerequisites: event.target.value }))}
+                rows={3}
+                placeholder="One prerequisite per line"
                 className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
@@ -2352,10 +2545,113 @@ export const TrainingCourseCatalog: React.FC = () => {
                     className="rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none">
                     {gradingOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
+                  <label className="flex min-w-[130px] flex-col text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                    Course target
+                    {criterion.gradingSystem === 'Out of 100' ? (
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={criterion.passingGrade}
+                        onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, passingGrade: e.target.value } : c))}
+                        className="mt-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
+                      />
+                    ) : (
+                      <select
+                        value={criterion.passingGrade}
+                        onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, passingGrade: e.target.value } : c))}
+                        className="mt-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
+                      >
+                        {getPassingGradeOptions(criterion.gradingSystem).map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    )}
+                  </label>
                   <button type="button" onClick={() => setCourseCriteria((p) => p.filter((c) => c.id !== criterion.id))} className="text-red-500 hover:text-red-700"><X className="h-4 w-4" /></button>
                 </div>
               ))}
             </div>
+          </div>
+          <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-slate-900">
+                <Link className="h-4 w-4 text-blue-600" />
+                <h4 className="text-sm font-semibold">Course resources</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCourseResources((current) => [...current, createEmptyResource()])}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add resource
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-500">
+              Optional links, documents, videos or checklists that belong to this course and can appear in exports.
+            </p>
+            {courseResources.length === 0 ? (
+              <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                No course resources yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {courseResources.map((resource) => (
+                  <div key={resource.id} className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 md:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                    <label className="flex flex-col text-xs font-medium text-slate-700">
+                      Type
+                      <select
+                        value={resource.type}
+                        onChange={(event) => setCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, type: event.target.value as TrainingResource['type'] } : item))}
+                        className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                      >
+                        {resourceTypeOptions.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col text-xs font-medium text-slate-700">
+                      Title
+                      <input
+                        type="text"
+                        value={resource.title}
+                        onChange={(event) => setCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, title: event.target.value } : item))}
+                        className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                      />
+                    </label>
+                    <label className="flex flex-col text-xs font-medium text-slate-700">
+                      Link or file reference
+                      <input
+                        type="text"
+                        value={resource.url || ''}
+                        onChange={(event) => setCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, url: event.target.value } : item))}
+                        className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                      />
+                    </label>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => setCourseResources((current) => current.filter((item) => item.id !== resource.id))}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                        title="Remove resource"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <label className="flex flex-col text-xs font-medium text-slate-700 md:col-span-4">
+                      Notes
+                      <textarea
+                        rows={2}
+                        value={resource.notes || ''}
+                        onChange={(event) => setCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, notes: event.target.value } : item))}
+                        className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                      />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="mt-6 flex justify-end gap-3">
             <button onClick={handleCancelCreate} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-100">Cancel</button>
@@ -2722,9 +3018,24 @@ export const TrainingCourseCatalog: React.FC = () => {
                       Category
                       <input type="text" value={editCourse.category} onChange={(e) => setEditCourse((p) => ({ ...p, category: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
                     </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Version
+                      <input type="text" value={editCourse.version} onChange={(e) => setEditCourse((p) => ({ ...p, version: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Status
+                      <select value={editCourse.status} onChange={(e) => setEditCourse((p) => ({ ...p, status: e.target.value as TrainingModule['status'] }))} className="mt-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100">
+                        <option value="draft">Draft</option>
+                        <option value="published">Published</option>
+                      </select>
+                    </label>
                     <label className="flex flex-col text-sm font-medium text-gray-700 md:col-span-2">
                       Description
                       <textarea rows={2} value={editCourse.description} onChange={(e) => setEditCourse((p) => ({ ...p, description: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                    </label>
+                    <label className="flex flex-col text-sm font-medium text-gray-700 md:col-span-2">
+                      Prerequisites
+                      <textarea rows={3} value={editCourse.prerequisites} onChange={(e) => setEditCourse((p) => ({ ...p, prerequisites: e.target.value }))} placeholder="One prerequisite per line" className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
                     </label>
                     <label className="flex flex-col text-sm font-medium text-gray-700">
                       Objectives
@@ -2938,6 +3249,29 @@ export const TrainingCourseCatalog: React.FC = () => {
                             className="rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none">
                             {gradingOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                           </select>
+                          <label className="flex min-w-[130px] flex-col text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                            Course target
+                            {criterion.gradingSystem === 'Out of 100' ? (
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={criterion.passingGrade}
+                                onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, passingGrade: e.target.value } : c))}
+                                className="mt-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
+                              />
+                            ) : (
+                              <select
+                                value={criterion.passingGrade}
+                                onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, passingGrade: e.target.value } : c))}
+                                className="mt-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm font-normal text-gray-900 focus:border-blue-400 focus:outline-none"
+                              >
+                                {getPassingGradeOptions(criterion.gradingSystem).map((option) => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                            )}
+                          </label>
                           <button type="button" onClick={() => setEditCourseCriteria((p) => p.filter((c) => c.id !== criterion.id))} className="text-red-500 hover:text-red-700">
                             <X className="h-4 w-4" />
                           </button>
@@ -3006,6 +3340,86 @@ export const TrainingCourseCatalog: React.FC = () => {
                       ))}
                     </div>
                   </div>
+                  <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-slate-900">
+                        <Link className="h-4 w-4 text-blue-600" />
+                        <h4 className="text-sm font-semibold">Course resources</h4>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditCourseResources((current) => [...current, createEmptyResource()])}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add resource
+                      </button>
+                    </div>
+                    <p className="mb-3 text-xs text-slate-500">
+                      Optional links, documents, videos or checklists that belong to this course and can appear in exports.
+                    </p>
+                    {editCourseResources.length === 0 ? (
+                      <p className="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                        No course resources yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {editCourseResources.map((resource) => (
+                          <div key={resource.id} className="grid gap-3 rounded-md border border-slate-200 bg-white px-4 py-3 md:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                            <label className="flex flex-col text-xs font-medium text-slate-700">
+                              Type
+                              <select
+                                value={resource.type}
+                                onChange={(event) => setEditCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, type: event.target.value as TrainingResource['type'] } : item))}
+                                className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                              >
+                                {resourceTypeOptions.map((option) => (
+                                  <option key={option} value={option}>{option}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex flex-col text-xs font-medium text-slate-700">
+                              Title
+                              <input
+                                type="text"
+                                value={resource.title}
+                                onChange={(event) => setEditCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, title: event.target.value } : item))}
+                                className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                              />
+                            </label>
+                            <label className="flex flex-col text-xs font-medium text-slate-700">
+                              Link or file reference
+                              <input
+                                type="text"
+                                value={resource.url || ''}
+                                onChange={(event) => setEditCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, url: event.target.value } : item))}
+                                className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                              />
+                            </label>
+                            <div className="flex items-end">
+                              <button
+                                type="button"
+                                onClick={() => setEditCourseResources((current) => current.filter((item) => item.id !== resource.id))}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                                title="Remove resource"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <label className="flex flex-col text-xs font-medium text-slate-700 md:col-span-4">
+                              Notes
+                              <textarea
+                                rows={2}
+                                value={resource.notes || ''}
+                                onChange={(event) => setEditCourseResources((current) => current.map((item) => item.id === resource.id ? { ...item, notes: event.target.value } : item))}
+                                className="mt-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-blue-400 focus:outline-none"
+                              />
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="mt-5 flex justify-end gap-3">
                     <button onClick={() => setShowEditCourseForm(false)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
                     <button onClick={handleSaveEditCourse} className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
@@ -3048,6 +3462,110 @@ export const TrainingCourseCatalog: React.FC = () => {
                         className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
                       />
                     </label>
+                    <div className="rounded-lg border border-blue-200 bg-white p-4 md:col-span-2">
+                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-blue-950">
+                        <Settings2 className="h-4 w-4 text-blue-600" />
+                        Lesson setup
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Sequence code
+                          <input
+                            type="text"
+                            value={newLesson.sequenceCode}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, sequenceCode: event.target.value }))}
+                            placeholder="e.g. RPL-1 or RPC-03"
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Sequence ID
+                          <input
+                            type="text"
+                            value={newLesson.sequenceId}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, sequenceId: event.target.value }))}
+                            placeholder="Optional stable ID"
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Sequence title
+                          <input
+                            type="text"
+                            value={newLesson.sequenceTitle}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, sequenceTitle: event.target.value }))}
+                            placeholder="Defaults to lesson name"
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Stage
+                          <select
+                            value={newLesson.stage}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, stage: event.target.value as TrainingLesson['stage'] }))}
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          >
+                            <option value="ground">Ground</option>
+                            <option value="flight">Flight</option>
+                            <option value="simulator">Simulator</option>
+                          </select>
+                        </label>
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Duration minutes
+                          <input
+                            type="number"
+                            min={1}
+                            value={newLesson.durationMinutes}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, durationMinutes: event.target.value }))}
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Minimum competency
+                          <select
+                            value={newLesson.minCompetency}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, minCompetency: event.target.value as TrainingLesson['minCompetency'] }))}
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          >
+                            <option value="Introduce">Introduce</option>
+                            <option value="Practice">Practice</option>
+                            <option value="Assess">Assess</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Key exercises
+                          <textarea
+                            rows={4}
+                            value={newLesson.keyExercises}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, keyExercises: event.target.value }))}
+                            placeholder="One exercise per line"
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Student preparation
+                          <textarea
+                            rows={4}
+                            value={newLesson.studentPreparation}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, studentPreparation: event.target.value }))}
+                            placeholder="Reading, planning or briefing to complete first"
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex flex-col text-xs font-medium text-blue-900">
+                          Instructor notes
+                          <textarea
+                            rows={4}
+                            value={newLesson.instructorNotes}
+                            onChange={(event) => setNewLesson((prev) => ({ ...prev, instructorNotes: event.target.value }))}
+                            placeholder="Delivery notes, emphasis or setup reminders"
+                            className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
+                          />
+                        </label>
+                      </div>
+                    </div>
                     <RichTextEditor
                       label="Flight exercises"
                       value={newLesson.flightExercises}

@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
-import { TrainingExam, TrainingLesson, TrainingModule } from '../types';
+import { TrainingExam, TrainingLesson, TrainingModule, TrainingResource } from '../types';
 import { useAuth } from './AuthContext';
 
 type TrainingModulesContextValue = {
@@ -21,6 +21,7 @@ const TrainingModulesContext = createContext<TrainingModulesContextValue | undef
 
 function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[]): TrainingModule {
   const rawExams = Array.isArray(row.exam_requirements) ? row.exam_requirements : [];
+  const rawResources = Array.isArray(row.resources) ? row.resources : [];
   return {
     id: row.id as string,
     title: (row.title as string) ?? '',
@@ -58,7 +59,13 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     })).filter((exam: TrainingExam) => exam.name.trim()),
     createdBy: (row.created_by as string) ?? undefined,
     lessons,
-    resources: [],
+    resources: rawResources.map((resource: any) => ({
+      id: String(resource.id ?? `resource-${Date.now()}`),
+      type: ['document', 'video', 'link', 'checklist'].includes(resource.type) ? resource.type : 'document',
+      title: String(resource.title ?? ''),
+      url: resource.url ? String(resource.url) : undefined,
+      notes: resource.notes ? String(resource.notes) : undefined,
+    })).filter((resource: TrainingResource) => resource.title.trim()),
     lastUpdated: row.last_updated ? new Date(row.last_updated as string) : new Date(),
   };
 }
@@ -112,6 +119,7 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
       ? module.completionEndorsementExpiryMonths
       : null,
     exam_requirements: module.exams ?? [],
+    resources: module.resources ?? [],
     last_updated: module.lastUpdated.toISOString(),
   };
 }
