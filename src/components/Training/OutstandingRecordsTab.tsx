@@ -912,25 +912,23 @@ export const OutstandingRecordsTab: React.FC = () => {
                     </div>
                   </div>
 
-                  {expanded && (
-                    <div className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4 dark:border-[#2c2f36] sm:flex-row sm:gap-3">
-                      <button
-                        onClick={() => handleDismiss(log)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors dark:border-[#363b45] dark:text-gray-100 dark:hover:bg-[#262b33]"
-                      >
-                        <XCircle className="h-4 w-4 text-gray-400" />
-                        No Record Needed
-                      </button>
-                      <button
-                        onClick={() => openLog(log)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-                      >
-                        <BookOpen className="h-4 w-4" />
-                        Add Record
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  )}
+                  <div className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4 dark:border-[#2c2f36] sm:flex-row sm:gap-3">
+                    <button
+                      onClick={() => handleDismiss(log)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors dark:border-[#363b45] dark:text-gray-100 dark:hover:bg-[#262b33]"
+                    >
+                      <XCircle className="h-4 w-4 text-gray-400" />
+                      No Record Needed
+                    </button>
+                    <button
+                      onClick={() => openLog(log)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                      <BookOpen className="h-4 w-4" />
+                      Add Record
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
