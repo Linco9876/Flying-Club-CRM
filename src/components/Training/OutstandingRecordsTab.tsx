@@ -1044,13 +1044,13 @@ export const OutstandingRecordsTab: React.FC = () => {
   const queueButtons = [
     { id: 'mine' as const, label: 'Assigned to me', icon: AlertCircle },
     ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
-    { id: 'dismissed' as const, label: 'No record needed', icon: Undo2 },
+    { id: 'dismissed' as const, label: 'No Record Needed', icon: Undo2 },
   ];
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
       <header className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 p-4 text-white shadow-sm dark:border-blue-400/20 sm:p-5">
-        <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
               <ClipboardList className="h-5 w-5" />
@@ -1059,15 +1059,16 @@ export const OutstandingRecordsTab: React.FC = () => {
               <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
               <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
               <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
-                Start a draft, work through records assigned to you, review other instructors' records, or restore flights marked as no record needed.
+                Start in-flight drafts, complete records assigned to you, review other instructor queues, or reinstate flights marked as no record needed.
               </p>
             </div>
           </div>
 
-          <div className="grid min-w-0 gap-2 rounded-2xl bg-white/10 p-1.5 sm:grid-cols-2 xl:grid-cols-4 2xl:w-auto 2xl:auto-cols-max 2xl:grid-flow-col 2xl:grid-cols-none">
+          <div className="grid min-w-0 gap-2 rounded-2xl bg-white/10 p-1.5 sm:grid-cols-2 xl:w-auto xl:auto-cols-max xl:grid-flow-col xl:grid-cols-none">
             <button
               type="button"
               onClick={() => setShowDraftComposer(value => !value)}
+              aria-pressed={showDraftComposer}
               className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 showDraftComposer
                   ? 'bg-white text-blue-900 shadow-sm'
@@ -1084,6 +1085,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                   key={item.id}
                   type="button"
                   onClick={() => setQueueView(item.id)}
+                  aria-pressed={queueView === item.id}
                   className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                     queueView === item.id
                       ? 'bg-white text-blue-900 shadow-sm'

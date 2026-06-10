@@ -160,7 +160,7 @@ const toPublicProduct = (product: any) => ({
   durationMinutes: product.duration_minutes,
   bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
   price: Number(product.price || 0),
-  checkoutAvailable: Boolean(product.stripe_price_id),
+  checkoutAvailable: Boolean(product.stripe_price_id) && Number(product.price || 0) > 0,
   bookingInstructions: product.booking_instructions,
 });
 

@@ -395,7 +395,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   : 'text-amber-800 dark:text-amber-100'
               }`}>
                 {checkoutReadyProducts.length} of {activeProducts.length} active voucher product{activeProducts.length === 1 ? '' : 's'} have Stripe Price IDs.
-                Public purchase buttons only appear for active products with a Stripe Price ID.
+                Public purchase buttons only appear for active products with a real price and a Stripe Price ID.
               </p>
             </div>
           </div>
@@ -412,7 +412,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         <div className="mt-4 grid gap-3 text-xs leading-5 text-gray-700 dark:text-gray-300 lg:grid-cols-3">
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Products</p>
-            <p className="mt-1">Add a Stripe Price ID from Stripe to each voucher product that should be sold online.</p>
+            <p className="mt-1">Add a real price and a Stripe Price ID from Stripe to each voucher product that should be sold online.</p>
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Supabase</p>

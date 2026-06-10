@@ -87,6 +87,9 @@ Deno.serve(async (req: Request) => {
     if (!product.stripe_price_id) {
       return json({ error: "Online checkout is not enabled for this voucher yet. Please contact Bendigo Flying Club to purchase it." }, 409);
     }
+    if (Number(product.price || 0) <= 0) {
+      return json({ error: "Online checkout is not enabled until this voucher has a valid price." }, 409);
+    }
 
     const { data: voucher, error: voucherError } = await adminClient
       .from("trial_flight_vouchers")
