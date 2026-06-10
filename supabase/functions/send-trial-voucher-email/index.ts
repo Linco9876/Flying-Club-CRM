@@ -96,7 +96,15 @@ const buildVoucherEmail = ({
         timeZone: "Australia/Sydney",
       }).format(new Date(voucher.expires_at))
     : "";
-  const recipientLabel = recipientName || "the recipient";
+  const sentToPurchaser = !voucher.send_to_recipient;
+  const flyerName = voucher.recipient_name || (sentToPurchaser ? "the recipient" : recipientName) || "the recipient";
+  const greetingName = recipientName || "there";
+  const productText = product.email_body || product.description || "This voucher includes a trial instructional flight with a qualified Bendigo Flying Club instructor.";
+  const purchaserForwardingNote = sentToPurchaser
+    ? voucher.recipient_name
+      ? `This voucher has been sent to the purchaser so they can forward it to ${escapeHtml(voucher.recipient_name)} whenever they are ready.`
+      : "This voucher has been sent to the purchaser so they can forward it to the recipient whenever they are ready."
+    : "";
 
   return `<!doctype html>
 <html>
@@ -109,18 +117,32 @@ const buildVoucherEmail = ({
               <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:34px 30px;color:#ffffff;">
                 <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
                 <h1 style="margin:0;font-size:30px;line-height:1.15;">Your trial flight voucher is ready</h1>
-                <p style="margin:14px 0 0;color:#dbeafe;font-size:15px;line-height:1.6;">${escapeHtml(aircraftLabel)} for ${escapeHtml(recipientLabel)}.</p>
+                <p style="margin:14px 0 0;color:#dbeafe;font-size:15px;line-height:1.6;">${escapeHtml(aircraftLabel)} for ${escapeHtml(flyerName)}.</p>
               </td>
             </tr>
             <tr>
               <td style="padding:28px 30px;">
-                <p style="margin:0 0 18px;font-size:17px;line-height:1.6;color:#0f172a;">Hi ${escapeHtml(recipientName || "there")},</p>
-                ${paragraphs(product.email_body || product.description)}
+                <p style="margin:0 0 18px;font-size:17px;line-height:1.6;color:#0f172a;">Hi ${escapeHtml(greetingName)},</p>
+                ${sentToPurchaser ? `<p style="margin:0 0 14px;line-height:1.65;color:#334155;">${purchaserForwardingNote}</p>` : ""}
+                ${paragraphs(productText)}
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:24px 0;border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
                   <tr>
                     <td style="padding:18px;">
                       <p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#2563eb;font-weight:700;">Voucher code</p>
                       <p style="margin:0;font-size:26px;font-weight:800;letter-spacing:1px;color:#0f172a;">${escapeHtml(voucher.code)}</p>
+                    </td>
+                  </tr>
+                </table>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border:1px solid #e2e8f0;border-radius:18px;background:#ffffff;">
+                  <tr>
+                    <td style="padding:18px;">
+                      <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#2563eb;font-weight:700;">What is included</p>
+                      <ul style="margin:0;padding-left:20px;color:#334155;line-height:1.65;">
+                        <li>A welcome and pre-flight briefing at Bendigo Flying Club.</li>
+                        <li>${escapeHtml(product.duration_minutes)} minutes of trial instructional flight time with a qualified instructor.</li>
+                        <li>Use of the eligible ${escapeHtml(product.aircraft_mode === "archer" ? "PA-28 Archer" : product.aircraft_mode === "tecnam" ? "Tecnam aircraft" : "selected aircraft")} for this voucher.</li>
+                        <li>Time after the flight to ask questions about learning to fly.</li>
+                      </ul>
                     </td>
                   </tr>
                 </table>
@@ -160,7 +182,7 @@ const buildVoucherEmail = ({
                   <a href="${escapeHtml(redeemUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;border-radius:14px;padding:14px 22px;">Book your trial flight</a>
                 </p>
                 <p style="margin:0 0 10px;color:#64748b;font-size:13px;line-height:1.6;">If the button does not work, visit ${escapeHtml(redeemUrl)} and enter the voucher code above.</p>
-                ${voucher.send_to_recipient ? "" : `<p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">This email was sent to the purchaser. You can forward this email to the recipient whenever you are ready.</p>`}
+                ${voucher.send_to_recipient ? "" : `<p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">Forward this email to the recipient when you are ready. The booking link and voucher code are all they need to start the restricted booking account setup.</p>`}
               </td>
             </tr>
           </table>
