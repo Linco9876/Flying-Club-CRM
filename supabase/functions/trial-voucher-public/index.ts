@@ -214,6 +214,24 @@ const aircraftMatchesProduct = (aircraft: any, product: any) => {
   return false;
 };
 
+const normaliseEndorsementType = (value: unknown) => String(value || "").trim().toLowerCase();
+
+const instructorHasAircraftEndorsement = (
+  instructorId: string,
+  aircraft: any,
+  endorsementsByInstructor: Map<string, any[]>,
+) => {
+  const requiredType = normaliseEndorsementType(aircraft.required_endorsement_type);
+  if (!requiredType) return true;
+
+  const today = dateKey(new Date());
+  return (endorsementsByInstructor.get(instructorId) || []).some((endorsement: any) =>
+    endorsement.is_active !== false &&
+    normaliseEndorsementType(endorsement.type) === requiredType &&
+    (!endorsement.expiry_date || String(endorsement.expiry_date) >= today)
+  );
+};
+
 const productBookingSetup = (product: any, aircraftRows: any[] = []) => {
   const serviceableAircraft = aircraftRows
     .filter((aircraft: any) => aircraft.status === "serviceable")
@@ -323,12 +341,17 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
     { data: schedules, error: schedulesError },
     { data: absences, error: absencesError },
     { data: users, error: usersError },
+    { data: endorsements, error: endorsementsError },
   ] = await Promise.all([
-    adminClient.from("aircraft").select("id,registration,make,model,status"),
+    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
     adminClient.from("bookings").select("id,aircraft_id,instructor_id,start_time,end_time,status,deleted_at,has_conflict"),
     adminClient.from("instructor_weekly_schedules").select("*"),
     adminClient.from("instructor_absences").select("*"),
     adminClient.from("users").select("id,name").in("id", Array.from(allowedInstructorIds)),
+    adminClient
+      .from("endorsements")
+      .select("student_id,type,expiry_date,is_active")
+      .in("student_id", Array.from(allowedInstructorIds)),
   ]);
 
   if (aircraftError) throw aircraftError;
@@ -336,11 +359,18 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
   if (schedulesError) throw schedulesError;
   if (absencesError) throw absencesError;
   if (usersError) throw usersError;
+  if (endorsementsError) throw endorsementsError;
 
   const eligibleAircraft = (aircraftRows || [])
     .filter((aircraft: any) => aircraft.status === "serviceable")
     .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
   const userMap = new Map((users || []).map((user: any) => [user.id, user.name]));
+  const endorsementsByInstructor = new Map<string, any[]>();
+  (endorsements || []).forEach((endorsement: any) => {
+    const instructorEndorsements = endorsementsByInstructor.get(endorsement.student_id) || [];
+    instructorEndorsements.push(endorsement);
+    endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
+  });
   const now = new Date();
   const horizon = addMinutes(now, 60 * 24 * 45);
   const activeBookings = (bookings || []).filter((booking: any) =>
@@ -380,6 +410,7 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
           }
 
           const aircraft = eligibleAircraft.find((candidate: any) =>
+            instructorHasAircraftEndorsement(instructorId, candidate, endorsementsByInstructor) &&
             !activeBookings.some((booking: any) =>
               overlaps(start, end, booking.start_time, booking.end_time) &&
               (booking.aircraft_id === candidate.id || booking.instructor_id === instructorId)
