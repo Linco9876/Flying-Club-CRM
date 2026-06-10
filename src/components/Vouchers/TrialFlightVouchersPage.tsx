@@ -75,6 +75,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const selectedProduct = products.find(product => product.id === issueForm.productId);
   const checkoutReadyProducts = activeProducts.filter(product => Boolean(product.stripePriceId));
   const checkoutSetupComplete = activeProducts.length > 0 && checkoutReadyProducts.length === activeProducts.length;
+  const hasTecnamProduct = products.some(product => product.aircraftMode === 'tecnam');
+  const hasArcherProduct = products.some(product => product.aircraftMode === 'archer');
 
   const aircraftByMode = useMemo(() => {
     const tecnams = aircraft.filter(item =>
@@ -118,6 +120,42 @@ export const TrialFlightVouchersPage: React.FC = () => {
     setEditingProductId(undefined);
     setProductForm(buildPresetProduct(aircraftMode, instructors.map(instructor => instructor.id)));
     toast.success(`${modeLabel(aircraftMode)} voucher template loaded`);
+  };
+
+  const createStandardProducts = async () => {
+    if (instructors.length === 0) {
+      toast.error('Add at least one instructor before creating standard voucher products');
+      return;
+    }
+
+    const missingModes: TrialFlightVoucherAircraftMode[] = [
+      ...(!hasTecnamProduct ? ['tecnam' as const] : []),
+      ...(!hasArcherProduct ? ['archer' as const] : []),
+    ];
+
+    if (missingModes.length === 0) {
+      toast.success('Standard voucher products already exist');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      for (const mode of missingModes) {
+        const product = buildPresetProduct(mode, instructors.map(instructor => instructor.id));
+        await saveProduct({
+          ...product,
+          isActive: mode === 'archer' && aircraftByMode.archers.length === 0 ? false : product.isActive,
+        });
+      }
+
+      if (!hasArcherProduct && aircraftByMode.archers.length === 0) {
+        toast('Archer product was created inactive because no PA-28 Archer aircraft was found in the fleet.');
+      } else {
+        toast.success('Standard voucher products created');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleToggleProductActive = async (product: TrialFlightVoucherProduct) => {
@@ -415,7 +453,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   Load a standard voucher, then confirm price, aircraft and eligible instructors before saving.
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[24rem]">
+              <div className="grid gap-2 sm:grid-cols-3 lg:min-w-[34rem]">
+                <button
+                  type="button"
+                  onClick={createStandardProducts}
+                  disabled={saving || (hasTecnamProduct && hasArcherProduct)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create standard
+                </button>
                 <button
                   type="button"
                   onClick={() => applyPreset('tecnam')}
@@ -434,6 +481,11 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 </button>
               </div>
             </div>
+            {aircraftByMode.archers.length === 0 && (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
+                No PA-28 Archer aircraft is currently detected in the fleet. Archer voucher products can be drafted, but they should stay inactive until the Archer aircraft exists and is serviceable.
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
