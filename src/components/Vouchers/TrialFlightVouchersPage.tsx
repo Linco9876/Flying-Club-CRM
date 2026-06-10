@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CalendarDays, CheckCircle, Copy, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
@@ -337,6 +337,100 @@ export const TrialFlightVouchersPage: React.FC = () => {
       console.error(`Failed to copy ${label.toLowerCase()}:`, error);
       toast.error(`Could not copy ${label.toLowerCase()}`);
     }
+  };
+
+  const escapeHtml = (value: unknown) =>
+    String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+  const downloadVoucherCertificate = (voucher: TrialFlightVoucher) => {
+    const product = products.find(item => item.id === voucher.productId);
+    const redeemUrl = getRedeemUrl(voucher.code);
+    const recipient = voucher.recipientName || 'Gift voucher recipient';
+    const productName = voucher.productName || product?.name || 'Trial Flight Gift Voucher';
+    const duration = product?.durationMinutes ? `${product.durationMinutes} minute trial instructional flight` : 'Trial instructional flight';
+    const bookingBlock = product?.durationMinutes ? `${product.durationMinutes + 30} minute booking block` : 'Flight time plus 30 minutes for briefing and paperwork';
+    const aircraft = product ? modeLabel(product.aircraftMode) : 'Eligible aircraft';
+    const expiry = voucher.expiresAt ? voucher.expiresAt.toLocaleDateString() : 'No expiry recorded';
+    const fileName = `${productName}-${voucher.code}`.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(productName)} - ${escapeHtml(voucher.code)}</title>
+    <style>
+      @page { size: A4; margin: 16mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #eef4fb; color: #0f172a; font-family: Arial, Helvetica, sans-serif; }
+      .page { min-height: calc(297mm - 32mm); display: flex; align-items: center; justify-content: center; }
+      .voucher { width: 100%; max-width: 900px; overflow: hidden; border-radius: 28px; background: white; box-shadow: 0 24px 70px rgba(15, 23, 42, .18); border: 1px solid #dbeafe; }
+      .hero { padding: 42px; color: white; background: linear-gradient(135deg, #07152e, #0d3b78 60%, #2563eb); }
+      .eyebrow { margin: 0 0 10px; font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: #bfdbfe; font-weight: 700; }
+      h1 { margin: 0; font-size: 40px; line-height: 1.05; }
+      .subtitle { margin: 14px 0 0; color: #dbeafe; font-size: 18px; line-height: 1.5; }
+      .body { padding: 34px 42px 38px; }
+      .code { margin: 0 0 24px; padding: 20px; border-radius: 20px; background: #eff6ff; border: 1px solid #bfdbfe; }
+      .code-label { margin: 0 0 6px; color: #2563eb; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
+      .code-value { margin: 0; font-size: 34px; letter-spacing: 2px; font-weight: 900; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 22px 0; }
+      .item { padding: 16px; border: 1px solid #e2e8f0; border-radius: 18px; background: #f8fafc; }
+      .item strong { display: block; margin-bottom: 5px; font-size: 13px; text-transform: uppercase; color: #64748b; letter-spacing: 1px; }
+      .item span { font-size: 17px; font-weight: 700; color: #0f172a; }
+      .steps { margin: 24px 0 0; padding: 18px 20px; border-radius: 18px; background: #f8fbff; border: 1px solid #dbeafe; color: #334155; line-height: 1.65; }
+      .url { margin-top: 18px; padding: 14px; border-radius: 14px; background: #f1f5f9; color: #334155; font-size: 13px; word-break: break-all; }
+      .footer { margin-top: 26px; color: #64748b; font-size: 13px; line-height: 1.6; }
+      @media print { body { background: white; } .voucher { box-shadow: none; } }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="voucher">
+        <div class="hero">
+          <p class="eyebrow">Bendigo Flying Club</p>
+          <h1>Trial Flight Gift Voucher</h1>
+          <p class="subtitle">${escapeHtml(productName)} for ${escapeHtml(recipient)}</p>
+        </div>
+        <div class="body">
+          <div class="code">
+            <p class="code-label">Voucher Code</p>
+            <p class="code-value">${escapeHtml(voucher.code)}</p>
+          </div>
+          <div class="grid">
+            <div class="item"><strong>Flight</strong><span>${escapeHtml(duration)}</span></div>
+            <div class="item"><strong>Booking block</strong><span>${escapeHtml(bookingBlock)}</span></div>
+            <div class="item"><strong>Aircraft</strong><span>${escapeHtml(aircraft)}</span></div>
+            <div class="item"><strong>Expiry</strong><span>${escapeHtml(expiry)}</span></div>
+          </div>
+          <div class="steps">
+            <strong>How to book</strong>
+            <ol>
+              <li>Visit the Bendigo Flying Club portal using the link below.</li>
+              <li>Enter the voucher code and create the restricted booking account with full name, email and phone.</li>
+              <li>Choose an available time. The system checks eligible aircraft and instructor availability together.</li>
+            </ol>
+          </div>
+          <div class="url">${escapeHtml(redeemUrl)}</div>
+          <p class="footer">This voucher reserves the trial flight time plus 30 minutes for arrival, briefing and paperwork. Please contact Bendigo Flying Club if you need help booking or changing the flight.</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${fileName || 'trial-flight-voucher'}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Voucher certificate downloaded');
   };
 
   const modeLabel = (mode: TrialFlightVoucherAircraftMode) =>
@@ -1275,6 +1369,14 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           <ExternalLink className="h-3.5 w-3.5" />
                           Open
                         </a>
+                        <button
+                          type="button"
+                          onClick={() => downloadVoucherCertificate(voucher)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-400/30 dark:bg-[#171a21] dark:text-emerald-200 dark:hover:bg-emerald-950/40"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download voucher
+                        </button>
                       </div>
                     </div>
                   </div>
