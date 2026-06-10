@@ -4,6 +4,8 @@ import { Plane, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
+const PASSWORD_RESET_RETURN_KEY = 'bfc_password_reset_return_to';
+
 export const ResetPasswordPage: React.FC = () => {
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
@@ -13,6 +15,7 @@ export const ResetPasswordPage: React.FC = () => {
   const [isValidToken, setIsValidToken] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState('Please wait...');
   const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
+  const [postResetReturnTo, setPostResetReturnTo] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,6 +28,13 @@ export const ResetPasswordPage: React.FC = () => {
 
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const searchParams = new URLSearchParams(window.location.search);
+    const voucherCode = searchParams.get('voucherCode') || (hashParams.has('access_token') ? searchParams.get('code') : null);
+    if (window.location.pathname === '/trial-flight-voucher') {
+      const returnTo = `/trial-flight-voucher${voucherCode ? `?voucherCode=${encodeURIComponent(voucherCode)}` : ''}`;
+      sessionStorage.setItem(PASSWORD_RESET_RETURN_KEY, returnTo);
+      setPostResetReturnTo(returnTo);
+    }
+
     const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
     const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
     const code = searchParams.get('code') || hashParams.get('code');
@@ -182,6 +192,28 @@ export const ResetPasswordPage: React.FC = () => {
     };
   }, [navigate]);
 
+  const getPostResetRedirect = async () => {
+    const storedReturnTo = sessionStorage.getItem(PASSWORD_RESET_RETURN_KEY) || postResetReturnTo;
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData.user?.id;
+    if (!userId) return { redirectTo: '/', keepSignedIn: false };
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('portal_access_scope')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile?.portal_access_scope === 'trial_voucher') {
+      return {
+        redirectTo: storedReturnTo?.startsWith('/trial-flight-voucher') ? storedReturnTo : '/trial-flight-voucher',
+        keepSignedIn: true,
+      };
+    }
+
+    return { redirectTo: '/', keepSignedIn: false };
+  };
+
   useEffect(() => {
     if (!isValidToken) return;
     if (window.location.hash || window.location.search) {
@@ -215,22 +247,32 @@ export const ResetPasswordPage: React.FC = () => {
 
       if (error) throw error;
 
-      toast.success('Password updated successfully! Redirecting to login...');
+      const redirect = await getPostResetRedirect();
+      toast.success(redirect.keepSignedIn ? 'Password updated. Opening your voucher booking page...' : 'Password updated successfully! Redirecting to login...');
 
-      await supabase.auth.signOut();
+      if (!redirect.keepSignedIn) {
+        await supabase.auth.signOut();
+      } else {
+        sessionStorage.removeItem(PASSWORD_RESET_RETURN_KEY);
+      }
 
       setTimeout(() => {
-        navigate('/', { replace: true });
+        navigate(redirect.redirectTo, { replace: true });
       }, 1200);
     } catch (error: any) {
       console.error('Password update error:', error);
       const message = error.message || 'Failed to update password';
 
       if (message.toLowerCase().includes('same as the old')) {
-        toast.success('That password is already current for this account. Redirecting to login...');
-        await supabase.auth.signOut();
+        const redirect = await getPostResetRedirect();
+        toast.success(redirect.keepSignedIn ? 'That password is already current. Opening your voucher booking page...' : 'That password is already current for this account. Redirecting to login...');
+        if (!redirect.keepSignedIn) {
+          await supabase.auth.signOut();
+        } else {
+          sessionStorage.removeItem(PASSWORD_RESET_RETURN_KEY);
+        }
         setTimeout(() => {
-          navigate('/', { replace: true });
+          navigate(redirect.redirectTo, { replace: true });
         }, 1200);
         return;
       }

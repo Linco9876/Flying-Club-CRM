@@ -30,7 +30,7 @@ interface VoucherSlot {
 
 const getInitialCode = () => {
   const params = new URLSearchParams(window.location.search);
-  return (params.get('code') || '').trim().toUpperCase();
+  return (params.get('voucherCode') || params.get('code') || '').trim().toUpperCase();
 };
 
 export const TrialVoucherRedeemPage: React.FC = () => {
@@ -114,7 +114,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     }
     setLoading(true);
     try {
-      const redirectTo = `${window.location.origin}/trial-flight-voucher?code=${encodeURIComponent(code)}`;
+      const redirectTo = `${window.location.origin}/trial-flight-voucher?voucherCode=${encodeURIComponent(code)}`;
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
         body: { action: 'redeem', code, ...form, redirectTo },
       });
@@ -182,7 +182,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     if (!voucher || !code) return;
     setLoading(true);
     try {
-      const redirectTo = `${window.location.origin}/trial-flight-voucher?code=${encodeURIComponent(code)}`;
+      const redirectTo = `${window.location.origin}/trial-flight-voucher?voucherCode=${encodeURIComponent(code)}`;
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
         body: { action: 'resend-setup', code, redirectTo },
       });
