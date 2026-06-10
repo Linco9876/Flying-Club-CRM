@@ -175,6 +175,23 @@ export const useTrialFlightVouchers = () => {
     await fetchAll();
   };
 
+  const sendVoucherEmail = async (voucherId: string, options?: { force?: boolean }) => {
+    const { data, error } = await supabase.functions.invoke('send-trial-voucher-email', {
+      body: {
+        voucherId,
+        force: Boolean(options?.force),
+        redirectOrigin: window.location.origin,
+      },
+    });
+
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+
+    toast.success(data?.scheduled ? 'Voucher email is scheduled' : 'Voucher email sent');
+    await fetchAll();
+    return data;
+  };
+
   return {
     products,
     activeProducts,
@@ -183,5 +200,6 @@ export const useTrialFlightVouchers = () => {
     refetch: fetchAll,
     saveProduct,
     issueVoucher,
+    sendVoucherEmail,
   };
 };

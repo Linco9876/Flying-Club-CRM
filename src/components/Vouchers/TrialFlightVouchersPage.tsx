@@ -30,7 +30,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { users, getInstructors } = useUsers();
-  const { products, vouchers, loading, saveProduct, issueVoucher } = useTrialFlightVouchers();
+  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [issueForm, setIssueForm] = useState({
@@ -149,6 +149,18 @@ export const TrialFlightVouchersPage: React.FC = () => {
         expiresAt: '',
         notes: '',
       });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendVoucherEmail = async (voucherId: string, force = false) => {
+    setSaving(true);
+    try {
+      await sendVoucherEmail(voucherId, { force });
+    } catch (error) {
+      console.error('Failed to send voucher email:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to send voucher email');
     } finally {
       setSaving(false);
     }
@@ -324,6 +336,35 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">{voucher.status}</span>
                   </div>
                   <p className="mt-2 flex items-center gap-2 text-sm font-mono text-gray-800 dark:text-gray-200"><Ticket className="h-4 w-4" /> {voucher.code}</p>
+                  <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-[#111827] dark:text-gray-300">
+                    {voucher.deliveredAt
+                      ? `Email delivered ${voucher.deliveredAt.toLocaleString()}`
+                      : voucher.sendToRecipient && voucher.recipientDeliveryAt
+                        ? `Recipient email scheduled for ${voucher.recipientDeliveryAt.toLocaleString()}`
+                        : 'Purchaser email not marked delivered yet'}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSendVoucherEmail(voucher.id, false)}
+                      disabled={saving}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-[#2c2f36] dark:text-gray-200 dark:hover:bg-[#111827]"
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                      {voucher.deliveredAt ? 'Resend' : 'Send email'}
+                    </button>
+                    {voucher.sendToRecipient && voucher.recipientDeliveryAt && !voucher.deliveredAt && voucher.recipientDeliveryAt > new Date() && (
+                      <button
+                        type="button"
+                        onClick={() => handleSendVoucherEmail(voucher.id, true)}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        Send now
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
               {vouchers.length === 0 && <p className="text-sm text-gray-500">No vouchers issued yet.</p>}
@@ -336,4 +377,3 @@ export const TrialFlightVouchersPage: React.FC = () => {
 };
 
 export default TrialFlightVouchersPage;
-

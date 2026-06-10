@@ -141,27 +141,96 @@ const buildVoucherEmail = ({
 </html>`;
 };
 
+const resolveDelivery = (voucher: any) => {
+  const to = voucher.send_to_recipient ? voucher.recipient_email : voucher.purchaser_email;
+  const toName = voucher.send_to_recipient ? voucher.recipient_name : voucher.purchaser_name;
+  return { to, toName };
+};
+
+const sendVoucherEmail = async ({
+  adminClient,
+  voucher,
+  redirectOrigin,
+}: {
+  adminClient: ReturnType<typeof createClient>;
+  voucher: any;
+  redirectOrigin?: string;
+}) => {
+  const product = voucher.trial_flight_voucher_products;
+  const { to, toName } = resolveDelivery(voucher);
+  if (!to) return { sent: false, error: "Voucher has no delivery email address" };
+
+  const origin = String(redirectOrigin || Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
+  const redeemUrl = `${origin}/trial-flight-voucher?code=${encodeURIComponent(voucher.code)}`;
+  const subject = product.email_subject || "Your Bendigo Flying Club trial flight voucher";
+  const html = buildVoucherEmail({ voucher, product, recipientName: toName || "", redeemUrl });
+
+  const result = await sendBrevoEmail({ to, toName, subject, html });
+  if (!result.sent) return { sent: false, error: result.error || "Email could not be sent" };
+
+  await adminClient
+    .from("trial_flight_vouchers")
+    .update({ delivered_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", voucher.id);
+
+  return { sent: true, to, redeemUrl };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "No authorization header" }, 401);
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const body = await req.json();
+    const action = String(body.action || "send-one");
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    if (action === "send-due") {
+      const configuredSecret = Deno.env.get("TRIAL_VOUCHER_CRON_SECRET");
+      const suppliedSecret = req.headers.get("x-cron-secret") || String(body.cronSecret || "");
+      if (configuredSecret && suppliedSecret !== configuredSecret) {
+        return json({ error: "Invalid cron secret" }, 401);
+      }
+
+      const { data: vouchers, error: voucherError } = await adminClient
+        .from("trial_flight_vouchers")
+        .select("*, trial_flight_voucher_products(*)")
+        .eq("send_to_recipient", true)
+        .is("delivered_at", null)
+        .eq("status", "issued")
+        .lte("recipient_delivery_at", new Date().toISOString())
+        .limit(25);
+
+      if (voucherError) return json({ error: voucherError.message }, 500);
+
+      const results = [];
+      for (const voucher of vouchers || []) {
+        const result = await sendVoucherEmail({ adminClient, voucher });
+        results.push({ voucherId: voucher.id, code: voucher.code, ...result });
+      }
+
+      return json({
+        processed: results.length,
+        sent: results.filter((result: any) => result.sent).length,
+        failed: results.filter((result: any) => !result.sent).length,
+        results,
+      });
+    }
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return json({ error: "No authorization header" }, 401);
 
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user: callerUser }, error: callerError } = await callerClient.auth.getUser();
     if (callerError || !callerUser) return json({ error: "Unauthorized" }, 401);
-
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
 
     const [{ data: callerRoles, error: rolesError }, { data: callerProfile, error: profileError }] = await Promise.all([
       adminClient.from("user_roles").select("role").eq("user_id", callerUser.id),
@@ -174,7 +243,7 @@ Deno.serve(async (req: Request) => {
       (callerRoles || []).some((row) => isStaffRole(String(row.role)));
     if (!callerIsStaff) return json({ error: "Only staff can send voucher emails" }, 403);
 
-    const { voucherId, redirectOrigin, force = false } = await req.json();
+    const { voucherId, redirectOrigin, force = false } = body;
     if (!voucherId || typeof voucherId !== "string") return json({ error: "voucherId is required" }, 400);
 
     const { data: voucher, error: voucherError } = await adminClient
@@ -191,25 +260,10 @@ Deno.serve(async (req: Request) => {
       return json({ sent: false, scheduled: true, deliveryAt: deliveryAt.toISOString() });
     }
 
-    const product = voucher.trial_flight_voucher_products;
-    const to = voucher.send_to_recipient ? voucher.recipient_email : voucher.purchaser_email;
-    const toName = voucher.send_to_recipient ? voucher.recipient_name : voucher.purchaser_name;
-    if (!to) return json({ error: "Voucher has no delivery email address" }, 400);
-
-    const origin = String(redirectOrigin || Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
-    const redeemUrl = `${origin}/trial-flight-voucher?code=${encodeURIComponent(voucher.code)}`;
-    const subject = product.email_subject || "Your Bendigo Flying Club trial flight voucher";
-    const html = buildVoucherEmail({ voucher, product, recipientName: toName || "", redeemUrl });
-
-    const result = await sendBrevoEmail({ to, toName, subject, html });
+    const result = await sendVoucherEmail({ adminClient, voucher, redirectOrigin });
     if (!result.sent) return json({ error: result.error || "Email could not be sent" }, 500);
 
-    await adminClient
-      .from("trial_flight_vouchers")
-      .update({ delivered_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq("id", voucher.id);
-
-    return json({ sent: true, to, redeemUrl });
+    return json(result);
   } catch (error) {
     console.error("send-trial-voucher-email error:", error);
     return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);
