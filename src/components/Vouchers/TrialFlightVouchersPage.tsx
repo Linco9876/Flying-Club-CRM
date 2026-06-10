@@ -24,6 +24,27 @@ const emptyProduct = (): Omit<TrialFlightVoucherProduct, 'id' | 'createdAt' | 'u
   isActive: true,
 });
 
+const buildPresetProduct = (
+  aircraftMode: TrialFlightVoucherAircraftMode,
+  instructorIds: string[],
+): Omit<TrialFlightVoucherProduct, 'id' | 'createdAt' | 'updatedAt'> => {
+  const isArcher = aircraftMode === 'archer';
+  const aircraftName = isArcher ? 'PA-28 Archer' : 'Tecnam';
+  const name = `${aircraftName} Trial Instructional Flight`;
+
+  return {
+    ...emptyProduct(),
+    name,
+    aircraftMode,
+    instructorIds,
+    description: `A ${aircraftName} trial instructional flight voucher for someone who wants to experience flying from Bendigo Flying Club with a qualified instructor.`,
+    emailSubject: `Your Bendigo Flying Club ${aircraftName} trial flight voucher`,
+    emailBody: `This voucher includes a pre-flight welcome, a ${aircraftName} trial instructional flight with a qualified instructor, and time to ask questions about learning to fly at Bendigo Flying Club.`,
+    bookingInstructions: `Use the voucher code or link in this email to choose an available ${aircraftName} trial flight time. The booking system allows the flight duration plus 30 minutes for briefing, paperwork and aircraft changeover.`,
+    isActive: true,
+  };
+};
+
 const dateTimeLocalToIso = (value: string) => value ? new Date(value).toISOString() : undefined;
 
 export const TrialFlightVouchersPage: React.FC = () => {
@@ -86,6 +107,12 @@ export const TrialFlightVouchersPage: React.FC = () => {
       bookingInstructions: product.bookingInstructions,
       isActive: product.isActive,
     });
+  };
+
+  const applyPreset = (aircraftMode: TrialFlightVoucherAircraftMode) => {
+    setEditingProductId(undefined);
+    setProductForm(buildPresetProduct(aircraftMode, instructors.map(instructor => instructor.id)));
+    toast.success(`${modeLabel(aircraftMode)} voucher template loaded`);
   };
 
   const handleToggleProductActive = async (product: TrialFlightVoucherProduct) => {
@@ -268,6 +295,35 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <Plus className="h-4 w-4" />
               New
             </button>
+          </div>
+
+          <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-3 dark:border-blue-400/20 dark:bg-blue-950/20">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-bold text-blue-950 dark:text-blue-100">Quick setup templates</p>
+                <p className="text-xs text-blue-800 dark:text-blue-200">
+                  Load a standard voucher, then confirm price, aircraft and eligible instructors before saving.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[24rem]">
+                <button
+                  type="button"
+                  onClick={() => applyPreset('tecnam')}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-800 shadow-sm transition hover:bg-blue-50 dark:border-blue-400/30 dark:bg-[#111827] dark:text-blue-100 dark:hover:bg-blue-950/40"
+                >
+                  <Plane className="h-4 w-4" />
+                  Tecnam voucher
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset('archer')}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-800 shadow-sm transition hover:bg-blue-50 dark:border-blue-400/30 dark:bg-[#111827] dark:text-blue-100 dark:hover:bg-blue-950/40"
+                >
+                  <Plane className="h-4 w-4" />
+                  Archer voucher
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
