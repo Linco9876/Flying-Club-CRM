@@ -132,6 +132,14 @@ const AppContent: React.FC = () => {
     );
   }
 
+  if (isPasswordRecovery) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <ResetPasswordPage />
+      </Suspense>
+    );
+  }
+
   if (location.pathname === '/trial-flight-voucher') {
     return (
       <Suspense fallback={<PageLoader />}>
@@ -148,14 +156,6 @@ const AppContent: React.FC = () => {
     return (
       <Suspense fallback={<PageLoader />}>
         <TrialVoucherSalesPage />
-      </Suspense>
-    );
-  }
-
-  if (isPasswordRecovery) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <ResetPasswordPage />
       </Suspense>
     );
   }
