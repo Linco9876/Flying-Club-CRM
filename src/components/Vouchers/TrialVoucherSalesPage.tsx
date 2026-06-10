@@ -129,13 +129,40 @@ export const TrialVoucherSalesPage: React.FC = () => {
     return '';
   }, [checkoutStatus, checkoutStatusLoading]);
 
-  const mailtoHref = useMemo(() => {
+  const buildMailtoHref = (product?: PublicVoucherProduct) => {
     const subject = encodeURIComponent('Trial flight gift voucher purchase');
+    const voucherLines = product
+      ? [
+          `Preferred voucher: ${product.name}`,
+          `Flight time: ${product.durationMinutes} minutes`,
+          `Booking block: ${product.bookingBlockMinutes} minutes`,
+          `Aircraft: ${aircraftLabel(product.aircraftMode)}`,
+          `Advertised price: ${formatPrice(product.price)}`,
+        ]
+      : [
+          'Preferred voucher:',
+        ];
     const body = encodeURIComponent(
-      'Hi Bendigo Flying Club,\n\nI would like to purchase a trial instructional flight gift voucher.\n\nPreferred voucher:\nRecipient name:\nPurchaser name:\nPhone:\n\nThank you.'
+      [
+        'Hi Bendigo Flying Club,',
+        '',
+        'I would like to purchase a trial instructional flight gift voucher.',
+        '',
+        ...voucherLines,
+        'Recipient name:',
+        'Recipient email:',
+        'Purchaser name:',
+        'Purchaser email:',
+        'Phone:',
+        '',
+        'Please let me know the next steps.',
+        '',
+        'Thank you.',
+      ].join('\n')
     );
     return `mailto:info@bendigoflyingclub.com.au?subject=${subject}&body=${body}`;
-  }, []);
+  };
+  const mailtoHref = useMemo(() => buildMailtoHref(), []);
 
   const resetPurchaseForm = (product?: PublicVoucherProduct | null) => {
     setSelectedProduct(product || null);
@@ -319,7 +346,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                         </span>
                       )}
                       <a
-                        href={mailtoHref}
+                        href={buildMailtoHref(product)}
                         className="inline-flex items-center gap-2 px-1 py-2 text-sm font-bold text-blue-700 hover:text-blue-900"
                       >
                         Contact to purchase
