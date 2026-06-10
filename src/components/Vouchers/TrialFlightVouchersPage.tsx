@@ -58,6 +58,7 @@ const isArcherAircraft = (item: { registration?: string; make?: string; model?: 
   const compact = label.replace(/[^a-z0-9]/g, '');
   return label.includes('archer') || compact.includes('pa28') || compact.includes('piperpa28');
 };
+const isValidStripePriceId = (value?: string) => !value?.trim() || /^price_[A-Za-z0-9_]+$/.test(value.trim());
 
 const toDateTimeLocalValue = (date: Date) => {
   const offsetMs = date.getTimezoneOffset() * 60_000;
@@ -270,6 +271,21 @@ export const TrialFlightVouchersPage: React.FC = () => {
     if (productForm.aircraftMode === 'archer' && productForm.aircraftIds.length === 0 && aircraftByMode.archers.length === 0) {
       toast.error('No PA-28 Archer aircraft were found in the fleet. Select the Archer aircraft or update the aircraft details first.');
       return;
+    }
+    if (Number(productForm.price || 0) < 0) {
+      toast.error('Voucher price cannot be negative');
+      return;
+    }
+    if (!isValidStripePriceId(productForm.stripePriceId)) {
+      toast.error('Stripe Price ID must start with price_');
+      return;
+    }
+    if (productForm.stripePriceId?.trim() && Number(productForm.price || 0) <= 0) {
+      toast.error('Enter the CRM sale price before adding a Stripe Price ID');
+      return;
+    }
+    if (productForm.isActive && Number(productForm.price || 0) > 0 && !productForm.stripePriceId?.trim()) {
+      toast('Product will be saved for manual issue only. Add a Stripe Price ID when online sales are ready.');
     }
 
     setSaving(true);
@@ -634,6 +650,32 @@ export const TrialFlightVouchersPage: React.FC = () => {
       : productForm.aircraftIds.length > 0
         ? `Only the ${productForm.aircraftIds.length} selected aircraft will be offered for this ${modeLabel(productForm.aircraftMode).toLowerCase()} voucher.`
         : `${matchingAircraftCount} ${modeLabel(productForm.aircraftMode).toLowerCase()} aircraft currently match this voucher rule.`;
+  const productFormStripeId = productForm.stripePriceId?.trim() || '';
+  const productFormPrice = Number(productForm.price || 0);
+  const productFormCheckoutReady = productForm.isActive && productFormPrice > 0 && isValidStripePriceId(productFormStripeId) && Boolean(productFormStripeId);
+  const productFormStripeIssues = [
+    ...(productFormPrice <= 0 ? ['Enter the public AUD sale price.'] : []),
+    ...(!productFormStripeId ? ['Create a Stripe product/price and paste the Price ID.'] : []),
+    ...(productFormStripeId && !isValidStripePriceId(productFormStripeId) ? ['Stripe Price ID should look like price_123...'] : []),
+    ...(!productForm.isActive ? ['Activate the product when it is ready to sell or issue.'] : []),
+  ];
+  const copyStripeSetupSummary = async () => {
+    const summary = [
+      `Product name: ${productForm.name || 'Trial instructional flight voucher'}`,
+      `Price: AUD ${productFormPrice.toFixed(2)}`,
+      `Flight duration: ${productForm.durationMinutes} minutes`,
+      `Booking block: ${Number(productForm.durationMinutes || 0) + 30} minutes`,
+      `Aircraft rule: ${modeLabel(productForm.aircraftMode)}`,
+      `Description: ${productForm.description || ''}`,
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(summary);
+      toast.success('Stripe setup summary copied');
+    } catch {
+      toast.error('Could not copy Stripe setup summary');
+    }
+  };
 
   const checkoutStatus = (product: TrialFlightVoucherProduct) => {
     if (!product.isActive) return { label: 'Manual setup', className: 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300' };
@@ -1164,6 +1206,48 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <span className="text-xs font-semibold uppercase text-gray-500">Stripe price ID</span>
               <input value={productForm.stripePriceId || ''} onChange={e => setProductForm(f => ({ ...f, stripePriceId: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" placeholder="price_..." />
             </label>
+            <div className={`sm:col-span-2 rounded-2xl border p-3 ${
+              productFormCheckoutReady
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-400/30 dark:bg-emerald-950/25 dark:text-emerald-100'
+                : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/25 dark:text-amber-100'
+            }`}>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-sm font-bold">
+                    {productFormCheckoutReady ? 'Online checkout ready for this product' : 'Online checkout setup'}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 opacity-85">
+                    Manual vouchers can still be issued without Stripe. Public online purchase buttons only appear after the product is active, has a real AUD price, and has a Stripe Price ID.
+                  </p>
+                  {!productFormCheckoutReady && (
+                    <ul className="mt-2 space-y-1 text-xs leading-5">
+                      {productFormStripeIssues.map(issue => (
+                        <li key={issue}>- {issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+                  <button
+                    type="button"
+                    onClick={copyStripeSetupSummary}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-gray-800 ring-1 ring-black/5 transition hover:bg-white dark:bg-[#111827] dark:text-gray-100 dark:ring-white/10"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy Stripe details
+                  </button>
+                  <a
+                    href="https://dashboard.stripe.com/products"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-gray-800 ring-1 ring-black/5 transition hover:bg-white dark:bg-[#111827] dark:text-gray-100 dark:ring-white/10"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open Stripe products
+                  </a>
+                </div>
+              </div>
+            </div>
             <label className="sm:col-span-2">
               <span className="text-xs font-semibold uppercase text-gray-500">Aircraft rule</span>
               <select value={productForm.aircraftMode} onChange={e => setProductForm(f => ({ ...f, aircraftMode: e.target.value as TrialFlightVoucherAircraftMode }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100">
