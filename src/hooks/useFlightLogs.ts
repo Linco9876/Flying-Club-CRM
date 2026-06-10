@@ -4,6 +4,14 @@ import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod } from '../
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 
+const toLocalDateOnly = (value: string) => {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export interface FlightLog {
   id: string;
   booking_id?: string;
@@ -131,6 +139,60 @@ export function useFlightLogs(userId?: string) {
     fetchFlightLogs();
   }, [userId]);
 
+  const syncBookingTrainingRecordsToFlightLog = async (
+    bookingId: string | undefined,
+    flightLogId: string,
+    logData: CreateFlightLogData
+  ) => {
+    if (!bookingId) return;
+
+    const { data: aircraft } = await supabase
+      .from('aircraft')
+      .select('registration, type, make, model')
+      .eq('id', logData.aircraft_id)
+      .maybeSingle();
+
+    const { data: linkedRecords, error: linkedRecordsError } = await supabase
+      .from('training_records')
+      .select('id')
+      .eq('booking_id', bookingId);
+
+    if (linkedRecordsError) throw linkedRecordsError;
+    if (!linkedRecords || linkedRecords.length === 0) return;
+
+    const aircraftType = aircraft?.type
+      || [aircraft?.make, aircraft?.model].filter(Boolean).join(' ')
+      || 'single-engine';
+
+    const { error: trainingRecordUpdateError } = await supabase
+      .from('training_records')
+      .update({
+        flight_log_id: flightLogId,
+        student_id: logData.student_id,
+        instructor_id: logData.instructor_id ?? null,
+        aircraft_id: logData.aircraft_id,
+        aircraft_type: aircraftType,
+        registration: aircraft?.registration ?? '',
+        date: toLocalDateOnly(logData.start_time),
+        dual_time_min: Math.round((logData.dual_time ?? 0) * 60),
+        solo_time_min: Math.round((logData.solo_time ?? 0) * 60),
+      })
+      .eq('booking_id', bookingId);
+
+    if (trainingRecordUpdateError) throw trainingRecordUpdateError;
+
+    if (logData.instructor_id) {
+      const { error: matrixUpdateError } = await supabase
+        .from('student_matrix_assessments')
+        .update({ instructor_id: logData.instructor_id, updated_at: new Date().toISOString() })
+        .in('training_record_id', linkedRecords.map(record => record.id));
+
+      if (matrixUpdateError) {
+        console.error('Error syncing matrix assessment instructor:', matrixUpdateError);
+      }
+    }
+  };
+
   const createFlightLog = async (logData: CreateFlightLogData) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -253,6 +315,8 @@ export function useFlightLogs(userId?: string) {
           .eq('status', 'pending_approval');
 
         if (approvalError) console.error('Error approving logged booking:', approvalError);
+
+        await syncBookingTrainingRecordsToFlightLog(normalisedLogData.booking_id, data.id, normalisedLogData);
       }
 
       const { error: aircraftUpdateError } = await supabase
@@ -289,6 +353,32 @@ export function useFlightLogs(userId?: string) {
 
       if (updateError) throw updateError;
 
+      if (normalisedUpdates.booking_id) {
+        const { data: updatedLog, error: updatedLogError } = await supabase
+          .from('flight_logs')
+          .select('booking_id, aircraft_id, student_id, instructor_id, start_time, end_time, start_tach, end_tach, flight_duration, dual_time, solo_time')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (updatedLogError) throw updatedLogError;
+
+        if (updatedLog?.booking_id) {
+          await syncBookingTrainingRecordsToFlightLog(updatedLog.booking_id, id, {
+            booking_id: updatedLog.booking_id,
+            aircraft_id: updatedLog.aircraft_id,
+            student_id: updatedLog.student_id,
+            instructor_id: updatedLog.instructor_id,
+            start_time: updatedLog.start_time,
+            end_time: updatedLog.end_time,
+            start_tach: Number(updatedLog.start_tach ?? 0),
+            end_tach: Number(updatedLog.end_tach ?? 0),
+            flight_duration: Number(updatedLog.flight_duration ?? 0),
+            dual_time: Number(updatedLog.dual_time ?? 0),
+            solo_time: Number(updatedLog.solo_time ?? 0),
+          });
+        }
+      }
+
       await fetchFlightLogs();
       return { error: null };
     } catch (err) {
@@ -307,6 +397,27 @@ export function useFlightLogs(userId?: string) {
         .maybeSingle();
 
       if (existingLogError) throw existingLogError;
+
+      const { error: detachTrainingRecordsError } = await supabase
+        .from('training_records')
+        .update({
+          flight_log_id: null,
+          ...(existingLog?.booking_id ? { booking_id: existingLog.booking_id } : {}),
+        })
+        .eq('flight_log_id', id);
+
+      if (detachTrainingRecordsError) throw detachTrainingRecordsError;
+
+      if (existingLog?.booking_id) {
+        const { error: bookingUpdateError } = await supabase
+          .from('bookings')
+          .update({ flight_logged: false })
+          .eq('id', existingLog.booking_id);
+
+        if (bookingUpdateError) {
+          console.error('Error marking booking unlogged:', bookingUpdateError);
+        }
+      }
 
       const { data: chargeTransactions } = await supabase
         .from('account_transactions')
@@ -347,17 +458,6 @@ export function useFlightLogs(userId?: string) {
         .eq('id', id);
 
       if (deleteError) throw deleteError;
-
-      if (existingLog?.booking_id) {
-        const { error: bookingUpdateError } = await supabase
-          .from('bookings')
-          .update({ flight_logged: false })
-          .eq('id', existingLog.booking_id);
-
-        if (bookingUpdateError) {
-          console.error('Error marking booking unlogged:', bookingUpdateError);
-        }
-      }
 
       await fetchFlightLogs();
       return { error: null };

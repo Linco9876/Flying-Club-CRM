@@ -754,14 +754,14 @@ export const useBookings = (enabled = true) => {
               }
               setBookings(prev =>
                 prev.some(b => b.id === updated.id)
-                  ? prev.map(b => b.id === updated.id ? mapBookingRow(updated, b.flightLog) : b)
+                  ? prev.map(b => b.id === updated.id ? mapBookingRow(updated, updated.flight_logged ? b.flightLog : undefined) : b)
                   : [mapBookingRow(updated), ...prev]
               );
               return;
             }
             setBookings(prev =>
               prev.some(b => b.id === updated.id)
-                ? prev.map(b => b.id === updated.id ? mapBookingRow(updated, b.flightLog) : b)
+                ? prev.map(b => b.id === updated.id ? mapBookingRow(updated, updated.flight_logged ? b.flightLog : undefined) : b)
                 : [mapBookingRow(updated), ...prev]
             );
           } else if (payload.eventType === 'INSERT' && payload.new) {
