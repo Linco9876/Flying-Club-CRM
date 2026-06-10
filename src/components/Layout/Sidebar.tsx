@@ -87,8 +87,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
       </button>
 
       {/* Desktop Sidebar */}
-      <aside className="app-sidebar hidden lg:block bg-white shadow-md border-r border-gray-200 w-64 min-h-screen">
-        <nav className="mt-8 px-4">
+      <aside className="app-sidebar sticky top-16 hidden h-[calc(100vh-4rem)] w-64 shrink-0 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white shadow-md lg:block">
+        <nav className="px-4 py-8">
           {renderMenuItems()}
         </nav>
       </aside>
@@ -103,8 +103,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
           />
           
           {/* Sidebar */}
-          <div className="app-sidebar relative flex min-h-screen w-[min(18rem,85vw)] flex-col bg-white shadow-xl">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <div className="app-sidebar relative flex h-dvh max-h-dvh w-[min(18rem,85vw)] flex-col overflow-hidden bg-white shadow-xl">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">Menu</h2>
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
@@ -114,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
                 <X className="h-5 w-5 text-gray-600" />
               </button>
             </div>
-            <nav className="mt-4 flex-1 overflow-y-auto px-4 pb-6">
+            <nav className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">
               {renderMenuItems()}
             </nav>
           </div>
