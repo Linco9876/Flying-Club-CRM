@@ -49,6 +49,15 @@ const buildPresetProduct = (
 
 const dateTimeLocalToIso = (value: string) => value ? new Date(value).toISOString() : undefined;
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+const aircraftSearchLabel = (item: { registration?: string; make?: string; model?: string; type?: string }) =>
+  `${item.registration || ''} ${item.make || ''} ${item.model || ''} ${item.type || ''}`.toLowerCase();
+const isTecnamAircraft = (item: { registration?: string; make?: string; model?: string; type?: string }) =>
+  aircraftSearchLabel(item).includes('tecnam');
+const isArcherAircraft = (item: { registration?: string; make?: string; model?: string; type?: string }) => {
+  const label = aircraftSearchLabel(item);
+  const compact = label.replace(/[^a-z0-9]/g, '');
+  return label.includes('archer') || compact.includes('pa28') || compact.includes('piperpa28');
+};
 
 const toDateTimeLocalValue = (date: Date) => {
   const offsetMs = date.getTimezoneOffset() * 60_000;
@@ -124,13 +133,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
     .slice(0, 8);
 
   const aircraftByMode = useMemo(() => {
-    const tecnams = aircraft.filter(item =>
-      `${item.make} ${item.model} ${item.registration}`.toLowerCase().includes('tecnam')
-    );
-    const archers = aircraft.filter(item =>
-      `${item.make} ${item.model} ${item.registration}`.toLowerCase().includes('archer')
-      || `${item.make} ${item.model}`.toLowerCase().includes('pa-28')
-    );
+    const tecnams = aircraft.filter(isTecnamAircraft);
+    const archers = aircraft.filter(isArcherAircraft);
     return { tecnams, archers };
   }, [aircraft]);
 

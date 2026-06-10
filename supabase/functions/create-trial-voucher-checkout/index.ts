@@ -31,9 +31,12 @@ const aircraftMatchesProduct = (aircraft: any, product: any) => {
   if (attachedIds.size > 0) return attachedIds.has(aircraft.id);
 
   const label = `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.toLowerCase();
+  const compactLabel = label.replace(/[^a-z0-9]/g, "");
   if (product.aircraft_mode === "specific") return false;
   if (product.aircraft_mode === "tecnam") return label.includes("tecnam");
-  if (product.aircraft_mode === "archer") return label.includes("archer") || label.includes("pa-28");
+  if (product.aircraft_mode === "archer") {
+    return label.includes("archer") || compactLabel.includes("pa28") || compactLabel.includes("piperpa28");
+  }
   return false;
 };
 
