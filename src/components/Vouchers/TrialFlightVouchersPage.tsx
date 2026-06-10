@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { CheckCircle, Copy, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Copy, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
@@ -324,6 +324,26 @@ export const TrialFlightVouchersPage: React.FC = () => {
             ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-200'
             : 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300';
 
+  const voucherDeliveryDetails = (voucher: TrialFlightVoucher) => {
+    if (voucher.sendToRecipient) {
+      return {
+        label: 'Direct to recipient',
+        name: voucher.recipientName || 'Recipient',
+        email: voucher.recipientEmail || 'No recipient email set',
+        schedule: voucher.recipientDeliveryAt
+          ? `Scheduled for ${voucher.recipientDeliveryAt.toLocaleString()}`
+          : 'Sends as soon as the voucher is issued',
+      };
+    }
+
+    return {
+      label: 'Purchaser forwards',
+      name: voucher.purchaserName || 'Purchaser',
+      email: voucher.purchaserEmail,
+      schedule: 'Email is sent to the purchaser to forward or print when ready',
+    };
+  };
+
   const matchingAircraftCount =
     productForm.aircraftMode === 'tecnam'
       ? aircraftByMode.tecnams.length
@@ -349,6 +369,41 @@ export const TrialFlightVouchersPage: React.FC = () => {
     }
     if (!product.stripePriceId?.trim()) return { label: 'Missing Stripe ID', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100' };
     return { label: 'Missing price', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100' };
+  };
+
+  const getProductAircraft = (product: TrialFlightVoucherProduct) => {
+    const selectedAircraft = product.aircraftIds.length > 0
+      ? aircraft.filter(item => product.aircraftIds.includes(item.id))
+      : product.aircraftMode === 'tecnam'
+        ? aircraftByMode.tecnams
+        : product.aircraftMode === 'archer'
+          ? aircraftByMode.archers
+          : [];
+    const serviceableAircraft = selectedAircraft.filter(item => item.status === 'serviceable');
+    return {
+      selectedAircraft,
+      serviceableAircraft,
+      missingSelectedCount: product.aircraftIds.filter(id => !aircraft.some(item => item.id === id)).length,
+    };
+  };
+
+  const bookingReadiness = (product: TrialFlightVoucherProduct) => {
+    const { selectedAircraft, serviceableAircraft, missingSelectedCount } = getProductAircraft(product);
+    const eligibleInstructors = instructors.filter(instructor => product.instructorIds.includes(instructor.id));
+    const issues = [
+      ...(selectedAircraft.length === 0 ? ['No matching aircraft are set up for this voucher.'] : []),
+      ...(serviceableAircraft.length === 0 && selectedAircraft.length > 0 ? ['No eligible aircraft are currently serviceable.'] : []),
+      ...(eligibleInstructors.length === 0 ? ['No eligible instructors are selected.'] : []),
+      ...(missingSelectedCount > 0 ? [`${missingSelectedCount} selected aircraft ${missingSelectedCount === 1 ? 'record is' : 'records are'} no longer in the fleet.`] : []),
+    ];
+
+    return {
+      issues,
+      aircraftCount: selectedAircraft.length,
+      serviceableAircraftCount: serviceableAircraft.length,
+      instructorCount: eligibleInstructors.length,
+      ready: issues.length === 0,
+    };
   };
 
   return (
@@ -596,6 +651,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
             <div className="space-y-2">
               {products.map(product => {
                 const checkout = checkoutStatus(product);
+                const booking = bookingReadiness(product);
                 return (
                   <div
                     key={product.id}
@@ -619,6 +675,13 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${checkout.className}`}>
                             {checkout.label}
                           </span>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                            booking.ready
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                              : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200'
+                          }`}>
+                            {booking.ready ? 'Bookable' : 'No availability'}
+                          </span>
                         </div>
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                           {modeLabel(product.aircraftMode)} - {product.durationMinutes} min flight, {product.durationMinutes + 30} min booking block - ${product.price.toFixed(2)}
@@ -629,9 +692,22 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           </p>
                         )}
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          {product.instructorIds.length} eligible instructor{product.instructorIds.length === 1 ? '' : 's'}
-                          {product.aircraftIds.length > 0 ? ` - ${product.aircraftIds.length} selected aircraft only` : ''}
+                          {booking.serviceableAircraftCount} of {booking.aircraftCount} eligible aircraft serviceable - {booking.instructorCount} eligible instructor{booking.instructorCount === 1 ? '' : 's'}
+                          {product.aircraftIds.length > 0 ? ' - selected aircraft only' : ''}
                         </p>
+                        {!booking.ready && (
+                          <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800 dark:border-red-400/25 dark:bg-red-950/30 dark:text-red-100">
+                            <p className="flex items-center gap-1.5 font-bold">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              This product will not show bookable voucher times yet.
+                            </p>
+                            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                              {booking.issues.map(issue => (
+                                <li key={issue}>{issue}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
                         <button
@@ -761,6 +837,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
             <div className="space-y-2">
               {vouchers.slice(0, 8).map(voucher => {
                 const redeemUrl = getRedeemUrl(voucher.code);
+                const delivery = voucherDeliveryDetails(voucher);
                 return (
                 <div key={voucher.id} className="rounded-xl border border-gray-200 p-3 dark:border-[#2c2f36]">
                   <div className="flex items-start justify-between gap-3">
@@ -773,6 +850,17 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       <span className={`rounded-full px-2 py-1 text-xs font-semibold ${paymentPillClass(voucher.paymentStatus)}`}>
                         {paymentLabel(voucher.paymentStatus)}
                       </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/20 dark:text-blue-100">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="font-bold uppercase tracking-wide">{delivery.label}</p>
+                        <p className="mt-0.5 truncate">
+                          {delivery.name} - {delivery.email}
+                        </p>
+                      </div>
+                      <p className="max-w-xs text-blue-800 dark:text-blue-200 sm:text-right">{delivery.schedule}</p>
                     </div>
                   </div>
                   <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">

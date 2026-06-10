@@ -461,18 +461,14 @@ export const OutstandingRecordsTab: React.FC = () => {
     () => outstandingLogs.filter(log => log.instructor_id !== user?.id),
     [outstandingLogs, user?.id]
   );
-  const visibleOutstandingLogs = isAdmin
-    ? queueView === 'others'
+  const visibleOutstandingLogs = queueView === 'dismissed'
+    ? []
+    : isAdmin && queueView === 'others'
       ? otherInstructorOutstandingLogs
-      : queueView === 'mine'
+      : isAdmin
         ? myOutstandingLogs
-        : []
-    : outstandingLogs;
-  const visibleDismissedLogs = isAdmin
-    ? queueView === 'dismissed'
-      ? dismissedLogs
-      : []
-    : dismissedLogs;
+        : outstandingLogs;
+  const visibleDismissedLogs = queueView === 'dismissed' ? dismissedLogs : [];
   const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
     setPendingSubmits(current => {
       const withoutDuplicate = current.filter(item => item.id !== job.id && item.flightLogId !== job.flightLogId);
