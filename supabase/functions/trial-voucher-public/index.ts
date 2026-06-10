@@ -22,6 +22,83 @@ const json = (body: Record<string, unknown>, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+const escapeHtml = (value: unknown) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const sendVoucherAccountSetupEmail = async ({
+  email,
+  fullName,
+  productName,
+  setupLink,
+}: {
+  email: string;
+  fullName: string;
+  productName: string;
+  setupLink: string;
+}) => {
+  const apiKey = Deno.env.get("BREVO_API_KEY");
+  if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
+
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
+  const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4fb;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.14);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:30px;color:#ffffff;">
+                <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
+                <h1 style="margin:0;font-size:28px;line-height:1.2;">Finish setting up your trial flight booking account</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 30px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(fullName || "there")},</p>
+                <p style="margin:0 0 16px;line-height:1.65;color:#334155;">Your ${escapeHtml(productName || "trial flight voucher")} has been linked to a restricted Bendigo Flying Club booking account.</p>
+                <p style="margin:0 0 22px;line-height:1.65;color:#334155;">Use the button below to set your password and choose from the available trial flight times. This account only allows you to book the voucher flight.</p>
+                <p style="margin:26px 0;">
+                  <a href="${escapeHtml(setupLink)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;border-radius:14px;padding:14px 22px;">Set password and book</a>
+                </p>
+                <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">If the button does not work, copy and paste this link into your browser: ${escapeHtml(setupLink)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email, name: fullName || email }],
+      subject: "Set up your Bendigo Flying Club trial flight booking account",
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { sent: false, error: body || `Brevo email failed with ${response.status}` };
+  }
+
+  return { sent: true, error: null };
+};
+
 const getAuthenticatedUser = async (req: Request, supabaseUrl: string) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { user: null, error: "missing_authorization" };
@@ -508,11 +585,21 @@ Deno.serve(async (req: Request) => {
       email,
       options: redirectTo ? { redirectTo } : undefined,
     });
+    const setupLink = linkData?.properties?.action_link || null;
+    const setupEmail = setupLink
+      ? await sendVoucherAccountSetupEmail({
+          email,
+          fullName,
+          productName: product.name,
+          setupLink,
+        })
+      : { sent: false, error: "No setup link was generated" };
 
     return json({
       voucher: publicVoucher,
       userId,
-      setupLink: linkData?.properties?.action_link || null,
+      setupLink,
+      setupEmailSent: setupEmail.sent,
       message: "Voucher verified. Account created and voucher linked.",
     });
   } catch (error) {

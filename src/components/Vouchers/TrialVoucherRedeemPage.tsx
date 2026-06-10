@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, CheckCircle, Gift, Loader2, Plane, Ticket } from 'lucide-react';
+import { CalendarDays, CheckCircle, Copy, Gift, Loader2, Plane, Ticket } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -38,7 +38,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [code, setCode] = useState(getInitialCode);
   const [voucher, setVoucher] = useState<PublicVoucher | null>(null);
   const [loading, setLoading] = useState(false);
-  const [redeemed, setRedeemed] = useState<{ setupLink?: string | null } | null>(null);
+  const [redeemed, setRedeemed] = useState<{ setupLink?: string | null; setupEmailSent?: boolean } | null>(null);
   const [slots, setSlots] = useState<VoucherSlot[]>([]);
   const [bookedSlot, setBookedSlot] = useState<VoucherSlot | null>(null);
   const [form, setForm] = useState({ fullName: '', email: '', phone: '' });
@@ -53,7 +53,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (data?.error) throw new Error(data.error);
       setVoucher(data.voucher);
       setCode(data.voucher?.code || '');
-      setRedeemed({ setupLink: null });
+      setRedeemed({ setupLink: null, setupEmailSent: false });
       setSlots(data.slots || []);
       setBookedSlot(data.booking || null);
     } catch (error) {
@@ -118,7 +118,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      setRedeemed({ setupLink: data.setupLink });
+      setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
       toast.success('Voucher linked to your account');
       if (user) await loadAvailability();
     } catch (error) {
@@ -191,6 +191,16 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   };
 
   const canChooseTime = Boolean(user && voucher?.status === 'redeemed' && !bookedSlot);
+
+  const copySetupLink = async () => {
+    if (!redeemed?.setupLink) return;
+    try {
+      await navigator.clipboard.writeText(redeemed.setupLink);
+      toast.success('Setup link copied');
+    } catch {
+      toast.error('Could not copy setup link');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -297,12 +307,24 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <p className="mt-1 text-sm">
                       {user
                         ? 'Choose an available time below. Your booking block includes the flight plus 30 minutes for briefing and paperwork.'
-                        : 'Set your password and sign in to your restricted voucher account before choosing a flight time.'}
+                        : redeemed?.setupEmailSent
+                          ? 'We have emailed your setup link. Set your password and sign in to your restricted voucher account before choosing a flight time.'
+                          : 'Set your password and sign in to your restricted voucher account before choosing a flight time.'}
                     </p>
                     {redeemed.setupLink && (
-                      <a href={redeemed.setupLink} className="mt-3 inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                        Set password / continue
-                      </a>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <a href={redeemed.setupLink} className="inline-flex justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                          Set password / continue
+                        </a>
+                        <button
+                          type="button"
+                          onClick={copySetupLink}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                        >
+                          <Copy className="h-4 w-4" />
+                          Copy setup link
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
