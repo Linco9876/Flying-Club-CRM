@@ -87,25 +87,38 @@ export const TrialVoucherSalesPage: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get('session_id');
     if (!sessionId) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const loadCheckoutStatus = async () => {
-      setCheckoutStatusLoading(true);
+    const loadCheckoutStatus = async (attempt = 0) => {
+      if (cancelled) return;
+      if (attempt === 0) setCheckoutStatusLoading(true);
       try {
         const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
           body: { action: 'checkout-status', sessionId },
         });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
-        setCheckoutStatus(data?.checkout || null);
+        const nextStatus = data?.checkout || null;
+        if (cancelled) return;
+        setCheckoutStatus(nextStatus);
+        if (nextStatus?.paymentStatus !== 'paid' && attempt < 8) {
+          retryTimer = setTimeout(() => void loadCheckoutStatus(attempt + 1), 2500);
+        }
       } catch (error) {
         console.error('Failed to load voucher checkout status:', error);
-        setCheckoutStatus(null);
+        if (!cancelled) setCheckoutStatus(null);
       } finally {
-        setCheckoutStatusLoading(false);
+        if (!cancelled && attempt === 0) setCheckoutStatusLoading(false);
       }
     };
 
     void loadCheckoutStatus();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
   const checkoutMessage = useMemo(() => {
@@ -120,6 +133,9 @@ export const TrialVoucherSalesPage: React.FC = () => {
           return `Payment received. Your ${checkoutStatus.productName} email is scheduled for ${new Date(checkoutStatus.recipientDeliveryAt).toLocaleString()}.`;
         }
         return `Payment received. Your ${checkoutStatus.productName} email is queued for delivery to ${checkoutStatus.emailTo || 'the nominated email address'}.`;
+      }
+      if (checkoutStatus?.paymentStatus === 'pending') {
+        return `Stripe has returned from checkout and we are waiting for payment confirmation for ${checkoutStatus.productName}. This usually updates within a few seconds.`;
       }
       return 'Checkout returned successfully. If payment was completed, your voucher email will be confirmed shortly.';
     }
