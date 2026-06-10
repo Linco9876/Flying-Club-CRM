@@ -473,6 +473,46 @@ export const TrialFlightVouchersPage: React.FC = () => {
     standardReadiness('tecnam'),
     standardReadiness('archer'),
   ];
+  const tecnamReadiness = requiredVoucherReadiness.find(item => item.mode === 'tecnam');
+  const archerReadiness = requiredVoucherReadiness.find(item => item.mode === 'archer');
+  const setupTasks = [
+    {
+      label: 'Tecnam voucher can be booked',
+      complete: Boolean(tecnamReadiness?.bookingReady),
+      detail: tecnamReadiness?.bookingReady
+        ? `${tecnamReadiness.readiness?.serviceableAircraftCount ?? 0} serviceable Tecnam aircraft and ${tecnamReadiness.readiness?.instructorCount ?? 0} eligible instructor${tecnamReadiness.readiness?.instructorCount === 1 ? '' : 's'} are set.`
+        : tecnamReadiness?.issues[0] || 'Create and activate the Tecnam voucher product.',
+      href: '/aircraft',
+      action: 'Review aircraft',
+    },
+    {
+      label: 'Archer voucher can be booked',
+      complete: Boolean(archerReadiness?.bookingReady),
+      detail: archerReadiness?.bookingReady
+        ? `${archerReadiness.readiness?.serviceableAircraftCount ?? 0} PA-28 Archer aircraft and ${archerReadiness.readiness?.instructorCount ?? 0} eligible instructor${archerReadiness.readiness?.instructorCount === 1 ? '' : 's'} are set.`
+        : archerReadiness?.issues[0] || 'Add the PA-28 Archer to the fleet or select it manually on the Archer product.',
+      href: '/aircraft',
+      action: 'Add Archer',
+    },
+    {
+      label: 'Online checkout is ready',
+      complete: checkoutSetupComplete,
+      detail: checkoutSetupComplete
+        ? 'All active voucher products have prices and Stripe Price IDs.'
+        : `${checkoutReadyProducts.length} of ${activeProducts.length} active voucher product${activeProducts.length === 1 ? '' : 's'} have a usable price and Stripe Price ID.`,
+      href: '/trial-flight-gift-vouchers',
+      action: 'Preview sales page',
+    },
+    {
+      label: 'Scheduled delivery is monitored',
+      complete: dueRecipientVouchers.length === 0,
+      detail: dueRecipientVouchers.length === 0
+        ? `${futureRecipientVouchers.length} future recipient email${futureRecipientVouchers.length === 1 ? '' : 's'} scheduled.`
+        : `${dueRecipientVouchers.length} scheduled recipient email${dueRecipientVouchers.length === 1 ? ' is' : 's are'} due now.`,
+      action: dueRecipientVouchers.length > 0 ? 'Send due now' : 'Checked',
+      onClick: dueRecipientVouchers.length > 0 ? handleProcessDueEmails : undefined,
+    },
+  ];
   const selectedProductReadiness = selectedProduct ? bookingReadiness(selectedProduct) : null;
   const selectedProductIsIssueable = Boolean(selectedProduct?.isActive && selectedProductReadiness?.ready);
 
@@ -672,6 +712,71 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <section className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Go-live checklist</h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              These are the remaining operational pieces that decide whether the trial voucher flow can be sold and booked end to end.
+            </p>
+          </div>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-[#20242b] dark:text-gray-200">
+            {setupTasks.filter(task => task.complete).length} of {setupTasks.length} ready
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {setupTasks.map(task => (
+            <div
+              key={task.label}
+              className={`rounded-xl border p-3 ${
+                task.complete
+                  ? 'border-emerald-100 bg-emerald-50 dark:border-emerald-400/20 dark:bg-emerald-950/15'
+                  : 'border-amber-200 bg-amber-50 dark:border-amber-400/30 dark:bg-amber-950/20'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                  task.complete
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
+                }`}>
+                  {task.complete ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-950 dark:text-gray-100">{task.label}</p>
+                  <p className="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-300">{task.detail}</p>
+                  {task.href ? (
+                    <a
+                      href={task.href}
+                      target={task.href.startsWith('/trial-flight-gift-vouchers') ? '_blank' : undefined}
+                      rel={task.href.startsWith('/trial-flight-gift-vouchers') ? 'noreferrer' : undefined}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-200 dark:hover:bg-[#20242b]"
+                    >
+                      {task.action}
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  ) : task.onClick ? (
+                    <button
+                      type="button"
+                      onClick={task.onClick}
+                      disabled={saving}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                      {task.action}
+                    </button>
+                  ) : (
+                    <span className="mt-3 inline-flex rounded-lg bg-white/70 px-3 py-2 text-xs font-semibold text-gray-600 dark:bg-[#111827] dark:text-gray-300">
+                      {task.action}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
