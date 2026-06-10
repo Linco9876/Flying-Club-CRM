@@ -271,6 +271,19 @@ Deno.serve(async (req: Request) => {
         return json({ error: "This voucher already has a booking" }, 409);
       }
 
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) return json({ error: "Sign in to your voucher account before booking a time" }, 401);
+
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const callerClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: authError } = await callerClient.auth.getUser();
+      if (authError || !user) return json({ error: "Sign in to your voucher account before booking a time" }, 401);
+      if (user.id !== voucher.redeemed_by_user_id) {
+        return json({ error: "This voucher is linked to a different account" }, 403);
+      }
+
       const startTime = new Date(String(body.startTime || ""));
       const aircraftId = String(body.aircraftId || "");
       const instructorId = String(body.instructorId || "");

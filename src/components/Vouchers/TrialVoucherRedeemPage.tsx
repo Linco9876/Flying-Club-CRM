@@ -112,7 +112,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (data?.error) throw new Error(data.error);
       setRedeemed({ setupLink: data.setupLink });
       toast.success('Voucher linked to your account');
-      await loadAvailability();
+      if (user) await loadAvailability();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not redeem voucher');
     } finally {
@@ -138,6 +138,10 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   };
 
   const bookSlot = async (slot: VoucherSlot) => {
+    if (!user) {
+      toast.error('Sign in to your voucher account before booking a time');
+      return;
+    }
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
@@ -176,6 +180,8 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     });
     return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
   };
+
+  const canChooseTime = Boolean(user && voucher?.status === 'redeemed' && !bookedSlot);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -261,7 +267,11 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                 ) : (
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
                     <h3 className="font-bold">Your voucher is linked.</h3>
-                    <p className="mt-1 text-sm">Choose an available time below. Your booking block includes the flight plus 30 minutes for briefing and paperwork.</p>
+                    <p className="mt-1 text-sm">
+                      {user
+                        ? 'Choose an available time below. Your booking block includes the flight plus 30 minutes for briefing and paperwork.'
+                        : 'Set your password and sign in to your restricted voucher account before choosing a flight time.'}
+                    </p>
                     {redeemed.setupLink && (
                       <a href={redeemed.setupLink} className="mt-3 inline-flex rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
                         Set password / continue
@@ -270,7 +280,16 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   </div>
                 )}
 
-                {(redeemed || voucher.status === 'redeemed') && voucher.status !== 'booked' && !bookedSlot && (
+                {(redeemed || voucher.status === 'redeemed') && !user && voucher.status !== 'booked' && !bookedSlot && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+                    <h3 className="font-bold">Sign in before booking</h3>
+                    <p className="mt-1 text-sm">
+                      Your voucher is linked, but the final booking is only available from the account attached to this voucher.
+                    </p>
+                  </div>
+                )}
+
+                {canChooseTime && (
                   <div className="rounded-2xl border border-slate-200 p-4">
                     <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
