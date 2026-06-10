@@ -1050,22 +1050,21 @@ export const OutstandingRecordsTab: React.FC = () => {
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
       <header className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 p-4 text-white shadow-sm dark:border-blue-400/20 sm:p-5">
-        <div className="flex flex-col gap-5">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
-              {isAdmin
-                ? 'Choose your own queue, review another instructor queue, restore a flight, or start an in-flight draft.'
-                : 'Flights assigned to you that still need a training record, plus drafts you can prepare in the air.'}
-            </p>
-          </div>
-
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
+                {isAdmin
+                  ? 'Switch between your own flights, other instructor queues, restored records, and in-flight drafts.'
+                  : 'Flights assigned to you that still need a training record, plus drafts you can prepare in the air.'}
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => setShowDraftComposer(value => !value)}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+              className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 showDraftComposer
                   ? 'bg-white text-blue-900 shadow-sm'
                   : 'bg-blue-500 text-white shadow-sm hover:bg-blue-400'
@@ -1074,7 +1073,9 @@ export const OutstandingRecordsTab: React.FC = () => {
               <Save className="h-4 w-4" />
               Make Draft
             </button>
+          </div>
 
+          <div className="grid min-w-0 gap-2 rounded-2xl bg-white/10 p-1.5 sm:grid-cols-3">
             {queueButtons.map(item => {
               const Icon = item.icon;
               return (
