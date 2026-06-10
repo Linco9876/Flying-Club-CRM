@@ -209,31 +209,39 @@ const hasValidInternalSecret = (req: Request) => {
   return Boolean(configuredSecret && suppliedSecret && suppliedSecret === configuredSecret);
 };
 
-const getVaultSecret = async (adminClient: ReturnType<typeof createClient>, name: string) => {
+const sha256Hex = async (value: string) => {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const getStoredCronSecretHash = async (adminClient: ReturnType<typeof createClient>) => {
   const { data, error } = await adminClient
-    .schema("vault")
-    .from("decrypted_secrets")
-    .select("decrypted_secret")
-    .eq("name", name)
+    .from("trial_voucher_cron_auth")
+    .select("secret_hash")
+    .eq("id", true)
     .maybeSingle();
 
   if (error) {
-    console.error(`Failed to read vault secret ${name}:`, error.message);
+    console.error("Failed to read trial voucher cron auth hash:", error.message);
     return null;
   }
 
-  return typeof data?.decrypted_secret === "string" ? data.decrypted_secret : null;
+  return typeof data?.secret_hash === "string" ? data.secret_hash : null;
 };
 
 const hasValidCronSecret = async (req: Request, body: any, adminClient: ReturnType<typeof createClient>) => {
   const suppliedSecret = req.headers.get("x-cron-secret") || String(body.cronSecret || "");
   if (!suppliedSecret) return false;
 
-  const configuredSecret =
-    Deno.env.get("TRIAL_VOUCHER_CRON_SECRET") ||
-    await getVaultSecret(adminClient, "trial_voucher_cron_secret");
+  const configuredSecret = Deno.env.get("TRIAL_VOUCHER_CRON_SECRET");
+  if (configuredSecret && suppliedSecret === configuredSecret) return true;
 
-  return Boolean(configuredSecret && suppliedSecret === configuredSecret);
+  const storedHash = await getStoredCronSecretHash(adminClient);
+  if (!storedHash) return false;
+
+  return await sha256Hex(suppliedSecret) === storedHash;
 };
 
 const authenticateStaff = async ({
