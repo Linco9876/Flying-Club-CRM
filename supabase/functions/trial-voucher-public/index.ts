@@ -114,10 +114,10 @@ const getAuthenticatedUser = async (req: Request, supabaseUrl: string) => {
 
 const aircraftMatchesProduct = (aircraft: any, product: any) => {
   const attachedIds = new Set<string>(product.aircraft_ids || []);
-  if (attachedIds.size > 0 && attachedIds.has(aircraft.id)) return true;
-  if (product.aircraft_mode === "specific") return attachedIds.has(aircraft.id);
+  if (attachedIds.size > 0) return attachedIds.has(aircraft.id);
 
   const label = `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.toLowerCase();
+  if (product.aircraft_mode === "specific") return false;
   if (product.aircraft_mode === "tecnam") return label.includes("tecnam");
   if (product.aircraft_mode === "archer") return label.includes("archer") || label.includes("pa-28");
   return false;
