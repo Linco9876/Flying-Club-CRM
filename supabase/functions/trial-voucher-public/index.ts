@@ -75,6 +75,17 @@ const toPublicVoucher = (voucher: any, product: any) => ({
   },
 });
 
+const toPublicProduct = (product: any) => ({
+  id: product.id,
+  name: product.name,
+  description: product.description,
+  aircraftMode: product.aircraft_mode,
+  durationMinutes: product.duration_minutes,
+  bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
+  price: Number(product.price || 0),
+  bookingInstructions: product.booking_instructions,
+});
+
 const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>, product: any) => {
   const blockMinutes = Number(product.duration_minutes || 0) + 30;
   const allowedInstructorIds = new Set<string>(product.instructor_ids || []);
@@ -182,6 +193,17 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const action = String(body.action || "verify");
     const code = normaliseCode(body.code);
+
+    if (action === "products") {
+      const { data: products, error: productsError } = await adminClient
+        .from("trial_flight_voucher_products")
+        .select("id,name,description,aircraft_mode,duration_minutes,price,booking_instructions,is_active")
+        .eq("is_active", true)
+        .order("duration_minutes", { ascending: true });
+
+      if (productsError) return json({ error: productsError.message }, 500);
+      return json({ products: (products || []).map(toPublicProduct) });
+    }
 
     if (action === "my-voucher") {
       const { user } = await getAuthenticatedUser(req, supabaseUrl);

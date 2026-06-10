@@ -41,6 +41,7 @@ const DeclarationSigningPage = lazy(() => import('./components/Training/Declarat
 const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashboard').then(module => ({ default: module.SettingsDashboard })));
 const TrialFlightVouchersPage = lazy(() => import('./components/Vouchers/TrialFlightVouchersPage').then(module => ({ default: module.TrialFlightVouchersPage })));
 const TrialVoucherRedeemPage = lazy(() => import('./components/Vouchers/TrialVoucherRedeemPage').then(module => ({ default: module.TrialVoucherRedeemPage })));
+const TrialVoucherSalesPage = lazy(() => import('./components/Vouchers/TrialVoucherSalesPage').then(module => ({ default: module.TrialVoucherSalesPage })));
 const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
 
 const buildCopiedBookingFormData = (booking: Booking) => ({
@@ -135,6 +136,14 @@ const AppContent: React.FC = () => {
     return (
       <Suspense fallback={<PageLoader />}>
         <TrialVoucherRedeemPage />
+      </Suspense>
+    );
+  }
+
+  if (location.pathname === '/trial-flight-gift-vouchers') {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <TrialVoucherSalesPage />
       </Suspense>
     );
   }
@@ -645,6 +654,7 @@ const AuthenticatedApp: React.FC<{
     <Routes>
       <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense>} />
       <Route path="/trial-flight-voucher" element={<Suspense fallback={<PageLoader />}><TrialVoucherRedeemPage /></Suspense>} />
+      <Route path="/trial-flight-gift-vouchers" element={<Suspense fallback={<PageLoader />}><TrialVoucherSalesPage /></Suspense>} />
       <Route path="/students/:studentId" element={
         <RouteGuard requiredAction="view-students">
           <AppShell activeSidebarView="students" onViewChange={handleViewChange} backgroundColor={backgroundColor}>
