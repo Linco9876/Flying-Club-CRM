@@ -204,6 +204,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [proceedWithCarryForward, setProceedWithCarryForward] = useState(false);
+  const [queueView, setQueueView] = useState<'mine' | 'others' | 'dismissed'>('mine');
 
   const activeStudentId = activeLog?.student_id;
   const isDraftSession = Boolean(draftSession && activeLog?.id === draftSession.id);
@@ -452,6 +453,35 @@ export const OutstandingRecordsTab: React.FC = () => {
     });
     return map;
   }, [draftRecords]);
+  const myOutstandingLogs = useMemo(
+    () => outstandingLogs.filter(log => log.instructor_id === user?.id),
+    [outstandingLogs, user?.id]
+  );
+  const otherInstructorOutstandingLogs = useMemo(
+    () => outstandingLogs.filter(log => log.instructor_id !== user?.id),
+    [outstandingLogs, user?.id]
+  );
+  const visibleOutstandingLogs = isAdmin
+    ? queueView === 'others'
+      ? otherInstructorOutstandingLogs
+      : queueView === 'mine'
+        ? myOutstandingLogs
+        : []
+    : outstandingLogs;
+  const visibleDismissedLogs = isAdmin
+    ? queueView === 'dismissed'
+      ? dismissedLogs
+      : []
+    : dismissedLogs;
+  const outstandingTotal = outstandingLogs.length;
+  const dismissedTotal = dismissedLogs.length;
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (queueView === 'mine' && myOutstandingLogs.length === 0 && otherInstructorOutstandingLogs.length > 0) {
+      setQueueView('others');
+    }
+  }, [isAdmin, myOutstandingLogs.length, otherInstructorOutstandingLogs.length, queueView]);
 
   const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
     setPendingSubmits(current => {
@@ -1029,7 +1059,61 @@ export const OutstandingRecordsTab: React.FC = () => {
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6 lg:flex-row lg:gap-6">
       {/* Left: list of outstanding flights */}
       <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'lg:w-[30%] lg:min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
-        <div className="hidden items-start justify-between gap-3 sm:flex">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Training records queue</p>
+              <h2 className="mt-1 text-xl font-bold text-gray-950 dark:text-gray-100">Outstanding Records</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {isAdmin
+                  ? 'Your records are separated from other instructors so it is clear who needs to act.'
+                  : 'Flights assigned to you that still need a training record.'}
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center sm:min-w-64">
+              <div className="rounded-xl bg-blue-50 px-3 py-2 ring-1 ring-blue-100 dark:bg-blue-950/30 dark:ring-blue-400/20">
+                <p className="text-lg font-bold text-blue-700 dark:text-blue-200">{isAdmin ? myOutstandingLogs.length : outstandingTotal}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Mine</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 px-3 py-2 ring-1 ring-amber-100 dark:bg-amber-950/25 dark:ring-amber-400/20">
+                <p className="text-lg font-bold text-amber-700 dark:text-amber-200">{isAdmin ? otherInstructorOutstandingLogs.length : 0}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Others</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200 dark:bg-[#111827] dark:ring-[#363b45]">
+                <p className="text-lg font-bold text-slate-700 dark:text-slate-200">{dismissedTotal}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Restorable</p>
+              </div>
+            </div>
+          </div>
+
+          {isAdmin && (
+            <div className="mt-4 grid gap-2 rounded-xl bg-slate-100 p-1 dark:bg-[#111827] sm:grid-cols-3">
+              {[
+                { id: 'mine' as const, label: 'Assigned to me', count: myOutstandingLogs.length },
+                { id: 'others' as const, label: 'Other instructors', count: otherInstructorOutstandingLogs.length },
+                { id: 'dismissed' as const, label: 'No record needed', count: dismissedTotal },
+              ].map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setQueueView(item.id)}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                    queueView === item.id
+                      ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200 dark:bg-[#1f2633] dark:text-blue-200 dark:ring-[#363b45]'
+                      : 'text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-[#1b2230]'
+                  }`}
+                >
+                  {item.label}
+                  <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-700 dark:bg-[#2c3444] dark:text-slate-200">
+                    {item.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="hidden">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Outstanding Records</h2>
             <p className="text-sm text-gray-500 mt-0.5">
@@ -1043,15 +1127,15 @@ export const OutstandingRecordsTab: React.FC = () => {
           )}
         </div>
 
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm dark:border-blue-400/25 dark:bg-blue-950/20">
+        <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm dark:border-blue-400/25 dark:from-blue-950/25 dark:to-[#171a21]">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
               <Save className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-blue-950 dark:text-blue-100">In-flight draft</p>
+              <p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Start an in-flight draft</p>
               <p className="mt-0.5 text-xs leading-5 text-blue-800 dark:text-blue-200">
-                Start a record before the flight is logged, then attach it to the logged flight afterwards.
+                Capture comments and assessment marks during the flight, then attach the draft once the flight is logged.
               </p>
             </div>
           </div>
@@ -1111,19 +1195,26 @@ export const OutstandingRecordsTab: React.FC = () => {
           )}
         </div>
 
-        {outstandingLogs.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        {queueView !== 'dismissed' && visibleOutstandingLogs.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-12">
             <CheckCircle className="h-14 w-14 text-emerald-400 mx-auto mb-3" />
-            <h3 className="text-base font-semibold text-gray-900 mb-1">All caught up</h3>
-            <p className="text-sm text-gray-500">No outstanding training records.</p>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-1">
+              {isAdmin && queueView === 'others' ? 'No other instructor records waiting' : 'All caught up'}
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {isAdmin && queueView === 'others'
+                ? 'There are no outstanding records assigned to other instructors.'
+                : 'No outstanding training records assigned to this queue.'}
+            </p>
           </div>
         ) : (
-          outstandingLogs.map(log => {
+          queueView !== 'dismissed' && visibleOutstandingLogs.map(log => {
             const isActive = activeLog?.id === log.id;
             const expanded = expandedLogs.has(log.id);
             const flightDate = new Date(log.start_time);
             const durationH = ((log.dual_time ?? 0) + (log.solo_time ?? 0)).toFixed(1);
             const matchingDrafts = draftRecordsByStudent.get(log.student_id) ?? [];
+            const isMine = log.instructor_id === user?.id;
 
             return (
               <div
@@ -1134,16 +1225,30 @@ export const OutstandingRecordsTab: React.FC = () => {
                     : 'border-gray-200 hover:border-gray-300 hover:shadow-sm dark:border-[#2c2f36] dark:hover:border-[#4b5563]'
                 }`}
               >
+                <div className={`h-1 rounded-t-xl ${isMine ? 'bg-blue-500' : 'bg-amber-500'}`} />
                 <div className="p-4 sm:p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 mt-0.5">
-                        <AlertCircle className="h-5 w-5 text-amber-600" />
+                      <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 ${
+                        isMine
+                          ? 'bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-400/20'
+                          : 'bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-400/20'
+                      }`}>
+                        <AlertCircle className={`h-5 w-5 ${isMine ? 'text-blue-600 dark:text-blue-300' : 'text-amber-600 dark:text-amber-300'}`} />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm truncate dark:text-gray-100">
-                          {log.student_name ?? 'Unknown Student'}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-gray-900 text-sm truncate dark:text-gray-100">
+                            {log.student_name ?? 'Unknown Student'}
+                          </p>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                            isMine
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
+                          }`}>
+                            {isMine ? 'Assigned to you' : 'Other instructor'}
+                          </span>
+                        </div>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {format(flightDate, 'EEE d MMM yyyy')} &middot; {format(flightDate, 'h:mm a')}
                         </p>
@@ -1156,9 +1261,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                             <Clock className="h-3 w-3" />
                             {durationH}h
                           </span>
-                          {isAdmin && log.instructor_name && (
-                            <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-medium">
-                              {log.instructor_name}
+                          {log.instructor_name && (
+                            <span className={`inline-flex items-center gap-1 text-xs font-medium ${isMine ? 'text-blue-600 dark:text-blue-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                              Instructor: {log.instructor_name}
                             </span>
                           )}
                         </div>
@@ -1226,7 +1331,15 @@ export const OutstandingRecordsTab: React.FC = () => {
           })
         )}
 
-        {dismissedLogs.length > 0 && (
+        {queueView === 'dismissed' && visibleDismissedLogs.length === 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+            <Undo2 className="mx-auto mb-3 h-10 w-10 text-gray-300 dark:text-gray-600" />
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">No restorable records</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">No logged flights are currently marked as no record needed.</p>
+          </div>
+        )}
+
+        {visibleDismissedLogs.length > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
@@ -1236,21 +1349,33 @@ export const OutstandingRecordsTab: React.FC = () => {
                 </p>
               </div>
               <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600 dark:bg-[#202938] dark:text-gray-200">
-                {dismissedLogs.length}
+                {visibleDismissedLogs.length}
               </span>
             </div>
             <div className="space-y-2">
-              {dismissedLogs.slice(0, 8).map(log => {
+              {visibleDismissedLogs.slice(0, 8).map(log => {
                 const flightDate = new Date(log.start_time);
+                const isMine = log.instructor_id === user?.id;
                 return (
                   <div
                     key={log.id}
                     className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827]"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-                        {log.student_name ?? 'Unknown Student'}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {log.student_name ?? 'Unknown Student'}
+                        </p>
+                        {isAdmin && (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                            isMine
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
+                          }`}>
+                            {isMine ? 'Mine' : log.instructor_name || 'Other'}
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
                         {format(flightDate, 'EEE d MMM yyyy')} &middot; {format(flightDate, 'h:mm a')} &middot; {log.aircraft_registration ?? '-'}
                       </p>
