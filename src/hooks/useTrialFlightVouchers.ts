@@ -139,7 +139,7 @@ export const useTrialFlightVouchers = () => {
     notes?: string;
     createdBy?: string;
   }) => {
-    const { error } = await supabase.from('trial_flight_vouchers').insert({
+    const { data: createdVoucher, error } = await supabase.from('trial_flight_vouchers').insert({
       product_id: voucher.productId,
       code: generateVoucherCode(),
       purchaser_name: voucher.purchaserName,
@@ -153,10 +153,25 @@ export const useTrialFlightVouchers = () => {
       notes: voucher.notes || null,
       created_by: voucher.createdBy || null,
       status: 'issued',
-    });
+    }).select('id, code').single();
 
     if (error) throw error;
-    toast.success('Voucher issued');
+
+    try {
+      const { data, error: emailError } = await supabase.functions.invoke('send-trial-voucher-email', {
+        body: {
+          voucherId: createdVoucher?.id,
+          redirectOrigin: window.location.origin,
+        },
+      });
+      if (emailError) throw emailError;
+      if (data?.error) throw new Error(data.error);
+      toast.success(data?.scheduled ? 'Voucher issued and email scheduled' : 'Voucher issued and emailed');
+    } catch (emailError) {
+      console.error('Failed to send voucher email:', emailError);
+      toast.error('Voucher issued, but email delivery failed');
+    }
+
     await fetchAll();
   };
 
@@ -170,4 +185,3 @@ export const useTrialFlightVouchers = () => {
     issueVoucher,
   };
 };
-

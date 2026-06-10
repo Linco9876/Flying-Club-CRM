@@ -1048,59 +1048,63 @@ export const OutstandingRecordsTab: React.FC = () => {
     );
   }
 
+  const queueButtons = [
+    { id: 'mine' as const, label: 'Assigned to me' },
+    ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors' }] : []),
+    { id: 'dismissed' as const, label: 'No record needed' },
+  ];
+
   return (
-    <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6 lg:flex-row lg:gap-6">
-      {/* Left: list of outstanding flights */}
-      <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'lg:w-[30%] lg:min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Training records queue</p>
-              <h2 className="mt-1 text-xl font-bold text-gray-950 dark:text-gray-100">Outstanding Records</h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {isAdmin
-                  ? 'Your records are separated from other instructors so it is clear who needs to act.'
-                  : 'Flights assigned to you that still need a training record.'}
-              </p>
-            </div>
+    <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
+      <header className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 p-4 text-white shadow-sm dark:border-blue-400/20 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
+              {isAdmin
+                ? 'Choose your own queue, another instructor queue, or restore a flight that was marked no record needed.'
+                : 'Flights assigned to you that still need a training record, plus drafts you can prepare in the air.'}
+            </p>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
             <button
               type="button"
               onClick={() => setShowDraftComposer(value => !value)}
               className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                 showDraftComposer
-                  ? 'bg-blue-700 text-white shadow-sm dark:bg-blue-500'
-                  : 'bg-blue-600 text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400'
+                  ? 'bg-white text-blue-900 shadow-sm'
+                  : 'bg-blue-500 text-white shadow-sm hover:bg-blue-400'
               }`}
             >
               <Save className="h-4 w-4" />
               Make Draft
             </button>
-          </div>
 
-          {isAdmin && (
-            <div className="mt-4 grid gap-2 rounded-xl bg-slate-100 p-1 dark:bg-[#111827] sm:grid-cols-3">
-              {[
-                { id: 'mine' as const, label: 'Assigned to me' },
-                { id: 'others' as const, label: 'Other instructors' },
-                { id: 'dismissed' as const, label: 'No record needed' },
-              ].map(item => (
+            <div className="grid min-w-0 gap-2 rounded-xl bg-white/10 p-1 backdrop-blur sm:grid-cols-3">
+              {queueButtons.map(item => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setQueueView(item.id)}
                   className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
                     queueView === item.id
-                      ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200 dark:bg-[#1f2633] dark:text-blue-200 dark:ring-[#363b45]'
-                      : 'text-slate-600 hover:bg-white/60 dark:text-slate-300 dark:hover:bg-[#1b2230]'
+                      ? 'bg-white text-blue-900 shadow-sm'
+                      : 'text-blue-50 hover:bg-white/10'
                   }`}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
-          )}
+          </div>
         </div>
+      </header>
 
+      <div className="flex min-h-0 min-w-0 flex-col gap-4 lg:flex-row lg:gap-6">
+      {/* Left: list of outstanding flights */}
+      <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'lg:w-[30%] lg:min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
         <div className="hidden">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Outstanding Records</h2>
@@ -2063,6 +2067,7 @@ export const OutstandingRecordsTab: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
