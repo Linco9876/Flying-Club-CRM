@@ -48,6 +48,12 @@ const buildPresetProduct = (
 };
 
 const dateTimeLocalToIso = (value: string) => value ? new Date(value).toISOString() : undefined;
+const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+const toDateTimeLocalValue = (date: Date) => {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+};
 
 interface InstructorEndorsementRow {
   student_id: string;
@@ -82,6 +88,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const instructors = getInstructors();
   const activeProducts = products.filter(product => product.isActive);
   const selectedProduct = products.find(product => product.id === issueForm.productId);
+  const minimumRecipientDeliveryAt = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 5 * 60_000)), []);
   const productCheckoutReady = (product: TrialFlightVoucherProduct) =>
     Boolean(product.stripePriceId?.trim()) && Number(product.price || 0) > 0;
   const checkoutReadyProducts = activeProducts.filter(productCheckoutReady);
@@ -276,6 +283,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
       toast.error('Select a voucher and enter purchaser name/email');
       return;
     }
+    if (!isValidEmail(issueForm.purchaserEmail)) {
+      toast.error('Enter a valid purchaser email address');
+      return;
+    }
     const productToIssue = products.find(product => product.id === issueForm.productId);
     if (!productToIssue) {
       toast.error('Select a valid voucher product');
@@ -289,6 +300,21 @@ export const TrialFlightVouchersPage: React.FC = () => {
     if (issueForm.sendToRecipient && !issueForm.recipientEmail) {
       toast.error('Recipient email is required when sending direct to recipient');
       return;
+    }
+    if (issueForm.sendToRecipient && !isValidEmail(issueForm.recipientEmail)) {
+      toast.error('Enter a valid recipient email address');
+      return;
+    }
+    if (issueForm.sendToRecipient && issueForm.recipientDeliveryAt) {
+      const deliveryAt = new Date(issueForm.recipientDeliveryAt);
+      if (!Number.isFinite(deliveryAt.getTime())) {
+        toast.error('Choose a valid recipient send date/time');
+        return;
+      }
+      if (deliveryAt.getTime() < Date.now()) {
+        toast.error('Recipient send date/time must be in the future');
+        return;
+      }
     }
 
     setSaving(true);
@@ -1404,7 +1430,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   <input type="email" value={issueForm.recipientEmail} onChange={e => setIssueForm(f => ({ ...f, recipientEmail: e.target.value }))} placeholder="Recipient email" className="rounded-lg border border-blue-200 bg-white px-3 py-2 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100" />
                   <label className="text-sm text-blue-800 dark:text-blue-100">
                     Scheduled send date/time
-                    <input type="datetime-local" value={issueForm.recipientDeliveryAt} onChange={e => setIssueForm(f => ({ ...f, recipientDeliveryAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100" />
+                    <input type="datetime-local" min={minimumRecipientDeliveryAt} value={issueForm.recipientDeliveryAt} onChange={e => setIssueForm(f => ({ ...f, recipientDeliveryAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100" />
                   </label>
                   <p className="text-xs leading-5 text-blue-700 dark:text-blue-200">
                     Leave the schedule blank to email the recipient immediately.
