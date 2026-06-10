@@ -20,7 +20,8 @@ export const useAircraft = () => {
 
       const { data: defectsData, error: defectsError } = await supabase
         .from('defects')
-        .select('*');
+        .select('*')
+        .eq('status', 'open');
 
       if (defectsError) throw defectsError;
 
@@ -43,6 +44,7 @@ export const useAircraft = () => {
           status: d.status,
           photos: d.photos,
           melNotes: d.mel_notes,
+          fixNotes: d.fix_notes,
           severity: d.severity,
           location: d.location,
           tachHours: d.tach_hours,
@@ -135,21 +137,185 @@ export const useAircraft = () => {
     }
   };
 
-  const updateDefectStatus = async (
+  const updateDefect = async (
     defectId: string,
-    updates: { status: Defect['status']; melNotes?: string }
+    updates: Partial<Defect>,
+    userId?: string
   ) => {
     try {
+      const { data: oldDefect } = await supabase
+        .from('defects')
+        .select('*')
+        .eq('id', defectId)
+        .single();
+
+      const dbUpdates: any = {};
+      if (updates.summary !== undefined) dbUpdates.summary = updates.summary;
+      if (updates.description !== undefined) dbUpdates.description = updates.description;
+      if (updates.severity !== undefined) dbUpdates.severity = updates.severity;
+      if (updates.status !== undefined) dbUpdates.status = updates.status;
+      if (updates.location !== undefined) dbUpdates.location = updates.location;
+      if (updates.tachHours !== undefined) dbUpdates.tach_hours = updates.tachHours;
+      if (updates.hobbsHours !== undefined) dbUpdates.hobbs_hours = updates.hobbsHours;
+
+      dbUpdates.updated_at = new Date().toISOString();
+      dbUpdates.updated_by = userId;
+
+      const { error } = await supabase
+        .from('defects')
+        .update(dbUpdates)
+        .eq('id', defectId);
+
+      if (error) throw error;
+
+      if (oldDefect) {
+        const historyEntries = [];
+
+        if (updates.summary !== undefined && oldDefect.summary !== updates.summary) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'summary',
+            old_value: oldDefect.summary || '',
+            new_value: updates.summary || ''
+          });
+        }
+
+        if (updates.description !== undefined && oldDefect.description !== updates.description) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'description',
+            old_value: oldDefect.description || '',
+            new_value: updates.description || ''
+          });
+        }
+
+        if (updates.severity !== undefined && oldDefect.severity !== updates.severity) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'severity',
+            old_value: oldDefect.severity || '',
+            new_value: updates.severity || ''
+          });
+        }
+
+        if (updates.status !== undefined && oldDefect.status !== updates.status) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'status',
+            old_value: oldDefect.status || '',
+            new_value: updates.status || ''
+          });
+        }
+
+        if (updates.location !== undefined && oldDefect.location !== updates.location) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'location',
+            old_value: oldDefect.location || '',
+            new_value: updates.location || ''
+          });
+        }
+
+        if (updates.tachHours !== undefined && oldDefect.tach_hours !== updates.tachHours) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'tach_hours',
+            old_value: oldDefect.tach_hours?.toString() || '',
+            new_value: updates.tachHours?.toString() || ''
+          });
+        }
+
+        if (updates.hobbsHours !== undefined && oldDefect.hobbs_hours !== updates.hobbsHours) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'hobbs_hours',
+            old_value: oldDefect.hobbs_hours?.toString() || '',
+            new_value: updates.hobbsHours?.toString() || ''
+          });
+        }
+
+        if (historyEntries.length > 0) {
+          await supabase.from('defect_history').insert(historyEntries);
+        }
+      }
+
+      await fetchAircraft();
+      toast.success('Defect updated successfully');
+    } catch (err) {
+      console.error('Error updating defect:', err);
+      toast.error('Failed to update defect');
+      throw err;
+    }
+  };
+
+  const updateDefectStatus = async (
+    defectId: string,
+    updates: { status: Defect['status']; melNotes?: string; fixNotes?: string },
+    userId?: string
+  ) => {
+    try {
+      // Get old values for history
+      const { data: oldDefect } = await supabase
+        .from('defects')
+        .select('status, mel_notes, fix_notes')
+        .eq('id', defectId)
+        .single();
+
       const { error } = await supabase
         .from('defects')
         .update({
           status: updates.status,
           mel_notes: updates.melNotes ?? null,
-          updated_at: new Date().toISOString()
+          fix_notes: updates.fixNotes ?? null,
+          updated_at: new Date().toISOString(),
+          updated_by: userId
         })
         .eq('id', defectId);
 
       if (error) throw error;
+
+      // Track history
+      if (oldDefect) {
+        const historyEntries = [];
+        if (oldDefect.status !== updates.status) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'status',
+            old_value: oldDefect.status,
+            new_value: updates.status
+          });
+        }
+        if (updates.melNotes !== undefined && oldDefect.mel_notes !== updates.melNotes) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'mel_notes',
+            old_value: oldDefect.mel_notes || '',
+            new_value: updates.melNotes || ''
+          });
+        }
+        if (updates.fixNotes !== undefined && oldDefect.fix_notes !== updates.fixNotes) {
+          historyEntries.push({
+            defect_id: defectId,
+            changed_by: userId,
+            field_name: 'fix_notes',
+            old_value: oldDefect.fix_notes || '',
+            new_value: updates.fixNotes || ''
+          });
+        }
+
+        if (historyEntries.length > 0) {
+          await supabase.from('defect_history').insert(historyEntries);
+        }
+      }
 
       await fetchAircraft();
       toast.success('Defect status updated');
@@ -160,9 +326,29 @@ export const useAircraft = () => {
     }
   };
 
+  const getDefectHistory = async (defectId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('defect_history')
+        .select(`
+          *,
+          changed_by_user:changed_by(name, email)
+        `)
+        .eq('defect_id', defectId)
+        .order('changed_at', { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.error('Error fetching defect history:', err);
+      return [];
+    }
+  };
+
   const addAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'> & {
     aircraftRates?: { prepaid: number; payg: number; account: number };
     instructorRates?: { prepaid: number; payg: number; account: number };
+    rates?: Array<any>;
     milestones?: Array<{ title: string; dueCondition: string; dueValue: string }>;
     documents?: Array<{ name: string; type: string; size: number }>;
   }) => {
@@ -189,25 +375,25 @@ export const useAircraft = () => {
 
       if (error) throw error;
 
-      if (newAircraft && aircraftData.aircraftRates) {
-        const { error: ratesError } = await supabase.from('aircraft_rates').insert([
-          { aircraft_id: newAircraft.id, rate_type: 'aircraft_prepaid', amount: aircraftData.aircraftRates.prepaid },
-          { aircraft_id: newAircraft.id, rate_type: 'aircraft_payg', amount: aircraftData.aircraftRates.payg },
-          { aircraft_id: newAircraft.id, rate_type: 'aircraft_account', amount: aircraftData.aircraftRates.account }
-        ]);
+      if (newAircraft && aircraftData.rates && aircraftData.rates.length > 0) {
+        const ratesToInsert = aircraftData.rates.map(rate => ({
+          aircraft_id: newAircraft.id,
+          flight_type_id: rate.flightTypeId,
+          charge_type: rate.chargeType,
+          solo_rate: rate.soloRate || 0,
+          dual_rate: rate.dualRate || 0,
+          flat_surcharge: rate.flatSurcharge || 0,
+          weekend_surcharge: rate.weekendSurcharge || 0,
+          default_payment_method_id: rate.defaultPaymentMethodId || null,
+          included_taxes: rate.includedTaxes || 0
+        }));
+
+        const { error: ratesError } = await supabase
+          .from('aircraft_rates')
+          .insert(ratesToInsert);
+
         if (ratesError) {
           console.error('Error saving aircraft rates:', ratesError);
-        }
-      }
-
-      if (newAircraft && aircraftData.instructorRates) {
-        const { error: instructorRatesError } = await supabase.from('aircraft_rates').insert([
-          { aircraft_id: newAircraft.id, rate_type: 'instructor_prepaid', amount: aircraftData.instructorRates.prepaid },
-          { aircraft_id: newAircraft.id, rate_type: 'instructor_payg', amount: aircraftData.instructorRates.payg },
-          { aircraft_id: newAircraft.id, rate_type: 'instructor_account', amount: aircraftData.instructorRates.account }
-        ]);
-        if (instructorRatesError) {
-          console.error('Error saving instructor rates:', instructorRatesError);
         }
       }
 
@@ -250,7 +436,10 @@ export const useAircraft = () => {
     }
   };
 
-  const updateAircraft = async (id: string, aircraftData: Partial<Omit<Aircraft, 'id' | 'defects'>>) => {
+  const updateAircraft = async (id: string, aircraftData: Partial<Omit<Aircraft, 'id' | 'defects'>> & {
+    rates?: Array<any>;
+    milestones?: Array<{ title: string; dueCondition: string; dueValue: string }>;
+  }) => {
     try {
       const updateData: any = {};
       if (aircraftData.registration !== undefined) updateData.registration = aircraftData.registration;
@@ -273,6 +462,52 @@ export const useAircraft = () => {
         .eq('id', id);
 
       if (error) throw error;
+
+      if (aircraftData.rates !== undefined) {
+        const { error: deleteError } = await supabase
+          .from('aircraft_rates')
+          .delete()
+          .eq('aircraft_id', id);
+
+        if (deleteError) {
+          console.error('Error deleting old rates:', deleteError);
+        }
+
+        if (aircraftData.rates.length > 0) {
+          const ratesToInsert = aircraftData.rates.map(rate => ({
+            aircraft_id: id,
+            flight_type_id: rate.flightTypeId,
+            charge_type: rate.chargeType,
+            solo_rate: rate.soloRate || 0,
+            dual_rate: rate.dualRate || 0,
+            flat_surcharge: rate.flatSurcharge || 0,
+            weekend_surcharge: rate.weekendSurcharge || 0,
+            default_payment_method_id: rate.defaultPaymentMethodId || null,
+            included_taxes: rate.includedTaxes || 0
+          }));
+
+          const { error: insertError } = await supabase
+            .from('aircraft_rates')
+            .insert(ratesToInsert);
+
+          if (insertError) {
+            console.error('Error inserting new rates:', insertError);
+          }
+        }
+      }
+
+      // Insert any newly-added milestones
+      if (aircraftData.milestones && aircraftData.milestones.length > 0) {
+        const { error: milestonesError } = await supabase.from('maintenance_milestones').insert(
+          aircraftData.milestones.map(m => ({
+            aircraft_id: id,
+            title: m.title,
+            due_condition: m.dueCondition,
+            due_value: m.dueValue,
+          }))
+        );
+        if (milestonesError) console.error('Error saving milestones:', milestonesError);
+      }
 
       await fetchAircraft();
       toast.success('Aircraft updated successfully');
@@ -301,6 +536,55 @@ export const useAircraft = () => {
     }
   };
 
+  const deleteDefect = async (defectId: string) => {
+    try {
+      const { data: defect, error: fetchError } = await supabase
+        .from('defects')
+        .select('photos')
+        .eq('id', defectId)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Error fetching defect:', fetchError);
+        throw fetchError;
+      }
+
+      if (defect?.photos && Array.isArray(defect.photos)) {
+        for (const photoPath of defect.photos) {
+          try {
+            const { error: storageError } = await supabase.storage
+              .from('defect-attachments')
+              .remove([photoPath]);
+
+            if (storageError) {
+              console.warn('Error deleting photo from storage:', storageError);
+            }
+          } catch (photoErr) {
+            console.warn('Failed to delete photo:', photoErr);
+          }
+        }
+      }
+
+      const { error } = await supabase
+        .from('defects')
+        .delete()
+        .eq('id', defectId);
+
+      if (error) {
+        console.error('Error deleting defect from database:', error);
+        throw error;
+      }
+
+      await fetchAircraft();
+      toast.success('Defect deleted successfully');
+    } catch (err) {
+      console.error('Error deleting defect:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete defect';
+      toast.error(errorMessage);
+      throw err;
+    }
+  };
+
   useEffect(() => {
     fetchAircraft();
   }, []);
@@ -310,10 +594,13 @@ export const useAircraft = () => {
     loading,
     error,
     reportDefect,
+    updateDefect,
     updateDefectStatus,
+    getDefectHistory,
     addAircraft,
     updateAircraft,
     deleteAircraft,
+    deleteDefect,
     refetch: fetchAircraft
   };
 };

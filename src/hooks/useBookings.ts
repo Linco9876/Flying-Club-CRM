@@ -1,28 +1,49 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, FlightLog, BookingConflict } from '../types';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 export const useBookings = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      const { data: bookingsData, error: bookingsError } = await supabase
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 5000)
+      );
+
+      const bookingsPromise = supabase
         .from('bookings')
         .select('*')
+        .is('deleted_at', null)
         .order('start_time', { ascending: false });
 
-      if (bookingsError) throw bookingsError;
+      const { data: bookingsData, error: bookingsError } = await Promise.race([
+        bookingsPromise,
+        timeoutPromise
+      ]) as any;
+
+      if (bookingsError) {
+        console.error('Bookings error:', bookingsError);
+        setBookings([]);
+        setError(null);
+        setLoading(false);
+        return;
+      }
 
       const { data: flightLogsData, error: flightLogsError } = await supabase
         .from('flight_logs')
         .select('*');
 
-      if (flightLogsError) throw flightLogsError;
+      if (flightLogsError) {
+        console.error('Flight logs error:', flightLogsError);
+      }
 
       const flightLogsMap = new Map(flightLogsData?.map(fl => [fl.booking_id, {
         id: fl.id,
@@ -48,7 +69,9 @@ export const useBookings = () => {
         notes: b.notes,
         status: b.status,
         hasConflict: b.has_conflict || false,
-        flightLog: flightLogsMap.get(b.id)
+        flightLog: flightLogsMap.get(b.id),
+        flight_logged: b.flight_logged || false,
+        flightTypeId: b.flight_type_id || undefined,
       }));
 
       setBookings(combinedBookings);
@@ -56,7 +79,7 @@ export const useBookings = () => {
     } catch (err) {
       console.error('Error fetching bookings:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch bookings');
-      toast.error('Failed to load bookings');
+      setBookings([]);
     } finally {
       setLoading(false);
     }
@@ -72,6 +95,33 @@ export const useBookings = () => {
       }
       if (!bookingData.aircraftId || bookingData.aircraftId.trim() === '') {
         throw new Error('Aircraft is required');
+      }
+
+      // Validate against booking rules
+      const { data: ruleValidation, error: ruleError } = await supabase
+        .rpc('validate_booking_rules', {
+          p_start_time: bookingData.startTime.toISOString(),
+          p_end_time: bookingData.endTime.toISOString(),
+          p_instructor_id: bookingData.instructorId || null
+        });
+
+      if (ruleError) {
+        console.error('Error validating booking rules:', ruleError);
+      }
+
+      // Students always need approval; admins/instructors book directly
+      let needsApproval = user?.role === 'student' || user?.role === 'pilot';
+
+      if (ruleValidation && Array.isArray(ruleValidation) && ruleValidation.length > 0) {
+        const errors = ruleValidation.filter((err: any) => !err.needs_approval);
+        const approvalRequired = ruleValidation.some((err: any) => err.needs_approval);
+
+        if (errors.length > 0) {
+          const errorMessages = errors.map((err: any) => err.message);
+          throw new Error(errorMessages.join('. '));
+        }
+
+        if (approvalRequired) needsApproval = true;
       }
 
       // Check for conflicts before creating booking
@@ -95,6 +145,8 @@ export const useBookings = () => {
         throw new Error(conflictMessages.join('. '));
       }
 
+      const bookingStatus = needsApproval ? 'pending_approval' : bookingData.status;
+
       const insertData = {
         student_id: bookingData.studentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
@@ -103,7 +155,8 @@ export const useBookings = () => {
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
         notes: bookingData.notes || null,
-        status: bookingData.status
+        status: bookingStatus,
+        flight_type_id: bookingData.flightTypeId || null,
       };
 
       console.log('Insert data:', insertData);
@@ -128,8 +181,25 @@ export const useBookings = () => {
 
       console.log('Booking created:', data);
 
+      // Send approval notifications if needed
+      if (needsApproval && data && data.length > 0) {
+        const { error: notifyError } = await supabase
+          .rpc('notify_instructor_booking_request', {
+            booking_id: data[0].id
+          });
+
+        if (notifyError) {
+          console.error('Error sending approval notifications:', notifyError);
+        }
+      }
+
       await fetchBookings();
-      toast.success('Booking created successfully');
+
+      if (needsApproval) {
+        toast.success('Booking request submitted — awaiting approval');
+      } else {
+        toast.success('Booking created successfully');
+      }
     } catch (err: any) {
       console.error('Error adding booking:', err);
       console.error('Error details:', {
@@ -147,7 +217,7 @@ export const useBookings = () => {
     }
   };
 
-  const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>) => {
+  const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>, silent = false) => {
     try {
       const updateData: any = {};
       if (bookingData.studentId !== undefined) {
@@ -170,6 +240,7 @@ export const useBookings = () => {
       if (bookingData.paymentType !== undefined) updateData.payment_type = bookingData.paymentType;
       if (bookingData.notes !== undefined) updateData.notes = bookingData.notes || null;
       if (bookingData.status !== undefined) updateData.status = bookingData.status;
+      if (bookingData.flightTypeId !== undefined) updateData.flight_type_id = bookingData.flightTypeId || null;
 
       const { error } = await supabase
         .from('bookings')
@@ -179,7 +250,7 @@ export const useBookings = () => {
       if (error) throw error;
 
       await fetchBookings();
-      toast.success('Booking updated successfully');
+      if (!silent) toast.success('Booking updated successfully');
     } catch (err) {
       console.error('Error updating booking:', err);
       toast.error('Failed to update booking');
@@ -191,7 +262,7 @@ export const useBookings = () => {
     try {
       const { error } = await supabase
         .from('bookings')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', id);
 
       if (error) throw error;
@@ -232,8 +303,144 @@ export const useBookings = () => {
     }
   };
 
+  const approveBooking = async (bookingId: string) => {
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        throw new Error('User not authenticated');
+      }
+
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          status: 'confirmed',
+          approved_by: userData.user.id,
+          approved_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
+
+      if (error) throw error;
+
+      // Remove any pending booking_approval notifications for this booking
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('booking_id', bookingId)
+        .eq('type', 'booking_approval');
+
+      await fetchBookings();
+      toast.success('Booking approved successfully');
+    } catch (err) {
+      console.error('Error approving booking:', err);
+      toast.error('Failed to approve booking');
+      throw err;
+    }
+  };
+
+  const rejectBooking = async (bookingId: string, reason?: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({
+          status: 'cancelled',
+          notes: reason ? `Rejected: ${reason}` : 'Rejected by instructor'
+        })
+        .eq('id', bookingId);
+
+      if (error) throw error;
+
+      // Remove any pending booking_approval notifications for this booking
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('booking_id', bookingId)
+        .eq('type', 'booking_approval');
+
+      await fetchBookings();
+      toast.success('Booking rejected');
+    } catch (err) {
+      console.error('Error rejecting booking:', err);
+      toast.error('Failed to reject booking');
+      throw err;
+    }
+  };
+
   useEffect(() => {
     fetchBookings();
+
+    // Debounce rapid back-to-back realtime events (e.g. insert + update on same row)
+    let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefetch = () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(() => {
+        fetchBookings();
+        refetchTimer = null;
+      }, 300);
+    };
+
+    const bookingsSubscription = supabase
+      .channel('bookings_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        (payload) => {
+          // Apply optimistic update immediately so the colour changes right away,
+          // then schedule a full refetch to reconcile.
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const updated = payload.new as any;
+            setBookings(prev =>
+              prev.map(b =>
+                b.id === updated.id
+                  ? {
+                      ...b,
+                      status: updated.status ?? b.status,
+                      flight_logged: updated.flight_logged ?? b.flight_logged,
+                      startTime: updated.start_time ? new Date(updated.start_time) : b.startTime,
+                      endTime: updated.end_time ? new Date(updated.end_time) : b.endTime,
+                    }
+                  : b
+              )
+            );
+          } else if (payload.eventType === 'INSERT' && payload.new) {
+            // New booking from another user — schedule refetch to get full joined data
+            scheduleRefetch();
+            return;
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            const deleted = payload.old as any;
+            setBookings(prev => prev.filter(b => b.id !== deleted.id));
+          }
+          scheduleRefetch();
+        }
+      )
+      .subscribe();
+
+    const flightLogsSubscription = supabase
+      .channel('flight_logs_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'flight_logs' },
+        (payload) => {
+          // When a flight log is inserted, immediately mark the linked booking as logged
+          const newLog = payload.new as any;
+          if (newLog?.booking_id) {
+            setBookings(prev =>
+              prev.map(b =>
+                b.id === newLog.booking_id
+                  ? { ...b, flight_logged: true }
+                  : b
+              )
+            );
+          }
+          scheduleRefetch();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
+      bookingsSubscription.unsubscribe();
+      flightLogsSubscription.unsubscribe();
+    };
   }, []);
 
   return {
@@ -244,6 +451,8 @@ export const useBookings = () => {
     updateBooking,
     deleteBooking,
     addFlightLog,
+    approveBooking,
+    rejectBooking,
     refetch: fetchBookings
   };
 };

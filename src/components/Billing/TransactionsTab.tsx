@@ -1,305 +1,581 @@
-import React, { useState } from 'react';
-import { mockTransactions } from '../../data/mockData';
-import { Download, Search, Filter, Calendar } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX } from 'lucide-react';
+import { useBillingAccounts } from '../../hooks/useBillingAccounts';
+import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 
-interface Transaction {
-  id: string;
-  date: Date;
-  studentId: string;
-  studentName: string;
+type BillingHook = ReturnType<typeof useBillingAccounts>;
+
+const MarkPaidModal: React.FC<{
+  flightId: string;
   description: string;
-  amount: number;
-  paymentType: 'prepaid' | 'payg' | 'account' | 'deposit' | 'refund';
-  balanceAfter: number;
-  type: 'debit' | 'credit';
-}
+  amount: number | null;
+  preselectedPaymentType: string | null;
+  paymentMethods: { id: string; name: string }[];
+  onClose: () => void;
+  onConfirm: (flightLogId: string, paymentType: string) => Promise<void>;
+}> = ({ flightId, description, amount, preselectedPaymentType, paymentMethods, onClose, onConfirm }) => {
+  const preselected = paymentMethods.find(pm => pm.name === preselectedPaymentType);
+  const [paymentMethodId, setPaymentMethodId] = useState(preselected?.id ?? '');
+  const [saving, setSaving] = useState(false);
 
-export const TransactionsTab: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
-
-  // Mock transactions data
-  const transactions: Transaction[] = [
-    {
-      id: '1',
-      date: new Date('2024-01-25'),
-      studentId: '3',
-      studentName: 'John Pilot',
-      description: 'Flight Training - VH-ABC (1.5 hrs)',
-      amount: -547.50,
-      paymentType: 'prepaid',
-      balanceAfter: 702.50,
-      type: 'debit'
-    },
-    {
-      id: '2',
-      date: new Date('2024-01-20'),
-      studentId: '3',
-      studentName: 'John Pilot',
-      description: 'Account Top-up',
-      amount: 1000.00,
-      paymentType: 'deposit',
-      balanceAfter: 1250.00,
-      type: 'credit'
-    },
-    {
-      id: '3',
-      date: new Date('2024-01-18'),
-      studentId: '4',
-      studentName: 'Sarah Wings',
-      description: 'Solo Flight - VH-DEF (1.2 hrs)',
-      amount: -312.00,
-      paymentType: 'prepaid',
-      balanceAfter: 538.00,
-      type: 'debit'
-    },
-    {
-      id: '4',
-      date: new Date('2024-01-15'),
-      studentId: '4',
-      studentName: 'Sarah Wings',
-      description: 'Initial Deposit',
-      amount: 850.00,
-      paymentType: 'deposit',
-      balanceAfter: 850.00,
-      type: 'credit'
-    }
-  ];
-
-  const filteredTransactions = transactions.filter(transaction => {
-    const matchesSearch = transaction.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transaction.description.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesDateRange = (!dateRange.start || transaction.date >= new Date(dateRange.start)) &&
-                            (!dateRange.end || transaction.date <= new Date(dateRange.end));
-    
-    const matchesPaymentType = !paymentTypeFilter || transaction.paymentType === paymentTypeFilter;
-    
-    return matchesSearch && matchesDateRange && matchesPaymentType;
-  });
-
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedTransactions = filteredTransactions.slice(startIndex, startIndex + itemsPerPage);
-
-  const handleExport = (format: 'csv' | 'xlsx') => {
-    toast.success(`Exporting transactions to ${format.toUpperCase()}...`);
-    // In a real app, this would trigger the actual export
-  };
-
-  const getPaymentTypeColor = (type: string) => {
-    switch (type) {
-      case 'prepaid': return 'bg-blue-100 text-blue-800';
-      case 'payg': return 'bg-orange-100 text-orange-800';
-      case 'account': return 'bg-purple-100 text-purple-800';
-      case 'deposit': return 'bg-green-100 text-green-800';
-      case 'refund': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentMethodId) return;
+    const selected = paymentMethods.find(pm => pm.id === paymentMethodId);
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await onConfirm(flightId, selected.name);
+      onClose();
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
+        <div className="p-6 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900">Mark as Paid</h3>
+          <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{description}</p>
+          {amount != null && (
+            <p className="text-sm font-semibold text-gray-800 mt-1">${Math.abs(amount).toFixed(2)}</p>
+          )}
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
-            <div className="relative">
-              <Search className="h-4 w-4 absolute left-3 top-3 text-gray-400" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Search by student or description..."
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Payment Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method <span className="text-red-500">*</span></label>
             <select
-              value={paymentTypeFilter}
-              onChange={(e) => setPaymentTypeFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={paymentMethodId}
+              onChange={e => setPaymentMethodId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+              autoFocus
             >
-              <option value="">All Types</option>
-              <option value="prepaid">Prepaid</option>
-              <option value="payg">Pay As You Go</option>
-              <option value="account">Account</option>
-              <option value="deposit">Deposit</option>
-              <option value="refund">Refund</option>
+              <option value="">— Select —</option>
+              {paymentMethods.map(pm => (
+                <option key={pm.id} value={pm.id}>{pm.name}</option>
+              ))}
             </select>
           </div>
-        </div>
-
-        <div className="flex justify-between items-center mt-4">
-          <div className="text-sm text-gray-600">
-            Showing {paginatedTransactions.length} of {filteredTransactions.length} transactions
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving || !paymentMethodId} className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors">
+              {saving ? 'Saving...' : 'Confirm Payment'}
+            </button>
           </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => handleExport('csv')}
-              className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              <span>CSV</span>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const RejectModal: React.FC<{
+  transactionId: string;
+  userName: string;
+  amount: number;
+  description: string;
+  onClose: () => void;
+  onConfirm: (transactionId: string, notes: string) => Promise<void>;
+}> = ({ transactionId, userName, amount, description, onClose, onConfirm }) => {
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notes.trim()) return;
+    setSaving(true);
+    try {
+      await onConfirm(transactionId, notes.trim());
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="p-6 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <XCircle className="h-5 w-5 text-red-600" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">Reject Payment</h3>
+              <p className="text-sm text-gray-500 mt-0.5">{userName} · ${amount.toFixed(2)}</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-500 mt-3 bg-gray-50 rounded-lg px-3 py-2">{description}</p>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reason for rejection <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={3}
+              placeholder="e.g. Bank transfer reference not found, incorrect amount received..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              required
+              autoFocus
+            />
+            <p className="text-xs text-gray-400 mt-1">This note will be visible to the pilot.</p>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+              Cancel
             </button>
             <button
-              onClick={() => handleExport('xlsx')}
-              className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              type="submit"
+              disabled={saving || !notes.trim()}
+              className="flex-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 transition-colors"
             >
-              <Download className="h-4 w-4" />
-              <span>XLSX</span>
+              {saving ? 'Rejecting...' : 'Reject & Reverse Balance'}
             </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
+  const { transactions, unpaidFlights, loading, markFlightPaid, verifyTransaction, rejectTransaction } = billing;
+  const { paymentMethods } = useBillingSettings();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unpaid'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [markingPaid, setMarkingPaid] = useState<{ flightId: string; description: string; amount: number | null; paymentType: string | null } | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const itemsPerPage = 25;
+
+  const allRows = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      flightLogId: string | null;
+      date: string;
+      userName: string;
+      userEmail: string;
+      description: string;
+      amount: number | null;
+      paymentMethod: string | null;
+      balanceAfter: number | null;
+      rowType: 'credit' | 'debit' | 'unpaid';
+      paymentType: string | null;
+      isTopup: boolean;
+      verifiedStatus: 'pending' | 'verified' | 'rejected' | null;
+      rejectionNotes: string | null;
+    }> = [
+      ...transactions.map(t => ({
+        id: t.id,
+        flightLogId: null,
+        date: t.createdAt,
+        userName: t.userName,
+        userEmail: t.userEmail,
+        description: t.description,
+        amount: t.type === 'topup' || t.type === 'refund' ? t.amount : -t.amount,
+        paymentMethod: t.paymentMethodName,
+        balanceAfter: t.balanceAfter,
+        rowType: (t.type === 'topup' || t.type === 'refund' ? 'credit' : 'debit') as 'credit' | 'debit',
+        paymentType: null,
+        isTopup: t.type === 'topup',
+        verifiedStatus: t.verifiedStatus,
+        rejectionNotes: t.rejectionNotes,
+      })),
+      ...unpaidFlights.map(f => ({
+        id: `unpaid-${f.id}`,
+        flightLogId: f.id,
+        date: f.flightDate,
+        userName: f.userName,
+        userEmail: f.userEmail,
+        description: `Flight – ${f.aircraftRegistration} (${f.flightDuration.toFixed(1)} hrs)${f.flightTypeName ? ` · ${f.flightTypeName}` : ''}`,
+        amount: f.calculatedCost != null ? -f.calculatedCost : null,
+        paymentMethod: null,
+        balanceAfter: null,
+        rowType: 'unpaid' as const,
+        paymentType: f.paymentType,
+        isTopup: false,
+        verifiedStatus: null,
+        rejectionNotes: null,
+      })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return rows;
+  }, [transactions, unpaidFlights]);
+
+  const filtered = useMemo(() => {
+    return allRows.filter(row => {
+      const matchSearch =
+        !searchTerm ||
+        row.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        row.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const rowDate = new Date(row.date);
+      const matchStart = !dateStart || rowDate >= new Date(dateStart);
+      const matchEnd = !dateEnd || rowDate <= new Date(dateEnd + 'T23:59:59');
+      const matchType = typeFilter === 'all' || row.rowType === typeFilter;
+      return matchSearch && matchStart && matchEnd && matchType;
+    });
+  }, [allRows, searchTerm, dateStart, dateEnd, typeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const totalCredits = transactions
+    .filter(t => t.type === 'topup' || t.type === 'refund')
+    .reduce((s, t) => s + t.amount, 0);
+  const totalDebits = transactions
+    .filter(t => t.type === 'flight_charge' || t.type === 'adjustment')
+    .reduce((s, t) => s + t.amount, 0);
+  const totalUnpaidValue = unpaidFlights.reduce((s, f) => s + (f.calculatedCost ?? 0), 0);
+  const pendingCount = transactions.filter(t => t.type === 'topup' && t.verifiedStatus === 'pending').length;
+
+  const handleExport = () => {
+    const rows = [
+      ['Date', 'Student', 'Description', 'Amount', 'Payment Method', 'Balance After', 'Status'],
+      ...filtered.map(r => [
+        format(parseISO(r.date), 'dd/MM/yyyy HH:mm'),
+        r.userName,
+        r.description,
+        r.amount != null ? r.amount.toFixed(2) : '',
+        r.paymentMethod ?? '',
+        r.balanceAfter != null ? r.balanceAfter.toFixed(2) : '',
+        r.rowType === 'unpaid' ? 'Unpaid' :
+        r.isTopup ? (r.verifiedStatus === 'verified' ? 'Verified' : r.verifiedStatus === 'rejected' ? 'Rejected' : 'Pending') :
+        'Payment',
+      ]),
+    ];
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Exported to CSV');
+  };
+
+  const handleVerify = async (id: string) => {
+    setVerifyingId(id);
+    try {
+      await verifyTransaction(id);
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  const rejectingRow = rejectingId ? allRows.find(r => r.id === rejectingId) : null;
+
+  const statusBadge = (row: typeof allRows[0]) => {
+    if (row.rowType === 'unpaid') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+          <AlertCircle className="h-3 w-3" /> Unpaid
+        </span>
+      );
+    }
+    if (row.isTopup) {
+      if (row.verifiedStatus === 'verified') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <ShieldCheck className="h-3 w-3" /> Verified
+          </span>
+        );
+      }
+      if (row.verifiedStatus === 'rejected') {
+        return (
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+              <ShieldX className="h-3 w-3" /> Rejected
+            </span>
+            {row.rejectionNotes && (
+              <p className="text-xs text-red-600 max-w-[180px] leading-tight">{row.rejectionNotes}</p>
+            )}
+          </div>
+        );
+      }
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+          <ShieldAlert className="h-3 w-3" /> Unverified
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+        Payment
+      </span>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
+          <div className="p-2.5 bg-green-100 rounded-lg">
+            <TrendingUp className="h-5 w-5 text-green-600" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Credits</p>
+            <p className="text-xl font-bold text-gray-900">${totalCredits.toFixed(2)}</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
+          <div className="p-2.5 bg-blue-100 rounded-lg">
+            <TrendingDown className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Charged</p>
+            <p className="text-xl font-bold text-gray-900">${totalDebits.toFixed(2)}</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
+          <div className="p-2.5 bg-amber-100 rounded-lg">
+            <Clock className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Outstanding ({unpaidFlights.length} flights)
+            </p>
+            <p className="text-xl font-bold text-gray-900">${totalUnpaidValue.toFixed(2)}</p>
+          </div>
+        </div>
+        <div className={`rounded-xl border shadow-sm p-5 flex items-center gap-4 ${pendingCount > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+          <div className={`p-2.5 rounded-lg ${pendingCount > 0 ? 'bg-amber-100' : 'bg-gray-100'}`}>
+            <ShieldAlert className={`h-5 w-5 ${pendingCount > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Awaiting Verification</p>
+            <p className={`text-xl font-bold mt-0.5 ${pendingCount > 0 ? 'text-amber-700' : 'text-gray-900'}`}>{pendingCount}</p>
           </div>
         </div>
       </div>
 
-      {/* Transactions Table */}
-      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="relative">
+            <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+              placeholder="Search student or description..."
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <input
+            type="date"
+            value={dateStart}
+            onChange={e => { setDateStart(e.target.value); setCurrentPage(1); }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            type="date"
+            value={dateEnd}
+            onChange={e => { setDateEnd(e.target.value); setCurrentPage(1); }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <select
+            value={typeFilter}
+            onChange={e => { setTypeFilter(e.target.value as any); setCurrentPage(1); }}
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Types</option>
+            <option value="credit">Top-ups only</option>
+            <option value="debit">Payments only</option>
+            <option value="unpaid">Unpaid flights</option>
+          </select>
+        </div>
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-gray-500">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</p>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Description
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Payment Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Balance After
-                </th>
+          <table className="min-w-full divide-y divide-gray-100">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Student</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Method</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Balance After</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedTransactions.map(transaction => (
-                <tr key={transaction.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {transaction.date.toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {transaction.studentName}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    {transaction.description}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <span className={transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
-                      {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPaymentTypeColor(transaction.paymentType)}`}>
-                      {transaction.paymentType.charAt(0).toUpperCase() + transaction.paymentType.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ${transaction.balanceAfter.toFixed(2)}
+            <tbody className="divide-y divide-gray-100">
+              {paginated.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-5 py-12 text-center text-sm text-gray-400">
+                    No transactions found
                   </td>
                 </tr>
-              ))}
+              ) : (
+                paginated.map(row => (
+                  <tr
+                    key={row.id}
+                    className={`hover:bg-gray-50/80 transition-colors ${
+                      row.rowType === 'unpaid' ? 'bg-amber-50/40' :
+                      row.isTopup && row.verifiedStatus === 'pending' ? 'bg-amber-50/20' :
+                      row.isTopup && row.verifiedStatus === 'rejected' ? 'bg-red-50/20' :
+                      ''
+                    }`}
+                  >
+                    <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                      {format(parseISO(row.date), 'dd MMM yyyy')}
+                      <div className="text-xs text-gray-400">{format(parseISO(row.date), 'HH:mm')}</div>
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">{row.userName}</div>
+                      <div className="text-xs text-gray-400">{row.userEmail}</div>
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-gray-700 max-w-xs">
+                      <div className="flex items-start gap-1.5">
+                        {row.rowType === 'unpaid' && <AlertCircle className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />}
+                        {row.description}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-sm font-semibold">
+                      {row.amount != null ? (
+                        <span className={
+                          row.isTopup && row.verifiedStatus === 'rejected' ? 'text-red-400 line-through' :
+                          row.amount >= 0 ? 'text-green-600' :
+                          row.rowType === 'unpaid' ? 'text-amber-600' :
+                          'text-gray-800'
+                        }>
+                          {row.amount >= 0 ? '+' : ''}${Math.abs(row.amount).toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-xs italic">TBD</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
+                      {row.paymentMethod ?? <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-sm">
+                      {row.balanceAfter != null ? (
+                        <span className={row.balanceAfter < 0 ? 'text-red-600 font-medium' : 'text-gray-700'}>
+                          ${row.balanceAfter.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      {statusBadge(row)}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      {row.rowType === 'unpaid' && row.flightLogId && (
+                        <button
+                          onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Mark Paid
+                        </button>
+                      )}
+                      {row.isTopup && row.verifiedStatus === 'pending' && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleVerify(row.id)}
+                            disabled={verifyingId === row.id}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            {verifyingId === row.id ? '...' : 'Confirm'}
+                          </button>
+                          <button
+                            onClick={() => setRejectingId(row.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
-          <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200">
-            <div className="flex-1 flex justify-between sm:hidden">
+          <div className="px-5 py-3 flex items-center justify-between border-t border-gray-100 bg-gray-50">
+            <p className="text-sm text-gray-500">Page {currentPage} of {totalPages}</p>
+            <div className="flex gap-1">
               <button
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-white disabled:opacity-40 transition-colors"
               >
-                Previous
+                Prev
               </button>
               <button
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-white disabled:opacity-40 transition-colors"
               >
                 Next
               </button>
             </div>
-            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm text-gray-700">
-                  Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
-                  <span className="font-medium">{Math.min(startIndex + itemsPerPage, filteredTransactions.length)}</span> of{' '}
-                  <span className="font-medium">{filteredTransactions.length}</span> results
-                </p>
-              </div>
-              <div>
-                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                        page === currentPage
-                          ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
-                          : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Next
-                  </button>
-                </nav>
-              </div>
-            </div>
           </div>
         )}
       </div>
+
+      {markingPaid && (
+        <MarkPaidModal
+          flightId={markingPaid.flightId}
+          description={markingPaid.description}
+          amount={markingPaid.amount}
+          preselectedPaymentType={markingPaid.paymentType}
+          paymentMethods={paymentMethods}
+          onClose={() => setMarkingPaid(null)}
+          onConfirm={markFlightPaid}
+        />
+      )}
+
+      {rejectingId && rejectingRow && (
+        <RejectModal
+          transactionId={rejectingId}
+          userName={rejectingRow.userName}
+          amount={Math.abs(rejectingRow.amount ?? 0)}
+          description={rejectingRow.description}
+          onClose={() => setRejectingId(null)}
+          onConfirm={rejectTransaction}
+        />
+      )}
     </div>
   );
 };

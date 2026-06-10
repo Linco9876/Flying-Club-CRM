@@ -36,35 +36,26 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
     try {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
-        password: formData.password
+        password: formData.password,
+        options: {
+          data: {
+            name: formData.name,
+            phone: formData.phone || null,
+            role: 'student'
+          },
+          emailRedirectTo: window.location.origin
+        }
       });
 
       if (authError) throw authError;
 
       if (authData.user) {
-        const { error: userError } = await supabase
-          .from('users')
-          .insert({
-            id: authData.user.id,
-            email: formData.email,
-            name: formData.name,
-            role: 'student',
-            phone: formData.phone || null
-          });
-
-        if (userError) throw userError;
-
-        const { error: studentError } = await supabase
-          .from('students')
-          .insert({
-            id: authData.user.id,
-            prepaid_balance: 0
-          });
-
-        if (studentError) throw studentError;
-
-        toast.success('Account created successfully! Please sign in.');
-        onBackToLogin();
+        if (authData.session) {
+          toast.success('Account created successfully! Redirecting...');
+        } else {
+          toast.success('Account created! Please check your email to confirm your account before signing in.');
+          onBackToLogin();
+        }
       }
     } catch (error: any) {
       console.error('Sign up error:', error);

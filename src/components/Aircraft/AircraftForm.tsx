@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plane, Save, Upload, Plus, Trash2 } from 'lucide-react';
-import { Aircraft } from '../../types';
+import { X, Plane, Save, Upload, Plus, Trash2, DollarSign } from 'lucide-react';
+import { Aircraft, AircraftRate } from '../../types';
+import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { useAircraftRates } from '../../hooks/useAircraftRates';
+import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 
 interface AircraftFormProps {
@@ -9,6 +12,7 @@ interface AircraftFormProps {
   onSubmit: (aircraft: any) => void;
   aircraft?: Aircraft;
   isEdit?: boolean;
+  isDuplicate?: boolean;
 }
 
 interface MaintenanceMilestone {
@@ -24,26 +28,32 @@ interface CostStructure {
   account: number;
 }
 
-export const AircraftForm: React.FC<AircraftFormProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSubmit, 
-  aircraft, 
-  isEdit = false 
+export const AircraftForm: React.FC<AircraftFormProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  aircraft,
+  isEdit = false,
+  isDuplicate = false
 }) => {
   const [formData, setFormData] = useState({
-    registration: aircraft?.registration || '',
+    registration: (isEdit && aircraft?.registration) ? aircraft.registration : '',
     make: aircraft?.make || '',
     model: aircraft?.model || '',
     type: aircraft?.type || 'single-engine' as const,
-    tachStart: aircraft?.totalHours || 0,
-    fuelCapacity: 0,
-    emptyWeight: 0,
-    maxWeight: 0,
-    seatCapacity: 2,
+    tachStart: isEdit ? (aircraft?.totalHours || 0) : 0,
+    fuelCapacity: aircraft?.fuelCapacity || 0,
+    emptyWeight: aircraft?.emptyWeight || 0,
+    maxWeight: aircraft?.maxWeight || 0,
+    seatCapacity: aircraft?.seatCapacity || 2,
     status: aircraft?.status || 'serviceable' as const,
-    totalHours: aircraft?.totalHours || 0
+    totalHours: isEdit ? (aircraft?.totalHours || 0) : 0
   });
+
+  const { flightTypes, paymentMethods, loading: billingLoading } = useBillingSettings();
+  const { rates: existingRates, loading: ratesLoading, refetch: refetchRates } = useAircraftRates(aircraft?.id);
+
+  const [aircraftRates, setAircraftRates] = useState<Partial<AircraftRate>[]>([]);
 
   const [costStructure, setCostStructure] = useState<{
     aircraft: CostStructure;
@@ -61,6 +71,38 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     }
   });
 
+  // Re-fetch rates whenever the form opens for an aircraft
+  useEffect(() => {
+    if (isOpen && aircraft?.id) {
+      refetchRates();
+    }
+  }, [isOpen, aircraft?.id]);
+
+  // Build the rates grid once both flightTypes and existingRates are ready
+  useEffect(() => {
+    if (!isOpen || billingLoading || flightTypes.length === 0) return;
+    // For edit mode wait until rates have finished loading
+    if (isEdit && aircraft?.id && ratesLoading) return;
+
+    setAircraftRates(
+      flightTypes.map(ft => {
+        const saved = existingRates.find(r => r.flightTypeId === ft.id);
+        return saved ?? {
+          flightTypeId: ft.id,
+          chargeType: 'not_used' as const,
+          soloRate: 0,
+          dualRate: 0,
+          flatSurcharge: 0,
+          weekendSurcharge: 0,
+          defaultPaymentMethodId: null,
+          includedTaxes: 0,
+        };
+      })
+    );
+  // Deliberately depend on existingRates so we repopulate after the fetch completes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isEdit, aircraft?.id, flightTypes, existingRates, billingLoading, ratesLoading]);
+
   const [maintenanceMilestones, setMaintenanceMilestones] = useState<MaintenanceMilestone[]>([]);
   const [newMilestone, setNewMilestone] = useState({
     title: '',
@@ -68,22 +110,44 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     dueValue: ''
   });
 
+  // Load existing milestones when editing
+  useEffect(() => {
+    if (!isOpen || !isEdit || !aircraft?.id) {
+      if (!isOpen) setMaintenanceMilestones([]);
+      return;
+    }
+    supabase
+      .from('maintenance_milestones')
+      .select('id, title, due_condition, due_value')
+      .eq('aircraft_id', aircraft.id)
+      .then(({ data }) => {
+        if (data) {
+          setMaintenanceMilestones(data.map(m => ({
+            id: m.id,
+            title: m.title,
+            dueCondition: (m.due_condition as 'hours' | 'date') || 'hours',
+            dueValue: m.due_value || '',
+          })));
+        }
+      });
+  }, [isOpen, isEdit, aircraft?.id]);
+
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
   useEffect(() => {
-    if (aircraft && isEdit) {
+    if (aircraft && (isEdit || isDuplicate)) {
       setFormData({
-        registration: aircraft.registration,
+        registration: isEdit ? aircraft.registration : '',
         make: aircraft.make,
         model: aircraft.model,
         type: aircraft.type,
-        tachStart: aircraft.tachStart || aircraft.totalHours || 0,
+        tachStart: isEdit ? (aircraft.tachStart || aircraft.totalHours || 0) : 0,
         fuelCapacity: aircraft.fuelCapacity || 0,
         emptyWeight: aircraft.emptyWeight || 0,
         maxWeight: aircraft.maxWeight || 0,
         seatCapacity: aircraft.seatCapacity || 2,
         status: aircraft.status,
-        totalHours: aircraft.totalHours || 0
+        totalHours: isEdit ? (aircraft.totalHours || 0) : 0
       });
       setCostStructure({
         aircraft: {
@@ -97,8 +161,26 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
           account: aircraft.instructorRates?.account || 85
         }
       });
+    } else if (!aircraft && !isEdit && !isDuplicate) {
+      setFormData({
+        registration: '',
+        make: '',
+        model: '',
+        type: 'single-engine',
+        tachStart: 0,
+        fuelCapacity: 0,
+        emptyWeight: 0,
+        maxWeight: 0,
+        seatCapacity: 2,
+        status: 'serviceable',
+        totalHours: 0
+      });
+      setCostStructure({
+        aircraft: { prepaid: 0, payg: 0, account: 0 },
+        instructor: { prepaid: 85, payg: 95, account: 85 }
+      });
     }
-  }, [aircraft, isEdit]);
+  }, [aircraft, isEdit, isDuplicate]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,6 +213,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       tachStart: formData.tachStart,
       lastMaintenance: aircraft?.lastMaintenance,
       nextMaintenance: aircraft?.nextMaintenance,
+      // Send ALL rates (not_used included) — hook will delete+reinsert non-not_used
+      rates: aircraftRates.filter(r => r.chargeType !== 'not_used'),
       aircraftRates: {
         prepaid: costStructure.aircraft.prepaid,
         payg: costStructure.aircraft.payg,
@@ -141,11 +225,14 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         payg: costStructure.instructor.payg,
         account: costStructure.instructor.account
       },
-      milestones: maintenanceMilestones.map(m => ({
-        title: m.title,
-        dueCondition: m.dueCondition,
-        dueValue: m.dueValue
-      })),
+      // Only pass newly-added milestones (temp IDs = numeric strings from Date.now())
+      milestones: maintenanceMilestones
+        .filter(m => m.id.match(/^\d+$/))
+        .map(m => ({
+          title: m.title,
+          dueCondition: m.dueCondition,
+          dueValue: m.dueValue
+        })),
       documents: uploadedFiles.map(f => ({
         name: f.name,
         type: f.type,
@@ -154,7 +241,6 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     };
 
     onSubmit(aircraftData);
-    toast.success(isEdit ? 'Aircraft updated successfully!' : 'Aircraft added successfully!');
     onClose();
   };
 
@@ -174,7 +260,11 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     toast.success('Maintenance milestone added');
   };
 
-  const removeMilestone = (milestoneId: string) => {
+  const removeMilestone = async (milestoneId: string) => {
+    // If it's a real DB record (uuid format), delete from DB
+    if (isEdit && aircraft?.id && !milestoneId.match(/^\d+$/)) {
+      await supabase.from('maintenance_milestones').delete().eq('id', milestoneId);
+    }
     setMaintenanceMilestones(prev => prev.filter(m => m.id !== milestoneId));
     toast.success('Maintenance milestone removed');
   };
@@ -196,7 +286,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
-            {isEdit ? 'Edit Aircraft' : 'Add New Aircraft'}
+            {isEdit ? 'Edit Aircraft' : isDuplicate ? 'Duplicate Aircraft' : 'Add New Aircraft'}
           </h2>
           <button
             onClick={onClose}
@@ -354,82 +444,174 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
             </div>
           </div>
 
-          {/* Cost Structure */}
+          {/* Cost Structure by Flight Type */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Cost Structure</h3>
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-md font-medium text-gray-800 mb-3">Aircraft Hourly Rates</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Prepaid ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.aircraft.prepaid}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        aircraft: { ...prev.aircraft, prepaid: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Pay As You Go ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.aircraft.payg}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        aircraft: { ...prev.aircraft, payg: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <DollarSign className="h-5 w-5 mr-2" />
+              Cost Structure by Flight Type
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Configure rates for each flight type. Flight types are managed in Settings &gt; Billing & Rates.
+            </p>
 
-              <div>
-                <h4 className="text-md font-medium text-gray-800 mb-3">Instructor Hourly Rates</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Prepaid ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.instructor.prepaid}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        instructor: { ...prev.instructor, prepaid: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Pay As You Go ($)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costStructure.instructor.payg}
-                      onChange={(e) => setCostStructure(prev => ({
-                        ...prev,
-                        instructor: { ...prev.instructor, payg: parseFloat(e.target.value) || 0 }
-                      }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
+            {billingLoading ? (
+              <div className="text-center py-4 text-gray-500">Loading flight types...</div>
+            ) : aircraftRates.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">
+                No flight types configured. Go to Settings &gt; Billing & Rates to add flight types.
               </div>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                {aircraftRates.map((rate, index) => {
+                  const flightType = flightTypes.find(ft => ft.id === rate.flightTypeId);
+                  if (!flightType) return null;
+
+                  return (
+                    <div key={rate.flightTypeId || index} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                      <h4 className="text-md font-semibold text-gray-900 mb-3">{flightType.name}</h4>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Charge Type *
+                          </label>
+                          <select
+                            value={rate.chargeType}
+                            onChange={(e) => {
+                              const newRates = [...aircraftRates];
+                              newRates[index] = { ...newRates[index], chargeType: e.target.value as any };
+                              setAircraftRates(newRates);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="not_used">Not Used</option>
+                            <option value="tach">Tach Increment</option>
+                            <option value="flat">Flat Price</option>
+                            <option value="per_pax">Price Per Passenger</option>
+                            <option value="free">Free</option>
+                          </select>
+                        </div>
+
+                        {rate.chargeType !== 'not_used' && rate.chargeType !== 'free' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Solo Rate ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.soloRate}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], soloRate: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Dual Rate ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.dualRate}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], dualRate: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Flat Surcharge ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={rate.flatSurcharge}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], flatSurcharge: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Can be negative for discount"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">Positive = surcharge, Negative = discount</p>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Weekend/Holiday Surcharge ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.weekendSurcharge}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], weekendSurcharge: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Default Payment Method
+                              </label>
+                              <select
+                                value={rate.defaultPaymentMethodId || ''}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], defaultPaymentMethodId: e.target.value || null };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">None</option>
+                                {paymentMethods.map(pm => (
+                                  <option key={pm.id} value={pm.id}>{pm.name}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Included Taxes ($)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={rate.includedTaxes}
+                                onChange={(e) => {
+                                  const newRates = [...aircraftRates];
+                                  newRates[index] = { ...newRates[index], includedTaxes: parseFloat(e.target.value) || 0 };
+                                  setAircraftRates(newRates);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Maintenance Milestones */}
@@ -565,7 +747,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
               className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Save className="h-4 w-4" />
-              <span>{isEdit ? 'Update Aircraft' : 'Add Aircraft'}</span>
+              <span>{isEdit ? 'Update Aircraft' : isDuplicate ? 'Add Duplicate' : 'Add Aircraft'}</span>
             </button>
           </div>
         </form>

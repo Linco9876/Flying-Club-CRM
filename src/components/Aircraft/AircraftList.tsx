@@ -1,20 +1,40 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft, Defect } from '../../types';
-import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye } from 'lucide-react';
+import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText, MoreVertical, Pencil, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
+import { useAuth } from '../../context/AuthContext';
 
 export const AircraftList: React.FC = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManage = user?.role === 'admin' || user?.role === 'instructor';
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
+  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
+  const [duplicatingAircraft, setDuplicatingAircraft] = useState<Aircraft | null>(null);
   const [viewingAircraft, setViewingAircraft] = useState<Aircraft | null>(null);
   const [selectedAircraftForDefect, setSelectedAircraftForDefect] = useState<string>('');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleAddAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'>) => {
     await addAircraft(aircraftData);
@@ -30,13 +50,21 @@ export const AircraftList: React.FC = () => {
   };
 
   const openEditForm = (aircraft: Aircraft) => {
+    setDuplicatingAircraft(null);
     setEditingAircraft(aircraft);
+    setShowAircraftForm(true);
+  };
+
+  const openDuplicateForm = (aircraft: Aircraft) => {
+    setEditingAircraft(null);
+    setDuplicatingAircraft(aircraft);
     setShowAircraftForm(true);
   };
 
   const closeAircraftForm = () => {
     setShowAircraftForm(false);
     setEditingAircraft(null);
+    setDuplicatingAircraft(null);
   };
 
   if (loading) {
@@ -92,17 +120,59 @@ export const AircraftList: React.FC = () => {
     }
   };
 
+  const getNextMilestone = (aircraftId: string) => {
+    const aircraftMilestones = milestones.filter(m => m.aircraftId === aircraftId);
+    if (aircraftMilestones.length === 0) return null;
+
+    const ac = aircraft.find(a => a.id === aircraftId);
+    if (!ac) return null;
+
+    let soonest: any = null;
+    let soonestDiff = Infinity;
+
+    aircraftMilestones.forEach(milestone => {
+      if (milestone.nextDueHours !== undefined) {
+        const hoursRemaining = milestone.nextDueHours - ac.totalHours;
+        if (hoursRemaining < soonestDiff) {
+          soonestDiff = hoursRemaining;
+          soonest = {
+            title: milestone.title,
+            type: 'hours',
+            value: milestone.nextDueHours,
+            remaining: hoursRemaining
+          };
+        }
+      }
+      if (milestone.nextDueDate) {
+        const daysRemaining = Math.ceil((new Date(milestone.nextDueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (daysRemaining < soonestDiff) {
+          soonestDiff = daysRemaining;
+          soonest = {
+            title: milestone.title,
+            type: 'days',
+            value: new Date(milestone.nextDueDate).toLocaleDateString(),
+            remaining: daysRemaining
+          };
+        }
+      }
+    });
+
+    return soonest;
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Aircraft Fleet</h1>
-        <button 
-          onClick={() => setShowAircraftForm(true)}
-          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plane className="h-4 w-4" />
-          <span>Add Aircraft</span>
-        </button>
+        {canManage && (
+          <button
+            onClick={() => { setEditingAircraft(null); setDuplicatingAircraft(null); setShowAircraftForm(true); }}
+            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plane className="h-4 w-4" />
+            <span>Add Aircraft</span>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -130,12 +200,23 @@ export const AircraftList: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-gray-500">Hourly Rate</p>
-                  <p className="font-semibold text-gray-900">${aircraftItem.hourlyRate}</p>
-                </div>
-                <div>
                   <p className="text-gray-500">Total Hours</p>
                   <p className="font-semibold text-gray-900">{aircraftItem.totalHours}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Next Milestone</p>
+                  {!milestonesLoading && getNextMilestone(aircraftItem.id) ? (
+                    <p className="font-semibold text-gray-900 text-xs">
+                      {getNextMilestone(aircraftItem.id)!.title}
+                      <span className={`block ${getNextMilestone(aircraftItem.id)!.remaining < 10 ? 'text-red-600' : 'text-gray-600'}`}>
+                        {getNextMilestone(aircraftItem.id)!.type === 'hours'
+                          ? `${getNextMilestone(aircraftItem.id)!.remaining.toFixed(1)} hrs`
+                          : `${getNextMilestone(aircraftItem.id)!.remaining} days`}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="font-semibold text-gray-500">-</p>
+                  )}
                 </div>
               </div>
 
@@ -157,27 +238,60 @@ export const AircraftList: React.FC = () => {
                 </div>
               )}
 
-              <div className="flex justify-end space-x-2 pt-2">
-                <button
-                  onClick={() => openViewModal(aircraftItem)}
-                  className="flex items-center space-x-1 px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
-                >
-                  <Eye className="h-3 w-3" />
-                  <span>View</span>
-                </button>
-                <button
-                  onClick={() => openEditForm(aircraftItem)}
-                  className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleReportDefect(aircraftItem.id)}
-                  className="flex items-center space-x-1 px-3 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
-                >
-                  <Flag className="h-3 w-3" />
-                  <span>Report Defect</span>
-                </button>
+              <div className="flex justify-end pt-2" ref={openMenuId === aircraftItem.id ? menuRef : undefined}>
+                <div className="relative">
+                  <button
+                    onClick={() => setOpenMenuId(openMenuId === aircraftItem.id ? null : aircraftItem.id)}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+                    aria-label="Actions"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
+                  {openMenuId === aircraftItem.id && (
+                    <div className="absolute right-0 bottom-full mb-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                      <button
+                        onClick={() => { openViewModal(aircraftItem); setOpenMenuId(null); }}
+                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <Eye className="h-4 w-4 mr-2 text-gray-400" />
+                        View Details
+                      </button>
+                      <button
+                        onClick={() => { navigate(`/aircraft/${aircraftItem.id}/logs`); setOpenMenuId(null); }}
+                        className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        <FileText className="h-4 w-4 mr-2 text-gray-400" />
+                        Flight Logs
+                      </button>
+                      {canManage && (
+                        <>
+                          <button
+                            onClick={() => { openEditForm(aircraftItem); setOpenMenuId(null); }}
+                            className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <Pencil className="h-4 w-4 mr-2 text-gray-400" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => { openDuplicateForm(aircraftItem); setOpenMenuId(null); }}
+                            className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <Copy className="h-4 w-4 mr-2 text-gray-400" />
+                            Duplicate
+                          </button>
+                          <div className="border-t border-gray-100 my-1" />
+                          <button
+                            onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
+                            className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Flag className="h-4 w-4 mr-2" />
+                            Report Defect
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -188,8 +302,9 @@ export const AircraftList: React.FC = () => {
         isOpen={showAircraftForm}
         onClose={closeAircraftForm}
         onSubmit={editingAircraft ? handleEditAircraft : handleAddAircraft}
-        aircraft={editingAircraft || undefined}
+        aircraft={editingAircraft || duplicatingAircraft || undefined}
         isEdit={!!editingAircraft}
+        isDuplicate={!!duplicatingAircraft}
       />
 
       <DefectReportForm
@@ -330,15 +445,17 @@ export const AircraftList: React.FC = () => {
                 >
                   Close
                 </button>
-                <button
-                  onClick={() => {
-                    setShowViewModal(false);
-                    openEditForm(viewingAircraft);
-                  }}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Edit Aircraft
-                </button>
+                {canManage && (
+                  <button
+                    onClick={() => {
+                      setShowViewModal(false);
+                      openEditForm(viewingAircraft);
+                    }}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Edit Aircraft
+                  </button>
+                )}
               </div>
             </div>
           </div>

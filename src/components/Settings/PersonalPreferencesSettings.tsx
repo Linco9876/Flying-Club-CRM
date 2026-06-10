@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { User, Bell, Globe, Palette } from 'lucide-react';
+import { useUserPreferences } from '../../hooks/useSettings';
 
 interface PersonalPreferencesSettingsProps {
   canEdit: boolean;
@@ -9,33 +10,79 @@ interface PersonalPreferencesSettingsProps {
 
 export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsProps> = ({ canEdit, onFormChange }) => {
   const { user } = useAuth();
-  
+  const { preferences, loading, updatePreferences } = useUserPreferences(user?.id || '');
+
   const [formData, setFormData] = useState({
-    // Notification Preferences
     emailNotifications: true,
     smsNotifications: false,
     bookingReminders: true,
     currencyAlerts: true,
     maintenanceAlerts: true,
-    
-    // Display Preferences
     timezone: 'Australia/Melbourne',
     dateFormat: 'dd/MM/yyyy',
     timeFormat: '24h',
     defaultCalendarView: 'day',
     theme: 'light',
-    
-    // Portal Preferences (for students)
     showProgressDashboard: true,
     showUpcomingBookings: true,
     showRecentActivity: true,
     compactView: false
   });
 
+  useEffect(() => {
+    if (preferences) {
+      setFormData({
+        emailNotifications: preferences.email_notifications,
+        smsNotifications: preferences.sms_notifications,
+        bookingReminders: preferences.booking_reminders,
+        currencyAlerts: preferences.currency_alerts,
+        maintenanceAlerts: preferences.maintenance_alerts,
+        timezone: preferences.timezone,
+        dateFormat: preferences.date_format,
+        timeFormat: preferences.time_format,
+        defaultCalendarView: preferences.default_calendar_view,
+        theme: preferences.theme,
+        showProgressDashboard: preferences.show_progress_dashboard,
+        showUpcomingBookings: preferences.show_upcoming_bookings,
+        showRecentActivity: preferences.show_recent_activity,
+        compactView: preferences.compact_view
+      });
+    }
+  }, [preferences]);
+
+  useEffect(() => {
+    (window as any).__personalPreferencesSave = async () => {
+      await updatePreferences({
+        email_notifications: formData.emailNotifications,
+        sms_notifications: formData.smsNotifications,
+        booking_reminders: formData.bookingReminders,
+        currency_alerts: formData.currencyAlerts,
+        maintenance_alerts: formData.maintenanceAlerts,
+        timezone: formData.timezone,
+        date_format: formData.dateFormat,
+        time_format: formData.timeFormat,
+        default_calendar_view: formData.defaultCalendarView,
+        theme: formData.theme,
+        show_progress_dashboard: formData.showProgressDashboard,
+        show_upcoming_bookings: formData.showUpcomingBookings,
+        show_recent_activity: formData.showRecentActivity,
+        compact_view: formData.compactView
+      });
+    };
+  }, [formData, updatePreferences]);
+
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     onFormChange();
   };
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-gray-500">Loading preferences...</div>
+      </div>
+    );
+  }
 
   const timezones = [
     'Australia/Melbourne',

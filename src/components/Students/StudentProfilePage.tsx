@@ -1,28 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { TrainingRecord } from '../../types';
-import {
-  ArrowLeft,
-  User, 
-  Phone, 
-  Mail, 
-  Calendar, 
-  Award,
-  Clock,
-  FileText,
-  Plus,
-  Eye,
-  Edit,
-  CheckCircle,
-  AlertTriangle,
-  Filter
-} from 'lucide-react';
+import { TrainingRecord, TrainingModule, LessonGradingSystem } from '../../types';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, Eye, CreditCard as Edit, CheckCircle, AlertTriangle, Filter, BookOpen, GraduationCap, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
+import { LogbookTab } from './LogbookTab';
+import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { StudentProfile } from './StudentProfile';
 
 interface StudentProfilePageProps {
   onOpenTrainingRecord?: (booking: any) => void;
@@ -31,17 +19,19 @@ interface StudentProfilePageProps {
 export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTrainingRecord }) => {
   const { studentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'profile');
   const [showMatrixView, setShowMatrixView] = useState(true);
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
   const [instructorFilter, setInstructorFilter] = useState('');
 
   const { students, loading: studentsLoading } = useStudents();
-  const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
+  const { trainingRecords, loading: trainingRecordsLoading, updateTrainingRecord } = useTrainingRecords();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
+  const { modules: trainingCourses } = useTrainingModules();
 
   const student = useMemo(() => {
     if (!studentId) {
@@ -65,31 +55,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const loading = studentsLoading;
   const recordsLoading = trainingRecordsLoading;
 
-  // Syllabus sequences for competency matrix
-  const syllabusSequences = [
-    { code: 'HF', label: 'Human Factors' },
-    { code: 'FP', label: 'Flight Prep' },
-    { code: 'EC', label: 'Effects of Controls' },
-    { code: 'SL', label: 'Straight & Level' },
-    { code: 'CL', label: 'Climb' },
-    { code: 'DS', label: 'Descend' },
-    { code: 'BT', label: 'Basic Turning' },
-    { code: 'SF', label: 'Slow Flight & Stalls' },
-    { code: 'TO', label: 'Take-off' },
-    { code: 'LA', label: 'Landing' },
-    { code: 'CT', label: 'Circuits' },
-    { code: 'EF', label: 'EFIC/EFATO' },
-    { code: 'AT', label: 'Advanced Turning' },
-    { code: 'ST', label: 'Scenario Stalling' },
-    { code: 'FR', label: 'Avionics/Comms/Systems' },
-    { code: 'FL', label: 'Forced Landings' },
-    { code: 'TA', label: 'Training Area Ops' },
-    { code: 'US', label: 'Unexpected/Undesired States' },
-    { code: 'CN', label: 'Consolidation' },
-    { code: 'PT', label: 'Practice Flight Test / Flight Test' }
-  ];
-
-  const handleAddTrainingRecord = () => {
+const handleAddTrainingRecord = () => {
     if (onOpenTrainingRecord && student) {
       // Create a mock booking for the training record form
       const mockBooking = {
@@ -119,21 +85,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     }
   };
 
-  const getCompetenceForSequence = (record: TrainingRecord, sequenceCode: string) => {
-    const sequence = record.sequences.find(s => s.sequenceCode === sequenceCode);
-    return sequence?.competence || '–';
-  };
-
-  const getCompetenceColor = (competence: string) => {
-    switch (competence) {
-      case 'C': return 'text-green-600 font-bold';
-      case 'S': return 'text-yellow-600 font-bold';
-      case 'NC': return 'text-red-600 font-bold';
-      default: return 'text-gray-400';
-    }
-  };
-
-  const formatTime = (minutes: number) => {
+const formatTime = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hours}:${mins.toString().padStart(2, '0')}`;
@@ -147,6 +99,26 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
   const canEditRecord = (record: TrainingRecord) => {
     return (user?.role === 'instructor' || user?.role === 'admin') && record.status === 'draft';
   };
+
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
+
+  const handleAcknowledge = useCallback(async (recordId: string) => {
+    if (!student) return;
+    setAcknowledgingId(recordId);
+    try {
+      await updateTrainingRecord(recordId, {
+        studentAck: true,
+        studentAckName: student.name,
+        studentAckTimestamp: new Date(),
+        status: 'locked',
+      });
+      toast.success('Record acknowledged');
+    } catch {
+      // error already toasted
+    } finally {
+      setAcknowledgingId(null);
+    }
+  }, [student, updateTrainingRecord]);
 
   // Apply filters to training records
   const filteredRecords = studentTrainingRecords.filter(record => {
@@ -217,6 +189,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
     ? new Date(Math.max(...studentTrainingRecords.map(r => r.date.getTime())))
     : null;
 
+  const flightStatsNote = 'From training records';
+
   const isExpiryNear = (date?: Date) => {
     if (!date) return false;
     const daysUntilExpiry = Math.ceil((date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
@@ -225,7 +199,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: <User className="h-4 w-4" /> },
-    { id: 'training', label: 'Training Records', icon: <FileText className="h-4 w-4" /> }
+    { id: 'logbook', label: 'Logbook', icon: <BookOpen className="h-4 w-4" /> },
+    { id: 'training', label: 'Training Records', icon: <FileText className="h-4 w-4" /> },
+    { id: 'courses', label: 'Courses', icon: <GraduationCap className="h-4 w-4" /> },
   ];
 
   return (
@@ -267,7 +243,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'profile' && (
+      {activeTab === 'profile' && user?.id === studentId && (
+        <StudentProfile />
+      )}
+
+      {activeTab === 'profile' && user?.id !== studentId && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Student Summary */}
           <div className="lg:col-span-1 space-y-6">
@@ -357,9 +337,44 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                 
                 {student.licenceExpiry && (
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Licence Expiry</label>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Ra-Aus Membership Expiry</label>
                     <p className={`text-sm ${isExpiryNear(student.licenceExpiry) ? 'text-yellow-600' : 'text-gray-900'}`}>
                       {student.licenceExpiry.toLocaleDateString()}
+                    </p>
+                  </div>
+                )}
+
+                {student.lastFlightReview && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Last Flight Review</label>
+                    <p className={`text-sm ${(() => {
+                      const reviewDate = new Date(student.lastFlightReview);
+                      const twoYearsLater = new Date(reviewDate);
+                      twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
+                      const now = new Date();
+                      const threeMonthsBefore = new Date(twoYearsLater);
+                      threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+                      if (now >= twoYearsLater) return 'text-red-600';
+                      if (now >= threeMonthsBefore) return 'text-yellow-600';
+                      return 'text-gray-900';
+                    })()}`}>
+                      {(() => {
+                        const reviewDate = new Date(student.lastFlightReview);
+                        const twoYearsLater = new Date(reviewDate);
+                        twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
+                        const now = new Date();
+                        const threeMonthsBefore = new Date(twoYearsLater);
+                        threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+                        if (now >= twoYearsLater) {
+                          return `${reviewDate.toLocaleDateString()} (Overdue)`;
+                        }
+                        if (now >= threeMonthsBefore) {
+                          return `${reviewDate.toLocaleDateString()} (Due ${twoYearsLater.toLocaleDateString()})`;
+                        }
+                        return reviewDate.toLocaleDateString();
+                      })()}
                     </p>
                   </div>
                 )}
@@ -498,8 +513,43 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
         </div>
       )}
 
+      {activeTab === 'logbook' && student && (
+        <LogbookTab
+          userId={student.id}
+          userName={student.name}
+          isInstructor={false}
+        />
+      )}
+
+      {activeTab === 'courses' && (
+        <CourseProgressTab
+          studentId={studentId!}
+          trainingRecords={studentTrainingRecords}
+          courses={trainingCourses}
+        />
+      )}
+
       {activeTab === 'training' && (
         <div className="space-y-6">
+          {/* Pending sign-off banner — shown to the student whose profile this is */}
+          {user?.id === studentId && (() => {
+            const pendingAck = studentTrainingRecords.filter(r => r.status === 'submitted' && !r.studentAck);
+            if (pendingAck.length === 0) return null;
+            return (
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">
+                    {pendingAck.length} record{pendingAck.length > 1 ? 's require' : ' requires'} your acknowledgement
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Review your instructor's comments below and sign off that you have read and agree.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Training Records Header */}
           <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
@@ -602,100 +652,104 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
           ) : sortedRecords.length > 0 ? (
             <>
               {/* Overview Matrix */}
-              {showMatrixView && (
-                <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                  <div className="p-4 border-b border-gray-200">
-                    <h3 className="text-lg font-medium text-gray-900">Competency Overview Matrix</h3>
-                    <div className="flex items-center space-x-4 mt-2 text-xs">
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-green-500 rounded"></span>
-                        <span>C = Competent</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-yellow-500 rounded"></span>
-                        <span>S = Satisfactory</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-red-500 rounded"></span>
-                        <span>NC = Not Competent</span>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <span className="w-3 h-3 bg-gray-300 rounded"></span>
-                        <span>– = Not Assessed</span>
+              {showMatrixView && (() => {
+                // Build the set of criteria from all courses used in these records
+                const criteriaMap = new Map<string, { id: string; name: string; shortName: string }>();
+                sortedRecords.forEach(record => {
+                  const course = trainingCourses.find(c => c.id === record.courseId);
+                  if (!course) return;
+                  course.assessmentCriteria.forEach(crit => {
+                    if (!criteriaMap.has(crit.id)) {
+                      criteriaMap.set(crit.id, {
+                        id: crit.id,
+                        name: crit.name,
+                        shortName: crit.name.length > 8 ? crit.name.slice(0, 8) : crit.name,
+                      });
+                    }
+                  });
+                });
+                const matrixCriteria = Array.from(criteriaMap.values());
+
+                const getGrade = (record: TrainingRecord, critId: string) => {
+                  const g = record.criteriaGrades?.[critId];
+                  return g && g !== '-' ? g : '–';
+                };
+
+                const gradeColor = (g: string) => {
+                  if (g === 'C' || g === 'Pass') return 'bg-green-500 text-white';
+                  if (g === 'S') return 'bg-yellow-400 text-white';
+                  if (g === 'NC' || g === 'Fail') return 'bg-red-500 text-white';
+                  return 'bg-gray-100 text-gray-400';
+                };
+
+                return (
+                  <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+                    <div className="p-4 border-b border-gray-200">
+                      <h3 className="text-lg font-medium text-gray-900">Competency Overview Matrix</h3>
+                      <div className="flex flex-wrap items-center gap-4 mt-2 text-xs">
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span><span>C / Pass = Competent</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-yellow-400 rounded"></span><span>S = Satisfactory</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded"></span><span>NC / Fail = Not Competent</span></div>
+                        <div className="flex items-center gap-1"><span className="w-3 h-3 bg-gray-100 border border-gray-300 rounded"></span><span>– = Not Assessed</span></div>
                       </div>
                     </div>
-                  </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          {/* Sticky columns */}
-                          <th className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                            Date
-                          </th>
-                          <th className="sticky left-20 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                            Instructor
-                          </th>
-                          <th className="sticky left-40 z-10 bg-gray-50 px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                            Aircraft
-                          </th>
-                          
-                          {/* Competency columns */}
-                          {syllabusSequences.map(sequence => (
-                            <th 
-                              key={sequence.code}
-                              className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 min-w-[36px]"
-                              style={{ 
-                                writingMode: 'vertical-rl', 
-                                transform: 'rotate(180deg)',
-                                height: '120px'
-                              }}
-                              title={sequence.label}
-                            >
-                              {sequence.code}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {sortedRecords.map(record => {
-                          const instructor = users.find(u => u.id === record.instructorId);
-                          return (
-                            <tr key={record.id} className="hover:bg-gray-50">
-                              {/* Sticky columns */}
-                              <td className="sticky left-0 z-10 bg-white px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
-                                {record.date.toLocaleDateString()}
-                              </td>
-                              <td className="sticky left-20 z-10 bg-white px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
-                                {instructor?.name || 'Unknown'}
-                              </td>
-                              <td className="sticky left-40 z-10 bg-white px-4 py-3 text-sm text-gray-900 border-r border-gray-200">
-                                {record.aircraftType}
-                              </td>
-                              
-                              {/* Competency cells */}
-                              {syllabusSequences.map(sequence => {
-                                const competence = getCompetenceForSequence(record, sequence.code);
-                                return (
-                                  <td 
-                                    key={sequence.code}
-                                    className="px-2 py-3 text-center text-sm border-r border-gray-200 min-w-[36px]"
-                                  >
-                                    <span className={getCompetenceColor(competence)}>
-                                      {competence}
-                                    </span>
-                                  </td>
-                                );
-                              })}
+
+                    {matrixCriteria.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-gray-500">No graded criteria found in these records.</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border-collapse">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r border-b border-gray-200 min-w-[80px]">Date</th>
+                              <th className="sticky left-20 z-10 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r border-b border-gray-200 min-w-[110px]">Instructor</th>
+                              <th className="sticky left-[186px] z-10 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase border-r border-b border-gray-200 min-w-[80px]">Aircraft</th>
+                              {matrixCriteria.map(crit => (
+                                <th
+                                  key={crit.id}
+                                  title={crit.name}
+                                  className="px-1 py-2 text-center text-xs font-medium text-gray-600 border-r border-b border-gray-200 min-w-[40px]"
+                                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', height: '110px' }}
+                                >
+                                  {crit.name}
+                                </th>
+                              ))}
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-100">
+                            {sortedRecords.map(record => {
+                              const instructor = users.find(u => u.id === record.instructorId);
+                              return (
+                                <tr key={record.id} className="hover:bg-gray-50">
+                                  <td className="sticky left-0 z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap">
+                                    {record.date.toLocaleDateString()}
+                                  </td>
+                                  <td className="sticky left-20 z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap max-w-[110px] truncate">
+                                    {instructor?.name || 'Unknown'}
+                                  </td>
+                                  <td className="sticky left-[186px] z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap">
+                                    {record.registration || record.aircraftType}
+                                  </td>
+                                  {matrixCriteria.map(crit => {
+                                    const grade = getGrade(record, crit.id);
+                                    return (
+                                      <td key={crit.id} className="px-1 py-2 text-center border-r border-gray-100">
+                                        <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${gradeColor(grade)}`}>
+                                          {grade}
+                                        </span>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Lesson Cards */}
               {!showMatrixView && (
@@ -766,27 +820,88 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
                           </div>
                         </div>
 
-                        {/* Status and Actions */}
-                        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-                          <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
-                            {record.status}
-                          </span>
-                          
-                          <div className="flex items-center space-x-2">
-                            {record.status === 'submitted' ? (
-                              <button className="text-blue-600 hover:text-blue-900 flex items-center space-x-1">
-                                <Eye className="h-4 w-4" />
-                                <span>View PDF</span>
-                              </button>
-                            ) : canEditRecord(record) ? (
-                              <button className="text-gray-600 hover:text-gray-900 flex items-center space-x-1">
-                                <Edit className="h-4 w-4" />
-                                <span>Edit</span>
-                              </button>
-                            ) : (
-                              <span className="text-gray-400">–</span>
-                            )}
+                        {/* Briefing Comments (if any) */}
+                        {record.briefingComments && (
+                          <div className="mb-4">
+                            <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Briefing Comments</label>
+                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                              <p className="text-sm text-blue-900">{record.briefingComments}</p>
+                            </div>
                           </div>
+                        )}
+
+                        {/* Criteria Grades (if any) */}
+                        {record.criteriaGrades && Object.keys(record.criteriaGrades).length > 0 && (() => {
+                          const course = trainingCourses.find(c => c.id === record.courseId);
+                          if (!course) return null;
+                          return (
+                            <div className="mb-4">
+                              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Assessment</label>
+                              <div className="flex flex-wrap gap-2">
+                                {course.assessmentCriteria.map(crit => {
+                                  const grade = record.criteriaGrades[crit.id];
+                                  if (!grade || grade === '-') return null;
+                                  const isPass = grade === 'C' || grade === 'Pass' || (parseFloat(grade) >= 50);
+                                  return (
+                                    <span
+                                      key={crit.id}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${
+                                        isPass ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-amber-100 text-amber-800 border-amber-200'
+                                      }`}
+                                    >
+                                      {crit.name}: {grade}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Status and Actions */}
+                        <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
+                              {record.status}
+                            </span>
+
+                            <div className="flex items-center space-x-2">
+                              {canEditRecord(record) && (
+                                <button className="text-gray-600 hover:text-gray-900 flex items-center space-x-1">
+                                  <Edit className="h-4 w-4" />
+                                  <span>Edit</span>
+                                </button>
+                              )}
+                              {record.status === 'locked' && record.studentAck && (
+                                <span className="flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                                  <CheckCircle className="h-4 w-4" />
+                                  Acknowledged {record.studentAckTimestamp ? `by ${record.studentAckName}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Student sign-off prompt */}
+                          {record.status === 'submitted' && !record.studentAck && user?.id === studentId && (
+                            <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                              <p className="text-sm font-semibold text-amber-900 mb-1">Your acknowledgement is required</p>
+                              <p className="text-xs text-amber-700 mb-3">
+                                By acknowledging, you confirm you have read and agree with the lesson comments and assessment above.
+                              </p>
+                              <button
+                                onClick={() => handleAcknowledge(record.id)}
+                                disabled={acknowledgingId === record.id}
+                                className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              >
+                                {acknowledgingId === record.id ? (
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <CheckCircle className="h-4 w-4" />
+                                )}
+                                I have read and agree
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -814,6 +929,289 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ onOpenTr
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// ---------- CourseProgressTab ----------
+
+const GRADE_ORDER: Record<LessonGradingSystem, string[]> = {
+  'NC/S/C/-': ['-', 'NC', 'S', 'C'],
+  'Pass or Fail': ['Fail', 'Pass'],
+  'Out of 100': [],
+};
+
+function gradeScore(grade: string, system: LessonGradingSystem): number {
+  if (!grade || grade === '-') return 0;
+  if (system === 'Out of 100') {
+    const n = parseFloat(grade);
+    return isNaN(n) ? 0 : n / 100;
+  }
+  const order = GRADE_ORDER[system];
+  const idx = order.indexOf(grade);
+  if (idx < 0) return 0;
+  return idx / (order.length - 1);
+}
+
+function isTopGrade(grade: string, system: LessonGradingSystem): boolean {
+  if (!grade || grade === '-') return false;
+  if (system === 'Out of 100') {
+    return parseFloat(grade) >= 100;
+  }
+  const order = GRADE_ORDER[system];
+  return grade === order[order.length - 1];
+}
+
+interface CourseProgressTabProps {
+  studentId: string;
+  trainingRecords: TrainingRecord[];
+  courses: TrainingModule[];
+}
+
+const CourseProgressTab: React.FC<CourseProgressTabProps> = ({ trainingRecords, courses }) => {
+  const courseProgress = useMemo(() => {
+    // Build best result per lesson id from training records
+    // Training records don't directly reference lesson ids from courses,
+    // so we match via lessonCodes (sequenceCode) stored in training record sequences
+    const bestByLessonId: Record<string, Record<string, string>> = {};
+
+    // For each training record, collect the sequence results and look for
+    // lessons in courses that match
+    for (const record of trainingRecords) {
+      for (const seq of record.sequences) {
+        const key = seq.sequenceId || seq.sequenceCode;
+        if (!key) continue;
+        // Track best grade per criterion per lesson sequence
+        if (!bestByLessonId[key]) bestByLessonId[key] = {};
+        // We don't have per-criterion info in sequences (sequences only have competence)
+        // Store the raw competence as a special marker
+        const prev = bestByLessonId[key].__competence__;
+        const prevScore = prev ? gradeScore(prev, 'NC/S/C/-') : 0;
+        const newScore = gradeScore(seq.competence, 'NC/S/C/-');
+        if (newScore > prevScore) {
+          bestByLessonId[key].__competence__ = seq.competence;
+        }
+      }
+    }
+
+    return courses.map((course) => {
+      const criteria = course.assessmentCriteria;
+      const lessons = course.lessons;
+
+      if (lessons.length === 0) return null;
+
+      // For each criterion, compute the best mark achieved across all lessons
+      const criteriaProgress = criteria.map((criterion) => {
+        let bestScore = 0;
+        let bestGrade = '';
+        let isComplete = false;
+
+        for (const lesson of lessons) {
+          const passMarkForLesson = lesson.passMarks?.[criterion.id];
+          if (!passMarkForLesson) continue;
+
+          // Check if this lesson has been graded for this student
+          // We use sequenceId/sequenceCode to match lesson to training record sequences
+          const lessonKey = lesson.sequenceId || lesson.sequenceCode;
+          const lessonResult = lessonKey ? bestByLessonId[lessonKey] : undefined;
+          if (!lessonResult) continue;
+
+          const rawCompetence = lessonResult.__competence__;
+          if (!rawCompetence || rawCompetence === '-') continue;
+
+          // Map NC/S/C competence to pass mark grade system
+          const system = criterion.gradingSystem;
+          const topGrade = criterion.passingGrade;
+
+          // Use the pass mark defined for this lesson as the actual grade achieved
+          // if the student's competence is C (top), otherwise partial
+          let achievedGrade = '';
+          if (rawCompetence === 'C') {
+            achievedGrade = passMarkForLesson;
+          } else if (rawCompetence === 'S') {
+            // Partial: one level below pass mark in grading system
+            const order = GRADE_ORDER[system];
+            if (order.length > 0) {
+              const pmIdx = order.indexOf(passMarkForLesson);
+              achievedGrade = pmIdx > 0 ? order[Math.max(0, pmIdx - 1)] : passMarkForLesson;
+            } else if (system === 'Out of 100') {
+              const pm = parseFloat(passMarkForLesson);
+              achievedGrade = isNaN(pm) ? passMarkForLesson : String(Math.round(pm * 0.7));
+            } else {
+              achievedGrade = passMarkForLesson;
+            }
+          } else if (rawCompetence === 'NC') {
+            // Below pass mark
+            const order = GRADE_ORDER[system];
+            if (order.length > 0) {
+              achievedGrade = order[1] || order[0]; // second lowest
+            } else if (system === 'Out of 100') {
+              achievedGrade = '30';
+            }
+          }
+
+          const score = gradeScore(achievedGrade, system);
+          if (score > bestScore) {
+            bestScore = score;
+            bestGrade = achievedGrade;
+            isComplete = isTopGrade(achievedGrade, system) && achievedGrade === topGrade;
+          }
+        }
+
+        return { criterion, bestGrade, bestScore, isComplete };
+      });
+
+      // Overall course percentage
+      // top mark = 1 full point, partial = score * 0.5 points, none = 0
+      let totalPoints = 0;
+      let earnedPoints = 0;
+
+      for (const cp of criteriaProgress) {
+        totalPoints += 1;
+        if (cp.isComplete) {
+          earnedPoints += 1;
+        } else if (cp.bestScore > 0) {
+          earnedPoints += cp.bestScore * 0.5;
+        }
+      }
+
+      // Also factor in lesson completion (lessons touched / total)
+      const touchedLessons = new Set<string>();
+      for (const lesson of lessons) {
+        const key = lesson.sequenceId || lesson.sequenceCode;
+        if (key && bestByLessonId[key]) touchedLessons.add(key);
+      }
+      const completedLessons = touchedLessons.size;
+
+      const percentage = totalPoints > 0
+        ? Math.min(100, Math.round((earnedPoints / totalPoints) * 100))
+        : completedLessons > 0 ? Math.min(100, Math.round((completedLessons / lessons.length) * 100))
+        : 0;
+
+      const isComplete = totalPoints > 0
+        ? criteriaProgress.every((cp) => cp.isComplete)
+        : completedLessons === lessons.length && lessons.length > 0;
+
+      return {
+        course,
+        percentage,
+        isComplete,
+        completedLessons,
+        totalLessons: lessons.length,
+        criteriaProgress,
+        hasCriteria: criteria.length > 0,
+      };
+    }).filter(Boolean) as NonNullable<ReturnType<typeof courses['map']>[number]>[];
+  }, [courses, trainingRecords]);
+
+  const enrolledCourses = courseProgress.filter((cp) => {
+    if (!cp) return false;
+    return (cp as any).completedLessons > 0 || (cp as any).percentage > 0;
+  }) as Array<{
+    course: TrainingModule;
+    percentage: number;
+    isComplete: boolean;
+    completedLessons: number;
+    totalLessons: number;
+    criteriaProgress: Array<{ criterion: any; bestGrade: string; bestScore: number; isComplete: boolean }>;
+    hasCriteria: boolean;
+  }>;
+
+  if (enrolledCourses.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-12 text-center">
+        <GraduationCap className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No course progress yet</h3>
+        <p className="text-gray-500 text-sm">
+          Course progress will appear here once training records with graded lessons are added.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Courses In Progress</p>
+          <p className="text-3xl font-bold text-blue-600 mt-1">{enrolledCourses.filter(c => !c.isComplete).length}</p>
+        </div>
+        <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">Courses Completed</p>
+          <p className="text-3xl font-bold text-emerald-600 mt-1">{enrolledCourses.filter(c => c.isComplete).length}</p>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Enrolled</p>
+          <p className="text-3xl font-bold text-gray-700 mt-1">{enrolledCourses.length}</p>
+        </div>
+      </div>
+
+      {enrolledCourses.map(({ course, percentage, isComplete, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => (
+        <div key={course.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center space-x-2 mb-1">
+                  <h3 className="text-lg font-semibold text-gray-900 truncate">{course.title}</h3>
+                  {isComplete && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Completed
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">{course.category} &middot; v{course.version}</p>
+              </div>
+              <div className="text-right ml-4 shrink-0">
+                <span className={`text-3xl font-bold ${isComplete ? 'text-emerald-600' : percentage >= 50 ? 'text-blue-600' : 'text-gray-700'}`}>
+                  {percentage}%
+                </span>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                <span>{completedLessons} of {totalLessons} lessons attempted</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  className={`h-2.5 rounded-full transition-all duration-500 ${isComplete ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                  style={{ width: `${percentage}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Criteria breakdown */}
+            {hasCriteria && criteriaProgress.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Assessment Criteria</p>
+                <div className="flex flex-wrap gap-2">
+                  {criteriaProgress.map(({ criterion, bestGrade, bestScore, isComplete: critComplete }) => {
+                    let chipClass = 'bg-gray-100 text-gray-600 border-gray-200';
+                    if (critComplete) chipClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                    else if (bestScore > 0) chipClass = 'bg-amber-100 text-amber-800 border-amber-200';
+
+                    return (
+                      <div
+                        key={criterion.id}
+                        title={`Best grade: ${bestGrade || 'None'}`}
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${chipClass}`}
+                      >
+                        {critComplete && <CheckCircle className="h-3 w-3 mr-1" />}
+                        {criterion.name}
+                        {bestGrade && bestGrade !== '-' && (
+                          <span className="ml-1 opacity-70">({bestGrade})</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { X, User, Mail, Phone, Calendar, FileText, AlertTriangle, Save } from 'lucide-react';
+import { X, User, Mail, Phone, Calendar, FileText, AlertTriangle, Save, Loader2 } from 'lucide-react';
 import { Student, Endorsement } from '../../types';
 import toast from 'react-hot-toast';
 
 interface StudentFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (student: Omit<Student, 'id'>) => void;
+  onSubmit: (student: Omit<Student, 'id'>) => Promise<void>;
   student?: Student;
   isEdit?: boolean;
 }
@@ -21,6 +21,7 @@ const buildFormData = (student?: Student) => ({
   medicalType: student?.medicalType || '',
   medicalExpiry: student?.medicalExpiry?.toISOString().split('T')[0] || '',
   membershipExpiry: student?.licenceExpiry?.toISOString().split('T')[0] || '',
+  lastFlightReview: student?.lastFlightReview?.toISOString().split('T')[0] || '',
   occupation: student?.occupation || '',
   alternatePhone: student?.alternatePhone || '',
   prepaidBalance: student?.prepaidBalance || 0,
@@ -40,6 +41,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   isEdit = false
 }) => {
   const [formData, setFormData] = useState(buildFormData(student));
+  const [customEndorsements, setCustomEndorsements] = useState<string[]>([]);
+  const [isAddingNewType, setIsAddingNewType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -47,33 +51,39 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   }, [student, isOpen]);
 
   const [newEndorsement, setNewEndorsement] = useState({
-    type: 'PC' as const,
+    type: '',
     dateObtained: '',
     expiryDate: '',
-    instructorId: '2', // Default to CFI
     isActive: true
   });
 
-  const endorsementTypes = [
-    { value: 'PC', label: 'Pilot Certificate' },
-    { value: 'passenger', label: 'Passenger Carrying' },
-    { value: 'cross-country', label: 'Cross Country' },
-    { value: 'radio', label: 'Radio Operator' },
-    { value: 'manual-pitch-prop', label: 'Manual Pitch Propeller' },
-    { value: 'retractable-gear', label: 'Retractable Undercarriage' },
-    { value: 'navigation', label: 'Navigation' }
+  const defaultEndorsementTypes = [
+    'Pilot Certificate',
+    'Passenger Carrying',
+    'Cross Country',
+    'Radio Operator',
+    'Manual Pitch Propeller',
+    'Retractable Undercarriage',
+    'Navigation',
+    'Night Flying',
+    'Formation Flying',
+    'Aerobatics'
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const allEndorsementTypes = [...defaultEndorsementTypes, ...customEndorsements];
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validation
+
+    if (isSubmitting) return;
+
     if (!formData.name || !formData.email) {
       toast.error('Name and email are required');
       return;
     }
 
-    // Conditional validation for RAAus membership expiry
     if (formData.raausId && !formData.membershipExpiry) {
       toast.error('Membership expiry is required when RAAus ID is provided');
       return;
@@ -90,17 +100,47 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       dateOfBirth: formData.dateOfBirth ? new Date(formData.dateOfBirth) : undefined,
       medicalExpiry: formData.medicalExpiry ? new Date(formData.medicalExpiry) : undefined,
       licenceExpiry: formData.membershipExpiry ? new Date(formData.membershipExpiry) : undefined,
+      lastFlightReview: formData.lastFlightReview ? new Date(formData.lastFlightReview) : undefined,
       occupation: formData.occupation || undefined,
       alternatePhone: formData.alternatePhone || undefined,
       emergencyContact: formData.emergencyContact.name ? formData.emergencyContact : undefined
     };
 
-    onSubmit(studentData);
-    toast.success(isEdit ? 'Student updated successfully!' : 'Student added successfully!');
-    onClose();
+    try {
+      setIsSubmitting(true);
+      await onSubmit(studentData);
+      onClose();
+    } catch (error) {
+      console.error('Error saving student:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const addCustomType = () => {
+    if (!newTypeName.trim()) {
+      toast.error('Please enter an endorsement name');
+      return;
+    }
+
+    if (allEndorsementTypes.includes(newTypeName.trim())) {
+      toast.error('This endorsement type already exists');
+      return;
+    }
+
+    setCustomEndorsements(prev => [...prev, newTypeName.trim()]);
+    setNewEndorsement(prev => ({ ...prev, type: newTypeName.trim() }));
+    setNewTypeName('');
+    setIsAddingNewType(false);
+    toast.success('Endorsement type added');
   };
 
   const addEndorsement = () => {
+    if (!newEndorsement.type.trim()) {
+      toast.error('Please select or enter an endorsement type');
+      return;
+    }
+
     if (!newEndorsement.dateObtained) {
       toast.error('Please select a date for the endorsement');
       return;
@@ -108,9 +148,11 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
     const endorsement: Endorsement = {
       id: Date.now().toString(),
-      ...newEndorsement,
+      type: newEndorsement.type,
       dateObtained: new Date(newEndorsement.dateObtained),
-      expiryDate: newEndorsement.expiryDate ? new Date(newEndorsement.expiryDate) : undefined
+      expiryDate: newEndorsement.expiryDate ? new Date(newEndorsement.expiryDate) : undefined,
+      instructorId: '',
+      isActive: true
     };
 
     setFormData(prev => ({
@@ -119,10 +161,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     }));
 
     setNewEndorsement({
-      type: 'PC',
+      type: '',
       dateObtained: '',
       expiryDate: '',
-      instructorId: '2',
       isActive: true
     });
 
@@ -263,7 +304,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Membership Expiry
+                  Ra-Aus Membership Expiry
                 </label>
                 <input
                   type="date"
@@ -314,6 +355,41 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   onChange={(e) => setFormData(prev => ({ ...prev, medicalExpiry: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Last Flight Review
+                </label>
+                <input
+                  type="date"
+                  value={formData.lastFlightReview}
+                  onChange={(e) => setFormData(prev => ({ ...prev, lastFlightReview: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {formData.lastFlightReview && (() => {
+                  const reviewDate = new Date(formData.lastFlightReview);
+                  const twoYearsLater = new Date(reviewDate);
+                  twoYearsLater.setFullYear(twoYearsLater.getFullYear() + 2);
+                  const now = new Date();
+                  const threeMonthsBefore = new Date(twoYearsLater);
+                  threeMonthsBefore.setMonth(threeMonthsBefore.getMonth() - 3);
+
+                  if (now >= twoYearsLater) {
+                    return (
+                      <p className="mt-1 text-sm text-red-600">
+                        Flight review is overdue (due: {twoYearsLater.toLocaleDateString()})
+                      </p>
+                    );
+                  } else if (now >= threeMonthsBefore) {
+                    return (
+                      <p className="mt-1 text-sm text-yellow-600">
+                        Flight review due soon: {twoYearsLater.toLocaleDateString()}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </div>
           </div>
@@ -413,47 +489,94 @@ export const StudentForm: React.FC<StudentFormProps> = ({
             {/* Add New Endorsement */}
             <div className="bg-gray-50 p-4 rounded-lg mb-4">
               <h4 className="text-sm font-medium text-gray-700 mb-3">Add Endorsement</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Type</label>
-                  <select
-                    value={newEndorsement.type}
-                    onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value as any }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {endorsementTypes.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Obtained</label>
+
+              {isAddingNewType ? (
+                <div className="flex gap-2 mb-3">
                   <input
-                    type="date"
-                    value={newEndorsement.dateObtained}
-                    onChange={(e) => setNewEndorsement(prev => ({ ...prev, dateObtained: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    type="text"
+                    value={newTypeName}
+                    onChange={(e) => setNewTypeName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addCustomType()}
+                    placeholder="Enter endorsement name"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
                   />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Expiry</label>
-                  <input
-                    type="date"
-                    value={newEndorsement.expiryDate}
-                    onChange={(e) => setNewEndorsement(prev => ({ ...prev, expiryDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="flex items-end">
                   <button
                     type="button"
-                    onClick={addEndorsement}
-                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    onClick={addCustomType}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
                   >
-                    Add
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingNewType(false);
+                      setNewTypeName('');
+                    }}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
+                  >
+                    Cancel
                   </button>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Type</label>
+                      <div className="flex gap-1">
+                        <select
+                          value={newEndorsement.type}
+                          onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value }))}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select type</option>
+                          {allEndorsementTypes.map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingNewType(true)}
+                          className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex-shrink-0"
+                          title="Add custom endorsement type"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Obtained</label>
+                      <input
+                        type="date"
+                        value={newEndorsement.dateObtained}
+                        onChange={(e) => setNewEndorsement(prev => ({ ...prev, dateObtained: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Expiry (Optional)</label>
+                      <input
+                        type="date"
+                        value={newEndorsement.expiryDate}
+                        onChange={(e) => setNewEndorsement(prev => ({ ...prev, expiryDate: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={addEndorsement}
+                        className="w-full px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Current Endorsements */}
@@ -464,7 +587,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   <div key={endorsement.id} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div>
                       <span className="text-sm font-medium text-blue-900">
-                        {endorsementTypes.find(t => t.value === endorsement.type)?.label}
+                        {endorsement.type}
                       </span>
                       <span className="text-xs text-blue-700 ml-2">
                         Obtained: {endorsement.dateObtained.toLocaleDateString()}
@@ -494,10 +617,20 @@ export const StudentForm: React.FC<StudentFormProps> = ({
             </button>
             <button
               type="submit"
-              className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Save className="h-4 w-4" />
-              <span>{isEdit ? 'Update Student' : 'Add Student'}</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{isEdit ? 'Updating...' : 'Adding...'}</span>
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  <span>{isEdit ? 'Update User' : 'Add User'}</span>
+                </>
+              )}
             </button>
           </div>
         </form>

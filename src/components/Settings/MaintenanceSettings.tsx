@@ -1,101 +1,110 @@
-import React, { useState } from 'react';
-import { Wrench, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Wrench, Plus, Trash2, Loader2, Save } from 'lucide-react';
+import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 
 interface MaintenanceSettingsProps {
   canEdit: boolean;
   onFormChange: () => void;
 }
 
-interface MaintenanceMilestone {
-  id: string;
-  name: string;
-  intervalHours: number;
-  intervalMonths: number;
-  type: 'hours' | 'calendar' | 'both';
-  description: string;
-}
-
 export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdit, onFormChange }) => {
-  const [formData, setFormData] = useState({
-    autoGroundOnMajorDefect: true,
-    requireMaintenanceApproval: true,
-    maintenanceReminderDays: 14,
-    defectPhotoRequired: false
-  });
+  const {
+    templates,
+    settings,
+    loading,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
+    updateSettings
+  } = useMaintenanceSettings();
 
-  const [milestoneTemplates, setMilestoneTemplates] = useState<MaintenanceMilestone[]>([
-    {
-      id: '1',
-      name: '50 Hour Check',
-      intervalHours: 50,
-      intervalMonths: 0,
-      type: 'hours',
-      description: 'Basic inspection and oil change'
-    },
-    {
-      id: '2',
-      name: '100 Hour Check',
-      intervalHours: 100,
-      intervalMonths: 0,
-      type: 'hours',
-      description: 'Comprehensive inspection'
-    },
-    {
-      id: '3',
-      name: 'Annual Inspection',
-      intervalHours: 0,
-      intervalMonths: 12,
-      type: 'calendar',
-      description: 'Annual airworthiness inspection'
-    },
-    {
-      id: '4',
-      name: 'Hose Replacement',
-      intervalHours: 0,
-      intervalMonths: 24,
-      type: 'calendar',
-      description: 'Replace fuel and oil hoses'
-    }
-  ]);
+  const [formData, setFormData] = useState(settings);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setFormData(settings);
+  }, [settings]);
 
   const handleInputChange = (field: string, value: string | number | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    setHasChanges(true);
     onFormChange();
   };
 
-  const handleMilestoneChange = (id: string, field: string, value: string | number) => {
-    setMilestoneTemplates(prev => prev.map(milestone =>
-      milestone.id === id ? { ...milestone, [field]: value } : milestone
-    ));
-    onFormChange();
+  const handleMilestoneBlur = async (id: string, field: string, value: string | number) => {
+    try {
+      await updateTemplate(id, { [field]: value } as any);
+    } catch (error) {
+      console.error('Error updating template:', error);
+    }
   };
 
-  const addMilestone = () => {
-    const newMilestone: MaintenanceMilestone = {
-      id: (milestoneTemplates.length + 1).toString(),
-      name: 'New Milestone',
-      intervalHours: 50,
-      intervalMonths: 0,
-      type: 'hours',
-      description: ''
-    };
-    setMilestoneTemplates(prev => [...prev, newMilestone]);
-    onFormChange();
+  const [templateEditValues, setTemplateEditValues] = useState<Record<string, any>>({});
+
+  const addMilestone = async () => {
+    try {
+      await createTemplate({
+        name: 'New Milestone',
+        type: 'hours',
+        intervalHours: 50,
+        intervalMonths: 0,
+        description: '',
+        isDefault: false
+      });
+    } catch (error) {
+      console.error('Error creating template:', error);
+    }
   };
 
-  const removeMilestone = (id: string) => {
-    setMilestoneTemplates(prev => prev.filter(m => m.id !== id));
-    onFormChange();
+  const removeMilestone = async (id: string) => {
+    try {
+      await deleteTemplate(id);
+    } catch (error) {
+      console.error('Error deleting template:', error);
+    }
   };
+
+  const handleSaveSettings = async () => {
+    try {
+      setSaving(true);
+      await updateSettings(formData);
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-8">
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-2 flex items-center">
-          <Wrench className="h-5 w-5 mr-2" />
-          Maintenance Settings
-        </h2>
-        <p className="text-gray-600">Configure maintenance schedules and defect management</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2 flex items-center">
+            <Wrench className="h-5 w-5 mr-2" />
+            Maintenance Settings
+          </h2>
+          <p className="text-gray-600">Configure maintenance schedules and defect management</p>
+        </div>
+        {canEdit && hasChanges && (
+          <button
+            onClick={handleSaveSettings}
+            disabled={saving}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-70"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            <span>Save Settings</span>
+          </button>
+        )}
       </div>
 
       {/* General Settings */}
@@ -107,7 +116,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
               <input
                 type="checkbox"
                 id="autoGroundOnMajorDefect"
-                checked={formData.autoGroundOnMajorDefect}
+                checked={formData?.autoGroundOnMajorDefect ?? true}
                 onChange={(e) => handleInputChange('autoGroundOnMajorDefect', e.target.checked)}
                 disabled={!canEdit}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
@@ -121,7 +130,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
               <input
                 type="checkbox"
                 id="requireMaintenanceApproval"
-                checked={formData.requireMaintenanceApproval}
+                checked={formData?.requireMaintenanceApproval ?? true}
                 onChange={(e) => handleInputChange('requireMaintenanceApproval', e.target.checked)}
                 disabled={!canEdit}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
@@ -135,7 +144,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
               <input
                 type="checkbox"
                 id="defectPhotoRequired"
-                checked={formData.defectPhotoRequired}
+                checked={formData?.defectPhotoRequired ?? false}
                 onChange={(e) => handleInputChange('defectPhotoRequired', e.target.checked)}
                 disabled={!canEdit}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
@@ -152,7 +161,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                   type="number"
                   min="1"
                   max="90"
-                  value={formData.maintenanceReminderDays}
+                  value={formData?.maintenanceReminderDays ?? 14}
                   onChange={(e) => handleInputChange('maintenanceReminderDays', parseInt(e.target.value))}
                   disabled={!canEdit}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
@@ -167,15 +176,16 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
         <div>
           <h3 className="text-lg font-medium text-gray-900 mb-4">Default Milestone Templates</h3>
           <div className="space-y-3">
-            {milestoneTemplates.map(milestone => (
-              <div key={milestone.id} className="p-4 bg-gray-50 rounded-lg">
+            {templates.map(template => (
+              <div key={template.id} className="p-4 bg-gray-50 rounded-lg">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
                     <input
                       type="text"
-                      value={milestone.name}
-                      onChange={(e) => handleMilestoneChange(milestone.id, 'name', e.target.value)}
+                      value={templateEditValues[`${template.id}-name`] ?? template.name}
+                      onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-name`]: e.target.value }))}
+                      onBlur={(e) => handleMilestoneBlur(template.id, 'name', e.target.value)}
                       disabled={!canEdit}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                     />
@@ -184,8 +194,11 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
                     <select
-                      value={milestone.type}
-                      onChange={(e) => handleMilestoneChange(milestone.id, 'type', e.target.value)}
+                      value={templateEditValues[`${template.id}-type`] ?? template.type}
+                      onChange={(e) => {
+                        setTemplateEditValues(prev => ({ ...prev, [`${template.id}-type`]: e.target.value }));
+                        handleMilestoneBlur(template.id, 'type', e.target.value);
+                      }}
                       disabled={!canEdit}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                     >
@@ -195,28 +208,30 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                     </select>
                   </div>
 
-                  {(milestone.type === 'hours' || milestone.type === 'both') && (
+                  {(template.type === 'hours' || template.type === 'both') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Hours</label>
                       <input
                         type="number"
                         min="1"
-                        value={milestone.intervalHours}
-                        onChange={(e) => handleMilestoneChange(milestone.id, 'intervalHours', parseInt(e.target.value))}
+                        value={templateEditValues[`${template.id}-intervalHours`] ?? template.intervalHours}
+                        onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-intervalHours`]: e.target.value }))}
+                        onBlur={(e) => handleMilestoneBlur(template.id, 'intervalHours', parseInt(e.target.value))}
                         disabled={!canEdit}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                       />
                     </div>
                   )}
 
-                  {(milestone.type === 'calendar' || milestone.type === 'both') && (
+                  {(template.type === 'calendar' || template.type === 'both') && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Months</label>
                       <input
                         type="number"
                         min="1"
-                        value={milestone.intervalMonths}
-                        onChange={(e) => handleMilestoneChange(milestone.id, 'intervalMonths', parseInt(e.target.value))}
+                        value={templateEditValues[`${template.id}-intervalMonths`] ?? template.intervalMonths}
+                        onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-intervalMonths`]: e.target.value }))}
+                        onBlur={(e) => handleMilestoneBlur(template.id, 'intervalMonths', parseInt(e.target.value))}
                         disabled={!canEdit}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                       />
@@ -226,7 +241,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                   {canEdit && (
                     <div>
                       <button
-                        onClick={() => removeMilestone(milestone.id)}
+                        onClick={() => removeMilestone(template.id)}
                         className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -239,8 +254,9 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
                   <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                   <input
                     type="text"
-                    value={milestone.description}
-                    onChange={(e) => handleMilestoneChange(milestone.id, 'description', e.target.value)}
+                    value={templateEditValues[`${template.id}-description`] ?? (template.description || '')}
+                    onChange={(e) => setTemplateEditValues(prev => ({ ...prev, [`${template.id}-description`]: e.target.value }))}
+                    onBlur={(e) => handleMilestoneBlur(template.id, 'description', e.target.value)}
                     disabled={!canEdit}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                     placeholder="Brief description of maintenance task"

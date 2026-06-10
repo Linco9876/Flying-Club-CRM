@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { User } from '../types';
+import { User, UserRole } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -19,116 +19,237 @@ export const useAuth = () => {
   return context;
 };
 
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
+    )
+  ]);
+};
+
+const fetchUserWithRetry = async (userId: string, maxRetries = 3, delay = 500): Promise<any> => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const [userResult, rolesResult] = await Promise.all([
+        withTimeout(
+          supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle(),
+          5000
+        ),
+        withTimeout(
+          supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', userId),
+          5000
+        )
+      ]);
+
+      if (userResult.error) {
+        console.error(`Error fetching user data (attempt ${i + 1}):`, userResult.error);
+        if (i === maxRetries - 1) throw userResult.error;
+      }
+
+      if (rolesResult.error) {
+        console.error(`Error fetching user roles (attempt ${i + 1}):`, rolesResult.error);
+      }
+
+      if (userResult.data) {
+        const roles = (rolesResult.data?.map(r => r.role as UserRole) || []).filter(Boolean);
+        return {
+          ...userResult.data,
+          roles: roles.length > 0 ? roles : [userResult.data.role as UserRole]
+        };
+      }
+
+      if (i < maxRetries - 1) {
+        console.log(`User record not found, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    } catch (error) {
+      console.error(`Fetch attempt ${i + 1} failed:`, error);
+      if (i === maxRetries - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  return null;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+    let initTimeout: NodeJS.Timeout;
+
     const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const sessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          10000
+        );
 
-        if (session?.user) {
-          const { data: userData, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+        if (sessionResult.error) {
+          console.error('Error getting session:', sessionResult.error);
+          if (mounted) setIsLoading(false);
+          return;
+        }
 
-          if (!error && userData) {
-            setUser({
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role,
-              phone: userData.phone,
-              avatar: userData.avatar_url
-            });
+        const session = sessionResult.data.session;
+
+        if (session?.user && mounted) {
+          try {
+            const userData = await fetchUserWithRetry(session.user.id);
+
+            if (userData && mounted) {
+              setUser({
+                id: userData.id,
+                email: userData.email,
+                name: userData.name,
+                role: userData.role,
+                roles: userData.roles,
+                phone: userData.phone,
+                avatar: userData.avatar_url
+              });
+            } else {
+              console.warn('User session exists but no user record found after retries');
+              await supabase.auth.signOut();
+            }
+          } catch (error) {
+            console.error('Error fetching user data:', error);
           }
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
 
-    initAuth();
+    initTimeout = setTimeout(() => {
+      if (mounted) {
+        console.error('Auth initialization timed out');
+        setIsLoading(false);
+      }
+    }, 20000);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle();
+    initAuth().finally(() => {
+      clearTimeout(initTimeout);
+    });
 
-        if (userData) {
-          setUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            phone: userData.phone,
-            avatar: userData.avatar_url
-          });
-        }
-      } else if (event === 'SIGNED_OUT') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+
+      // Token refresh and initial session restore — do nothing, initAuth handles startup
+      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        return;
+      }
+
+      if (event === 'SIGNED_OUT') {
         setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      // Only respond to a genuine new sign-in (e.g. from the login form)
+      // If initAuth already set the user for this session, skip to avoid a double-load flash
+      if (event === 'SIGNED_IN' && session?.user) {
+        (async () => {
+          // Use a ref-free check: if user state is null it means initAuth hasn't finished
+          // or this is a fresh login. Either way, fetch without flashing isLoading.
+          try {
+            const userData = await fetchUserWithRetry(session.user.id);
+            if (userData && mounted) {
+              setUser(prev => {
+                // Only update if we don't have this user already
+                if (prev?.id === userData.id) return prev;
+                return {
+                  id: userData.id,
+                  email: userData.email,
+                  name: userData.name,
+                  role: userData.role,
+                  roles: userData.roles,
+                  phone: userData.phone,
+                  avatar: userData.avatar_url
+                };
+              });
+            }
+          } catch (error) {
+            console.error('Error fetching user in auth change:', error);
+          }
+        })();
       }
     });
 
     return () => {
+      mounted = false;
+      clearTimeout(initTimeout);
       subscription.unsubscribe();
     };
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (error) {
-        console.error('Login error:', error);
+        console.error('Login error:', error.message);
+        setIsLoading(false);
         return false;
       }
 
       if (data.user) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .maybeSingle();
+        try {
+          const userData = await fetchUserWithRetry(data.user.id);
 
-        if (userData) {
-          setUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            phone: userData.phone,
-            avatar: userData.avatar_url
-          });
-          return true;
+          if (userData) {
+            setUser({
+              id: userData.id,
+              email: userData.email,
+              name: userData.name,
+              role: userData.role,
+              roles: userData.roles,
+              phone: userData.phone,
+              avatar: userData.avatar_url
+            });
+            setIsLoading(false);
+            return true;
+          } else {
+            console.error('User profile not found');
+            await supabase.auth.signOut();
+            setIsLoading(false);
+            return false;
+          }
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
+          await supabase.auth.signOut();
+          setIsLoading(false);
+          return false;
         }
       }
 
+      setIsLoading(false);
       return false;
     } catch (error) {
       console.error('Login error:', error);
-      return false;
-    } finally {
       setIsLoading(false);
+      return false;
     }
   };
 
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    window.history.replaceState(null, '', '/');
   };
 
   return (

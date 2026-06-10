@@ -5,12 +5,21 @@ export const getCurrentTime = (): Date => {
   return new Date();
 };
 
-export const isPastBooking = (booking: { startTime: Date | string }): boolean => {
+export const isPastBooking = (booking: { startTime: Date | string; endTime: Date | string }): boolean => {
   const now = getCurrentTime();
-  const startTime = typeof booking.startTime === 'string' 
-    ? parseISO(booking.startTime) 
+  const endTime = typeof booking.endTime === 'string'
+    ? parseISO(booking.endTime)
+    : booking.endTime;
+
+  return isBefore(endTime, now);
+};
+
+export const hasBookingStarted = (booking: { startTime: Date | string }): boolean => {
+  const now = getCurrentTime();
+  const startTime = typeof booking.startTime === 'string'
+    ? parseISO(booking.startTime)
     : booking.startTime;
-  
+
   return isBefore(startTime, now);
 };
 

@@ -4,15 +4,19 @@ import { useNavigate } from 'react-router-dom';
 import { mockTrainingRecords } from '../../data/mockData';
 import { StudentForm } from './StudentForm';
 import { StudentDetails } from './StudentDetails';
+import { InviteUserModal } from './InviteUserModal';
 import { Student } from '../../types';
-import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
+import { User, Phone, Mail, Clock, Award, AlertTriangle, CheckCircle, Loader2, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
+import { useInvitations } from '../../hooks/useInvitations';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
-  const { students, loading, addStudent, updateStudent } = useStudents();
+  const { students, loading, addStudent, updateStudent, refetch } = useStudents();
+  const { inviteUser } = useInvitations();
   const [showStudentForm, setShowStudentForm] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [showStudentDetails, setShowStudentDetails] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
@@ -61,6 +65,19 @@ export const StudentList: React.FC = () => {
     setViewingStudent(null);
   };
 
+  const handleInviteUser = async (data: {
+    email: string;
+    name: string;
+    phone?: string;
+    role?: 'student' | 'instructor' | 'admin';
+  }) => {
+    const password = await inviteUser(data);
+    if (password) {
+      await refetch();
+    }
+    return password;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -72,13 +89,13 @@ export const StudentList: React.FC = () => {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Students</h1>
-        <button 
-          onClick={() => setShowStudentForm(true)}
+        <h1 className="text-2xl font-bold text-gray-900">Students/Pilots</h1>
+        <button
+          onClick={() => setShowInviteModal(true)}
           className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
         >
-          <User className="h-4 w-4" />
-          <span>Add Student</span>
+          <UserPlus className="h-4 w-4" />
+          <span>Invite User</span>
         </button>
       </div>
 
@@ -88,7 +105,7 @@ export const StudentList: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student
+                  User
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Contact
@@ -121,7 +138,16 @@ export const StudentList: React.FC = () => {
                           <User className="h-5 w-5 text-white" />
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              student.role === 'admin' ? 'bg-purple-100 text-purple-800' :
+                              student.role === 'instructor' ? 'bg-green-100 text-green-800' :
+                              'bg-blue-100 text-blue-800'
+                            }`}>
+                              {student.role}
+                            </span>
+                          </div>
                           <div className="text-sm text-gray-500">
                             {student.raausId && `RAAus: ${student.raausId}`}
                           </div>
@@ -159,7 +185,7 @@ export const StudentList: React.FC = () => {
                         </div>
                         <div className={`flex items-center text-xs ${licenceNearExpiry ? 'text-yellow-600' : 'text-green-600'}`}>
                           {licenceNearExpiry ? <AlertTriangle className="h-3 w-3 mr-1" /> : <CheckCircle className="h-3 w-3 mr-1" />}
-                          Licence: {student.licenceExpiry?.toLocaleDateString()}
+                          Membership: {student.licenceExpiry?.toLocaleDateString()}
                         </div>
                         <div className="flex items-center text-xs text-blue-600">
                           <Award className="h-3 w-3 mr-1" />
@@ -209,6 +235,12 @@ export const StudentList: React.FC = () => {
           student={viewingStudent}
         />
       )}
+
+      <InviteUserModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        onInvite={handleInviteUser}
+      />
     </div>
   );
 };

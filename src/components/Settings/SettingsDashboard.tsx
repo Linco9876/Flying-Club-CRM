@@ -31,6 +31,9 @@ import { RolesPermissionsSettings } from './RolesPermissionsSettings';
 import { AuditDataSettings } from './AuditDataSettings';
 import { PersonalPreferencesSettings } from './PersonalPreferencesSettings';
 import { BookingFieldSettings } from './BookingFieldSettings';
+import { RosterAvailabilitySettings } from './RosterAvailabilitySettings';
+import { BillingRatesSettings } from './BillingRatesSettings';
+import FlightLogSettings from './FlightLogSettings';
 import toast from 'react-hot-toast';
 
 interface SettingsSection {
@@ -53,9 +56,10 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'calendar', label: 'Calendar', icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
     { id: 'booking-rules', label: 'Bookings & Rules', icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
     { id: 'booking-fields', label: 'Booking Form Fields', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BookingFieldSettings },
-    { id: 'roster', label: 'Roster & Availability', icon: <Users className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
+    { id: 'roster', label: 'Roster & Availability', icon: <Users className="h-4 w-4" />, roles: ['admin', 'instructor'], component: RosterAvailabilitySettings },
     { id: 'training', label: 'Training / Syllabus', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: DocumentsTemplatesSettings },
-    { id: 'billing', label: 'Billing & Rates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
+    { id: 'billing', label: 'Billing & Rates', icon: <FileText className="h-4 w-4" />, roles: ['admin'], component: BillingRatesSettings },
+    { id: 'flight-log', label: 'Flight Log Form', icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: FlightLogSettings },
     { id: 'integrations', label: 'Integrations', icon: <Database className="h-4 w-4" />, roles: ['admin'], component: DocumentsTemplatesSettings },
     { id: 'notifications', label: 'Notifications', icon: <FileText className="h-4 w-4" />, roles: ['admin', 'instructor'], component: NotificationsSettings },
     { id: 'safety', label: 'Safety & Compliance', icon: <Shield className="h-4 w-4" />, roles: ['admin', 'instructor'], component: SafetyComplianceSettings },
@@ -79,29 +83,32 @@ export const SettingsDashboard: React.FC = () => {
     return matchesSearch;
   });
 
-  // Set default section based on user role
+  // Set default section based on user role (only on mount)
   useEffect(() => {
-    if (user?.role === 'student' || user?.role === 'instructor') {
+    if (user?.role === 'student' || user?.role === 'instructor' || user?.role === 'pilot') {
       setActiveSection('personal');
     } else {
       setActiveSection('organisation');
     }
-    
-    // Ensure the active section is available to the user
+  }, [user?.role]);
+
+  // Ensure the active section is available to the user
+  useEffect(() => {
     if (filteredSections.length > 0 && !filteredSections.find(s => s.id === activeSection)) {
       setActiveSection(filteredSections[0].id);
     }
-  }, [user?.role, filteredSections, activeSection]);
+  }, [filteredSections]);
 
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      // Mock save operation
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const saveFunction = (window as any)[`__${activeSection.replace(/-/g, '')}SettingsSave`];
+      if (saveFunction) {
+        await saveFunction();
+      }
       setHasUnsavedChanges(false);
-      toast.success('Settings saved successfully!');
     } catch (error) {
-      toast.error('Failed to save settings');
+      console.error('Error saving settings:', error);
     } finally {
       setIsLoading(false);
     }
@@ -127,7 +134,7 @@ export const SettingsDashboard: React.FC = () => {
 
   const canEdit = (sectionId: string) => {
     if (user?.role === 'admin') return true;
-    if ((user?.role === 'instructor' || user?.role === 'student') && sectionId === 'personal') return true;
+    if ((user?.role === 'instructor' || user?.role === 'student' || user?.role === 'pilot') && sectionId === 'personal') return true;
     return false;
   };
 

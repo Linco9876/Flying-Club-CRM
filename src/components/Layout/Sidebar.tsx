@@ -2,18 +2,19 @@ import React from 'react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getAuthorizedMenuItems } from '../../utils/rbac';
-import { 
-  Calendar, 
-  Users, 
-  Plane, 
-  FileText, 
-  Settings, 
-  BarChart3, 
+import {
+  Calendar,
+  Users,
+  Plane,
+  FileText,
+  Settings,
+  BarChart3,
   Wrench,
   CreditCard,
   BookOpen,
   Shield,
   ClipboardList,
+  AlertCircle,
   Menu,
   X
 } from 'lucide-react';
@@ -31,12 +32,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['admin', 'instructor', 'student'] },
     { id: 'calendar', label: 'Calendar', icon: Calendar, roles: ['admin', 'instructor', 'student'] },
     { id: 'bookings', label: 'My Bookings', icon: ClipboardList, roles: ['student'] },
-    { id: 'students', label: 'Students', icon: Users, roles: ['admin', 'instructor'] },
-    { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor'] },
+    { id: 'students', label: 'Students/Pilots', icon: Users, roles: ['admin', 'instructor'] },
+    { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'student'] },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },
     { id: 'training', label: 'Training Records', icon: BookOpen, roles: ['admin', 'instructor'] },
+    { id: 'outstanding-records', label: 'Outstanding Records', icon: AlertCircle, roles: ['admin', 'instructor'] },
     { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },
     { id: 'profile', label: 'My Profile', icon: Users, roles: ['student'] },
+    { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin'] },
     { id: 'billing', label: 'Billing', icon: CreditCard, roles: ['admin', 'instructor'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['admin', 'instructor'] },
     { id: 'safety', label: 'Safety', icon: Shield, roles: ['admin', 'instructor', 'student'] },

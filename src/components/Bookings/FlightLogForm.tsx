@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Save, Calculator, Plane, Clock, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { mockAircraft, mockStudents } from '../../data/mockData';
 import { Booking, FlightLog } from '../../types';
 import toast from 'react-hot-toast';
+import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { TachOverlapWarningModal } from './TachOverlapWarningModal';
+import { supabase } from '../../lib/supabase';
 
 interface FlightLogFormProps {
   isOpen: boolean;
@@ -19,12 +22,13 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
   booking
 }) => {
   const { user } = useAuth();
-  
+  const { checkTachOverlap } = useFlightLogs();
+
   // Get booking details
   const aircraft = mockAircraft.find(a => a.id === booking.aircraftId);
   const student = mockStudents.find(s => s.id === booking.studentId);
   const instructor = mockStudents.find(s => s.id === booking.instructorId);
-  
+
   const [formData, setFormData] = useState({
     date: booking.startTime.toISOString().split('T')[0],
     dualTime: booking.instructorId ? 0.0 : 0.0,
@@ -34,6 +38,66 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
     landings: 0,
     notes: ''
   });
+
+  const [showOverlapWarning, setShowOverlapWarning] = useState(false);
+  const [overlappingLogs, setOverlappingLogs] = useState<any[]>([]);
+  const [pendingFlightLogData, setPendingFlightLogData] = useState<Omit<FlightLog, 'id'> | null>(null);
+
+  // Automatically calculate start tach based on previous flight logs
+  useEffect(() => {
+    const calculateStartTach = async () => {
+      if (!booking.aircraftId || !isOpen) {
+        console.log('Skipping tach calculation - no aircraft ID or modal closed');
+        return;
+      }
+
+      console.log('Calculating start tach for aircraft:', booking.aircraftId);
+
+      try {
+        // Fetch all flight logs for this aircraft, ordered by end time descending
+        const { data: logs, error } = await supabase
+          .from('flight_logs')
+          .select('start_time, end_time, start_tach, end_tach')
+          .eq('aircraft_id', booking.aircraftId)
+          .order('end_time', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching flight logs:', error);
+          return;
+        }
+
+        console.log('Found flight logs:', logs?.length || 0);
+
+        if (!logs || logs.length === 0) {
+          console.log('No previous logs found');
+          return;
+        }
+
+        const bookingStartTime = new Date(booking.startTime);
+        console.log('Booking start time:', bookingStartTime);
+
+        // Find the most recent log that ended before this booking started
+        const previousLog = logs.find(log => new Date(log.end_time) <= bookingStartTime);
+
+        if (!previousLog) {
+          console.log('No logs before this booking time');
+          return;
+        }
+
+        console.log('Found previous log ending at:', previousLog.end_time, 'with end tach:', previousLog.end_tach);
+
+        // Set the start tach to the end tach of the previous flight
+        const startTach = parseFloat(previousLog.end_tach);
+        console.log('Setting start tach to:', startTach);
+
+        setFormData(prev => ({ ...prev, tachStart: startTach }));
+      } catch (err) {
+        console.error('Error calculating start tach:', err);
+      }
+    };
+
+    calculateStartTach();
+  }, [booking.aircraftId, booking.startTime, isOpen]);
 
   const calculateDuration = () => {
     return Math.max(0, formData.tachEnd - formData.tachStart);
@@ -46,9 +110,9 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
     return aircraftCost + instructorCost;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validation
     if (formData.tachEnd <= formData.tachStart) {
       toast.error('End tach must be greater than start tach');
@@ -73,9 +137,39 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
       notes: formData.notes
     };
 
+    const { overlaps } = await checkTachOverlap(
+      booking.aircraftId,
+      formData.tachStart,
+      formData.tachEnd
+    );
+
+    if (overlaps && overlaps.length > 0) {
+      setOverlappingLogs(overlaps);
+      setPendingFlightLogData(flightLogData);
+      setShowOverlapWarning(true);
+      return;
+    }
+
     onSubmit(flightLogData);
     toast.success(`Flight logged! $${totalCost.toFixed(2)} deducted from student account`);
     onClose();
+  };
+
+  const handleConfirmOverlap = () => {
+    if (pendingFlightLogData) {
+      onSubmit(pendingFlightLogData);
+      toast.success(`Flight logged! $${pendingFlightLogData.totalCost.toFixed(2)} deducted from student account`);
+      setShowOverlapWarning(false);
+      setPendingFlightLogData(null);
+      setOverlappingLogs([]);
+      onClose();
+    }
+  };
+
+  const handleCancelOverlap = () => {
+    setShowOverlapWarning(false);
+    setPendingFlightLogData(null);
+    setOverlappingLogs([]);
   };
 
   if (!isOpen) return null;
@@ -217,6 +311,11 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
                 placeholder="0.0"
                 required
               />
+              {formData.tachStart > 0 && (
+                <p className="text-xs text-green-600 mt-1">
+                  Auto-filled from previous flight log
+                </p>
+              )}
             </div>
 
             <div>
@@ -325,6 +424,15 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
           </div>
         </form>
       </div>
+
+      <TachOverlapWarningModal
+        isOpen={showOverlapWarning}
+        onClose={handleCancelOverlap}
+        onConfirm={handleConfirmOverlap}
+        overlappingLogs={overlappingLogs}
+        tachStart={formData.tachStart}
+        tachEnd={formData.tachEnd}
+      />
     </div>
   );
 };

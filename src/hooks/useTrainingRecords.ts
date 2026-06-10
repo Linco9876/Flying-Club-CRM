@@ -42,6 +42,9 @@ export const useTrainingRecords = () => {
         id: r.id,
         studentId: r.student_id,
         bookingId: r.booking_id,
+        flightLogId: r.flight_log_id,
+        courseId: r.course_id,
+        lessonId: r.lesson_id,
         date: new Date(r.date),
         aircraftId: r.aircraft_id,
         aircraftType: r.aircraft_type,
@@ -50,13 +53,16 @@ export const useTrainingRecords = () => {
         dualTimeMin: r.dual_time_min,
         soloTimeMin: r.solo_time_min,
         comments: r.comments,
+        briefingComments: r.briefing_comments || '',
         formalBriefing: r.formal_briefing,
+        criteriaGrades: r.criteria_grades || {},
         lessonCodes: r.lesson_codes || [],
         nextLesson: r.next_lesson,
         status: r.status,
         instructorSignatureUrl: r.instructor_signature_url,
         studentAck: r.student_ack,
         studentAckName: r.student_ack_name,
+        studentComments: r.student_comments || '',
         instructorSignTimestamp: r.instructor_sign_timestamp ? new Date(r.instructor_sign_timestamp) : undefined,
         studentAckTimestamp: r.student_ack_timestamp ? new Date(r.student_ack_timestamp) : undefined,
         attachments: r.attachments || [],
@@ -89,6 +95,9 @@ export const useTrainingRecords = () => {
         .insert({
           student_id: recordData.studentId,
           booking_id: recordData.bookingId,
+          flight_log_id: recordData.flightLogId,
+          course_id: recordData.courseId,
+          lesson_id: recordData.lessonId,
           date: recordData.date.toISOString(),
           aircraft_id: recordData.aircraftId,
           aircraft_type: recordData.aircraftType,
@@ -97,7 +106,9 @@ export const useTrainingRecords = () => {
           dual_time_min: recordData.dualTimeMin,
           solo_time_min: recordData.soloTimeMin,
           comments: recordData.comments,
+          briefing_comments: recordData.briefingComments,
           formal_briefing: recordData.formalBriefing,
+          criteria_grades: recordData.criteriaGrades,
           lesson_codes: recordData.lessonCodes,
           next_lesson: recordData.nextLesson,
           status: recordData.status,
@@ -114,7 +125,6 @@ export const useTrainingRecords = () => {
       if (error) throw error;
 
       await fetchTrainingRecords();
-      toast.success('Training record created successfully');
       return data;
     } catch (err) {
       console.error('Error adding training record:', err);
@@ -143,6 +153,7 @@ export const useTrainingRecords = () => {
       if (recordData.instructorSignatureUrl !== undefined) updateData.instructor_signature_url = recordData.instructorSignatureUrl;
       if (recordData.studentAck !== undefined) updateData.student_ack = recordData.studentAck;
       if (recordData.studentAckName !== undefined) updateData.student_ack_name = recordData.studentAckName;
+      if (recordData.studentComments !== undefined) updateData.student_comments = recordData.studentComments;
       if (recordData.instructorSignTimestamp !== undefined) updateData.instructor_sign_timestamp = recordData.instructorSignTimestamp?.toISOString();
       if (recordData.studentAckTimestamp !== undefined) updateData.student_ack_timestamp = recordData.studentAckTimestamp?.toISOString();
       if (recordData.attachments !== undefined) updateData.attachments = recordData.attachments;
@@ -155,7 +166,6 @@ export const useTrainingRecords = () => {
       if (error) throw error;
 
       await fetchTrainingRecords();
-      toast.success('Training record updated successfully');
     } catch (err) {
       console.error('Error updating training record:', err);
       toast.error('Failed to update training record');

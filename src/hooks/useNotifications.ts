@@ -33,6 +33,7 @@ export const useNotifications = () => {
         title: n.title,
         message: n.message,
         bookingId: n.booking_id,
+        metadata: n.metadata ?? undefined,
         isRead: n.is_read,
         createdAt: new Date(n.created_at)
       }));

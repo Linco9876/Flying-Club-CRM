@@ -13,8 +13,7 @@ export const useStudents = () => {
       setLoading(true);
       const { data: usersData, error: usersError } = await supabase
         .from('users')
-        .select('*')
-        .eq('role', 'student');
+        .select('*');
 
       if (usersError) throw usersError;
 
@@ -29,6 +28,16 @@ export const useStudents = () => {
         .select('*');
 
       if (endorsementsError) throw endorsementsError;
+
+      const { data: rolesData } = await supabase
+        .from('user_roles')
+        .select('user_id, role');
+
+      const rolesMap = new Map<string, string[]>();
+      (rolesData || []).forEach((r: any) => {
+        if (!rolesMap.has(r.user_id)) rolesMap.set(r.user_id, []);
+        rolesMap.get(r.user_id)!.push(r.role);
+      });
 
       const studentsMap = new Map(studentsData?.map(s => [s.id, s]) || []);
       const endorsementsMap = new Map<string, Endorsement[]>();
@@ -48,11 +57,17 @@ export const useStudents = () => {
 
       const combinedStudents: Student[] = (usersData || []).map(user => {
         const studentData = studentsMap.get(user.id);
+        const userRoles = rolesMap.get(user.id) || [user.role || 'student'];
+        const primaryRole = userRoles.includes('admin') ? 'admin'
+                          : userRoles.includes('instructor') ? 'instructor'
+                          : userRoles.includes('pilot') ? 'pilot'
+                          : 'student';
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: 'student' as const,
+          role: primaryRole as 'student' | 'instructor' | 'admin' | 'pilot',
+          roles: userRoles,
           phone: user.phone,
           avatar: user.avatar_url,
           raausId: studentData?.raaus_id,
@@ -60,6 +75,7 @@ export const useStudents = () => {
           medicalType: studentData?.medical_type,
           medicalExpiry: studentData?.medical_expiry ? new Date(studentData.medical_expiry) : undefined,
           licenceExpiry: studentData?.licence_expiry ? new Date(studentData.licence_expiry) : undefined,
+          lastFlightReview: studentData?.last_flight_review ? new Date(studentData.last_flight_review) : undefined,
           occupation: studentData?.occupation,
           alternatePhone: studentData?.alternate_phone,
           emergencyContact: studentData?.emergency_contact_name ? {
@@ -144,6 +160,7 @@ export const useStudents = () => {
           medical_type: studentData.medicalType,
           medical_expiry: studentData.medicalExpiry,
           licence_expiry: studentData.licenceExpiry,
+          last_flight_review: studentData.lastFlightReview,
           occupation: studentData.occupation,
           alternate_phone: studentData.alternatePhone,
           date_of_birth: studentData.dateOfBirth,
@@ -161,7 +178,7 @@ export const useStudents = () => {
           type: e.type,
           date_obtained: e.dateObtained,
           expiry_date: e.expiryDate,
-          instructor_id: e.instructorId,
+          instructor_id: e.instructorId || null,
           is_active: e.isActive
         }));
 
@@ -173,13 +190,13 @@ export const useStudents = () => {
       }
 
       await fetchStudents();
-      toast.success('Student added successfully');
+      toast.success('User added successfully');
     } catch (err) {
       console.error('Error adding student:', err);
       if (err instanceof Error && err.message.includes('already exists')) {
         return;
       }
-      toast.error('Failed to add student');
+      toast.error('Failed to add user');
       throw err;
     }
   };
@@ -206,6 +223,7 @@ export const useStudents = () => {
           medical_type: studentData.medicalType,
           medical_expiry: studentData.medicalExpiry,
           licence_expiry: studentData.licenceExpiry,
+          last_flight_review: studentData.lastFlightReview,
           occupation: studentData.occupation,
           alternate_phone: studentData.alternatePhone,
           date_of_birth: studentData.dateOfBirth,
@@ -231,7 +249,7 @@ export const useStudents = () => {
           type: e.type,
           date_obtained: e.dateObtained,
           expiry_date: e.expiryDate,
-          instructor_id: e.instructorId,
+          instructor_id: e.instructorId || null,
           is_active: e.isActive
         }));
 
@@ -243,10 +261,10 @@ export const useStudents = () => {
       }
 
       await fetchStudents();
-      toast.success('Student updated successfully');
+      toast.success('User updated successfully');
     } catch (err) {
       console.error('Error updating student:', err);
-      toast.error('Failed to update student');
+      toast.error('Failed to update user');
       throw err;
     }
   };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   format,
   addDays,
@@ -19,10 +19,15 @@ import {
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
+import { useCalendarSettings } from '../../hooks/useSettings';
+import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
+import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
-import { isPastBooking } from '../../utils/timeUtils';
+import { isPastBooking, hasBookingStarted } from '../../utils/timeUtils';
+import { BookingActionMenu } from '../Bookings/BookingActionMenu';
+import { FlightLogModal } from '../Bookings/FlightLogModal';
 import toast from 'react-hot-toast';
 
 interface CalendarProps {
@@ -36,7 +41,8 @@ interface CalendarProps {
     resourceType?: 'aircraft' | 'instructor'
   ) => void;
   onEditBooking?: (booking: Booking) => void;
-  onUpdateBooking?: (bookingId: string, updates: Partial<Booking>) => void;
+  onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => void;
+  onDeleteBooking?: (bookingId: string) => void;
 }
 
 interface Resource {
@@ -64,10 +70,17 @@ export const Calendar: React.FC<CalendarProps> = ({
   onNewBookingWithTime,
   onEditBooking,
   onUpdateBooking,
+  onDeleteBooking,
 }) => {
   const { aircraft } = useAircraft();
   const { getInstructors } = useUsers();
   const instructors = getInstructors();
+  const { settings: calendarSettings, updateSettingsSilent } = useCalendarSettings();
+  const { weeklySchedules, absences, scheduleChanges } = useInstructorAvailability();
+
+  // Per-resource visibility & ordering (loaded from/synced to DB)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
@@ -79,10 +92,18 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   // Drag and drop states
   const [draggedBooking, setDraggedBooking] = useState<Booking | null>(null);
+  const [draggedBookingOriginal, setDraggedBookingOriginal] = useState<Booking | null>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    startTime: Date;
+    endTime: Date;
+    resourceId: string;
+    resourceType: 'aircraft' | 'instructor';
+  } | null>(null);
   const [resizingBooking, setResizingBooking] = useState<{
     booking: Booking;
     handle: 'top' | 'bottom';
   } | null>(null);
+  const [wasResizing, setWasResizing] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({
     x: 0,
     y: 0,
@@ -103,34 +124,105 @@ export const Calendar: React.FC<CalendarProps> = ({
     dayIndex?: number;
   } | null>(null);
 
-  // Dynamic slot height based on viewport
+  // Dynamic slot height based on viewport and settings
   const [slotHeight, setSlotHeight] = useState<number>(60);
+
+  // Action menu and flight log states
+  const [actionMenuBooking, setActionMenuBooking] = useState<Booking | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [showFlightLogModal, setShowFlightLogModal] = useState(false);
+  const [flightLogBooking, setFlightLogBooking] = useState<Booking | null>(null);
+  const [highlightUnlogged, setHighlightUnlogged] = useState(false);
+
+  // Drag delay state
+  const [dragDelayTimer, setDragDelayTimer] = useState<NodeJS.Timeout | null>(null);
+  const [isDragDelayActive, setIsDragDelayActive] = useState(false);
+
+  // Tick every 30 seconds so past-unlogged bookings turn red automatically
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   useKeyboardNavigation({
     onArrowLeft: () => navigateDate('prev'),
     onArrowRight: () => navigateDate('next'),
     onEscape: () => {
+      if (dragDelayTimer) {
+        clearTimeout(dragDelayTimer);
+        setDragDelayTimer(null);
+      }
+      setIsDragDelayActive(false);
       setIsDragging(false);
       setDragStart(null);
       setDragEnd(null);
+      setDraggedBooking(null);
+      setDraggedBookingOriginal(null);
+      setDragPreview(null);
+      setResizingBooking(null);
+      setWasResizing(false);
     },
     enabled: true,
   });
 
+  // Cleanup drag delay timer on unmount
+  useEffect(() => {
+    return () => {
+      if (dragDelayTimer) {
+        clearTimeout(dragDelayTimer);
+      }
+    };
+  }, [dragDelayTimer]);
+
+  useEffect(() => {
+    if (calendarSettings?.default_view) {
+      setViewMode(calendarSettings.default_view as ViewMode);
+    }
+  }, [calendarSettings?.default_view]);
+
+  // Seed hidden/order from persisted settings once data is ready
+  useEffect(() => {
+    if (!calendarSettings) return;
+    setHiddenIds(new Set(calendarSettings.hidden_resources ?? []));
+    const savedOrder = calendarSettings.resource_order ?? [];
+    if (savedOrder.length > 0) {
+      setOrderedIds(savedOrder.map((r: { id: string }) => r.id));
+    }
+  // Only run when settings first loads (id changes)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarSettings?.id]);
+
+  // When aircraft/instructors load, ensure orderedIds includes all current resources
+  useEffect(() => {
+    const allIds = [
+      ...aircraft.map(a => a.id),
+      ...instructors.map(i => i.id),
+    ];
+    setOrderedIds(prev => {
+      const existing = new Set(prev);
+      const newIds = allIds.filter(id => !existing.has(id));
+      return [...prev, ...newIds];
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aircraft.length, instructors.length]);
+
+
   // Compute slot height on mount and resize
   useEffect(() => {
     const computeSlotHeight = () => {
-      // Adjust headerHeight to reflect your layout (controls + top padding)
       const headerHeight = 200;
       const availableHeight = window.innerHeight - headerHeight;
       const numSlots = getTimeSlots().length;
-      setSlotHeight(availableHeight / numSlots);
+      const baseHeight = availableHeight / numSlots;
+      const heightMultiplier = calendarSettings?.double_height_slots ? 2 : 1;
+      setSlotHeight(baseHeight * heightMultiplier);
     };
 
     computeSlotHeight();
     window.addEventListener('resize', computeSlotHeight);
     return () => window.removeEventListener('resize', computeSlotHeight);
-  }, []);
+  }, [calendarSettings?.double_height_slots]);
 
   const navigateDate = (direction: 'prev' | 'next') => {
     if (viewMode === 'day') {
@@ -145,7 +237,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const getWeekDays = () => {
-    const start = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday start
+    const weekStartsOn = calendarSettings?.week_starts_on === 'sunday' ? 0 : 1;
+    const start = startOfWeek(currentDate, { weekStartsOn });
     return Array.from({ length: 7 }, (_, i) => addDays(start, i));
   };
 
@@ -184,12 +277,43 @@ export const Calendar: React.FC<CalendarProps> = ({
     return resources;
   };
 
+  const handleHideResource = useCallback((id: string) => {
+    setHiddenIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      updateSettingsSilent({ hidden_resources: Array.from(next) });
+      return next;
+    });
+  }, [updateSettingsSilent]);
+
+  const handleShowResource = useCallback((id: string) => {
+    setHiddenIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      updateSettingsSilent({ hidden_resources: Array.from(next) });
+      return next;
+    });
+  }, [updateSettingsSilent]);
+
+  const handleReorderResources = useCallback((newOrderIds: string[]) => {
+    setOrderedIds(newOrderIds);
+    const allResources = [
+      ...aircraft.map(a => ({ id: a.id, type: 'aircraft' as const })),
+      ...instructors.map(i => ({ id: i.id, type: 'instructor' as const })),
+    ];
+    const resourceMap = new Map(allResources.map(r => [r.id, r]));
+    const resourceOrder = newOrderIds
+      .map(id => resourceMap.get(id))
+      .filter((r): r is { id: string; type: 'aircraft' | 'instructor' } => !!r);
+    updateSettingsSilent({ resource_order: resourceOrder });
+  }, [aircraft, instructors, updateSettingsSilent]);
+
   const getAllResources = (): Resource[] => {
-    const resources: Resource[] = [];
+    const resourceMap = new Map<string, Resource>();
 
     if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
       aircraft.forEach((a) => {
-        resources.push({
+        resourceMap.set(a.id, {
           id: a.id,
           name: a.registration,
           type: 'aircraft',
@@ -201,33 +325,52 @@ export const Calendar: React.FC<CalendarProps> = ({
 
     if (resourceFilter === 'instructors' || resourceFilter === 'both') {
       instructors.forEach((instructor) => {
-        resources.push({
+        resourceMap.set(instructor.id, {
           id: instructor.id,
-          name: instructor.name,
+          name: instructor.name || instructor.email,
           type: 'instructor',
           icon: <User className="h-4 w-4" />,
         });
       });
     }
 
-    return resources;
+    // Apply custom order, then append any not yet in order list
+    const ordered: Resource[] = [];
+    const seen = new Set<string>();
+
+    orderedIds.forEach(id => {
+      if (!hiddenIds.has(id) && resourceMap.has(id)) {
+        ordered.push(resourceMap.get(id)!);
+        seen.add(id);
+      }
+    });
+
+    resourceMap.forEach((r, id) => {
+      if (!seen.has(id) && !hiddenIds.has(id)) {
+        ordered.push(r);
+      }
+    });
+
+    return ordered;
   };
 
   const getTimeSlots = () => {
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
     const slots = [];
     for (let hour = 6; hour < 20; hour++) {
-      // 15-minute slots: 24, 25, 26, 27, etc.
-      slots.push(hour * 4);
-      slots.push(hour * 4 + 1);
-      slots.push(hour * 4 + 2);
-      slots.push(hour * 4 + 3);
+      for (let i = 0; i < slotsPerHour; i++) {
+        slots.push(hour * (60 / snapDuration) + i);
+      }
     }
     return slots;
   };
 
   const getTimeFromSlot = (slot: number) => {
-    const hour = Math.floor(slot / 4);
-    const minute = (slot % 4) * 15;
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
+    const hour = Math.floor(slot / slotsPerHour);
+    const minute = (slot % slotsPerHour) * snapDuration;
     return { hour, minute };
   };
 
@@ -243,36 +386,181 @@ export const Calendar: React.FC<CalendarProps> = ({
     return `${hour.toString().padStart(2, '0')}:00`;
   };
 
-  // Mock unavailability data
   const getUnavailabilityPeriods = (date: Date): UnavailabilityPeriod[] => {
-    return [
-      // Aircraft maintenance periods
-      {
-        resourceId: '1',
-        resourceType: 'aircraft',
-        startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
-        endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0),
-        reason: 'Maintenance',
-        pattern: 'diagonal',
-      },
-      {
-        resourceId: '3',
-        resourceType: 'aircraft',
-        startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 13, 0),
-        endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 19, 0),
-        reason: 'Unserviceable',
-        pattern: 'diagonal',
-      },
-      // Instructor unavailability
-      {
-        resourceId: '2',
-        resourceType: 'instructor',
-        startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 17, 0),
-        endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 19, 0),
-        reason: 'Not Available',
-        pattern: 'diagonal',
-      },
-    ];
+    const periods: UnavailabilityPeriod[] = [];
+    const dayOfWeek = date.getDay();
+    const dateStr = format(date, 'yyyy-MM-dd');
+
+    instructors.forEach((instructor) => {
+      // Check for absences
+      const absence = absences.find(
+        (a) =>
+          a.userId === instructor.id &&
+          dateStr >= a.startDate &&
+          dateStr <= a.endDate
+      );
+
+      if (absence) {
+        let startHour = 6;
+        let startMinute = 0;
+        let endHour = 20;
+        let endMinute = 0;
+
+        if (absence.startTime && absence.endTime) {
+          [startHour, startMinute] = absence.startTime.split(':').map(Number);
+          [endHour, endMinute] = absence.endTime.split(':').map(Number);
+        }
+
+        periods.push({
+          resourceId: instructor.id,
+          resourceType: 'instructor',
+          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+          reason: absence.reason || 'Absent',
+          pattern: 'solid',
+        });
+        return;
+      }
+
+      // Check for schedule changes effective on this date
+      const applicableChanges = scheduleChanges
+        .filter((c) => c.userId === instructor.id && c.dayOfWeek === dayOfWeek && c.effectiveFrom <= dateStr)
+        .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+
+      const scheduleChange = applicableChanges[0];
+
+      if (scheduleChange) {
+        if (!scheduleChange.isAvailable) {
+          periods.push({
+            resourceId: instructor.id,
+            resourceType: 'instructor',
+            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+            reason: 'Not Available',
+            pattern: 'diagonal',
+          });
+        } else {
+          const [startHour, startMinute] = scheduleChange.startTime.split(':').map(Number);
+          const [endHour, endMinute] = scheduleChange.endTime.split(':').map(Number);
+
+          if (startHour > 6) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+            });
+          }
+
+          if (scheduleChange.afternoonStartTime && scheduleChange.afternoonEndTime) {
+            const [afternoonStartHour, afternoonStartMinute] = scheduleChange.afternoonStartTime.split(':').map(Number);
+            const [afternoonEndHour, afternoonEndMinute] = scheduleChange.afternoonEndTime.split(':').map(Number);
+
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
+              reason: 'Lunch Break',
+              pattern: 'diagonal',
+            });
+
+            if (afternoonEndHour < 20) {
+              periods.push({
+                resourceId: instructor.id,
+                resourceType: 'instructor',
+                startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonEndHour, afternoonEndMinute),
+                endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+                reason: 'Not Available',
+                pattern: 'diagonal',
+              });
+            }
+          } else {
+            if (endHour < 20) {
+              periods.push({
+                resourceId: instructor.id,
+                resourceType: 'instructor',
+                startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+                endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+                reason: 'Not Available',
+                pattern: 'diagonal',
+              });
+            }
+          }
+        }
+        return;
+      }
+
+      // Check weekly schedule
+      const weeklySchedule = weeklySchedules.find(
+        (s) => s.userId === instructor.id && s.dayOfWeek === dayOfWeek
+      );
+
+      if (!weeklySchedule || !weeklySchedule.isAvailable) {
+        periods.push({
+          resourceId: instructor.id,
+          resourceType: 'instructor',
+          startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+          endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+          reason: 'Not Available',
+          pattern: 'diagonal',
+        });
+      } else {
+        const [startHour, startMinute] = weeklySchedule.startTime.split(':').map(Number);
+        const [endHour, endMinute] = weeklySchedule.endTime.split(':').map(Number);
+
+        if (startHour > 6) {
+          periods.push({
+            resourceId: instructor.id,
+            resourceType: 'instructor',
+            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 6, 0),
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMinute),
+            reason: 'Not Available',
+            pattern: 'diagonal',
+          });
+        }
+
+        if (weeklySchedule.afternoonStartTime && weeklySchedule.afternoonEndTime) {
+          const [afternoonStartHour, afternoonStartMinute] = weeklySchedule.afternoonStartTime.split(':').map(Number);
+          const [afternoonEndHour, afternoonEndMinute] = weeklySchedule.afternoonEndTime.split(':').map(Number);
+
+          periods.push({
+            resourceId: instructor.id,
+            resourceType: 'instructor',
+            startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+            endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonStartHour, afternoonStartMinute),
+            reason: 'Lunch Break',
+            pattern: 'diagonal',
+          });
+
+          if (afternoonEndHour < 20) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), afternoonEndHour, afternoonEndMinute),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+            });
+          }
+        } else {
+          if (endHour < 20) {
+            periods.push({
+              resourceId: instructor.id,
+              resourceType: 'instructor',
+              startTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMinute),
+              endTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 20, 0),
+              reason: 'Not Available',
+              pattern: 'diagonal',
+            });
+          }
+        }
+      }
+    });
+
+    return periods;
   };
 
   const getBookingsForResource = (
@@ -298,18 +586,19 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const getBookingPosition = (booking: Booking) => {
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
     const startTime = new Date(booking.startTime);
     const endTime = new Date(booking.endTime);
     const startHour = startTime.getHours();
     const startMinute = startTime.getMinutes();
 
-    // Calculate position from 6:00 AM start
-    const startSlot = (startHour - 6) * 4 + Math.floor(startMinute / 15);
+    const startSlot = (startHour - 6) * slotsPerHour + Math.floor(startMinute / snapDuration);
     const durationMs = endTime.getTime() - startTime.getTime();
     const durationHours = durationMs / (1000 * 60 * 60);
-    const durationInSlots = Math.max(1, Math.ceil(durationHours * 4));
-    const remainderMinutes = startMinute % 15;
-    const minuteHeight = slotHeight / 15;
+    const durationInSlots = Math.max(1, Math.ceil(durationHours * slotsPerHour));
+    const remainderMinutes = startMinute % snapDuration;
+    const minuteHeight = slotHeight / snapDuration;
 
     return {
       gridRowStart: startSlot + 1,
@@ -366,6 +655,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     date: Date
   ) => {
     if (draggedBooking || resizingBooking || isDragging) return;
+    if (actionMenuBooking) { setActionMenuBooking(null); return; }
 
     if (isResourceUnavailable(resourceId, resourceType, slot, date)) {
       toast.error('Cannot book during unavailable time');
@@ -373,8 +663,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     if (onNewBookingWithTime) {
+      const snapDuration = calendarSettings?.snap_duration || 15;
+      const slotsPerHour = 60 / snapDuration;
       const startTime = formatTimeSlot(slot);
-      const endTime = formatTimeSlot(slot + 4); // Default 1 hour booking
+      const endTime = formatTimeSlot(slot + slotsPerHour);
       onNewBookingWithTime(
         date,
         startTime,
@@ -385,6 +677,175 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
+  const cancelDragDelay = () => {
+    if (dragDelayTimer) {
+      clearTimeout(dragDelayTimer);
+      setDragDelayTimer(null);
+    }
+    setIsDragDelayActive(false);
+  };
+
+  const startDragDelayTimer = (
+    booking: Booking,
+    resourceType: 'aircraft' | 'instructor'
+  ) => {
+    if (isPastBooking(booking)) {
+      return;
+    }
+
+    setIsDragDelayActive(true);
+    const timer = setTimeout(() => {
+      handleBookingDragStart(booking, resourceType);
+      setIsDragDelayActive(false);
+    }, 300);
+    setDragDelayTimer(timer);
+  };
+
+  const handleBookingDragStart = (
+    booking: Booking,
+    resourceType: 'aircraft' | 'instructor'
+  ) => {
+    if (isPastBooking(booking)) {
+      toast.error('Cannot move past bookings');
+      return;
+    }
+
+    setDraggedBooking(booking);
+    setDraggedBookingOriginal(booking);
+    setDragPreview({
+      startTime: new Date(booking.startTime),
+      endTime: new Date(booking.endTime),
+      resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
+      resourceType
+    });
+  };
+
+  const handleResizeStart = (
+    e: React.MouseEvent,
+    booking: Booking,
+    handle: 'top' | 'bottom',
+    resourceType: 'aircraft' | 'instructor'
+  ) => {
+    if (isPastBooking(booking)) {
+      toast.error('Cannot resize past bookings');
+      return;
+    }
+
+    e.stopPropagation();
+    e.preventDefault();
+    setWasResizing(true);
+    setResizingBooking({ booking, handle });
+    setDraggedBookingOriginal(booking);
+    setDragPreview({
+      startTime: new Date(booking.startTime),
+      endTime: new Date(booking.endTime),
+      resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
+      resourceType
+    });
+  };
+
+  const handleBookingDragOver = (
+    e: React.MouseEvent,
+    slot: number,
+    resourceId: string,
+    resourceType: 'aircraft' | 'instructor',
+    date: Date
+  ) => {
+    if (!draggedBooking && !resizingBooking) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const snapDuration = calendarSettings?.snap_duration || 15;
+    const slotsPerHour = 60 / snapDuration;
+
+    const { hour, minute } = getTimeFromSlot(slot);
+    const slotTime = new Date(date);
+    slotTime.setHours(hour, minute, 0, 0);
+
+    if (resizingBooking) {
+      const originalStart = new Date(draggedBookingOriginal!.startTime);
+      const originalEnd = new Date(draggedBookingOriginal!.endTime);
+      const minDuration = snapDuration * 60 * 1000;
+
+      if (resizingBooking.handle === 'top') {
+        const newStartTime = slotTime;
+        if (newStartTime.getTime() + minDuration <= originalEnd.getTime()) {
+          setDragPreview({
+            startTime: newStartTime,
+            endTime: originalEnd,
+            resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId : resizingBooking.booking.instructorId || '',
+            resourceType
+          });
+        }
+      } else {
+        const newEndTime = new Date(slotTime);
+        newEndTime.setMinutes(newEndTime.getMinutes() + snapDuration);
+
+        if (newEndTime.getTime() >= originalStart.getTime() + minDuration) {
+          setDragPreview({
+            startTime: originalStart,
+            endTime: newEndTime,
+            resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId : resizingBooking.booking.instructorId || '',
+            resourceType
+          });
+        }
+      }
+    } else if (draggedBooking) {
+      const originalStart = new Date(draggedBookingOriginal!.startTime);
+      const originalEnd = new Date(draggedBookingOriginal!.endTime);
+      const duration = originalEnd.getTime() - originalStart.getTime();
+
+      const newStartTime = slotTime;
+      const newEndTime = new Date(newStartTime.getTime() + duration);
+
+      setDragPreview({
+        startTime: newStartTime,
+        endTime: newEndTime,
+        resourceId,
+        resourceType
+      });
+    }
+  };
+
+  const handleBookingDrop = async () => {
+    const booking = draggedBooking || resizingBooking?.booking;
+    if (!booking || !dragPreview || !onUpdateBooking) {
+      setDraggedBooking(null);
+      setDraggedBookingOriginal(null);
+      setDragPreview(null);
+      setResizingBooking(null);
+      setTimeout(() => setWasResizing(false), 100);
+      return;
+    }
+
+    try {
+      const updates: Partial<Booking> = {
+        startTime: dragPreview.startTime,
+        endTime: dragPreview.endTime
+      };
+
+      if (draggedBooking) {
+        if (dragPreview.resourceType === 'aircraft' && dragPreview.resourceId !== booking.aircraftId) {
+          updates.aircraftId = dragPreview.resourceId;
+        } else if (dragPreview.resourceType === 'instructor' && dragPreview.resourceId !== booking.instructorId) {
+          updates.instructorId = dragPreview.resourceId;
+        }
+      }
+
+      await onUpdateBooking(booking.id, updates, true);
+      toast.success(resizingBooking ? 'Booking resized successfully' : 'Booking moved successfully');
+    } catch (error) {
+      console.error('Error updating booking:', error);
+      toast.error('Failed to update booking');
+    } finally {
+      setDraggedBooking(null);
+      setDraggedBookingOriginal(null);
+      setDragPreview(null);
+      setResizingBooking(null);
+      setTimeout(() => setWasResizing(false), 100);
+    }
+  };
+
   const handleMouseDown = (
     slot: number,
     resourceId: string,
@@ -392,6 +853,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     date: Date,
     dayIndex?: number
   ) => {
+    if (actionMenuBooking) return;
     if (isResourceUnavailable(resourceId, resourceType, slot, date)) return;
 
     setIsDragging(true);
@@ -512,6 +974,19 @@ export const Calendar: React.FC<CalendarProps> = ({
     </div>
   );
 
+  const getManagedResources = (): ManagedResource[] => {
+    const result: ManagedResource[] = [];
+
+    if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
+      aircraft.forEach(a => result.push({ id: a.id, name: a.registration, type: 'aircraft', status: a.status }));
+    }
+    if (resourceFilter === 'instructors' || resourceFilter === 'both') {
+      instructors.forEach(i => result.push({ id: i.id, name: i.name || i.email, type: 'instructor' }));
+    }
+
+    return result;
+  };
+
   const renderFilterControls = () => (
     <div className="flex items-center space-x-3 flex-wrap">
       <select
@@ -525,6 +1000,15 @@ export const Calendar: React.FC<CalendarProps> = ({
         <option value="aircraft">Aircraft Only</option>
         <option value="instructors">Instructors Only</option>
       </select>
+
+      <ResourceManagerPanel
+        resources={getManagedResources()}
+        hiddenIds={hiddenIds}
+        orderedIds={orderedIds}
+        onHide={handleHideResource}
+        onShow={handleShowResource}
+        onReorder={handleReorderResources}
+      />
     </div>
   );
 
@@ -590,12 +1074,14 @@ export const Calendar: React.FC<CalendarProps> = ({
             }}
           >
             {/* Current Time Indicator */}
-            <CurrentTimeIndicator isVisible={isToday(currentDate)} />
+            <CurrentTimeIndicator isVisible={isToday(currentDate) && (calendarSettings?.show_current_time_indicator ?? true)} />
 
             {timeSlots.map((slot, slotIndex) => {
+              const snapDuration = calendarSettings?.snap_duration || 15;
+              const slotsPerHour = 60 / snapDuration;
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHourMarker = minute === 15;
+              const isHalfHourMarker = snapDuration <= 15 && minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
@@ -613,7 +1099,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
                       style={{
                         gridColumn: 1,
-                        gridRow: `${slotIndex + 1} / span 4`,
+                        gridRow: `${slotIndex + 1} / span ${slotsPerHour}`,
                         paddingTop: 2,
                       }}
                     >
@@ -637,12 +1123,27 @@ export const Calendar: React.FC<CalendarProps> = ({
                       slot,
                       currentDate
                     );
+
+                    const prevSlot = slot - 1;
+                    const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
+                      resource.id,
+                      resource.type,
+                      prevSlot,
+                      currentDate
+                    ) : null;
+
+                    const isFirstSlotOfPeriod = unavailability && (
+                      !prevUnavailability ||
+                      prevUnavailability.reason !== unavailability.reason ||
+                      prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
+                    );
+
                     const isInDragRange = isTimeSlotInDragRange(
                       slot,
                       resource.id,
                       resource.type
                     );
-                    const hourIndex = Math.floor(slot / 4);
+                    const hourIndex = Math.floor(slot / slotsPerHour);
                     const isAlternateHour = hourIndex % 2 === 1;
                     const cursorClass = unavailability
                       ? 'cursor-not-allowed'
@@ -685,8 +1186,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                             currentDate
                           )
                         }
-                        onMouseDown={() =>
-                          !unavailability &&
+                        onMouseDown={(e) =>
+                          !unavailability && !draggedBooking &&
                           handleMouseDown(
                             slot,
                             resource.id,
@@ -694,16 +1195,26 @@ export const Calendar: React.FC<CalendarProps> = ({
                             currentDate
                           )
                         }
-                        onMouseUp={() => handleMouseUp(currentDate)}
-                        onMouseEnter={() =>
-                          handleMouseEnter(
-                            slot,
-                            resource.id,
-                            resource.type
-                          )
-                        }
+                        onMouseUp={() => {
+                          if (draggedBooking || resizingBooking) {
+                            handleBookingDrop();
+                          } else {
+                            handleMouseUp(currentDate);
+                          }
+                        }}
+                        onMouseEnter={(e) => {
+                          if (draggedBooking || resizingBooking) {
+                            handleBookingDragOver(e, slot, resource.id, resource.type, currentDate);
+                          } else {
+                            handleMouseEnter(
+                              slot,
+                              resource.id,
+                              resource.type
+                            );
+                          }
+                        }}
                       >
-                        {unavailability && (
+                        {unavailability && isFirstSlotOfPeriod && (
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
                               {unavailability.reason}
@@ -730,19 +1241,25 @@ export const Calendar: React.FC<CalendarProps> = ({
                 const startOffset = bookingStart.getMinutes() % 30;
                 const endOffset = bookingEnd.getMinutes() % 30;
                 const showHalfHourMarker = startOffset === 15 || endOffset === 15;
-
+                const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
+                const isBeingResized = resizingBooking?.booking.id === booking.id;
                 return (
                   <div
                     key={`${booking.id}-${resource.id}`}
+                    data-booking-element
                     className={`${
                       booking.hasConflict
                         ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                        : booking.status === 'pending_approval'
+                        ? 'bg-yellow-400 border-yellow-500 hover:bg-yellow-500 text-gray-900'
+                        : booking.flight_logged
+                        ? 'bg-green-500 border-green-600 hover:bg-green-600'
                         : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                     } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                      draggedBooking?.id === booking.id
-                        ? 'opacity-75'
+                      isBeingDragged
+                        ? 'opacity-30 pointer-events-none'
                         : ''
-                    }`}
+                    } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                     style={{
                       gridColumn: resourceIndex + 2,
                       gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
@@ -750,26 +1267,68 @@ export const Calendar: React.FC<CalendarProps> = ({
                       minHeight: slotHeight,
                     }}
                     title={`${booking.notes || 'Booking'}`}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      if (!isPastBooking(booking)) {
+                        startDragDelayTimer(booking, resource.type);
+                      }
+                    }}
+                    onMouseUp={cancelDragDelay}
+                    onMouseLeave={cancelDragDelay}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (
-                        onEditBooking &&
-                        !draggedBooking &&
-                        !isPastBooking(booking)
-                      ) {
+
+                      // Cancel any drag state
+                      if (dragDelayTimer) {
+                        clearTimeout(dragDelayTimer);
+                        setDragDelayTimer(null);
+                      }
+                      setIsDragDelayActive(false);
+
+                      // If drag already started, cancel it
+                      if (draggedBooking) {
+                        setDraggedBooking(null);
+                        setDraggedBookingOriginal(null);
+                        setDragPreview(null);
+                        return;
+                      }
+
+                      if (wasResizing) {
+                        return;
+                      }
+
+                      if (hasBookingStarted(booking)) {
+                        setActionMenuBooking(booking);
+                        setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                      } else if (onEditBooking) {
                         onEditBooking(booking);
-                      } else if (isPastBooking(booking)) {
-                        // For past bookings, could show action menu here too
-                        // For now, just prevent editing
-                        toast(
-                          'Use the action menu to manage past bookings'
-                        );
                       }
                     }}
                   >
-                    {showHalfHourMarker && (
-                      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                    {!isPastBooking(booking) && (
+                      <>
+                        <div
+                          className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleResizeStart(e, booking, 'top', resource.type);
+                          }}
+                          title="Drag to change start time"
+                        />
+                        <div
+                          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleResizeStart(e, booking, 'bottom', resource.type);
+                          }}
+                          title="Drag to change end time"
+                        />
+                      </>
                     )}
+                    {showHalfHourMarker && (
+                      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
+                    )}
+                    <div className="relative z-10">
                     <div className="font-medium text-xs truncate">
                       {resource.type === 'aircraft'
                         ? resource.name
@@ -791,10 +1350,48 @@ export const Calendar: React.FC<CalendarProps> = ({
                         'HH:mm'
                       )}
                     </div>
+                    </div>
                   </div>
                 );
               })
             )}
+
+            {/* Render drag preview */}
+            {dragPreview && (draggedBooking || resizingBooking) && resources.map((resource, resourceIndex) => {
+              if (resource.id !== dragPreview.resourceId || resource.type !== dragPreview.resourceType) {
+                return null;
+              }
+
+              const booking = draggedBooking || resizingBooking?.booking;
+              const previewPosition = getBookingPosition({
+                ...booking!,
+                startTime: dragPreview.startTime,
+                endTime: dragPreview.endTime
+              });
+
+              return (
+                <div
+                  key={`preview-${resource.id}`}
+                  className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                  style={{
+                    gridColumn: resourceIndex + 2,
+                    gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
+                    marginTop: previewPosition.marginTop,
+                    minHeight: slotHeight,
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <div className="font-medium text-xs truncate">
+                    {resource.type === 'aircraft'
+                      ? resource.name
+                      : 'Lesson'}
+                  </div>
+                  <div className="text-xs opacity-75 truncate">
+                    {format(dragPreview.startTime, 'HH:mm')} - {format(dragPreview.endTime, 'HH:mm')}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -936,13 +1533,15 @@ export const Calendar: React.FC<CalendarProps> = ({
           >
             {/* Current Time Indicator - show on today only */}
             <CurrentTimeIndicator
-              isVisible={weekDays.some((day) => isToday(day))}
+              isVisible={weekDays.some((day) => isToday(day)) && (calendarSettings?.show_current_time_indicator ?? true)}
             />
 
             {timeSlots.map((slot, slotIndex) => {
+              const snapDuration = calendarSettings?.snap_duration || 15;
+              const slotsPerHour = 60 / snapDuration;
               const { minute } = getTimeFromSlot(slot);
               const isHourStart = minute === 0;
-              const isHalfHourMarker = minute === 15;
+              const isHalfHourMarker = snapDuration <= 15 && minute === 15;
               const timeLabel = isHourStart ? formatHourLabel(slot) : '';
               const resourceBorderClasses = `${
                 isHourStart ? ' border-t border-gray-200' : ''
@@ -960,7 +1559,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       className="relative bg-white border-r border-gray-200 border-t border-gray-200 pr-2 flex items-start justify-end"
                       style={{
                         gridColumn: 1,
-                        gridRow: `${slotIndex + 1} / span 4`,
+                        gridRow: `${slotIndex + 1} / span ${slotsPerHour}`,
                         paddingTop: 2,
                       }}
                     >
@@ -980,7 +1579,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                   {weekDays.map((day, dayIndex) => {
                     const daySlots = [];
                     let columnOffset = 0;
-                    const hourIndex = Math.floor(slot / 4);
+                    const hourIndex = Math.floor(slot / slotsPerHour);
                     const isAlternateHour = hourIndex % 2 === 1;
                     const borderClasses = resourceBorderClasses;
 
@@ -992,6 +1591,21 @@ export const Calendar: React.FC<CalendarProps> = ({
                         slot,
                         day
                       );
+
+                      const prevSlot = slot - 1;
+                      const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
+                        selectedAircraftId,
+                        'aircraft',
+                        prevSlot,
+                        day
+                      ) : null;
+
+                      const isFirstSlotOfPeriod = unavailability && (
+                        !prevUnavailability ||
+                        prevUnavailability.reason !== unavailability.reason ||
+                        prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
+                      );
+
                       const isInDragRange = isTimeSlotInDragRange(
                         slot,
                         selectedAircraftId,
@@ -1039,8 +1653,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                               day
                             )
                           }
-                          onMouseDown={() =>
-                            !unavailability &&
+                          onMouseDown={(e) =>
+                            !unavailability && !draggedBooking &&
                             handleMouseDown(
                               slot,
                               selectedAircraftId,
@@ -1049,17 +1663,27 @@ export const Calendar: React.FC<CalendarProps> = ({
                               dayIndex
                             )
                           }
-                          onMouseUp={() => handleMouseUp(day)}
-                          onMouseEnter={() =>
-                            handleMouseEnter(
-                              slot,
-                              selectedAircraftId,
-                              'aircraft',
-                              dayIndex
-                            )
-                          }
+                          onMouseUp={() => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDrop();
+                            } else {
+                              handleMouseUp(day);
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDragOver(e, slot, selectedAircraftId, 'aircraft', day);
+                            } else {
+                              handleMouseEnter(
+                                slot,
+                                selectedAircraftId,
+                                'aircraft',
+                                dayIndex
+                              );
+                            }
+                          }}
                         >
-                          {unavailability && (
+                          {unavailability && isFirstSlotOfPeriod && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
                                 {unavailability.reason}
@@ -1079,6 +1703,21 @@ export const Calendar: React.FC<CalendarProps> = ({
                         slot,
                         day
                       );
+
+                      const prevSlot = slot - 1;
+                      const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
+                        selectedInstructorId,
+                        'instructor',
+                        prevSlot,
+                        day
+                      ) : null;
+
+                      const isFirstSlotOfPeriod = unavailability && (
+                        !prevUnavailability ||
+                        prevUnavailability.reason !== unavailability.reason ||
+                        prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
+                      );
+
                       const isInDragRange = isTimeSlotInDragRange(
                         slot,
                         selectedInstructorId,
@@ -1126,8 +1765,8 @@ export const Calendar: React.FC<CalendarProps> = ({
                               day
                             )
                           }
-                          onMouseDown={() =>
-                            !unavailability &&
+                          onMouseDown={(e) =>
+                            !unavailability && !draggedBooking &&
                             handleMouseDown(
                               slot,
                               selectedInstructorId,
@@ -1136,17 +1775,27 @@ export const Calendar: React.FC<CalendarProps> = ({
                               dayIndex
                             )
                           }
-                          onMouseUp={() => handleMouseUp(day)}
-                          onMouseEnter={() =>
-                            handleMouseEnter(
-                              slot,
-                              selectedInstructorId,
-                              'instructor',
-                              dayIndex
-                            )
-                          }
+                          onMouseUp={() => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDrop();
+                            } else {
+                              handleMouseUp(day);
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            if (draggedBooking || resizingBooking) {
+                              handleBookingDragOver(e, slot, selectedInstructorId, 'instructor', day);
+                            } else {
+                              handleMouseEnter(
+                                slot,
+                                selectedInstructorId,
+                                'instructor',
+                                dayIndex
+                              );
+                            }
+                          }}
                         >
-                          {unavailability && (
+                          {unavailability && isFirstSlotOfPeriod && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <span className="text-xs text-gray-600 font-medium bg-white bg-opacity-75 px-1 rounded">
                                 {unavailability.reason}
@@ -1185,17 +1834,23 @@ export const Calendar: React.FC<CalendarProps> = ({
                   const endOffset = bookingEnd.getMinutes() % 30;
                   const showHalfHourMarker =
                     startOffset === 15 || endOffset === 15;
-
+                  const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
+                  const isBeingResized = resizingBooking?.booking.id === booking.id;
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-aircraft`}
+                      data-booking-element
                       className={`${
                         booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
+                          : booking.status === 'pending_approval'
+                          ? 'bg-yellow-400 border-yellow-500 hover:bg-yellow-500 text-gray-900'
+                          : booking.flight_logged
+                          ? 'bg-green-500 border-green-600 hover:bg-green-600'
                           : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                        draggedBooking?.id === booking.id ? 'opacity-75' : ''
-                      }`}
+                        isBeingDragged ? 'opacity-30 pointer-events-none' : ''
+                      } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
                         gridColumn: columnIndex + 2,
                         gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
@@ -1203,16 +1858,52 @@ export const Calendar: React.FC<CalendarProps> = ({
                         minHeight: slotHeight,
                       }}
                       title={`${booking.notes || 'Booking'}`}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        if (!isPastBooking(booking)) {
+                          startDragDelayTimer(booking, 'aircraft');
+                        }
+                      }}
+                      onMouseUp={cancelDragDelay}
+                      onMouseLeave={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (onEditBooking && !draggedBooking) {
+                        if (wasResizing) {
+                          return;
+                        }
+
+                        if (hasBookingStarted(booking)) {
+                          setActionMenuBooking(booking);
+                          setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                        } else if (onEditBooking && !draggedBooking) {
                           onEditBooking(booking);
                         }
                       }}
                     >
-                      {showHalfHourMarker && (
-                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                      {!isPastBooking(booking) && (
+                        <>
+                          <div
+                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleResizeStart(e, booking, 'top', 'aircraft');
+                            }}
+                            title="Drag to change start time"
+                          />
+                          <div
+                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleResizeStart(e, booking, 'bottom', 'aircraft');
+                            }}
+                            title="Drag to change end time"
+                          />
+                        </>
                       )}
+                      {showHalfHourMarker && (
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
+                      )}
+                      <div className="relative z-10">
                       <div className="font-medium text-xs truncate">
                         Aircraft
                       </div>
@@ -1229,6 +1920,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           new Date(booking.endTime),
                           'HH:mm'
                         )}
+                      </div>
                       </div>
                     </div>
                   );
@@ -1253,17 +1945,23 @@ export const Calendar: React.FC<CalendarProps> = ({
                   const endOffset = bookingEnd.getMinutes() % 30;
                   const showHalfHourMarker =
                     startOffset === 15 || endOffset === 15;
-
+                  const isBeingDragged = draggedBooking?.id === booking.id || resizingBooking?.booking.id === booking.id;
+                  const isBeingResized = resizingBooking?.booking.id === booking.id;
                   bookingElements.push(
                     <div
                       key={`${booking.id}-${dayIndex}-instructor`}
+                      data-booking-element
                       className={`${
                         booking.hasConflict
                           ? 'bg-red-500 border-red-600 hover:bg-red-600'
-                          : 'bg-green-500 border-green-600 hover:bg-green-600'
+                          : booking.status === 'pending_approval'
+                          ? 'bg-yellow-400 border-yellow-500 hover:bg-yellow-500 text-gray-900'
+                          : booking.flight_logged
+                          ? 'bg-green-500 border-green-600 hover:bg-green-600'
+                          : 'bg-blue-500 border-blue-600 hover:bg-blue-600'
                       } relative text-white text-xs p-2 rounded shadow-sm overflow-hidden cursor-move transition-colors z-10 border ${
-                        draggedBooking?.id === booking.id ? 'opacity-75' : ''
-                      }`}
+                        isBeingDragged ? 'opacity-30 pointer-events-none' : ''
+                      } ${isBeingResized ? 'pointer-events-none' : ''} group`}
                       style={{
                         gridColumn: columnIndex + 2,
                         gridRow: `${position.gridRowStart} / ${position.gridRowEnd}`,
@@ -1271,16 +1969,52 @@ export const Calendar: React.FC<CalendarProps> = ({
                         minHeight: slotHeight,
                       }}
                       title={`${booking.notes || 'Booking'}`}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        if (!isPastBooking(booking)) {
+                          startDragDelayTimer(booking, 'instructor');
+                        }
+                      }}
+                      onMouseUp={cancelDragDelay}
+                      onMouseLeave={cancelDragDelay}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (onEditBooking && !draggedBooking) {
+                        if (wasResizing) {
+                          return;
+                        }
+
+                        if (hasBookingStarted(booking)) {
+                          setActionMenuBooking(booking);
+                          setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                        } else if (onEditBooking && !draggedBooking) {
                           onEditBooking(booking);
                         }
                       }}
                     >
-                      {showHalfHourMarker && (
-                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/70" />
+                      {!isPastBooking(booking) && (
+                        <>
+                          <div
+                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleResizeStart(e, booking, 'top', 'instructor');
+                            }}
+                            title="Drag to change start time"
+                          />
+                          <div
+                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleResizeStart(e, booking, 'bottom', 'instructor');
+                            }}
+                            title="Drag to change end time"
+                          />
+                        </>
                       )}
+                      {showHalfHourMarker && (
+                        <div className="pointer-events-none absolute inset-x-1 top-1/2 h-0.5 bg-white/30 z-0" />
+                      )}
+                      <div className="relative z-10">
                       <div className="font-medium text-xs truncate">
                         Instructor
                       </div>
@@ -1298,12 +2032,86 @@ export const Calendar: React.FC<CalendarProps> = ({
                           'HH:mm'
                         )}
                       </div>
+                      </div>
                     </div>
                   );
                 });
               }
 
               return bookingElements;
+            })}
+
+            {/* Render drag preview */}
+            {dragPreview && (draggedBooking || resizingBooking) && weekDays.map((day, dayIndex) => {
+              const previewElements = [];
+              let columnOffset = 0;
+              const booking = draggedBooking || resizingBooking?.booking;
+
+              // Check if preview is on this day
+              if (!isSameDay(dragPreview.startTime, day)) {
+                return null;
+              }
+
+              // Add aircraft preview if selected and matches
+              if (hasAircraft && dragPreview.resourceType === 'aircraft' && dragPreview.resourceId === selectedAircraftId) {
+                const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                const previewPosition = getBookingPosition({
+                  ...booking!,
+                  startTime: dragPreview.startTime,
+                  endTime: dragPreview.endTime
+                });
+
+                previewElements.push(
+                  <div
+                    key={`preview-${dayIndex}-aircraft`}
+                    className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                    style={{
+                      gridColumn: columnIndex + 2,
+                      gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
+                      marginTop: previewPosition.marginTop,
+                      minHeight: slotHeight,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    <div className="font-medium text-xs truncate">Aircraft</div>
+                    <div className="text-xs opacity-75 truncate">
+                      {format(dragPreview.startTime, 'HH:mm')} - {format(dragPreview.endTime, 'HH:mm')}
+                    </div>
+                  </div>
+                );
+              }
+              columnOffset = hasAircraft ? 1 : 0;
+
+              // Add instructor preview if selected and matches
+              if (hasInstructor && dragPreview.resourceType === 'instructor' && dragPreview.resourceId === selectedInstructorId) {
+                const columnIndex = dayIndex * columnsPerDay + columnOffset;
+                const previewPosition = getBookingPosition({
+                  ...booking!,
+                  startTime: dragPreview.startTime,
+                  endTime: dragPreview.endTime
+                });
+
+                previewElements.push(
+                  <div
+                    key={`preview-${dayIndex}-instructor`}
+                    className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                    style={{
+                      gridColumn: columnIndex + 2,
+                      gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
+                      marginTop: previewPosition.marginTop,
+                      minHeight: slotHeight,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    <div className="font-medium text-xs truncate">Instructor</div>
+                    <div className="text-xs opacity-75 truncate">
+                      {format(dragPreview.startTime, 'HH:mm')} - {format(dragPreview.endTime, 'HH:mm')}
+                    </div>
+                  </div>
+                );
+              }
+
+              return previewElements;
             })}
           </div>
         </div>
@@ -1349,6 +2157,16 @@ export const Calendar: React.FC<CalendarProps> = ({
           </div>
           <div className="flex items-center space-x-3 flex-wrap">
             {renderViewModeButtons()}
+
+            <label className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={highlightUnlogged}
+                onChange={(e) => setHighlightUnlogged(e.target.checked)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">Highlight Unlogged</span>
+            </label>
 
             <button
               onClick={onNewBooking}
@@ -1404,6 +2222,50 @@ export const Calendar: React.FC<CalendarProps> = ({
           onDayClick={(date) => {
             setCurrentDate(date);
             setViewMode('day');
+          }}
+        />
+      )}
+
+      {actionMenuBooking && (
+        <div
+          className="fixed inset-0 z-40"
+          onMouseDown={(e) => { e.stopPropagation(); setActionMenuBooking(null); }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
+
+      {actionMenuBooking && (
+        <BookingActionMenu
+          booking={actionMenuBooking}
+          position={actionMenuPosition}
+          onEdit={() => {
+            if (onEditBooking) {
+              onEditBooking(actionMenuBooking);
+            }
+          }}
+          onLogFlight={() => {
+            setFlightLogBooking(actionMenuBooking);
+            setShowFlightLogModal(true);
+          }}
+          onDelete={() => {
+            if (onDeleteBooking) {
+              onDeleteBooking(actionMenuBooking.id);
+            }
+          }}
+          onClose={() => setActionMenuBooking(null)}
+        />
+      )}
+
+      {showFlightLogModal && flightLogBooking && (
+        <FlightLogModal
+          booking={flightLogBooking}
+          onClose={() => {
+            setShowFlightLogModal(false);
+            setFlightLogBooking(null);
+          }}
+          onSuccess={() => {
+            setShowFlightLogModal(false);
+            setFlightLogBooking(null);
           }}
         />
       )}

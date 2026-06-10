@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { TrainingModulesProvider } from './context/TrainingModulesContext';
 import { useBookings } from './hooks/useBookings';
 import { Booking } from './types';
 import { Header } from './components/Layout/Header';
@@ -16,20 +17,30 @@ import { BookingsList } from './components/Bookings/BookingsList';
 import { StudentProfile } from './components/Students/StudentProfile';
 import { StudentList } from './components/Students/StudentList';
 import { StudentProfilePage } from './components/Students/StudentProfilePage';
+import { MyLogbookPage } from './components/Students/MyLogbookPage';
 import { AircraftList } from './components/Aircraft/AircraftList';
+import { AircraftFlightLogs } from './components/Aircraft/AircraftFlightLogs';
 import { MaintenanceBoard } from './components/Maintenance/MaintenanceBoard';
 import { BillingDashboard } from './components/Billing/BillingDashboard';
 import { ReportsDashboard } from './components/Reports/ReportsDashboard';
 import { SafetyDashboard } from './components/Safety/SafetyDashboard';
 import { TrainingRecordForm } from './components/Training/TrainingRecordForm';
+import { TrainingCourseCatalog } from './components/Training/TrainingCourseCatalog';
+import { TrainingModuleBuilder } from './components/Training/TrainingModuleBuilder';
+import { OutstandingRecordsTab } from './components/Training/OutstandingRecordsTab';
 import { SettingsDashboard } from './components/Settings/SettingsDashboard';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
-  const { bookings, loading: bookingsLoading, addBooking, updateBooking, deleteBooking } = useBookings();
   const [activeView, setActiveView] = useState('dashboard');
+
+  React.useEffect(() => {
+    if (!user) {
+      setActiveView('dashboard');
+    }
+  }, [user]);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [showTrainingRecordForm, setShowTrainingRecordForm] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
@@ -40,7 +51,7 @@ const AppContent: React.FC = () => {
     endTime?: string;
   }>({});
 
-  if (isLoading || bookingsLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
@@ -54,48 +65,99 @@ const AppContent: React.FC = () => {
   if (!user) {
     return <LoginForm />;
   }
-const handleNewBookingWithTime = (
-  date: Date,
-  startTime: string,
-  endTime?: string
-) => {
-  setBookingFormData({
-    date: format(date, 'yyyy-MM-dd'),  // use local date
-    startTime,
-    endTime,
-  });
-  setShowBookingForm(true);
+
+  return <AuthenticatedApp
+    user={user}
+    activeView={activeView}
+    setActiveView={setActiveView}
+    showBookingForm={showBookingForm}
+    setShowBookingForm={setShowBookingForm}
+    showTrainingRecordForm={showTrainingRecordForm}
+    setShowTrainingRecordForm={setShowTrainingRecordForm}
+    editingBooking={editingBooking}
+    setEditingBooking={setEditingBooking}
+    selectedBookingForRecord={selectedBookingForRecord}
+    setSelectedBookingForRecord={setSelectedBookingForRecord}
+    bookingFormData={bookingFormData}
+    setBookingFormData={setBookingFormData}
+  />;
 };
 
-const handleNewBookingWithResource = (
-  date: Date,
-  startTime: string,
-  endTime?: string,
-  resourceId?: string,
-  resourceType?: 'aircraft' | 'instructor'
-) => {
-  const formData: any = {
-    date: format(date, 'yyyy-MM-dd'),  // use local date
-    startTime,
-    endTime,
+const AuthenticatedApp: React.FC<{
+  user: any;
+  activeView: string;
+  setActiveView: (view: string) => void;
+  showBookingForm: boolean;
+  setShowBookingForm: (show: boolean) => void;
+  showTrainingRecordForm: boolean;
+  setShowTrainingRecordForm: (show: boolean) => void;
+  editingBooking: Booking | null;
+  setEditingBooking: (booking: Booking | null) => void;
+  selectedBookingForRecord: Booking | null;
+  setSelectedBookingForRecord: (booking: Booking | null) => void;
+  bookingFormData: any;
+  setBookingFormData: (data: any) => void;
+}> = ({
+  activeView,
+  setActiveView,
+  showBookingForm,
+  setShowBookingForm,
+  showTrainingRecordForm,
+  setShowTrainingRecordForm,
+  editingBooking,
+  setEditingBooking,
+  selectedBookingForRecord,
+  setSelectedBookingForRecord,
+  bookingFormData,
+  setBookingFormData
+}) => {
+  const navigate = useNavigate();
+  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking } = useBookings();
+
+  const handleViewChange = (view: string) => {
+    setActiveView(view);
+    navigate('/');
   };
-  if (resourceType === 'aircraft') {
-    formData.aircraftId = resourceId;
-  } else if (resourceType === 'instructor') {
-    formData.instructorId = resourceId;
-  }
-  setBookingFormData(formData);
-  setShowBookingForm(true);
-};
-  
+
+  const handleNewBookingWithTime = (
+    date: Date,
+    startTime: string,
+    endTime?: string
+  ) => {
+    setBookingFormData({
+      date: format(date, 'yyyy-MM-dd'),
+      startTime,
+      endTime,
+    });
+    setShowBookingForm(true);
+  };
+
+  const handleNewBookingWithResource = (
+    date: Date,
+    startTime: string,
+    endTime?: string,
+    resourceId?: string,
+    resourceType?: 'aircraft' | 'instructor'
+  ) => {
+    const formData: any = {
+      date: format(date, 'yyyy-MM-dd'),
+      startTime,
+      endTime,
+    };
+    if (resourceType === 'aircraft') {
+      formData.aircraftId = resourceId;
+    } else if (resourceType === 'instructor') {
+      formData.instructorId = resourceId;
+    }
+    setBookingFormData(formData);
+    setShowBookingForm(true);
+  };
+
   const handleBookingSubmit = async (bookingData: any) => {
     try {
-      console.log('Form data received:', bookingData);
-
-      const startTime = new Date(`${bookingData.date}T${bookingData.startTime}`);
-      const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}`);
-
-      console.log('Parsed times:', { startTime, endTime });
+      // Parse as local time by appending seconds — avoids UTC date-shift
+      const startTime = new Date(`${bookingData.date}T${bookingData.startTime}:00`);
+      const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
 
       if (editingBooking) {
         await updateBooking(editingBooking.id, {
@@ -106,10 +168,11 @@ const handleNewBookingWithResource = (
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
-          status: editingBooking.status
+          status: editingBooking.status,
+          flightTypeId: bookingData.flightTypeId || undefined,
         });
       } else {
-        const newBookingData = {
+        await addBooking({
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
           aircraftId: bookingData.aircraftId,
@@ -117,20 +180,18 @@ const handleNewBookingWithResource = (
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
-          status: 'confirmed' as const
-        };
-
-        console.log('Creating new booking:', newBookingData);
-        await addBooking(newBookingData);
+          status: 'confirmed' as const,
+          flightTypeId: bookingData.flightTypeId || undefined,
+        });
       }
     } catch (error) {
       console.error('Error saving booking:', error);
     }
   };
 
-  const handleUpdateBooking = async (bookingId: string, updates: Partial<Booking>) => {
+  const handleUpdateBooking = async (bookingId: string, updates: Partial<Booking>, silent?: boolean) => {
     try {
-      await updateBooking(bookingId, updates);
+      await updateBooking(bookingId, updates, silent);
     } catch (error) {
       console.error('Error updating booking:', error);
     }
@@ -160,15 +221,22 @@ const handleNewBookingWithResource = (
       case 'dashboard':
         return <Dashboard />;
       case 'calendar':
-        return <Calendar 
+        return <Calendar
           bookings={bookings}
-          onNewBooking={() => setShowBookingForm(true)} 
+          onNewBooking={() => setShowBookingForm(true)}
           onNewBookingWithTime={handleNewBookingWithResource}
           onEditBooking={(booking) => {
             setEditingBooking(booking);
             setShowBookingForm(true);
           }}
           onUpdateBooking={handleUpdateBooking}
+          onDeleteBooking={async (bookingId) => {
+            try {
+              await deleteBooking(bookingId);
+            } catch (error) {
+              console.error('Error deleting booking:', error);
+            }
+          }}
         />;
       case 'bookings':
         return <BookingsList
@@ -179,6 +247,20 @@ const handleNewBookingWithResource = (
               await deleteBooking(bookingId);
             } catch (error) {
               console.error('Error deleting booking:', error);
+            }
+          }}
+          onApproveBooking={async (bookingId) => {
+            try {
+              await approveBooking(bookingId);
+            } catch (error) {
+              console.error('Error approving booking:', error);
+            }
+          }}
+          onRejectBooking={async (bookingId) => {
+            try {
+              await rejectBooking(bookingId);
+            } catch (error) {
+              console.error('Error rejecting booking:', error);
             }
           }}
           onOpenTrainingRecord={handleOpenTrainingRecord}
@@ -195,10 +277,24 @@ const handleNewBookingWithResource = (
         return <ReportsDashboard />;
       case 'safety':
         return <SafetyDashboard />;
+      case 'training':
+        return <TrainingCourseCatalog />;
+      case 'outstanding-records':
+        return (
+          <div className="p-0">
+            <div className="px-6 pt-6 pb-2">
+              <h1 className="text-2xl font-bold text-gray-900">Outstanding Records</h1>
+              <p className="text-gray-600 mt-1 text-sm">Flights awaiting a training record entry</p>
+            </div>
+            <OutstandingRecordsTab />
+          </div>
+        );
       case 'syllabus-management':
-        return <Dashboard />;
+        return <TrainingModuleBuilder />;
       case 'profile':
         return <StudentProfile />;
+      case 'mylogbook':
+        return <MyLogbookPage />;
       case 'settings':
         return <SettingsDashboard />;
       default:
@@ -214,7 +310,7 @@ const handleNewBookingWithResource = (
           <div className="min-h-screen bg-gray-50">
             <Header />
             <div className="flex lg:ml-0 ml-0">
-              <Sidebar activeView="students" onViewChange={setActiveView} />
+              <Sidebar activeView="students" onViewChange={handleViewChange} />
               <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0">
                 <StudentProfilePage
                   onOpenTrainingRecord={(booking) => {
@@ -222,6 +318,19 @@ const handleNewBookingWithResource = (
                     setShowTrainingRecordForm(true);
                   }}
                 />
+              </main>
+            </div>
+          </div>
+        </RouteGuard>
+      } />
+      <Route path="/aircraft/:aircraftId/logs" element={
+        <RouteGuard requiredAction="view-aircraft">
+          <div className="min-h-screen bg-gray-50">
+            <Header />
+            <div className="flex lg:ml-0 ml-0">
+              <Sidebar activeView="aircraft" onViewChange={handleViewChange} />
+              <main className="flex-1 overflow-x-hidden lg:ml-0 ml-0 p-6">
+                <AircraftFlightLogs />
               </main>
             </div>
           </div>
@@ -277,11 +386,13 @@ const getRequiredActionForView = (view: string) => {
     'aircraft': 'view-aircraft',
     'maintenance': 'view-maintenance',
     'training': 'view-training',
+    'outstanding-records': 'view-outstanding-records',
     'syllabus-management': 'view-training',
     'billing': 'view-billing',
     'reports': 'view-reports',
     'safety': 'view-safety',
-    'profile': 'view-students',
+    'profile': 'edit-personal-settings',
+    'mylogbook': 'view-logbook',
     'settings': 'view-settings'
   };
   return actionMap[view] || 'view-dashboard';
@@ -291,6 +402,7 @@ const getRequiredResourceForView = (view: string) => {
   const resourceMap: Record<string, 'all' | 'own'> = {
     'bookings': 'own',
     'profile': 'own',
+    'mylogbook': 'own',
     'settings': 'own'
   };
   return resourceMap[view] || 'all';
@@ -300,18 +412,20 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <AppContent />
-        <Toaster 
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: '#fff',
-              color: '#374151',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-            },
-          }}
-        />
+        <TrainingModulesProvider>
+          <AppContent />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              style: {
+                background: '#fff',
+                color: '#374151',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+              },
+            }}
+          />
+        </TrainingModulesProvider>
       </AuthProvider>
     </Router>
   );

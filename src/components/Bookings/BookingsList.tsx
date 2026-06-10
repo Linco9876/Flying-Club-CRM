@@ -15,13 +15,17 @@ interface BookingsListProps {
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>) => void;
   onDeleteBooking?: (bookingId: string) => void;
   onOpenTrainingRecord?: (booking: Booking) => void;
+  onApproveBooking?: (bookingId: string) => void;
+  onRejectBooking?: (bookingId: string) => void;
 }
 
 export const BookingsList: React.FC<BookingsListProps> = ({
   bookings,
   onUpdateBooking,
   onDeleteBooking,
-  onOpenTrainingRecord
+  onOpenTrainingRecord,
+  onApproveBooking,
+  onRejectBooking
 }) => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
@@ -85,6 +89,8 @@ export const BookingsList: React.FC<BookingsListProps> = ({
     switch (status) {
       case 'confirmed':
         return 'bg-green-100 text-green-800 border-green-200';
+      case 'pending_approval':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
       case 'cancelled':
         return 'bg-red-100 text-red-800 border-red-200';
       case 'completed':
@@ -145,8 +151,11 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                       setShowFlightLogForm(true);
                     }}
                     onViewTrainingRecord={() => onOpenTrainingRecord && onOpenTrainingRecord(booking)}
+                    onApprove={onApproveBooking ? () => onApproveBooking(booking.id) : undefined}
+                    onReject={onRejectBooking ? () => onRejectBooking(booking.id) : undefined}
                     hasTrainingRecord={!!booking.flightLog}
                     canDelete={user?.role !== 'student'}
+                    canApprove={user?.role === 'admin' || user?.role === 'instructor'}
                   />
                 </div>
               </div>

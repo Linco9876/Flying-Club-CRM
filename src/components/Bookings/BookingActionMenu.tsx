@@ -1,174 +1,177 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, CreditCard as Edit, Trash2, FileText, Eye, X } from 'lucide-react';
+import React from 'react';
+import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon } from 'lucide-react';
 import { Booking } from '../../types';
-import { formatLocalDateTime } from '../../utils/timeUtils';
 
 interface BookingActionMenuProps {
   booking: Booking;
   onEdit: () => void;
-  onDelete: () => void;
   onLogFlight: () => void;
-  onViewDetails?: () => void;
+  onDelete: () => void;
   onViewTrainingRecord?: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
   hasTrainingRecord?: boolean;
   canDelete?: boolean;
+  canApprove?: boolean;
+  position?: { x: number; y: number };
+  onClose?: () => void;
 }
 
 export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   booking,
   onEdit,
-  onDelete,
   onLogFlight,
-  onViewDetails,
+  onDelete,
   onViewTrainingRecord,
-  hasTrainingRecord = false,
-  canDelete = true
+  onApprove,
+  onReject,
+  hasTrainingRecord,
+  canDelete = true,
+  canApprove = false,
+  position,
+  onClose,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [isOpen, setIsOpen] = React.useState(position ? true : false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
 
-  const handleAction = (action: () => void) => {
-    action();
-    setIsOpen(false);
-  };
-
-  // Close menu when clicking outside
-  useEffect(() => {
+  React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node) &&
-          buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [isOpen]);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (position && onClose) {
+          onClose();
+        } else {
+          setIsOpen(false);
+        }
+      }
+    };
 
-  // Handle keyboard navigation
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
+    if (isOpen && !position) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    if (isOpen || position) {
+      document.addEventListener('keydown', handleEscape);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, position, onClose]);
+
+  const handleAction = (action: () => void) => {
+    action();
+    if (position && onClose) {
+      onClose();
+    } else {
       setIsOpen(false);
-      buttonRef.current?.focus();
     }
   };
 
-  return (
-    <div className="relative">
+  const menuContent = (
+    <>
       <button
-        ref={buttonRef}
+        onClick={() => handleAction(onEdit)}
+        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+      >
+        <Edit className="h-4 w-4" />
+        <span>Edit Booking</span>
+      </button>
+
+      <button
+        onClick={() => handleAction(onLogFlight)}
+        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+      >
+        <FileText className="h-4 w-4" />
+        <span>Log Flight</span>
+      </button>
+
+      {hasTrainingRecord && onViewTrainingRecord && (
+        <button
+          onClick={() => handleAction(onViewTrainingRecord)}
+          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
+        >
+          <FileText className="h-4 w-4" />
+          <span>View Training Record</span>
+        </button>
+      )}
+
+      {canApprove && booking.status === 'pending_approval' && (
+        <>
+          <div className="border-t border-gray-200 my-1"></div>
+          {onApprove && (
+            <button
+              onClick={() => handleAction(onApprove)}
+              className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center space-x-2 transition-colors"
+            >
+              <Check className="h-4 w-4" />
+              <span>Approve Booking</span>
+            </button>
+          )}
+          {onReject && (
+            <button
+              onClick={() => handleAction(onReject)}
+              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 transition-colors"
+            >
+              <XIcon className="h-4 w-4" />
+              <span>Reject Booking</span>
+            </button>
+          )}
+        </>
+      )}
+
+      {canDelete && (
+        <>
+          <div className="border-t border-gray-200 my-1"></div>
+          <button
+            onClick={() => handleAction(onDelete)}
+            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span>Delete Booking</span>
+          </button>
+        </>
+      )}
+    </>
+  );
+
+  if (position) {
+    return (
+      <div
+        ref={menuRef}
+        className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 min-w-[200px]"
+        style={{
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+        }}
+      >
+        {menuContent}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
         onClick={(e) => {
           e.stopPropagation();
           setIsOpen(!isOpen);
         }}
-        className="p-2 hover:bg-gray-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-        aria-label="Booking actions"
-        aria-expanded={isOpen}
-        aria-haspopup="true"
+        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        title="More actions"
       >
-        <MoreVertical className="h-4 w-4 text-gray-600" />
+        <MoreVertical className="h-5 w-5 text-gray-600" />
       </button>
 
       {isOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setIsOpen(false)}
-          />
-          
-          {/* Menu */}
-          <div
-            ref={menuRef}
-            className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50"
-            onKeyDown={handleKeyDown}
-            role="menu"
-            aria-orientation="vertical"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-4 py-3 border-b border-gray-100">
-              <p className="text-xs text-gray-500">
-                Started at {formatLocalDateTime(booking.startTime)}
-              </p>
-            </div>
-
-            <div className="py-1">
-              {/* Log Flight / View Training Record */}
-              {hasTrainingRecord ? (
-                <button
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2 focus:outline-none focus:bg-gray-50"
-                  role="menuitem"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAction(onViewTrainingRecord || (() => {}));
-                  }}
-                >
-                  <Eye className="h-4 w-4" />
-                  <span>View Training Record</span>
-                </button>
-              ) : (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAction(onLogFlight);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-blue-700 hover:bg-blue-50 flex items-center space-x-2 focus:outline-none focus:bg-blue-50 font-medium"
-                  role="menuitem"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>Log Flight</span>
-                </button>
-              )}
-              
-              {/* Edit Booking */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAction(onEdit);
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2 focus:outline-none focus:bg-gray-50"
-                role="menuitem"
-              >
-                <Edit className="h-4 w-4" />
-                <span>Edit Booking</span>
-              </button>
-
-              {/* View Details */}
-              {onViewDetails && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAction(onViewDetails);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2 focus:outline-none focus:bg-gray-50"
-                  role="menuitem"
-                >
-                  <Eye className="h-4 w-4" />
-                  <span>View Details</span>
-                </button>
-              )}
-              
-              {/* Delete Booking */}
-              {canDelete && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAction(onDelete);
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 focus:outline-none focus:bg-red-50"
-                  role="menuitem"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span>Delete Booking</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </>
+        <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+          {menuContent}
+        </div>
       )}
     </div>
   );
