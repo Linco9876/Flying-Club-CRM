@@ -141,6 +141,10 @@ const AppContent: React.FC = () => {
   }
 
   if (location.pathname === '/trial-flight-gift-vouchers') {
+    if (!isLoading && user?.portalAccessScope === 'trial_voucher') {
+      return <Navigate to="/trial-flight-voucher" replace />;
+    }
+
     return (
       <Suspense fallback={<PageLoader />}>
         <TrialVoucherSalesPage />
