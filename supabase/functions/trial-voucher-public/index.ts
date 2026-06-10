@@ -681,16 +681,39 @@ Deno.serve(async (req: Request) => {
         return json({ error: bookingError?.message || "Could not create booking" }, 500);
       }
 
-      const { error: voucherUpdateError } = await adminClient
+      const cancelInsertedBooking = async () => {
+        const now = new Date().toISOString();
+        await adminClient
+          .from("bookings")
+          .update({
+            status: "cancelled",
+            deleted_at: now,
+            updated_at: now,
+          })
+          .eq("id", booking.id);
+      };
+
+      const { data: bookedVoucher, error: voucherUpdateError } = await adminClient
         .from("trial_flight_vouchers")
         .update({
           status: "booked",
           booked_booking_id: booking.id,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", voucher.id);
+        .eq("id", voucher.id)
+        .eq("status", "redeemed")
+        .is("booked_booking_id", null)
+        .select("id")
+        .maybeSingle();
 
-      if (voucherUpdateError) return json({ error: voucherUpdateError.message }, 500);
+      if (voucherUpdateError) {
+        await cancelInsertedBooking();
+        return json({ error: voucherUpdateError.message }, 500);
+      }
+      if (!bookedVoucher) {
+        await cancelInsertedBooking();
+        return json({ error: "This voucher was booked from another session. Refresh to see the latest booking." }, 409);
+      }
 
       const bookedSummary = { ...matchingSlot, bookingId: booking.id };
       const confirmationEmail = await sendTrialBookingConfirmationEmail({
