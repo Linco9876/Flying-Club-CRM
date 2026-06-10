@@ -232,6 +232,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
             <div className="mt-6 rounded-2xl bg-white/10 p-4 text-sm text-blue-50">
               Voucher bookings reserve the flight time plus 30 minutes for arrival, briefing and paperwork. Available times are based on aircraft and qualified instructor availability.
             </div>
+            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-6 text-blue-50">
+              This account is only for choosing the trial flight time. If your email is already used for a normal club member account, use a different email for the voucher or contact the club to link it manually.
+            </div>
           </section>
 
           <section className="rounded-3xl bg-white p-5 text-slate-950 shadow-2xl sm:p-6">

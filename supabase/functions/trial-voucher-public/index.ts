@@ -428,11 +428,17 @@ Deno.serve(async (req: Request) => {
 
     const { data: existingProfile } = await adminClient
       .from("users")
-      .select("id,email")
+      .select("id,email,portal_access_scope")
       .eq("email", email)
       .maybeSingle();
 
     let userId = existingProfile?.id;
+
+    if (existingProfile && existingProfile.portal_access_scope !== "trial_voucher") {
+      return json({
+        error: "This email already belongs to a full Bendigo Flying Club account. Use a different email for this restricted voucher booking account, or contact the club for help linking the voucher.",
+      }, 409);
+    }
 
     if (!userId) {
       const tempPassword = crypto.randomUUID() + "A1!";
@@ -460,6 +466,15 @@ Deno.serve(async (req: Request) => {
 
       if (userError) return json({ error: userError.message }, 500);
 
+      await adminClient.from("user_roles").upsert({ user_id: userId, role: "student" }, { onConflict: "user_id,role" });
+      await adminClient.from("students").upsert({ id: userId, prepaid_balance: 0 }, { onConflict: "id" });
+    } else {
+      await adminClient.from("users").update({
+        name: fullName,
+        phone,
+        role: "student",
+        portal_access_scope: "trial_voucher",
+      }).eq("id", userId);
       await adminClient.from("user_roles").upsert({ user_id: userId, role: "student" }, { onConflict: "user_id,role" });
       await adminClient.from("students").upsert({ id: userId, prepaid_balance: 0 }, { onConflict: "id" });
     }
