@@ -32,6 +32,21 @@ interface FlightLogModalProps {
   flightLogId?: string;
 }
 
+const padDatePart = (value: number) => String(value).padStart(2, '0');
+
+const toLocalDateTimeInputValue = (value: Date | string) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return [
+    date.getFullYear(),
+    padDatePart(date.getMonth() + 1),
+    padDatePart(date.getDate())
+  ].join('-') + `T${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`;
+};
+
+const localDateTimeInputToIso = (value: string) => new Date(value).toISOString();
+
 export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   booking,
   onClose,
@@ -500,8 +515,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               <label className={labelClass}>Start Time</label>
               <input
                 type="datetime-local"
-                value={new Date(formData.start_time).toISOString().slice(0, 16)}
-                onChange={(e) => setFormData({ ...formData, start_time: new Date(e.target.value).toISOString() })}
+                value={toLocalDateTimeInputValue(formData.start_time)}
+                onChange={(e) => setFormData({ ...formData, start_time: localDateTimeInputToIso(e.target.value) })}
                 className={fieldClass}
                 required
               />
@@ -510,8 +525,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               <label className={labelClass}>End Time</label>
               <input
                 type="datetime-local"
-                value={new Date(formData.end_time).toISOString().slice(0, 16)}
-                onChange={(e) => setFormData({ ...formData, end_time: new Date(e.target.value).toISOString() })}
+                value={toLocalDateTimeInputValue(formData.end_time)}
+                onChange={(e) => setFormData({ ...formData, end_time: localDateTimeInputToIso(e.target.value) })}
                 className={fieldClass}
                 required
               />
