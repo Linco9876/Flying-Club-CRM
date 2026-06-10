@@ -43,6 +43,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [bookedSlot, setBookedSlot] = useState<VoucherSlot | null>(null);
   const [form, setForm] = useState({ fullName: '', email: '', phone: '' });
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
+  const [setupResendEmail, setSetupResendEmail] = useState('');
 
   const loadLinkedVoucher = async () => {
     setLoading(true);
@@ -172,6 +173,26 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not book this time');
       await loadAvailability();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendSetupLink = async () => {
+    if (!voucher || !code) return;
+    setLoading(true);
+    try {
+      const redirectTo = `${window.location.origin}/trial-flight-voucher?code=${encodeURIComponent(code)}`;
+      const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+        body: { action: 'resend-setup', code, redirectTo },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
+      setSetupResendEmail(data.email || '');
+      toast.success(data.setupEmailSent ? 'Setup link resent' : 'Setup link generated');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not resend setup link');
     } finally {
       setLoading(false);
     }
@@ -360,12 +381,27 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <p className="mt-1 text-sm">
                       Your voucher is linked to a restricted booking account. The final booking is only available from the account attached to this voucher.
                     </p>
-                    <a
-                      href="/"
-                      className="mt-3 inline-flex rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
-                    >
-                      Sign in to voucher account
-                    </a>
+                    {setupResendEmail && (
+                      <p className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-amber-800">
+                        Setup link sent to {setupResendEmail}. Check junk mail if it does not arrive.
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <a
+                        href="/"
+                        className="inline-flex justify-center rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
+                      >
+                        Sign in to voucher account
+                      </a>
+                      <button
+                        type="button"
+                        onClick={resendSetupLink}
+                        disabled={loading}
+                        className="inline-flex justify-center rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        Resend setup link
+                      </button>
+                    </div>
                   </div>
                 )}
 

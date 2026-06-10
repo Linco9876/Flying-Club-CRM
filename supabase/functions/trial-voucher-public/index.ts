@@ -560,6 +560,49 @@ Deno.serve(async (req: Request) => {
       return json({ voucher: publicVoucher });
     }
 
+    if (action === "resend-setup") {
+      if (voucher.status === "booked") return json({ error: "This voucher has already been booked" }, 409);
+      if (voucher.status !== "redeemed" || !voucher.redeemed_by_user_id) {
+        return json({ error: "Redeem this voucher before requesting a setup link" }, 409);
+      }
+
+      const { data: linkedUser, error: linkedUserError } = await adminClient
+        .from("users")
+        .select("email,name,portal_access_scope")
+        .eq("id", voucher.redeemed_by_user_id)
+        .maybeSingle();
+
+      if (linkedUserError) return json({ error: linkedUserError.message }, 500);
+      if (!linkedUser?.email || linkedUser.portal_access_scope !== "trial_voucher") {
+        return json({ error: "The linked voucher account could not be found. Contact Bendigo Flying Club for help." }, 409);
+      }
+
+      const redirectTo = String(body.redirectTo || "").trim() || undefined;
+      const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+        type: "recovery",
+        email: linkedUser.email,
+        options: redirectTo ? { redirectTo } : undefined,
+      });
+
+      if (linkError) return json({ error: linkError.message }, 500);
+
+      const setupLink = linkData?.properties?.action_link || null;
+      const setupEmail = setupLink
+        ? await sendVoucherAccountSetupEmail({
+            email: linkedUser.email,
+            fullName: linkedUser.name || "there",
+            productName: product.name,
+            setupLink,
+          })
+        : { sent: false, error: "No setup link was generated" };
+
+      return json({
+        setupLink,
+        setupEmailSent: setupEmail.sent,
+        email: linkedUser.email,
+      });
+    }
+
     if (action === "availability") {
       if (voucher.status === "booked" || voucher.booked_booking_id) {
         return json({ error: "This voucher has already been booked" }, 409);
