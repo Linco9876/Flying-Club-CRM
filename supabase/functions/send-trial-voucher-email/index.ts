@@ -209,6 +209,33 @@ const hasValidInternalSecret = (req: Request) => {
   return Boolean(configuredSecret && suppliedSecret && suppliedSecret === configuredSecret);
 };
 
+const getVaultSecret = async (adminClient: ReturnType<typeof createClient>, name: string) => {
+  const { data, error } = await adminClient
+    .schema("vault")
+    .from("decrypted_secrets")
+    .select("decrypted_secret")
+    .eq("name", name)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`Failed to read vault secret ${name}:`, error.message);
+    return null;
+  }
+
+  return typeof data?.decrypted_secret === "string" ? data.decrypted_secret : null;
+};
+
+const hasValidCronSecret = async (req: Request, body: any, adminClient: ReturnType<typeof createClient>) => {
+  const suppliedSecret = req.headers.get("x-cron-secret") || String(body.cronSecret || "");
+  if (!suppliedSecret) return false;
+
+  const configuredSecret =
+    Deno.env.get("TRIAL_VOUCHER_CRON_SECRET") ||
+    await getVaultSecret(adminClient, "trial_voucher_cron_secret");
+
+  return Boolean(configuredSecret && suppliedSecret === configuredSecret);
+};
+
 const authenticateStaff = async ({
   req,
   supabaseUrl,
@@ -292,11 +319,7 @@ Deno.serve(async (req: Request) => {
     });
 
     if (action === "send-due") {
-      const configuredSecret = Deno.env.get("TRIAL_VOUCHER_CRON_SECRET");
-      const suppliedSecret = req.headers.get("x-cron-secret") || String(body.cronSecret || "");
-      const hasValidCronSecret = Boolean(configuredSecret && suppliedSecret === configuredSecret);
-
-      if (!hasValidCronSecret) {
+      if (!(await hasValidCronSecret(req, body, adminClient))) {
         const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
         if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
       }
