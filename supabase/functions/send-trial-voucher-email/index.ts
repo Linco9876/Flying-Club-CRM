@@ -230,6 +230,10 @@ const sendVoucherEmail = async ({
   voucher: any;
   redirectOrigin?: string;
 }) => {
+  if (!["issued", "redeemed", "booked"].includes(String(voucher.status || ""))) {
+    return { sent: false, error: "Voucher email can only be sent after the voucher is issued." };
+  }
+
   const product = voucher.trial_flight_voucher_products;
   const { to, toName } = resolveDelivery(voucher);
   if (!to) return { sent: false, error: "Voucher has no delivery email address" };
@@ -317,6 +321,9 @@ Deno.serve(async (req: Request) => {
 
     if (voucherError) return json({ error: voucherError.message }, 500);
     if (!voucher) return json({ error: "Voucher not found" }, 404);
+    if (!["issued", "redeemed", "booked"].includes(String(voucher.status || ""))) {
+      return json({ error: "Voucher email can only be sent after the voucher is issued." }, 409);
+    }
 
     const deliveryAt = voucher.recipient_delivery_at ? new Date(voucher.recipient_delivery_at) : null;
     if (!force && voucher.send_to_recipient && deliveryAt && deliveryAt.getTime() > Date.now()) {

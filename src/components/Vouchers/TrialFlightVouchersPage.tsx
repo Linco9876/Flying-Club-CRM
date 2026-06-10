@@ -616,6 +616,11 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   <option value="waived">Waived / complimentary</option>
                 </select>
               </label>
+              {issueForm.paymentStatus === 'pending' && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
+                  Payment pending saves this voucher as a draft. It will not email or redeem until it is marked paid, manual, or waived.
+                </div>
+              )}
               <input value={issueForm.purchaserName} onChange={e => setIssueForm(f => ({ ...f, purchaserName: e.target.value }))} placeholder="Purchaser name" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
               <input type="email" value={issueForm.purchaserEmail} onChange={e => setIssueForm(f => ({ ...f, purchaserEmail: e.target.value }))} placeholder="Purchaser email" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
               <input value={issueForm.purchaserPhone} onChange={e => setIssueForm(f => ({ ...f, purchaserPhone: e.target.value }))} placeholder="Purchaser phone" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />

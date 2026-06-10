@@ -165,11 +165,18 @@ export const useTrialFlightVouchers = () => {
     paymentAmount?: number;
     paymentCurrency?: string;
   }) => {
+    const paymentStatus = voucher.paymentStatus || 'manual';
+    const issueStatus =
+      paymentStatus === 'pending'
+        ? 'draft'
+        : paymentStatus === 'failed' || paymentStatus === 'refunded'
+          ? 'cancelled'
+          : 'issued';
     const paymentFields = {
-      payment_status: voucher.paymentStatus || 'manual',
+      payment_status: paymentStatus,
       payment_amount: voucher.paymentAmount ?? null,
       payment_currency: voucher.paymentCurrency || 'AUD',
-      paid_at: voucher.paymentStatus === 'paid' ? new Date().toISOString() : null,
+      paid_at: paymentStatus === 'paid' ? new Date().toISOString() : null,
     };
     const basePayload = {
       product_id: voucher.productId,
@@ -184,7 +191,7 @@ export const useTrialFlightVouchers = () => {
       expires_at: voucher.expiresAt || null,
       notes: voucher.notes || null,
       created_by: voucher.createdBy || null,
-      status: 'issued',
+      status: issueStatus,
     };
 
     let { data: createdVoucher, error } = await supabase
@@ -204,6 +211,16 @@ export const useTrialFlightVouchers = () => {
     }
 
     if (error) throw error;
+
+    if (issueStatus !== 'issued') {
+      toast.success(
+        issueStatus === 'draft'
+          ? 'Voucher saved as a draft. It will not email or redeem until payment is marked ready.'
+          : 'Voucher saved, but it has not been issued.'
+      );
+      await fetchAll();
+      return;
+    }
 
     try {
       const { data, error: emailError } = await supabase.functions.invoke('send-trial-voucher-email', {
