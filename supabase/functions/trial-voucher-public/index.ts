@@ -465,22 +465,28 @@ Deno.serve(async (req: Request) => {
     const code = normaliseCode(body.code);
 
     if (action === "products") {
-      const [
-        { data: products, error: productsError },
-        { data: aircraftRows, error: aircraftError },
-        { data: endorsementRows, error: endorsementError },
-      ] = await Promise.all([
+      const [{ data: products, error: productsError }, { data: aircraftRows, error: aircraftError }] = await Promise.all([
         adminClient
           .from("trial_flight_voucher_products")
           .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,booking_instructions,is_active")
           .eq("is_active", true)
           .order("duration_minutes", { ascending: true }),
         adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
-        adminClient.from("endorsements").select("student_id,type,expiry_date,is_active"),
       ]);
 
       if (productsError) return json({ error: productsError.message }, 500);
       if (aircraftError) return json({ error: aircraftError.message }, 500);
+
+      const instructorIds = Array.from(new Set(
+        (products || []).flatMap((product: any) => product.instructor_ids || [])
+      ));
+      const { data: endorsementRows, error: endorsementError } = instructorIds.length > 0
+        ? await adminClient
+          .from("endorsements")
+          .select("student_id,type,expiry_date,is_active")
+          .in("student_id", instructorIds)
+        : { data: [], error: null };
+
       if (endorsementError) return json({ error: endorsementError.message }, 500);
       return json({ products: (products || []).map((product: any) => toPublicProduct(product, aircraftRows || [], endorsementRows || [])) });
     }
