@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -6,6 +6,7 @@ import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
 import { useUsers } from '../../hooks/useUsers';
 import { TrialFlightVoucher, TrialFlightVoucherAircraftMode, TrialFlightVoucherPaymentStatus, TrialFlightVoucherProduct } from '../../types';
 import toast from 'react-hot-toast';
+import { supabase } from '../../lib/supabase';
 
 const defaultEmailBody =
   'This voucher includes a pre-flight welcome, a trial instructional flight with a qualified instructor, and time to ask questions about learning to fly at Bendigo Flying Club.';
@@ -48,6 +49,13 @@ const buildPresetProduct = (
 
 const dateTimeLocalToIso = (value: string) => value ? new Date(value).toISOString() : undefined;
 
+interface InstructorEndorsementRow {
+  student_id: string;
+  type: string;
+  expiry_date?: string | null;
+  is_active?: boolean | null;
+}
+
 export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
@@ -55,6 +63,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
+  const [instructorEndorsements, setInstructorEndorsements] = useState<InstructorEndorsementRow[]>([]);
   const [issueForm, setIssueForm] = useState({
     productId: '',
     purchaserName: '',
@@ -117,6 +126,36 @@ export const TrialFlightVouchersPage: React.FC = () => {
     );
     return { tecnams, archers };
   }, [aircraft]);
+
+  const instructorIdsKey = useMemo(
+    () => instructors.map(instructor => instructor.id).sort().join(','),
+    [instructors]
+  );
+
+  useEffect(() => {
+    const loadInstructorEndorsements = async () => {
+      const instructorIds = instructorIdsKey ? instructorIdsKey.split(',').filter(Boolean) : [];
+      if (instructorIds.length === 0) {
+        setInstructorEndorsements([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('endorsements')
+        .select('student_id,type,expiry_date,is_active')
+        .in('student_id', instructorIds);
+
+      if (error) {
+        console.warn('Failed to load instructor endorsements for voucher readiness:', error);
+        setInstructorEndorsements([]);
+        return;
+      }
+
+      setInstructorEndorsements(data || []);
+    };
+
+    void loadInstructorEndorsements();
+  }, [instructorIdsKey]);
 
   const updateArraySelection = (field: 'aircraftIds' | 'instructorIds', id: string, checked: boolean) => {
     setProductForm(form => ({
@@ -486,6 +525,26 @@ export const TrialFlightVouchersPage: React.FC = () => {
     return items.length > maxVisible ? `${visible} +${items.length - maxVisible} more` : visible;
   };
 
+  const normaliseEndorsementType = (value?: string | null) => String(value || '').trim().toLowerCase();
+
+  const instructorHasAircraftEndorsement = (instructorId: string, aircraftId: string) => {
+    const aircraftItem = aircraft.find(item => item.id === aircraftId);
+    const requiredType = normaliseEndorsementType(aircraftItem?.requiredEndorsementType);
+    if (!requiredType) return true;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return instructorEndorsements.some(endorsement => {
+      if (endorsement.student_id !== instructorId) return false;
+      if (endorsement.is_active === false) return false;
+      if (normaliseEndorsementType(endorsement.type) !== requiredType) return false;
+      if (!endorsement.expiry_date) return true;
+      const expiry = new Date(`${endorsement.expiry_date}T23:59:59`);
+      return expiry >= today;
+    });
+  };
+
   const paymentLabel = (status?: TrialFlightVoucherPaymentStatus) =>
     status === 'paid' ? 'Paid'
       : status === 'pending' ? 'Payment pending'
@@ -575,10 +634,17 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const bookingReadiness = (product: TrialFlightVoucherProduct) => {
     const { selectedAircraft, serviceableAircraft, missingSelectedCount } = getProductAircraft(product);
     const eligibleInstructors = instructors.filter(instructor => product.instructorIds.includes(instructor.id));
+    const qualifiedInstructors = eligibleInstructors.filter(instructor =>
+      serviceableAircraft.some(aircraftItem => instructorHasAircraftEndorsement(instructor.id, aircraftItem.id))
+    );
+    const endorsementRestrictedAircraft = serviceableAircraft.filter(item => item.requiredEndorsementType);
     const issues = [
       ...(selectedAircraft.length === 0 ? ['No matching aircraft are set up for this voucher.'] : []),
       ...(serviceableAircraft.length === 0 && selectedAircraft.length > 0 ? ['No eligible aircraft are currently serviceable.'] : []),
       ...(eligibleInstructors.length === 0 ? ['No eligible instructors are selected.'] : []),
+      ...(serviceableAircraft.length > 0 && eligibleInstructors.length > 0 && qualifiedInstructors.length === 0
+        ? ['No selected instructor currently holds the required aircraft endorsement for the serviceable aircraft.']
+        : []),
       ...(missingSelectedCount > 0 ? [`${missingSelectedCount} selected aircraft ${missingSelectedCount === 1 ? 'record is' : 'records are'} no longer in the fleet.`] : []),
     ];
 
@@ -587,6 +653,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
       aircraftCount: selectedAircraft.length,
       serviceableAircraftCount: serviceableAircraft.length,
       instructorCount: eligibleInstructors.length,
+      qualifiedInstructorCount: qualifiedInstructors.length,
+      endorsementRestrictedAircraftCount: endorsementRestrictedAircraft.length,
       ready: issues.length === 0,
     };
   };
@@ -611,6 +679,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
         : []),
       ...(readiness.aircraftCount > 0 && readiness.serviceableAircraftCount === 0 ? ['Mark at least one eligible aircraft as serviceable.'] : []),
       ...(readiness.instructorCount === 0 ? ['Select at least one eligible instructor for this voucher.'] : []),
+      ...(readiness.instructorCount > 0 && readiness.qualifiedInstructorCount === 0
+        ? ['Select an instructor who holds the required endorsement for at least one serviceable aircraft.']
+        : []),
       ...(Number(product.price || 0) <= 0 ? ['Enter the real AUD sale price before online checkout is enabled.'] : []),
       ...(!product.stripePriceId?.trim() ? ['Paste the matching Stripe Price ID, for example price_..., once the Stripe product is created.'] : []),
     ];
@@ -650,7 +721,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       label: 'Tecnam voucher can be booked',
       complete: Boolean(tecnamReadiness?.bookingReady),
       detail: tecnamReadiness?.bookingReady
-        ? `${tecnamReadiness.readiness?.serviceableAircraftCount ?? 0} serviceable Tecnam aircraft and ${tecnamReadiness.readiness?.instructorCount ?? 0} eligible instructor${tecnamReadiness.readiness?.instructorCount === 1 ? '' : 's'} are set.`
+        ? `${tecnamReadiness.readiness?.serviceableAircraftCount ?? 0} serviceable Tecnam aircraft and ${tecnamReadiness.readiness?.qualifiedInstructorCount ?? 0} qualified instructor${tecnamReadiness.readiness?.qualifiedInstructorCount === 1 ? '' : 's'} are set.`
         : tecnamReadiness?.issues[0] || 'Create and activate the Tecnam voucher product.',
       href: '/aircraft',
       action: 'Review aircraft',
@@ -659,7 +730,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       label: 'Archer voucher can be booked',
       complete: Boolean(archerReadiness?.bookingReady),
       detail: archerReadiness?.bookingReady
-        ? `${archerReadiness.readiness?.serviceableAircraftCount ?? 0} PA-28 Archer aircraft and ${archerReadiness.readiness?.instructorCount ?? 0} eligible instructor${archerReadiness.readiness?.instructorCount === 1 ? '' : 's'} are set.`
+        ? `${archerReadiness.readiness?.serviceableAircraftCount ?? 0} PA-28 Archer aircraft and ${archerReadiness.readiness?.qualifiedInstructorCount ?? 0} qualified instructor${archerReadiness.readiness?.qualifiedInstructorCount === 1 ? '' : 's'} are set.`
         : archerReadiness?.issues[0] || 'Add the PA-28 Archer to the fleet or select it manually on the Archer product.',
       href: '/aircraft',
       action: 'Add Archer',
@@ -799,8 +870,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     <p className="text-gray-500 dark:text-gray-400">Aircraft</p>
                   </div>
                   <div className="rounded-xl border border-white/70 bg-white/70 p-2 dark:border-[#2c2f36] dark:bg-[#111827]">
-                    <p className="text-lg font-bold text-gray-950 dark:text-gray-100">{item.readiness?.instructorCount ?? product?.instructorIds.length ?? 0}</p>
-                    <p className="text-gray-500 dark:text-gray-400">Instructors</p>
+                    <p className="text-lg font-bold text-gray-950 dark:text-gray-100">{item.readiness?.qualifiedInstructorCount ?? 0}</p>
+                    <p className="text-gray-500 dark:text-gray-400">Qualified</p>
                   </div>
                   <div className="rounded-xl border border-white/70 bg-white/70 p-2 dark:border-[#2c2f36] dark:bg-[#111827]">
                     <p className="text-lg font-bold text-gray-950 dark:text-gray-100">{product?.stripePriceId ? 'Yes' : 'No'}</p>
@@ -820,6 +891,11 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     <p className="mt-1 text-gray-600 dark:text-gray-300">
                       {compactList(instructorNames, product ? 'No eligible instructors selected' : 'Create product first')}
                     </p>
+                    {product && item.readiness && item.readiness.endorsementRestrictedAircraftCount > 0 && (
+                      <p className="mt-1 text-amber-700 dark:text-amber-200">
+                        {item.readiness.qualifiedInstructorCount} of {item.readiness.instructorCount} selected instructors match required aircraft endorsements.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1182,7 +1258,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           </p>
                         )}
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          {booking.serviceableAircraftCount} of {booking.aircraftCount} eligible aircraft serviceable - {booking.instructorCount} eligible instructor{booking.instructorCount === 1 ? '' : 's'}
+                          {booking.serviceableAircraftCount} of {booking.aircraftCount} eligible aircraft serviceable - {booking.qualifiedInstructorCount} qualified instructor{booking.qualifiedInstructorCount === 1 ? '' : 's'}
                           {product.aircraftIds.length > 0 ? ' - selected aircraft only' : ''}
                         </p>
                         <div className="mt-2 grid gap-2 text-xs leading-5 sm:grid-cols-2">
@@ -1280,7 +1356,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     {modeLabel(selectedProduct.aircraftMode)} - {selectedProduct.durationMinutes} min flight, {selectedProduct.durationMinutes + 30} min booking block.
                   </p>
                   <p className="mt-1 text-xs">
-                    {selectedProductReadiness?.serviceableAircraftCount ?? 0} serviceable aircraft - {selectedProductReadiness?.instructorCount ?? 0} eligible instructor{selectedProductReadiness?.instructorCount === 1 ? '' : 's'}
+                    {selectedProductReadiness?.serviceableAircraftCount ?? 0} serviceable aircraft - {selectedProductReadiness?.qualifiedInstructorCount ?? 0} qualified instructor{selectedProductReadiness?.qualifiedInstructorCount === 1 ? '' : 's'}
                   </p>
                   {selectedProduct.stripePriceId && (
                     <span className="mt-1 block text-xs font-mono text-blue-700 dark:text-blue-200">Stripe price: {selectedProduct.stripePriceId}</span>
