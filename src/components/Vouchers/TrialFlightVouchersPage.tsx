@@ -79,6 +79,33 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const checkoutSetupComplete = activeProducts.length > 0 && checkoutReadyProducts.length === activeProducts.length;
   const hasTecnamProduct = products.some(product => product.aircraftMode === 'tecnam');
   const hasArcherProduct = products.some(product => product.aircraftMode === 'archer');
+  const now = Date.now();
+  const emailReadyStatuses = new Set(['issued', 'redeemed', 'booked']);
+  const scheduledRecipientVouchers = vouchers.filter(voucher =>
+    voucher.sendToRecipient &&
+    voucher.recipientDeliveryAt &&
+    !voucher.deliveredAt &&
+    emailReadyStatuses.has(voucher.status)
+  );
+  const dueRecipientVouchers = scheduledRecipientVouchers.filter(voucher =>
+    voucher.recipientDeliveryAt && voucher.recipientDeliveryAt.getTime() <= now
+  );
+  const futureRecipientVouchers = scheduledRecipientVouchers.filter(voucher =>
+    voucher.recipientDeliveryAt && voucher.recipientDeliveryAt.getTime() > now
+  );
+  const visibleRecentVouchers = [...vouchers]
+    .sort((a, b) => {
+      const aDue = dueRecipientVouchers.some(voucher => voucher.id === a.id);
+      const bDue = dueRecipientVouchers.some(voucher => voucher.id === b.id);
+      if (aDue !== bDue) return aDue ? -1 : 1;
+
+      const aUndelivered = !a.deliveredAt && emailReadyStatuses.has(a.status);
+      const bUndelivered = !b.deliveredAt && emailReadyStatuses.has(b.status);
+      if (aUndelivered !== bUndelivered) return aUndelivered ? -1 : 1;
+
+      return (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0);
+    })
+    .slice(0, 8);
 
   const aircraftByMode = useMemo(() => {
     const tecnams = aircraft.filter(item =>
@@ -336,13 +363,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const voucherDeliveryDetails = (voucher: TrialFlightVoucher) => {
     if (voucher.sendToRecipient) {
+      const scheduledTime = voucher.recipientDeliveryAt?.getTime();
+      const isDue = Boolean(scheduledTime && scheduledTime <= now && !voucher.deliveredAt && emailReadyStatuses.has(voucher.status));
       return {
         label: 'Direct to recipient',
         name: voucher.recipientName || 'Recipient',
         email: voucher.recipientEmail || 'No recipient email set',
         schedule: voucher.recipientDeliveryAt
-          ? `Scheduled for ${voucher.recipientDeliveryAt.toLocaleString()}`
+          ? `${isDue ? 'Due now' : 'Scheduled'} for ${voucher.recipientDeliveryAt.toLocaleString()}`
           : 'Sends as soon as the voucher is issued',
+        state: voucher.deliveredAt ? 'delivered' : isDue ? 'due' : voucher.recipientDeliveryAt ? 'scheduled' : 'immediate',
       };
     }
 
@@ -351,6 +381,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       name: voucher.purchaserName || 'Purchaser',
       email: voucher.purchaserEmail,
       schedule: 'Email is sent to the purchaser to forward or print when ready',
+      state: voucher.deliveredAt ? 'delivered' : 'manual',
     };
   };
 
@@ -996,6 +1027,18 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <div>
                 <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Recent vouchers</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">Scheduled recipient emails are sent automatically; this button checks anything due now.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    dueRecipientVouchers.length > 0
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
+                      : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200'
+                  }`}>
+                    {dueRecipientVouchers.length} due now
+                  </span>
+                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
+                    {futureRecipientVouchers.length} scheduled
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -1004,15 +1047,24 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-950/50"
               >
                 <Mail className="h-3.5 w-3.5" />
-                Send due now
+                {dueRecipientVouchers.length > 0 ? `Send due now (${dueRecipientVouchers.length})` : 'Check due emails'}
               </button>
             </div>
+            {dueRecipientVouchers.length > 0 && (
+              <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
+                {dueRecipientVouchers.length} scheduled recipient email{dueRecipientVouchers.length === 1 ? ' is' : 's are'} due and not marked delivered. The cards needing attention are shown first.
+              </div>
+            )}
             <div className="space-y-2">
-              {vouchers.slice(0, 8).map(voucher => {
+              {visibleRecentVouchers.map(voucher => {
                 const redeemUrl = getRedeemUrl(voucher.code);
                 const delivery = voucherDeliveryDetails(voucher);
                 return (
-                <div key={voucher.id} className="rounded-xl border border-gray-200 p-3 dark:border-[#2c2f36]">
+                <div key={voucher.id} className={`rounded-xl border p-3 ${
+                  delivery.state === 'due'
+                    ? 'border-amber-300 bg-amber-50/70 dark:border-amber-400/35 dark:bg-amber-950/20'
+                    : 'border-gray-200 dark:border-[#2c2f36]'
+                }`}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-gray-950 dark:text-gray-100">{voucher.productName || 'Voucher'}</p>
@@ -1025,7 +1077,11 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/20 dark:text-blue-100">
+                  <div className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${
+                    delivery.state === 'due'
+                      ? 'border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100'
+                      : 'border-blue-100 bg-blue-50 text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/20 dark:text-blue-100'
+                  }`}>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <p className="font-bold uppercase tracking-wide">{delivery.label}</p>
@@ -1033,7 +1089,13 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           {delivery.name} - {delivery.email}
                         </p>
                       </div>
-                      <p className="max-w-xs text-blue-800 dark:text-blue-200 sm:text-right">{delivery.schedule}</p>
+                      <p className={`max-w-xs sm:text-right ${
+                        delivery.state === 'due'
+                          ? 'font-semibold text-amber-900 dark:text-amber-100'
+                          : 'text-blue-800 dark:text-blue-200'
+                      }`}>
+                        {delivery.schedule}
+                      </p>
                     </div>
                   </div>
                   {(voucher.redeemedByName || voucher.bookedBooking) && (
@@ -1111,11 +1173,15 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-[#111827] dark:text-gray-300">
+                  <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+                    delivery.state === 'due'
+                      ? 'bg-amber-100 font-semibold text-amber-900 dark:bg-amber-950/30 dark:text-amber-100'
+                      : 'bg-gray-50 text-gray-600 dark:bg-[#111827] dark:text-gray-300'
+                  }`}>
                     {voucher.deliveredAt
                       ? `Email delivered ${voucher.deliveredAt.toLocaleString()}`
                       : voucher.sendToRecipient && voucher.recipientDeliveryAt
-                        ? `Recipient email scheduled for ${voucher.recipientDeliveryAt.toLocaleString()}`
+                        ? `${delivery.state === 'due' ? 'Recipient email is due now' : 'Recipient email scheduled'} for ${voucher.recipientDeliveryAt.toLocaleString()}`
                         : 'Purchaser email not marked delivered yet'}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
