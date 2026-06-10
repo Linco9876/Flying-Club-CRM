@@ -94,7 +94,7 @@ export interface Booking {
   aircraftId: string;
   startTime: Date;
   endTime: Date;
-  paymentType: 'prepaid' | 'payg' | 'account';
+  paymentType: string;
   notes?: string;
   status: 'confirmed' | 'cancelled' | 'completed' | 'no-show' | 'pending_approval';
   hasConflict?: boolean;

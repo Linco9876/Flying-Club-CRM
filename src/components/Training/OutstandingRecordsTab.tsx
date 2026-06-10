@@ -1046,34 +1046,37 @@ export const OutstandingRecordsTab: React.FC = () => {
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
       <header className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white shadow-sm dark:border-blue-400/20">
-        <div className="flex min-w-0 items-start gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
-          <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
-            <ClipboardList className="h-5 w-5" />
+        <div className="flex min-w-0 flex-col gap-4 px-4 pt-4 sm:px-5 sm:pt-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
+              <ClipboardList className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
+                Draft records in flight, complete your own queue, or restore flights that were marked as no record needed.
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
-            <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
-              Draft records in flight, complete your own queue, or restore flights that were marked as no record needed.
-            </p>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowDraftComposer(value => !value)}
+            aria-pressed={showDraftComposer}
+            className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
+              showDraftComposer
+                ? 'bg-white text-blue-900 shadow-sm'
+                : 'bg-blue-500 text-white shadow-sm hover:bg-blue-400'
+            }`}
+          >
+            <Save className="h-4 w-4" />
+            Make Draft
+          </button>
         </div>
 
         <div className="mt-4 border-t border-white/10 bg-white/[0.08] px-3 py-3 sm:px-4">
-          <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center">
-            <button
-              type="button"
-              onClick={() => setShowDraftComposer(value => !value)}
-              aria-pressed={showDraftComposer}
-              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-                showDraftComposer
-                  ? 'bg-white text-blue-900 shadow-sm'
-                  : 'bg-blue-500 text-white shadow-sm hover:bg-blue-400'
-              }`}
-            >
-              <Save className="h-4 w-4" />
-              Make Draft
-            </button>
+          <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:items-center">
             {queueButtons.map(item => {
               const Icon = item.icon;
               return (

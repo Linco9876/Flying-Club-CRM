@@ -4,7 +4,7 @@ import { Plane, ArrowLeft, Calendar, Pencil, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
 import toast from 'react-hot-toast';
-import { calculateFlightCost, isPrepaidPaymentMethod } from '../../utils/billing';
+import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../../utils/billing';
 
 interface FlightLog {
   id: string;
@@ -302,6 +302,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
     });
 
     setSavingLog(true);
+    const voucherPayment = isVoucherPaymentMethod(editForm.payment_type);
     const { error: updateError } = await supabase
       .from('flight_logs')
       .update({
@@ -314,7 +315,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
         payment_type: editForm.payment_type || null,
         calculated_cost: recalculatedCost,
         total_cost: recalculatedCost,
-        payment_status: recalculatedCost <= 0 ? 'free' : isPrepaidPaymentMethod(editForm.payment_type) ? 'paid' : 'pending',
+        payment_status: recalculatedCost <= 0 ? 'free' : voucherPayment || isPrepaidPaymentMethod(editForm.payment_type) ? 'paid' : 'pending',
         observations: editForm.observations || null,
       })
       .eq('id', editingLog.id);
@@ -326,7 +327,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       return;
     }
 
-    if (isPrepaidPaymentMethod(editForm.payment_type)) {
+    if (!voucherPayment && isPrepaidPaymentMethod(editForm.payment_type)) {
       const { data: charge } = await supabase
         .from('account_transactions')
         .select('id, amount, user_id')

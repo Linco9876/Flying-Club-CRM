@@ -8,7 +8,7 @@ import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useAircraftRates } from '../../hooks/useAircraftRates';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
-import { calculateFlightCost } from '../../utils/billing';
+import { calculateFlightCost, isVoucherPaymentMethod } from '../../utils/billing';
 import { TachOverlapWarningModal } from './TachOverlapWarningModal';
 
 interface Booking {
@@ -20,6 +20,8 @@ interface Booking {
   endTime: Date | string;
   notes?: string;
   flightTypeId?: string;
+  paymentType?: string;
+  trialFlightVoucherId?: string;
   status?: string;
 }
 
@@ -68,6 +70,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const startTime = booking.startTime instanceof Date ? booking.startTime : new Date(booking.startTime);
   const endTime = booking.endTime instanceof Date ? booking.endTime : new Date(booking.endTime);
   const isDualFlight = !!booking.instructorId;
+  const isVoucherBooking = !!booking.trialFlightVoucherId || isVoucherPaymentMethod(booking.paymentType);
   const fieldClass = 'w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500';
   const labelClass = 'block text-xs font-medium text-gray-700 mb-1';
 
@@ -87,6 +90,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   // Derive payment type from the pre-filled flight type (respects forced payment and free types)
   const derivePaymentType = (flightTypeId: string) => {
+    if (isVoucherBooking) return booking.paymentType || 'Gift Voucher';
     if (!flightTypeId) return '';
     const ft = flightTypes.find(f => f.id === flightTypeId);
     if (!ft) return '';
@@ -137,7 +141,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const selectedFlightType = flightTypes.find(ft => ft.id === formData.flight_type_id) ?? null;
   const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
   const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
-  const isPaymentForced = !isFree && !!selectedFlightType?.forcedPaymentMethodId;
+  const isPaymentForced = isVoucherBooking || (!isFree && !!selectedFlightType?.forcedPaymentMethodId);
   const estimatedCost = calculateFlightCost({
     rate: selectedRate,
     durationHours: formData.flight_duration === '' ? 0 : formData.flight_duration,
@@ -161,7 +165,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (!formData.flight_type_id || !flightTypes.length) return;
     const derived = derivePaymentType(formData.flight_type_id);
     setFormData(prev => ({ ...prev, payment_type: derived }));
-  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length]);
+  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking, booking.paymentType]);
 
   useEffect(() => {
     if (mode !== 'edit') return;
@@ -627,7 +631,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                     {isPaymentForced && (
                       <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                         <Lock className="h-3 w-3" />
-                        Required by flight type
+                        {isVoucherBooking ? 'Covered by voucher' : 'Required by flight type'}
                       </span>
                     )}
                   </span>
@@ -646,6 +650,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   disabled={isPaymentForced}
                 >
                   <option value="">Select payment type</option>
+                  {isVoucherBooking && (
+                    <option value={formData.payment_type || 'Gift Voucher'}>
+                      {formData.payment_type || 'Gift Voucher'}
+                    </option>
+                  )}
                   {paymentMethods.filter(pm => pm.active).map(pm => (
                     <option key={pm.id} value={pm.name}>{pm.name}</option>
                   ))}
@@ -656,7 +665,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
           {formData.flight_type_id && formData.flight_duration !== '' && (
             <div className="rounded-lg border border-gray-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-              Estimated charge: <span className="font-semibold">${estimatedCost.toFixed(2)}</span>
+              {isVoucherBooking ? 'Voucher value used for this flight: ' : 'Estimated charge: '}
+              <span className="font-semibold">${estimatedCost.toFixed(2)}</span>
               {selectedRate && (
                 <span className="ml-2 text-xs text-blue-700">
                   {selectedRate.chargeType === 'tach'

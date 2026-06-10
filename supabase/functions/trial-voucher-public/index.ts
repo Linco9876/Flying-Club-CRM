@@ -727,7 +727,7 @@ Deno.serve(async (req: Request) => {
           instructor_id: instructorId,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
-          payment_type: "prepaid",
+          payment_type: "Gift Voucher",
           status: "confirmed",
           has_conflict: false,
           notes: `Trial flight voucher ${voucher.code} - ${product.name}`,

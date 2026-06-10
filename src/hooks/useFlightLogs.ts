@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod } from '../utils/billing';
+import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../utils/billing';
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 
@@ -239,9 +239,10 @@ export function useFlightLogs(userId?: string) {
           .maybeSingle();
         paymentMethodId = paymentMethod?.id ?? null;
       }
+      const voucherPayment = isVoucherPaymentMethod(normalisedLogData.payment_type);
       const initialPaymentStatus: 'free' | 'pending' | 'paid' = noCharge || calculatedCost <= 0
         ? 'free'
-        : isPrepaidPaymentMethod(normalisedLogData.payment_type)
+        : voucherPayment || isPrepaidPaymentMethod(normalisedLogData.payment_type)
           ? 'paid'
           : 'pending';
 
@@ -262,7 +263,7 @@ export function useFlightLogs(userId?: string) {
 
       if (insertError) throw insertError;
 
-      if (initialPaymentStatus === 'paid' && calculatedCost > 0 && normalisedLogData.student_id) {
+      if (!voucherPayment && initialPaymentStatus === 'paid' && calculatedCost > 0 && normalisedLogData.student_id) {
         const { data: student } = await supabase
           .from('students')
           .select('prepaid_balance')
