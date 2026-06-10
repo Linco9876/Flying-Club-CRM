@@ -308,6 +308,11 @@ Deno.serve(async (req: Request) => {
       await adminClient.from("trial_flight_vouchers").update({ status: "expired" }).eq("id", voucher.id);
       return json({ error: "This voucher has expired" }, 410);
     }
+    if (!["issued", "redeemed", "booked"].includes(voucher.status)) {
+      return json({
+        error: "This voucher is not ready to redeem yet. If it was purchased online, wait for payment confirmation or contact Bendigo Flying Club.",
+      }, 409);
+    }
 
     const product = voucher.trial_flight_voucher_products;
     if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
@@ -417,6 +422,12 @@ Deno.serve(async (req: Request) => {
     if (action !== "redeem") return json({ error: "Unsupported action" }, 400);
 
     if (voucher.status === "booked") return json({ error: "This voucher has already been booked" }, 409);
+    if (voucher.status === "redeemed") {
+      return json({ error: "This voucher is already linked to an account. Sign in with that voucher account to choose a time." }, 409);
+    }
+    if (voucher.status !== "issued") {
+      return json({ error: "This voucher is not ready to redeem yet. Contact Bendigo Flying Club for help." }, 409);
+    }
 
     const fullName = String(body.fullName || "").trim();
     const email = String(body.email || "").trim().toLowerCase();

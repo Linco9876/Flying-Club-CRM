@@ -311,7 +311,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
                     <h3 className="font-bold">Sign in before booking</h3>
                     <p className="mt-1 text-sm">
-                      Your voucher is linked, but the final booking is only available from the account attached to this voucher.
+                      Your voucher is linked to a restricted booking account. The final booking is only available from the account attached to this voucher.
                     </p>
                     <a
                       href="/"
