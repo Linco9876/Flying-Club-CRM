@@ -204,6 +204,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [proceedWithCarryForward, setProceedWithCarryForward] = useState(false);
   const [queueView, setQueueView] = useState<'mine' | 'others' | 'dismissed'>('mine');
+  const [showDraftComposer, setShowDraftComposer] = useState(false);
 
   const activeStudentId = activeLog?.student_id;
   const isDraftSession = Boolean(draftSession && activeLog?.id === draftSession.id);
@@ -472,9 +473,6 @@ export const OutstandingRecordsTab: React.FC = () => {
       ? dismissedLogs
       : []
     : dismissedLogs;
-  const outstandingTotal = outstandingLogs.length;
-  const dismissedTotal = dismissedLogs.length;
-
   useEffect(() => {
     if (!isAdmin) return;
     if (queueView === 'mine' && myOutstandingLogs.length === 0 && otherInstructorOutstandingLogs.length > 0) {
@@ -1065,28 +1063,26 @@ export const OutstandingRecordsTab: React.FC = () => {
                   : 'Flights assigned to you that still need a training record.'}
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center sm:min-w-64">
-              <div className="rounded-xl bg-blue-50 px-3 py-2 ring-1 ring-blue-100 dark:bg-blue-950/30 dark:ring-blue-400/20">
-                <p className="text-lg font-bold text-blue-700 dark:text-blue-200">{isAdmin ? myOutstandingLogs.length : outstandingTotal}</p>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Mine</p>
-              </div>
-              <div className="rounded-xl bg-amber-50 px-3 py-2 ring-1 ring-amber-100 dark:bg-amber-950/25 dark:ring-amber-400/20">
-                <p className="text-lg font-bold text-amber-700 dark:text-amber-200">{isAdmin ? otherInstructorOutstandingLogs.length : 0}</p>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Others</p>
-              </div>
-              <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200 dark:bg-[#111827] dark:ring-[#363b45]">
-                <p className="text-lg font-bold text-slate-700 dark:text-slate-200">{dismissedTotal}</p>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Restorable</p>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowDraftComposer(value => !value)}
+              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                showDraftComposer
+                  ? 'bg-blue-700 text-white shadow-sm dark:bg-blue-500'
+                  : 'bg-blue-600 text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400'
+              }`}
+            >
+              <Save className="h-4 w-4" />
+              Make Draft
+            </button>
           </div>
 
           {isAdmin && (
             <div className="mt-4 grid gap-2 rounded-xl bg-slate-100 p-1 dark:bg-[#111827] sm:grid-cols-3">
               {[
-                { id: 'mine' as const, label: 'Assigned to me', count: myOutstandingLogs.length },
-                { id: 'others' as const, label: 'Other instructors', count: otherInstructorOutstandingLogs.length },
-                { id: 'dismissed' as const, label: 'No record needed', count: dismissedTotal },
+                { id: 'mine' as const, label: 'Assigned to me' },
+                { id: 'others' as const, label: 'Other instructors' },
+                { id: 'dismissed' as const, label: 'No record needed' },
               ].map(item => (
                 <button
                   key={item.id}
@@ -1099,9 +1095,6 @@ export const OutstandingRecordsTab: React.FC = () => {
                   }`}
                 >
                   {item.label}
-                  <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-700 dark:bg-[#2c3444] dark:text-slate-200">
-                    {item.count}
-                  </span>
                 </button>
               ))}
             </div>
@@ -1122,6 +1115,7 @@ export const OutstandingRecordsTab: React.FC = () => {
           )}
         </div>
 
+        {showDraftComposer && (
         <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm dark:border-blue-400/25 dark:from-blue-950/25 dark:to-[#171a21]">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
@@ -1179,6 +1173,7 @@ export const OutstandingRecordsTab: React.FC = () => {
             </div>
           )}
         </div>
+        )}
 
         {queueView !== 'dismissed' && visibleOutstandingLogs.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-12">
@@ -1333,9 +1328,6 @@ export const OutstandingRecordsTab: React.FC = () => {
                   Restore one if a training record needs to be added after all.
                 </p>
               </div>
-              <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600 dark:bg-[#202938] dark:text-gray-200">
-                {visibleDismissedLogs.length}
-              </span>
             </div>
             <div className="space-y-2">
               {visibleDismissedLogs.slice(0, 8).map(log => {
