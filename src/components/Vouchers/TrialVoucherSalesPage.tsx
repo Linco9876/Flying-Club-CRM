@@ -20,7 +20,9 @@ const aircraftLabel = (mode: TrialFlightVoucherAircraftMode) =>
   mode === 'tecnam' ? 'Any Tecnam' : mode === 'archer' ? 'PA-28 Archer' : 'Selected aircraft';
 
 const formatPrice = (price: number) =>
-  new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(price || 0);
+  price > 0
+    ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(price)
+    : 'Contact for price';
 
 const isValidEmail = (value: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
