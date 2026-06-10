@@ -73,7 +73,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const instructors = getInstructors();
   const activeProducts = products.filter(product => product.isActive);
   const selectedProduct = products.find(product => product.id === issueForm.productId);
-  const checkoutReadyProducts = activeProducts.filter(product => Boolean(product.stripePriceId));
+  const productCheckoutReady = (product: TrialFlightVoucherProduct) =>
+    Boolean(product.stripePriceId?.trim()) && Number(product.price || 0) > 0;
+  const checkoutReadyProducts = activeProducts.filter(productCheckoutReady);
   const checkoutSetupComplete = activeProducts.length > 0 && checkoutReadyProducts.length === activeProducts.length;
   const hasTecnamProduct = products.some(product => product.aircraftMode === 'tecnam');
   const hasArcherProduct = products.some(product => product.aircraftMode === 'archer');
@@ -336,8 +338,18 @@ export const TrialFlightVouchersPage: React.FC = () => {
     productForm.aircraftMode === 'specific'
       ? 'Only the selected aircraft will be offered for this voucher.'
       : productForm.aircraftIds.length > 0
-        ? `Matching ${modeLabel(productForm.aircraftMode).toLowerCase()} aircraft plus ${productForm.aircraftIds.length} selected aircraft can be offered.`
+        ? `Only the ${productForm.aircraftIds.length} selected aircraft will be offered for this ${modeLabel(productForm.aircraftMode).toLowerCase()} voucher.`
         : `${matchingAircraftCount} ${modeLabel(productForm.aircraftMode).toLowerCase()} aircraft currently match this voucher rule.`;
+
+  const checkoutStatus = (product: TrialFlightVoucherProduct) => {
+    if (!product.isActive) return { label: 'Manual setup', className: 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300' };
+    if (productCheckoutReady(product)) return { label: 'Online checkout ready', className: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200' };
+    if (!product.stripePriceId?.trim() && Number(product.price || 0) <= 0) {
+      return { label: 'Missing price and Stripe ID', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100' };
+    }
+    if (!product.stripePriceId?.trim()) return { label: 'Missing Stripe ID', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100' };
+    return { label: 'Missing price', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100' };
+  };
 
   return (
     <div className="p-3 sm:p-6">
@@ -394,7 +406,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   ? 'text-emerald-800 dark:text-emerald-200'
                   : 'text-amber-800 dark:text-amber-100'
               }`}>
-                {checkoutReadyProducts.length} of {activeProducts.length} active voucher product{activeProducts.length === 1 ? '' : 's'} have Stripe Price IDs.
+                {checkoutReadyProducts.length} of {activeProducts.length} active voucher product{activeProducts.length === 1 ? '' : 's'} are ready for online checkout.
                 Public purchase buttons only appear for active products with a real price and a Stripe Price ID.
               </p>
             </div>
@@ -582,65 +594,71 @@ export const TrialFlightVouchersPage: React.FC = () => {
               </div>
             </div>
             <div className="space-y-2">
-              {products.map(product => (
-                <div
-                  key={product.id}
-                  className={`rounded-xl border p-3 transition ${
-                    editingProductId === product.id
-                      ? 'border-blue-300 bg-blue-50 dark:border-blue-400/40 dark:bg-blue-950/20'
-                      : 'border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#111827]'
-                  }`}
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-gray-950 dark:text-gray-100">{product.name || 'Untitled voucher'}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
-                          product.isActive
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
-                            : 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300'
-                        }`}>
-                          {product.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {modeLabel(product.aircraftMode)} - {product.durationMinutes} min flight, {product.durationMinutes + 30} min booking block - ${product.price.toFixed(2)}
-                      </p>
-                      {product.stripePriceId && (
-                        <p className="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400">
-                          Stripe: {product.stripePriceId}
+              {products.map(product => {
+                const checkout = checkoutStatus(product);
+                return (
+                  <div
+                    key={product.id}
+                    className={`rounded-xl border p-3 transition ${
+                      editingProductId === product.id
+                        ? 'border-blue-300 bg-blue-50 dark:border-blue-400/40 dark:bg-blue-950/20'
+                        : 'border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#111827]'
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-gray-950 dark:text-gray-100">{product.name || 'Untitled voucher'}</p>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                            product.isActive
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                              : 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300'
+                          }`}>
+                            {product.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${checkout.className}`}>
+                            {checkout.label}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {modeLabel(product.aircraftMode)} - {product.durationMinutes} min flight, {product.durationMinutes + 30} min booking block - ${product.price.toFixed(2)}
                         </p>
-                      )}
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {product.instructorIds.length} eligible instructor{product.instructorIds.length === 1 ? '' : 's'}
-                        {product.aircraftIds.length > 0 ? ` - ${product.aircraftIds.length} selected aircraft` : ''}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(product)}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242b]"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleProductActive(product)}
-                        disabled={saving}
-                        className={`inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-60 ${
-                          product.isActive
-                            ? 'border border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-400/30 dark:text-amber-200 dark:hover:bg-amber-950/30'
-                            : 'border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/30 dark:text-emerald-200 dark:hover:bg-emerald-950/30'
-                        }`}
-                      >
-                        {product.isActive ? 'Deactivate' : 'Activate'}
-                      </button>
+                        {product.stripePriceId && (
+                          <p className="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400">
+                            Stripe: {product.stripePriceId}
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {product.instructorIds.length} eligible instructor{product.instructorIds.length === 1 ? '' : 's'}
+                          {product.aircraftIds.length > 0 ? ` - ${product.aircraftIds.length} selected aircraft only` : ''}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(product)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242b]"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleProductActive(product)}
+                          disabled={saving}
+                          className={`inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-60 ${
+                            product.isActive
+                              ? 'border border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-400/30 dark:text-amber-200 dark:hover:bg-amber-950/30'
+                              : 'border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/30 dark:text-emerald-200 dark:hover:bg-emerald-950/30'
+                          }`}
+                        >
+                          {product.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {products.length === 0 && (
                 <p className="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-[#363b45] dark:text-gray-400">
                   No voucher products yet. Create the Tecnam and Archer products here before issuing vouchers.
