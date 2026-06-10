@@ -99,6 +99,97 @@ const sendVoucherAccountSetupEmail = async ({
   return { sent: true, error: null };
 };
 
+const sendTrialBookingConfirmationEmail = async ({
+  voucher,
+  product,
+  booking,
+}: {
+  voucher: any;
+  product: any;
+  booking: any;
+}) => {
+  const apiKey = Deno.env.get("BREVO_API_KEY");
+  if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
+
+  const to = voucher.recipient_email || voucher.purchaser_email;
+  if (!to) return { sent: false, error: "Voucher has no confirmation email address" };
+
+  const toName = voucher.recipient_name || voucher.purchaser_name || to;
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
+  const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
+  const timeZone = "Australia/Sydney";
+  const dateLabel = new Intl.DateTimeFormat("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone,
+  }).format(new Date(booking.startTime));
+  const timeLabel = `${new Intl.DateTimeFormat("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(booking.startTime))} - ${new Intl.DateTimeFormat("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(booking.endTime))}`;
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4fb;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.14);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:30px;color:#ffffff;">
+                <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
+                <h1 style="margin:0;font-size:28px;line-height:1.2;">Your trial flight is booked</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 30px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(toName)},</p>
+                <p style="margin:0 0 18px;line-height:1.65;color:#334155;">Your ${escapeHtml(product.name || "trial instructional flight")} has been booked.</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
+                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Date</strong><span style="color:#475569;">${escapeHtml(dateLabel)}</span></td></tr>
+                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Time</strong><span style="color:#475569;">${escapeHtml(timeLabel)}</span></td></tr>
+                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Aircraft</strong><span style="color:#475569;">${escapeHtml(booking.aircraftLabel || "Aircraft")}</span></td></tr>
+                  <tr><td style="padding:16px 18px;"><strong style="display:block;color:#0f172a;">Instructor</strong><span style="color:#475569;">${escapeHtml(booking.instructorName || "Instructor")}</span></td></tr>
+                </table>
+                <p style="margin:0 0 14px;line-height:1.65;color:#334155;">Please arrive with enough time for the pre-flight briefing and any paperwork. The booking block includes the flight time plus 30 minutes.</p>
+                <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">Voucher code: ${escapeHtml(voucher.code)}. Contact Bendigo Flying Club if you need help changing this booking.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email: to, name: toName }],
+      subject: "Your Bendigo Flying Club trial flight is booked",
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { sent: false, error: body || `Brevo email failed with ${response.status}` };
+  }
+
+  return { sent: true, error: null };
+};
+
 const getAuthenticatedUser = async (req: Request, supabaseUrl: string) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { user: null, error: "missing_authorization" };
@@ -516,10 +607,18 @@ Deno.serve(async (req: Request) => {
 
       if (voucherUpdateError) return json({ error: voucherUpdateError.message }, 500);
 
+      const bookedSummary = { ...matchingSlot, bookingId: booking.id };
+      const confirmationEmail = await sendTrialBookingConfirmationEmail({
+        voucher,
+        product,
+        booking: bookedSummary,
+      });
+
       return json({
         voucher: { ...publicVoucher, status: "booked" },
         bookingId: booking.id,
-        booking: { ...matchingSlot, bookingId: booking.id },
+        booking: bookedSummary,
+        confirmationEmailSent: confirmationEmail.sent,
       });
     }
 

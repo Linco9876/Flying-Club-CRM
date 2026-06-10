@@ -42,6 +42,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [slots, setSlots] = useState<VoucherSlot[]>([]);
   const [bookedSlot, setBookedSlot] = useState<VoucherSlot | null>(null);
   const [form, setForm] = useState({ fullName: '', email: '', phone: '' });
+  const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
 
   const loadLinkedVoucher = async () => {
     setLoading(true);
@@ -164,9 +165,10 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setBookedSlot(data.booking || slot);
+      setConfirmationEmailSent(Boolean(data.confirmationEmailSent));
       setVoucher(current => current ? { ...current, status: 'booked' } : current);
       setSlots([]);
-      toast.success('Trial flight booked');
+      toast.success(data.confirmationEmailSent ? 'Trial flight booked and confirmation emailed' : 'Trial flight booked');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not book this time');
       await loadAvailability();
@@ -431,6 +433,11 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       {formatSlotDate(bookedSlot.startTime)} at {formatSlotTime(bookedSlot.startTime, bookedSlot.endTime)}
                     </p>
                     <p className="mt-1 text-sm">{bookedSlot.aircraftLabel} with {bookedSlot.instructorName}</p>
+                    <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-emerald-800">
+                      {confirmationEmailSent
+                        ? 'A confirmation email has been sent with these booking details.'
+                        : 'Your booking is saved. If you do not receive an email, keep these details or contact Bendigo Flying Club.'}
+                    </p>
                   </div>
                 )}
 
