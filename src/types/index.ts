@@ -158,6 +158,7 @@ export interface TrialFlightVoucher {
     startTime: Date;
     endTime: Date;
     status: Booking['status'];
+    flightLogged?: boolean;
     aircraftRegistration?: string;
     aircraftType?: string;
     instructorName?: string;

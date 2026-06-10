@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
 import { useUsers } from '../../hooks/useUsers';
-import { TrialFlightVoucherAircraftMode, TrialFlightVoucherPaymentStatus, TrialFlightVoucherProduct } from '../../types';
+import { TrialFlightVoucher, TrialFlightVoucherAircraftMode, TrialFlightVoucherPaymentStatus, TrialFlightVoucherProduct } from '../../types';
 import toast from 'react-hot-toast';
 
 const defaultEmailBody =
@@ -52,7 +52,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { users, getInstructors } = useUsers();
-  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails } = useTrialFlightVouchers();
+  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [issueForm, setIssueForm] = useState({
@@ -319,6 +319,24 @@ export const TrialFlightVouchersPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to process due voucher emails:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process due voucher emails');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReleaseVoucherBooking = async (voucher: TrialFlightVoucher) => {
+    if (!voucher.bookedBooking) return;
+    const confirmed = window.confirm(
+      'Release this voucher booking? The linked calendar booking will be cancelled and the voucher holder will be able to choose a new time.'
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      await releaseVoucherBooking(voucher);
+    } catch (error) {
+      console.error('Failed to release voucher booking:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to release voucher booking');
     } finally {
       setSaving(false);
     }
@@ -1330,6 +1348,20 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           <p className="truncate text-indigo-800 dark:text-indigo-200">
                             Instructor: {voucher.bookedBooking.instructorName || 'Not assigned'}
                           </p>
+                          {voucher.bookedBooking.flightLogged ? (
+                            <p className="mt-2 rounded-lg bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                              Flight logged - release disabled
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleReleaseVoucherBooking(voucher)}
+                              disabled={saving}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-60 dark:border-indigo-400/30 dark:bg-[#111827] dark:text-indigo-200 dark:hover:bg-indigo-950/40"
+                            >
+                              Release booking
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

@@ -69,6 +69,7 @@ const mapVoucher = (
     startTime: new Date(booking.start_time),
     endTime: new Date(booking.end_time),
     status: booking.status,
+    flightLogged: Boolean(booking.flight_logged),
     aircraftRegistration: aircraft?.registration || undefined,
     aircraftType: aircraft ? [aircraft.make, aircraft.model].filter(Boolean).join(' ') : undefined,
     instructorName: instructor?.name || undefined,
@@ -128,7 +129,7 @@ export const useTrialFlightVouchers = () => {
       if (bookedBookingIds.length > 0) {
         const { data, error } = await supabase
           .from('bookings')
-          .select('id,start_time,end_time,status,aircraft_id,instructor_id')
+          .select('id,start_time,end_time,status,aircraft_id,instructor_id,flight_logged')
           .in('id', bookedBookingIds);
         if (error) throw error;
         bookingRows = data || [];
@@ -351,6 +352,41 @@ export const useTrialFlightVouchers = () => {
     return data;
   };
 
+  const releaseVoucherBooking = async (voucher: TrialFlightVoucher) => {
+    if (!voucher.bookedBookingId || !voucher.bookedBooking) {
+      throw new Error('This voucher does not have a linked booking');
+    }
+    if (voucher.bookedBooking.flightLogged) {
+      throw new Error('This voucher booking has a flight log. Delete or correct the flight log before releasing the voucher booking.');
+    }
+
+    const now = new Date().toISOString();
+    const { error: bookingError } = await supabase
+      .from('bookings')
+      .update({
+        status: 'cancelled',
+        deleted_at: now,
+        updated_at: now,
+      })
+      .eq('id', voucher.bookedBookingId);
+
+    if (bookingError) throw bookingError;
+
+    const { error: voucherError } = await supabase
+      .from('trial_flight_vouchers')
+      .update({
+        status: 'redeemed',
+        booked_booking_id: null,
+        updated_at: now,
+      })
+      .eq('id', voucher.id);
+
+    if (voucherError) throw voucherError;
+
+    toast.success('Voucher booking released. The recipient can choose a new time.');
+    await fetchAll();
+  };
+
   return {
     products,
     activeProducts,
@@ -362,5 +398,6 @@ export const useTrialFlightVouchers = () => {
     sendVoucherEmail,
     markVoucherReady,
     processDueVoucherEmails,
+    releaseVoucherBooking,
   };
 };
