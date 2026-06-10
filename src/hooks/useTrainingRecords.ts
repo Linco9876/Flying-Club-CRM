@@ -236,9 +236,9 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
           course_id: recordData.courseId,
           lesson_id: recordData.lessonId,
           date: toLocalDateOnly(recordData.date),
-          aircraft_id: recordData.aircraftId,
-          aircraft_type: recordData.aircraftType,
-          registration: recordData.registration,
+          aircraft_id: recordData.aircraftId || null,
+          aircraft_type: recordData.aircraftType || '',
+          registration: recordData.registration || '',
           instructor_id: recordData.instructorId,
           dual_time_min: recordData.dualTimeMin,
           solo_time_min: recordData.soloTimeMin,
@@ -307,9 +307,9 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
       if (recordData.courseId !== undefined) updateData.course_id = recordData.courseId;
       if (recordData.lessonId !== undefined) updateData.lesson_id = recordData.lessonId;
       if (recordData.date !== undefined) updateData.date = toLocalDateOnly(recordData.date);
-      if (recordData.aircraftId !== undefined) updateData.aircraft_id = recordData.aircraftId;
-      if (recordData.aircraftType !== undefined) updateData.aircraft_type = recordData.aircraftType;
-      if (recordData.registration !== undefined) updateData.registration = recordData.registration;
+      if (recordData.aircraftId !== undefined) updateData.aircraft_id = recordData.aircraftId || null;
+      if (recordData.aircraftType !== undefined) updateData.aircraft_type = recordData.aircraftType || '';
+      if (recordData.registration !== undefined) updateData.registration = recordData.registration || '';
       if (recordData.instructorId !== undefined) updateData.instructor_id = recordData.instructorId;
       if (recordData.dualTimeMin !== undefined) updateData.dual_time_min = recordData.dualTimeMin;
       if (recordData.soloTimeMin !== undefined) updateData.solo_time_min = recordData.soloTimeMin;

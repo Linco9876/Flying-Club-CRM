@@ -187,12 +187,11 @@ export const OutstandingRecordsTab: React.FC = () => {
     id: string;
     studentId: string;
     studentName?: string;
-    aircraftId: string;
+    aircraftId?: string;
     aircraftRegistration?: string;
     startedAt: string;
   } | null>(null);
   const [draftStudentId, setDraftStudentId] = useState('');
-  const [draftAircraftId, setDraftAircraftId] = useState('');
   const [step, setStep] = useState<Step>('action');
   const [form, setForm] = useState<RecordFormState>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
@@ -647,13 +646,9 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   function openDraftSession(record?: typeof trainingRecords[number]) {
     const student = users.find(member => member.id === (record?.studentId || draftStudentId));
-    const aircraft = aircraftList.find(item => item.id === (record?.aircraftId || draftAircraftId));
+    const aircraft = record?.aircraftId ? aircraftList.find(item => item.id === record.aircraftId) : undefined;
     if (!student?.id) {
       toast.error('Select a student before starting a draft');
-      return;
-    }
-    if (!aircraft?.id) {
-      toast.error('Select an aircraft before starting a draft');
       return;
     }
 
@@ -663,13 +658,13 @@ export const OutstandingRecordsTab: React.FC = () => {
       id: sessionId,
       studentId: student.id,
       studentName: student.name,
-      aircraftId: aircraft.id,
-      aircraftRegistration: aircraft.registration,
+      aircraftId: aircraft?.id || record?.aircraftId || undefined,
+      aircraftRegistration: aircraft?.registration || record?.registration || undefined,
       startedAt,
     });
     setActiveLog({
       id: sessionId,
-      aircraft_id: aircraft.id,
+      aircraft_id: aircraft?.id || record?.aircraftId || '',
       student_id: student.id,
       instructor_id: user?.id || '',
       start_time: startedAt,
@@ -680,8 +675,8 @@ export const OutstandingRecordsTab: React.FC = () => {
       student_name: student.name,
       student_email: student.email,
       instructor_name: user?.name,
-      aircraft_registration: aircraft.registration,
-      aircraft_type: aircraft.type,
+      aircraft_registration: aircraft?.registration || record?.registration || undefined,
+      aircraft_type: aircraft?.type || record?.aircraftType || undefined,
     });
     setActiveDraftRecord(record ?? null);
     setForm(record ? {
@@ -1139,25 +1134,15 @@ export const OutstandingRecordsTab: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3">
             <select
               value={draftStudentId}
               onChange={event => setDraftStudentId(event.target.value)}
-              className="min-w-0 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100"
+              className="w-full min-w-0 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100"
             >
               <option value="">Select student/pilot</option>
               {studentOptions.map(member => (
                 <option key={member.id} value={member.id}>{member.name}</option>
-              ))}
-            </select>
-            <select
-              value={draftAircraftId}
-              onChange={event => setDraftAircraftId(event.target.value)}
-              className="min-w-0 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100"
-            >
-              <option value="">Select aircraft</option>
-              {aircraftList.map(aircraft => (
-                <option key={aircraft.id} value={aircraft.id}>{aircraft.registration} {aircraft.type ? `- ${aircraft.type}` : ''}</option>
               ))}
             </select>
           </div>
@@ -1165,7 +1150,7 @@ export const OutstandingRecordsTab: React.FC = () => {
             type="button"
             onClick={() => openDraftSession()}
             className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!draftStudentId || !draftAircraftId}
+            disabled={!draftStudentId}
           >
             <BookOpen className="h-4 w-4" />
             Start Draft Record
