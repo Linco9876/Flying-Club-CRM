@@ -236,7 +236,8 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     }));
   }, [slots]);
 
-  const canChooseTime = Boolean(user && voucher?.status === 'redeemed' && !bookedSlot);
+  const isFullPortalUserOnVoucherPage = Boolean(user && user.portalAccessScope !== 'trial_voucher');
+  const canChooseTime = Boolean(user && !isFullPortalUserOnVoucherPage && voucher?.status === 'redeemed' && !bookedSlot);
 
   const copySetupLink = async () => {
     if (!redeemed?.setupLink) return;
@@ -265,6 +266,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
             <div className="rounded-2xl border border-white/10 bg-white/10 p-3 text-sm text-blue-50 sm:text-right">
               <p className="font-semibold">{user.name || user.email}</p>
               <p className="mt-0.5 text-xs text-blue-100/80">{user.email}</p>
+              {isFullPortalUserOnVoucherPage && (
+                <p className="mt-1 text-xs font-semibold text-amber-100">Normal portal account</p>
+              )}
               <button
                 type="button"
                 onClick={logout}
@@ -372,6 +376,22 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         </button>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {isFullPortalUserOnVoucherPage && voucher.status !== 'issued' && voucher.status !== 'booked' && !bookedSlot && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+                    <h3 className="font-bold">Use the voucher booking account</h3>
+                    <p className="mt-1 text-sm leading-6">
+                      You are currently signed in to a normal Bendigo Flying Club portal account. Sign out, then use the setup link from the voucher email to sign in to the restricted voucher booking account.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={logout}
+                      className="mt-3 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
+                    >
+                      Sign out of this account
+                    </button>
                   </div>
                 )}
 

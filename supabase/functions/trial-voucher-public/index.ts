@@ -346,6 +346,24 @@ const getBookingSummary = async (adminClient: ReturnType<typeof createClient>, b
   };
 };
 
+const assertVoucherAccount = async (adminClient: ReturnType<typeof createClient>, userId: string) => {
+  const { data: linkedUser, error } = await adminClient
+    .from("users")
+    .select("id,email,name,portal_access_scope,is_active")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!linkedUser || linkedUser.portal_access_scope !== "trial_voucher" || linkedUser.is_active === false) {
+    return {
+      ok: false,
+      error: "Sign in with the restricted voucher booking account linked to this voucher.",
+    };
+  }
+
+  return { ok: true, user: linkedUser };
+};
+
 const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>, product: any) => {
   const blockMinutes = Number(product.duration_minutes || 0) + 30;
   const allowedInstructorIds = new Set<string>(product.instructor_ids || []);
@@ -568,6 +586,9 @@ Deno.serve(async (req: Request) => {
       const product = voucher.trial_flight_voucher_products;
       if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
 
+      const voucherAccount = await assertVoucherAccount(adminClient, user.id);
+      if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
+
       const publicVoucher = toPublicVoucher(voucher, product);
       const slots = voucher.status === "redeemed" ? await buildAvailableSlots(adminClient, product) : [];
       const booking = voucher.status === "booked" ? await getBookingSummary(adminClient, voucher.booked_booking_id) : null;
@@ -675,6 +696,8 @@ Deno.serve(async (req: Request) => {
       if (user.id !== voucher.redeemed_by_user_id) {
         return json({ error: "This voucher is linked to a different account" }, 403);
       }
+      const voucherAccount = await assertVoucherAccount(adminClient, user.id);
+      if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
 
       if (!["redeemed"].includes(voucher.status)) {
         return json({ error: "This voucher is not available for booking" }, 409);
@@ -697,6 +720,8 @@ Deno.serve(async (req: Request) => {
       if (user.id !== voucher.redeemed_by_user_id) {
         return json({ error: "This voucher is linked to a different account" }, 403);
       }
+      const voucherAccount = await assertVoucherAccount(adminClient, user.id);
+      if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
 
       const startTime = new Date(String(body.startTime || ""));
       const aircraftId = String(body.aircraftId || "");
