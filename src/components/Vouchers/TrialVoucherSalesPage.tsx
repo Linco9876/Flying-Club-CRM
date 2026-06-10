@@ -18,6 +18,16 @@ interface PublicVoucherProduct {
   bookingInstructions?: string;
 }
 
+interface CheckoutStatus {
+  status: string;
+  paymentStatus: string;
+  productName: string;
+  emailTo?: string;
+  sendToRecipient?: boolean;
+  recipientDeliveryAt?: string | null;
+  deliveredAt?: string | null;
+}
+
 const aircraftLabel = (mode: TrialFlightVoucherAircraftMode) =>
   mode === 'tecnam' ? 'Any Tecnam' : mode === 'archer' ? 'PA-28 Archer' : 'Selected aircraft';
 
@@ -38,6 +48,8 @@ export const TrialVoucherSalesPage: React.FC = () => {
   const [products, setProducts] = useState<PublicVoucherProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus | null>(null);
+  const [checkoutStatusLoading, setCheckoutStatusLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<PublicVoucherProduct | null>(null);
   const [purchaseForm, setPurchaseForm] = useState({
     purchaserName: '',
@@ -71,16 +83,51 @@ export const TrialVoucherSalesPage: React.FC = () => {
     void loadProducts();
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id');
+    if (!sessionId) return;
+
+    const loadCheckoutStatus = async () => {
+      setCheckoutStatusLoading(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+          body: { action: 'checkout-status', sessionId },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        setCheckoutStatus(data?.checkout || null);
+      } catch (error) {
+        console.error('Failed to load voucher checkout status:', error);
+        setCheckoutStatus(null);
+      } finally {
+        setCheckoutStatusLoading(false);
+      }
+    };
+
+    void loadCheckoutStatus();
+  }, []);
+
   const checkoutMessage = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('checkout') === 'success') {
-      return 'If payment was completed, your voucher email will be confirmed shortly.';
+      if (checkoutStatusLoading) return 'Checking your voucher email status...';
+      if (checkoutStatus?.paymentStatus === 'paid') {
+        if (checkoutStatus.deliveredAt) {
+          return `Payment received. Your ${checkoutStatus.productName} email has been sent to ${checkoutStatus.emailTo || 'the nominated email address'}.`;
+        }
+        if (checkoutStatus.sendToRecipient && checkoutStatus.recipientDeliveryAt) {
+          return `Payment received. Your ${checkoutStatus.productName} email is scheduled for ${new Date(checkoutStatus.recipientDeliveryAt).toLocaleString()}.`;
+        }
+        return `Payment received. Your ${checkoutStatus.productName} email is queued for delivery to ${checkoutStatus.emailTo || 'the nominated email address'}.`;
+      }
+      return 'Checkout returned successfully. If payment was completed, your voucher email will be confirmed shortly.';
     }
     if (params.get('checkout') === 'cancelled') {
       return 'Checkout was cancelled. You can start again or contact the club for help.';
     }
     return '';
-  }, []);
+  }, [checkoutStatus, checkoutStatusLoading]);
 
   const mailtoHref = useMemo(() => {
     const subject = encodeURIComponent('Trial flight gift voucher purchase');

@@ -210,6 +210,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
       toast.error('Select a voucher and enter purchaser name/email');
       return;
     }
+    const productToIssue = products.find(product => product.id === issueForm.productId);
+    if (!productToIssue) {
+      toast.error('Select a valid voucher product');
+      return;
+    }
+    const issueReadiness = bookingReadiness(productToIssue);
+    if (!productToIssue.isActive || !issueReadiness.ready) {
+      toast.error('This voucher product is not bookable yet. Fix the aircraft and instructor setup before issuing it.');
+      return;
+    }
     if (issueForm.sendToRecipient && !issueForm.recipientEmail) {
       toast.error('Recipient email is required when sending direct to recipient');
       return;
@@ -406,6 +416,35 @@ export const TrialFlightVouchersPage: React.FC = () => {
     };
   };
 
+  const standardReadiness = (mode: 'tecnam' | 'archer') => {
+    const modeProducts = products.filter(product => product.aircraftMode === mode);
+    const activeModeProducts = modeProducts.filter(product => product.isActive);
+    const product = activeModeProducts[0] ?? modeProducts[0];
+    const readiness = product ? bookingReadiness(product) : null;
+    const issues = [
+      ...(!product ? [`Create a ${modeLabel(mode)} voucher product.`] : []),
+      ...(product && !product.isActive ? ['Product exists but is inactive.'] : []),
+      ...(readiness?.issues ?? []),
+      ...(product && !productCheckoutReady(product) ? ['Add a real price and Stripe Price ID before online sales can open.'] : []),
+    ];
+
+    return {
+      mode,
+      product,
+      readiness,
+      issues,
+      bookingReady: Boolean(product?.isActive && readiness?.ready),
+      checkoutReady: Boolean(product?.isActive && readiness?.ready && productCheckoutReady(product)),
+    };
+  };
+
+  const requiredVoucherReadiness = [
+    standardReadiness('tecnam'),
+    standardReadiness('archer'),
+  ];
+  const selectedProductReadiness = selectedProduct ? bookingReadiness(selectedProduct) : null;
+  const selectedProductIsIssueable = Boolean(selectedProduct?.isActive && selectedProductReadiness?.ready);
+
   return (
     <div className="p-3 sm:p-6">
       <div className="mb-6 rounded-2xl bg-gradient-to-r from-blue-950 to-blue-800 p-5 text-white shadow-lg sm:p-6">
@@ -433,6 +472,117 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <section className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Voucher readiness</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+              Bendigo Flying Club sells trial instructional flights in the Tecnam fleet and the PA-28 Archer. These checks show whether each voucher can be booked and whether it is ready for online Stripe checkout.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={createStandardProducts}
+            disabled={saving}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Plus className="h-4 w-4" />
+            Create missing standard products
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {requiredVoucherReadiness.map(item => {
+            const isReady = item.checkoutReady;
+            const isBookable = item.bookingReady;
+            const product = item.product;
+
+            return (
+              <div
+                key={item.mode}
+                className={`rounded-2xl border p-4 ${
+                  isReady
+                    ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-400/25 dark:bg-emerald-950/15'
+                    : isBookable
+                      ? 'border-blue-200 bg-blue-50 dark:border-blue-400/25 dark:bg-blue-950/15'
+                      : 'border-amber-200 bg-amber-50 dark:border-amber-400/25 dark:bg-amber-950/15'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-bold text-gray-950 dark:text-gray-100">{modeLabel(item.mode)}</h3>
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                        isReady
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
+                          : isBookable
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-100'
+                      }`}>
+                        {isReady ? 'Checkout ready' : isBookable ? 'Bookable manually' : 'Needs setup'}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-sm text-gray-600 dark:text-gray-300">
+                      {product?.name || 'No voucher product has been created yet.'}
+                    </p>
+                  </div>
+                  {product ? (
+                    <button
+                      type="button"
+                      onClick={() => startEdit(product)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-200 dark:hover:bg-[#20242b]"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => applyPreset(item.mode)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 dark:border-blue-400/30 dark:bg-[#111827] dark:text-blue-200 dark:hover:bg-blue-950/40"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Draft
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="rounded-xl border border-white/70 bg-white/70 p-2 dark:border-[#2c2f36] dark:bg-[#111827]">
+                    <p className="text-lg font-bold text-gray-950 dark:text-gray-100">{item.readiness?.serviceableAircraftCount ?? 0}</p>
+                    <p className="text-gray-500 dark:text-gray-400">Aircraft</p>
+                  </div>
+                  <div className="rounded-xl border border-white/70 bg-white/70 p-2 dark:border-[#2c2f36] dark:bg-[#111827]">
+                    <p className="text-lg font-bold text-gray-950 dark:text-gray-100">{item.readiness?.instructorCount ?? product?.instructorIds.length ?? 0}</p>
+                    <p className="text-gray-500 dark:text-gray-400">Instructors</p>
+                  </div>
+                  <div className="rounded-xl border border-white/70 bg-white/70 p-2 dark:border-[#2c2f36] dark:bg-[#111827]">
+                    <p className="text-lg font-bold text-gray-950 dark:text-gray-100">{product?.stripePriceId ? 'Yes' : 'No'}</p>
+                    <p className="text-gray-500 dark:text-gray-400">Stripe</p>
+                  </div>
+                </div>
+
+                {item.issues.length > 0 ? (
+                  <div className="mt-3 space-y-1.5">
+                    {item.issues.map(issue => (
+                      <p key={issue} className="flex gap-2 text-xs leading-5 text-gray-700 dark:text-gray-300">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
+                        <span>{issue}</span>
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 flex gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-200">
+                    <CheckCircle className="h-4 w-4" />
+                    Ready for online purchase and voucher booking.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <div className={`mb-6 rounded-2xl border p-4 shadow-sm dark:bg-[#171a21] sm:p-5 ${
         checkoutSetupComplete
@@ -751,13 +901,36 @@ export const TrialFlightVouchersPage: React.FC = () => {
             <div className="grid gap-3">
               <select value={issueForm.productId} onChange={e => setIssueForm(f => ({ ...f, productId: e.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100">
                 <option value="">Select voucher product</option>
-                {activeProducts.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}
+                {activeProducts.map(product => {
+                  const readiness = bookingReadiness(product);
+                  return (
+                    <option key={product.id} value={product.id} disabled={!readiness.ready}>
+                      {product.name}{readiness.ready ? '' : ' - setup incomplete'}
+                    </option>
+                  );
+                })}
               </select>
               {selectedProduct && (
-                <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
-                  {modeLabel(selectedProduct.aircraftMode)} - {selectedProduct.durationMinutes} min flight, {selectedProduct.durationMinutes + 30} min booking block.
+                <div className={`rounded-lg border p-3 text-sm ${
+                  selectedProductIsIssueable
+                    ? 'border-blue-100 bg-blue-50 text-blue-900 dark:border-blue-400/25 dark:bg-blue-950/30 dark:text-blue-100'
+                    : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100'
+                }`}>
+                  <p>
+                    {modeLabel(selectedProduct.aircraftMode)} - {selectedProduct.durationMinutes} min flight, {selectedProduct.durationMinutes + 30} min booking block.
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {selectedProductReadiness?.serviceableAircraftCount ?? 0} serviceable aircraft - {selectedProductReadiness?.instructorCount ?? 0} eligible instructor{selectedProductReadiness?.instructorCount === 1 ? '' : 's'}
+                  </p>
                   {selectedProduct.stripePriceId && (
                     <span className="mt-1 block text-xs font-mono text-blue-700 dark:text-blue-200">Stripe price: {selectedProduct.stripePriceId}</span>
+                  )}
+                  {!selectedProductIsIssueable && selectedProductReadiness && (
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">
+                      {selectedProductReadiness.issues.map(issue => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}
@@ -811,7 +984,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 <input type="date" value={issueForm.expiresAt} onChange={e => setIssueForm(f => ({ ...f, expiresAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
               </label>
               <textarea value={issueForm.notes} onChange={e => setIssueForm(f => ({ ...f, notes: e.target.value }))} rows={3} placeholder="Internal notes" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
-              <button onClick={handleIssueVoucher} disabled={saving || loading} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+              <button onClick={handleIssueVoucher} disabled={saving || loading || (Boolean(selectedProduct) && !selectedProductIsIssueable)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
                 <Mail className="h-4 w-4" />
                 Issue voucher
               </button>

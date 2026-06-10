@@ -435,6 +435,48 @@ Deno.serve(async (req: Request) => {
       return json({ products: (products || []).map((product: any) => toPublicProduct(product, aircraftRows || [])) });
     }
 
+    if (action === "checkout-status") {
+      const sessionId = String(body.sessionId || "").trim();
+      if (!sessionId) return json({ error: "Checkout session is required" }, 400);
+
+      const { data: voucher, error: voucherError } = await adminClient
+        .from("trial_flight_vouchers")
+        .select(`
+          status,
+          payment_status,
+          purchaser_email,
+          recipient_email,
+          send_to_recipient,
+          recipient_delivery_at,
+          delivered_at,
+          trial_flight_voucher_products(name)
+        `)
+        .eq("stripe_checkout_session_id", sessionId)
+        .maybeSingle();
+
+      if (voucherError) return json({ error: voucherError.message }, 500);
+      if (!voucher) return json({ error: "Checkout session was not found yet" }, 404);
+
+      const emailTo = voucher.send_to_recipient
+        ? voucher.recipient_email
+        : voucher.purchaser_email;
+      const product = Array.isArray(voucher.trial_flight_voucher_products)
+        ? voucher.trial_flight_voucher_products[0]
+        : voucher.trial_flight_voucher_products;
+
+      return json({
+        checkout: {
+          status: voucher.status,
+          paymentStatus: voucher.payment_status,
+          productName: product?.name || "Trial flight voucher",
+          emailTo,
+          sendToRecipient: Boolean(voucher.send_to_recipient),
+          recipientDeliveryAt: voucher.recipient_delivery_at,
+          deliveredAt: voucher.delivered_at,
+        },
+      });
+    }
+
     if (action === "my-voucher") {
       const { user } = await getAuthenticatedUser(req, supabaseUrl);
       if (!user) return json({ error: "You need to sign in to view your voucher" }, 401);
