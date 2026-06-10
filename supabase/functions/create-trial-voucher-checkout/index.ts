@@ -22,6 +22,7 @@ const generateVoucherCode = () => {
 
 const cleanEmail = (value: unknown) => String(value || "").trim().toLowerCase();
 const cleanText = (value: unknown) => String(value || "").trim();
+const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
@@ -54,8 +55,25 @@ Deno.serve(async (req: Request) => {
     if (!productId || !purchaserName || !purchaserEmail || !successUrl || !cancelUrl) {
       return json({ error: "Voucher, purchaser name, purchaser email, success URL and cancel URL are required" }, 400);
     }
+    if (!isValidEmail(purchaserEmail)) {
+      return json({ error: "Enter a valid purchaser email address" }, 400);
+    }
     if (sendToRecipient && !recipientEmail) {
       return json({ error: "Recipient email is required when sending direct to the recipient" }, 400);
+    }
+    if (sendToRecipient && recipientEmail && !isValidEmail(recipientEmail)) {
+      return json({ error: "Enter a valid recipient email address" }, 400);
+    }
+    let recipientDeliveryAtIso: string | null = null;
+    if (sendToRecipient && recipientDeliveryAt) {
+      const deliveryAt = new Date(recipientDeliveryAt);
+      if (!Number.isFinite(deliveryAt.getTime())) {
+        return json({ error: "Choose a valid recipient send date/time" }, 400);
+      }
+      if (deliveryAt.getTime() < Date.now()) {
+        return json({ error: "Recipient send date/time must be in the future" }, 400);
+      }
+      recipientDeliveryAtIso = deliveryAt.toISOString();
     }
 
     const { data: product, error: productError } = await adminClient
@@ -81,7 +99,7 @@ Deno.serve(async (req: Request) => {
         recipient_name: recipientName || null,
         recipient_email: recipientEmail || null,
         send_to_recipient: sendToRecipient,
-        recipient_delivery_at: recipientDeliveryAt || null,
+        recipient_delivery_at: recipientDeliveryAtIso,
         status: "draft",
         payment_status: "pending",
         payment_amount: Number(product.price || 0),

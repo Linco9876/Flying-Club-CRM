@@ -22,6 +22,14 @@ const aircraftLabel = (mode: TrialFlightVoucherAircraftMode) =>
 const formatPrice = (price: number) =>
   new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(price || 0);
 
+const isValidEmail = (value: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+const toDateTimeLocalValue = (date: Date) => {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+};
+
 export const TrialVoucherSalesPage: React.FC = () => {
   const [products, setProducts] = useState<PublicVoucherProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +44,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
     sendToRecipient: false,
     recipientDeliveryAt: '',
   });
+  const minimumDeliveryAt = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 5 * 60_000)), []);
 
   useEffect(() => {
     const loadProducts = async () => {
@@ -96,9 +105,28 @@ export const TrialVoucherSalesPage: React.FC = () => {
       toast.error('Purchaser name and email are required');
       return;
     }
+    if (!isValidEmail(purchaseForm.purchaserEmail)) {
+      toast.error('Enter a valid purchaser email address');
+      return;
+    }
     if (purchaseForm.sendToRecipient && !purchaseForm.recipientEmail.trim()) {
       toast.error('Recipient email is required when sending direct to recipient');
       return;
+    }
+    if (purchaseForm.sendToRecipient && !isValidEmail(purchaseForm.recipientEmail)) {
+      toast.error('Enter a valid recipient email address');
+      return;
+    }
+    if (purchaseForm.sendToRecipient && purchaseForm.recipientDeliveryAt) {
+      const deliveryAt = new Date(purchaseForm.recipientDeliveryAt);
+      if (!Number.isFinite(deliveryAt.getTime())) {
+        toast.error('Choose a valid recipient send date/time');
+        return;
+      }
+      if (deliveryAt.getTime() < Date.now()) {
+        toast.error('Recipient send date/time must be in the future');
+        return;
+      }
     }
 
     setCheckoutLoading(true);
@@ -290,7 +318,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                   <input type="email" value={purchaseForm.recipientEmail} onChange={e => setPurchaseForm(f => ({ ...f, recipientEmail: e.target.value }))} placeholder="Recipient email" className="rounded-xl border border-blue-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
                   <label className="text-sm font-semibold text-blue-900">
                     Send date/time
-                    <input type="datetime-local" value={purchaseForm.recipientDeliveryAt} onChange={e => setPurchaseForm(f => ({ ...f, recipientDeliveryAt: e.target.value }))} className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="datetime-local" min={minimumDeliveryAt} value={purchaseForm.recipientDeliveryAt} onChange={e => setPurchaseForm(f => ({ ...f, recipientDeliveryAt: e.target.value }))} className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
                   </label>
                   <p className="text-xs leading-5 text-blue-800">Leave blank to send the recipient email after payment is confirmed.</p>
                 </div>
