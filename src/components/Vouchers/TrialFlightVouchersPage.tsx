@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Copy, ExternalLink, Mail, Pencil, Plane, Plus, Save, Ticket, Users } from 'lucide-react';
+import { CheckCircle, Copy, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
@@ -73,6 +73,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const instructors = getInstructors();
   const activeProducts = products.filter(product => product.isActive);
   const selectedProduct = products.find(product => product.id === issueForm.productId);
+  const checkoutReadyProducts = activeProducts.filter(product => Boolean(product.stripePriceId));
+  const checkoutSetupComplete = activeProducts.length > 0 && checkoutReadyProducts.length === activeProducts.length;
 
   const aircraftByMode = useMemo(() => {
     const tecnams = aircraft.filter(item =>
@@ -311,6 +313,64 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <p className="text-lg font-bold">{vouchers.filter(voucher => voucher.status === 'redeemed').length}</p>
               <p className="text-xs text-blue-100">Redeemed</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className={`mb-6 rounded-2xl border p-4 shadow-sm dark:bg-[#171a21] sm:p-5 ${
+        checkoutSetupComplete
+          ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-400/25'
+          : 'border-amber-200 bg-amber-50 dark:border-amber-400/25'
+      }`}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 gap-3">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+              checkoutSetupComplete
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
+                : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200'
+            }`}>
+              {checkoutSetupComplete ? <CheckCircle className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
+            </div>
+            <div className="min-w-0">
+              <p className={`text-sm font-bold ${
+                checkoutSetupComplete
+                  ? 'text-emerald-950 dark:text-emerald-100'
+                  : 'text-amber-950 dark:text-amber-100'
+              }`}>
+                Online checkout setup
+              </p>
+              <p className={`mt-1 max-w-3xl text-sm leading-6 ${
+                checkoutSetupComplete
+                  ? 'text-emerald-800 dark:text-emerald-200'
+                  : 'text-amber-800 dark:text-amber-100'
+              }`}>
+                {checkoutReadyProducts.length} of {activeProducts.length} active voucher product{activeProducts.length === 1 ? '' : 's'} have Stripe Price IDs.
+                Public purchase buttons only appear for active products with a Stripe Price ID.
+              </p>
+            </div>
+          </div>
+          <a
+            href="/trial-flight-gift-vouchers"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/50 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-100 dark:hover:bg-[#20242b]"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Public sales page
+          </a>
+        </div>
+        <div className="mt-4 grid gap-3 text-xs leading-5 text-gray-700 dark:text-gray-300 lg:grid-cols-3">
+          <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
+            <p className="font-bold text-gray-950 dark:text-gray-100">Products</p>
+            <p className="mt-1">Add a Stripe Price ID from Stripe to each voucher product that should be sold online.</p>
+          </div>
+          <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
+            <p className="font-bold text-gray-950 dark:text-gray-100">Supabase</p>
+            <p className="mt-1">Deploy the voucher migrations plus `create-trial-voucher-checkout`, `send-trial-voucher-email`, and `trial-voucher-stripe-webhook` functions.</p>
+          </div>
+          <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
+            <p className="font-bold text-gray-950 dark:text-gray-100">Secrets</p>
+            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and Stripe webhook URL.</p>
           </div>
         </div>
       </div>
