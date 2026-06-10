@@ -406,7 +406,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const getRedeemUrl = (code: string) => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${origin}/trial-flight-voucher?code=${encodeURIComponent(code)}`;
+    return `${origin}/trial-flight-voucher?voucherCode=${encodeURIComponent(code)}`;
   };
 
   const copyToClipboard = async (value: string, label: string) => {

@@ -296,7 +296,7 @@ const sendVoucherEmail = async ({
   if (!to) return { sent: false, error: "Voucher has no delivery email address" };
 
   const origin = String(redirectOrigin || Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
-  const redeemUrl = `${origin}/trial-flight-voucher?code=${encodeURIComponent(voucher.code)}`;
+  const redeemUrl = `${origin}/trial-flight-voucher?voucherCode=${encodeURIComponent(voucher.code)}`;
   const subject = product.email_subject || "Your Bendigo Flying Club trial flight voucher";
   const html = buildVoucherEmail({ voucher, product, recipientName: toName || "", redeemUrl });
 
