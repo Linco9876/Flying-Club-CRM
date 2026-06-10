@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
@@ -52,7 +52,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { users, getInstructors } = useUsers();
-  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking } = useTrialFlightVouchers();
+  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [issueForm, setIssueForm] = useState({
@@ -337,6 +337,29 @@ export const TrialFlightVouchersPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to release voucher booking:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to release voucher booking');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelVoucher = async (voucher: TrialFlightVoucher) => {
+    if (voucher.bookedBookingId || voucher.status === 'booked') {
+      toast.error('Release the linked booking before cancelling this voucher.');
+      return;
+    }
+
+    const reason = window.prompt(
+      `Cancel voucher ${voucher.code}? This prevents it from being redeemed or booked. Add an optional reason:`,
+      voucher.paymentStatus === 'pending' ? 'Abandoned or failed checkout' : ''
+    );
+    if (reason === null) return;
+
+    setSaving(true);
+    try {
+      await cancelVoucher(voucher.id, reason);
+    } catch (error) {
+      console.error('Failed to cancel voucher:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to cancel voucher');
     } finally {
       setSaving(false);
     }
@@ -1365,6 +1388,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
               {visibleRecentVouchers.map(voucher => {
                 const redeemUrl = getRedeemUrl(voucher.code);
                 const delivery = voucherDeliveryDetails(voucher);
+                const canCancelVoucher = voucher.status !== 'cancelled' && voucher.status !== 'booked' && !voucher.bookedBookingId;
                 return (
                 <div key={voucher.id} className={`rounded-xl border p-3 ${
                   delivery.state === 'due'
@@ -1542,6 +1566,17 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       >
                         <Mail className="h-3.5 w-3.5" />
                         Send now
+                      </button>
+                    )}
+                    {canCancelVoucher && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelVoucher(voucher)}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60 dark:border-red-400/30 dark:bg-[#171a21] dark:text-red-200 dark:hover:bg-red-950/30"
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                        Cancel voucher
                       </button>
                     )}
                   </div>

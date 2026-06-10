@@ -375,6 +375,23 @@ export const useTrialFlightVouchers = () => {
     return data;
   };
 
+  const cancelVoucher = async (voucherId: string, reason?: string) => {
+    const { data, error } = await supabase.functions.invoke('trial-voucher-admin', {
+      body: {
+        action: 'cancel-voucher',
+        voucherId,
+        reason,
+      },
+    });
+
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+
+    toast.success('Voucher cancelled');
+    await fetchAll();
+    return data;
+  };
+
   return {
     products,
     activeProducts,
@@ -387,5 +404,6 @@ export const useTrialFlightVouchers = () => {
     markVoucherReady,
     processDueVoucherEmails,
     releaseVoucherBooking,
+    cancelVoucher,
   };
 };

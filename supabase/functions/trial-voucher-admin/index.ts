@@ -71,21 +71,60 @@ Deno.serve(async (req: Request) => {
     const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
     if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
 
-    if (action !== "release-booking") {
-      return json({ error: "Unsupported action" }, 400);
-    }
-
     const voucherId = String(body.voucherId || "").trim();
     if (!voucherId) return json({ error: "voucherId is required" }, 400);
 
     const { data: voucher, error: voucherError } = await adminClient
       .from("trial_flight_vouchers")
-      .select("id,status,booked_booking_id,code")
+      .select("id,status,payment_status,booked_booking_id,code,delivered_at,redeemed_by_user_id,notes")
       .eq("id", voucherId)
       .maybeSingle();
 
     if (voucherError) return json({ error: voucherError.message }, 500);
     if (!voucher) return json({ error: "Voucher not found" }, 404);
+
+    if (action === "cancel-voucher") {
+      if (voucher.status === "cancelled") {
+        return json({ cancelled: true, voucherId: voucher.id, alreadyCancelled: true });
+      }
+      if (voucher.booked_booking_id) {
+        return json({ error: "Release the linked booking before cancelling this voucher." }, 409);
+      }
+      if (voucher.status === "booked") {
+        return json({ error: "Booked vouchers cannot be cancelled until the booking is released." }, 409);
+      }
+
+      const now = new Date().toISOString();
+      const reason = String(body.reason || "").trim();
+      const notes = [
+        voucher.notes || "",
+        `Cancelled by staff ${staffAuth.userId} at ${now}.`,
+        reason ? `Reason: ${reason}` : "",
+      ].filter(Boolean).join(" ");
+
+      const { error: cancelError } = await adminClient
+        .from("trial_flight_vouchers")
+        .update({
+          status: "cancelled",
+          payment_status: voucher.payment_status === "paid" ? "refunded" : voucher.payment_status,
+          notes,
+          updated_at: now,
+        })
+        .eq("id", voucher.id);
+
+      if (cancelError) return json({ error: cancelError.message }, 500);
+
+      return json({
+        cancelled: true,
+        voucherId: voucher.id,
+        cancelledBy: staffAuth.userId,
+      });
+    }
+
+    if (action !== "release-booking") {
+      return json({ error: "Unsupported action" }, 400);
+    }
+
     if (!voucher.booked_booking_id) return json({ error: "This voucher does not have a linked booking" }, 409);
 
     const { data: booking, error: bookingError } = await adminClient
