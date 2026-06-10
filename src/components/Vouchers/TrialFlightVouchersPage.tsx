@@ -454,6 +454,15 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const modeLabel = (mode: TrialFlightVoucherAircraftMode) =>
     mode === 'tecnam' ? 'Any Tecnam' : mode === 'archer' ? 'PA-28 Archer' : 'Selected aircraft';
 
+  const aircraftLabel = (item: { registration?: string; make?: string; model?: string }) =>
+    [item.registration, item.make, item.model].filter(Boolean).join(' ').trim() || 'Unnamed aircraft';
+
+  const compactList = (items: string[], emptyLabel: string, maxVisible = 3) => {
+    if (items.length === 0) return emptyLabel;
+    const visible = items.slice(0, maxVisible).join(', ');
+    return items.length > maxVisible ? `${visible} +${items.length - maxVisible} more` : visible;
+  };
+
   const paymentLabel = (status?: TrialFlightVoucherPaymentStatus) =>
     status === 'paid' ? 'Paid'
       : status === 'pending' ? 'Payment pending'
@@ -557,6 +566,32 @@ export const TrialFlightVouchersPage: React.FC = () => {
       instructorCount: eligibleInstructors.length,
       ready: issues.length === 0,
     };
+  };
+
+  const productInstructorNames = (product: TrialFlightVoucherProduct) =>
+    instructors
+      .filter(instructor => product.instructorIds.includes(instructor.id))
+      .map(instructor => instructor.name);
+
+  const productNextActions = (product: TrialFlightVoucherProduct) => {
+    const readiness = bookingReadiness(product);
+    const actions = [
+      ...(!product.isActive ? ['Activate this voucher product when it is ready to issue.'] : []),
+      ...(readiness.aircraftCount === 0
+        ? [
+            product.aircraftMode === 'archer'
+              ? 'Add the PA-28 Archer to Aircraft Fleet with make/model containing Archer or PA-28, set it serviceable, or select the Archer as a specific aircraft.'
+              : product.aircraftMode === 'tecnam'
+                ? 'Add at least one Tecnam aircraft to Aircraft Fleet and mark it serviceable, or select specific Tecnam aircraft.'
+                : 'Select at least one aircraft for this voucher.'
+          ]
+        : []),
+      ...(readiness.aircraftCount > 0 && readiness.serviceableAircraftCount === 0 ? ['Mark at least one eligible aircraft as serviceable.'] : []),
+      ...(readiness.instructorCount === 0 ? ['Select at least one eligible instructor for this voucher.'] : []),
+      ...(Number(product.price || 0) <= 0 ? ['Enter the real AUD sale price before online checkout is enabled.'] : []),
+      ...(!product.stripePriceId?.trim() ? ['Paste the matching Stripe Price ID, for example price_..., once the Stripe product is created.'] : []),
+    ];
+    return actions;
   };
 
   const standardReadiness = (mode: 'tecnam' | 'archer') => {
@@ -680,6 +715,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
             const isReady = item.checkoutReady;
             const isBookable = item.bookingReady;
             const product = item.product;
+            const productAircraft = product ? getProductAircraft(product) : null;
+            const aircraftNames = productAircraft?.serviceableAircraft.map(aircraftLabel) ?? [];
+            const instructorNames = product ? productInstructorNames(product) : [];
+            const nextActions = product ? productNextActions(product) : [`Create the ${modeLabel(item.mode)} voucher product.`];
 
             return (
               <div
@@ -746,6 +785,21 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   </div>
                 </div>
 
+                <div className="mt-3 grid gap-2 text-xs leading-5 sm:grid-cols-2">
+                  <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
+                    <p className="font-bold text-gray-950 dark:text-gray-100">Detected aircraft</p>
+                    <p className="mt-1 text-gray-600 dark:text-gray-300">
+                      {compactList(aircraftNames, product ? 'No serviceable aircraft detected' : 'Create product first')}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
+                    <p className="font-bold text-gray-950 dark:text-gray-100">Selected instructors</p>
+                    <p className="mt-1 text-gray-600 dark:text-gray-300">
+                      {compactList(instructorNames, product ? 'No eligible instructors selected' : 'Create product first')}
+                    </p>
+                  </div>
+                </div>
+
                 {item.issues.length > 0 ? (
                   <div className="mt-3 space-y-1.5">
                     {item.issues.map(issue => (
@@ -760,6 +814,17 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     <CheckCircle className="h-4 w-4" />
                     Ready for online purchase and voucher booking.
                   </p>
+                )}
+
+                {nextActions.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-white/70 bg-white/80 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
+                    <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Next actions</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-gray-700 dark:text-gray-300">
+                      {nextActions.map(action => (
+                        <li key={action}>{action}</li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             );
@@ -1050,6 +1115,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
               {products.map(product => {
                 const checkout = checkoutStatus(product);
                 const booking = bookingReadiness(product);
+                const productAircraft = getProductAircraft(product);
+                const serviceableAircraftNames = productAircraft.serviceableAircraft.map(aircraftLabel);
+                const instructorNames = productInstructorNames(product);
+                const nextActions = productNextActions(product);
                 return (
                   <div
                     key={product.id}
@@ -1093,6 +1162,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           {booking.serviceableAircraftCount} of {booking.aircraftCount} eligible aircraft serviceable - {booking.instructorCount} eligible instructor{booking.instructorCount === 1 ? '' : 's'}
                           {product.aircraftIds.length > 0 ? ' - selected aircraft only' : ''}
                         </p>
+                        <div className="mt-2 grid gap-2 text-xs leading-5 sm:grid-cols-2">
+                          <p className="rounded-lg bg-gray-50 px-3 py-2 text-gray-600 dark:bg-[#171a21] dark:text-gray-300">
+                            <span className="font-semibold text-gray-800 dark:text-gray-100">Aircraft:</span>{' '}
+                            {compactList(serviceableAircraftNames, 'No serviceable aircraft detected')}
+                          </p>
+                          <p className="rounded-lg bg-gray-50 px-3 py-2 text-gray-600 dark:bg-[#171a21] dark:text-gray-300">
+                            <span className="font-semibold text-gray-800 dark:text-gray-100">Instructors:</span>{' '}
+                            {compactList(instructorNames, 'No instructors selected')}
+                          </p>
+                        </div>
                         {!booking.ready && (
                           <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800 dark:border-red-400/25 dark:bg-red-950/30 dark:text-red-100">
                             <p className="flex items-center gap-1.5 font-bold">
@@ -1102,6 +1181,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
                             <ul className="mt-1 list-disc space-y-0.5 pl-5">
                               {booking.issues.map(issue => (
                                 <li key={issue}>{issue}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {nextActions.length > 0 && (
+                          <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/25 dark:bg-amber-950/30 dark:text-amber-100">
+                            <p className="font-bold">Setup actions</p>
+                            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                              {nextActions.map(action => (
+                                <li key={action}>{action}</li>
                               ))}
                             </ul>
                           </div>
