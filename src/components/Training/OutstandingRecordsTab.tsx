@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
+import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useOutstandingRecords, OutstandingFlightLog } from '../../hooks/useOutstandingRecords';
@@ -43,6 +43,7 @@ interface RecordFormState {
 interface QueuedTrainingRecordSubmit {
   id: string;
   queuedAt: string;
+  existingTrainingRecordId?: string;
   instructorId: string;
   instructorName?: string;
   studentName?: string;
@@ -175,12 +176,23 @@ export const OutstandingRecordsTab: React.FC = () => {
     isAdmin ? undefined : user?.id,
     isAdmin
   );
-  const { trainingRecords, addTrainingRecord } = useTrainingRecords();
+  const { trainingRecords, addTrainingRecord, updateTrainingRecord } = useTrainingRecords();
   const { modules: courses, loading: coursesLoading } = useTrainingModules();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
 
   const [activeLog, setActiveLog] = useState<OutstandingFlightLog | null>(null);
+  const [activeDraftRecord, setActiveDraftRecord] = useState<typeof trainingRecords[number] | null>(null);
+  const [draftSession, setDraftSession] = useState<{
+    id: string;
+    studentId: string;
+    studentName?: string;
+    aircraftId: string;
+    aircraftRegistration?: string;
+    startedAt: string;
+  } | null>(null);
+  const [draftStudentId, setDraftStudentId] = useState('');
+  const [draftAircraftId, setDraftAircraftId] = useState('');
   const [step, setStep] = useState<Step>('action');
   const [form, setForm] = useState<RecordFormState>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
@@ -192,6 +204,9 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [proceedWithCarryForward, setProceedWithCarryForward] = useState(false);
+
+  const activeStudentId = activeLog?.student_id;
+  const isDraftSession = Boolean(draftSession && activeLog?.id === draftSession.id);
 
   const selectedCourse = useMemo(
     () => courses.find(c => c.id === form.courseId) ?? null,
@@ -212,7 +227,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     bestAssessmentByRow,
     loading: matrixLoading,
     saveAssessments: saveMatrixAssessments,
-  } = useSyllabusMatrix(form.courseId || undefined, activeLog?.student_id);
+  } = useSyllabusMatrix(form.courseId || undefined, activeStudentId);
 
   // Criteria come from the course level, pass marks from the lesson
   const activeCriteria: LessonAssessmentCriterion[] = selectedCourse?.assessmentCriteria ?? [];
@@ -319,10 +334,10 @@ export const OutstandingRecordsTab: React.FC = () => {
   }, [selectedCourse, selectedLessonIndex]);
 
   const highestGradesToDate = useMemo(() => {
-    if (!activeLog || !selectedCourse) return {};
+    if (!activeStudentId || !selectedCourse) return {};
 
     return trainingRecords
-      .filter(record => record.studentId === activeLog.student_id && record.courseId === selectedCourse.id)
+      .filter(record => record.studentId === activeStudentId && record.courseId === selectedCourse.id && record.status !== 'draft')
       .reduce<Record<string, string>>((acc, record) => {
         Object.entries(record.criteriaGrades ?? {}).forEach(([criterionId, grade]) => {
           const criterion = selectedCourse.assessmentCriteria.find(item => item.id === criterionId);
@@ -330,7 +345,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         });
         return acc;
       }, {});
-  }, [activeLog, selectedCourse, trainingRecords]);
+  }, [activeStudentId, selectedCourse, trainingRecords]);
 
   const lessonPassed = useMemo(() => {
     if (!selectedLesson) return false;
@@ -415,6 +430,28 @@ export const OutstandingRecordsTab: React.FC = () => {
     () => courses.filter(course => course.status === 'published' && course.lessons.length > 0),
     [courses]
   );
+  const studentOptions = useMemo(
+    () => users
+      .filter(member => {
+        const roles = member.roles?.length ? member.roles : [member.role];
+        return member.isActive !== false && roles.some(role => role === 'student' || role === 'pilot');
+      })
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [users]
+  );
+  const draftRecords = useMemo(
+    () => trainingRecords
+      .filter(record => record.status === 'draft' && (isAdmin || record.instructorId === user?.id))
+      .sort((a, b) => b.date.getTime() - a.date.getTime()),
+    [isAdmin, trainingRecords, user?.id]
+  );
+  const draftRecordsByStudent = useMemo(() => {
+    const map = new Map<string, typeof draftRecords>();
+    draftRecords.forEach(record => {
+      map.set(record.studentId, [...(map.get(record.studentId) ?? []), record]);
+    });
+    return map;
+  }, [draftRecords]);
 
   const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
     setPendingSubmits(current => {
@@ -437,24 +474,32 @@ export const OutstandingRecordsTab: React.FC = () => {
     const recordDate = new Date(job.recordData.date);
     let trainingRecordId: string | undefined;
 
-    const { data: existingRecord, error: existingError } = await supabase
-      .from('training_records')
-      .select('id')
-      .eq('flight_log_id', job.recordData.flightLogId)
-      .eq('course_id', job.recordData.courseId)
-      .eq('lesson_id', job.recordData.lessonId)
-      .maybeSingle();
-
-    if (existingError) throw existingError;
-
-    if (existingRecord?.id) {
-      trainingRecordId = existingRecord.id;
-    } else {
-      const createdRecord = await addTrainingRecord({
+    if (job.existingTrainingRecordId) {
+      await updateTrainingRecord(job.existingTrainingRecordId, {
         ...job.recordData,
         date: recordDate,
       });
-      trainingRecordId = createdRecord?.id;
+      trainingRecordId = job.existingTrainingRecordId;
+    } else {
+      const { data: existingRecord, error: existingError } = await supabase
+        .from('training_records')
+        .select('id')
+        .eq('flight_log_id', job.recordData.flightLogId)
+        .eq('course_id', job.recordData.courseId)
+        .eq('lesson_id', job.recordData.lessonId)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+
+      if (existingRecord?.id) {
+        trainingRecordId = existingRecord.id;
+      } else {
+        const createdRecord = await addTrainingRecord({
+          ...job.recordData,
+          date: recordDate,
+        });
+        trainingRecordId = createdRecord?.id;
+      }
     }
 
     if (trainingRecordId && job.matrixAssessments.length > 0) {
@@ -482,7 +527,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         metadata: { student_id: job.recordData.studentId },
       });
     }
-  }, [addTrainingRecord, markRecorded, saveMatrixAssessments]);
+  }, [addTrainingRecord, markRecorded, saveMatrixAssessments, updateTrainingRecord]);
 
   const syncPendingSubmits = useCallback(async () => {
     const queue = readQueuedSubmits();
@@ -520,14 +565,35 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
   }, [clearDraft, refetch, submitQueuedJob, syncingOfflineQueue]);
 
-  function openLog(log: OutstandingFlightLog) {
+  function openLog(log: OutstandingFlightLog, draftRecord?: typeof trainingRecords[number]) {
     setActiveLog(log);
+    setDraftSession(null);
+    setActiveDraftRecord(draftRecord ?? null);
     const draftKey = getDraftKey(user?.id, log.id);
     const savedDraft = draftKey && typeof window !== 'undefined'
       ? window.localStorage.getItem(draftKey)
       : null;
 
-    if (savedDraft) {
+    if (draftRecord) {
+      setForm({
+        ...emptyForm(),
+        courseId: draftRecord.courseId || '',
+        lessonId: draftRecord.lessonId || '',
+        formalBriefing: draftRecord.formalBriefing,
+        briefingComments: draftRecord.briefingComments || '',
+        flightComments: draftRecord.comments || '',
+        criteriaGrades: draftRecord.criteriaGrades || {},
+        matrixGrades: {},
+        isFlightReview: draftRecord.isFlightReview || false,
+        flightReviewType: draftRecord.flightReviewType || 'Flight Review',
+        flightReviewResult: draftRecord.flightReviewResult || 'not_assessed',
+        flightReviewNotes: draftRecord.flightReviewNotes || '',
+      });
+      setStep(draftRecord.lessonId ? 'form' : draftRecord.courseId ? 'lesson' : 'course');
+      setProceedWithCarryForward(false);
+      setDraftSavedAt(null);
+      toast.success('Draft loaded. Review it, then submit to attach it to this flight.');
+    } else if (savedDraft) {
       try {
         const parsed = JSON.parse(savedDraft) as { form?: RecordFormState; step?: Step; savedAt?: string };
         setForm(parsed.form || { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
@@ -549,8 +615,69 @@ export const OutstandingRecordsTab: React.FC = () => {
     setCommentCleanupOriginal(null);
   }
 
+  function openDraftSession(record?: typeof trainingRecords[number]) {
+    const student = users.find(member => member.id === (record?.studentId || draftStudentId));
+    const aircraft = aircraftList.find(item => item.id === (record?.aircraftId || draftAircraftId));
+    if (!student?.id) {
+      toast.error('Select a student before starting a draft');
+      return;
+    }
+    if (!aircraft?.id) {
+      toast.error('Select an aircraft before starting a draft');
+      return;
+    }
+
+    const sessionId = record?.id ? `draft-record:${record.id}` : `draft-session:${Date.now()}`;
+    const startedAt = record?.date?.toISOString() || new Date().toISOString();
+    setDraftSession({
+      id: sessionId,
+      studentId: student.id,
+      studentName: student.name,
+      aircraftId: aircraft.id,
+      aircraftRegistration: aircraft.registration,
+      startedAt,
+    });
+    setActiveLog({
+      id: sessionId,
+      aircraft_id: aircraft.id,
+      student_id: student.id,
+      instructor_id: user?.id || '',
+      start_time: startedAt,
+      end_time: startedAt,
+      dual_time: 0,
+      solo_time: 0,
+      training_record_status: 'pending',
+      student_name: student.name,
+      student_email: student.email,
+      instructor_name: user?.name,
+      aircraft_registration: aircraft.registration,
+      aircraft_type: aircraft.type,
+    });
+    setActiveDraftRecord(record ?? null);
+    setForm(record ? {
+      ...emptyForm(),
+      courseId: record.courseId || '',
+      lessonId: record.lessonId || '',
+      formalBriefing: record.formalBriefing,
+      briefingComments: record.briefingComments || '',
+      flightComments: record.comments || '',
+      criteriaGrades: record.criteriaGrades || {},
+      matrixGrades: {},
+      isFlightReview: record.isFlightReview || false,
+      flightReviewType: record.flightReviewType || 'Flight Review',
+      flightReviewResult: record.flightReviewResult || 'not_assessed',
+      flightReviewNotes: record.flightReviewNotes || '',
+    } : { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
+    setStep(record?.lessonId ? 'form' : record?.courseId ? 'lesson' : 'course');
+    setProceedWithCarryForward(false);
+    setCommentCleanupOriginal(null);
+    setDraftSavedAt(record ? record.date : null);
+  }
+
   function closePanel() {
     setActiveLog(null);
+    setActiveDraftRecord(null);
+    setDraftSession(null);
     setStep('action');
     setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
     setCommentCleanupOriginal(null);
@@ -585,8 +712,8 @@ export const OutstandingRecordsTab: React.FC = () => {
   function handleSelectLesson(lessonId: string) {
     const course = courses.find(c => c.id === form.courseId);
     const lesson = course?.lessons.find(l => l.id === lessonId);
-    const studentPreviousRecords = activeLog && course
-      ? trainingRecords.filter(record => record.studentId === activeLog.student_id && record.courseId === course.id)
+    const studentPreviousRecords = activeStudentId && course
+      ? trainingRecords.filter(record => record.studentId === activeStudentId && record.courseId === course.id && record.status !== 'draft')
       : [];
 
     const highestByCriterion = studentPreviousRecords.reduce<Record<string, string>>((acc, record) => {
@@ -719,6 +846,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     return {
       id: `${activeLog.id}:${form.courseId}:${form.lessonId}`,
       queuedAt: new Date().toISOString(),
+      existingTrainingRecordId: activeDraftRecord?.id,
       instructorId: user.id,
       instructorName: user.name,
       studentName: activeLog.student_name,
@@ -818,6 +946,64 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
   }
 
+  async function handleSaveDraftRecord() {
+    if (!activeLog || !user || !selectedLesson) return;
+    if (!form.courseId || !form.lessonId) {
+      toast.error('Please select a course and lesson before saving the draft');
+      return;
+    }
+
+    const aircraft = aircraftList.find(a => a.id === activeLog.aircraft_id);
+    const criteriaGrades = hasMatrixAssessment
+      ? { ...form.criteriaGrades, ...matrixDerivedCriteriaGrades }
+      : form.criteriaGrades;
+    const draftPayload = {
+      studentId: activeLog.student_id,
+      courseId: form.courseId,
+      lessonId: form.lessonId,
+      date: new Date(activeLog.start_time),
+      aircraftId: activeLog.aircraft_id,
+      aircraftType: aircraft?.type ?? activeLog.aircraft_type ?? 'single-engine',
+      registration: aircraft?.registration ?? activeLog.aircraft_registration ?? '',
+      instructorId: user.id,
+      dualTimeMin: 0,
+      soloTimeMin: 0,
+      comments: form.flightComments,
+      briefingComments: form.briefingComments,
+      formalBriefing: form.formalBriefing,
+      criteriaGrades,
+      lessonCodes: selectedLesson.sequenceCode ? [selectedLesson.sequenceCode] : [],
+      nextLesson: nextLessonForRecord,
+      status: 'draft' as const,
+      studentAck: false,
+      studentComments: '',
+      attachments: [],
+      isFlightReview: Boolean(selectedLesson.isFlightTest),
+      flightReviewType: selectedLesson.isFlightTest ? (form.flightReviewType || 'Flight Test') : undefined,
+      flightReviewResult: selectedLesson.isFlightTest ? form.flightReviewResult : undefined,
+      flightReviewNotes: selectedLesson.isFlightTest ? form.flightReviewNotes : undefined,
+    };
+
+    setSubmitting(true);
+    try {
+      if (activeDraftRecord?.id) {
+        await updateTrainingRecord(activeDraftRecord.id, draftPayload);
+      } else {
+        await addTrainingRecord(draftPayload);
+      }
+      toast.success('Training record draft saved. Attach it to the logged flight when you are back.');
+      closePanel();
+    } catch (error) {
+      if (isNetworkLikeError(error)) {
+        toast.success('Signal dropped. Your in-flight draft is still saved on this device.');
+      } else {
+        toast.error('Failed to save training record draft');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6 space-y-3">
@@ -849,6 +1035,74 @@ export const OutstandingRecordsTab: React.FC = () => {
           )}
         </div>
 
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm dark:border-blue-400/25 dark:bg-blue-950/20">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+              <Save className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-blue-950 dark:text-blue-100">In-flight draft</p>
+              <p className="mt-0.5 text-xs leading-5 text-blue-800 dark:text-blue-200">
+                Start a record before the flight is logged, then attach it to the logged flight afterwards.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <select
+              value={draftStudentId}
+              onChange={event => setDraftStudentId(event.target.value)}
+              className="min-w-0 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100"
+            >
+              <option value="">Select student/pilot</option>
+              {studentOptions.map(member => (
+                <option key={member.id} value={member.id}>{member.name}</option>
+              ))}
+            </select>
+            <select
+              value={draftAircraftId}
+              onChange={event => setDraftAircraftId(event.target.value)}
+              className="min-w-0 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100"
+            >
+              <option value="">Select aircraft</option>
+              {aircraftList.map(aircraft => (
+                <option key={aircraft.id} value={aircraft.id}>{aircraft.registration} {aircraft.type ? `- ${aircraft.type}` : ''}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => openDraftSession()}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!draftStudentId || !draftAircraftId}
+          >
+            <BookOpen className="h-4 w-4" />
+            Start Draft Record
+          </button>
+          {draftRecords.length > 0 && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-200">
+                Saved drafts
+              </p>
+              {draftRecords.slice(0, 4).map(record => {
+                const student = users.find(member => member.id === record.studentId);
+                const course = courses.find(item => item.id === record.courseId);
+                const lesson = course?.lessons.find(item => item.id === record.lessonId);
+                return (
+                  <button
+                    key={record.id}
+                    type="button"
+                    onClick={() => openDraftSession(record)}
+                    className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-left text-xs text-blue-950 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-400/20 dark:bg-[#111827] dark:text-blue-100 dark:hover:bg-blue-950/40"
+                  >
+                    <span className="block truncate font-semibold">{student?.name || 'Unknown member'}</span>
+                    <span className="block truncate opacity-80">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {outstandingLogs.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
             <CheckCircle className="h-14 w-14 text-emerald-400 mx-auto mb-3" />
@@ -861,6 +1115,7 @@ export const OutstandingRecordsTab: React.FC = () => {
             const expanded = expandedLogs.has(log.id);
             const flightDate = new Date(log.start_time);
             const durationH = ((log.dual_time ?? 0) + (log.solo_time ?? 0)).toFixed(1);
+            const matchingDrafts = draftRecordsByStudent.get(log.student_id) ?? [];
 
             return (
               <div
@@ -929,6 +1184,34 @@ export const OutstandingRecordsTab: React.FC = () => {
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
+                  {matchingDrafts.length > 0 && (
+                    <div className="mt-3 space-y-2 rounded-lg border border-blue-100 bg-blue-50 p-3 dark:border-blue-400/20 dark:bg-blue-950/20">
+                      <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">
+                        Draft available for this member
+                      </p>
+                      {matchingDrafts.slice(0, 3).map(record => {
+                        const course = courses.find(item => item.id === record.courseId);
+                        const lesson = course?.lessons.find(item => item.id === record.lessonId);
+                        return (
+                          <button
+                            key={record.id}
+                            type="button"
+                            onClick={() => openLog(log, record)}
+                            className="flex w-full items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-left text-xs text-blue-950 ring-1 ring-blue-100 transition hover:bg-blue-100 dark:bg-[#111827] dark:text-blue-100 dark:ring-blue-400/20 dark:hover:bg-blue-950/40"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-semibold">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
+                              <span className="block truncate opacity-75">Saved {format(record.date, 'd MMM yyyy')}</span>
+                            </span>
+                            <span className="inline-flex shrink-0 items-center gap-1 font-semibold">
+                              <LinkIcon className="h-3.5 w-3.5" />
+                              Use draft
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -943,9 +1226,11 @@ export const OutstandingRecordsTab: React.FC = () => {
             {/* Panel header */}
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
               <div className="min-w-0">
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100">Training Record</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                  {isDraftSession ? 'In-flight Draft Record' : activeDraftRecord ? 'Attach Draft Training Record' : 'Training Record'}
+                </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {activeLog.student_name} &middot; {format(new Date(activeLog.start_time), 'd MMM yyyy')}
+                  {activeLog.student_name} &middot; {isDraftSession ? 'Started' : 'Flight'} {format(new Date(activeLog.start_time), 'd MMM yyyy')}
                 </p>
               </div>
               <button
@@ -1106,6 +1391,14 @@ export const OutstandingRecordsTab: React.FC = () => {
                       </p>
                     )}
                   </div>
+                  {isDraftSession && (
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-400/25 dark:bg-indigo-950/25 dark:text-indigo-100">
+                      <p className="font-semibold">This is not attached to a logged flight yet.</p>
+                      <p className="mt-1 text-xs leading-5">
+                        Save it as a draft now. After the flight is logged, use the matching draft shown under the outstanding record to attach and submit it.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Selected context */}
                   <div className="bg-blue-50 rounded-lg px-4 py-3 border border-blue-100 text-sm">
@@ -1586,24 +1879,26 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {/* Submit */}
                   <div className="pt-2 border-t border-gray-100">
                     <button
-                      onClick={handleSubmit}
-                      disabled={submitting || (trainingSettings.requireFlightComments && !form.flightComments.trim())}
+                      onClick={isDraftSession ? handleSaveDraftRecord : handleSubmit}
+                      disabled={submitting || (!isDraftSession && trainingSettings.requireFlightComments && !form.flightComments.trim())}
                       className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       {submitting ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Submitting...
+                          {isDraftSession ? 'Saving draft...' : 'Submitting...'}
                         </>
                       ) : (
                         <>
-                          <ClipboardList className="h-4 w-4" />
-                          Submit Training Record
+                          {isDraftSession ? <Save className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+                          {isDraftSession ? 'Save Draft Record' : activeDraftRecord ? 'Attach Draft & Submit' : 'Submit Training Record'}
                         </>
                       )}
                     </button>
                     <p className="text-xs text-gray-400 text-center mt-2">
-                      {selectedCourseRequiresAck
+                      {isDraftSession
+                        ? 'Drafts stay hidden from the student until they are attached to a logged flight and submitted.'
+                        : selectedCourseRequiresAck
                         ? 'The student will be asked to acknowledge this record.'
                         : 'This course does not require acknowledgement; the record will lock on submit.'}
                     </p>

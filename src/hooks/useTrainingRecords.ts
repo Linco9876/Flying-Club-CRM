@@ -267,8 +267,10 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
       if (error) throw error;
 
-      const enrolmentId = await ensureStudentCourseEnrolment(recordData.studentId, recordData.courseId);
-      void sendDeclarationLinksForEnrolment(enrolmentId);
+      if (recordData.status !== 'draft') {
+        const enrolmentId = await ensureStudentCourseEnrolment(recordData.studentId, recordData.courseId);
+        void sendDeclarationLinksForEnrolment(enrolmentId);
+      }
 
       const sequenceRows = recordData.sequences
         ?.filter(sequence => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sequence.sequenceId))
@@ -348,8 +350,9 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
       if (error) throw error;
 
-      if (recordData.studentId || recordData.courseId) {
-        const existingRecord = trainingRecords.find(record => record.id === id);
+      const existingRecord = trainingRecords.find(record => record.id === id);
+      const nextStatus = recordData.status || existingRecord?.status;
+      if (nextStatus !== 'draft' && (recordData.studentId || recordData.courseId || recordData.status)) {
         const enrolmentId = await ensureStudentCourseEnrolment(
           recordData.studentId || existingRecord?.studentId,
           recordData.courseId || existingRecord?.courseId
