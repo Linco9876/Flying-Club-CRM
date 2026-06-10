@@ -51,7 +51,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { users, getInstructors } = useUsers();
-  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail } = useTrialFlightVouchers();
+  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, processDueVoucherEmails } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [issueForm, setIssueForm] = useState({
@@ -209,6 +209,18 @@ export const TrialFlightVouchersPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to send voucher email:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to send voucher email');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleProcessDueEmails = async () => {
+    setSaving(true);
+    try {
+      await processDueVoucherEmails();
+    } catch (error) {
+      console.error('Failed to process due voucher emails:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to process due voucher emails');
     } finally {
       setSaving(false);
     }
@@ -533,7 +545,21 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-            <h2 className="mb-3 text-lg font-bold text-gray-950 dark:text-gray-100">Recent vouchers</h2>
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Recent vouchers</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Scheduled recipient emails are sent automatically; this button checks anything due now.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleProcessDueEmails}
+                disabled={saving}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-60 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-950/50"
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Send due now
+              </button>
+            </div>
             <div className="space-y-2">
               {vouchers.slice(0, 8).map(voucher => {
                 const redeemUrl = getRedeemUrl(voucher.code);

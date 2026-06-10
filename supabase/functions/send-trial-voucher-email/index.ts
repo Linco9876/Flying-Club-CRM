@@ -177,6 +177,44 @@ const resolveDelivery = (voucher: any) => {
   return { to, toName };
 };
 
+type StaffAuthResult =
+  | { ok: true; userId: string }
+  | { ok: false; error: string; status: number };
+
+const authenticateStaff = async ({
+  req,
+  supabaseUrl,
+  anonKey,
+  adminClient,
+}: {
+  req: Request;
+  supabaseUrl: string;
+  anonKey: string;
+  adminClient: ReturnType<typeof createClient>;
+}): Promise<StaffAuthResult> => {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return { ok: false, error: "No authorization header", status: 401 };
+
+  const callerClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user: callerUser }, error: callerError } = await callerClient.auth.getUser();
+  if (callerError || !callerUser) return { ok: false, error: "Unauthorized", status: 401 };
+
+  const [{ data: callerRoles, error: rolesError }, { data: callerProfile, error: profileError }] = await Promise.all([
+    adminClient.from("user_roles").select("role").eq("user_id", callerUser.id),
+    adminClient.from("users").select("role").eq("id", callerUser.id).maybeSingle(),
+  ]);
+  if (rolesError) return { ok: false, error: rolesError.message, status: 500 };
+  if (profileError) return { ok: false, error: profileError.message, status: 500 };
+
+  const callerIsStaff = isStaffRole(String(callerProfile?.role || "")) ||
+    (callerRoles || []).some((row) => isStaffRole(String(row.role)));
+  if (!callerIsStaff) return { ok: false, error: "Only staff can send voucher emails", status: 403 };
+
+  return { ok: true, userId: callerUser.id };
+};
+
 const sendVoucherEmail = async ({
   adminClient,
   voucher,
@@ -224,8 +262,11 @@ Deno.serve(async (req: Request) => {
     if (action === "send-due") {
       const configuredSecret = Deno.env.get("TRIAL_VOUCHER_CRON_SECRET");
       const suppliedSecret = req.headers.get("x-cron-secret") || String(body.cronSecret || "");
-      if (configuredSecret && suppliedSecret !== configuredSecret) {
-        return json({ error: "Invalid cron secret" }, 401);
+      const hasValidCronSecret = Boolean(configuredSecret && suppliedSecret === configuredSecret);
+
+      if (!hasValidCronSecret) {
+        const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
+        if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
       }
 
       const { data: vouchers, error: voucherError } = await adminClient
@@ -253,25 +294,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "No authorization header" }, 401);
-
-    const callerClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user: callerUser }, error: callerError } = await callerClient.auth.getUser();
-    if (callerError || !callerUser) return json({ error: "Unauthorized" }, 401);
-
-    const [{ data: callerRoles, error: rolesError }, { data: callerProfile, error: profileError }] = await Promise.all([
-      adminClient.from("user_roles").select("role").eq("user_id", callerUser.id),
-      adminClient.from("users").select("role").eq("id", callerUser.id).maybeSingle(),
-    ]);
-    if (rolesError) return json({ error: rolesError.message }, 500);
-    if (profileError) return json({ error: profileError.message }, 500);
-
-    const callerIsStaff = isStaffRole(String(callerProfile?.role || "")) ||
-      (callerRoles || []).some((row) => isStaffRole(String(row.role)));
-    if (!callerIsStaff) return json({ error: "Only staff can send voucher emails" }, 403);
+    const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
+    if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
 
     const { voucherId, redirectOrigin, force = false } = body;
     if (!voucherId || typeof voucherId !== "string") return json({ error: "voucherId is required" }, 400);

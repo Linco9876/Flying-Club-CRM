@@ -192,6 +192,19 @@ export const useTrialFlightVouchers = () => {
     return data;
   };
 
+  const processDueVoucherEmails = async () => {
+    const { data, error } = await supabase.functions.invoke('send-trial-voucher-email', {
+      body: { action: 'send-due' },
+    });
+
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+
+    toast.success(`Due voucher emails checked: ${data?.sent || 0} sent, ${data?.failed || 0} failed`);
+    await fetchAll();
+    return data;
+  };
+
   return {
     products,
     activeProducts,
@@ -201,5 +214,6 @@ export const useTrialFlightVouchers = () => {
     saveProduct,
     issueVoucher,
     sendVoucherEmail,
+    processDueVoucherEmails,
   };
 };
