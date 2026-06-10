@@ -181,6 +181,12 @@ type StaffAuthResult =
   | { ok: true; userId: string }
   | { ok: false; error: string; status: number };
 
+const hasValidInternalSecret = (req: Request) => {
+  const configuredSecret = Deno.env.get("TRIAL_VOUCHER_INTERNAL_SECRET");
+  const suppliedSecret = req.headers.get("x-internal-secret");
+  return Boolean(configuredSecret && suppliedSecret && suppliedSecret === configuredSecret);
+};
+
 const authenticateStaff = async ({
   req,
   supabaseUrl,
@@ -294,8 +300,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
-    if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
+    const internalSend = hasValidInternalSecret(req);
+    if (!internalSend) {
+      const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
+      if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
+    }
 
     const { voucherId, redirectOrigin, force = false } = body;
     if (!voucherId || typeof voucherId !== "string") return json({ error: "voucherId is required" }, 400);

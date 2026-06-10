@@ -1075,7 +1075,7 @@ export const OutstandingRecordsTab: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid min-w-0 gap-2 rounded-2xl bg-white/10 p-1.5 sm:grid-cols-3">
+          <div className={`grid min-w-0 gap-2 rounded-2xl bg-white/10 p-1.5 ${isAdmin ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
             {queueButtons.map(item => {
               const Icon = item.icon;
               return (
