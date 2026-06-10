@@ -83,6 +83,7 @@ const toPublicProduct = (product: any) => ({
   durationMinutes: product.duration_minutes,
   bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
   price: Number(product.price || 0),
+  checkoutAvailable: Boolean(product.stripe_price_id),
   bookingInstructions: product.booking_instructions,
 });
 
@@ -231,7 +232,7 @@ Deno.serve(async (req: Request) => {
     if (action === "products") {
       const { data: products, error: productsError } = await adminClient
         .from("trial_flight_voucher_products")
-        .select("id,name,description,aircraft_mode,duration_minutes,price,booking_instructions,is_active")
+        .select("id,name,description,aircraft_mode,duration_minutes,price,stripe_price_id,booking_instructions,is_active")
         .eq("is_active", true)
         .order("duration_minutes", { ascending: true });
 

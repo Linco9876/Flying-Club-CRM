@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Gift, Loader2, Mail, Plane, ShieldCheck, Ticket } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { TrialFlightVoucherAircraftMode } from '../../types';
+import toast from 'react-hot-toast';
 
 interface PublicVoucherProduct {
   id: string;
@@ -11,6 +12,7 @@ interface PublicVoucherProduct {
   durationMinutes: number;
   bookingBlockMinutes: number;
   price: number;
+  checkoutAvailable?: boolean;
   bookingInstructions?: string;
 }
 
@@ -23,6 +25,17 @@ const formatPrice = (price: number) =>
 export const TrialVoucherSalesPage: React.FC = () => {
   const [products, setProducts] = useState<PublicVoucherProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<PublicVoucherProduct | null>(null);
+  const [purchaseForm, setPurchaseForm] = useState({
+    purchaserName: '',
+    purchaserEmail: '',
+    purchaserPhone: '',
+    recipientName: '',
+    recipientEmail: '',
+    sendToRecipient: false,
+    recipientDeliveryAt: '',
+  });
 
   useEffect(() => {
     const loadProducts = async () => {
@@ -45,6 +58,17 @@ export const TrialVoucherSalesPage: React.FC = () => {
     void loadProducts();
   }, []);
 
+  const checkoutMessage = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') === 'success') {
+      return 'If payment was completed, your voucher email will be confirmed shortly.';
+    }
+    if (params.get('checkout') === 'cancelled') {
+      return 'Checkout was cancelled. You can start again or contact the club for help.';
+    }
+    return '';
+  }, []);
+
   const mailtoHref = useMemo(() => {
     const subject = encodeURIComponent('Trial flight gift voucher purchase');
     const body = encodeURIComponent(
@@ -52,6 +76,56 @@ export const TrialVoucherSalesPage: React.FC = () => {
     );
     return `mailto:info@bendigoflyingclub.com.au?subject=${subject}&body=${body}`;
   }, []);
+
+  const resetPurchaseForm = (product?: PublicVoucherProduct | null) => {
+    setSelectedProduct(product || null);
+    setPurchaseForm({
+      purchaserName: '',
+      purchaserEmail: '',
+      purchaserPhone: '',
+      recipientName: '',
+      recipientEmail: '',
+      sendToRecipient: false,
+      recipientDeliveryAt: '',
+    });
+  };
+
+  const startCheckout = async () => {
+    if (!selectedProduct) return;
+    if (!purchaseForm.purchaserName.trim() || !purchaseForm.purchaserEmail.trim()) {
+      toast.error('Purchaser name and email are required');
+      return;
+    }
+    if (purchaseForm.sendToRecipient && !purchaseForm.recipientEmail.trim()) {
+      toast.error('Recipient email is required when sending direct to recipient');
+      return;
+    }
+
+    setCheckoutLoading(true);
+    try {
+      const origin = window.location.origin;
+      const { data, error } = await supabase.functions.invoke('create-trial-voucher-checkout', {
+        body: {
+          productId: selectedProduct.id,
+          ...purchaseForm,
+          recipientDeliveryAt: purchaseForm.recipientDeliveryAt
+            ? new Date(purchaseForm.recipientDeliveryAt).toISOString()
+            : undefined,
+          successUrl: `${origin}/trial-flight-gift-vouchers?checkout=success`,
+          cancelUrl: `${origin}/trial-flight-gift-vouchers?checkout=cancelled`,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (!data?.checkoutUrl) throw new Error('Stripe checkout did not return a payment link');
+      window.location.href = data.checkoutUrl;
+    } catch (error) {
+      console.error('Failed to start voucher checkout:', error);
+      toast.error(error instanceof Error ? error.message : 'Could not start online checkout');
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -94,6 +168,11 @@ export const TrialVoucherSalesPage: React.FC = () => {
                 <p>Available times are checked against the voucher aircraft type and qualified instructor availability.</p>
               </div>
             </div>
+            {checkoutMessage && (
+              <div className="mt-6 rounded-2xl border border-white/15 bg-white/10 p-4 text-sm leading-6 text-blue-50">
+                {checkoutMessage}
+              </div>
+            )}
           </section>
 
           <section className="rounded-3xl bg-white p-5 text-slate-950 shadow-2xl sm:p-6">
@@ -141,13 +220,29 @@ export const TrialVoucherSalesPage: React.FC = () => {
                         <p className="font-bold">{aircraftLabel(product.aircraftMode)}</p>
                       </div>
                     </div>
-                    <a
-                      href={mailtoHref}
-                      className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-900"
-                    >
-                      Request this voucher
-                      <ArrowRight className="h-4 w-4" />
-                    </a>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      {product.checkoutAvailable ? (
+                        <button
+                          type="button"
+                          onClick={() => resetPurchaseForm(product)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700"
+                        >
+                          Buy online
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                          Online checkout not enabled yet
+                        </span>
+                      )}
+                      <a
+                        href={mailtoHref}
+                        className="inline-flex items-center gap-2 px-1 py-2 text-sm font-bold text-blue-700 hover:text-blue-900"
+                      >
+                        Contact to purchase
+                        <ArrowRight className="h-4 w-4" />
+                      </a>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -158,11 +253,61 @@ export const TrialVoucherSalesPage: React.FC = () => {
             )}
 
             <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-              Online card checkout will be connected here later with Stripe. For now, this page displays the live voucher products and directs purchasers to Bendigo Flying Club to complete payment and issue the voucher.
+              Online card checkout appears automatically for voucher products that have a Stripe Price ID configured. Otherwise, contact the club and we can issue the voucher manually.
             </div>
           </section>
         </main>
       </div>
+      {selectedProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 py-6">
+          <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-5 text-slate-950 shadow-2xl sm:p-6">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Secure checkout</p>
+                <h3 className="mt-1 text-2xl font-bold">{selectedProduct.name}</h3>
+                <p className="mt-1 text-sm text-slate-600">{formatPrice(selectedProduct.price)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => resetPurchaseForm(null)}
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-bold text-slate-500 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-3">
+              <input value={purchaseForm.purchaserName} onChange={e => setPurchaseForm(f => ({ ...f, purchaserName: e.target.value }))} placeholder="Purchaser full name" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+              <input type="email" value={purchaseForm.purchaserEmail} onChange={e => setPurchaseForm(f => ({ ...f, purchaserEmail: e.target.value }))} placeholder="Purchaser email" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+              <input value={purchaseForm.purchaserPhone} onChange={e => setPurchaseForm(f => ({ ...f, purchaserPhone: e.target.value }))} placeholder="Purchaser phone" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+              <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                <input type="checkbox" checked={purchaseForm.sendToRecipient} onChange={e => setPurchaseForm(f => ({ ...f, sendToRecipient: e.target.checked }))} />
+                Send voucher direct to recipient
+              </label>
+              {purchaseForm.sendToRecipient && (
+                <div className="grid gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                  <input value={purchaseForm.recipientName} onChange={e => setPurchaseForm(f => ({ ...f, recipientName: e.target.value }))} placeholder="Recipient name" className="rounded-xl border border-blue-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="email" value={purchaseForm.recipientEmail} onChange={e => setPurchaseForm(f => ({ ...f, recipientEmail: e.target.value }))} placeholder="Recipient email" className="rounded-xl border border-blue-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+                  <label className="text-sm font-semibold text-blue-900">
+                    Send date/time
+                    <input type="datetime-local" value={purchaseForm.recipientDeliveryAt} onChange={e => setPurchaseForm(f => ({ ...f, recipientDeliveryAt: e.target.value }))} className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
+                  </label>
+                  <p className="text-xs leading-5 text-blue-800">Leave blank to send the recipient email after payment is confirmed.</p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={startCheckout}
+                disabled={checkoutLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+              >
+                {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ticket className="h-4 w-4" />}
+                Continue to card payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
