@@ -107,6 +107,7 @@ export interface Booking {
 
 export type TrialFlightVoucherAircraftMode = 'tecnam' | 'archer' | 'specific';
 export type TrialFlightVoucherStatus = 'draft' | 'issued' | 'redeemed' | 'booked' | 'expired' | 'cancelled';
+export type TrialFlightVoucherPaymentStatus = 'manual' | 'pending' | 'paid' | 'failed' | 'refunded' | 'waived';
 
 export interface TrialFlightVoucherProduct {
   id: string;
@@ -117,6 +118,7 @@ export interface TrialFlightVoucherProduct {
   instructorIds: string[];
   durationMinutes: number;
   price: number;
+  stripePriceId?: string;
   emailSubject: string;
   emailBody: string;
   bookingInstructions: string;
@@ -139,6 +141,12 @@ export interface TrialFlightVoucher {
   recipientDeliveryAt?: Date;
   deliveredAt?: Date;
   status: TrialFlightVoucherStatus;
+  paymentStatus?: TrialFlightVoucherPaymentStatus;
+  paymentAmount?: number;
+  paymentCurrency?: string;
+  stripeCheckoutSessionId?: string;
+  stripePaymentIntentId?: string;
+  paidAt?: Date;
   expiresAt?: Date;
   redeemedAt?: Date;
   redeemedByUserId?: string;

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
 import { useUsers } from '../../hooks/useUsers';
-import { TrialFlightVoucherAircraftMode, TrialFlightVoucherProduct } from '../../types';
+import { TrialFlightVoucherAircraftMode, TrialFlightVoucherPaymentStatus, TrialFlightVoucherProduct } from '../../types';
 import toast from 'react-hot-toast';
 
 const defaultEmailBody =
@@ -18,6 +18,7 @@ const emptyProduct = (): Omit<TrialFlightVoucherProduct, 'id' | 'createdAt' | 'u
   instructorIds: [],
   durationMinutes: 60,
   price: 0,
+  stripePriceId: '',
   emailSubject: 'Your Bendigo Flying Club trial flight voucher',
   emailBody: defaultEmailBody,
   bookingInstructions: 'Use the voucher code or link in this email to choose an available time. Please allow at least 30 minutes either side of the flight for briefing and paperwork.',
@@ -64,6 +65,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
     sendToRecipient: false,
     recipientDeliveryAt: '',
     expiresAt: '',
+    paymentStatus: 'manual' as TrialFlightVoucherPaymentStatus,
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -102,6 +104,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       instructorIds: product.instructorIds,
       durationMinutes: product.durationMinutes,
       price: product.price,
+      stripePriceId: product.stripePriceId || '',
       emailSubject: product.emailSubject,
       emailBody: product.emailBody,
       bookingInstructions: product.bookingInstructions,
@@ -182,6 +185,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
         sendToRecipient: issueForm.sendToRecipient,
         recipientDeliveryAt: dateTimeLocalToIso(issueForm.recipientDeliveryAt),
         expiresAt: issueForm.expiresAt ? new Date(`${issueForm.expiresAt}T23:59:59`).toISOString() : undefined,
+        paymentStatus: issueForm.paymentStatus,
+        paymentAmount: selectedProduct?.price,
+        paymentCurrency: 'AUD',
         notes: issueForm.notes,
         createdBy: user?.id,
       });
@@ -195,6 +201,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         sendToRecipient: false,
         recipientDeliveryAt: '',
         expiresAt: '',
+        paymentStatus: 'manual',
         notes: '',
       });
     } finally {
@@ -243,6 +250,25 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const modeLabel = (mode: TrialFlightVoucherAircraftMode) =>
     mode === 'tecnam' ? 'Any Tecnam' : mode === 'archer' ? 'PA-28 Archer' : 'Selected aircraft';
+
+  const paymentLabel = (status?: TrialFlightVoucherPaymentStatus) =>
+    status === 'paid' ? 'Paid'
+      : status === 'pending' ? 'Payment pending'
+      : status === 'failed' ? 'Payment failed'
+      : status === 'refunded' ? 'Refunded'
+      : status === 'waived' ? 'Waived'
+      : 'Manual issue';
+
+  const paymentPillClass = (status?: TrialFlightVoucherPaymentStatus) =>
+    status === 'paid'
+      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+      : status === 'pending'
+        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200'
+        : status === 'failed'
+          ? 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200'
+          : status === 'refunded'
+            ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-200'
+            : 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300';
 
   const matchingAircraftCount =
     productForm.aircraftMode === 'tecnam'
@@ -351,6 +377,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <span className="text-xs font-semibold uppercase text-gray-500">Price</span>
               <input type="number" min={0} step="0.01" value={productForm.price} onChange={e => setProductForm(f => ({ ...f, price: Number(e.target.value) }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
             </label>
+            <label>
+              <span className="text-xs font-semibold uppercase text-gray-500">Stripe price ID</span>
+              <input value={productForm.stripePriceId || ''} onChange={e => setProductForm(f => ({ ...f, stripePriceId: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" placeholder="price_..." />
+            </label>
             <label className="sm:col-span-2">
               <span className="text-xs font-semibold uppercase text-gray-500">Aircraft rule</span>
               <select value={productForm.aircraftMode} onChange={e => setProductForm(f => ({ ...f, aircraftMode: e.target.value as TrialFlightVoucherAircraftMode }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100">
@@ -452,6 +482,11 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {modeLabel(product.aircraftMode)} - {product.durationMinutes} min flight, {product.durationMinutes + 30} min booking block - ${product.price.toFixed(2)}
                       </p>
+                      {product.stripePriceId && (
+                        <p className="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400">
+                          Stripe: {product.stripePriceId}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {product.instructorIds.length} eligible instructor{product.instructorIds.length === 1 ? '' : 's'}
                         {product.aircraftIds.length > 0 ? ` - ${product.aircraftIds.length} selected aircraft` : ''}
@@ -503,8 +538,24 @@ export const TrialFlightVouchersPage: React.FC = () => {
               {selectedProduct && (
                 <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
                   {modeLabel(selectedProduct.aircraftMode)} - {selectedProduct.durationMinutes} min flight, {selectedProduct.durationMinutes + 30} min booking block.
+                  {selectedProduct.stripePriceId && (
+                    <span className="mt-1 block text-xs font-mono text-blue-700 dark:text-blue-200">Stripe price: {selectedProduct.stripePriceId}</span>
+                  )}
                 </div>
               )}
+              <label className="text-sm text-gray-600 dark:text-gray-300">
+                Payment status
+                <select
+                  value={issueForm.paymentStatus}
+                  onChange={e => setIssueForm(f => ({ ...f, paymentStatus: e.target.value as TrialFlightVoucherPaymentStatus }))}
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
+                >
+                  <option value="manual">Manual issue</option>
+                  <option value="paid">Paid outside CRM</option>
+                  <option value="pending">Payment pending</option>
+                  <option value="waived">Waived / complimentary</option>
+                </select>
+              </label>
               <input value={issueForm.purchaserName} onChange={e => setIssueForm(f => ({ ...f, purchaserName: e.target.value }))} placeholder="Purchaser name" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
               <input type="email" value={issueForm.purchaserEmail} onChange={e => setIssueForm(f => ({ ...f, purchaserEmail: e.target.value }))} placeholder="Purchaser email" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
               <input value={issueForm.purchaserPhone} onChange={e => setIssueForm(f => ({ ...f, purchaserPhone: e.target.value }))} placeholder="Purchaser phone" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
@@ -570,7 +621,12 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       <p className="font-semibold text-gray-950 dark:text-gray-100">{voucher.productName || 'Voucher'}</p>
                       <p className="text-sm text-gray-500">{voucher.purchaserName} - {voucher.purchaserEmail}</p>
                     </div>
-                    <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">{voucher.status}</span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">{voucher.status}</span>
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${paymentPillClass(voucher.paymentStatus)}`}>
+                        {paymentLabel(voucher.paymentStatus)}
+                      </span>
+                    </div>
                   </div>
                   <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import {
   TrialFlightVoucher,
   TrialFlightVoucherAircraftMode,
+  TrialFlightVoucherPaymentStatus,
   TrialFlightVoucherProduct,
   TrialFlightVoucherStatus,
 } from '../types';
@@ -17,6 +18,7 @@ const mapProduct = (row: any): TrialFlightVoucherProduct => ({
   instructorIds: row.instructor_ids || [],
   durationMinutes: row.duration_minutes,
   price: Number(row.price || 0),
+  stripePriceId: row.stripe_price_id || undefined,
   emailSubject: row.email_subject || '',
   emailBody: row.email_body || '',
   bookingInstructions: row.booking_instructions || '',
@@ -39,6 +41,12 @@ const mapVoucher = (row: any): TrialFlightVoucher => ({
   recipientDeliveryAt: row.recipient_delivery_at ? new Date(row.recipient_delivery_at) : undefined,
   deliveredAt: row.delivered_at ? new Date(row.delivered_at) : undefined,
   status: row.status as TrialFlightVoucherStatus,
+  paymentStatus: (row.payment_status || 'manual') as TrialFlightVoucherPaymentStatus,
+  paymentAmount: row.payment_amount === null || row.payment_amount === undefined ? undefined : Number(row.payment_amount),
+  paymentCurrency: row.payment_currency || 'AUD',
+  stripeCheckoutSessionId: row.stripe_checkout_session_id || undefined,
+  stripePaymentIntentId: row.stripe_payment_intent_id || undefined,
+  paidAt: row.paid_at ? new Date(row.paid_at) : undefined,
   expiresAt: row.expires_at ? new Date(row.expires_at) : undefined,
   redeemedAt: row.redeemed_at ? new Date(row.redeemed_at) : undefined,
   redeemedByUserId: row.redeemed_by_user_id || undefined,
@@ -55,6 +63,13 @@ export const generateVoucherCode = () => {
     Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')
   );
   return `BFC-${parts.join('-')}`;
+};
+
+const isMissingColumnError = (error: unknown) => {
+  const message = error && typeof error === 'object' && 'message' in error
+    ? String((error as { message?: unknown }).message || '')
+    : String(error || '');
+  return /column .* does not exist|could not find .* column|schema cache/i.test(message);
 };
 
 export const useTrialFlightVouchers = () => {
@@ -110,6 +125,7 @@ export const useTrialFlightVouchers = () => {
       instructor_ids: product.instructorIds,
       duration_minutes: product.durationMinutes,
       price: product.price,
+      stripe_price_id: product.stripePriceId?.trim() || null,
       email_subject: product.emailSubject,
       email_body: product.emailBody,
       booking_instructions: product.bookingInstructions,
@@ -117,11 +133,18 @@ export const useTrialFlightVouchers = () => {
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = id
-      ? await supabase.from('trial_flight_voucher_products').update(payload).eq('id', id)
-      : await supabase.from('trial_flight_voucher_products').insert(payload);
+    const savePayload = async (nextPayload: Record<string, unknown>) => id
+      ? await supabase.from('trial_flight_voucher_products').update(nextPayload).eq('id', id)
+      : await supabase.from('trial_flight_voucher_products').insert(nextPayload);
 
-    if (error) throw error;
+    const { error } = await savePayload(payload);
+    if (error) {
+      if (!isMissingColumnError(error)) throw error;
+      const legacyPayload = { ...payload };
+      delete legacyPayload.stripe_price_id;
+      const { error: legacyError } = await savePayload(legacyPayload);
+      if (legacyError) throw legacyError;
+    }
     toast.success(id ? 'Voucher product updated' : 'Voucher product created');
     await fetchAll();
   };
@@ -138,8 +161,17 @@ export const useTrialFlightVouchers = () => {
     expiresAt?: string;
     notes?: string;
     createdBy?: string;
+    paymentStatus?: TrialFlightVoucherPaymentStatus;
+    paymentAmount?: number;
+    paymentCurrency?: string;
   }) => {
-    const { data: createdVoucher, error } = await supabase.from('trial_flight_vouchers').insert({
+    const paymentFields = {
+      payment_status: voucher.paymentStatus || 'manual',
+      payment_amount: voucher.paymentAmount ?? null,
+      payment_currency: voucher.paymentCurrency || 'AUD',
+      paid_at: voucher.paymentStatus === 'paid' ? new Date().toISOString() : null,
+    };
+    const basePayload = {
       product_id: voucher.productId,
       code: generateVoucherCode(),
       purchaser_name: voucher.purchaserName,
@@ -153,7 +185,23 @@ export const useTrialFlightVouchers = () => {
       notes: voucher.notes || null,
       created_by: voucher.createdBy || null,
       status: 'issued',
-    }).select('id, code').single();
+    };
+
+    let { data: createdVoucher, error } = await supabase
+      .from('trial_flight_vouchers')
+      .insert({ ...basePayload, ...paymentFields })
+      .select('id, code')
+      .single();
+
+    if (error && isMissingColumnError(error)) {
+      const legacyResult = await supabase
+        .from('trial_flight_vouchers')
+        .insert(basePayload)
+        .select('id, code')
+        .single();
+      createdVoucher = legacyResult.data;
+      error = legacyResult.error;
+    }
 
     if (error) throw error;
 
