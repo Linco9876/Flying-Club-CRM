@@ -337,8 +337,10 @@ Deno.serve(async (req: Request) => {
         .select("*, trial_flight_voucher_products(*)")
         .eq("send_to_recipient", true)
         .is("delivered_at", null)
-        .eq("status", "issued")
+        .in("status", ["issued", "redeemed", "booked"])
+        .not("recipient_delivery_at", "is", null)
         .lte("recipient_delivery_at", new Date().toISOString())
+        .order("recipient_delivery_at", { ascending: true })
         .limit(25);
 
       if (voucherError) return json({ error: voucherError.message }, 500);
