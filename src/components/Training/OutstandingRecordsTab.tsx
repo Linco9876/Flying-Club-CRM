@@ -1042,12 +1042,11 @@ export const OutstandingRecordsTab: React.FC = () => {
     ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
     { id: 'dismissed' as const, label: 'No Record Needed', icon: Undo2 },
   ];
-  const activeQueue = queueButtons.find(item => item.id === queueView) ?? queueButtons[0];
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
       <header className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 p-4 text-white shadow-sm dark:border-blue-400/20 sm:p-5">
-        <div className="flex flex-col gap-5 2xl:flex-row 2xl:items-center 2xl:justify-between">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
               <ClipboardList className="h-5 w-5" />
@@ -1103,21 +1102,6 @@ export const OutstandingRecordsTab: React.FC = () => {
       <div className="flex min-h-0 min-w-0 flex-col gap-4 lg:flex-row lg:gap-6">
       {/* Left: list of outstanding flights */}
       <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'lg:w-[30%] lg:min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
-        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-          <div className="flex items-center gap-2">
-            <activeQueue.icon className="h-4 w-4 text-blue-600 dark:text-blue-300" />
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{activeQueue.label}</h2>
-          </div>
-        </div>
-
-        <p className="px-1 text-xs text-gray-500 dark:text-gray-400">
-          {queueView === 'dismissed'
-            ? 'Flights marked as no record needed can be restored here.'
-            : queueView === 'others'
-              ? 'Review records assigned to other instructors without mixing them with your own queue.'
-              : 'Your assigned flights waiting for a training record.'}
-        </p>
-
         {showDraftComposer && (
         <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm dark:border-blue-400/25 dark:from-blue-950/25 dark:to-[#171a21]">
           <div className="flex items-start gap-3">
