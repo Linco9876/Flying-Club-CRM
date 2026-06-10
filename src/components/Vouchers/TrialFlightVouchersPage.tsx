@@ -420,7 +420,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Secrets</p>
-            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and Stripe webhook URL.</p>
+            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and Stripe webhook URL. Scheduled recipient delivery also needs `TRIAL_VOUCHER_CRON_SECRET` as an Edge Function secret and the same value stored in Supabase Vault as `trial_voucher_cron_secret`.</p>
           </div>
         </div>
       </div>
