@@ -33,7 +33,7 @@ const getInitialCode = () => {
 };
 
 export const TrialVoucherRedeemPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [code, setCode] = useState(getInitialCode);
   const [voucher, setVoucher] = useState<PublicVoucher | null>(null);
   const [loading, setLoading] = useState(false);
@@ -186,14 +186,29 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-8 sm:px-6 lg:px-8">
-        <header className="mb-8 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500">
-            <Plane className="h-6 w-6" />
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500">
+              <Plane className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-200">Bendigo Flying Club</p>
+              <h1 className="text-2xl font-bold">Trial Flight Voucher</h1>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-200">Bendigo Flying Club</p>
-            <h1 className="text-2xl font-bold">Trial Flight Voucher</h1>
-          </div>
+          {user && (
+            <div className="rounded-2xl border border-white/10 bg-white/10 p-3 text-sm text-blue-50 sm:text-right">
+              <p className="font-semibold">{user.name || user.email}</p>
+              <p className="mt-0.5 text-xs text-blue-100/80">{user.email}</p>
+              <button
+                type="button"
+                onClick={logout}
+                className="mt-2 rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </header>
 
         <main className="grid flex-1 items-start gap-6 lg:grid-cols-[0.9fr_1.1fr]">
