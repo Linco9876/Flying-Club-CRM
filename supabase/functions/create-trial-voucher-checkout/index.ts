@@ -24,6 +24,30 @@ const cleanEmail = (value: unknown) => String(value || "").trim().toLowerCase();
 const cleanText = (value: unknown) => String(value || "").trim();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
+const aircraftMatchesProduct = (aircraft: any, product: any) => {
+  const attachedIds = new Set<string>(product.aircraft_ids || []);
+  if (attachedIds.size > 0) return attachedIds.has(aircraft.id);
+
+  const label = `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.toLowerCase();
+  if (product.aircraft_mode === "specific") return false;
+  if (product.aircraft_mode === "tecnam") return label.includes("tecnam");
+  if (product.aircraft_mode === "archer") return label.includes("archer") || label.includes("pa-28");
+  return false;
+};
+
+const productBookingSetup = (product: any, aircraftRows: any[] = []) => {
+  const serviceableAircraft = aircraftRows
+    .filter((aircraft: any) => aircraft.status === "serviceable")
+    .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
+  const instructorCount = (product.instructor_ids || []).length;
+
+  return {
+    bookingAvailable: serviceableAircraft.length > 0 && instructorCount > 0,
+    serviceableAircraftCount: serviceableAircraft.length,
+    instructorCount,
+  };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -78,12 +102,23 @@ Deno.serve(async (req: Request) => {
 
     const { data: product, error: productError } = await adminClient
       .from("trial_flight_voucher_products")
-      .select("id,name,description,price,stripe_price_id,is_active")
+      .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,price,stripe_price_id,is_active")
       .eq("id", productId)
       .maybeSingle();
 
     if (productError) return json({ error: productError.message }, 500);
     if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
+    const { data: aircraftRows, error: aircraftError } = await adminClient
+      .from("aircraft")
+      .select("id,registration,make,model,status");
+
+    if (aircraftError) return json({ error: aircraftError.message }, 500);
+    const setup = productBookingSetup(product, aircraftRows || []);
+    if (!setup.bookingAvailable) {
+      return json({
+        error: "Online checkout is temporarily unavailable because this voucher does not currently have both a serviceable eligible aircraft and an eligible instructor configured.",
+      }, 409);
+    }
     if (!product.stripe_price_id) {
       return json({ error: "Online checkout is not enabled for this voucher yet. Please contact Bendigo Flying Club to purchase it." }, 409);
     }

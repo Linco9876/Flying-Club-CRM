@@ -123,6 +123,24 @@ const aircraftMatchesProduct = (aircraft: any, product: any) => {
   return false;
 };
 
+const productBookingSetup = (product: any, aircraftRows: any[] = []) => {
+  const serviceableAircraft = aircraftRows
+    .filter((aircraft: any) => aircraft.status === "serviceable")
+    .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
+  const instructorCount = (product.instructor_ids || []).length;
+  const issues = [
+    ...(serviceableAircraft.length === 0 ? ["No eligible aircraft are currently serviceable"] : []),
+    ...(instructorCount === 0 ? ["No eligible instructors are configured"] : []),
+  ];
+
+  return {
+    bookingAvailable: issues.length === 0,
+    serviceableAircraftCount: serviceableAircraft.length,
+    instructorCount,
+    issue: issues.join(". "),
+  };
+};
+
 const timeForDate = (date: Date, time: string, fallbackHour: number, fallbackMinute = 0) => {
   const [hourRaw, minuteRaw] = String(time || "").slice(0, 5).split(":").map(Number);
   const hour = Number.isFinite(hourRaw) ? hourRaw : fallbackHour;
@@ -152,17 +170,22 @@ const toPublicVoucher = (voucher: any, product: any) => ({
   },
 });
 
-const toPublicProduct = (product: any) => ({
-  id: product.id,
-  name: product.name,
-  description: product.description,
-  aircraftMode: product.aircraft_mode,
-  durationMinutes: product.duration_minutes,
-  bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
-  price: Number(product.price || 0),
-  checkoutAvailable: Boolean(product.stripe_price_id) && Number(product.price || 0) > 0,
-  bookingInstructions: product.booking_instructions,
-});
+const toPublicProduct = (product: any, aircraftRows: any[] = []) => {
+  const setup = productBookingSetup(product, aircraftRows);
+  return {
+    id: product.id,
+    name: product.name,
+    description: product.description,
+    aircraftMode: product.aircraft_mode,
+    durationMinutes: product.duration_minutes,
+    bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
+    price: Number(product.price || 0),
+    checkoutAvailable: Boolean(product.stripe_price_id) && Number(product.price || 0) > 0 && setup.bookingAvailable,
+    bookingAvailable: setup.bookingAvailable,
+    bookingSetupMessage: setup.issue,
+    bookingInstructions: product.booking_instructions,
+  };
+};
 
 const getBookingSummary = async (adminClient: ReturnType<typeof createClient>, bookingId?: string | null) => {
   if (!bookingId) return null;
@@ -307,14 +330,18 @@ Deno.serve(async (req: Request) => {
     const code = normaliseCode(body.code);
 
     if (action === "products") {
-      const { data: products, error: productsError } = await adminClient
-        .from("trial_flight_voucher_products")
-        .select("id,name,description,aircraft_mode,duration_minutes,price,stripe_price_id,booking_instructions,is_active")
-        .eq("is_active", true)
-        .order("duration_minutes", { ascending: true });
+      const [{ data: products, error: productsError }, { data: aircraftRows, error: aircraftError }] = await Promise.all([
+        adminClient
+          .from("trial_flight_voucher_products")
+          .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,booking_instructions,is_active")
+          .eq("is_active", true)
+          .order("duration_minutes", { ascending: true }),
+        adminClient.from("aircraft").select("id,registration,make,model,status"),
+      ]);
 
       if (productsError) return json({ error: productsError.message }, 500);
-      return json({ products: (products || []).map(toPublicProduct) });
+      if (aircraftError) return json({ error: aircraftError.message }, 500);
+      return json({ products: (products || []).map((product: any) => toPublicProduct(product, aircraftRows || [])) });
     }
 
     if (action === "my-voucher") {

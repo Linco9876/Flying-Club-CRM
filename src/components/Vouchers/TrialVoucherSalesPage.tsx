@@ -13,6 +13,8 @@ interface PublicVoucherProduct {
   bookingBlockMinutes: number;
   price: number;
   checkoutAvailable?: boolean;
+  bookingAvailable?: boolean;
+  bookingSetupMessage?: string;
   bookingInstructions?: string;
 }
 
@@ -260,6 +262,10 @@ export const TrialVoucherSalesPage: React.FC = () => {
                           Buy online
                           <ArrowRight className="h-4 w-4" />
                         </button>
+                      ) : !product.bookingAvailable ? (
+                        <span className="inline-flex items-center rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                          Temporarily unavailable online
+                        </span>
                       ) : (
                         <span className="inline-flex items-center rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
                           Online checkout not enabled yet
@@ -273,6 +279,11 @@ export const TrialVoucherSalesPage: React.FC = () => {
                         <ArrowRight className="h-4 w-4" />
                       </a>
                     </div>
+                    {!product.bookingAvailable && (
+                      <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
+                        {product.bookingSetupMessage || 'This voucher needs eligible aircraft and instructor availability configured before it can be sold online.'}
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
