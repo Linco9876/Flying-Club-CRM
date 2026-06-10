@@ -9,3 +9,9 @@ verify_jwt = false
 
 [functions.send-trial-voucher-email]
 verify_jwt = false
+
+[functions.create-trial-voucher-checkout]
+verify_jwt = false
+
+[functions.trial-voucher-stripe-webhook]
+verify_jwt = false

@@ -257,6 +257,27 @@ export const useTrialFlightVouchers = () => {
     return data;
   };
 
+  const markVoucherReady = async (
+    voucherId: string,
+    paymentStatus: Extract<TrialFlightVoucherPaymentStatus, 'manual' | 'paid' | 'waived'> = 'paid'
+  ) => {
+    const { error } = await supabase
+      .from('trial_flight_vouchers')
+      .update({
+        status: 'issued',
+        payment_status: paymentStatus,
+        paid_at: paymentStatus === 'paid' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', voucherId);
+
+    if (error) throw error;
+
+    const data = await sendVoucherEmail(voucherId);
+    toast.success('Voucher marked ready');
+    return data;
+  };
+
   const processDueVoucherEmails = async () => {
     const { data, error } = await supabase.functions.invoke('send-trial-voucher-email', {
       body: { action: 'send-due' },
@@ -279,6 +300,7 @@ export const useTrialFlightVouchers = () => {
     saveProduct,
     issueVoucher,
     sendVoucherEmail,
+    markVoucherReady,
     processDueVoucherEmails,
   };
 };

@@ -52,7 +52,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { users, getInstructors } = useUsers();
-  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, processDueVoucherEmails } = useTrialFlightVouchers();
+  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [issueForm, setIssueForm] = useState({
@@ -218,6 +218,18 @@ export const TrialFlightVouchersPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to send voucher email:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to send voucher email');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMarkVoucherReady = async (voucherId: string) => {
+    setSaving(true);
+    try {
+      await markVoucherReady(voucherId, 'paid');
+    } catch (error) {
+      console.error('Failed to mark voucher ready:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to mark voucher ready');
     } finally {
       setSaving(false);
     }
@@ -739,10 +751,21 @@ export const TrialFlightVouchersPage: React.FC = () => {
                         : 'Purchaser email not marked delivered yet'}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
+                    {(voucher.status === 'draft' || voucher.paymentStatus === 'pending') && (
+                      <button
+                        type="button"
+                        onClick={() => handleMarkVoucherReady(voucher.id)}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Mark paid & send
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleSendVoucherEmail(voucher.id, false)}
-                      disabled={saving}
+                      disabled={saving || voucher.status === 'draft' || voucher.paymentStatus === 'pending'}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-[#2c2f36] dark:text-gray-200 dark:hover:bg-[#111827]"
                     >
                       <Mail className="h-3.5 w-3.5" />
