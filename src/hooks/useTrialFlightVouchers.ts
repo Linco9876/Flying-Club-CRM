@@ -360,31 +360,19 @@ export const useTrialFlightVouchers = () => {
       throw new Error('This voucher booking has a flight log. Delete or correct the flight log before releasing the voucher booking.');
     }
 
-    const now = new Date().toISOString();
-    const { error: bookingError } = await supabase
-      .from('bookings')
-      .update({
-        status: 'cancelled',
-        deleted_at: now,
-        updated_at: now,
-      })
-      .eq('id', voucher.bookedBookingId);
+    const { data, error } = await supabase.functions.invoke('trial-voucher-admin', {
+      body: {
+        action: 'release-booking',
+        voucherId: voucher.id,
+      },
+    });
 
-    if (bookingError) throw bookingError;
-
-    const { error: voucherError } = await supabase
-      .from('trial_flight_vouchers')
-      .update({
-        status: 'redeemed',
-        booked_booking_id: null,
-        updated_at: now,
-      })
-      .eq('id', voucher.id);
-
-    if (voucherError) throw voucherError;
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
 
     toast.success('Voucher booking released. The recipient can choose a new time.');
     await fetchAll();
+    return data;
   };
 
   return {
