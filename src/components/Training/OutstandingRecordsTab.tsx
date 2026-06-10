@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon } from 'lucide-react';
+import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Undo2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useOutstandingRecords, OutstandingFlightLog } from '../../hooks/useOutstandingRecords';
@@ -172,7 +172,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const { user } = useAuth();
   const { settings: trainingSettings } = useTrainingSettings();
   const isAdmin = user?.role === 'admin';
-  const { outstandingLogs, loading, dismissRecord, markRecorded, refetch } = useOutstandingRecords(
+  const { outstandingLogs, dismissedLogs, loading, dismissRecord, restoreRecord, markRecorded, refetch } = useOutstandingRecords(
     isAdmin ? undefined : user?.id,
     isAdmin
   );
@@ -709,6 +709,14 @@ export const OutstandingRecordsTab: React.FC = () => {
     setStep('lesson');
   }
 
+  async function handleRestoreDismissed(log: OutstandingFlightLog) {
+    try {
+      await restoreRecord(log.id);
+    } catch {
+      // error already toasted
+    }
+  }
+
   function handleSelectLesson(lessonId: string) {
     const course = courses.find(c => c.id === form.courseId);
     const lesson = course?.lessons.find(l => l.id === lessonId);
@@ -1216,6 +1224,50 @@ export const OutstandingRecordsTab: React.FC = () => {
               </div>
             );
           })
+        )}
+
+        {dismissedLogs.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">No record needed</p>
+                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  Restore one if a training record needs to be added after all.
+                </p>
+              </div>
+              <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600 dark:bg-[#202938] dark:text-gray-200">
+                {dismissedLogs.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {dismissedLogs.slice(0, 8).map(log => {
+                const flightDate = new Date(log.start_time);
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827]"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
+                        {log.student_name ?? 'Unknown Student'}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                        {format(flightDate, 'EEE d MMM yyyy')} &middot; {format(flightDate, 'h:mm a')} &middot; {log.aircraft_registration ?? '-'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRestoreDismissed(log)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 dark:border-blue-400/30 dark:bg-[#171a21] dark:text-blue-200 dark:hover:bg-blue-950/40"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" />
+                      Restore
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 
