@@ -23,6 +23,8 @@ const generateVoucherCode = () => {
 const cleanEmail = (value: unknown) => String(value || "").trim().toLowerCase();
 const cleanText = (value: unknown) => String(value || "").trim();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const dateKey = (date: Date) => date.toISOString().slice(0, 10);
+const normaliseEndorsementType = (value: unknown) => String(value || "").trim().toLowerCase();
 
 const aircraftMatchesProduct = (aircraft: any, product: any) => {
   const attachedIds = new Set<string>(product.aircraft_ids || []);
@@ -35,16 +37,44 @@ const aircraftMatchesProduct = (aircraft: any, product: any) => {
   return false;
 };
 
-const productBookingSetup = (product: any, aircraftRows: any[] = []) => {
+const instructorHasAircraftEndorsement = (
+  instructorId: string,
+  aircraft: any,
+  endorsementsByInstructor: Map<string, any[]>,
+) => {
+  const requiredType = normaliseEndorsementType(aircraft.required_endorsement_type);
+  if (!requiredType) return true;
+
+  const today = dateKey(new Date());
+  return (endorsementsByInstructor.get(instructorId) || []).some((endorsement: any) =>
+    endorsement.is_active !== false &&
+    normaliseEndorsementType(endorsement.type) === requiredType &&
+    (!endorsement.expiry_date || String(endorsement.expiry_date) >= today)
+  );
+};
+
+const productBookingSetup = (product: any, aircraftRows: any[] = [], endorsementRows: any[] = []) => {
   const serviceableAircraft = aircraftRows
     .filter((aircraft: any) => aircraft.status === "serviceable")
     .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
-  const instructorCount = (product.instructor_ids || []).length;
+  const instructorIds = product.instructor_ids || [];
+  const endorsementsByInstructor = new Map<string, any[]>();
+  endorsementRows.forEach((endorsement: any) => {
+    const instructorEndorsements = endorsementsByInstructor.get(endorsement.student_id) || [];
+    instructorEndorsements.push(endorsement);
+    endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
+  });
+  const qualifiedInstructorIds = instructorIds.filter((instructorId: string) =>
+    serviceableAircraft.some((aircraft: any) =>
+      instructorHasAircraftEndorsement(instructorId, aircraft, endorsementsByInstructor)
+    )
+  );
 
   return {
-    bookingAvailable: serviceableAircraft.length > 0 && instructorCount > 0,
+    bookingAvailable: serviceableAircraft.length > 0 && qualifiedInstructorIds.length > 0,
     serviceableAircraftCount: serviceableAircraft.length,
-    instructorCount,
+    instructorCount: instructorIds.length,
+    qualifiedInstructorCount: qualifiedInstructorIds.length,
   };
 };
 
@@ -110,13 +140,23 @@ Deno.serve(async (req: Request) => {
     if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
     const { data: aircraftRows, error: aircraftError } = await adminClient
       .from("aircraft")
-      .select("id,registration,make,model,status");
+      .select("id,registration,make,model,status,required_endorsement_type");
 
     if (aircraftError) return json({ error: aircraftError.message }, 500);
-    const setup = productBookingSetup(product, aircraftRows || []);
+    const instructorIds = product.instructor_ids || [];
+    const { data: endorsementRows, error: endorsementError } = instructorIds.length > 0
+      ? await adminClient
+        .from("endorsements")
+        .select("student_id,type,expiry_date,is_active")
+        .in("student_id", instructorIds)
+      : { data: [], error: null };
+
+    if (endorsementError) return json({ error: endorsementError.message }, 500);
+
+    const setup = productBookingSetup(product, aircraftRows || [], endorsementRows || []);
     if (!setup.bookingAvailable) {
       return json({
-        error: "Online checkout is temporarily unavailable because this voucher does not currently have both a serviceable eligible aircraft and an eligible instructor configured.",
+        error: "Online checkout is temporarily unavailable because this voucher does not currently have both a serviceable eligible aircraft and a qualified eligible instructor configured.",
       }, 409);
     }
     if (!product.stripe_price_id) {
