@@ -158,6 +158,10 @@ const AppContent: React.FC = () => {
     );
   }
 
+  if (user?.portalAccessScope === 'trial_voucher' && location.pathname !== '/trial-flight-voucher') {
+    return <Navigate to={`/trial-flight-voucher${location.search || ''}`} replace />;
+  }
+
   if (isKioskRoute) {
     return (
       <KioskRoute
@@ -174,10 +178,6 @@ const AppContent: React.FC = () => {
 
   if (user && localStorage.getItem(KIOSK_SESSION_KEY) === 'true') {
     return <Navigate to="/kiosk" replace />;
-  }
-
-  if (user?.portalAccessScope === 'trial_voucher') {
-    return <Navigate to={`/trial-flight-voucher${location.search || ''}`} replace />;
   }
 
   if (!user) {
