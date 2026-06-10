@@ -286,6 +286,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <p className="mt-1 text-sm">
                       Your voucher is linked, but the final booking is only available from the account attached to this voucher.
                     </p>
+                    <a
+                      href="/"
+                      className="mt-3 inline-flex rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
+                    >
+                      Sign in to voucher account
+                    </a>
                   </div>
                 )}
 
