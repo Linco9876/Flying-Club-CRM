@@ -27,7 +27,18 @@ const mapProduct = (row: any): TrialFlightVoucherProduct => ({
   updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
 });
 
-const mapVoucher = (row: any): TrialFlightVoucher => ({
+const mapVoucher = (
+  row: any,
+  bookingMap = new Map<string, any>(),
+  aircraftMap = new Map<string, any>(),
+  userMap = new Map<string, any>()
+): TrialFlightVoucher => {
+  const booking = row.booked_booking_id ? bookingMap.get(row.booked_booking_id) : null;
+  const aircraft = booking?.aircraft_id ? aircraftMap.get(booking.aircraft_id) : null;
+  const instructor = booking?.instructor_id ? userMap.get(booking.instructor_id) : null;
+  const redeemedBy = row.redeemed_by_user_id ? userMap.get(row.redeemed_by_user_id) : null;
+
+  return ({
   id: row.id,
   productId: row.product_id,
   productName: row.trial_flight_voucher_products?.name,
@@ -50,12 +61,24 @@ const mapVoucher = (row: any): TrialFlightVoucher => ({
   expiresAt: row.expires_at ? new Date(row.expires_at) : undefined,
   redeemedAt: row.redeemed_at ? new Date(row.redeemed_at) : undefined,
   redeemedByUserId: row.redeemed_by_user_id || undefined,
+  redeemedByName: redeemedBy?.name || undefined,
+  redeemedByEmail: redeemedBy?.email || undefined,
   bookedBookingId: row.booked_booking_id || undefined,
+  bookedBooking: booking ? {
+    id: booking.id,
+    startTime: new Date(booking.start_time),
+    endTime: new Date(booking.end_time),
+    status: booking.status,
+    aircraftRegistration: aircraft?.registration || undefined,
+    aircraftType: aircraft ? [aircraft.make, aircraft.model].filter(Boolean).join(' ') : undefined,
+    instructorName: instructor?.name || undefined,
+  } : undefined,
   notes: row.notes || undefined,
   createdBy: row.created_by || undefined,
   createdAt: row.created_at ? new Date(row.created_at) : undefined,
   updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
-});
+  });
+};
 
 export const generateVoucherCode = () => {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -94,8 +117,45 @@ export const useTrialFlightVouchers = () => {
       if (productError) throw productError;
       if (voucherError) throw voucherError;
 
+      const bookedBookingIds = Array.from(new Set(
+        (voucherRows || []).map((row: any) => row.booked_booking_id).filter(Boolean)
+      ));
+      const redeemedUserIds = Array.from(new Set(
+        (voucherRows || []).map((row: any) => row.redeemed_by_user_id).filter(Boolean)
+      ));
+
+      let bookingRows: any[] = [];
+      if (bookedBookingIds.length > 0) {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('id,start_time,end_time,status,aircraft_id,instructor_id')
+          .in('id', bookedBookingIds);
+        if (error) throw error;
+        bookingRows = data || [];
+      }
+
+      const aircraftIds = Array.from(new Set(bookingRows.map(row => row.aircraft_id).filter(Boolean)));
+      const instructorIds = Array.from(new Set(bookingRows.map(row => row.instructor_id).filter(Boolean)));
+      const userIds = Array.from(new Set([...redeemedUserIds, ...instructorIds]));
+
+      const [{ data: aircraftRows, error: aircraftError }, { data: userRows, error: userError }] = await Promise.all([
+        aircraftIds.length > 0
+          ? supabase.from('aircraft').select('id,registration,make,model').in('id', aircraftIds)
+          : Promise.resolve({ data: [], error: null }),
+        userIds.length > 0
+          ? supabase.from('users').select('id,name,email').in('id', userIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (aircraftError) throw aircraftError;
+      if (userError) throw userError;
+
+      const bookingMap = new Map((bookingRows || []).map(row => [row.id, row]));
+      const aircraftMap = new Map((aircraftRows || []).map((row: any) => [row.id, row]));
+      const userMap = new Map((userRows || []).map((row: any) => [row.id, row]));
+
       setProducts((productRows || []).map(mapProduct));
-      setVouchers((voucherRows || []).map(mapVoucher));
+      setVouchers((voucherRows || []).map((row: any) => mapVoucher(row, bookingMap, aircraftMap, userMap)));
     } catch (error) {
       console.error('Failed to load trial flight vouchers:', error);
       toast.error('Failed to load trial flight vouchers');

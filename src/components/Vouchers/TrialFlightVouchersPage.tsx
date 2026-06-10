@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle, Copy, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle, Copy, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
@@ -1036,6 +1036,43 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       <p className="max-w-xs text-blue-800 dark:text-blue-200 sm:text-right">{delivery.schedule}</p>
                     </div>
                   </div>
+                  {(voucher.redeemedByName || voucher.bookedBooking) && (
+                    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                      {voucher.redeemedByName && (
+                        <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 leading-5 text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-950/20 dark:text-emerald-100">
+                          <p className="font-bold uppercase tracking-wide">Redeemed account</p>
+                          <p className="mt-0.5 truncate">{voucher.redeemedByName}</p>
+                          {voucher.redeemedByEmail && (
+                            <p className="truncate text-emerald-700 dark:text-emerald-200">{voucher.redeemedByEmail}</p>
+                          )}
+                          {voucher.redeemedAt && (
+                            <p className="mt-1 text-emerald-700 dark:text-emerald-200">Redeemed {voucher.redeemedAt.toLocaleString()}</p>
+                          )}
+                        </div>
+                      )}
+                      {voucher.bookedBooking && (
+                        <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 leading-5 text-indigo-950 dark:border-indigo-400/20 dark:bg-indigo-950/20 dark:text-indigo-100">
+                          <p className="font-bold uppercase tracking-wide">Linked booking</p>
+                          <p className="mt-0.5 flex items-center gap-1.5 font-semibold">
+                            <CalendarDays className="h-3.5 w-3.5" />
+                            {voucher.bookedBooking.startTime.toLocaleString([], {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'short',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                          <p className="truncate text-indigo-800 dark:text-indigo-200">
+                            {voucher.bookedBooking.aircraftRegistration || 'Aircraft'}{voucher.bookedBooking.aircraftType ? ` - ${voucher.bookedBooking.aircraftType}` : ''}
+                          </p>
+                          <p className="truncate text-indigo-800 dark:text-indigo-200">
+                            Instructor: {voucher.bookedBooking.instructorName || 'Not assigned'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <p className="flex min-w-0 items-center gap-2 text-sm font-mono text-gray-800 dark:text-gray-200">

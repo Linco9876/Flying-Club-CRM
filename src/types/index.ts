@@ -150,7 +150,18 @@ export interface TrialFlightVoucher {
   expiresAt?: Date;
   redeemedAt?: Date;
   redeemedByUserId?: string;
+  redeemedByName?: string;
+  redeemedByEmail?: string;
   bookedBookingId?: string;
+  bookedBooking?: {
+    id: string;
+    startTime: Date;
+    endTime: Date;
+    status: Booking['status'];
+    aircraftRegistration?: string;
+    aircraftType?: string;
+    instructorName?: string;
+  };
   notes?: string;
   createdBy?: string;
   createdAt?: Date;
