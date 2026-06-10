@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, CheckCircle, Copy, Gift, Loader2, Plane, Ticket } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
@@ -190,6 +190,29 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
   };
 
+  const formatSlotDateHeading = (value: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(new Date(value));
+
+  const groupedSlots = useMemo(() => {
+    const groups = new Map<string, VoucherSlot[]>();
+    [...slots]
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+      .forEach(slot => {
+        const key = new Date(slot.startTime).toDateString();
+        groups.set(key, [...(groups.get(key) || []), slot]);
+      });
+
+    return Array.from(groups.entries()).map(([dateKey, items]) => ({
+      dateKey,
+      label: formatSlotDateHeading(items[0].startTime),
+      slots: items,
+    }));
+  }, [slots]);
+
   const canChooseTime = Boolean(user && voucher?.status === 'redeemed' && !bookedSlot);
 
   const copySetupLink = async () => {
@@ -356,23 +379,41 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         Refresh
                       </button>
                     </div>
-                    <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
-                      {slots.map(slot => (
-                        <button
-                          key={`${slot.startTime}-${slot.aircraftId}-${slot.instructorId}`}
-                          onClick={() => bookSlot(slot)}
-                          disabled={loading}
-                          className="w-full rounded-2xl border border-slate-200 p-3 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-60"
-                        >
-                          <div className="flex items-start justify-between gap-3">
+                    <div className="max-h-[30rem] space-y-4 overflow-y-auto pr-1">
+                      {groupedSlots.map(group => (
+                        <div key={group.dateKey} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="mb-3 flex items-center justify-between gap-3">
                             <div>
-                              <p className="font-bold text-slate-950">{formatSlotDate(slot.startTime)}</p>
-                              <p className="text-sm text-slate-700">{formatSlotTime(slot.startTime, slot.endTime)}</p>
+                              <p className="font-bold text-slate-950">{group.label}</p>
+                              <p className="text-xs text-slate-500">
+                                {group.slots.length} available time{group.slots.length === 1 ? '' : 's'}
+                              </p>
                             </div>
-                            <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Book</span>
+                            <CalendarDays className="h-5 w-5 text-blue-600" />
                           </div>
-                          <p className="mt-2 text-sm text-slate-600">{slot.aircraftLabel} with {slot.instructorName}</p>
-                        </button>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {group.slots.map(slot => (
+                              <button
+                                key={`${slot.startTime}-${slot.aircraftId}-${slot.instructorId}`}
+                                onClick={() => bookSlot(slot)}
+                                disabled={loading}
+                                className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-60"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-base font-black text-slate-950">{formatSlotTime(slot.startTime, slot.endTime)}</p>
+                                    <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{formatSlotDate(slot.startTime)}</p>
+                                  </div>
+                                  <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Book</span>
+                                </div>
+                                <div className="mt-3 space-y-1 text-sm text-slate-600">
+                                  <p className="font-semibold text-slate-800">{slot.aircraftLabel}</p>
+                                  <p>Instructor: {slot.instructorName}</p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       ))}
                       {slots.length === 0 && (
                         <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
