@@ -86,6 +86,40 @@ const toPublicProduct = (product: any) => ({
   bookingInstructions: product.booking_instructions,
 });
 
+const getBookingSummary = async (adminClient: ReturnType<typeof createClient>, bookingId?: string | null) => {
+  if (!bookingId) return null;
+
+  const { data: booking, error: bookingError } = await adminClient
+    .from("bookings")
+    .select("id,start_time,end_time,aircraft_id,instructor_id")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (bookingError) throw bookingError;
+  if (!booking) return null;
+
+  const [{ data: aircraft }, { data: instructor }] = await Promise.all([
+    booking.aircraft_id
+      ? adminClient.from("aircraft").select("id,registration,make,model").eq("id", booking.aircraft_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    booking.instructor_id
+      ? adminClient.from("users").select("id,name").eq("id", booking.instructor_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  return {
+    bookingId: booking.id,
+    startTime: booking.start_time,
+    endTime: booking.end_time,
+    aircraftId: booking.aircraft_id,
+    aircraftLabel: aircraft
+      ? `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.trim()
+      : "Aircraft",
+    instructorId: booking.instructor_id,
+    instructorName: instructor?.name || "Instructor",
+  };
+};
+
 const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>, product: any) => {
   const blockMinutes = Number(product.duration_minutes || 0) + 30;
   const allowedInstructorIds = new Set<string>(product.instructor_ids || []);
@@ -239,7 +273,8 @@ Deno.serve(async (req: Request) => {
 
       const publicVoucher = toPublicVoucher(voucher, product);
       const slots = voucher.status === "redeemed" ? await buildAvailableSlots(adminClient, product) : [];
-      return json({ voucher: publicVoucher, slots });
+      const booking = voucher.status === "booked" ? await getBookingSummary(adminClient, voucher.booked_booking_id) : null;
+      return json({ voucher: publicVoucher, slots, booking });
     }
 
     if (!code) return json({ error: "Voucher code is required" }, 400);
@@ -374,7 +409,7 @@ Deno.serve(async (req: Request) => {
       return json({
         voucher: { ...publicVoucher, status: "booked" },
         bookingId: booking.id,
-        booking: matchingSlot,
+        booking: { ...matchingSlot, bookingId: booking.id },
       });
     }
 

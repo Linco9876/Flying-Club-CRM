@@ -19,6 +19,7 @@ interface PublicVoucher {
 }
 
 interface VoucherSlot {
+  bookingId?: string;
   startTime: string;
   endTime: string;
   aircraftId: string;
@@ -41,6 +42,27 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [slots, setSlots] = useState<VoucherSlot[]>([]);
   const [bookedSlot, setBookedSlot] = useState<VoucherSlot | null>(null);
   const [form, setForm] = useState({ fullName: '', email: '', phone: '' });
+
+  const loadLinkedVoucher = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+        body: { action: 'my-voucher' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setVoucher(data.voucher);
+      setCode(data.voucher?.code || '');
+      setRedeemed({ setupLink: null });
+      setSlots(data.slots || []);
+      setBookedSlot(data.booking || null);
+    } catch (error) {
+      if (!code) setVoucher(null);
+      toast.error(error instanceof Error ? error.message : 'Could not load your voucher');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const verifyVoucher = async (nextCode = code) => {
     if (!nextCode.trim()) {
@@ -72,29 +94,15 @@ export const TrialVoucherRedeemPage: React.FC = () => {
 
   useEffect(() => {
     if (code || !user) return;
-
-    const loadLinkedVoucher = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
-          body: { action: 'my-voucher' },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        setVoucher(data.voucher);
-        setCode(data.voucher?.code || '');
-        setRedeemed({ setupLink: null });
-        setSlots(data.slots || []);
-      } catch (error) {
-        setVoucher(null);
-        toast.error(error instanceof Error ? error.message : 'Could not load your voucher');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     void loadLinkedVoucher();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, user]);
+
+  useEffect(() => {
+    if (!user || !code || bookedSlot) return;
+    void loadLinkedVoucher();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const redeemVoucher = async () => {
     if (!voucher) return;
@@ -157,6 +165,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (data?.error) throw new Error(data.error);
       setBookedSlot(data.booking || slot);
       setVoucher(current => current ? { ...current, status: 'booked' } : current);
+      setSlots([]);
       toast.success('Trial flight booked');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not book this time');
