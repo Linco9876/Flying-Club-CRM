@@ -22,6 +22,19 @@ const json = (body: Record<string, unknown>, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
+const getAuthenticatedUser = async (req: Request, supabaseUrl: string) => {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return { user: null, error: "missing_authorization" };
+
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const callerClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user }, error } = await callerClient.auth.getUser();
+  if (error || !user) return { user: null, error: error?.message || "invalid_session" };
+  return { user, error: null };
+};
+
 const aircraftMatchesProduct = (aircraft: any, product: any) => {
   const attachedIds = new Set<string>(product.aircraft_ids || []);
   if (attachedIds.size > 0 && attachedIds.has(aircraft.id)) return true;
@@ -171,15 +184,8 @@ Deno.serve(async (req: Request) => {
     const code = normaliseCode(body.code);
 
     if (action === "my-voucher") {
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader) return json({ error: "You need to sign in to view your voucher" }, 401);
-
-      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-      const callerClient = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: { user }, error: authError } = await callerClient.auth.getUser();
-      if (authError || !user) return json({ error: "You need to sign in to view your voucher" }, 401);
+      const { user } = await getAuthenticatedUser(req, supabaseUrl);
+      if (!user) return json({ error: "You need to sign in to view your voucher" }, 401);
 
       const { data: voucher, error: voucherError } = await adminClient
         .from("trial_flight_vouchers")
@@ -255,7 +261,20 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "availability") {
-      if (!["redeemed", "issued"].includes(voucher.status)) {
+      if (voucher.status === "booked" || voucher.booked_booking_id) {
+        return json({ error: "This voucher has already been booked" }, 409);
+      }
+      if (voucher.status !== "redeemed" || !voucher.redeemed_by_user_id) {
+        return json({ error: "Redeem this voucher and sign in before viewing available times" }, 409);
+      }
+
+      const { user } = await getAuthenticatedUser(req, supabaseUrl);
+      if (!user) return json({ error: "Sign in to your voucher account before viewing available times" }, 401);
+      if (user.id !== voucher.redeemed_by_user_id) {
+        return json({ error: "This voucher is linked to a different account" }, 403);
+      }
+
+      if (!["redeemed"].includes(voucher.status)) {
         return json({ error: "This voucher is not available for booking" }, 409);
       }
 
@@ -271,15 +290,8 @@ Deno.serve(async (req: Request) => {
         return json({ error: "This voucher already has a booking" }, 409);
       }
 
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader) return json({ error: "Sign in to your voucher account before booking a time" }, 401);
-
-      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-      const callerClient = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: { user }, error: authError } = await callerClient.auth.getUser();
-      if (authError || !user) return json({ error: "Sign in to your voucher account before booking a time" }, 401);
+      const { user } = await getAuthenticatedUser(req, supabaseUrl);
+      if (!user) return json({ error: "Sign in to your voucher account before booking a time" }, 401);
       if (user.id !== voucher.redeemed_by_user_id) {
         return json({ error: "This voucher is linked to a different account" }, 403);
       }
