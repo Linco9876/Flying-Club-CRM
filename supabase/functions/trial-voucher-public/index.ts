@@ -232,20 +232,33 @@ const instructorHasAircraftEndorsement = (
   );
 };
 
-const productBookingSetup = (product: any, aircraftRows: any[] = []) => {
+const productBookingSetup = (product: any, aircraftRows: any[] = [], endorsementRows: any[] = []) => {
   const serviceableAircraft = aircraftRows
     .filter((aircraft: any) => aircraft.status === "serviceable")
     .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
-  const instructorCount = (product.instructor_ids || []).length;
+  const instructorIds = product.instructor_ids || [];
+  const endorsementsByInstructor = new Map<string, any[]>();
+  endorsementRows.forEach((endorsement: any) => {
+    const instructorEndorsements = endorsementsByInstructor.get(endorsement.student_id) || [];
+    instructorEndorsements.push(endorsement);
+    endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
+  });
+  const qualifiedInstructorIds = instructorIds.filter((instructorId: string) =>
+    serviceableAircraft.some((aircraft: any) =>
+      instructorHasAircraftEndorsement(instructorId, aircraft, endorsementsByInstructor)
+    )
+  );
   const issues = [
     ...(serviceableAircraft.length === 0 ? ["No eligible aircraft are currently serviceable"] : []),
-    ...(instructorCount === 0 ? ["No eligible instructors are configured"] : []),
+    ...(instructorIds.length === 0 ? ["No eligible instructors are configured"] : []),
+    ...(instructorIds.length > 0 && qualifiedInstructorIds.length === 0 ? ["No selected instructor currently holds the required aircraft endorsement"] : []),
   ];
 
   return {
     bookingAvailable: issues.length === 0,
     serviceableAircraftCount: serviceableAircraft.length,
-    instructorCount,
+    instructorCount: instructorIds.length,
+    qualifiedInstructorCount: qualifiedInstructorIds.length,
     issue: issues.join(". "),
   };
 };
@@ -279,8 +292,8 @@ const toPublicVoucher = (voucher: any, product: any) => ({
   },
 });
 
-const toPublicProduct = (product: any, aircraftRows: any[] = []) => {
-  const setup = productBookingSetup(product, aircraftRows);
+const toPublicProduct = (product: any, aircraftRows: any[] = [], endorsementRows: any[] = []) => {
+  const setup = productBookingSetup(product, aircraftRows, endorsementRows);
   return {
     id: product.id,
     name: product.name,
@@ -452,18 +465,24 @@ Deno.serve(async (req: Request) => {
     const code = normaliseCode(body.code);
 
     if (action === "products") {
-      const [{ data: products, error: productsError }, { data: aircraftRows, error: aircraftError }] = await Promise.all([
+      const [
+        { data: products, error: productsError },
+        { data: aircraftRows, error: aircraftError },
+        { data: endorsementRows, error: endorsementError },
+      ] = await Promise.all([
         adminClient
           .from("trial_flight_voucher_products")
           .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,booking_instructions,is_active")
           .eq("is_active", true)
           .order("duration_minutes", { ascending: true }),
-        adminClient.from("aircraft").select("id,registration,make,model,status"),
+        adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
+        adminClient.from("endorsements").select("student_id,type,expiry_date,is_active"),
       ]);
 
       if (productsError) return json({ error: productsError.message }, 500);
       if (aircraftError) return json({ error: aircraftError.message }, 500);
-      return json({ products: (products || []).map((product: any) => toPublicProduct(product, aircraftRows || [])) });
+      if (endorsementError) return json({ error: endorsementError.message }, 500);
+      return json({ products: (products || []).map((product: any) => toPublicProduct(product, aircraftRows || [], endorsementRows || [])) });
     }
 
     if (action === "checkout-status") {
