@@ -101,6 +101,18 @@ export const TrialFlightVouchersPage: React.FC = () => {
       toast.error('Select at least one instructor who can fly this voucher');
       return;
     }
+    if (productForm.aircraftMode === 'specific' && productForm.aircraftIds.length === 0) {
+      toast.error('Select at least one aircraft for a selected-aircraft voucher');
+      return;
+    }
+    if (productForm.aircraftMode === 'tecnam' && productForm.aircraftIds.length === 0 && aircraftByMode.tecnams.length === 0) {
+      toast.error('No Tecnam aircraft were found in the fleet. Select specific aircraft or update the aircraft details first.');
+      return;
+    }
+    if (productForm.aircraftMode === 'archer' && productForm.aircraftIds.length === 0 && aircraftByMode.archers.length === 0) {
+      toast.error('No PA-28 Archer aircraft were found in the fleet. Select the Archer aircraft or update the aircraft details first.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -168,6 +180,23 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const modeLabel = (mode: TrialFlightVoucherAircraftMode) =>
     mode === 'tecnam' ? 'Any Tecnam' : mode === 'archer' ? 'PA-28 Archer' : 'Selected aircraft';
+
+  const matchingAircraftCount =
+    productForm.aircraftMode === 'tecnam'
+      ? aircraftByMode.tecnams.length
+      : productForm.aircraftMode === 'archer'
+        ? aircraftByMode.archers.length
+        : productForm.aircraftIds.length;
+  const hasAircraftSetupWarning =
+    (productForm.aircraftMode === 'specific' && productForm.aircraftIds.length === 0) ||
+    (productForm.aircraftMode === 'tecnam' && productForm.aircraftIds.length === 0 && aircraftByMode.tecnams.length === 0) ||
+    (productForm.aircraftMode === 'archer' && productForm.aircraftIds.length === 0 && aircraftByMode.archers.length === 0);
+  const aircraftSetupText =
+    productForm.aircraftMode === 'specific'
+      ? 'Only the selected aircraft will be offered for this voucher.'
+      : productForm.aircraftIds.length > 0
+        ? `Matching ${modeLabel(productForm.aircraftMode).toLowerCase()} aircraft plus ${productForm.aircraftIds.length} selected aircraft can be offered.`
+        : `${matchingAircraftCount} ${modeLabel(productForm.aircraftMode).toLowerCase()} aircraft currently match this voucher rule.`;
 
   return (
     <div className="p-3 sm:p-6">
@@ -263,7 +292,15 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   </label>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-gray-500">Optional for Tecnam/Archer rules. Required if using selected aircraft only.</p>
+              <div className={`mt-3 rounded-lg px-3 py-2 text-xs ${
+                hasAircraftSetupWarning
+                  ? 'border border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100'
+                  : 'bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-100'
+              }`}>
+                {hasAircraftSetupWarning
+                  ? 'This voucher will not show availability until at least one matching aircraft is available.'
+                  : aircraftSetupText}
+              </div>
             </div>
             <div className="rounded-xl border border-gray-200 p-3 dark:border-[#2c2f36]">
               <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100"><Users className="h-4 w-4" /> Eligible instructors</p>
@@ -305,12 +342,26 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 <input type="checkbox" checked={issueForm.sendToRecipient} onChange={e => setIssueForm(f => ({ ...f, sendToRecipient: e.target.checked }))} />
                 Send direct to recipient
               </label>
-              <input value={issueForm.recipientName} onChange={e => setIssueForm(f => ({ ...f, recipientName: e.target.value }))} placeholder="Recipient name" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
-              <input type="email" value={issueForm.recipientEmail} onChange={e => setIssueForm(f => ({ ...f, recipientEmail: e.target.value }))} placeholder="Recipient email" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
-              <label className="text-sm text-gray-600 dark:text-gray-300">
-                Scheduled send date/time
-                <input type="datetime-local" value={issueForm.recipientDeliveryAt} onChange={e => setIssueForm(f => ({ ...f, recipientDeliveryAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
-              </label>
+              {issueForm.sendToRecipient ? (
+                <div className="grid gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3 dark:border-blue-400/20 dark:bg-blue-950/20">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-200">
+                    Recipient delivery
+                  </p>
+                  <input value={issueForm.recipientName} onChange={e => setIssueForm(f => ({ ...f, recipientName: e.target.value }))} placeholder="Recipient name" className="rounded-lg border border-blue-200 bg-white px-3 py-2 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100" />
+                  <input type="email" value={issueForm.recipientEmail} onChange={e => setIssueForm(f => ({ ...f, recipientEmail: e.target.value }))} placeholder="Recipient email" className="rounded-lg border border-blue-200 bg-white px-3 py-2 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100" />
+                  <label className="text-sm text-blue-800 dark:text-blue-100">
+                    Scheduled send date/time
+                    <input type="datetime-local" value={issueForm.recipientDeliveryAt} onChange={e => setIssueForm(f => ({ ...f, recipientDeliveryAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 dark:border-blue-400/30 dark:bg-[#111827] dark:text-gray-100" />
+                  </label>
+                  <p className="text-xs leading-5 text-blue-700 dark:text-blue-200">
+                    Leave the schedule blank to email the recipient immediately.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-300">
+                  The voucher email will be sent to the purchaser so they can forward or print it when they are ready.
+                </div>
+              )}
               <label className="text-sm text-gray-600 dark:text-gray-300">
                 Expiry date
                 <input type="date" value={issueForm.expiresAt} onChange={e => setIssueForm(f => ({ ...f, expiresAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
