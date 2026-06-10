@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CalendarDays, CheckCircle, Gift, Loader2, Plane, Ticket } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 
 interface PublicVoucher {
   code: string;
@@ -32,6 +33,7 @@ const getInitialCode = () => {
 };
 
 export const TrialVoucherRedeemPage: React.FC = () => {
+  const { user } = useAuth();
   const [code, setCode] = useState(getInitialCode);
   const [voucher, setVoucher] = useState<PublicVoucher | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,6 +56,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setVoucher(data.voucher);
+      setCode(data.voucher?.code || nextCode);
     } catch (error) {
       setVoucher(null);
       toast.error(error instanceof Error ? error.message : 'Could not verify voucher');
@@ -64,8 +67,34 @@ export const TrialVoucherRedeemPage: React.FC = () => {
 
   useEffect(() => {
     if (code) void verifyVoucher(code);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (code || !user) return;
+
+    const loadLinkedVoucher = async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+          body: { action: 'my-voucher' },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        setVoucher(data.voucher);
+        setCode(data.voucher?.code || '');
+        setRedeemed({ setupLink: null });
+        setSlots(data.slots || []);
+      } catch (error) {
+        setVoucher(null);
+        toast.error(error instanceof Error ? error.message : 'Could not load your voucher');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadLinkedVoucher();
+  }, [code, user]);
 
   const redeemVoucher = async () => {
     if (!voucher) return;
@@ -91,12 +120,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     }
   };
 
-  const loadAvailability = async () => {
-    if (!code.trim()) return;
+  const loadAvailability = async (nextCode = code) => {
+    if (!nextCode.trim()) return;
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
-        body: { action: 'availability', code },
+        body: { action: 'availability', code: nextCode },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -220,7 +249,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   <p className="mt-4 text-sm leading-6 text-slate-700">{voucher.product.bookingInstructions}</p>
                 </div>
 
-                {!redeemed ? (
+                {!redeemed && voucher.status === 'issued' ? (
                   <div className="grid gap-3">
                     <input value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} placeholder="Full name" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
                     <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
@@ -241,7 +270,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   </div>
                 )}
 
-                {(redeemed || voucher.status === 'redeemed') && !bookedSlot && (
+                {(redeemed || voucher.status === 'redeemed') && voucher.status !== 'booked' && !bookedSlot && (
                   <div className="rounded-2xl border border-slate-200 p-4">
                     <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -287,6 +316,15 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       {formatSlotDate(bookedSlot.startTime)} at {formatSlotTime(bookedSlot.startTime, bookedSlot.endTime)}
                     </p>
                     <p className="mt-1 text-sm">{bookedSlot.aircraftLabel} with {bookedSlot.instructorName}</p>
+                  </div>
+                )}
+
+                {!bookedSlot && voucher.status === 'booked' && (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+                    <h3 className="font-bold">This voucher has already been booked</h3>
+                    <p className="mt-1 text-sm">
+                      Contact Bendigo Flying Club if you need help changing the booking.
+                    </p>
                   </div>
                 )}
               </div>

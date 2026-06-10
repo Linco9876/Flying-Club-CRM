@@ -473,13 +473,6 @@ export const OutstandingRecordsTab: React.FC = () => {
       ? dismissedLogs
       : []
     : dismissedLogs;
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (queueView === 'mine' && myOutstandingLogs.length === 0 && otherInstructorOutstandingLogs.length > 0) {
-      setQueueView('others');
-    }
-  }, [isAdmin, myOutstandingLogs.length, otherInstructorOutstandingLogs.length, queueView]);
-
   const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
     setPendingSubmits(current => {
       const withoutDuplicate = current.filter(item => item.id !== job.id && item.flightLogId !== job.flightLogId);
@@ -1049,26 +1042,26 @@ export const OutstandingRecordsTab: React.FC = () => {
   }
 
   const queueButtons = [
-    { id: 'mine' as const, label: 'Assigned to me' },
-    ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors' }] : []),
-    { id: 'dismissed' as const, label: 'No record needed' },
+    { id: 'mine' as const, label: 'Assigned to me', icon: AlertCircle },
+    ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
+    { id: 'dismissed' as const, label: 'No record needed', icon: Undo2 },
   ];
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
       <header className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 p-4 text-white shadow-sm dark:border-blue-400/20 sm:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-5">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
             <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
               {isAdmin
-                ? 'Choose your own queue, another instructor queue, or restore a flight that was marked no record needed.'
+                ? 'Choose your own queue, review another instructor queue, restore a flight, or start an in-flight draft.'
                 : 'Flights assigned to you that still need a training record, plus drafts you can prepare in the air.'}
             </p>
           </div>
 
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <button
               type="button"
               onClick={() => setShowDraftComposer(value => !value)}
@@ -1082,22 +1075,24 @@ export const OutstandingRecordsTab: React.FC = () => {
               Make Draft
             </button>
 
-            <div className="grid min-w-0 gap-2 rounded-xl bg-white/10 p-1 backdrop-blur sm:grid-cols-3">
-              {queueButtons.map(item => (
+            {queueButtons.map(item => {
+              const Icon = item.icon;
+              return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setQueueView(item.id)}
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                  className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
                     queueView === item.id
                       ? 'bg-white text-blue-900 shadow-sm'
-                      : 'text-blue-50 hover:bg-white/10'
+                      : 'bg-white/10 text-blue-50 hover:bg-white/15'
                   }`}
                 >
+                  <Icon className="h-4 w-4" />
                   {item.label}
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
       </header>
@@ -1112,11 +1107,6 @@ export const OutstandingRecordsTab: React.FC = () => {
               {isAdmin ? 'All instructors — flights awaiting a training record' : 'Flights awaiting a training record'}
             </p>
           </div>
-          {outstandingLogs.length > 0 && (
-            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-800 text-sm font-bold border border-amber-200">
-              {outstandingLogs.length}
-            </span>
-          )}
         </div>
 
         {showDraftComposer && (

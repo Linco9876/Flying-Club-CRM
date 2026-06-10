@@ -48,6 +48,20 @@ const absenceBlocksTime = (absence: any, start: Date, end: Date) => {
   return overlaps(start, end, absenceStart, absenceEnd);
 };
 
+const toPublicVoucher = (voucher: any, product: any) => ({
+  code: voucher.code,
+  status: voucher.status,
+  recipientName: voucher.recipient_name,
+  product: {
+    name: product.name,
+    description: product.description,
+    aircraftMode: product.aircraft_mode,
+    durationMinutes: product.duration_minutes,
+    bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
+    bookingInstructions: product.booking_instructions,
+  },
+});
+
 const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>, product: any) => {
   const blockMinutes = Number(product.duration_minutes || 0) + 30;
   const allowedInstructorIds = new Set<string>(product.instructor_ids || []);
@@ -156,6 +170,50 @@ Deno.serve(async (req: Request) => {
     const action = String(body.action || "verify");
     const code = normaliseCode(body.code);
 
+    if (action === "my-voucher") {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) return json({ error: "You need to sign in to view your voucher" }, 401);
+
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const callerClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: authError } = await callerClient.auth.getUser();
+      if (authError || !user) return json({ error: "You need to sign in to view your voucher" }, 401);
+
+      const { data: voucher, error: voucherError } = await adminClient
+        .from("trial_flight_vouchers")
+        .select(`
+          *,
+          trial_flight_voucher_products(
+            id,
+            name,
+            description,
+            aircraft_mode,
+            aircraft_ids,
+            instructor_ids,
+            duration_minutes,
+            booking_instructions,
+            is_active
+          )
+        `)
+        .eq("redeemed_by_user_id", user.id)
+        .in("status", ["redeemed", "booked"])
+        .order("redeemed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (voucherError) return json({ error: voucherError.message }, 500);
+      if (!voucher) return json({ error: "No linked trial flight voucher was found for this account" }, 404);
+
+      const product = voucher.trial_flight_voucher_products;
+      if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
+
+      const publicVoucher = toPublicVoucher(voucher, product);
+      const slots = voucher.status === "redeemed" ? await buildAvailableSlots(adminClient, product) : [];
+      return json({ voucher: publicVoucher, slots });
+    }
+
     if (!code) return json({ error: "Voucher code is required" }, 400);
 
     const { data: voucher, error: voucherError } = await adminClient
@@ -190,19 +248,7 @@ Deno.serve(async (req: Request) => {
     const product = voucher.trial_flight_voucher_products;
     if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
 
-    const publicVoucher = {
-      code: voucher.code,
-      status: voucher.status,
-      recipientName: voucher.recipient_name,
-      product: {
-        name: product.name,
-        description: product.description,
-        aircraftMode: product.aircraft_mode,
-        durationMinutes: product.duration_minutes,
-        bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
-        bookingInstructions: product.booking_instructions,
-      },
-    };
+    const publicVoucher = toPublicVoucher(voucher, product);
 
     if (action === "verify") {
       return json({ voucher: publicVoucher });
