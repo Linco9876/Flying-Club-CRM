@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.change-user-email]
 verify_jwt = false
+
+[functions.trial-voucher-public]
+verify_jwt = false

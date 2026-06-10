@@ -39,6 +39,8 @@ const OutstandingRecordsTab = lazy(() => import('./components/Training/Outstandi
 const StudentAcknowledgementModal = lazy(() => import('./components/Training/StudentAcknowledgementModal').then(module => ({ default: module.StudentAcknowledgementModal })));
 const DeclarationSigningPage = lazy(() => import('./components/Training/DeclarationSigningPage').then(module => ({ default: module.DeclarationSigningPage })));
 const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashboard').then(module => ({ default: module.SettingsDashboard })));
+const TrialFlightVouchersPage = lazy(() => import('./components/Vouchers/TrialFlightVouchersPage').then(module => ({ default: module.TrialFlightVouchersPage })));
+const TrialVoucherRedeemPage = lazy(() => import('./components/Vouchers/TrialVoucherRedeemPage').then(module => ({ default: module.TrialVoucherRedeemPage })));
 const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
 
 const buildCopiedBookingFormData = (booking: Booking) => ({
@@ -125,6 +127,14 @@ const AppContent: React.FC = () => {
     return (
       <Suspense fallback={<PageLoader />}>
         <DeclarationSigningPage />
+      </Suspense>
+    );
+  }
+
+  if (location.pathname === '/trial-flight-voucher') {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <TrialVoucherRedeemPage />
       </Suspense>
     );
   }
@@ -601,6 +611,8 @@ const AuthenticatedApp: React.FC<{
         return <BillingDashboard mode="own" />;
       case 'financial-dashboard':
         return <BillingDashboard mode="financial" />;
+      case 'gift-vouchers':
+        return <TrialFlightVouchersPage />;
       case 'reports':
         return <ReportsDashboard />;
       case 'safety':
@@ -636,6 +648,7 @@ const AuthenticatedApp: React.FC<{
   return (
     <Routes>
       <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense>} />
+      <Route path="/trial-flight-voucher" element={<Suspense fallback={<PageLoader />}><TrialVoucherRedeemPage /></Suspense>} />
       <Route path="/students/:studentId" element={
         <RouteGuard requiredAction="view-students">
           <AppShell activeSidebarView="students" onViewChange={handleViewChange} backgroundColor={backgroundColor}>
@@ -714,6 +727,7 @@ const viewPathMap: Record<string, string> = {
   'syllabus-management': '/training/syllabus',
   billing: '/billing',
   'financial-dashboard': '/financial-dashboard',
+  'gift-vouchers': '/gift-vouchers',
   reports: '/reports',
   safety: '/safety',
   profile: '/profile',
@@ -736,6 +750,7 @@ const getViewForPath = (pathname: string) => {
   if (pathname.startsWith('/training/outstanding-records')) return 'outstanding-records';
   if (pathname.startsWith('/training/syllabus')) return 'syllabus-management';
   if (pathname.startsWith('/training')) return 'training';
+  if (pathname.startsWith('/gift-vouchers')) return 'gift-vouchers';
   return 'dashboard';
 };
 
@@ -752,6 +767,7 @@ const getRequiredActionForView = (view: string) => {
     'syllabus-management': 'edit-settings',
     'billing': 'view-billing',
     'financial-dashboard': 'view-billing',
+    'gift-vouchers': 'view-billing',
     'reports': 'view-reports',
     'safety': 'view-safety',
     'profile': 'edit-personal-settings',

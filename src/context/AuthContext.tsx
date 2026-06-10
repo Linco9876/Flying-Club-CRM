@@ -138,7 +138,8 @@ const mapUserData = (userData: any): User => ({
   preferredAircraftId: userData.preferred_aircraft_id,
   avatar: userData.avatar_url,
   coverPhoto: userData.cover_url,
-  isActive: userData.is_active ?? true
+  isActive: userData.is_active ?? true,
+  portalAccessScope: userData.portal_access_scope || 'full'
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

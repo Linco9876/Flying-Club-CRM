@@ -12,6 +12,7 @@ import {
   Shield,
   AlertCircle,
   DollarSign,
+  Gift,
   Menu,
   X
 } from 'lucide-react';
@@ -34,6 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },
     { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin', 'pilot', 'student'] },
     { id: 'financial-dashboard', label: 'Financial Dashboard', icon: DollarSign, roles: ['admin'] },
+    { id: 'gift-vouchers', label: 'Gift Vouchers', icon: Gift, roles: ['admin'] },
     { id: 'reports', label: 'Reports', icon: FileText, roles: ['admin', 'instructor'] },
     { id: 'safety', label: 'Safety', icon: Shield, roles: ['admin', 'instructor', 'student'] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin'] }

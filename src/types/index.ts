@@ -23,6 +23,7 @@ export interface User {
   isAvailable?: boolean;
   isSeniorInstructor?: boolean;
   isActive?: boolean;
+  portalAccessScope?: 'full' | 'trial_voucher';
 }
 
 export interface Student extends User {
@@ -101,6 +102,51 @@ export interface Booking {
   flightLog?: FlightLog;
   flight_logged?: boolean;
   flightTypeId?: string;
+  trialFlightVoucherId?: string;
+}
+
+export type TrialFlightVoucherAircraftMode = 'tecnam' | 'archer' | 'specific';
+export type TrialFlightVoucherStatus = 'draft' | 'issued' | 'redeemed' | 'booked' | 'expired' | 'cancelled';
+
+export interface TrialFlightVoucherProduct {
+  id: string;
+  name: string;
+  description: string;
+  aircraftMode: TrialFlightVoucherAircraftMode;
+  aircraftIds: string[];
+  instructorIds: string[];
+  durationMinutes: number;
+  price: number;
+  emailSubject: string;
+  emailBody: string;
+  bookingInstructions: string;
+  isActive: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface TrialFlightVoucher {
+  id: string;
+  productId: string;
+  productName?: string;
+  code: string;
+  purchaserName: string;
+  purchaserEmail: string;
+  purchaserPhone?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  sendToRecipient: boolean;
+  recipientDeliveryAt?: Date;
+  deliveredAt?: Date;
+  status: TrialFlightVoucherStatus;
+  expiresAt?: Date;
+  redeemedAt?: Date;
+  redeemedByUserId?: string;
+  bookedBookingId?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface FlightLog {

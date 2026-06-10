@@ -186,6 +186,7 @@ export const getAuthorizedMenuItems = (user: User | null) => {
     { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook', resource: 'own', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'billing', label: 'Billing', action: 'view-billing', resource: 'own' },
     { id: 'financial-dashboard', label: 'Financial Dashboard', action: 'view-billing', resource: 'all', roles: ['admin'] },
+    { id: 'gift-vouchers', label: 'Gift Vouchers', action: 'view-billing', resource: 'all', roles: ['admin'] },
     { id: 'reports', label: 'Reports', action: 'view-reports' },
     { id: 'safety', label: 'Safety', action: 'view-safety', resource: hasAnyRole(user, ['student', 'pilot']) ? 'own' : 'all' },
     { id: 'settings', label: 'Settings', action: 'view-settings', resource: hasRole(user, 'admin') ? 'all' : 'own' }

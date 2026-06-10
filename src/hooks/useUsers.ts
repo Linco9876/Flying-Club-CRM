@@ -80,6 +80,7 @@ export const useUsers = () => {
           avatar: u.avatar_url,
           coverPhoto: u.cover_url,
           isActive: u.is_active ?? true,
+          portalAccessScope: u.portal_access_scope || 'full',
           isSeniorInstructor: u.is_senior_instructor || false
         };
       });
@@ -124,6 +125,7 @@ export const useUsers = () => {
       if (updates.avatar !== undefined) updateData.avatar_url = updates.avatar;
       if (updates.coverPhoto !== undefined) updateData.cover_url = updates.coverPhoto;
       if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+      if (updates.portalAccessScope !== undefined) updateData.portal_access_scope = updates.portalAccessScope;
       if (updates.isSeniorInstructor !== undefined) updateData.is_senior_instructor = updates.isSeniorInstructor;
 
       const { data: updatedUsers, error: updateError } = await supabase

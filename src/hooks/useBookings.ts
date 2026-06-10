@@ -33,6 +33,7 @@ export const useBookings = (enabled = true) => {
     flightLog,
     flight_logged: row.flight_logged || false,
     flightTypeId: row.flight_type_id || undefined,
+    trialFlightVoucherId: row.trial_flight_voucher_id || undefined,
   });
 
   const validateTimingRules = (
