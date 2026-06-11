@@ -276,6 +276,18 @@ export const TrialFlightVouchersPage: React.FC = () => {
       toast.error('Voucher price cannot be negative');
       return;
     }
+    if (!productForm.emailSubject.trim()) {
+      toast.error('Voucher email subject is required');
+      return;
+    }
+    if (!productForm.emailBody.trim()) {
+      toast.error('Voucher email body is required');
+      return;
+    }
+    if (!productForm.bookingInstructions.trim()) {
+      toast.error('Booking instructions are required');
+      return;
+    }
     if (!isValidStripePriceId(productForm.stripePriceId)) {
       toast.error('Stripe Price ID must start with price_');
       return;
@@ -1379,6 +1391,15 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <textarea rows={3} value={productForm.description} onChange={e => setProductForm(f => ({ ...f, description: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
             </label>
             <label className="sm:col-span-2">
+              <span className="text-xs font-semibold uppercase text-gray-500">Voucher email subject</span>
+              <input
+                value={productForm.emailSubject}
+                onChange={e => setProductForm(f => ({ ...f, emailSubject: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
+                placeholder="Your Bendigo Flying Club trial flight voucher"
+              />
+            </label>
+            <label className="sm:col-span-2">
               <span className="text-xs font-semibold uppercase text-gray-500">Email body</span>
               <textarea rows={4} value={productForm.emailBody} onChange={e => setProductForm(f => ({ ...f, emailBody: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
             </label>
@@ -1386,6 +1407,29 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <span className="text-xs font-semibold uppercase text-gray-500">Booking instructions</span>
               <textarea rows={3} value={productForm.bookingInstructions} onChange={e => setProductForm(f => ({ ...f, bookingInstructions: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
             </label>
+            <div className="sm:col-span-2 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-400/25 dark:bg-blue-950/25 dark:text-blue-100">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-200">Email preview</p>
+                  <h3 className="mt-1 truncate text-base font-bold text-blue-950 dark:text-blue-50">
+                    {productForm.emailSubject || 'Your Bendigo Flying Club trial flight voucher'}
+                  </h3>
+                </div>
+                <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-bold text-blue-800 ring-1 ring-blue-100 dark:bg-[#111827] dark:text-blue-100 dark:ring-blue-400/20">
+                  {Number(productForm.durationMinutes || 0)} min flight + 30 min booking block
+                </span>
+              </div>
+              <div className="mt-3 rounded-xl bg-white p-3 leading-6 text-gray-700 ring-1 ring-blue-100 dark:bg-[#111827] dark:text-gray-200 dark:ring-blue-400/20">
+                <p className="font-semibold text-gray-950 dark:text-gray-100">{productForm.name || 'Trial instructional flight voucher'}</p>
+                <p className="mt-2">{productForm.emailBody || defaultEmailBody}</p>
+                <div className="mt-3 rounded-lg bg-gray-50 p-3 text-xs leading-5 text-gray-600 dark:bg-[#0b1120] dark:text-gray-300">
+                  The delivered email includes the voucher code, a secure booking link, the flight duration, the booking block, and these instructions:
+                  <span className="mt-1 block font-semibold text-gray-800 dark:text-gray-100">
+                    {productForm.bookingInstructions || 'Use the voucher code or link to choose an available flight time.'}
+                  </span>
+                </div>
+              </div>
+            </div>
             <label className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-200 sm:col-span-2">
               <input
                 type="checkbox"
