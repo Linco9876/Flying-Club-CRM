@@ -48,6 +48,8 @@ const overlaps = (aStart: Date | string, aEnd: Date | string, bStart: Date | str
   new Date(aStart) < new Date(bEnd) && new Date(aEnd) > new Date(bStart);
 const VOUCHER_TIME_ZONE = "Australia/Sydney";
 const VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS = 2;
+const VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS = 62;
+const VOUCHER_MAX_AVAILABLE_SLOTS = 1500;
 
 type LocalDateParts = { year: number; month: number; day: number };
 
@@ -677,7 +679,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
     endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
   });
   const now = new Date();
-  const horizon = addMinutes(now, 60 * 24 * 45);
+  const horizon = addMinutes(now, 60 * 24 * VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS);
   const activeBookings = (bookings || []).filter((booking: any) =>
     !booking.deleted_at &&
     ["confirmed", "pending_approval"].includes(booking.status) &&
@@ -690,7 +692,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
   const aircraftUseCount = new Map<string, number>();
 
   const today = localDatePartsForInstant(now);
-  for (let dayOffset = VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS; dayOffset < 45; dayOffset += 1) {
+  for (let dayOffset = VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS; dayOffset <= VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS; dayOffset += 1) {
     const day = addLocalDays(today, dayOffset);
     const dayOfWeek = new Date(Date.UTC(day.year, day.month - 1, day.day)).getUTCDay();
 
@@ -750,7 +752,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
             instructorName: userMap.get(instructorId) || "Instructor",
           });
 
-          if (slots.length >= 60) return slots;
+          if (slots.length >= VOUCHER_MAX_AVAILABLE_SLOTS) return slots;
         }
       }
     }
