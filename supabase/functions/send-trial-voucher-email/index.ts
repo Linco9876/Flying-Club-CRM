@@ -199,6 +199,13 @@ const resolveDelivery = (voucher: any) => {
   return { to, toName };
 };
 
+const isMissingEmailClaimColumn = (error: unknown) => {
+  const message = error && typeof error === "object" && "message" in error
+    ? String((error as { message?: unknown }).message || "")
+    : String(error || "");
+  return /email_delivery_claimed_at|schema cache|column/i.test(message);
+};
+
 const claimVoucherEmailDelivery = async (
   adminClient: ReturnType<typeof createClient>,
   voucherId: string,
@@ -216,7 +223,13 @@ const claimVoucherEmailDelivery = async (
     .select("id")
     .maybeSingle();
 
-  if (error) throw error;
+  if (error) {
+    if (isMissingEmailClaimColumn(error)) {
+      console.warn("email_delivery_claimed_at is not available yet; sending voucher email without delivery claim.");
+      return true;
+    }
+    throw error;
+  }
   return Boolean(data?.id);
 };
 
@@ -224,7 +237,7 @@ const releaseVoucherEmailDeliveryClaim = async (
   adminClient: ReturnType<typeof createClient>,
   voucherId: string,
 ) => {
-  await adminClient
+  const { error } = await adminClient
     .from("trial_flight_vouchers")
     .update({
       email_delivery_claimed_at: null,
@@ -232,6 +245,10 @@ const releaseVoucherEmailDeliveryClaim = async (
     })
     .eq("id", voucherId)
     .is("delivered_at", null);
+
+  if (error && !isMissingEmailClaimColumn(error)) {
+    throw error;
+  }
 };
 
 type StaffAuthResult =
@@ -352,14 +369,29 @@ const sendVoucherEmail = async ({
     return { sent: false, error: result.error || "Email could not be sent" };
   }
 
-  await adminClient
+  const deliveredAt = new Date().toISOString();
+  const { error: deliveredError } = await adminClient
     .from("trial_flight_vouchers")
     .update({
-      delivered_at: new Date().toISOString(),
+      delivered_at: deliveredAt,
       email_delivery_claimed_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", voucher.id);
+
+  if (deliveredError) {
+    if (!isMissingEmailClaimColumn(deliveredError)) throw deliveredError;
+
+    const { error: fallbackDeliveredError } = await adminClient
+      .from("trial_flight_vouchers")
+      .update({
+        delivered_at: deliveredAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", voucher.id);
+
+    if (fallbackDeliveredError) throw fallbackDeliveredError;
+  }
 
   return { sent: true, to, redeemUrl };
 };
@@ -385,18 +417,33 @@ Deno.serve(async (req: Request) => {
         if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
       }
 
-      const staleClaimCutoff = new Date(Date.now() - 15 * 60_000).toISOString();
-      const { data: vouchers, error: voucherError } = await adminClient
-        .from("trial_flight_vouchers")
-        .select("*, trial_flight_voucher_products(*)")
-        .eq("send_to_recipient", true)
-        .is("delivered_at", null)
-        .or(`email_delivery_claimed_at.is.null,email_delivery_claimed_at.lt.${staleClaimCutoff}`)
-        .in("status", ["issued", "redeemed", "booked"])
-        .not("recipient_delivery_at", "is", null)
-        .lte("recipient_delivery_at", new Date().toISOString())
-        .order("recipient_delivery_at", { ascending: true })
-        .limit(25);
+      const loadDueVouchers = async (includeClaimFilter: boolean) => {
+        let query = adminClient
+          .from("trial_flight_vouchers")
+          .select("*, trial_flight_voucher_products(*)")
+          .eq("send_to_recipient", true)
+          .is("delivered_at", null)
+          .in("status", ["issued", "redeemed", "booked"])
+          .not("recipient_delivery_at", "is", null)
+          .lte("recipient_delivery_at", new Date().toISOString())
+          .order("recipient_delivery_at", { ascending: true })
+          .limit(25);
+
+        if (includeClaimFilter) {
+          const staleClaimCutoff = new Date(Date.now() - 15 * 60_000).toISOString();
+          query = query.or(`email_delivery_claimed_at.is.null,email_delivery_claimed_at.lt.${staleClaimCutoff}`);
+        }
+
+        return await query;
+      };
+
+      let { data: vouchers, error: voucherError } = await loadDueVouchers(true);
+      if (voucherError && isMissingEmailClaimColumn(voucherError)) {
+        console.warn("email_delivery_claimed_at is not available yet; loading due voucher emails without claim filter.");
+        const fallback = await loadDueVouchers(false);
+        vouchers = fallback.data;
+        voucherError = fallback.error;
+      }
 
       if (voucherError) return json({ error: voucherError.message }, 500);
 
