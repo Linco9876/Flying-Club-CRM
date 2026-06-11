@@ -7,6 +7,9 @@ verify_jwt = false
 [functions.trial-voucher-public]
 verify_jwt = false
 
+[functions.trial-voucher-admin]
+verify_jwt = false
+
 [functions.send-trial-voucher-email]
 verify_jwt = false
 

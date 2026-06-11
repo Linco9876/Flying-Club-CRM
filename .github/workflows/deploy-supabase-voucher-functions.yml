@@ -7,6 +7,7 @@ on:
     paths:
       - "supabase/config.toml"
       - "supabase/functions/trial-voucher-public/**"
+      - "supabase/functions/trial-voucher-admin/**"
       - "supabase/functions/create-trial-voucher-checkout/**"
       - "supabase/functions/send-trial-voucher-email/**"
       - "supabase/functions/trial-voucher-stripe-webhook/**"
@@ -52,6 +53,7 @@ jobs:
 
           npx --yes supabase@latest functions deploy \
             trial-voucher-public \
+            trial-voucher-admin \
             create-trial-voucher-checkout \
             send-trial-voucher-email \
             trial-voucher-stripe-webhook \
