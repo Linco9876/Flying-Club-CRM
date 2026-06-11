@@ -96,6 +96,9 @@ const isMissingColumnError = (error: unknown) => {
   return /column .* does not exist|could not find .* column|schema cache/i.test(message);
 };
 
+const isUniqueViolation = (error: unknown) =>
+  Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === '23505');
+
 const extractFunctionErrorMessage = async (error: unknown, fallback: string) => {
   const defaultMessage =
     error && typeof error === 'object' && 'message' in error
@@ -273,7 +276,6 @@ export const useTrialFlightVouchers = () => {
     };
     const basePayload = {
       product_id: voucher.productId,
-      code: generateVoucherCode(),
       purchaser_name: voucher.purchaserName,
       purchaser_email: voucher.purchaserEmail,
       purchaser_phone: voucher.purchaserPhone || null,
@@ -287,20 +289,33 @@ export const useTrialFlightVouchers = () => {
       status: issueStatus,
     };
 
-    let { data: createdVoucher, error } = await supabase
-      .from('trial_flight_vouchers')
-      .insert({ ...basePayload, ...paymentFields })
-      .select('id, code')
-      .single();
+    let createdVoucher: { id: string; code: string } | null = null;
+    let error: unknown = null;
 
-    if (error && isMissingColumnError(error)) {
-      const legacyResult = await supabase
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const nextCode = generateVoucherCode();
+      const payloadWithCode = { ...basePayload, code: nextCode };
+      const result = await supabase
         .from('trial_flight_vouchers')
-        .insert(basePayload)
+        .insert({ ...payloadWithCode, ...paymentFields })
         .select('id, code')
         .single();
-      createdVoucher = legacyResult.data;
-      error = legacyResult.error;
+
+      createdVoucher = result.data;
+      error = result.error;
+
+      if (error && isMissingColumnError(error)) {
+        const legacyResult = await supabase
+          .from('trial_flight_vouchers')
+          .insert(payloadWithCode)
+          .select('id, code')
+          .single();
+        createdVoucher = legacyResult.data;
+        error = legacyResult.error;
+      }
+
+      if (!error) break;
+      if (!isUniqueViolation(error)) break;
     }
 
     if (error) throw error;

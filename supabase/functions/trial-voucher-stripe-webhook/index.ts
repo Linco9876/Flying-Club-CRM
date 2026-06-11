@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+type SupabaseAdminClient = any;
+
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -94,7 +96,7 @@ const stripePaymentFields = (session: any) => {
   };
 };
 
-const getVoucherForSession = async (adminClient: ReturnType<typeof createClient>, session: any) => {
+const getVoucherForSession = async (adminClient: SupabaseAdminClient, session: any) => {
   const metadataVoucherId = asString(session.metadata?.voucher_id || session.client_reference_id);
   if (metadataVoucherId) {
     const { data, error } = await adminClient
@@ -124,7 +126,7 @@ const recordStripeEvent = async ({
   voucherId,
   sessionId,
 }: {
-  adminClient: ReturnType<typeof createClient>;
+  adminClient: SupabaseAdminClient;
   event: any;
   voucherId?: string | null;
   sessionId?: string | null;
@@ -154,7 +156,7 @@ const recordStripeEvent = async ({
 };
 
 const markEventProcessed = async (
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: SupabaseAdminClient,
   eventId: string,
   processingError?: string,
 ) => {

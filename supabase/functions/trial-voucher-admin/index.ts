@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+type SupabaseAdminClient = any;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -28,7 +30,7 @@ const authenticateStaff = async ({
   req: Request;
   supabaseUrl: string;
   anonKey: string;
-  adminClient: ReturnType<typeof createClient>;
+  adminClient: SupabaseAdminClient;
 }): Promise<StaffAuthResult> => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { ok: false, error: "No authorization header", status: 401 };
@@ -47,7 +49,7 @@ const authenticateStaff = async ({
   if (profileError) return { ok: false, error: profileError.message, status: 500 };
 
   const callerIsStaff = isStaffRole(String(callerProfile?.role || "")) ||
-    (callerRoles || []).some((row) => isStaffRole(String(row.role)));
+    (callerRoles || []).some((row: any) => isStaffRole(String(row.role)));
   if (!callerIsStaff) return { ok: false, error: "Only staff can manage trial vouchers", status: 403 };
 
   return { ok: true, userId: callerUser.id };

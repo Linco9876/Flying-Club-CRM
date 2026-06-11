@@ -26,6 +26,7 @@ interface CheckoutStatus {
   sendToRecipient?: boolean;
   recipientDeliveryAt?: string | null;
   deliveredAt?: string | null;
+  warning?: string;
 }
 
 const aircraftLabel = (mode: TrialFlightVoucherAircraftMode) =>
@@ -149,6 +150,9 @@ export const TrialVoucherSalesPage: React.FC = () => {
       if (checkoutStatus?.paymentStatus === 'paid') {
         if (checkoutStatus.deliveredAt) {
           return `Payment received. Your ${checkoutStatus.productName} email has been sent to ${checkoutStatus.emailTo || 'the nominated email address'}.`;
+        }
+        if (checkoutStatus.warning) {
+          return `Payment received for ${checkoutStatus.productName}, but the voucher email needs attention: ${checkoutStatus.warning}. Please contact Bendigo Flying Club if it does not arrive shortly.`;
         }
         if (checkoutStatus.sendToRecipient && checkoutStatus.recipientDeliveryAt) {
           return `Payment received. Your ${checkoutStatus.productName} email is scheduled for ${new Date(checkoutStatus.recipientDeliveryAt).toLocaleString()}.`;
@@ -285,6 +289,15 @@ export const TrialVoucherSalesPage: React.FC = () => {
 
   const startCheckout = async () => {
     if (!selectedProduct) return;
+    if (!selectedProduct.bookingAvailable) {
+      toast.error(selectedProduct.bookingSetupMessage || 'This voucher is temporarily unavailable for booking.');
+      return;
+    }
+    if (!selectedProduct.checkoutAvailable) {
+      toast('Online card payment is not enabled for this voucher yet. Use the manual request option and the club can issue it for you.');
+      setPurchaseMode('manual');
+      return;
+    }
     if (!validatePurchaseForm()) return;
 
     setCheckoutLoading(true);

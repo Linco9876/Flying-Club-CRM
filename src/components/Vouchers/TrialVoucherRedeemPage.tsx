@@ -104,16 +104,16 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (code || !user) return;
+    if (code || !isVoucherAccountUser) return;
     void loadLinkedVoucher();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, user]);
+  }, [code, isVoucherAccountUser]);
 
   useEffect(() => {
-    if (!user || !code || bookedSlot) return;
+    if (!isVoucherAccountUser || !code || bookedSlot) return;
     void loadLinkedVoucher();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [isVoucherAccountUser, code, bookedSlot]);
 
   const redeemVoucher = async () => {
     if (!voucher) return;

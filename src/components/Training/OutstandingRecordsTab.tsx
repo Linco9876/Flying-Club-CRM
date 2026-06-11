@@ -1038,31 +1038,34 @@ export const OutstandingRecordsTab: React.FC = () => {
   }
 
   const queueButtons = [
-    { id: 'mine' as const, label: 'Assigned to Me', icon: AlertCircle },
-    ...(isAdmin ? [{ id: 'others' as const, label: 'Other Instructors', icon: BookOpen }] : []),
-    { id: 'dismissed' as const, label: 'No Record Needed', icon: Undo2 },
+    { id: 'mine' as const, label: 'Assigned to me', icon: AlertCircle },
+    ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
+    { id: 'dismissed' as const, label: 'No record needed', icon: Undo2 },
   ];
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
       <header className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 text-white shadow-sm dark:border-blue-400/20">
-        <div className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
-              <ClipboardList className="h-5 w-5" />
+        <div className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5">
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
+                <ClipboardList className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training queue</p>
+                <h2 className="mt-0.5 text-2xl font-bold tracking-tight">Outstanding Records</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/80">
+                  Start an in-flight draft or switch between your records, other instructor records, and flights marked as no record needed.
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records</p>
-              <h2 className="mt-0.5 text-2xl font-bold tracking-tight">Outstanding Records</h2>
-            </div>
-          </div>
 
-          <div className="grid min-w-0 gap-2 rounded-2xl bg-white/8 p-1.5 ring-1 ring-white/10 sm:grid-cols-2 xl:grid-cols-4 xl:min-w-[40rem]">
             <button
               type="button"
               onClick={() => setShowDraftComposer(value => !value)}
               aria-pressed={showDraftComposer}
-              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+              className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
                 showDraftComposer
                   ? 'bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
                   : 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-400'
@@ -1071,6 +1074,11 @@ export const OutstandingRecordsTab: React.FC = () => {
               <Save className="h-4 w-4 shrink-0" />
               <span className="truncate">Make Draft</span>
             </button>
+          </div>
+
+          <div className={`grid min-w-0 gap-2 rounded-2xl bg-white/8 p-1.5 ring-1 ring-white/10 sm:grid-cols-2 ${
+            isAdmin ? 'xl:grid-cols-3' : 'xl:grid-cols-2'
+          }`}>
             {queueButtons.map(item => {
               const Icon = item.icon;
               return (

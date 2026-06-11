@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,11 +21,11 @@ const generateVoucherCode = () => {
   return `BFC-${randomPart()}-${randomPart()}-${randomPart()}`;
 };
 
+const isUniqueViolation = (error: any) => error?.code === "23505";
+
 const cleanEmail = (value: unknown) => String(value || "").trim().toLowerCase();
 const cleanText = (value: unknown) => String(value || "").trim();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-const dateKey = (date: Date) => date.toISOString().slice(0, 10);
-const normaliseEndorsementType = (value: unknown) => String(value || "").trim().toLowerCase();
 const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
 const isDevelopmentOrigin = (origin: string) =>
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
@@ -42,61 +43,6 @@ const safeReturnUrl = (value: unknown, fallbackPath: string) => {
   } catch {
     return fallback;
   }
-};
-
-const aircraftMatchesProduct = (aircraft: any, product: any) => {
-  const attachedIds = new Set<string>(product.aircraft_ids || []);
-  if (attachedIds.size > 0) return attachedIds.has(aircraft.id);
-
-  const label = `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.toLowerCase();
-  const compactLabel = label.replace(/[^a-z0-9]/g, "");
-  if (product.aircraft_mode === "specific") return false;
-  if (product.aircraft_mode === "tecnam") return label.includes("tecnam");
-  if (product.aircraft_mode === "archer") {
-    return label.includes("archer") || compactLabel.includes("pa28") || compactLabel.includes("piperpa28");
-  }
-  return false;
-};
-
-const instructorHasAircraftEndorsement = (
-  instructorId: string,
-  aircraft: any,
-  endorsementsByInstructor: Map<string, any[]>,
-) => {
-  const requiredType = normaliseEndorsementType(aircraft.required_endorsement_type);
-  if (!requiredType) return true;
-
-  const today = dateKey(new Date());
-  return (endorsementsByInstructor.get(instructorId) || []).some((endorsement: any) =>
-    endorsement.is_active !== false &&
-    normaliseEndorsementType(endorsement.type) === requiredType &&
-    (!endorsement.expiry_date || String(endorsement.expiry_date) >= today)
-  );
-};
-
-const productBookingSetup = (product: any, aircraftRows: any[] = [], endorsementRows: any[] = []) => {
-  const serviceableAircraft = aircraftRows
-    .filter((aircraft: any) => aircraft.status === "serviceable")
-    .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
-  const instructorIds = product.instructor_ids || [];
-  const endorsementsByInstructor = new Map<string, any[]>();
-  endorsementRows.forEach((endorsement: any) => {
-    const instructorEndorsements = endorsementsByInstructor.get(endorsement.student_id) || [];
-    instructorEndorsements.push(endorsement);
-    endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
-  });
-  const qualifiedInstructorIds = instructorIds.filter((instructorId: string) =>
-    serviceableAircraft.some((aircraft: any) =>
-      instructorHasAircraftEndorsement(instructorId, aircraft, endorsementsByInstructor)
-    )
-  );
-
-  return {
-    bookingAvailable: serviceableAircraft.length > 0 && qualifiedInstructorIds.length > 0,
-    serviceableAircraftCount: serviceableAircraft.length,
-    instructorCount: instructorIds.length,
-    qualifiedInstructorCount: qualifiedInstructorIds.length,
-  };
 };
 
 Deno.serve(async (req: Request) => {
@@ -174,10 +120,10 @@ Deno.serve(async (req: Request) => {
 
     if (endorsementError) return json({ error: endorsementError.message }, 500);
 
-    const setup = productBookingSetup(product, aircraftRows || [], endorsementRows || []);
+    const setup = trialVoucherProductBookingSetup(product, aircraftRows || [], endorsementRows || []);
     if (!setup.bookingAvailable) {
       return json({
-        error: "Online checkout is temporarily unavailable because this voucher does not currently have both a serviceable eligible aircraft and a qualified eligible instructor configured.",
+        error: `Online checkout is temporarily unavailable: ${setup.issue || "this voucher does not currently have both a serviceable eligible aircraft and a qualified eligible instructor configured"}.`,
       }, 409);
     }
     if (!product.stripe_price_id) {
@@ -187,26 +133,35 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Online checkout is not enabled until this voucher has a valid price." }, 409);
     }
 
-    const { data: voucher, error: voucherError } = await adminClient
-      .from("trial_flight_vouchers")
-      .insert({
-        product_id: product.id,
-        code: generateVoucherCode(),
-        purchaser_name: purchaserName,
-        purchaser_email: purchaserEmail,
-        purchaser_phone: purchaserPhone || null,
-        recipient_name: recipientName || null,
-        recipient_email: recipientEmail || null,
-        send_to_recipient: sendToRecipient,
-        recipient_delivery_at: recipientDeliveryAtIso,
-        status: "draft",
-        payment_status: "pending",
-        payment_amount: Number(product.price || 0),
-        payment_currency: "AUD",
-        notes: "Created from public Stripe checkout",
-      })
-      .select("id,code")
-      .single();
+    let voucher: any = null;
+    let voucherError: any = null;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const result = await adminClient
+        .from("trial_flight_vouchers")
+        .insert({
+          product_id: product.id,
+          code: generateVoucherCode(),
+          purchaser_name: purchaserName,
+          purchaser_email: purchaserEmail,
+          purchaser_phone: purchaserPhone || null,
+          recipient_name: recipientName || null,
+          recipient_email: recipientEmail || null,
+          send_to_recipient: sendToRecipient,
+          recipient_delivery_at: recipientDeliveryAtIso,
+          status: "draft",
+          payment_status: "pending",
+          payment_amount: Number(product.price || 0),
+          payment_currency: "AUD",
+          notes: "Created from public Stripe checkout",
+        })
+        .select("id,code")
+        .single();
+
+      voucher = result.data;
+      voucherError = result.error;
+      if (!voucherError || !isUniqueViolation(voucherError)) break;
+    }
 
     if (voucherError || !voucher) {
       return json({ error: voucherError?.message || "Could not create voucher checkout record" }, 500);

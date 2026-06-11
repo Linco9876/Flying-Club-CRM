@@ -1,5 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  aircraftMatchesTrialVoucherProduct,
+  instructorHasTrialVoucherAircraftEndorsement,
+  trialVoucherProductBookingSetup,
+} from "../_shared/trialVoucherReadiness.ts";
+
+type SupabaseAdminClient = any;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -252,70 +259,7 @@ const getAuthenticatedUser = async (req: Request, supabaseUrl: string) => {
   return { user, error: null };
 };
 
-const aircraftMatchesProduct = (aircraft: any, product: any) => {
-  const attachedIds = new Set<string>(product.aircraft_ids || []);
-  if (attachedIds.size > 0) return attachedIds.has(aircraft.id);
-
-  const label = `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.toLowerCase();
-  const compactLabel = label.replace(/[^a-z0-9]/g, "");
-  if (product.aircraft_mode === "specific") return false;
-  if (product.aircraft_mode === "tecnam") return label.includes("tecnam");
-  if (product.aircraft_mode === "archer") {
-    return label.includes("archer") || compactLabel.includes("pa28") || compactLabel.includes("piperpa28");
-  }
-  return false;
-};
-
-const normaliseEndorsementType = (value: unknown) => String(value || "").trim().toLowerCase();
-
-const instructorHasAircraftEndorsement = (
-  instructorId: string,
-  aircraft: any,
-  endorsementsByInstructor: Map<string, any[]>,
-) => {
-  const requiredType = normaliseEndorsementType(aircraft.required_endorsement_type);
-  if (!requiredType) return true;
-
-  const today = dateKey(new Date());
-  return (endorsementsByInstructor.get(instructorId) || []).some((endorsement: any) =>
-    endorsement.is_active !== false &&
-    normaliseEndorsementType(endorsement.type) === requiredType &&
-    (!endorsement.expiry_date || String(endorsement.expiry_date) >= today)
-  );
-};
-
-const productBookingSetup = (product: any, aircraftRows: any[] = [], endorsementRows: any[] = []) => {
-  const serviceableAircraft = aircraftRows
-    .filter((aircraft: any) => aircraft.status === "serviceable")
-    .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
-  const instructorIds = product.instructor_ids || [];
-  const endorsementsByInstructor = new Map<string, any[]>();
-  endorsementRows.forEach((endorsement: any) => {
-    const instructorEndorsements = endorsementsByInstructor.get(endorsement.student_id) || [];
-    instructorEndorsements.push(endorsement);
-    endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
-  });
-  const qualifiedInstructorIds = instructorIds.filter((instructorId: string) =>
-    serviceableAircraft.some((aircraft: any) =>
-      instructorHasAircraftEndorsement(instructorId, aircraft, endorsementsByInstructor)
-    )
-  );
-  const issues = [
-    ...(serviceableAircraft.length === 0 ? ["No eligible aircraft are currently serviceable"] : []),
-    ...(instructorIds.length === 0 ? ["No eligible instructors are configured"] : []),
-    ...(instructorIds.length > 0 && qualifiedInstructorIds.length === 0 ? ["No selected instructor currently holds the required aircraft endorsement"] : []),
-  ];
-
-  return {
-    bookingAvailable: issues.length === 0,
-    serviceableAircraftCount: serviceableAircraft.length,
-    instructorCount: instructorIds.length,
-    qualifiedInstructorCount: qualifiedInstructorIds.length,
-    issue: issues.join(". "),
-  };
-};
-
-const getProductBookingSetup = async (adminClient: ReturnType<typeof createClient>, product: any) => {
+const getProductBookingSetup = async (adminClient: SupabaseAdminClient, product: any) => {
   const instructorIds = product.instructor_ids || [];
   const [{ data: aircraftRows, error: aircraftError }, { data: endorsementRows, error: endorsementError }] = await Promise.all([
     adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
@@ -329,7 +273,7 @@ const getProductBookingSetup = async (adminClient: ReturnType<typeof createClien
 
   if (aircraftError) throw aircraftError;
   if (endorsementError) throw endorsementError;
-  return productBookingSetup(product, aircraftRows || [], endorsementRows || []);
+  return trialVoucherProductBookingSetup(product, aircraftRows || [], endorsementRows || []);
 };
 
 const timeForDate = (date: Date, time: string, fallbackHour: number, fallbackMinute = 0) => {
@@ -400,7 +344,7 @@ const toPublicVoucher = (voucher: any, product: any) => ({
 });
 
 const toPublicProduct = (product: any, aircraftRows: any[] = [], endorsementRows: any[] = []) => {
-  const setup = productBookingSetup(product, aircraftRows, endorsementRows);
+  const setup = trialVoucherProductBookingSetup(product, aircraftRows, endorsementRows);
   return {
     id: product.id,
     name: product.name,
@@ -477,7 +421,7 @@ const reconcileCheckoutSession = async ({
   voucher,
   sessionId,
 }: {
-  adminClient: ReturnType<typeof createClient>;
+  adminClient: SupabaseAdminClient;
   supabaseUrl: string;
   voucher: any;
   sessionId: string;
@@ -544,7 +488,7 @@ const reconcileCheckoutSession = async ({
   return { reconciled: true, email };
 };
 
-const getBookingSummary = async (adminClient: ReturnType<typeof createClient>, bookingId?: string | null) => {
+const getBookingSummary = async (adminClient: SupabaseAdminClient, bookingId?: string | null) => {
   if (!bookingId) return null;
 
   const { data: booking, error: bookingError } = await adminClient
@@ -578,7 +522,7 @@ const getBookingSummary = async (adminClient: ReturnType<typeof createClient>, b
   };
 };
 
-const assertVoucherAccount = async (adminClient: ReturnType<typeof createClient>, userId: string) => {
+const assertVoucherAccount = async (adminClient: SupabaseAdminClient, userId: string) => {
   const { data: linkedUser, error } = await adminClient
     .from("users")
     .select("id,email,name,portal_access_scope,is_active")
@@ -596,7 +540,7 @@ const assertVoucherAccount = async (adminClient: ReturnType<typeof createClient>
   return { ok: true, user: linkedUser };
 };
 
-const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>, product: any) => {
+const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: any) => {
   const blockMinutes = Number(product.duration_minutes || 0) + 30;
   const allowedInstructorIds = new Set<string>(product.instructor_ids || []);
   if (!blockMinutes || allowedInstructorIds.size === 0) return [];
@@ -632,7 +576,7 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
 
   const eligibleAircraft = (aircraftRows || [])
     .filter((aircraft: any) => aircraft.status === "serviceable")
-    .filter((aircraft: any) => aircraftMatchesProduct(aircraft, product));
+    .filter((aircraft: any) => aircraftMatchesTrialVoucherProduct(aircraft, product));
   const userMap = new Map((users || []).map((user: any) => [user.id, user.name]));
   const endorsementsByInstructor = new Map<string, any[]>();
   (endorsements || []).forEach((endorsement: any) => {
@@ -676,7 +620,7 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
           }
 
           const aircraft = eligibleAircraft.find((candidate: any) =>
-            instructorHasAircraftEndorsement(instructorId, candidate, endorsementsByInstructor) &&
+            instructorHasTrialVoucherAircraftEndorsement(instructorId, candidate, endorsementsByInstructor) &&
             !activeBookings.some((booking: any) =>
               overlaps(start, end, booking.start_time, booking.end_time) &&
               (booking.aircraft_id === candidate.id || booking.instructor_id === instructorId)
@@ -1165,11 +1109,18 @@ Deno.serve(async (req: Request) => {
     if (redeemError) return json({ error: redeemError.message }, 500);
 
     const redirectTo = safeVoucherRedirectTo(body.redirectTo, voucher.code);
-    const { data: linkData } = await adminClient.auth.admin.generateLink({
+    const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
       type: "recovery",
       email,
       options: { redirectTo },
     });
+
+    if (linkError) {
+      return json({
+        error: `Voucher linked, but the setup link could not be generated: ${linkError.message}. Use the admin resend setup link action or contact Bendigo Flying Club for help.`,
+      }, 500);
+    }
+
     const setupLink = linkData?.properties?.action_link || null;
     const setupEmail = setupLink
       ? await sendVoucherAccountSetupEmail({

@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+type SupabaseAdminClient = any;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -207,7 +209,7 @@ const isMissingEmailClaimColumn = (error: unknown) => {
 };
 
 const claimVoucherEmailDelivery = async (
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: SupabaseAdminClient,
   voucherId: string,
 ) => {
   const staleClaimCutoff = new Date(Date.now() - 15 * 60_000).toISOString();
@@ -234,7 +236,7 @@ const claimVoucherEmailDelivery = async (
 };
 
 const releaseVoucherEmailDeliveryClaim = async (
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: SupabaseAdminClient,
   voucherId: string,
 ) => {
   const { error } = await adminClient
@@ -268,7 +270,7 @@ const sha256Hex = async (value: string) => {
     .join("");
 };
 
-const getStoredCronSecretHash = async (adminClient: ReturnType<typeof createClient>) => {
+const getStoredCronSecretHash = async (adminClient: SupabaseAdminClient) => {
   const { data, error } = await adminClient
     .from("trial_voucher_cron_auth")
     .select("secret_hash")
@@ -283,7 +285,7 @@ const getStoredCronSecretHash = async (adminClient: ReturnType<typeof createClie
   return typeof data?.secret_hash === "string" ? data.secret_hash : null;
 };
 
-const hasValidCronSecret = async (req: Request, body: any, adminClient: ReturnType<typeof createClient>) => {
+const hasValidCronSecret = async (req: Request, body: any, adminClient: SupabaseAdminClient) => {
   const suppliedSecret = req.headers.get("x-cron-secret") || String(body.cronSecret || "");
   if (!suppliedSecret) return false;
 
@@ -305,7 +307,7 @@ const authenticateStaff = async ({
   req: Request;
   supabaseUrl: string;
   anonKey: string;
-  adminClient: ReturnType<typeof createClient>;
+  adminClient: SupabaseAdminClient;
 }): Promise<StaffAuthResult> => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { ok: false, error: "No authorization header", status: 401 };
@@ -324,7 +326,7 @@ const authenticateStaff = async ({
   if (profileError) return { ok: false, error: profileError.message, status: 500 };
 
   const callerIsStaff = isStaffRole(String(callerProfile?.role || "")) ||
-    (callerRoles || []).some((row) => isStaffRole(String(row.role)));
+    (callerRoles || []).some((row: any) => isStaffRole(String(row.role)));
   if (!callerIsStaff) return { ok: false, error: "Only staff can send voucher emails", status: 403 };
 
   return { ok: true, userId: callerUser.id };
@@ -335,7 +337,7 @@ const sendVoucherEmail = async ({
   voucher,
   redirectOrigin,
 }: {
-  adminClient: ReturnType<typeof createClient>;
+  adminClient: SupabaseAdminClient;
   voucher: any;
   redirectOrigin?: string;
 }) => {

@@ -239,6 +239,14 @@ export const TrialFlightVouchersPage: React.FC = () => {
   };
 
   const handleToggleProductActive = async (product: TrialFlightVoucherProduct) => {
+    if (!product.isActive) {
+      const readiness = bookingReadiness(product);
+      if (!readiness.ready) {
+        toast.error(`This voucher is not bookable yet: ${readiness.issues[0] || 'complete the aircraft and instructor setup first.'}`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       await saveProduct({ ...product, isActive: !product.isActive }, product.id);
@@ -271,6 +279,17 @@ export const TrialFlightVouchersPage: React.FC = () => {
     if (productForm.aircraftMode === 'archer' && productForm.aircraftIds.length === 0 && aircraftByMode.archers.length === 0) {
       toast.error('No PA-28 Archer aircraft were found in the fleet. Select the Archer aircraft or update the aircraft details first.');
       return;
+    }
+    if (productForm.isActive) {
+      const qualifiedInstructorSelected = productForm.instructorIds.some(instructorId =>
+        productFormAircraft.serviceableAircraft.some(aircraftItem =>
+          instructorHasAircraftEndorsement(instructorId, aircraftItem.id)
+        )
+      );
+      if (!qualifiedInstructorSelected) {
+        toast.error('Select at least one instructor who can fly at least one serviceable eligible aircraft before activating this voucher.');
+        return;
+      }
     }
     if (Number(productForm.price || 0) < 0) {
       toast.error('Voucher price cannot be negative');
@@ -400,6 +419,27 @@ export const TrialFlightVouchersPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to send voucher email:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to send voucher email');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResendSetupLink = async (voucher: TrialFlightVoucher) => {
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+        body: {
+          action: 'resend-setup',
+          code: voucher.code,
+          redirectTo: getRedeemUrl(voucher.code),
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(data?.setupEmailSent ? 'Voucher account setup link resent' : 'Setup link generated');
+    } catch (error) {
+      console.error('Failed to resend voucher setup link:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to resend setup link');
     } finally {
       setSaving(false);
     }
@@ -1858,6 +1898,17 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           {voucher.redeemedAt && (
                             <p className="mt-1 text-emerald-700 dark:text-emerald-200">Redeemed {voucher.redeemedAt.toLocaleString()}</p>
                           )}
+                          {voucher.status === 'redeemed' && (
+                            <button
+                              type="button"
+                              onClick={() => handleResendSetupLink(voucher)}
+                              disabled={saving}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-400/30 dark:bg-[#111827] dark:text-emerald-200 dark:hover:bg-emerald-950/40"
+                            >
+                              <Mail className="h-3.5 w-3.5" />
+                              Resend setup link
+                            </button>
+                          )}
                         </div>
                       )}
                       {voucher.bookedBooking && (
@@ -1914,6 +1965,22 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     </div>
                     <div className="mt-3 flex flex-col gap-2 border-t border-gray-200 pt-3 dark:border-[#2c2f36]">
                       <p className="break-all text-xs leading-5 text-gray-600 dark:text-gray-300">{redeemUrl}</p>
+                      {voucher.stripeCheckoutSessionId && (
+                        <div className="flex flex-col gap-2 rounded-lg border border-purple-100 bg-purple-50 px-3 py-2 text-xs leading-5 text-purple-900 dark:border-purple-400/25 dark:bg-purple-950/25 dark:text-purple-100 sm:flex-row sm:items-center sm:justify-between">
+                          <span className="min-w-0">
+                            <span className="font-bold uppercase tracking-wide">Stripe checkout</span>
+                            <span className="ml-2 break-all font-mono">{voucher.stripeCheckoutSessionId}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(voucher.stripeCheckoutSessionId || '', 'Stripe checkout session ID')}
+                            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-purple-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-purple-700 transition hover:bg-purple-100 dark:border-purple-400/30 dark:bg-[#171a21] dark:text-purple-200 dark:hover:bg-purple-950/40"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            Copy session
+                          </button>
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"

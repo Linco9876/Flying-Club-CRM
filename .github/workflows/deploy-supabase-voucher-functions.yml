@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "supabase/config.toml"
+      - "supabase/functions/_shared/**"
       - "supabase/functions/trial-voucher-public/**"
       - "supabase/functions/trial-voucher-admin/**"
       - "supabase/functions/create-trial-voucher-checkout/**"
@@ -44,6 +45,22 @@ jobs:
             echo "Create one in Supabase Account > Access Tokens, then add it to GitHub repository secrets." >&2
             exit 1
           fi
+
+      - name: Type-check voucher Edge Functions
+        run: |
+          set -euo pipefail
+
+          npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-public/index.ts
+          npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-admin/index.ts
+          npx --yes deno check --node-modules-dir=false supabase/functions/create-trial-voucher-checkout/index.ts
+          npx --yes deno check --node-modules-dir=false supabase/functions/send-trial-voucher-email/index.ts
+          npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-stripe-webhook/index.ts
+
+      - name: Test voucher readiness rules
+        run: |
+          set -euo pipefail
+
+          npx --yes deno test --node-modules-dir=false supabase/functions/_shared/trialVoucherReadiness.test.ts
 
       - name: Deploy voucher Edge Functions
         env:

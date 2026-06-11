@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:vouchers": "node scripts/check-voucher-readiness.mjs",
+    "smoke:vouchers": "node scripts/smoke-voucher-live.mjs",
+    "test:vouchers": "npx --yes deno test --node-modules-dir=false supabase/functions/_shared/trialVoucherReadiness.test.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },
