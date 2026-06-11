@@ -49,6 +49,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
   const [setupResendEmail, setSetupResendEmail] = useState('');
   const [selectedSlotDate, setSelectedSlotDate] = useState('all');
+  const [availabilityAutoLoadedForCode, setAvailabilityAutoLoadedForCode] = useState('');
   const isVoucherAccountUser = Boolean(user?.portalAccessScope === 'trial_voucher');
   const isFullPortalUserOnVoucherPage = Boolean(user && !isVoucherAccountUser);
 
@@ -340,6 +341,13 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   );
 
   const canChooseTime = Boolean(isVoucherAccountUser && voucher?.status === 'redeemed' && !bookedSlot);
+
+  useEffect(() => {
+    if (!canChooseTime || !code || slots.length > 0 || availabilityAutoLoadedForCode === code) return;
+    setAvailabilityAutoLoadedForCode(code);
+    void loadAvailability(code);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availabilityAutoLoadedForCode, canChooseTime, code, slots.length]);
 
   const copySetupLink = async () => {
     if (!redeemed?.setupLink) return;
