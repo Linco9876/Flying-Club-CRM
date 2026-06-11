@@ -222,6 +222,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     });
     return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
   };
+  const flightDurationLabel = voucher?.product.durationMinutes
+    ? `${voucher.product.durationMinutes} min trial flight`
+    : 'Trial flight';
+  const bookingBlockLabel = voucher?.product.bookingBlockMinutes
+    ? `${voucher.product.bookingBlockMinutes} min reserved block`
+    : 'Reserved booking block';
 
   const formatSlotDateHeading = (value: string) =>
     new Intl.DateTimeFormat(undefined, {
@@ -520,10 +526,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                                   <div>
                                     <p className="text-base font-black text-slate-950">{formatSlotTime(slot.startTime, slot.endTime)}</p>
                                     <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{formatSlotDate(slot.startTime)}</p>
+                                    <p className="mt-1 text-xs font-semibold text-blue-700">{bookingBlockLabel}</p>
                                   </div>
                                   <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Book</span>
                                 </div>
                                 <div className="mt-3 space-y-1 text-sm text-slate-600">
+                                  <p>{flightDurationLabel}</p>
                                   <p className="font-semibold text-slate-800">{slot.aircraftLabel}</p>
                                   <p>Instructor: {slot.instructorName}</p>
                                 </div>
@@ -547,6 +555,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <p className="mt-1 text-sm">
                       {formatSlotDate(bookedSlot.startTime)} at {formatSlotTime(bookedSlot.startTime, bookedSlot.endTime)}
                     </p>
+                    <p className="mt-1 text-sm font-semibold">{bookingBlockLabel} including {flightDurationLabel.toLowerCase()}.</p>
                     <p className="mt-1 text-sm">{bookedSlot.aircraftLabel} with {bookedSlot.instructorName}</p>
                     <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-emerald-800">
                       {confirmationEmailSent

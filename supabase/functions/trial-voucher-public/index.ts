@@ -180,6 +180,8 @@ const sendTrialBookingConfirmationEmail = async ({
     minute: "2-digit",
     timeZone,
   }).format(new Date(booking.endTime))}`;
+  const flightMinutes = Number(product.duration_minutes || 0);
+  const blockMinutes = flightMinutes + 30;
   const html = `<!doctype html>
 <html>
   <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
@@ -199,11 +201,12 @@ const sendTrialBookingConfirmationEmail = async ({
                 <p style="margin:0 0 18px;line-height:1.65;color:#334155;">Your ${escapeHtml(product.name || "trial instructional flight")} has been booked.</p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
                   <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Date</strong><span style="color:#475569;">${escapeHtml(dateLabel)}</span></td></tr>
-                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Time</strong><span style="color:#475569;">${escapeHtml(timeLabel)}</span></td></tr>
+                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Arrival / reserved booking block</strong><span style="color:#475569;">${escapeHtml(timeLabel)}</span></td></tr>
+                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Trial flight time</strong><span style="color:#475569;">${escapeHtml(flightMinutes ? `${flightMinutes} minutes` : "As listed on your voucher")}</span></td></tr>
                   <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Aircraft</strong><span style="color:#475569;">${escapeHtml(booking.aircraftLabel || "Aircraft")}</span></td></tr>
                   <tr><td style="padding:16px 18px;"><strong style="display:block;color:#0f172a;">Instructor</strong><span style="color:#475569;">${escapeHtml(booking.instructorName || "Instructor")}</span></td></tr>
                 </table>
-                <p style="margin:0 0 14px;line-height:1.65;color:#334155;">Please arrive with enough time for the pre-flight briefing and any paperwork. The booking block includes the flight time plus 30 minutes.</p>
+                <p style="margin:0 0 14px;line-height:1.65;color:#334155;">Please arrive at the start of the reserved booking block. It includes ${escapeHtml(blockMinutes ? `${blockMinutes} minutes total` : "the flight time plus 30 minutes")} for the flight, pre-flight briefing, aircraft changeover and paperwork.</p>
                 <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">Voucher code: ${escapeHtml(voucher.code)}. Contact Bendigo Flying Club if you need help changing this booking.</p>
               </td>
             </tr>
