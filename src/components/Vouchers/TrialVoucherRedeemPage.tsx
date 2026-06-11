@@ -409,6 +409,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
             <div className="mt-6 rounded-2xl bg-white/10 p-4 text-sm text-blue-50">
               Voucher bookings reserve the flight time plus 30 minutes for arrival, briefing and paperwork. Available times are based on aircraft and qualified instructor availability.
             </div>
+            <div className="mt-3 rounded-2xl border border-amber-200/30 bg-amber-200/10 p-4 text-sm leading-6 text-amber-50">
+              Online voucher bookings are available from two days ahead. For today or tomorrow, please call Bendigo Flying Club so we can confirm availability directly.
+            </div>
             <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-6 text-blue-50">
               This account is only for choosing the trial flight time. If your email is already used for a normal club member account, use a different email for the voucher or contact the club to link it manually.
             </div>
@@ -552,6 +555,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         <p className="text-sm text-slate-600">
                           {slots.length} available time{slots.length === 1 ? '' : 's'} found. Aircraft and instructor availability are checked together.
                         </p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          Need today or tomorrow? Please call the club to book short-notice voucher flights.
+                        </p>
                       </div>
                       <button onClick={loadAvailability} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
                         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
@@ -676,7 +682,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       ))}
                       {slots.length === 0 && (
                         <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-                          No available times found yet. Try refreshing, or contact Bendigo Flying Club and we can help find a time.
+                          No online voucher times found from two days ahead. Try refreshing, or contact Bendigo Flying Club if you need today or tomorrow.
                         </div>
                       )}
                     </div>
