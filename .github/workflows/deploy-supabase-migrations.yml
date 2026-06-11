@@ -1,0 +1,59 @@
+name: Deploy Supabase migrations
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/migrations/**"
+      - ".github/workflows/deploy-supabase-migrations.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-migrations
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "Missing SUPABASE_DB_URL GitHub secret." >&2
+            echo "Add the pooled or direct Supabase Postgres connection string as a repository secret." >&2
+            echo "It must be percent-encoded if the password contains special characters." >&2
+            exit 1
+          fi
+
+      - name: Show pending migration plan
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          npx --yes supabase@latest db push \
+            --db-url "${SUPABASE_DB_URL}" \
+            --dry-run
+
+      - name: Apply migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+
+          npx --yes supabase@latest db push \
+            --db-url "${SUPABASE_DB_URL}" \
+            --yes
