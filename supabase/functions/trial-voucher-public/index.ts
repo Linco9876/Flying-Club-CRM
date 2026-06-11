@@ -106,6 +106,38 @@ const zonedLocalTimeToUtc = (parts: LocalDateParts, hour: number, minute: number
   return new Date(localAsUtc - finalOffset * 60_000);
 };
 
+const slotLocalSummary = (start: Date | string, end: Date | string) => {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const localParts = localDatePartsForInstant(startDate);
+  const dateLong = new Intl.DateTimeFormat("en-AU", {
+    timeZone: VOUCHER_TIME_ZONE,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(startDate);
+  const dateShort = new Intl.DateTimeFormat("en-AU", {
+    timeZone: VOUCHER_TIME_ZONE,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(startDate);
+  const timeFormatter = new Intl.DateTimeFormat("en-AU", {
+    timeZone: VOUCHER_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+
+  return {
+    localDateKey: localDateKey(localParts),
+    localDateLabel: dateLong,
+    localDateShortLabel: dateShort,
+    localTimeLabel: `${timeFormatter.format(startDate)} - ${timeFormatter.format(endDate)}`,
+    timeZone: VOUCHER_TIME_ZONE,
+  };
+};
+
 const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
 const isDevelopmentOrigin = (origin: string) =>
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
@@ -571,6 +603,7 @@ const getBookingSummary = async (adminClient: SupabaseAdminClient, bookingId?: s
     bookingId: booking.id,
     startTime: booking.start_time,
     endTime: booking.end_time,
+    ...slotLocalSummary(booking.start_time, booking.end_time),
     aircraftId: booking.aircraft_id,
     aircraftLabel: aircraft
       ? `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.trim()
@@ -710,6 +743,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
           slots.push({
             startTime: start.toISOString(),
             endTime: end.toISOString(),
+            ...slotLocalSummary(start, end),
             aircraftId: aircraft.id,
             aircraftLabel: `${aircraft.registration} ${aircraft.make || ""} ${aircraft.model || ""}`.trim(),
             instructorId,

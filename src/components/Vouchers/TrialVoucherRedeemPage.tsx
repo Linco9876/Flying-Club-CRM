@@ -23,6 +23,11 @@ interface VoucherSlot {
   bookingId?: string;
   startTime: string;
   endTime: string;
+  localDateKey?: string;
+  localDateLabel?: string;
+  localDateShortLabel?: string;
+  localTimeLabel?: string;
+  timeZone?: string;
   aircraftId: string;
   aircraftLabel: string;
   instructorId: string;
@@ -225,15 +230,21 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     }
   };
 
-  const formatSlotDate = (value: string) =>
-    new Intl.DateTimeFormat('en-AU', {
+  const formatSlotDate = (slotOrValue: VoucherSlot | string) => {
+    if (typeof slotOrValue !== 'string' && slotOrValue.localDateShortLabel) return slotOrValue.localDateShortLabel;
+    const value = typeof slotOrValue === 'string' ? slotOrValue : slotOrValue.startTime;
+    return new Intl.DateTimeFormat('en-AU', {
       timeZone: VOUCHER_TIME_ZONE,
       weekday: 'short',
       day: 'numeric',
       month: 'short',
     }).format(new Date(value));
+  };
 
-  const formatSlotTime = (start: string, end: string) => {
+  const formatSlotTime = (slotOrStart: VoucherSlot | string, fallbackEnd?: string) => {
+    if (typeof slotOrStart !== 'string' && slotOrStart.localTimeLabel) return slotOrStart.localTimeLabel;
+    const start = typeof slotOrStart === 'string' ? slotOrStart : slotOrStart.startTime;
+    const end = typeof slotOrStart === 'string' ? fallbackEnd || slotOrStart : slotOrStart.endTime;
     const formatter = new Intl.DateTimeFormat('en-AU', {
       timeZone: VOUCHER_TIME_ZONE,
       hour: 'numeric',
@@ -242,6 +253,18 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     });
     return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
   };
+
+  const slotDateKey = (slot: VoucherSlot) => {
+    if (slot.localDateKey) return slot.localDateKey;
+    const parts = new Intl.DateTimeFormat('en-AU', {
+      timeZone: VOUCHER_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(slot.startTime));
+    const value = (type: string) => parts.find(part => part.type === type)?.value || '';
+    return `${value('year')}-${value('month')}-${value('day')}`;
+  };
   const flightDurationLabel = voucher?.product.durationMinutes
     ? `${voucher.product.durationMinutes} min trial flight`
     : 'Trial flight';
@@ -249,31 +272,29 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     ? `${voucher.product.bookingBlockMinutes} min reserved block`
     : 'Reserved booking block';
 
-  const formatSlotDateHeading = (value: string) =>
-    new Intl.DateTimeFormat('en-AU', {
+  const formatSlotDateHeading = (slotOrValue: VoucherSlot | string) => {
+    if (typeof slotOrValue !== 'string' && slotOrValue.localDateLabel) return slotOrValue.localDateLabel;
+    const value = typeof slotOrValue === 'string' ? slotOrValue : slotOrValue.startTime;
+    return new Intl.DateTimeFormat('en-AU', {
       timeZone: VOUCHER_TIME_ZONE,
       weekday: 'long',
       day: 'numeric',
       month: 'long',
     }).format(new Date(value));
+  };
 
   const groupedSlots = useMemo(() => {
     const groups = new Map<string, VoucherSlot[]>();
     [...slots]
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       .forEach(slot => {
-        const key = new Intl.DateTimeFormat('en-CA', {
-          timeZone: VOUCHER_TIME_ZONE,
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).format(new Date(slot.startTime));
+        const key = slotDateKey(slot);
         groups.set(key, [...(groups.get(key) || []), slot]);
       });
 
     return Array.from(groups.entries()).map(([dateKey, items]) => ({
       dateKey,
-      label: formatSlotDateHeading(items[0].startTime),
+      label: formatSlotDateHeading(items[0]),
       slots: items,
     }));
   }, [slots]);
@@ -561,6 +582,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         <p className="text-sm text-slate-600">
                           {slots.length} available time{slots.length === 1 ? '' : 's'} found. Aircraft and instructor availability are checked together.
                         </p>
+                        <p className="mt-1 text-xs font-bold uppercase tracking-wide text-blue-700">
+                          Times shown in Bendigo local time
+                        </p>
                         <p className="mt-1 text-xs font-medium text-slate-500">
                           Need today or tomorrow? Please call the club to book short-notice voucher flights.
                         </p>
@@ -669,8 +693,8 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
-                                    <p className="text-base font-black text-slate-950">{formatSlotTime(slot.startTime, slot.endTime)}</p>
-                                    <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{formatSlotDate(slot.startTime)}</p>
+                                    <p className="text-base font-black text-slate-950">{formatSlotTime(slot)}</p>
+                                    <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{formatSlotDate(slot)} · Bendigo local time</p>
                                     <p className="mt-1 text-xs font-semibold text-blue-700">{bookingBlockLabel}</p>
                                   </div>
                                   <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Book</span>
@@ -704,7 +728,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
                     <h3 className="font-bold">Trial flight booked</h3>
                     <p className="mt-1 text-sm">
-                      {formatSlotDate(bookedSlot.startTime)} at {formatSlotTime(bookedSlot.startTime, bookedSlot.endTime)}
+                      {formatSlotDate(bookedSlot)} at {formatSlotTime(bookedSlot)}
                     </p>
                     <p className="mt-1 text-sm font-semibold">{bookingBlockLabel} including {flightDurationLabel.toLowerCase()}.</p>
                     <p className="mt-1 text-sm">Aircraft and instructor have been allocated internally by Bendigo Flying Club.</p>
