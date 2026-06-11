@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle, Copy, Gift, Loader2, Plane, Ticket } from 'lucide-react';
+import { CalendarDays, CheckCircle, ChevronLeft, ChevronRight, Copy, Gift, Loader2, Plane, Ticket } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -30,6 +30,7 @@ interface VoucherSlot {
 }
 
 const VOUCHER_TIME_ZONE = 'Australia/Sydney';
+const CALENDAR_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const getInitialCode = () => {
   const params = new URLSearchParams(window.location.search);
@@ -263,6 +264,67 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     }));
   }, [slots]);
 
+  const groupedSlotMap = useMemo(
+    () => new Map(groupedSlots.map(group => [group.dateKey, group])),
+    [groupedSlots]
+  );
+
+  const availableMonthKeys = useMemo(
+    () => Array.from(new Set(groupedSlots.map(group => group.dateKey.slice(0, 7)))),
+    [groupedSlots]
+  );
+
+  const [calendarMonthKey, setCalendarMonthKey] = useState('');
+
+  useEffect(() => {
+    if (!groupedSlots.length) {
+      setCalendarMonthKey('');
+      return;
+    }
+    setCalendarMonthKey(current => {
+      if (current && availableMonthKeys.includes(current)) return current;
+      return groupedSlots[0].dateKey.slice(0, 7);
+    });
+  }, [availableMonthKeys, groupedSlots]);
+
+  const calendarMonth = useMemo(() => {
+    if (!calendarMonthKey) return null;
+    const [year, month] = calendarMonthKey.split('-').map(Number);
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    const monthEnd = new Date(Date.UTC(year, month, 0));
+    const leadingDays = (monthStart.getUTCDay() + 6) % 7;
+    const totalCells = Math.ceil((leadingDays + monthEnd.getUTCDate()) / 7) * 7;
+    const monthLabel = new Intl.DateTimeFormat('en-AU', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(monthStart);
+    const days = Array.from({ length: totalCells }, (_, index) => {
+      const date = new Date(Date.UTC(year, month - 1, 1 - leadingDays + index));
+      const dateKey = date.toISOString().slice(0, 10);
+      const group = groupedSlotMap.get(dateKey);
+      return {
+        dateKey,
+        dayNumber: date.getUTCDate(),
+        isCurrentMonth: date.getUTCMonth() === month - 1,
+        slotsCount: group?.slots.length || 0,
+      };
+    });
+    return { label: monthLabel, days };
+  }, [calendarMonthKey, groupedSlotMap]);
+
+  const currentMonthIndex = calendarMonthKey ? availableMonthKeys.indexOf(calendarMonthKey) : -1;
+
+  const showPreviousCalendarMonth = () => {
+    if (currentMonthIndex <= 0) return;
+    setCalendarMonthKey(availableMonthKeys[currentMonthIndex - 1]);
+  };
+
+  const showNextCalendarMonth = () => {
+    if (currentMonthIndex < 0 || currentMonthIndex >= availableMonthKeys.length - 1) return;
+    setCalendarMonthKey(availableMonthKeys[currentMonthIndex + 1]);
+  };
+
   useEffect(() => {
     if (selectedSlotDate === 'all') return;
     if (!groupedSlots.some(group => group.dateKey === selectedSlotDate)) {
@@ -481,36 +543,81 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         Refresh
                       </button>
                     </div>
-                    {groupedSlots.length > 1 && (
-                      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSlotDate('all')}
-                          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                            selectedSlotDate === 'all'
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                          }`}
-                        >
-                          All dates
-                        </button>
-                        {groupedSlots.map(group => (
+                    {calendarMonth && groupedSlots.length > 1 && (
+                      <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="mb-3 flex items-center justify-between gap-3">
                           <button
-                            key={group.dateKey}
                             type="button"
-                            onClick={() => setSelectedSlotDate(group.dateKey)}
-                            className={`shrink-0 rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
-                              selectedSlotDate === group.dateKey
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            onClick={showPreviousCalendarMonth}
+                            disabled={currentMonthIndex <= 0}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label="Previous available month"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <div className="text-center">
+                            <p className="font-bold text-slate-950">{calendarMonth.label}</p>
+                            <p className="text-xs text-slate-500">Choose a day with available trial flight times</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={showNextCalendarMonth}
+                            disabled={currentMonthIndex < 0 || currentMonthIndex >= availableMonthKeys.length - 1}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label="Next available month"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                          {CALENDAR_WEEKDAYS.map(day => (
+                            <div key={day} className="py-1">{day}</div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-7 gap-1">
+                          {calendarMonth.days.map(day => {
+                            const isSelected = selectedSlotDate === day.dateKey;
+                            const hasSlots = day.slotsCount > 0;
+                            return (
+                              <button
+                                key={day.dateKey}
+                                type="button"
+                                onClick={() => hasSlots && setSelectedSlotDate(day.dateKey)}
+                                disabled={!hasSlots}
+                                className={`min-h-14 rounded-xl border p-1 text-center transition ${
+                                  isSelected
+                                    ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                                    : hasSlots
+                                      ? 'border-blue-100 bg-white text-slate-900 hover:border-blue-300 hover:bg-blue-50'
+                                      : 'border-transparent bg-transparent text-slate-300'
+                                } ${!day.isCurrentMonth ? 'opacity-40' : ''}`}
+                              >
+                                <span className="block text-sm font-black">{day.dayNumber}</span>
+                                {hasSlots && (
+                                  <span className={`mt-0.5 block text-[10px] font-semibold ${isSelected ? 'text-blue-100' : 'text-blue-700'}`}>
+                                    {day.slotsCount} time{day.slotsCount === 1 ? '' : 's'}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <p className="text-xs text-slate-500">
+                            Showing {selectedSlotDate === 'all' ? 'all available dates' : groupedSlotMap.get(selectedSlotDate)?.label || 'selected date'}.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSlotDate('all')}
+                            className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
+                              selectedSlotDate === 'all'
+                                ? 'bg-slate-950 text-white'
+                                : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                             }`}
                           >
-                            <span className="block whitespace-nowrap">{formatSlotDate(group.slots[0].startTime)}</span>
-                            <span className={`block text-xs ${selectedSlotDate === group.dateKey ? 'text-blue-100' : 'text-slate-500'}`}>
-                              {group.slots.length} time{group.slots.length === 1 ? '' : 's'}
-                            </span>
+                            Show all
                           </button>
-                        ))}
+                        </div>
                       </div>
                     )}
                     <div className="max-h-[30rem] space-y-4 overflow-y-auto pr-1">
