@@ -56,6 +56,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
   const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus | null>(null);
   const [checkoutStatusLoading, setCheckoutStatusLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<PublicVoucherProduct | null>(null);
+  const [purchaseMode, setPurchaseMode] = useState<'checkout' | 'manual'>('checkout');
   const [purchaseForm, setPurchaseForm] = useState({
     purchaserName: '',
     purchaserEmail: '',
@@ -162,7 +163,10 @@ export const TrialVoucherSalesPage: React.FC = () => {
     return '';
   }, [checkoutStatus, checkoutStatusLoading]);
 
-  const buildMailtoHref = (product?: PublicVoucherProduct) => {
+  const buildMailtoHref = (
+    product?: PublicVoucherProduct,
+    form?: typeof purchaseForm
+  ) => {
     const subject = encodeURIComponent('Trial flight gift voucher purchase');
     const voucherLines = product
       ? [
@@ -175,6 +179,31 @@ export const TrialVoucherSalesPage: React.FC = () => {
       : [
           'Preferred voucher:',
         ];
+    const deliveryLines = form
+      ? [
+          `Purchaser name: ${form.purchaserName.trim() || ''}`,
+          `Purchaser email: ${form.purchaserEmail.trim() || ''}`,
+          `Purchaser phone: ${form.purchaserPhone.trim() || ''}`,
+          `Send direct to recipient: ${form.sendToRecipient ? 'Yes' : 'No - send to purchaser'}`,
+          `Recipient name: ${form.recipientName.trim() || ''}`,
+          `Recipient email: ${form.recipientEmail.trim() || ''}`,
+          `Preferred recipient send date/time: ${
+            form.sendToRecipient && form.recipientDeliveryAt
+              ? new Date(form.recipientDeliveryAt).toLocaleString()
+              : form.sendToRecipient
+                ? 'As soon as payment/manual issue is complete'
+                : 'Not applicable'
+          }`,
+        ]
+      : [
+          'Recipient name:',
+          'Recipient email:',
+          'Purchaser name:',
+          'Purchaser email:',
+          'Phone:',
+          'Send direct to recipient: Yes / No',
+          'Preferred recipient send date/time:',
+        ];
     const body = encodeURIComponent(
       [
         'Hi Bendigo Flying Club,',
@@ -182,11 +211,8 @@ export const TrialVoucherSalesPage: React.FC = () => {
         'I would like to purchase a trial instructional flight gift voucher.',
         '',
         ...voucherLines,
-        'Recipient name:',
-        'Recipient email:',
-        'Purchaser name:',
-        'Purchaser email:',
-        'Phone:',
+        '',
+        ...deliveryLines,
         '',
         'Please let me know the next steps.',
         '',
@@ -197,8 +223,12 @@ export const TrialVoucherSalesPage: React.FC = () => {
   };
   const mailtoHref = useMemo(() => buildMailtoHref(), []);
 
-  const resetPurchaseForm = (product?: PublicVoucherProduct | null) => {
+  const resetPurchaseForm = (
+    product?: PublicVoucherProduct | null,
+    mode: 'checkout' | 'manual' = 'checkout'
+  ) => {
     setSelectedProduct(product || null);
+    setPurchaseMode(mode);
     setPurchaseForm({
       purchaserName: '',
       purchaserEmail: '',
@@ -210,35 +240,49 @@ export const TrialVoucherSalesPage: React.FC = () => {
     });
   };
 
-  const startCheckout = async () => {
-    if (!selectedProduct) return;
+  const validatePurchaseForm = () => {
     if (!purchaseForm.purchaserName.trim() || !purchaseForm.purchaserEmail.trim()) {
       toast.error('Purchaser name and email are required');
-      return;
+      return false;
     }
     if (!isValidEmail(purchaseForm.purchaserEmail)) {
       toast.error('Enter a valid purchaser email address');
-      return;
+      return false;
     }
     if (purchaseForm.sendToRecipient && !purchaseForm.recipientEmail.trim()) {
       toast.error('Recipient email is required when sending direct to recipient');
-      return;
+      return false;
     }
     if (purchaseForm.sendToRecipient && !isValidEmail(purchaseForm.recipientEmail)) {
       toast.error('Enter a valid recipient email address');
-      return;
+      return false;
     }
     if (purchaseForm.sendToRecipient && purchaseForm.recipientDeliveryAt) {
       const deliveryAt = new Date(purchaseForm.recipientDeliveryAt);
       if (!Number.isFinite(deliveryAt.getTime())) {
         toast.error('Choose a valid recipient send date/time');
-        return;
+        return false;
       }
       if (deliveryAt.getTime() < Date.now()) {
         toast.error('Recipient send date/time must be in the future');
-        return;
+        return false;
       }
     }
+
+    return true;
+  };
+
+  const startManualPurchaseRequest = () => {
+    if (!selectedProduct) return;
+    if (!validatePurchaseForm()) return;
+
+    window.location.href = buildMailtoHref(selectedProduct, purchaseForm);
+    toast.success('Opening an email to Bendigo Flying Club with the voucher details');
+  };
+
+  const startCheckout = async () => {
+    if (!selectedProduct) return;
+    if (!validatePurchaseForm()) return;
 
     setCheckoutLoading(true);
     try {
@@ -363,7 +407,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                       {product.checkoutAvailable ? (
                         <button
                           type="button"
-                          onClick={() => resetPurchaseForm(product)}
+                          onClick={() => resetPurchaseForm(product, 'checkout')}
                           className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700"
                         >
                           Buy online
@@ -374,9 +418,14 @@ export const TrialVoucherSalesPage: React.FC = () => {
                           Temporarily unavailable online
                         </span>
                       ) : (
-                        <span className="inline-flex items-center rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                          Available by manual purchase
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => resetPurchaseForm(product, 'manual')}
+                          className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-amber-600"
+                        >
+                          Request voucher
+                          <ArrowRight className="h-4 w-4" />
+                        </button>
                       )}
                       <a
                         href={buildMailtoHref(product)}
@@ -460,7 +509,9 @@ export const TrialVoucherSalesPage: React.FC = () => {
           <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-5 text-slate-950 shadow-2xl sm:p-6">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Secure checkout</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                  {purchaseMode === 'checkout' ? 'Secure checkout' : 'Manual voucher request'}
+                </p>
                 <h3 className="mt-1 text-2xl font-bold">{selectedProduct.name}</h3>
                 <p className="mt-1 text-sm text-slate-600">{formatPrice(selectedProduct.price)}</p>
               </div>
@@ -475,8 +526,9 @@ export const TrialVoucherSalesPage: React.FC = () => {
 
             <div className="grid gap-3">
               <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-900">
-                By default the voucher email goes to the purchaser, so you can forward it or print it when you are ready.
-                Tick direct recipient delivery if you want the voucher emailed to the recipient after payment, either immediately or at the date and time you choose.
+                {purchaseMode === 'checkout'
+                  ? 'By default the voucher email goes to the purchaser, so you can forward it or print it when you are ready. Tick direct recipient delivery if you want the voucher emailed to the recipient after payment, either immediately or at the date and time you choose.'
+                  : 'Online card payment is not enabled for this voucher yet. Enter the details below and we will open a prefilled email to the club so staff can take payment, issue the voucher, and schedule recipient delivery if needed.'}
               </div>
               <input value={purchaseForm.purchaserName} onChange={e => setPurchaseForm(f => ({ ...f, purchaserName: e.target.value }))} placeholder="Purchaser full name" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
               <input type="email" value={purchaseForm.purchaserEmail} onChange={e => setPurchaseForm(f => ({ ...f, purchaserEmail: e.target.value }))} placeholder="Purchaser email" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
@@ -496,15 +548,26 @@ export const TrialVoucherSalesPage: React.FC = () => {
                   <p className="text-xs leading-5 text-blue-800">Leave blank to send the recipient email after payment is confirmed.</p>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={startCheckout}
-                disabled={checkoutLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
-              >
-                {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ticket className="h-4 w-4" />}
-                Continue to card payment
-              </button>
+              {purchaseMode === 'checkout' ? (
+                <button
+                  type="button"
+                  onClick={startCheckout}
+                  disabled={checkoutLoading}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ticket className="h-4 w-4" />}
+                  Continue to card payment
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startManualPurchaseRequest}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-semibold text-white transition hover:bg-amber-600"
+                >
+                  <Mail className="h-4 w-4" />
+                  Email voucher request
+                </button>
+              )}
             </div>
           </div>
         </div>
