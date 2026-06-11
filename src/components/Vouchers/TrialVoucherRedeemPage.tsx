@@ -46,6 +46,8 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
   const [setupResendEmail, setSetupResendEmail] = useState('');
   const [selectedSlotDate, setSelectedSlotDate] = useState('all');
+  const isVoucherAccountUser = Boolean(user?.portalAccessScope === 'trial_voucher');
+  const isFullPortalUserOnVoucherPage = Boolean(user && !isVoucherAccountUser);
 
   const loadLinkedVoucher = async () => {
     setLoading(true);
@@ -128,8 +130,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
+      setVoucher(data.voucher || (voucher ? { ...voucher, status: 'redeemed' } : voucher));
       toast.success('Voucher linked to your account');
-      if (user) await loadAvailability();
+      if (isVoucherAccountUser) await loadAvailability();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not redeem voucher');
     } finally {
@@ -257,8 +260,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     [groupedSlots, selectedSlotDate]
   );
 
-  const isFullPortalUserOnVoucherPage = Boolean(user && user.portalAccessScope !== 'trial_voucher');
-  const canChooseTime = Boolean(user && !isFullPortalUserOnVoucherPage && voucher?.status === 'redeemed' && !bookedSlot);
+  const canChooseTime = Boolean(isVoucherAccountUser && voucher?.status === 'redeemed' && !bookedSlot);
 
   const copySetupLink = async () => {
     if (!redeemed?.setupLink) return;
@@ -377,7 +379,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <h3 className="font-bold">Your voucher is linked.</h3>
                     <p className="mt-1 text-sm">
                       {user
-                        ? 'Choose an available time below. Your booking block includes the flight plus 30 minutes for briefing and paperwork.'
+                        ? isFullPortalUserOnVoucherPage
+                          ? 'This voucher is linked, but booking must be completed from the restricted voucher account. Sign out, then use the setup link from the voucher email.'
+                          : 'Choose an available time below. Your booking block includes the flight plus 30 minutes for briefing and paperwork.'
                         : redeemed?.setupEmailSent
                           ? 'We have emailed your setup link. Set your password and sign in to your restricted voucher account before choosing a flight time.'
                           : 'Set your password and sign in to your restricted voucher account before choosing a flight time.'}
@@ -400,7 +404,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   </div>
                 )}
 
-                {isFullPortalUserOnVoucherPage && voucher.status !== 'issued' && voucher.status !== 'booked' && !bookedSlot && (
+                {isFullPortalUserOnVoucherPage && (redeemed || voucher.status === 'redeemed') && voucher.status !== 'booked' && !bookedSlot && (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
                     <h3 className="font-bold">Use the voucher booking account</h3>
                     <p className="mt-1 text-sm leading-6">

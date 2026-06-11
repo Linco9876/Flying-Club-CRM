@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Gift, Loader2, Mail, Plane, ShieldCheck, Ticket } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { TrialFlightVoucherAircraftMode } from '../../types';
@@ -52,6 +52,7 @@ const toDateTimeLocalValue = (date: Date) => {
 export const TrialVoucherSalesPage: React.FC = () => {
   const [products, setProducts] = useState<PublicVoucherProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [productsError, setProductsError] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatus | null>(null);
   const [checkoutStatusLoading, setCheckoutStatusLoading] = useState(false);
@@ -80,26 +81,28 @@ export const TrialVoucherSalesPage: React.FC = () => {
       }));
   }, [products]);
 
-  useEffect(() => {
-    const loadProducts = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
-          body: { action: 'products' },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        setProducts(data?.products || []);
-      } catch (error) {
-        console.error('Failed to load trial flight voucher products:', error);
-        setProducts([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadProducts();
+  const loadProducts = useCallback(async () => {
+    setLoading(true);
+    setProductsError('');
+    try {
+      const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+        body: { action: 'products' },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setProducts(data?.products || []);
+    } catch (error) {
+      console.error('Failed to load trial flight voucher products:', error);
+      setProducts([]);
+      setProductsError(error instanceof Error ? error.message : 'Could not load voucher options');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -377,6 +380,33 @@ export const TrialVoucherSalesPage: React.FC = () => {
               <div className="flex min-h-48 items-center justify-center rounded-2xl bg-slate-50 text-slate-600">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 Loading voucher options...
+              </div>
+            ) : productsError ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-950">
+                <h4 className="text-lg font-bold">Voucher options could not load</h4>
+                <p className="mt-2 text-sm leading-6 text-amber-800">
+                  The public voucher service did not respond, so we cannot safely show live voucher availability or checkout right now.
+                </p>
+                <p className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-amber-800">
+                  {productsError}
+                </p>
+                <div className="mt-4 flex flex-col justify-center gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => void loadProducts()}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-amber-700"
+                  >
+                    <Loader2 className="h-4 w-4" />
+                    Try again
+                  </button>
+                  <a
+                    href={mailtoHref}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-amber-800 ring-1 ring-amber-200 transition hover:bg-amber-100"
+                  >
+                    <Mail className="h-4 w-4" />
+                    Contact the club
+                  </a>
+                </div>
               </div>
             ) : products.length > 0 ? (
               <div className="space-y-3">

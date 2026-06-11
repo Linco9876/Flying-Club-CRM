@@ -900,7 +900,7 @@ Deno.serve(async (req: Request) => {
       : { sent: false, error: "No setup link was generated" };
 
     return json({
-      voucher: publicVoucher,
+      voucher: { ...publicVoucher, status: "redeemed" },
       userId,
       setupLink,
       setupEmailSent: setupEmail.sent,
