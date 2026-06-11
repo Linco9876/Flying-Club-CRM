@@ -796,6 +796,36 @@ export const TrialFlightVouchersPage: React.FC = () => {
   ];
   const tecnamReadiness = requiredVoucherReadiness.find(item => item.mode === 'tecnam');
   const archerReadiness = requiredVoucherReadiness.find(item => item.mode === 'archer');
+  const bookableStandardProducts = requiredVoucherReadiness.filter(item => item.bookingReady);
+  const checkoutReadyStandardProducts = requiredVoucherReadiness.filter(item => item.checkoutReady);
+  const manualIssueReady = requiredVoucherReadiness.length > 0 && bookableStandardProducts.length === requiredVoucherReadiness.length;
+  const publicSalesReady = requiredVoucherReadiness.length > 0 && checkoutReadyStandardProducts.length === requiredVoucherReadiness.length;
+  const standardReadinessSummary = [
+    {
+      label: 'Manual issue',
+      value: manualIssueReady ? 'Ready' : `${bookableStandardProducts.length}/${requiredVoucherReadiness.length}`,
+      complete: manualIssueReady,
+      detail: manualIssueReady
+        ? 'Tecnam and Archer vouchers can be issued by staff once payment is handled outside Stripe.'
+        : 'Finish aircraft and instructor setup before staff issue both voucher types.',
+    },
+    {
+      label: 'Online sales',
+      value: publicSalesReady ? 'Ready' : `${checkoutReadyStandardProducts.length}/${requiredVoucherReadiness.length}`,
+      complete: publicSalesReady,
+      detail: publicSalesReady
+        ? 'Both standard voucher types are bookable and have Stripe Price IDs.'
+        : 'Public sales remain gated until both standard voucher types have price, Stripe Price ID, aircraft, and instructor readiness.',
+    },
+    {
+      label: 'Scheduled email',
+      value: dueRecipientVouchers.length > 0 ? 'Due' : 'Watching',
+      complete: dueRecipientVouchers.length === 0,
+      detail: dueRecipientVouchers.length > 0
+        ? 'Run Send due now, then confirm GitHub Actions has SUPABASE_URL and TRIAL_VOUCHER_CRON_SECRET secrets.'
+        : 'The CRM can send due emails manually, and GitHub Actions can run it automatically once secrets are set.',
+    },
+  ];
   const setupTasks = [
     {
       label: 'Tecnam voucher can be booked',
@@ -864,6 +894,34 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <section className="mb-6 grid gap-3 lg:grid-cols-3">
+        {standardReadinessSummary.map(item => (
+          <div
+            key={item.label}
+            className={`rounded-2xl border p-4 shadow-sm ${
+              item.complete
+                ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-400/25 dark:bg-emerald-950/15'
+                : 'border-amber-200 bg-amber-50 dark:border-amber-400/25 dark:bg-amber-950/15'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{item.label}</p>
+                <p className="mt-1 text-2xl font-bold text-gray-950 dark:text-gray-100">{item.value}</p>
+              </div>
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                item.complete
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
+                  : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200'
+              }`}>
+                {item.complete ? <CheckCircle className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+              </div>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">{item.detail}</p>
+          </div>
+        ))}
+      </section>
 
       <section className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
