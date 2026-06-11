@@ -50,6 +50,7 @@ const VOUCHER_TIME_ZONE = "Australia/Sydney";
 const VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS = 2;
 const VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS = 62;
 const VOUCHER_MAX_AVAILABLE_SLOTS = 1500;
+const VOUCHER_RESCHEDULE_CUTOFF_HOURS = 72;
 
 type LocalDateParts = { year: number; month: number; day: number };
 
@@ -139,6 +140,17 @@ const slotLocalSummary = (start: Date | string, end: Date | string) => {
     timeZone: VOUCHER_TIME_ZONE,
   };
 };
+
+const rescheduleDeadlineFor = (start: Date | string) =>
+  addMinutes(new Date(start), -VOUCHER_RESCHEDULE_CUTOFF_HOURS * 60);
+
+const canRescheduleBooking = (start: Date | string) =>
+  Date.now() <= rescheduleDeadlineFor(start).getTime();
+
+const rescheduleInfoFor = (start: Date | string) => ({
+  rescheduleAllowed: canRescheduleBooking(start),
+  rescheduleDeadline: rescheduleDeadlineFor(start).toISOString(),
+});
 
 const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
 const isDevelopmentOrigin = (origin: string) =>
@@ -585,12 +597,12 @@ const getBookingSummary = async (adminClient: SupabaseAdminClient, bookingId?: s
 
   const { data: booking, error: bookingError } = await adminClient
     .from("bookings")
-    .select("id,start_time,end_time,aircraft_id,instructor_id")
+    .select("id,start_time,end_time,aircraft_id,instructor_id,status,deleted_at")
     .eq("id", bookingId)
     .maybeSingle();
 
   if (bookingError) throw bookingError;
-  if (!booking) return null;
+  if (!booking || booking.deleted_at || booking.status === "cancelled") return null;
 
   const [{ data: aircraft }, { data: instructor }] = await Promise.all([
     booking.aircraft_id
@@ -606,6 +618,7 @@ const getBookingSummary = async (adminClient: SupabaseAdminClient, bookingId?: s
     startTime: booking.start_time,
     endTime: booking.end_time,
     ...slotLocalSummary(booking.start_time, booking.end_time),
+    ...rescheduleInfoFor(booking.start_time),
     aircraftId: booking.aircraft_id,
     aircraftLabel: aircraft
       ? `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.trim()
@@ -631,6 +644,20 @@ const assertVoucherAccount = async (adminClient: SupabaseAdminClient, userId: st
   }
 
   return { ok: true, user: linkedUser };
+};
+
+const getActiveBookingForReschedule = async (adminClient: SupabaseAdminClient, bookingId?: string | null) => {
+  if (!bookingId) return null;
+
+  const { data: booking, error } = await adminClient
+    .from("bookings")
+    .select("id,start_time,end_time,aircraft_id,instructor_id,status,deleted_at")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!booking || booking.deleted_at || booking.status === "cancelled") return null;
+  return booking;
 };
 
 const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: any) => {
@@ -1062,6 +1089,144 @@ Deno.serve(async (req: Request) => {
 
       const slots = await buildAvailableSlots(adminClient, product);
       return json({ voucher: publicVoucher, slots });
+    }
+
+    if (action === "reschedule-availability") {
+      if (!voucher.redeemed_by_user_id) {
+        return json({ error: "Redeem this voucher before changing a booking" }, 409);
+      }
+      if (voucher.status !== "booked" || !voucher.booked_booking_id) {
+        return json({ error: "This voucher does not have a booking to reschedule" }, 409);
+      }
+
+      const { user } = await getAuthenticatedUser(req, supabaseUrl);
+      if (!user) return json({ error: "Sign in to your voucher account before changing this booking" }, 401);
+      if (user.id !== voucher.redeemed_by_user_id) {
+        return json({ error: "This voucher is linked to a different account" }, 403);
+      }
+      const voucherAccount = await assertVoucherAccount(adminClient, user.id);
+      if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
+
+      const currentBooking = await getActiveBookingForReschedule(adminClient, voucher.booked_booking_id);
+      if (!currentBooking) return json({ error: "The current booking could not be found. Contact Bendigo Flying Club for help." }, 404);
+      if (!canRescheduleBooking(currentBooking.start_time)) {
+        return json({
+          error: "Online rescheduling closes 3 days before the booking. Please contact Bendigo Flying Club.",
+          booking: await getBookingSummary(adminClient, currentBooking.id),
+        }, 409);
+      }
+
+      const [slots, booking] = await Promise.all([
+        buildAvailableSlots(adminClient, product),
+        getBookingSummary(adminClient, currentBooking.id),
+      ]);
+      return json({ voucher: publicVoucher, slots, booking });
+    }
+
+    if (action === "reschedule") {
+      if (!voucher.redeemed_by_user_id) {
+        return json({ error: "Redeem this voucher before changing a booking" }, 409);
+      }
+      if (voucher.status !== "booked" || !voucher.booked_booking_id) {
+        return json({ error: "This voucher does not have a booking to reschedule" }, 409);
+      }
+
+      const { user } = await getAuthenticatedUser(req, supabaseUrl);
+      if (!user) return json({ error: "Sign in to your voucher account before changing this booking" }, 401);
+      if (user.id !== voucher.redeemed_by_user_id) {
+        return json({ error: "This voucher is linked to a different account" }, 403);
+      }
+      const voucherAccount = await assertVoucherAccount(adminClient, user.id);
+      if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
+
+      const currentBooking = await getActiveBookingForReschedule(adminClient, voucher.booked_booking_id);
+      if (!currentBooking) return json({ error: "The current booking could not be found. Contact Bendigo Flying Club for help." }, 404);
+      if (!canRescheduleBooking(currentBooking.start_time)) {
+        return json({ error: "Online rescheduling closes 3 days before the booking. Please contact Bendigo Flying Club." }, 409);
+      }
+
+      const startTime = new Date(String(body.startTime || ""));
+      const aircraftId = String(body.aircraftId || "");
+      const instructorId = String(body.instructorId || "");
+      const blockMinutes = Number(product.duration_minutes || 0) + 30;
+      const endTime = addMinutes(startTime, blockMinutes);
+
+      if (!Number.isFinite(startTime.getTime()) || !aircraftId || !instructorId) {
+        return json({ error: "A valid time, aircraft and instructor are required" }, 400);
+      }
+
+      const slots = await buildAvailableSlots(adminClient, product);
+      const matchingSlot = slots.find((slot: any) =>
+        slot.startTime === startTime.toISOString() &&
+        slot.aircraftId === aircraftId &&
+        slot.instructorId === instructorId
+      );
+
+      if (!matchingSlot) {
+        return json({ error: "That time is no longer available. Please choose another time." }, 409);
+      }
+
+      const nowIso = new Date().toISOString();
+      const { error: cancelError } = await adminClient
+        .from("bookings")
+        .update({ status: "cancelled", deleted_at: nowIso, updated_at: nowIso })
+        .eq("id", currentBooking.id)
+        .is("deleted_at", null);
+
+      if (cancelError) return json({ error: cancelError.message }, 500);
+
+      const { error: voucherResetError } = await adminClient
+        .from("trial_flight_vouchers")
+        .update({ status: "redeemed", booked_booking_id: null, updated_at: nowIso })
+        .eq("id", voucher.id);
+
+      if (voucherResetError) {
+        await adminClient
+          .from("bookings")
+          .update({ status: currentBooking.status, deleted_at: currentBooking.deleted_at, updated_at: nowIso })
+          .eq("id", currentBooking.id);
+        return json({ error: voucherResetError.message }, 500);
+      }
+
+      const { data: bookingId, error: bookingError } = await adminClient.rpc("book_trial_flight_voucher_slot", {
+        p_voucher_id: voucher.id,
+        p_student_id: voucher.redeemed_by_user_id,
+        p_aircraft_id: aircraftId,
+        p_instructor_id: instructorId,
+        p_start_time: startTime.toISOString(),
+        p_end_time: endTime.toISOString(),
+        p_notes: `Trial flight voucher ${voucher.code} - ${product.name}`,
+      });
+
+      if (bookingError || !bookingId) {
+        await Promise.all([
+          adminClient
+            .from("bookings")
+            .update({ status: currentBooking.status, deleted_at: currentBooking.deleted_at, updated_at: nowIso })
+            .eq("id", currentBooking.id),
+          adminClient
+            .from("trial_flight_vouchers")
+            .update({ status: "booked", booked_booking_id: currentBooking.id, updated_at: nowIso })
+            .eq("id", voucher.id),
+        ]);
+        const message = bookingError?.message || "Could not reschedule booking";
+        const status = /no longer available|not available|already|not ready/i.test(message) ? 409 : 500;
+        return json({ error: message }, status);
+      }
+
+      const bookedSummary = { ...matchingSlot, bookingId, ...rescheduleInfoFor(matchingSlot.startTime) };
+      const confirmationEmail = await sendTrialBookingConfirmationEmail({
+        voucher,
+        product,
+        booking: bookedSummary,
+      });
+
+      return json({
+        voucher: { ...publicVoucher, status: "booked" },
+        bookingId,
+        booking: bookedSummary,
+        confirmationEmailSent: confirmationEmail.sent,
+      });
     }
 
     if (action === "book") {

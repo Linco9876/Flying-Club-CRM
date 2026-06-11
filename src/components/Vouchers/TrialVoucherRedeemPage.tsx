@@ -32,6 +32,8 @@ interface VoucherSlot {
   aircraftLabel: string;
   instructorId: string;
   instructorName: string;
+  rescheduleAllowed?: boolean;
+  rescheduleDeadline?: string;
 }
 
 const VOUCHER_TIME_ZONE = 'Australia/Sydney';
@@ -56,6 +58,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [selectedSlotDate, setSelectedSlotDate] = useState('all');
   const [availabilityAutoLoadedForCode, setAvailabilityAutoLoadedForCode] = useState('');
   const [availabilityHydrating, setAvailabilityHydrating] = useState(false);
+  const [rescheduling, setRescheduling] = useState(false);
   const isVoucherAccountUser = Boolean(user?.portalAccessScope === 'trial_voucher');
   const isFullPortalUserOnVoucherPage = Boolean(user && !isVoucherAccountUser);
 
@@ -70,6 +73,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setVoucher(data.voucher);
       setCode(data.voucher?.code || '');
       setRedeemed({ setupLink: null, setupEmailSent: false });
+      setRescheduling(false);
       const linkedSlots = data.slots || [];
       setBookedSlot(data.booking || null);
       const shouldChooseTime = isVoucherAccountUser && data.voucher?.status === 'redeemed' && !data.booking;
@@ -102,6 +106,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (data?.error) throw new Error(data.error);
       setVoucher(data.voucher);
       setCode(data.voucher?.code || nextCode);
+      setRescheduling(false);
       setForm(current => ({
         ...current,
         fullName: current.fullName || data.voucher?.recipientName || '',
@@ -160,17 +165,22 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     }
   };
 
-  const loadAvailability = async (nextCode = code) => {
+  const loadAvailability = async (nextCode = code, mode: 'booking' | 'reschedule' = 'booking') => {
     if (!nextCode.trim()) return;
     setLoading(true);
     setAvailabilityHydrating(true);
     try {
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
-        body: { action: 'availability', code: nextCode },
+        body: { action: mode === 'reschedule' ? 'reschedule-availability' : 'availability', code: nextCode },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setSlots(data.slots || []);
+      if (data.booking) setBookedSlot(data.booking);
+      if (mode === 'reschedule') {
+        setSelectedSlotDate('all');
+        setRescheduling(true);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not load available times');
     } finally {
@@ -188,7 +198,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     try {
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
         body: {
-          action: 'book',
+          action: rescheduling ? 'reschedule' : 'book',
           code,
           startTime: slot.startTime,
           aircraftId: slot.aircraftId,
@@ -201,13 +211,31 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setConfirmationEmailSent(Boolean(data.confirmationEmailSent));
       setVoucher(current => current ? { ...current, status: 'booked' } : current);
       setSlots([]);
-      toast.success(data.confirmationEmailSent ? 'Trial flight booked and confirmation emailed' : 'Trial flight booked');
+      setRescheduling(false);
+      toast.success(rescheduling
+        ? data.confirmationEmailSent
+          ? 'Trial flight rescheduled and confirmation emailed'
+          : 'Trial flight rescheduled'
+        : data.confirmationEmailSent
+          ? 'Trial flight booked and confirmation emailed'
+          : 'Trial flight booked');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not book this time');
-      await loadAvailability();
+      toast.error(error instanceof Error ? error.message : rescheduling ? 'Could not reschedule this booking' : 'Could not book this time');
+      await loadAvailability(code, rescheduling ? 'reschedule' : 'booking');
     } finally {
       setLoading(false);
     }
+  };
+
+  const startReschedule = async () => {
+    if (!bookedSlot || !code) return;
+    await loadAvailability(code, 'reschedule');
+  };
+
+  const cancelReschedule = () => {
+    setRescheduling(false);
+    setSlots([]);
+    setSelectedSlotDate('all');
   };
 
   const resendSetupLink = async () => {
@@ -374,14 +402,29 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     [groupedSlots, selectedSlotDate]
   );
 
-  const canChooseTime = Boolean(isVoucherAccountUser && voucher?.status === 'redeemed' && !bookedSlot);
+  const canRescheduleBookedSlot = Boolean(bookedSlot && (
+    bookedSlot.rescheduleAllowed ??
+    (Date.now() <= new Date(bookedSlot.startTime).getTime() - 72 * 60 * 60 * 1000)
+  ));
+  const rescheduleDeadlineLabel = bookedSlot?.rescheduleDeadline
+    ? new Intl.DateTimeFormat('en-AU', {
+        timeZone: VOUCHER_TIME_ZONE,
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).format(new Date(bookedSlot.rescheduleDeadline))
+    : null;
+  const canChooseTime = Boolean(isVoucherAccountUser && ((voucher?.status === 'redeemed' && !bookedSlot) || rescheduling));
 
   useEffect(() => {
-    if (!canChooseTime || !code || slots.length > 0 || availabilityAutoLoadedForCode === code) return;
+    if (rescheduling || !canChooseTime || !code || slots.length > 0 || availabilityAutoLoadedForCode === code) return;
     setAvailabilityAutoLoadedForCode(code);
     void loadAvailability(code);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availabilityAutoLoadedForCode, canChooseTime, code, slots.length]);
+  }, [availabilityAutoLoadedForCode, canChooseTime, code, rescheduling, slots.length]);
 
   const copySetupLink = async () => {
     if (!redeemed?.setupLink) return;
@@ -578,7 +621,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   <div className="rounded-2xl border border-slate-200 p-4">
                     <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <h3 className="font-bold text-slate-950">Available times</h3>
+                        <h3 className="font-bold text-slate-950">{rescheduling ? 'Choose a new time' : 'Available times'}</h3>
                         <p className="text-sm text-slate-600">
                           {slots.length} available time{slots.length === 1 ? '' : 's'} found. Aircraft and instructor availability are checked together.
                         </p>
@@ -586,13 +629,27 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                           Times shown in Bendigo local time
                         </p>
                         <p className="mt-1 text-xs font-medium text-slate-500">
-                          Need today or tomorrow? Please call the club to book short-notice voucher flights.
+                          {rescheduling
+                            ? 'Rescheduling is available online until 3 days before the booked time.'
+                            : 'Need today or tomorrow? Please call the club to book short-notice voucher flights.'}
                         </p>
                       </div>
-                      <button onClick={() => loadAvailability()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
-                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                        Refresh
-                      </button>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        {rescheduling && (
+                          <button
+                            type="button"
+                            onClick={cancelReschedule}
+                            disabled={loading}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <button onClick={() => loadAvailability(code, rescheduling ? 'reschedule' : 'booking')} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
+                          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+                          Refresh
+                        </button>
+                      </div>
                     </div>
                     {calendarMonth && groupedSlots.length > 1 && (
                       <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -697,7 +754,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                                     <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{formatSlotDate(slot)} · Bendigo local time</p>
                                     <p className="mt-1 text-xs font-semibold text-blue-700">{bookingBlockLabel}</p>
                                   </div>
-                                  <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Book</span>
+                                  <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">{rescheduling ? 'Reschedule' : 'Book'}</span>
                                 </div>
                                 <div className="mt-3 space-y-1 text-sm text-slate-600">
                                   <p>{flightDurationLabel}</p>
@@ -714,7 +771,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       )}
                       {slots.length === 0 && !availabilityHydrating && (
                         <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-                          No online voucher times found from two days ahead. Try refreshing, or contact Bendigo Flying Club if you need today or tomorrow.
+                          {rescheduling
+                            ? 'No alternate online voucher times were found. Try refreshing, or contact Bendigo Flying Club for help changing this booking.'
+                            : 'No online voucher times found from two days ahead. Try refreshing, or contact Bendigo Flying Club if you need today or tomorrow.'}
                         </div>
                       )}
                     </div>
@@ -733,6 +792,25 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         ? 'A confirmation email has been sent with these booking details.'
                         : 'Your booking is saved. If you do not receive an email, keep these details or contact Bendigo Flying Club.'}
                     </p>
+                    {isVoucherAccountUser && (
+                      <div className="mt-3">
+                        {canRescheduleBookedSlot ? (
+                          <button
+                            type="button"
+                            onClick={startReschedule}
+                            disabled={loading || rescheduling}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60"
+                          >
+                            {loading && rescheduling ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+                            {rescheduling ? 'Choose a new time above' : 'Reschedule booking'}
+                          </button>
+                        ) : (
+                          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                            Online rescheduling closes 3 days before the booking{rescheduleDeadlineLabel ? ` (${rescheduleDeadlineLabel})` : ''}. Please contact Bendigo Flying Club if you need to change this time.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
