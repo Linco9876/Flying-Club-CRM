@@ -1,0 +1,51 @@
+name: Send due trial voucher emails
+
+on:
+  schedule:
+    # GitHub schedules are UTC. This runs regularly so recipient delivery times
+    # are picked up without relying on an admin opening the CRM.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  send-due:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger due voucher email delivery
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          TRIAL_VOUCHER_CRON_SECRET: ${{ secrets.TRIAL_VOUCHER_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "Missing SUPABASE_URL GitHub secret." >&2
+            exit 1
+          fi
+
+          if [ -z "${TRIAL_VOUCHER_CRON_SECRET:-}" ]; then
+            echo "Missing TRIAL_VOUCHER_CRON_SECRET GitHub secret." >&2
+            exit 1
+          fi
+
+          response_file="$(mktemp)"
+          status_code="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "x-cron-secret: ${TRIAL_VOUCHER_CRON_SECRET}" \
+              --data '{"action":"send-due"}' \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              "${SUPABASE_URL%/}/functions/v1/send-trial-voucher-email"
+          )"
+
+          echo "send-due status: ${status_code}"
+          cat "$response_file"
+          echo
+
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            exit 1
+          fi

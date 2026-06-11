@@ -361,7 +361,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                           ? 'We have emailed your setup link. Set your password and sign in to your restricted voucher account before choosing a flight time.'
                           : 'Set your password and sign in to your restricted voucher account before choosing a flight time.'}
                     </p>
-                    {redeemed.setupLink && (
+                    {redeemed?.setupLink && (
                       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                         <a href={redeemed.setupLink} className="inline-flex justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
                           Set password / continue

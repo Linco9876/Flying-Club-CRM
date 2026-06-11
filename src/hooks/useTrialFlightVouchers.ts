@@ -96,6 +96,38 @@ const isMissingColumnError = (error: unknown) => {
   return /column .* does not exist|could not find .* column|schema cache/i.test(message);
 };
 
+const extractFunctionErrorMessage = async (error: unknown, fallback: string) => {
+  const defaultMessage =
+    error && typeof error === 'object' && 'message' in error
+      ? String((error as { message?: unknown }).message || fallback)
+      : fallback;
+
+  if (!error || typeof error !== 'object' || !('context' in error)) {
+    return defaultMessage;
+  }
+
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== 'object' || typeof (context as Response).text !== 'function') {
+    return defaultMessage;
+  }
+
+  try {
+    const response = context as Response;
+    const bodyText = await response.clone().text();
+    if (!bodyText) return defaultMessage;
+
+    try {
+      const parsed = JSON.parse(bodyText) as { error?: unknown; message?: unknown };
+      const message = String(parsed.error || parsed.message || '').trim();
+      return message || defaultMessage;
+    } catch {
+      return bodyText.trim() || defaultMessage;
+    }
+  } catch {
+    return defaultMessage;
+  }
+};
+
 export const useTrialFlightVouchers = () => {
   const [products, setProducts] = useState<TrialFlightVoucherProduct[]>([]);
   const [vouchers, setVouchers] = useState<TrialFlightVoucher[]>([]);
@@ -295,7 +327,7 @@ export const useTrialFlightVouchers = () => {
       toast.success(data?.scheduled ? 'Voucher issued and email scheduled' : 'Voucher issued and emailed');
     } catch (emailError) {
       console.error('Failed to send voucher email:', emailError);
-      toast.error('Voucher issued, but email delivery failed');
+      toast.error(await extractFunctionErrorMessage(emailError, 'Voucher issued, but email delivery failed'));
     }
 
     await fetchAll();
@@ -310,7 +342,9 @@ export const useTrialFlightVouchers = () => {
       },
     });
 
-    if (error) throw error;
+    if (error) {
+      throw new Error(await extractFunctionErrorMessage(error, 'Failed to send voucher email'));
+    }
     if (data?.error) throw new Error(data.error);
 
     toast.success(data?.scheduled ? 'Voucher email is scheduled' : 'Voucher email sent');
@@ -334,9 +368,14 @@ export const useTrialFlightVouchers = () => {
 
     if (error) throw error;
 
-    const data = await sendVoucherEmail(voucherId);
-    toast.success('Voucher marked ready');
-    return data;
+    try {
+      const data = await sendVoucherEmail(voucherId);
+      toast.success('Voucher marked ready');
+      return data;
+    } catch (emailError) {
+      await fetchAll();
+      throw new Error(await extractFunctionErrorMessage(emailError, 'Voucher marked ready, but email delivery failed'));
+    }
   };
 
   const processDueVoucherEmails = async () => {
@@ -344,7 +383,9 @@ export const useTrialFlightVouchers = () => {
       body: { action: 'send-due' },
     });
 
-    if (error) throw error;
+    if (error) {
+      throw new Error(await extractFunctionErrorMessage(error, 'Failed to process due voucher emails'));
+    }
     if (data?.error) throw new Error(data.error);
 
     toast.success(`Due voucher emails checked: ${data?.sent || 0} sent, ${data?.failed || 0} failed`);
@@ -367,7 +408,9 @@ export const useTrialFlightVouchers = () => {
       },
     });
 
-    if (error) throw error;
+    if (error) {
+      throw new Error(await extractFunctionErrorMessage(error, 'Failed to release voucher booking'));
+    }
     if (data?.error) throw new Error(data.error);
 
     toast.success('Voucher booking released. The recipient can choose a new time.');
@@ -384,7 +427,9 @@ export const useTrialFlightVouchers = () => {
       },
     });
 
-    if (error) throw error;
+    if (error) {
+      throw new Error(await extractFunctionErrorMessage(error, 'Failed to cancel voucher'));
+    }
     if (data?.error) throw new Error(data.error);
 
     toast.success('Voucher cancelled');

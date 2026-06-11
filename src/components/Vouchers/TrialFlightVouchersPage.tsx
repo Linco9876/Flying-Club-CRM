@@ -90,7 +90,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
     sendToRecipient: false,
     recipientDeliveryAt: '',
     expiresAt: '',
-    paymentStatus: 'manual' as TrialFlightVoucherPaymentStatus,
+    paymentStatus: 'paid' as TrialFlightVoucherPaymentStatus,
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -298,7 +298,15 @@ export const TrialFlightVouchersPage: React.FC = () => {
     }
   };
 
-  const handleIssueVoucher = async () => {
+  const resolveIssueButtonLabel = (status: TrialFlightVoucherPaymentStatus) => {
+    if (status === 'paid') return 'Mark paid & send voucher';
+    if (status === 'pending') return 'Save unpaid draft';
+    if (status === 'waived') return 'Send complimentary voucher';
+    return 'Send manual voucher';
+  };
+
+  const handleIssueVoucher = async (paymentStatusOverride?: TrialFlightVoucherPaymentStatus) => {
+    const effectivePaymentStatus = paymentStatusOverride || issueForm.paymentStatus;
     if (!issueForm.productId || !issueForm.purchaserName || !issueForm.purchaserEmail) {
       toast.error('Select a voucher and enter purchaser name/email');
       return;
@@ -349,7 +357,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         sendToRecipient: issueForm.sendToRecipient,
         recipientDeliveryAt: dateTimeLocalToIso(issueForm.recipientDeliveryAt),
         expiresAt: issueForm.expiresAt ? new Date(`${issueForm.expiresAt}T23:59:59`).toISOString() : undefined,
-        paymentStatus: issueForm.paymentStatus,
+        paymentStatus: effectivePaymentStatus,
         paymentAmount: selectedProduct?.price,
         paymentCurrency: 'AUD',
         notes: issueForm.notes,
@@ -365,7 +373,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         sendToRecipient: false,
         recipientDeliveryAt: '',
         expiresAt: '',
-        paymentStatus: 'manual',
+        paymentStatus: 'paid',
         notes: '',
       });
     } finally {
@@ -1056,7 +1064,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Secrets</p>
-            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and Stripe webhook URL. Scheduled recipient delivery also needs `TRIAL_VOUCHER_CRON_SECRET` as an Edge Function secret and the same value stored in Supabase Vault as `trial_voucher_cron_secret`.</p>
+            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and Stripe webhook URL. Scheduled recipient delivery also needs `TRIAL_VOUCHER_CRON_SECRET` as an Edge Function secret, GitHub Actions secret, and the same value stored in Supabase Vault as `trial_voucher_cron_secret`.</p>
           </div>
         </div>
       </div>
@@ -1447,7 +1455,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         <section className="space-y-6">
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
             <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Issue voucher</h2>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Creates the code now. Stripe payment can later create the same record automatically.</p>
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Create and email vouchers for cash sales, EFTs, or other external payments without using Stripe checkout.</p>
             <div className="grid gap-3">
               <select value={issueForm.productId} onChange={e => setIssueForm(f => ({ ...f, productId: e.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100">
                 <option value="">Select voucher product</option>
@@ -1472,6 +1480,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   <p className="mt-1 text-xs">
                     {selectedProductReadiness?.serviceableAircraftCount ?? 0} serviceable aircraft - {selectedProductReadiness?.qualifiedInstructorCount ?? 0} qualified instructor{selectedProductReadiness?.qualifiedInstructorCount === 1 ? '' : 's'}
                   </p>
+                  <p className="mt-1 text-xs font-semibold">
+                    Sale price: ${selectedProduct.price.toFixed(2)} AUD
+                  </p>
                   {selectedProduct.stripePriceId && (
                     <span className="mt-1 block text-xs font-mono text-blue-700 dark:text-blue-200">Stripe price: {selectedProduct.stripePriceId}</span>
                   )}
@@ -1485,21 +1496,36 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 </div>
               )}
               <label className="text-sm text-gray-600 dark:text-gray-300">
-                Payment status
+                Payment handling
                 <select
                   value={issueForm.paymentStatus}
                   onChange={e => setIssueForm(f => ({ ...f, paymentStatus: e.target.value as TrialFlightVoucherPaymentStatus }))}
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
                 >
-                  <option value="manual">Manual issue</option>
-                  <option value="paid">Paid outside CRM</option>
-                  <option value="pending">Payment pending</option>
-                  <option value="waived">Waived / complimentary</option>
+                  <option value="paid">Paid outside CRM (cash / EFT / other)</option>
+                  <option value="manual">Manual issue without marking paid</option>
+                  <option value="pending">Save as unpaid draft</option>
+                  <option value="waived">Complimentary / waived</option>
                 </select>
               </label>
+              {issueForm.paymentStatus === 'paid' && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900 dark:border-emerald-400/30 dark:bg-emerald-950/30 dark:text-emerald-100">
+                  This marks the voucher as paid now and sends the voucher email immediately, or schedules it if a future recipient send time is set.
+                </div>
+              )}
+              {issueForm.paymentStatus === 'manual' && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-100">
+                  Use this when you need to send the voucher now but do not want to record it as paid inside the CRM.
+                </div>
+              )}
               {issueForm.paymentStatus === 'pending' && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
                   Payment pending saves this voucher as a draft. It will not email or redeem until it is marked paid, manual, or waived.
+                </div>
+              )}
+              {issueForm.paymentStatus === 'waived' && (
+                <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs leading-5 text-violet-900 dark:border-violet-400/30 dark:bg-violet-950/30 dark:text-violet-100">
+                  Complimentary vouchers are issued and emailed without recording a payment.
                 </div>
               )}
               <input value={issueForm.purchaserName} onChange={e => setIssueForm(f => ({ ...f, purchaserName: e.target.value }))} placeholder="Purchaser name" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
@@ -1534,10 +1560,21 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 <input type="date" value={issueForm.expiresAt} onChange={e => setIssueForm(f => ({ ...f, expiresAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
               </label>
               <textarea value={issueForm.notes} onChange={e => setIssueForm(f => ({ ...f, notes: e.target.value }))} rows={3} placeholder="Internal notes" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
-              <button onClick={handleIssueVoucher} disabled={saving || loading || (Boolean(selectedProduct) && !selectedProductIsIssueable)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
-                <Mail className="h-4 w-4" />
-                Issue voucher
-              </button>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button onClick={() => handleIssueVoucher(issueForm.paymentStatus)} disabled={saving || loading || (Boolean(selectedProduct) && !selectedProductIsIssueable)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+                  <Mail className="h-4 w-4" />
+                  {resolveIssueButtonLabel(issueForm.paymentStatus)}
+                </button>
+                <button
+                  onClick={() => handleIssueVoucher('paid')}
+                  disabled={saving || loading || !issueForm.productId || (Boolean(selectedProduct) && !selectedProductIsIssueable)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/30 dark:bg-emerald-950/30 dark:text-emerald-100 dark:hover:bg-emerald-950/50"
+                  type="button"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Mark paid & send now
+                </button>
+              </div>
             </div>
           </div>
 
