@@ -658,6 +658,58 @@ export const TrialFlightVouchersPage: React.FC = () => {
       : productForm.aircraftIds.length > 0
         ? `Only the ${productForm.aircraftIds.length} selected aircraft will be offered for this ${modeLabel(productForm.aircraftMode).toLowerCase()} voucher.`
         : `${matchingAircraftCount} ${modeLabel(productForm.aircraftMode).toLowerCase()} aircraft currently match this voucher rule.`;
+  const productFormAircraft = useMemo(() => {
+    const selectedAircraft = productForm.aircraftIds.length > 0
+      ? aircraft.filter(item => productForm.aircraftIds.includes(item.id))
+      : productForm.aircraftMode === 'tecnam'
+        ? aircraftByMode.tecnams
+        : productForm.aircraftMode === 'archer'
+          ? aircraftByMode.archers
+          : [];
+
+    return {
+      selectedAircraft,
+      serviceableAircraft: selectedAircraft.filter(item => item.status === 'serviceable'),
+    };
+  }, [aircraft, aircraftByMode.archers, aircraftByMode.tecnams, productForm.aircraftIds, productForm.aircraftMode]);
+  const instructorVoucherReadiness = (instructorId: string) => {
+    if (productFormAircraft.selectedAircraft.length === 0) {
+      return {
+        ready: false,
+        label: 'No aircraft match',
+        detail: 'Add or select an eligible aircraft before this instructor can be qualified for the voucher.',
+      };
+    }
+    if (productFormAircraft.serviceableAircraft.length === 0) {
+      return {
+        ready: false,
+        label: 'No serviceable aircraft',
+        detail: 'At least one eligible aircraft must be serviceable before this instructor can fly voucher bookings.',
+      };
+    }
+
+    const qualifiedAircraft = productFormAircraft.serviceableAircraft.filter(item =>
+      instructorHasAircraftEndorsement(instructorId, item.id)
+    );
+    const restrictedAircraft = productFormAircraft.serviceableAircraft.filter(item => item.requiredEndorsementType);
+
+    if (qualifiedAircraft.length > 0) {
+      return {
+        ready: true,
+        label: 'Can fly voucher',
+        detail: `${qualifiedAircraft.length} eligible serviceable aircraft available for this instructor.`,
+      };
+    }
+
+    const requiredTypes = Array.from(new Set(restrictedAircraft.map(item => item.requiredEndorsementType).filter(Boolean)));
+    return {
+      ready: false,
+      label: 'Needs endorsement',
+      detail: requiredTypes.length > 0
+        ? `Needs active endorsement: ${requiredTypes.join(', ')}.`
+        : 'This instructor does not currently match the eligible aircraft for this voucher.',
+    };
+  };
   const productFormStripeId = productForm.stripePriceId?.trim() || '';
   const productFormPrice = Number(productForm.price || 0);
   const productFormCheckoutReady = productForm.isActive && productFormPrice > 0 && isValidStripePriceId(productFormStripeId) && Boolean(productFormStripeId);
@@ -1367,14 +1419,51 @@ export const TrialFlightVouchersPage: React.FC = () => {
             </div>
             <div className="rounded-xl border border-gray-200 p-3 dark:border-[#2c2f36]">
               <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100"><Users className="h-4 w-4" /> Eligible instructors</p>
-              <div className="max-h-40 space-y-2 overflow-y-auto">
-                {instructors.map(instructor => (
-                  <label key={instructor.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-                    <input type="checkbox" checked={productForm.instructorIds.includes(instructor.id)} onChange={e => updateArraySelection('instructorIds', instructor.id, e.target.checked)} />
-                    {instructor.name}
-                  </label>
-                ))}
+              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                {instructors.map(instructor => {
+                  const readiness = instructorVoucherReadiness(instructor.id);
+                  return (
+                    <label
+                      key={instructor.id}
+                      className={`block rounded-lg border px-3 py-2 text-sm transition ${
+                        productForm.instructorIds.includes(instructor.id)
+                          ? 'border-blue-200 bg-blue-50 dark:border-blue-400/30 dark:bg-blue-950/20'
+                          : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-[#2c2f36] dark:bg-[#111827] dark:hover:bg-[#171a21]'
+                      }`}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="flex min-w-0 items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={productForm.instructorIds.includes(instructor.id)}
+                            onChange={e => updateArraySelection('instructorIds', instructor.id, e.target.checked)}
+                            className="mt-1"
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate font-semibold text-gray-800 dark:text-gray-100">{instructor.name}</span>
+                            <span className="mt-0.5 block text-xs leading-5 text-gray-500 dark:text-gray-400">{readiness.detail}</span>
+                          </span>
+                        </span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                          readiness.ready
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                            : 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
+                        }`}>
+                          {readiness.label}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+                {instructors.length === 0 && (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
+                    Add instructors before this voucher can be issued or sold.
+                  </p>
+                )}
               </div>
+              <p className="mt-3 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                Voucher booking times only appear when at least one selected instructor can fly at least one serviceable eligible aircraft.
+              </p>
             </div>
           </div>
 
