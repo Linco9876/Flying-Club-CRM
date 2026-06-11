@@ -358,7 +358,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                         </span>
                       ) : (
                         <span className="inline-flex items-center rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                          Online checkout not enabled yet
+                          Available by manual purchase
                         </span>
                       )}
                       <a
@@ -372,6 +372,11 @@ export const TrialVoucherSalesPage: React.FC = () => {
                     {!product.bookingAvailable && (
                       <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
                         {product.bookingSetupMessage || 'This voucher needs eligible aircraft and instructor availability configured before it can be sold online.'}
+                      </div>
+                    )}
+                    {product.bookingAvailable && !product.checkoutAvailable && (
+                      <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                        This voucher can be issued by the club now, but online card payment is not enabled yet. Use “Contact to purchase” and the club can email the voucher to you or schedule it for the recipient.
                       </div>
                     )}
                   </article>
