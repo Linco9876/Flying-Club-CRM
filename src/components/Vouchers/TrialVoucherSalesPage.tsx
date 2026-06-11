@@ -31,6 +31,11 @@ interface CheckoutStatus {
 const aircraftLabel = (mode: TrialFlightVoucherAircraftMode) =>
   mode === 'tecnam' ? 'Any Tecnam' : mode === 'archer' ? 'PA-28 Archer' : 'Selected aircraft';
 
+const standardVoucherNames: Record<'tecnam' | 'archer', string> = {
+  tecnam: 'Tecnam Trial Instructional Flight',
+  archer: 'PA-28 Archer Trial Instructional Flight',
+};
+
 const formatPrice = (price: number) =>
   price > 0
     ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(price)
@@ -61,6 +66,18 @@ export const TrialVoucherSalesPage: React.FC = () => {
     recipientDeliveryAt: '',
   });
   const minimumDeliveryAt = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 5 * 60_000)), []);
+  const missingStandardOptions = useMemo(() => {
+    const activeModes = new Set(products.map(product => product.aircraftMode));
+    return (['tecnam', 'archer'] as const)
+      .filter(mode => !activeModes.has(mode))
+      .map(mode => ({
+        mode,
+        name: standardVoucherNames[mode],
+        description: mode === 'archer'
+          ? 'A PA-28 Archer trial instructional flight voucher is planned, but the club still needs the Archer aircraft, instructor, and pricing setup completed before it can be sold online.'
+          : 'A Tecnam trial instructional flight voucher is planned, but the club still needs product setup completed before it can be sold online.',
+      }));
+  }, [products]);
 
   useEffect(() => {
     const loadProducts = async () => {
@@ -379,6 +396,50 @@ export const TrialVoucherSalesPage: React.FC = () => {
                         This voucher can be issued by the club now, but online card payment is not enabled yet. Use "Contact to purchase" and the club can email the voucher to you or schedule it for the recipient.
                       </div>
                     )}
+                  </article>
+                ))}
+                {missingStandardOptions.map(option => (
+                  <article key={option.mode} className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <h4 className="text-lg font-bold text-slate-950">{option.name}</h4>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">{option.description}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-slate-200 px-3 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
+                        Coming soon
+                      </span>
+                    </div>
+                    <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Flight</p>
+                        <p className="font-bold">To be confirmed</p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Booking block</p>
+                        <p className="font-bold">Flight + 30 min</p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Aircraft</p>
+                        <p className="font-bold">{aircraftLabel(option.mode)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <a
+                        href={buildMailtoHref({
+                          id: option.mode,
+                          name: option.name,
+                          description: option.description,
+                          aircraftMode: option.mode,
+                          durationMinutes: 0,
+                          bookingBlockMinutes: 30,
+                          price: 0,
+                        })}
+                        className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-bold text-blue-700 ring-1 ring-slate-200 hover:bg-blue-50"
+                      >
+                        Contact to register interest
+                        <ArrowRight className="h-4 w-4" />
+                      </a>
+                    </div>
                   </article>
                 ))}
               </div>
