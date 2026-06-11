@@ -761,62 +761,23 @@ Deno.serve(async (req: Request) => {
         return json({ error: "That time is no longer available. Please choose another time." }, 409);
       }
 
-      const { data: booking, error: bookingError } = await adminClient
-        .from("bookings")
-        .insert({
-          student_id: voucher.redeemed_by_user_id,
-          aircraft_id: aircraftId,
-          instructor_id: instructorId,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
-          payment_type: "Gift Voucher",
-          status: "confirmed",
-          has_conflict: false,
-          notes: `Trial flight voucher ${voucher.code} - ${product.name}`,
-          trial_flight_voucher_id: voucher.id,
-        })
-        .select("id")
-        .single();
+      const { data: bookingId, error: bookingError } = await adminClient.rpc("book_trial_flight_voucher_slot", {
+        p_voucher_id: voucher.id,
+        p_student_id: voucher.redeemed_by_user_id,
+        p_aircraft_id: aircraftId,
+        p_instructor_id: instructorId,
+        p_start_time: startTime.toISOString(),
+        p_end_time: endTime.toISOString(),
+        p_notes: `Trial flight voucher ${voucher.code} - ${product.name}`,
+      });
 
-      if (bookingError || !booking) {
-        return json({ error: bookingError?.message || "Could not create booking" }, 500);
+      if (bookingError || !bookingId) {
+        const message = bookingError?.message || "Could not create booking";
+        const status = /no longer available|not available|already|not ready/i.test(message) ? 409 : 500;
+        return json({ error: message }, status);
       }
 
-      const cancelInsertedBooking = async () => {
-        const now = new Date().toISOString();
-        await adminClient
-          .from("bookings")
-          .update({
-            status: "cancelled",
-            deleted_at: now,
-            updated_at: now,
-          })
-          .eq("id", booking.id);
-      };
-
-      const { data: bookedVoucher, error: voucherUpdateError } = await adminClient
-        .from("trial_flight_vouchers")
-        .update({
-          status: "booked",
-          booked_booking_id: booking.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", voucher.id)
-        .eq("status", "redeemed")
-        .is("booked_booking_id", null)
-        .select("id")
-        .maybeSingle();
-
-      if (voucherUpdateError) {
-        await cancelInsertedBooking();
-        return json({ error: voucherUpdateError.message }, 500);
-      }
-      if (!bookedVoucher) {
-        await cancelInsertedBooking();
-        return json({ error: "This voucher was booked from another session. Refresh to see the latest booking." }, 409);
-      }
-
-      const bookedSummary = { ...matchingSlot, bookingId: booking.id };
+      const bookedSummary = { ...matchingSlot, bookingId };
       const confirmationEmail = await sendTrialBookingConfirmationEmail({
         voucher,
         product,
@@ -825,7 +786,7 @@ Deno.serve(async (req: Request) => {
 
       return json({
         voucher: { ...publicVoucher, status: "booked" },
-        bookingId: booking.id,
+        bookingId,
         booking: bookedSummary,
         confirmationEmailSent: confirmationEmail.sent,
       });
