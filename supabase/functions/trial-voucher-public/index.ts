@@ -10,6 +10,30 @@ const corsHeaders = {
 const normaliseCode = (value: unknown) =>
   String(value || "").trim().toUpperCase().replace(/\s+/g, "-");
 
+const asString = (value: unknown) => {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
+};
+
+const stripeAmountToDollars = (value: unknown) => {
+  const cents = Number(value);
+  return Number.isFinite(cents) ? cents / 100 : null;
+};
+
+const stripeCurrency = (value: unknown) => {
+  const currency = asString(value).trim().toUpperCase();
+  return currency || "AUD";
+};
+
+const stripePaymentFields = (session: any) => {
+  const amount = stripeAmountToDollars(session.amount_total);
+  return {
+    ...(amount === null ? {} : { payment_amount: amount }),
+    payment_currency: stripeCurrency(session.currency),
+  };
+};
+
 const addMinutes = (date: Date, minutes: number) => new Date(date.getTime() + minutes * 60_000);
 const pad = (value: number) => String(value).padStart(2, "0");
 const dateKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -330,6 +354,134 @@ const toPublicProduct = (product: any, aircraftRows: any[] = [], endorsementRows
   };
 };
 
+const sendVoucherEmailFromCheckoutStatus = async ({
+  supabaseUrl,
+  internalSecret,
+  voucherId,
+}: {
+  supabaseUrl: string;
+  internalSecret: string;
+  voucherId: string;
+}) => {
+  const response = await fetch(`${supabaseUrl}/functions/v1/send-trial-voucher-email`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": internalSecret,
+    },
+    body: JSON.stringify({
+      voucherId,
+      redirectOrigin: Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au",
+    }),
+  });
+
+  const bodyText = await response.text();
+  let body: any = {};
+  try {
+    body = bodyText ? JSON.parse(bodyText) : {};
+  } catch {
+    body = { raw: bodyText };
+  }
+
+  if (!response.ok) {
+    throw new Error(body?.error || `Voucher email failed with ${response.status}`);
+  }
+
+  return body;
+};
+
+const retrieveStripeCheckoutSession = async (sessionId: string) => {
+  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+  if (!stripeSecretKey) return null;
+
+  const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${stripeSecretKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Stripe checkout lookup failed with ${response.status}`);
+  }
+
+  return await response.json();
+};
+
+const reconcileCheckoutSession = async ({
+  adminClient,
+  supabaseUrl,
+  voucher,
+  sessionId,
+}: {
+  adminClient: ReturnType<typeof createClient>;
+  supabaseUrl: string;
+  voucher: any;
+  sessionId: string;
+}) => {
+  if (voucher.payment_status === "paid" || voucher.delivered_at) {
+    return { reconciled: false, email: null };
+  }
+
+  const stripeSession = await retrieveStripeCheckoutSession(sessionId);
+  if (!stripeSession) return { reconciled: false, email: null };
+  if (stripeSession.id !== sessionId) throw new Error("Stripe checkout session mismatch");
+  if (stripeSession.client_reference_id && stripeSession.client_reference_id !== voucher.id) {
+    throw new Error("Stripe checkout session does not match this voucher");
+  }
+  if (stripeSession.metadata?.voucher_id && stripeSession.metadata.voucher_id !== voucher.id) {
+    throw new Error("Stripe checkout metadata does not match this voucher");
+  }
+
+  if (stripeSession.status === "expired") {
+    await adminClient
+      .from("trial_flight_vouchers")
+      .update({
+        payment_status: "failed",
+        stripe_payment_intent_id: asString(stripeSession.payment_intent) || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", voucher.id)
+      .neq("payment_status", "paid");
+    return { reconciled: true, email: null };
+  }
+
+  if (stripeSession.payment_status !== "paid") {
+    await adminClient
+      .from("trial_flight_vouchers")
+      .update({
+        payment_status: "pending",
+        stripe_payment_intent_id: asString(stripeSession.payment_intent) || null,
+        ...stripePaymentFields(stripeSession),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", voucher.id);
+    return { reconciled: true, email: null };
+  }
+
+  const { error: updateError } = await adminClient
+    .from("trial_flight_vouchers")
+    .update({
+      status: voucher.status === "draft" ? "issued" : voucher.status,
+      payment_status: "paid",
+      stripe_payment_intent_id: asString(stripeSession.payment_intent) || null,
+      ...stripePaymentFields(stripeSession),
+      paid_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", voucher.id);
+
+  if (updateError) throw updateError;
+
+  const internalSecret = Deno.env.get("TRIAL_VOUCHER_INTERNAL_SECRET");
+  const email = internalSecret
+    ? await sendVoucherEmailFromCheckoutStatus({ supabaseUrl, internalSecret, voucherId: voucher.id })
+    : null;
+
+  return { reconciled: true, email };
+};
+
 const getBookingSummary = async (adminClient: ReturnType<typeof createClient>, bookingId?: string | null) => {
   if (!bookingId) return null;
 
@@ -534,7 +686,44 @@ Deno.serve(async (req: Request) => {
       const sessionId = String(body.sessionId || "").trim();
       if (!sessionId) return json({ error: "Checkout session is required" }, 400);
 
-      const { data: voucher, error: voucherError } = await adminClient
+      const { data: initialVoucher, error: voucherError } = await adminClient
+        .from("trial_flight_vouchers")
+        .select(`
+          id,
+          status,
+          payment_status,
+          purchaser_email,
+          recipient_email,
+          send_to_recipient,
+          recipient_delivery_at,
+          delivered_at,
+          stripe_checkout_session_id,
+          trial_flight_voucher_products(name)
+        `)
+        .eq("stripe_checkout_session_id", sessionId)
+        .maybeSingle();
+
+      if (voucherError) return json({ error: voucherError.message }, 500);
+      if (!initialVoucher) return json({ error: "Checkout session was not found yet" }, 404);
+
+      let checkoutEmail: any = null;
+      let checkoutWarning = "";
+      if (initialVoucher.payment_status !== "paid") {
+        try {
+          const reconciliation = await reconcileCheckoutSession({
+            adminClient,
+            supabaseUrl,
+            voucher: initialVoucher,
+            sessionId,
+          });
+          checkoutEmail = reconciliation.email;
+        } catch (error) {
+          checkoutWarning = error instanceof Error ? error.message : "Could not reconcile Stripe checkout yet";
+          console.warn("Stripe checkout reconciliation skipped:", error);
+        }
+      }
+
+      const { data: voucher, error: refreshedError } = await adminClient
         .from("trial_flight_vouchers")
         .select(`
           status,
@@ -549,8 +738,8 @@ Deno.serve(async (req: Request) => {
         .eq("stripe_checkout_session_id", sessionId)
         .maybeSingle();
 
-      if (voucherError) return json({ error: voucherError.message }, 500);
-      if (!voucher) return json({ error: "Checkout session was not found yet" }, 404);
+      if (refreshedError) return json({ error: refreshedError.message }, 500);
+      if (!voucher) return json({ error: "Checkout session was not found after reconciliation" }, 404);
 
       const emailTo = voucher.send_to_recipient
         ? voucher.recipient_email
@@ -568,6 +757,8 @@ Deno.serve(async (req: Request) => {
           sendToRecipient: Boolean(voucher.send_to_recipient),
           recipientDeliveryAt: voucher.recipient_delivery_at,
           deliveredAt: voucher.delivered_at,
+          email: checkoutEmail,
+          warning: checkoutWarning || undefined,
         },
       });
     }
