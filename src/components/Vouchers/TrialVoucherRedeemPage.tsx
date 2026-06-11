@@ -658,8 +658,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                                 </div>
                                 <div className="mt-3 space-y-1 text-sm text-slate-600">
                                   <p>{flightDurationLabel}</p>
-                                  <p className="font-semibold text-slate-800">{slot.aircraftLabel}</p>
-                                  <p>Instructor: {slot.instructorName}</p>
+                                  <p className="font-semibold text-slate-800">
+                                    Aircraft and instructor will be allocated by Bendigo Flying Club.
+                                  </p>
                                 </div>
                               </button>
                             ))}
@@ -682,7 +683,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       {formatSlotDate(bookedSlot.startTime)} at {formatSlotTime(bookedSlot.startTime, bookedSlot.endTime)}
                     </p>
                     <p className="mt-1 text-sm font-semibold">{bookingBlockLabel} including {flightDurationLabel.toLowerCase()}.</p>
-                    <p className="mt-1 text-sm">{bookedSlot.aircraftLabel} with {bookedSlot.instructorName}</p>
+                    <p className="mt-1 text-sm">Aircraft and instructor have been allocated internally by Bendigo Flying Club.</p>
                     <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-emerald-800">
                       {confirmationEmailSent
                         ? 'A confirmation email has been sent with these booking details.'

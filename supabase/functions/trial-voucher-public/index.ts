@@ -267,9 +267,7 @@ const sendTrialBookingConfirmationEmail = async ({
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
                   <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Date</strong><span style="color:#475569;">${escapeHtml(dateLabel)}</span></td></tr>
                   <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Arrival / reserved booking block</strong><span style="color:#475569;">${escapeHtml(timeLabel)}</span></td></tr>
-                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Trial flight time</strong><span style="color:#475569;">${escapeHtml(flightMinutes ? `${flightMinutes} minutes` : "As listed on your voucher")}</span></td></tr>
-                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Aircraft</strong><span style="color:#475569;">${escapeHtml(booking.aircraftLabel || "Aircraft")}</span></td></tr>
-                  <tr><td style="padding:16px 18px;"><strong style="display:block;color:#0f172a;">Instructor</strong><span style="color:#475569;">${escapeHtml(booking.instructorName || "Instructor")}</span></td></tr>
+                  <tr><td style="padding:16px 18px;"><strong style="display:block;color:#0f172a;">Trial flight time</strong><span style="color:#475569;">${escapeHtml(flightMinutes ? `${flightMinutes} minutes` : "As listed on your voucher")}</span></td></tr>
                 </table>
                 <p style="margin:0 0 14px;line-height:1.65;color:#334155;">Please arrive at the start of the reserved booking block. It includes ${escapeHtml(blockMinutes ? `${blockMinutes} minutes total` : "the flight time plus 30 minutes")} for the flight, pre-flight briefing, aircraft changeover and paperwork.</p>
                 <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">Voucher code: ${escapeHtml(voucher.code)}. Contact Bendigo Flying Club if you need help changing this booking.</p>
@@ -635,7 +633,8 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
 
   const eligibleAircraft = (aircraftRows || [])
     .filter((aircraft: any) => aircraft.status === "serviceable")
-    .filter((aircraft: any) => aircraftMatchesTrialVoucherProduct(aircraft, product));
+    .filter((aircraft: any) => aircraftMatchesTrialVoucherProduct(aircraft, product))
+    .sort((a: any, b: any) => String(a.registration || "").localeCompare(String(b.registration || "")));
   const userMap = new Map((users || []).map((user: any) => [user.id, user.name]));
   const endorsementsByInstructor = new Map<string, any[]>();
   (endorsements || []).forEach((endorsement: any) => {
@@ -653,6 +652,8 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
   );
 
   const slots: any[] = [];
+  const slotKeys = new Set<string>();
+  const aircraftUseCount = new Map<string, number>();
 
   const today = localDatePartsForInstant(now);
   for (let dayOffset = 0; dayOffset < 45; dayOffset += 1) {
@@ -682,15 +683,28 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
             continue;
           }
 
-          const aircraft = eligibleAircraft.find((candidate: any) =>
-            instructorHasTrialVoucherAircraftEndorsement(instructorId, candidate, endorsementsByInstructor) &&
-            !activeBookings.some((booking: any) =>
-              overlaps(start, end, booking.start_time, booking.end_time) &&
-              (booking.aircraft_id === candidate.id || booking.instructor_id === instructorId)
+          const slotKey = `${start.toISOString()}-${end.toISOString()}`;
+          if (slotKeys.has(slotKey)) continue;
+
+          const availableAircraft = eligibleAircraft
+            .filter((candidate: any) =>
+              instructorHasTrialVoucherAircraftEndorsement(instructorId, candidate, endorsementsByInstructor) &&
+              !activeBookings.some((booking: any) =>
+                overlaps(start, end, booking.start_time, booking.end_time) &&
+                (booking.aircraft_id === candidate.id || booking.instructor_id === instructorId)
+              )
             )
-          );
+            .sort((a: any, b: any) => {
+              const useDiff = (aircraftUseCount.get(a.id) || 0) - (aircraftUseCount.get(b.id) || 0);
+              if (useDiff !== 0) return useDiff;
+              return String(a.registration || "").localeCompare(String(b.registration || ""));
+            });
+
+          const aircraft = availableAircraft[0];
 
           if (!aircraft) continue;
+          slotKeys.add(slotKey);
+          aircraftUseCount.set(aircraft.id, (aircraftUseCount.get(aircraft.id) || 0) + 1);
 
           slots.push({
             startTime: start.toISOString(),
