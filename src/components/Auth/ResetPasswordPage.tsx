@@ -22,17 +22,18 @@ export const ResetPasswordPage: React.FC = () => {
     let recoveryConfirmed = false;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-    if (window.location.pathname !== '/reset-password') {
-      window.history.replaceState(null, '', `/reset-password${window.location.search}${window.location.hash}`);
-    }
-
+    const originalPathname = window.location.pathname;
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const searchParams = new URLSearchParams(window.location.search);
     const voucherCode = searchParams.get('voucherCode') || (hashParams.has('access_token') ? searchParams.get('code') : null);
-    if (window.location.pathname === '/trial-flight-voucher') {
+    if (originalPathname === '/trial-flight-voucher') {
       const returnTo = `/trial-flight-voucher${voucherCode ? `?voucherCode=${encodeURIComponent(voucherCode)}` : ''}`;
       sessionStorage.setItem(PASSWORD_RESET_RETURN_KEY, returnTo);
       setPostResetReturnTo(returnTo);
+    }
+
+    if (originalPathname !== '/reset-password') {
+      window.history.replaceState(null, '', `/reset-password${window.location.search}${window.location.hash}`);
     }
 
     const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
