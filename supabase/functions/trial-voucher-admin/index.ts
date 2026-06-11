@@ -16,6 +16,7 @@ const json = (body: Record<string, unknown>, status = 200) =>
   });
 
 const isStaffRole = (role: string) => ["admin", "senior_instructor", "instructor"].includes(role);
+const cleanText = (value: unknown) => String(value || "").trim();
 
 type StaffAuthResult =
   | { ok: true; userId: string }
@@ -72,6 +73,68 @@ Deno.serve(async (req: Request) => {
 
     const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
     if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
+
+    if (action === "validate-stripe-price") {
+      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+      if (!stripeSecretKey) {
+        return json({
+          error: "Stripe secret key is not configured in Supabase Edge Function secrets.",
+          configured: false,
+        }, 503);
+      }
+
+      const stripePriceId = cleanText(body.stripePriceId);
+      const expectedAmount = Number(body.expectedAmount || 0);
+      if (!/^price_[A-Za-z0-9_]+$/.test(stripePriceId)) {
+        return json({ error: "Stripe Price ID must start with price_." }, 400);
+      }
+
+      const stripeResponse = await fetch(`https://api.stripe.com/v1/prices/${encodeURIComponent(stripePriceId)}?expand[]=product`, {
+        headers: {
+          Authorization: `Bearer ${stripeSecretKey}`,
+        },
+      });
+      const stripePrice = await stripeResponse.json();
+
+      if (!stripeResponse.ok) {
+        return json({
+          error: stripePrice?.error?.message || "Stripe price could not be loaded.",
+          configured: true,
+          valid: false,
+        }, 502);
+      }
+
+      const currency = String(stripePrice.currency || "").toUpperCase();
+      const unitAmount = typeof stripePrice.unit_amount === "number" ? stripePrice.unit_amount / 100 : null;
+      const product = typeof stripePrice.product === "object" ? stripePrice.product : null;
+      const issues = [
+        ...(stripePrice.active ? [] : ["Stripe price is inactive."]),
+        ...(product && product.active === false ? ["Stripe product is inactive."] : []),
+        ...(currency === "AUD" ? [] : [`Stripe price currency is ${currency || "unknown"}, expected AUD.`]),
+        ...(unitAmount === null ? ["Stripe price does not have a fixed unit amount."] : []),
+        ...(unitAmount !== null && expectedAmount > 0 && Math.round(unitAmount * 100) !== Math.round(expectedAmount * 100)
+          ? [`Stripe amount ${currency} ${unitAmount.toFixed(2)} does not match CRM price AUD ${expectedAmount.toFixed(2)}.`]
+          : []),
+      ];
+
+      return json({
+        configured: true,
+        valid: issues.length === 0,
+        issues,
+        price: {
+          id: stripePrice.id,
+          active: Boolean(stripePrice.active),
+          currency,
+          unitAmount,
+          type: stripePrice.type,
+          billingScheme: stripePrice.billing_scheme,
+          productId: product?.id || (typeof stripePrice.product === "string" ? stripePrice.product : null),
+          productName: product?.name || null,
+          productActive: product?.active ?? null,
+          livemode: Boolean(stripePrice.livemode),
+        },
+      });
+    }
 
     const voucherId = String(body.voucherId || "").trim();
     if (!voucherId) return json({ error: "voucherId is required" }, 400);

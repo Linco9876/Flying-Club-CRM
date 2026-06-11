@@ -102,6 +102,10 @@ const appPath = join(root, 'src/App.tsx');
 const app = existsSync(appPath) ? readFileSync(appPath, 'utf8') : '';
 const resetPasswordPath = join(root, 'src/components/Auth/ResetPasswordPage.tsx');
 const resetPassword = existsSync(resetPasswordPath) ? readFileSync(resetPasswordPath, 'utf8') : '';
+const adminFunctionPath = join(root, 'supabase/functions/trial-voucher-admin/index.ts');
+const adminFunction = existsSync(adminFunctionPath) ? readFileSync(adminFunctionPath, 'utf8') : '';
+const adminVoucherPagePath = join(root, 'src/components/Vouchers/TrialFlightVouchersPage.tsx');
+const adminVoucherPage = existsSync(adminVoucherPagePath) ? readFileSync(adminVoucherPagePath, 'utf8') : '';
 addCheck(
   'Public voucher function restricts normal portal users from voucher account-only actions',
   publicFunction.includes('portal_access_scope') && publicFunction.includes('trial_voucher'),
@@ -132,6 +136,14 @@ addCheck(
     resetPassword.includes('PASSWORD_RESET_RETURN_KEY') &&
     resetPassword.includes("profile?.portal_access_scope === 'trial_voucher'") &&
     resetPassword.includes("storedReturnTo?.startsWith('/trial-flight-voucher')"),
+);
+addCheck(
+  'Admin voucher tools validate Stripe Price IDs without exposing the Stripe secret',
+  adminFunction.includes('validate-stripe-price') &&
+    adminFunction.includes('STRIPE_SECRET_KEY') &&
+    adminFunction.includes('https://api.stripe.com/v1/prices/') &&
+    adminVoucherPage.includes('Check Stripe ID') &&
+    adminVoucherPage.includes('validate-stripe-price'),
 );
 
 const readinessHelperPath = join(root, 'supabase/functions/_shared/trialVoucherReadiness.ts');

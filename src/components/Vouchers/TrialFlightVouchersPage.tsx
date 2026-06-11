@@ -72,6 +72,22 @@ interface InstructorEndorsementRow {
   is_active?: boolean | null;
 }
 
+interface StripePriceValidationResult {
+  valid: boolean;
+  configured?: boolean;
+  issues?: string[];
+  price?: {
+    id: string;
+    active: boolean;
+    currency: string;
+    unitAmount: number | null;
+    productId?: string | null;
+    productName?: string | null;
+    productActive?: boolean | null;
+    livemode: boolean;
+  };
+}
+
 export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
@@ -94,6 +110,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
     notes: '',
   });
   const [saving, setSaving] = useState(false);
+  const [stripeValidation, setStripeValidation] = useState<StripePriceValidationResult | null>(null);
+  const [stripeValidationLoading, setStripeValidationLoading] = useState(false);
 
   const instructors = getInstructors();
   const activeProducts = products.filter(product => product.isActive);
@@ -169,6 +187,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
     void loadInstructorEndorsements();
   }, [instructorIdsKey]);
 
+  useEffect(() => {
+    setStripeValidation(null);
+  }, [productForm.price, productForm.stripePriceId]);
+
   const updateArraySelection = (field: 'aircraftIds' | 'instructorIds', id: string, checked: boolean) => {
     setProductForm(form => ({
       ...form,
@@ -180,6 +202,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const startEdit = (product: TrialFlightVoucherProduct) => {
     setEditingProductId(product.id);
+    setStripeValidation(null);
     setProductForm({
       name: product.name,
       description: product.description,
@@ -198,6 +221,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const applyPreset = (aircraftMode: TrialFlightVoucherAircraftMode) => {
     setEditingProductId(undefined);
+    setStripeValidation(null);
     setProductForm(buildPresetProduct(aircraftMode, instructors.map(instructor => instructor.id)));
     toast.success(`${modeLabel(aircraftMode)} voucher template loaded`);
   };
@@ -324,8 +348,46 @@ export const TrialFlightVouchersPage: React.FC = () => {
       await saveProduct(productForm, editingProductId);
       setProductForm(emptyProduct());
       setEditingProductId(undefined);
+      setStripeValidation(null);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleValidateStripePrice = async () => {
+    const stripePriceId = productForm.stripePriceId?.trim() || '';
+    if (!stripePriceId) {
+      toast.error('Paste a Stripe Price ID first');
+      return;
+    }
+    if (!isValidStripePriceId(stripePriceId)) {
+      toast.error('Stripe Price ID must start with price_');
+      return;
+    }
+
+    setStripeValidationLoading(true);
+    setStripeValidation(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('trial-voucher-admin', {
+        body: {
+          action: 'validate-stripe-price',
+          stripePriceId,
+          expectedAmount: Number(productForm.price || 0),
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setStripeValidation(data as StripePriceValidationResult);
+      if (data?.valid) {
+        toast.success('Stripe Price ID matches this voucher setup');
+      } else {
+        toast.error(data?.issues?.[0] || 'Stripe Price ID needs attention');
+      }
+    } catch (error) {
+      console.error('Failed to validate Stripe price:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to validate Stripe Price ID');
+    } finally {
+      setStripeValidationLoading(false);
     }
   };
 
@@ -1400,6 +1462,15 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
                   <button
                     type="button"
+                    onClick={handleValidateStripePrice}
+                    disabled={stripeValidationLoading || !productFormStripeId}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-gray-800 ring-1 ring-black/5 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#111827] dark:text-gray-100 dark:ring-white/10"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {stripeValidationLoading ? 'Checking...' : 'Check Stripe ID'}
+                  </button>
+                  <button
+                    type="button"
                     onClick={copyStripeSetupSummary}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-gray-800 ring-1 ring-black/5 transition hover:bg-white dark:bg-[#111827] dark:text-gray-100 dark:ring-white/10"
                   >
@@ -1417,6 +1488,39 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   </a>
                 </div>
               </div>
+              {stripeValidation && (
+                <div className={`mt-3 rounded-xl border p-3 text-xs leading-5 ${
+                  stripeValidation.valid
+                    ? 'border-emerald-200 bg-white/70 text-emerald-900 dark:border-emerald-400/30 dark:bg-emerald-950/20 dark:text-emerald-100'
+                    : 'border-amber-200 bg-white/70 text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/20 dark:text-amber-100'
+                }`}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-bold">
+                        {stripeValidation.valid ? 'Stripe price verified' : 'Stripe price needs attention'}
+                      </p>
+                      {stripeValidation.price && (
+                        <p className="mt-1">
+                          {stripeValidation.price.productName || stripeValidation.price.productId || 'Stripe product'} - {stripeValidation.price.currency} {stripeValidation.price.unitAmount?.toFixed(2) || 'variable'}
+                          {stripeValidation.price.livemode ? ' (live mode)' : ' (test mode)'}
+                        </p>
+                      )}
+                    </div>
+                    {stripeValidation.price?.id && (
+                      <span className="rounded-lg bg-white/70 px-2 py-1 font-mono text-[11px] dark:bg-[#111827]">
+                        {stripeValidation.price.id}
+                      </span>
+                    )}
+                  </div>
+                  {stripeValidation.issues && stripeValidation.issues.length > 0 && (
+                    <ul className="mt-2 list-disc space-y-1 pl-4">
+                      {stripeValidation.issues.map(issue => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
             <label className="sm:col-span-2">
               <span className="text-xs font-semibold uppercase text-gray-500">Aircraft rule</span>

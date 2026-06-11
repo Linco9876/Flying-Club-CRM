@@ -72,6 +72,7 @@ The voucher function deployment workflow runs Deno checks before deploying. The 
 
 - Create Stripe products/prices for each voucher product.
 - Copy the Stripe Price ID onto the matching voucher product in the CRM.
+- Use the admin product editor's **Check Stripe ID** action to verify the pasted Stripe Price ID exists in Stripe, is active, uses AUD, and matches the CRM sale price.
 - Set the Stripe webhook endpoint to:
 
 ```text
