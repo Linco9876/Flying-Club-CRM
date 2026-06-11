@@ -1178,15 +1178,15 @@ export const TrialFlightVouchersPage: React.FC = () => {
         <div className="mt-4 grid gap-3 text-xs leading-5 text-gray-700 dark:text-gray-300 lg:grid-cols-3">
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Products</p>
-            <p className="mt-1">Add a real price and a Stripe Price ID from Stripe to each voucher product that should be sold online.</p>
+            <p className="mt-1">Keep Tecnam and PA-28 Archer products active, priced, and linked to eligible aircraft and instructors. Add a Stripe Price ID when the product should sell online.</p>
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Supabase</p>
-            <p className="mt-1">Deploy the voucher migrations plus `create-trial-voucher-checkout`, `send-trial-voucher-email`, and `trial-voucher-stripe-webhook` functions.</p>
+            <p className="mt-1">Deploy the voucher migrations plus `trial-voucher-public`, `trial-voucher-admin`, `create-trial-voucher-checkout`, `send-trial-voucher-email`, and `trial-voucher-stripe-webhook` functions.</p>
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Secrets</p>
-            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and Stripe webhook URL. Scheduled recipient delivery also needs `TRIAL_VOUCHER_CRON_SECRET` as an Edge Function secret, GitHub Actions secret, and the same value stored in Supabase Vault as `trial_voucher_cron_secret`.</p>
+            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and the Stripe webhook URL. Scheduled recipient delivery also needs `TRIAL_VOUCHER_CRON_SECRET` in Supabase Edge Function secrets, GitHub Actions secrets, and Supabase Vault as `trial_voucher_cron_secret`.</p>
           </div>
         </div>
       </div>
