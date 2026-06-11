@@ -785,6 +785,7 @@ Deno.serve(async (req: Request) => {
       const { data: voucher, error: refreshedError } = await adminClient
         .from("trial_flight_vouchers")
         .select(`
+          id,
           status,
           payment_status,
           purchaser_email,
@@ -799,6 +800,33 @@ Deno.serve(async (req: Request) => {
 
       if (refreshedError) return json({ error: refreshedError.message }, 500);
       if (!voucher) return json({ error: "Checkout session was not found after reconciliation" }, 404);
+
+      if (!checkoutEmail && voucher.payment_status === "paid" && !voucher.delivered_at) {
+        const deliveryAt = voucher.recipient_delivery_at ? new Date(voucher.recipient_delivery_at) : null;
+        const isFutureRecipientDelivery = Boolean(
+          voucher.send_to_recipient &&
+          deliveryAt &&
+          deliveryAt.getTime() > Date.now()
+        );
+
+        if (!isFutureRecipientDelivery) {
+          const internalSecret = Deno.env.get("TRIAL_VOUCHER_INTERNAL_SECRET");
+          if (internalSecret) {
+            try {
+              checkoutEmail = await sendVoucherEmailFromCheckoutStatus({
+                supabaseUrl,
+                internalSecret,
+                voucherId: voucher.id,
+              });
+            } catch (error) {
+              checkoutWarning = error instanceof Error ? error.message : "Payment succeeded, but voucher email retry failed";
+              console.warn("Voucher email retry from checkout status failed:", error);
+            }
+          } else {
+            checkoutWarning = "Payment succeeded, but voucher email cannot be retried because the internal email secret is not configured";
+          }
+        }
+      }
 
       const emailTo = voucher.send_to_recipient
         ? voucher.recipient_email
