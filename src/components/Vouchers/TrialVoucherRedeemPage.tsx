@@ -44,6 +44,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [form, setForm] = useState({ fullName: '', email: '', phone: '' });
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
   const [setupResendEmail, setSetupResendEmail] = useState('');
+  const [selectedSlotDate, setSelectedSlotDate] = useState('all');
 
   const loadLinkedVoucher = async () => {
     setLoading(true);
@@ -235,6 +236,20 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       slots: items,
     }));
   }, [slots]);
+
+  useEffect(() => {
+    if (selectedSlotDate === 'all') return;
+    if (!groupedSlots.some(group => group.dateKey === selectedSlotDate)) {
+      setSelectedSlotDate('all');
+    }
+  }, [groupedSlots, selectedSlotDate]);
+
+  const visibleSlotGroups = useMemo(
+    () => selectedSlotDate === 'all'
+      ? groupedSlots
+      : groupedSlots.filter(group => group.dateKey === selectedSlotDate),
+    [groupedSlots, selectedSlotDate]
+  );
 
   const isFullPortalUserOnVoucherPage = Boolean(user && user.portalAccessScope !== 'trial_voucher');
   const canChooseTime = Boolean(user && !isFullPortalUserOnVoucherPage && voucher?.status === 'redeemed' && !bookedSlot);
@@ -430,15 +445,49 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <h3 className="font-bold text-slate-950">Available times</h3>
-                        <p className="text-sm text-slate-600">Aircraft and instructor availability are checked together.</p>
+                        <p className="text-sm text-slate-600">
+                          {slots.length} available time{slots.length === 1 ? '' : 's'} found. Aircraft and instructor availability are checked together.
+                        </p>
                       </div>
                       <button onClick={loadAvailability} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
                         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
                         Refresh
                       </button>
                     </div>
+                    {groupedSlots.length > 1 && (
+                      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSlotDate('all')}
+                          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                            selectedSlotDate === 'all'
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          All dates
+                        </button>
+                        {groupedSlots.map(group => (
+                          <button
+                            key={group.dateKey}
+                            type="button"
+                            onClick={() => setSelectedSlotDate(group.dateKey)}
+                            className={`shrink-0 rounded-xl px-3 py-2 text-left text-sm font-semibold transition ${
+                              selectedSlotDate === group.dateKey
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            <span className="block whitespace-nowrap">{formatSlotDate(group.slots[0].startTime)}</span>
+                            <span className={`block text-xs ${selectedSlotDate === group.dateKey ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {group.slots.length} time{group.slots.length === 1 ? '' : 's'}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className="max-h-[30rem] space-y-4 overflow-y-auto pr-1">
-                      {groupedSlots.map(group => (
+                      {visibleSlotGroups.map(group => (
                         <div key={group.dateKey} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                           <div className="mb-3 flex items-center justify-between gap-3">
                             <div>
