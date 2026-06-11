@@ -145,6 +145,16 @@ addCheck(
     adminVoucherPage.includes('Check Stripe ID') &&
     adminVoucherPage.includes('validate-stripe-price'),
 );
+addCheck(
+  'Admin voucher tools can create and link Stripe Price IDs server-side',
+  adminFunction.includes('create-stripe-price') &&
+    adminFunction.includes('https://api.stripe.com/v1/products') &&
+    adminFunction.includes('https://api.stripe.com/v1/prices') &&
+    adminFunction.includes('stripe_price_id: stripePrice.id') &&
+    adminVoucherPage.includes('Connect Stripe') &&
+    adminVoucherPage.includes('Create & link Stripe') &&
+    adminVoucherPage.includes('create-stripe-price'),
+);
 
 const readinessHelperPath = join(root, 'supabase/functions/_shared/trialVoucherReadiness.ts');
 const readinessHelper = existsSync(readinessHelperPath) ? readFileSync(readinessHelperPath, 'utf8') : '';

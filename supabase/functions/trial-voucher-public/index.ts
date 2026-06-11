@@ -46,6 +46,64 @@ const pad = (value: number) => String(value).padStart(2, "0");
 const dateKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const overlaps = (aStart: Date | string, aEnd: Date | string, bStart: Date | string, bEnd: Date | string) =>
   new Date(aStart) < new Date(bEnd) && new Date(aEnd) > new Date(bStart);
+const VOUCHER_TIME_ZONE = "Australia/Sydney";
+
+type LocalDateParts = { year: number; month: number; day: number };
+
+const localDateFormatter = new Intl.DateTimeFormat("en-AU", {
+  timeZone: VOUCHER_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const localDateTimeFormatter = new Intl.DateTimeFormat("en-AU", {
+  timeZone: VOUCHER_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+const datePartsFromFormatter = (formatter: Intl.DateTimeFormat, date: Date) => {
+  const parts = formatter.formatToParts(date);
+  const value = (type: string) => Number(parts.find(part => part.type === type)?.value);
+  return {
+    year: value("year"),
+    month: value("month"),
+    day: value("day"),
+    hour: value("hour"),
+    minute: value("minute"),
+    second: value("second"),
+  };
+};
+
+const localDatePartsForInstant = (date: Date): LocalDateParts => {
+  const parts = datePartsFromFormatter(localDateFormatter, date);
+  return { year: parts.year, month: parts.month, day: parts.day };
+};
+
+const localDateKey = (parts: LocalDateParts) => `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+
+const addLocalDays = (parts: LocalDateParts, days: number): LocalDateParts =>
+  localDatePartsForInstant(new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 12, 0, 0, 0)));
+
+const timeZoneOffsetMinutesAt = (date: Date) => {
+  const parts = datePartsFromFormatter(localDateTimeFormatter, date);
+  const localAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second, 0);
+  return (localAsUtc - date.getTime()) / 60_000;
+};
+
+const zonedLocalTimeToUtc = (parts: LocalDateParts, hour: number, minute: number) => {
+  const localAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, hour, minute, 0, 0);
+  const firstOffset = timeZoneOffsetMinutesAt(new Date(localAsUtc));
+  const firstUtc = new Date(localAsUtc - firstOffset * 60_000);
+  const finalOffset = timeZoneOffsetMinutesAt(firstUtc);
+  return new Date(localAsUtc - finalOffset * 60_000);
+};
 
 const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
 const isDevelopmentOrigin = (origin: string) =>
@@ -276,18 +334,19 @@ const getProductBookingSetup = async (adminClient: SupabaseAdminClient, product:
   return trialVoucherProductBookingSetup(product, aircraftRows || [], endorsementRows || []);
 };
 
-const timeForDate = (date: Date, time: string, fallbackHour: number, fallbackMinute = 0) => {
+const timeForLocalDate = (day: LocalDateParts, time: string, fallbackHour: number, fallbackMinute = 0) => {
   const [hourRaw, minuteRaw] = String(time || "").slice(0, 5).split(":").map(Number);
   const hour = Number.isFinite(hourRaw) ? hourRaw : fallbackHour;
   const minute = Number.isFinite(minuteRaw) ? minuteRaw : fallbackMinute;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hour, minute, 0, 0);
+  return zonedLocalTimeToUtc(day, hour, minute);
 };
 
 const absenceBlocksTime = (absence: any, start: Date, end: Date) => {
-  const startDate = dateKey(start);
+  const day = localDatePartsForInstant(start);
+  const startDate = localDateKey(day);
   if (startDate < absence.start_date || startDate > absence.end_date) return false;
-  const absenceStart = timeForDate(start, absence.start_time || "00:00", 0);
-  const absenceEnd = timeForDate(start, absence.end_time || "23:59", 23, 59);
+  const absenceStart = timeForLocalDate(day, absence.start_time || "00:00", 0);
+  const absenceEnd = timeForLocalDate(day, absence.end_time || "23:59", 23, 59);
   return overlaps(start, end, absenceStart, absenceEnd);
 };
 
@@ -298,13 +357,13 @@ const instructorWindowsForDate = ({
   schedules,
   scheduleChanges,
 }: {
-  day: Date;
+  day: LocalDateParts;
   dayOfWeek: number;
   instructorId: string;
   schedules: any[];
   scheduleChanges: any[];
 }) => {
-  const dayKey = dateKey(day);
+  const dayKey = localDateKey(day);
   const matchingChange = (scheduleChanges || [])
     .filter((change: any) =>
       (change.user_id || change.instructor_id) === instructorId &&
@@ -595,9 +654,10 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
 
   const slots: any[] = [];
 
+  const today = localDatePartsForInstant(now);
   for (let dayOffset = 0; dayOffset < 45; dayOffset += 1) {
-    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
-    const dayOfWeek = day.getDay();
+    const day = addLocalDays(today, dayOffset);
+    const dayOfWeek = new Date(Date.UTC(day.year, day.month - 1, day.day)).getUTCDay();
 
     for (const instructorId of allowedInstructorIds) {
       const windows = instructorWindowsForDate({
@@ -609,12 +669,15 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
       });
 
       for (const [windowStartRaw, windowEndRaw] of windows) {
-        const windowStart = timeForDate(day, windowStartRaw, 9);
-        const windowEnd = timeForDate(day, windowEndRaw, 17);
+        const windowStart = timeForLocalDate(day, windowStartRaw, 9);
+        const windowEnd = timeForLocalDate(day, windowEndRaw, 17);
         for (let cursor = new Date(windowStart); addMinutes(cursor, blockMinutes) <= windowEnd; cursor = addMinutes(cursor, 30)) {
           const start = new Date(cursor);
           const end = addMinutes(start, blockMinutes);
           if (start < addMinutes(now, 120)) continue;
+          if (localDateKey(localDatePartsForInstant(start)) !== localDateKey(localDatePartsForInstant(end))) {
+            continue;
+          }
           if ((absences || []).some((absence: any) => (absence.user_id || absence.instructor_id) === instructorId && absenceBlocksTime(absence, start, end))) {
             continue;
           }

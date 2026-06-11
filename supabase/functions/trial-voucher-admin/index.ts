@@ -136,6 +136,117 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "create-stripe-price") {
+      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+      if (!stripeSecretKey) {
+        return json({
+          error: "Stripe secret key is not configured in Supabase Edge Function secrets.",
+          configured: false,
+        }, 503);
+      }
+
+      const productId = cleanText(body.productId);
+      const replaceExisting = Boolean(body.replaceExisting);
+      if (!productId) return json({ error: "productId is required" }, 400);
+
+      const { data: product, error: productError } = await adminClient
+        .from("trial_flight_voucher_products")
+        .select("id,name,description,aircraft_mode,duration_minutes,price,stripe_price_id,is_active")
+        .eq("id", productId)
+        .maybeSingle();
+
+      if (productError) return json({ error: productError.message }, 500);
+      if (!product) return json({ error: "Voucher product not found" }, 404);
+      if (!product.is_active) return json({ error: "Activate the voucher product before creating a Stripe price." }, 409);
+      if (product.stripe_price_id && !replaceExisting) {
+        return json({
+          error: "This voucher already has a Stripe Price ID. Validate it or remove it before creating a replacement.",
+          stripePriceId: product.stripe_price_id,
+        }, 409);
+      }
+
+      const price = Number(product.price || 0);
+      if (!Number.isFinite(price) || price <= 0) {
+        return json({ error: "Enter a real CRM sale price before creating a Stripe price." }, 400);
+      }
+
+      const amountCents = Math.round(price * 100);
+      const productForm = new URLSearchParams();
+      productForm.set("name", product.name || "Trial instructional flight voucher");
+      if (product.description) productForm.set("description", product.description);
+      productForm.set("metadata[crm_product_id]", product.id);
+      productForm.set("metadata[voucher_type]", product.aircraft_mode || "trial_flight");
+      productForm.set("metadata[duration_minutes]", String(product.duration_minutes || ""));
+
+      const stripeProductResponse = await fetch("https://api.stripe.com/v1/products", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${stripeSecretKey}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: productForm,
+      });
+      const stripeProduct = await stripeProductResponse.json();
+      if (!stripeProductResponse.ok) {
+        return json({
+          error: stripeProduct?.error?.message || "Stripe product could not be created.",
+          configured: true,
+        }, 502);
+      }
+
+      const priceForm = new URLSearchParams();
+      priceForm.set("currency", "aud");
+      priceForm.set("unit_amount", String(amountCents));
+      priceForm.set("product", stripeProduct.id);
+      priceForm.set("metadata[crm_product_id]", product.id);
+      priceForm.set("metadata[voucher_type]", product.aircraft_mode || "trial_flight");
+
+      const stripePriceResponse = await fetch("https://api.stripe.com/v1/prices", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${stripeSecretKey}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: priceForm,
+      });
+      const stripePrice = await stripePriceResponse.json();
+      if (!stripePriceResponse.ok) {
+        return json({
+          error: stripePrice?.error?.message || "Stripe price could not be created.",
+          configured: true,
+          stripeProductId: stripeProduct.id,
+        }, 502);
+      }
+
+      const { error: updateError } = await adminClient
+        .from("trial_flight_voucher_products")
+        .update({
+          stripe_price_id: stripePrice.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", product.id);
+
+      if (updateError) return json({ error: updateError.message }, 500);
+
+      return json({
+        created: true,
+        productId: product.id,
+        stripeProduct: {
+          id: stripeProduct.id,
+          name: stripeProduct.name,
+          active: Boolean(stripeProduct.active),
+          livemode: Boolean(stripeProduct.livemode),
+        },
+        price: {
+          id: stripePrice.id,
+          active: Boolean(stripePrice.active),
+          currency: String(stripePrice.currency || "").toUpperCase(),
+          unitAmount: typeof stripePrice.unit_amount === "number" ? stripePrice.unit_amount / 100 : null,
+          livemode: Boolean(stripePrice.livemode),
+        },
+      });
+    }
+
     const voucherId = String(body.voucherId || "").trim();
     if (!voucherId) return json({ error: "voucherId is required" }, 400);
 

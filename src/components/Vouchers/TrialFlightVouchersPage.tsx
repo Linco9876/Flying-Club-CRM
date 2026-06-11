@@ -65,6 +65,33 @@ const toDateTimeLocalValue = (date: Date) => {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 };
 
+const extractFunctionErrorMessage = async (error: unknown, fallback: string) => {
+  const defaultMessage = error && typeof error === 'object' && 'message' in error
+    ? String((error as { message?: unknown }).message || fallback)
+    : fallback;
+
+  const context = error && typeof error === 'object' && 'context' in error
+    ? (error as { context?: unknown }).context
+    : null;
+
+  if (!context || typeof context !== 'object' || typeof (context as Response).text !== 'function') {
+    return defaultMessage;
+  }
+
+  try {
+    const bodyText = await (context as Response).clone().text();
+    if (!bodyText) return defaultMessage;
+    try {
+      const parsed = JSON.parse(bodyText) as { error?: unknown; message?: unknown };
+      return String(parsed.error || parsed.message || '').trim() || defaultMessage;
+    } catch {
+      return bodyText.trim() || defaultMessage;
+    }
+  } catch {
+    return defaultMessage;
+  }
+};
+
 interface InstructorEndorsementRow {
   student_id: string;
   type: string;
@@ -88,11 +115,29 @@ interface StripePriceValidationResult {
   };
 }
 
+interface StripePriceCreationResult {
+  created: boolean;
+  productId: string;
+  stripeProduct?: {
+    id: string;
+    name?: string;
+    active: boolean;
+    livemode: boolean;
+  };
+  price?: {
+    id: string;
+    active: boolean;
+    currency: string;
+    unitAmount: number | null;
+    livemode: boolean;
+  };
+}
+
 export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { users, getInstructors } = useUsers();
-  const { products, vouchers, loading, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
+  const { products, vouchers, loading, refetch, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [instructorEndorsements, setInstructorEndorsements] = useState<InstructorEndorsementRow[]>([]);
@@ -112,6 +157,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [stripeValidation, setStripeValidation] = useState<StripePriceValidationResult | null>(null);
   const [stripeValidationLoading, setStripeValidationLoading] = useState(false);
+  const [stripeCreationLoading, setStripeCreationLoading] = useState(false);
 
   const instructors = getInstructors();
   const activeProducts = products.filter(product => product.isActive);
@@ -385,9 +431,74 @@ export const TrialFlightVouchersPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to validate Stripe price:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to validate Stripe Price ID');
+      toast.error(await extractFunctionErrorMessage(error, 'Failed to validate Stripe Price ID'));
     } finally {
       setStripeValidationLoading(false);
+    }
+  };
+
+  const handleCreateStripePrice = async () => {
+    if (!editingProductId) {
+      toast.error('Save the voucher product before connecting it to Stripe');
+      return;
+    }
+    if (!productForm.name.trim()) {
+      toast.error('Voucher name is required before creating a Stripe product');
+      return;
+    }
+    if (Number(productForm.price || 0) <= 0) {
+      toast.error('Enter the AUD sale price before creating a Stripe price');
+      return;
+    }
+    if (!productForm.isActive) {
+      toast.error('Activate the voucher product before creating a Stripe price');
+      return;
+    }
+    if (productForm.stripePriceId?.trim()) {
+      toast.error('This product already has a Stripe Price ID. Check it or clear it before creating a new one.');
+      return;
+    }
+
+    setStripeCreationLoading(true);
+    setStripeValidation(null);
+    try {
+      await saveProduct(productForm, editingProductId);
+      const { data, error } = await supabase.functions.invoke('trial-voucher-admin', {
+        body: {
+          action: 'create-stripe-price',
+          productId: editingProductId,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      const result = data as StripePriceCreationResult;
+      const stripePriceId = result.price?.id;
+      if (!stripePriceId) throw new Error('Stripe returned no Price ID');
+
+      setProductForm(form => ({ ...form, stripePriceId }));
+      setStripeValidation({
+        valid: true,
+        configured: true,
+        issues: [],
+        price: {
+          id: stripePriceId,
+          active: Boolean(result.price?.active),
+          currency: result.price?.currency || 'AUD',
+          unitAmount: result.price?.unitAmount ?? null,
+          productId: result.stripeProduct?.id,
+          productName: result.stripeProduct?.name,
+          productActive: result.stripeProduct?.active ?? null,
+          livemode: Boolean(result.price?.livemode),
+        },
+      });
+      await refetch();
+      toast.success('Stripe product and Price ID created');
+    } catch (error) {
+      console.error('Failed to create Stripe price:', error);
+      toast.error(await extractFunctionErrorMessage(error, 'Failed to create Stripe Price ID'));
+    } finally {
+      setStripeCreationLoading(false);
     }
   };
 
@@ -1267,15 +1378,26 @@ export const TrialFlightVouchersPage: React.FC = () => {
               </p>
             </div>
           </div>
-          <a
-            href="/trial-flight-gift-vouchers"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/50 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-100 dark:hover:bg-[#20242b]"
-          >
-            <ExternalLink className="h-4 w-4" />
-            Public sales page
-          </a>
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+            <a
+              href="https://dashboard.stripe.com/apikeys"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#635bff] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#5147f0]"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Connect Stripe
+            </a>
+            <a
+              href="/trial-flight-gift-vouchers"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/50 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-100 dark:hover:bg-[#20242b]"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Public sales page
+            </a>
+          </div>
         </div>
         <div className="mt-4 grid gap-3 text-xs leading-5 text-gray-700 dark:text-gray-300 lg:grid-cols-3">
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
@@ -1288,7 +1410,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Secrets</p>
-            <p className="mt-1">Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and the Stripe webhook URL. Scheduled recipient delivery also needs `TRIAL_VOUCHER_CRON_SECRET` in Supabase Edge Function secrets, GitHub Actions secrets, and Supabase Vault as `trial_voucher_cron_secret`.</p>
+            <p className="mt-1">Use Connect Stripe to open the Stripe key screen, then add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` to Supabase Edge Function secrets. Also set `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and the Stripe webhook URL. Scheduled recipient delivery needs `TRIAL_VOUCHER_CRON_SECRET` in Supabase Edge Function secrets, GitHub Actions secrets, and Supabase Vault as `trial_voucher_cron_secret`.</p>
           </div>
         </div>
       </div>
@@ -1468,6 +1590,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   >
                     <ShieldCheck className="h-3.5 w-3.5" />
                     {stripeValidationLoading ? 'Checking...' : 'Check Stripe ID'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateStripePrice}
+                    disabled={stripeCreationLoading || !editingProductId || Boolean(productFormStripeId) || productFormPrice <= 0}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#635bff] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#5147f0] disabled:cursor-not-allowed disabled:opacity-50"
+                    title={!editingProductId ? 'Save this voucher product first' : undefined}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    {stripeCreationLoading ? 'Connecting...' : 'Create & link Stripe'}
                   </button>
                   <button
                     type="button"

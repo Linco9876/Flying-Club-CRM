@@ -70,8 +70,10 @@ The voucher function deployment workflow runs Deno checks before deploying. The 
 
 ## Stripe Setup
 
-- Create Stripe products/prices for each voucher product.
-- Copy the Stripe Price ID onto the matching voucher product in the CRM.
+- Use **Connect Stripe** in `/gift-vouchers` to open the Stripe API key screen.
+- Add the Stripe secret key to Supabase Edge Function secrets as `STRIPE_SECRET_KEY`. Do not paste secret keys into the browser UI or database.
+- After a voucher product has been saved with a real AUD price, use **Create & link Stripe** in the product editor to create a Stripe Product and Price from the CRM product and automatically save the Stripe Price ID.
+- Alternatively, create Stripe products/prices manually and copy the Stripe Price ID onto the matching voucher product in the CRM.
 - Use the admin product editor's **Check Stripe ID** action to verify the pasted Stripe Price ID exists in Stripe, is active, uses AUD, and matches the CRM sale price.
 - Set the Stripe webhook endpoint to:
 

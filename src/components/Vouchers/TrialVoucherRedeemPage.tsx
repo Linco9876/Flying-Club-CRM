@@ -29,6 +29,8 @@ interface VoucherSlot {
   instructorName: string;
 }
 
+const VOUCHER_TIME_ZONE = 'Australia/Sydney';
+
 const getInitialCode = () => {
   const params = new URLSearchParams(window.location.search);
   return (params.get('voucherCode') || params.get('code') || '').trim().toUpperCase();
@@ -209,16 +211,19 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   };
 
   const formatSlotDate = (value: string) =>
-    new Intl.DateTimeFormat(undefined, {
+    new Intl.DateTimeFormat('en-AU', {
+      timeZone: VOUCHER_TIME_ZONE,
       weekday: 'short',
       day: 'numeric',
       month: 'short',
     }).format(new Date(value));
 
   const formatSlotTime = (start: string, end: string) => {
-    const formatter = new Intl.DateTimeFormat(undefined, {
+    const formatter = new Intl.DateTimeFormat('en-AU', {
+      timeZone: VOUCHER_TIME_ZONE,
       hour: 'numeric',
       minute: '2-digit',
+      hourCycle: 'h23',
     });
     return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
   };
@@ -230,7 +235,8 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     : 'Reserved booking block';
 
   const formatSlotDateHeading = (value: string) =>
-    new Intl.DateTimeFormat(undefined, {
+    new Intl.DateTimeFormat('en-AU', {
+      timeZone: VOUCHER_TIME_ZONE,
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -241,7 +247,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     [...slots]
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
       .forEach(slot => {
-        const key = new Date(slot.startTime).toDateString();
+        const key = new Intl.DateTimeFormat('en-CA', {
+          timeZone: VOUCHER_TIME_ZONE,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date(slot.startTime));
         groups.set(key, [...(groups.get(key) || []), slot]);
       });
 
