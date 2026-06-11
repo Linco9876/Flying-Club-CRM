@@ -302,6 +302,7 @@ const toPublicVoucher = (voucher: any, product: any) => ({
   code: voucher.code,
   status: voucher.status,
   recipientName: voucher.recipient_name,
+  recipientEmail: voucher.recipient_email,
   product: {
     name: product.name,
     description: product.description,

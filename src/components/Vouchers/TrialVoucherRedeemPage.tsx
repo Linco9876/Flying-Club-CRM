@@ -8,6 +8,7 @@ interface PublicVoucher {
   code: string;
   status: string;
   recipientName?: string;
+  recipientEmail?: string;
   product: {
     name: string;
     description: string;
@@ -82,6 +83,11 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (data?.error) throw new Error(data.error);
       setVoucher(data.voucher);
       setCode(data.voucher?.code || nextCode);
+      setForm(current => ({
+        ...current,
+        fullName: current.fullName || data.voucher?.recipientName || '',
+        email: current.email || data.voucher?.recipientEmail || '',
+      }));
     } catch (error) {
       setVoucher(null);
       toast.error(error instanceof Error ? error.message : 'Could not verify voucher');
