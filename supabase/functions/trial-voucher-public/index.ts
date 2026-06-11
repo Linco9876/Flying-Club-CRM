@@ -40,6 +40,28 @@ const dateKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1
 const overlaps = (aStart: Date | string, aEnd: Date | string, bStart: Date | string, bEnd: Date | string) =>
   new Date(aStart) < new Date(bEnd) && new Date(aEnd) > new Date(bStart);
 
+const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
+const isDevelopmentOrigin = (origin: string) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
+  /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?$/i.test(origin);
+const isAllowedRedirectOrigin = (origin: string) => origin === siteOrigin() || isDevelopmentOrigin(origin);
+const safeVoucherRedirectTo = (value: unknown, code: string) => {
+  const fallback = `${siteOrigin()}/trial-flight-voucher?voucherCode=${encodeURIComponent(code)}`;
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+
+  try {
+    const url = new URL(raw, siteOrigin());
+    if (!isAllowedRedirectOrigin(url.origin)) return fallback;
+    url.pathname = "/trial-flight-voucher";
+    url.searchParams.set("voucherCode", code);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return fallback;
+  }
+};
+
 const json = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -866,11 +888,11 @@ Deno.serve(async (req: Request) => {
         return json({ error: "The linked voucher account could not be found. Contact Bendigo Flying Club for help." }, 409);
       }
 
-      const redirectTo = String(body.redirectTo || "").trim() || undefined;
+      const redirectTo = safeVoucherRedirectTo(body.redirectTo, voucher.code);
       const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
         type: "recovery",
         email: linkedUser.email,
-        options: redirectTo ? { redirectTo } : undefined,
+        options: { redirectTo },
       });
 
       if (linkError) return json({ error: linkError.message }, 500);
@@ -1074,11 +1096,11 @@ Deno.serve(async (req: Request) => {
 
     if (redeemError) return json({ error: redeemError.message }, 500);
 
-    const redirectTo = String(body.redirectTo || "").trim() || undefined;
+    const redirectTo = safeVoucherRedirectTo(body.redirectTo, voucher.code);
     const { data: linkData } = await adminClient.auth.admin.generateLink({
       type: "recovery",
       email,
-      options: redirectTo ? { redirectTo } : undefined,
+      options: { redirectTo },
     });
     const setupLink = linkData?.properties?.action_link || null;
     const setupEmail = setupLink

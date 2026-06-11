@@ -25,6 +25,24 @@ const cleanText = (value: unknown) => String(value || "").trim();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const dateKey = (date: Date) => date.toISOString().slice(0, 10);
 const normaliseEndorsementType = (value: unknown) => String(value || "").trim().toLowerCase();
+const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
+const isDevelopmentOrigin = (origin: string) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
+  /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?$/i.test(origin);
+const isAllowedReturnOrigin = (origin: string) => origin === siteOrigin() || isDevelopmentOrigin(origin);
+const safeReturnUrl = (value: unknown, fallbackPath: string) => {
+  const fallback = `${siteOrigin()}${fallbackPath}`;
+  const raw = cleanText(value);
+  if (!raw) return fallback;
+
+  try {
+    const url = new URL(raw, siteOrigin());
+    if (!isAllowedReturnOrigin(url.origin)) return fallback;
+    return url.toString();
+  } catch {
+    return fallback;
+  }
+};
 
 const aircraftMatchesProduct = (aircraft: any, product: any) => {
   const attachedIds = new Set<string>(product.aircraft_ids || []);
@@ -106,8 +124,8 @@ Deno.serve(async (req: Request) => {
     const recipientEmail = cleanEmail(body.recipientEmail);
     const sendToRecipient = Boolean(body.sendToRecipient);
     const recipientDeliveryAt = cleanText(body.recipientDeliveryAt);
-    const successUrl = cleanText(body.successUrl);
-    const cancelUrl = cleanText(body.cancelUrl);
+    const successUrl = safeReturnUrl(body.successUrl, "/trial-flight-gift-vouchers?checkout=success");
+    const cancelUrl = safeReturnUrl(body.cancelUrl, "/trial-flight-gift-vouchers?checkout=cancelled");
 
     if (!productId || !purchaserName || !purchaserEmail || !successUrl || !cancelUrl) {
       return json({ error: "Voucher, purchaser name, purchaser email, success URL and cancel URL are required" }, 400);
