@@ -49,3 +49,22 @@ jobs:
           if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
             exit 1
           fi
+
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          with open(path, "r", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          failed = int(payload.get("failed") or 0)
+          processed = int(payload.get("processed") or 0)
+          sent = int(payload.get("sent") or 0)
+
+          print(f"Due voucher email summary: processed={processed} sent={sent} failed={failed}")
+
+          if failed > 0:
+              print("One or more due trial voucher emails failed to send.", file=sys.stderr)
+              sys.exit(1)
+          PY
