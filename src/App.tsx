@@ -122,9 +122,10 @@ const AppContent: React.FC = () => {
     new URLSearchParams(location.search).get('type') === 'recovery' ||
     new URLSearchParams(location.hash.replace(/^#/, '')).get('type') === 'invite' ||
     new URLSearchParams(location.search).get('type') === 'invite';
+  const normalisedPathname = location.pathname.replace(/\/+$/, '') || '/';
   const isKioskRoute = location.pathname.startsWith('/kiosk');
 
-  if (location.pathname === '/declaration-sign') {
+  if (normalisedPathname === '/declaration-sign') {
     return (
       <Suspense fallback={<PageLoader />}>
         <DeclarationSigningPage />
@@ -140,7 +141,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (location.pathname === '/trial-flight-voucher') {
+  if (normalisedPathname === '/trial-flight-voucher') {
     return (
       <Suspense fallback={<PageLoader />}>
         <TrialVoucherRedeemPage />
@@ -148,7 +149,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (location.pathname === '/trial-flight-gift-vouchers') {
+  if (normalisedPathname === '/trial-flight-gift-vouchers') {
     if (!isLoading && user?.portalAccessScope === 'trial_voucher') {
       return <Navigate to="/trial-flight-voucher" replace />;
     }
@@ -171,7 +172,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (user?.portalAccessScope === 'trial_voucher' && location.pathname !== '/trial-flight-voucher') {
+  if (user?.portalAccessScope === 'trial_voucher' && normalisedPathname !== '/trial-flight-voucher') {
     return <Navigate to={`/trial-flight-voucher${location.search || ''}`} replace />;
   }
 
