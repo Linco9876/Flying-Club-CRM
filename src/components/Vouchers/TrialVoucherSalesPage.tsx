@@ -376,7 +376,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                     )}
                     {product.bookingAvailable && !product.checkoutAvailable && (
                       <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-                        This voucher can be issued by the club now, but online card payment is not enabled yet. Use “Contact to purchase” and the club can email the voucher to you or schedule it for the recipient.
+                        This voucher can be issued by the club now, but online card payment is not enabled yet. Use "Contact to purchase" and the club can email the voucher to you or schedule it for the recipient.
                       </div>
                     )}
                   </article>
@@ -413,6 +413,10 @@ export const TrialVoucherSalesPage: React.FC = () => {
             </div>
 
             <div className="grid gap-3">
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm leading-6 text-blue-900">
+                By default the voucher email goes to the purchaser, so you can forward it or print it when you are ready.
+                Tick direct recipient delivery if you want the voucher emailed to the recipient after payment, either immediately or at the date and time you choose.
+              </div>
               <input value={purchaseForm.purchaserName} onChange={e => setPurchaseForm(f => ({ ...f, purchaserName: e.target.value }))} placeholder="Purchaser full name" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
               <input type="email" value={purchaseForm.purchaserEmail} onChange={e => setPurchaseForm(f => ({ ...f, purchaserEmail: e.target.value }))} placeholder="Purchaser email" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
               <input value={purchaseForm.purchaserPhone} onChange={e => setPurchaseForm(f => ({ ...f, purchaserPhone: e.target.value }))} placeholder="Purchaser phone" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />

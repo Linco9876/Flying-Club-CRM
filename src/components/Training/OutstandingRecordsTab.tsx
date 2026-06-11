@@ -1038,61 +1038,66 @@ export const OutstandingRecordsTab: React.FC = () => {
   }
 
   const queueButtons = [
-    { id: 'mine' as const, label: 'Assigned to me', icon: AlertCircle },
-    ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
+    { id: 'mine' as const, label: 'Assigned to Me', icon: AlertCircle },
+    ...(isAdmin ? [{ id: 'others' as const, label: 'Other Instructors', icon: BookOpen }] : []),
     { id: 'dismissed' as const, label: 'No Record Needed', icon: Undo2 },
   ];
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
       <header className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white shadow-sm dark:border-blue-400/20">
-        <div className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
+        <div className="flex min-w-0 flex-col gap-5 px-4 py-4 sm:px-5 sm:py-5">
+          <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
               <ClipboardList className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
+                <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
+                  Start an in-flight draft, complete records assigned to you, review other instructors, or reinstate flights that were marked as not needing a record.
+                </p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
-              <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
-                Draft records in flight, complete your assigned flights, review other instructors, or restore flights marked as no record needed.
-              </p>
-            </div>
-          </div>
 
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
             <button
               type="button"
               onClick={() => setShowDraftComposer(value => !value)}
               aria-pressed={showDraftComposer}
-              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition xl:min-w-36 ${
+              className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto xl:min-w-40 ${
                 showDraftComposer
-                  ? 'bg-white text-blue-900 shadow-sm'
-                  : 'bg-blue-500 text-white shadow-sm hover:bg-blue-400'
+                  ? 'bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
+                  : 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-400'
               }`}
             >
               <Save className="h-4 w-4" />
               Make Draft
             </button>
-            {queueButtons.map(item => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setQueueView(item.id)}
-                  aria-pressed={queueView === item.id}
-                  className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition xl:min-w-40 ${
-                    queueView === item.id
-                      ? 'bg-white text-blue-900 shadow-sm'
-                      : 'bg-white/10 text-blue-50 ring-1 ring-white/10 hover:bg-white/15'
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="truncate">{item.label}</span>
-                </button>
-              );
-            })}
+          </div>
+
+          <div className="rounded-2xl bg-white/8 p-1.5 ring-1 ring-white/10">
+            <div className="grid min-w-0 gap-1.5 sm:grid-cols-3">
+              {queueButtons.map(item => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setQueueView(item.id)}
+                    aria-pressed={queueView === item.id}
+                    className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                      queueView === item.id
+                        ? 'bg-white text-blue-950 shadow-sm'
+                        : 'text-blue-50 hover:bg-white/10'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </header>
