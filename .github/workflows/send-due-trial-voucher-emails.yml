@@ -15,19 +15,28 @@ jobs:
     steps:
       - name: Trigger due voucher email delivery
         env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           TRIAL_VOUCHER_CRON_SECRET: ${{ secrets.TRIAL_VOUCHER_CRON_SECRET }}
         run: |
           set -euo pipefail
 
-          if [ -z "${SUPABASE_URL:-}" ]; then
-            echo "Missing SUPABASE_URL GitHub secret." >&2
+          fail_or_warn() {
+            message="$1"
+            if [ "${GITHUB_EVENT_NAME:-}" = "schedule" ]; then
+              echo "::warning::${message}"
+              exit 0
+            fi
+            echo "${message}" >&2
             exit 1
+          }
+
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            fail_or_warn "Missing SUPABASE_URL GitHub secret."
           fi
 
           if [ -z "${TRIAL_VOUCHER_CRON_SECRET:-}" ]; then
-            echo "Missing TRIAL_VOUCHER_CRON_SECRET GitHub secret." >&2
-            exit 1
+            fail_or_warn "Missing TRIAL_VOUCHER_CRON_SECRET GitHub secret."
           fi
 
           response_file="$(mktemp)"
@@ -47,14 +56,15 @@ jobs:
           echo
 
           if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
-            exit 1
+            fail_or_warn "Due trial voucher email delivery endpoint returned HTTP ${status_code}."
           fi
 
-          python3 - "$response_file" <<'PY'
+          python3 - "$response_file" "${GITHUB_EVENT_NAME:-}" <<'PY'
           import json
           import sys
 
           path = sys.argv[1]
+          event_name = sys.argv[2] if len(sys.argv) > 2 else ""
           with open(path, "r", encoding="utf-8") as handle:
               payload = json.load(handle)
 
@@ -65,6 +75,10 @@ jobs:
           print(f"Due voucher email summary: processed={processed} sent={sent} failed={failed}")
 
           if failed > 0:
-              print("One or more due trial voucher emails failed to send.", file=sys.stderr)
+              message = "One or more due trial voucher emails failed to send."
+              if event_name == "schedule":
+                  print(f"::warning::{message}")
+                  sys.exit(0)
+              print(message, file=sys.stderr)
               sys.exit(1)
           PY
