@@ -76,6 +76,24 @@ const asString = (value: unknown) => {
   return String(value);
 };
 
+const stripeAmountToDollars = (value: unknown) => {
+  const cents = Number(value);
+  return Number.isFinite(cents) ? cents / 100 : null;
+};
+
+const stripeCurrency = (value: unknown) => {
+  const currency = asString(value).trim().toUpperCase();
+  return currency || "AUD";
+};
+
+const stripePaymentFields = (session: any) => {
+  const amount = stripeAmountToDollars(session.amount_total);
+  return {
+    ...(amount === null ? {} : { payment_amount: amount }),
+    payment_currency: stripeCurrency(session.currency),
+  };
+};
+
 const getVoucherForSession = async (adminClient: ReturnType<typeof createClient>, session: any) => {
   const metadataVoucherId = asString(session.metadata?.voucher_id || session.client_reference_id);
   if (metadataVoucherId) {
@@ -226,7 +244,12 @@ Deno.serve(async (req: Request) => {
   let voucherId: string | null = null;
 
   try {
-    if (!["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.expired"].includes(event.type)) {
+    if (![
+      "checkout.session.completed",
+      "checkout.session.async_payment_succeeded",
+      "checkout.session.async_payment_failed",
+      "checkout.session.expired",
+    ].includes(event.type)) {
       return json({ received: true, ignored: true });
     }
 
@@ -247,6 +270,8 @@ Deno.serve(async (req: Request) => {
         .from("trial_flight_vouchers")
         .update({
           payment_status: "failed",
+          stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
+          stripe_payment_intent_id: asString(session.payment_intent) || null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", voucher.id)
@@ -256,11 +281,31 @@ Deno.serve(async (req: Request) => {
       return json({ received: true, voucherId: voucher.id, expired: true });
     }
 
+    if (event.type === "checkout.session.async_payment_failed") {
+      await adminClient
+        .from("trial_flight_vouchers")
+        .update({
+          payment_status: "failed",
+          stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
+          stripe_payment_intent_id: asString(session.payment_intent) || null,
+          ...stripePaymentFields(session),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", voucher.id)
+        .neq("payment_status", "paid");
+
+      await markEventProcessed(adminClient, event.id);
+      return json({ received: true, voucherId: voucher.id, failed: true });
+    }
+
     if (session.payment_status && session.payment_status !== "paid") {
       await adminClient
         .from("trial_flight_vouchers")
         .update({
           payment_status: "pending",
+          stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
+          stripe_payment_intent_id: asString(session.payment_intent) || null,
+          ...stripePaymentFields(session),
           updated_at: new Date().toISOString(),
         })
         .eq("id", voucher.id);
@@ -276,6 +321,7 @@ Deno.serve(async (req: Request) => {
         payment_status: "paid",
         stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
         stripe_payment_intent_id: asString(session.payment_intent) || null,
+        ...stripePaymentFields(session),
         paid_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

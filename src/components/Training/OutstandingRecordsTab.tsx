@@ -1306,7 +1306,7 @@ export const OutstandingRecordsTab: React.FC = () => {
           </div>
         )}
 
-        {visibleDismissedLogs.length > 0 && (
+        {queueView === 'dismissed' && visibleDismissedLogs.length > 0 && (
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
