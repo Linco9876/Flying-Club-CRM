@@ -199,6 +199,41 @@ const resolveDelivery = (voucher: any) => {
   return { to, toName };
 };
 
+const claimVoucherEmailDelivery = async (
+  adminClient: ReturnType<typeof createClient>,
+  voucherId: string,
+) => {
+  const staleClaimCutoff = new Date(Date.now() - 15 * 60_000).toISOString();
+  const { data, error } = await adminClient
+    .from("trial_flight_vouchers")
+    .update({
+      email_delivery_claimed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", voucherId)
+    .is("delivered_at", null)
+    .or(`email_delivery_claimed_at.is.null,email_delivery_claimed_at.lt.${staleClaimCutoff}`)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data?.id);
+};
+
+const releaseVoucherEmailDeliveryClaim = async (
+  adminClient: ReturnType<typeof createClient>,
+  voucherId: string,
+) => {
+  await adminClient
+    .from("trial_flight_vouchers")
+    .update({
+      email_delivery_claimed_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", voucherId)
+    .is("delivered_at", null);
+};
+
 type StaffAuthResult =
   | { ok: true; userId: string }
   | { ok: false; error: string; status: number };
@@ -295,17 +330,35 @@ const sendVoucherEmail = async ({
   const { to, toName } = resolveDelivery(voucher);
   if (!to) return { sent: false, error: "Voucher has no delivery email address" };
 
+  if (!voucher.delivered_at) {
+    const claimed = await claimVoucherEmailDelivery(adminClient, voucher.id);
+    if (!claimed) {
+      return {
+        sent: false,
+        skipped: true,
+        error: "Voucher email delivery is already in progress or has already completed.",
+      };
+    }
+  }
+
   const origin = String(redirectOrigin || Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
   const redeemUrl = `${origin}/trial-flight-voucher?voucherCode=${encodeURIComponent(voucher.code)}`;
   const subject = product.email_subject || "Your Bendigo Flying Club trial flight voucher";
   const html = buildVoucherEmail({ voucher, product, recipientName: toName || "", redeemUrl });
 
   const result = await sendBrevoEmail({ to, toName, subject, html });
-  if (!result.sent) return { sent: false, error: result.error || "Email could not be sent" };
+  if (!result.sent) {
+    await releaseVoucherEmailDeliveryClaim(adminClient, voucher.id);
+    return { sent: false, error: result.error || "Email could not be sent" };
+  }
 
   await adminClient
     .from("trial_flight_vouchers")
-    .update({ delivered_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({
+      delivered_at: new Date().toISOString(),
+      email_delivery_claimed_at: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", voucher.id);
 
   return { sent: true, to, redeemUrl };
@@ -332,11 +385,13 @@ Deno.serve(async (req: Request) => {
         if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
       }
 
+      const staleClaimCutoff = new Date(Date.now() - 15 * 60_000).toISOString();
       const { data: vouchers, error: voucherError } = await adminClient
         .from("trial_flight_vouchers")
         .select("*, trial_flight_voucher_products(*)")
         .eq("send_to_recipient", true)
         .is("delivered_at", null)
+        .or(`email_delivery_claimed_at.is.null,email_delivery_claimed_at.lt.${staleClaimCutoff}`)
         .in("status", ["issued", "redeemed", "booked"])
         .not("recipient_delivery_at", "is", null)
         .lte("recipient_delivery_at", new Date().toISOString())
@@ -354,7 +409,7 @@ Deno.serve(async (req: Request) => {
       return json({
         processed: results.length,
         sent: results.filter((result: any) => result.sent).length,
-        failed: results.filter((result: any) => !result.sent).length,
+        failed: results.filter((result: any) => !result.sent && !result.skipped).length,
         results,
       });
     }
