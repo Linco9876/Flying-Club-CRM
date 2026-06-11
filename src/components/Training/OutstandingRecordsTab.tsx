@@ -1045,56 +1045,51 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
-      <header className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white shadow-sm dark:border-blue-400/20">
-        <div className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5 sm:py-5">
-          <div className="flex min-w-0 flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
-                <ClipboardList className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records queue</p>
-                <h2 className="mt-1 text-2xl font-bold tracking-tight">Outstanding Records</h2>
-                <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/85">
-                  Start an in-flight draft, complete records assigned to you, review other instructors, or reinstate flights marked as not needing a record.
-                </p>
-              </div>
+      <header className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 text-white shadow-sm dark:border-blue-400/20">
+        <div className="flex min-w-0 flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-blue-100 ring-1 ring-white/15">
+              <ClipboardList className="h-5 w-5" />
             </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training records</p>
+              <h2 className="mt-0.5 text-2xl font-bold tracking-tight">Outstanding Records</h2>
+            </div>
+          </div>
 
-            <div className="grid min-w-0 gap-2 rounded-2xl bg-white/8 p-1.5 ring-1 ring-white/10 sm:grid-cols-2 lg:grid-cols-4 2xl:min-w-[42rem]">
-              <button
-                type="button"
-                onClick={() => setShowDraftComposer(value => !value)}
-                aria-pressed={showDraftComposer}
-                className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                  showDraftComposer
-                    ? 'bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
-                    : 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-400'
-                }`}
-              >
-                <Save className="h-4 w-4 shrink-0" />
-                <span className="truncate">Make Draft</span>
-              </button>
-              {queueButtons.map(item => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setQueueView(item.id)}
-                    aria-pressed={queueView === item.id}
-                    className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                      queueView === item.id
-                        ? 'bg-white text-blue-950 shadow-sm'
-                        : 'text-blue-50 hover:bg-white/10'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="grid min-w-0 gap-2 rounded-2xl bg-white/8 p-1.5 ring-1 ring-white/10 sm:grid-cols-2 xl:grid-cols-4 xl:min-w-[40rem]">
+            <button
+              type="button"
+              onClick={() => setShowDraftComposer(value => !value)}
+              aria-pressed={showDraftComposer}
+              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                showDraftComposer
+                  ? 'bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
+                  : 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-400'
+              }`}
+            >
+              <Save className="h-4 w-4 shrink-0" />
+              <span className="truncate">Make Draft</span>
+            </button>
+            {queueButtons.map(item => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setQueueView(item.id)}
+                  aria-pressed={queueView === item.id}
+                  className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                    queueView === item.id
+                      ? 'bg-white text-blue-950 shadow-sm'
+                      : 'text-blue-50 hover:bg-white/10'
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </header>
