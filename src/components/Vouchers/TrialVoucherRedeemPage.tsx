@@ -64,8 +64,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setVoucher(data.voucher);
       setCode(data.voucher?.code || '');
       setRedeemed({ setupLink: null, setupEmailSent: false });
-      setSlots(data.slots || []);
+      const linkedSlots = data.slots || [];
+      setSlots(linkedSlots);
       setBookedSlot(data.booking || null);
+      if (isVoucherAccountUser && data.voucher?.status === 'redeemed' && !data.booking && linkedSlots.length === 0) {
+        await loadAvailability(data.voucher?.code || code);
+      }
     } catch (error) {
       if (!code) setVoucher(null);
       toast.error(error instanceof Error ? error.message : 'Could not load your voucher');
@@ -94,6 +98,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         fullName: current.fullName || data.voucher?.recipientName || '',
         email: current.email || data.voucher?.recipientEmail || '',
       }));
+      if (isVoucherAccountUser && data.voucher?.status === 'redeemed') {
+        await loadAvailability(data.voucher?.code || nextCode);
+      }
     } catch (error) {
       setVoucher(null);
       toast.error(error instanceof Error ? error.message : 'Could not verify voucher');
