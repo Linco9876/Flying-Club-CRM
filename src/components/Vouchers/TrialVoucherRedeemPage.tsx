@@ -50,6 +50,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [setupResendEmail, setSetupResendEmail] = useState('');
   const [selectedSlotDate, setSelectedSlotDate] = useState('all');
   const [availabilityAutoLoadedForCode, setAvailabilityAutoLoadedForCode] = useState('');
+  const [availabilityHydrating, setAvailabilityHydrating] = useState(false);
   const isVoucherAccountUser = Boolean(user?.portalAccessScope === 'trial_voucher');
   const isFullPortalUserOnVoucherPage = Boolean(user && !isVoucherAccountUser);
 
@@ -65,9 +66,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setCode(data.voucher?.code || '');
       setRedeemed({ setupLink: null, setupEmailSent: false });
       const linkedSlots = data.slots || [];
-      setSlots(linkedSlots);
       setBookedSlot(data.booking || null);
-      if (isVoucherAccountUser && data.voucher?.status === 'redeemed' && !data.booking && linkedSlots.length === 0) {
+      const shouldChooseTime = isVoucherAccountUser && data.voucher?.status === 'redeemed' && !data.booking;
+      if (linkedSlots.length > 0 || !shouldChooseTime) {
+        setSlots(linkedSlots);
+      }
+      if (shouldChooseTime && linkedSlots.length === 0) {
         await loadAvailability(data.voucher?.code || code);
       }
     } catch (error) {
@@ -154,6 +158,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const loadAvailability = async (nextCode = code) => {
     if (!nextCode.trim()) return;
     setLoading(true);
+    setAvailabilityHydrating(true);
     try {
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
         body: { action: 'availability', code: nextCode },
@@ -164,6 +169,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not load available times');
     } finally {
+      setAvailabilityHydrating(false);
       setLoading(false);
     }
   };
@@ -559,7 +565,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                           Need today or tomorrow? Please call the club to book short-notice voucher flights.
                         </p>
                       </div>
-                      <button onClick={loadAvailability} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
+                      <button onClick={() => loadAvailability()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
                         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
                         Refresh
                       </button>
@@ -680,7 +686,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                           </div>
                         </div>
                       ))}
-                      {slots.length === 0 && (
+                      {slots.length === 0 && availabilityHydrating && (
+                        <div className="rounded-xl bg-blue-50 p-4 text-sm font-medium text-blue-700">
+                          Loading available online voucher times...
+                        </div>
+                      )}
+                      {slots.length === 0 && !availabilityHydrating && (
                         <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
                           No online voucher times found from two days ahead. Try refreshing, or contact Bendigo Flying Club if you need today or tomorrow.
                         </div>
