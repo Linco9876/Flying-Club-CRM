@@ -266,6 +266,23 @@ const productBookingSetup = (product: any, aircraftRows: any[] = [], endorsement
   };
 };
 
+const getProductBookingSetup = async (adminClient: ReturnType<typeof createClient>, product: any) => {
+  const instructorIds = product.instructor_ids || [];
+  const [{ data: aircraftRows, error: aircraftError }, { data: endorsementRows, error: endorsementError }] = await Promise.all([
+    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
+    instructorIds.length > 0
+      ? adminClient
+        .from("endorsements")
+        .select("student_id,type,expiry_date,is_active")
+        .in("student_id", instructorIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (aircraftError) throw aircraftError;
+  if (endorsementError) throw endorsementError;
+  return productBookingSetup(product, aircraftRows || [], endorsementRows || []);
+};
+
 const timeForDate = (date: Date, time: string, fallbackHour: number, fallbackMinute = 0) => {
   const [hourRaw, minuteRaw] = String(time || "").slice(0, 5).split(":").map(Number);
   const hour = Number.isFinite(hourRaw) ? hourRaw : fallbackHour;
@@ -822,6 +839,13 @@ Deno.serve(async (req: Request) => {
     }
     if (voucher.status !== "issued") {
       return json({ error: "This voucher is not ready to redeem yet. Contact Bendigo Flying Club for help." }, 409);
+    }
+
+    const bookingSetup = await getProductBookingSetup(adminClient, product);
+    if (!bookingSetup.bookingAvailable) {
+      return json({
+        error: `This voucher is valid, but booking setup is not ready yet: ${bookingSetup.issue || "no bookable aircraft or instructor is configured"}. Contact Bendigo Flying Club for help.`,
+      }, 409);
     }
 
     const fullName = String(body.fullName || "").trim();
