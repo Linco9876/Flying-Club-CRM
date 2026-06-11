@@ -344,6 +344,43 @@ const absenceBlocksTime = (absence: any, start: Date, end: Date) => {
   return overlaps(start, end, absenceStart, absenceEnd);
 };
 
+const instructorWindowsForDate = ({
+  day,
+  dayOfWeek,
+  instructorId,
+  schedules,
+  scheduleChanges,
+}: {
+  day: Date;
+  dayOfWeek: number;
+  instructorId: string;
+  schedules: any[];
+  scheduleChanges: any[];
+}) => {
+  const dayKey = dateKey(day);
+  const matchingChange = (scheduleChanges || [])
+    .filter((change: any) =>
+      (change.user_id || change.instructor_id) === instructorId &&
+      Number(change.day_of_week) === dayOfWeek &&
+      String(change.effective_from || change.change_date || "") <= dayKey
+    )
+    .sort((a: any, b: any) =>
+      String(b.effective_from || b.change_date || "").localeCompare(String(a.effective_from || a.change_date || ""))
+    )[0];
+
+  const schedule = matchingChange || (schedules || []).find((weekly: any) =>
+    (weekly.user_id || weekly.instructor_id) === instructorId &&
+    Number(weekly.day_of_week) === dayOfWeek
+  );
+
+  if (!schedule?.is_available) return [];
+
+  return [
+    [schedule.start_time, schedule.end_time],
+    [schedule.afternoon_start_time || schedule.start_time_2, schedule.afternoon_end_time || schedule.end_time_2],
+  ].filter(([start, end]) => start && end);
+};
+
 const toPublicVoucher = (voucher: any, product: any) => ({
   code: voucher.code,
   status: voucher.status,
@@ -565,6 +602,7 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
     { data: aircraftRows, error: aircraftError },
     { data: bookings, error: bookingsError },
     { data: schedules, error: schedulesError },
+    { data: scheduleChanges, error: scheduleChangesError },
     { data: absences, error: absencesError },
     { data: users, error: usersError },
     { data: endorsements, error: endorsementsError },
@@ -572,6 +610,7 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
     adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
     adminClient.from("bookings").select("id,aircraft_id,instructor_id,start_time,end_time,status,deleted_at,has_conflict"),
     adminClient.from("instructor_weekly_schedules").select("*"),
+    adminClient.from("instructor_schedule_changes").select("*"),
     adminClient.from("instructor_absences").select("*"),
     adminClient.from("users").select("id,name").in("id", Array.from(allowedInstructorIds)),
     adminClient
@@ -583,6 +622,7 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
   if (aircraftError) throw aircraftError;
   if (bookingsError) throw bookingsError;
   if (schedulesError) throw schedulesError;
+  if (scheduleChangesError) throw scheduleChangesError;
   if (absencesError) throw absencesError;
   if (usersError) throw usersError;
   if (endorsementsError) throw endorsementsError;
@@ -611,18 +651,15 @@ const buildAvailableSlots = async (adminClient: ReturnType<typeof createClient>,
   for (let dayOffset = 0; dayOffset < 45; dayOffset += 1) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
     const dayOfWeek = day.getDay();
-    const daySchedules = (schedules || []).filter((schedule: any) =>
-      schedule.is_available &&
-      Number(schedule.day_of_week) === dayOfWeek &&
-      allowedInstructorIds.has(schedule.user_id || schedule.instructor_id)
-    );
 
-    for (const schedule of daySchedules) {
-      const instructorId = schedule.user_id || schedule.instructor_id;
-      const windows = [
-        [schedule.start_time, schedule.end_time],
-        [schedule.afternoon_start_time || schedule.start_time_2, schedule.afternoon_end_time || schedule.end_time_2],
-      ].filter(([start, end]) => start && end);
+    for (const instructorId of allowedInstructorIds) {
+      const windows = instructorWindowsForDate({
+        day,
+        dayOfWeek,
+        instructorId,
+        schedules: schedules || [],
+        scheduleChanges: scheduleChanges || [],
+      });
 
       for (const [windowStartRaw, windowEndRaw] of windows) {
         const windowStart = timeForDate(day, windowStartRaw, 9);
