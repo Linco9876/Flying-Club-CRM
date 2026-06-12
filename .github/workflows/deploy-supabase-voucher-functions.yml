@@ -10,6 +10,7 @@ on:
       - "supabase/functions/trial-voucher-public/**"
       - "supabase/functions/trial-voucher-admin/**"
       - "supabase/functions/create-trial-voucher-checkout/**"
+      - "supabase/functions/stripe-connect/**"
       - "supabase/functions/send-trial-voucher-email/**"
       - "supabase/functions/trial-voucher-stripe-webhook/**"
       - ".github/workflows/deploy-supabase-voucher-functions.yml"
@@ -68,6 +69,7 @@ jobs:
           npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-public/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-admin/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/create-trial-voucher-checkout/index.ts
+          npx --yes deno check --node-modules-dir=false supabase/functions/stripe-connect/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/send-trial-voucher-email/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-stripe-webhook/index.ts
 
@@ -88,6 +90,7 @@ jobs:
             trial-voucher-public \
             trial-voucher-admin \
             create-trial-voucher-checkout \
+            stripe-connect \
             send-trial-voucher-email \
             trial-voucher-stripe-webhook \
             --project-ref "${SUPABASE_PROJECT_REF}" \
