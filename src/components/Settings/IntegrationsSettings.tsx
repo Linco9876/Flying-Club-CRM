@@ -1,5 +1,6 @@
 import React from 'react';
 import { ExternalLink, Link2, Plug, RefreshCw } from 'lucide-react';
+import { StripeIntegrationCard } from './StripeIntegrationCard';
 
 interface IntegrationsSettingsProps {
   canEdit: boolean;
@@ -16,6 +17,8 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ canE
         </h2>
         <p className="text-gray-600">Prepare external services for accounting, notifications and operational data sync.</p>
       </div>
+
+      <StripeIntegrationCard canEdit={canEdit} />
 
       <section className="rounded-lg border border-gray-200">
         <div className="p-5 border-b border-gray-200 flex items-start justify-between gap-4">

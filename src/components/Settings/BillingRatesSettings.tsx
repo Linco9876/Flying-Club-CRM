@@ -1,10 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CreditCard, DollarSign, ExternalLink, GripVertical, Loader2, Plus, RefreshCw, Trash2, Unlink, Users } from 'lucide-react';
-import toast from 'react-hot-toast';
+import React, { useEffect, useMemo, useState } from 'react';
+import { CreditCard, DollarSign, GripVertical, Loader2, Plus, Trash2, Users } from 'lucide-react';
 import { useBillingSettings, FlightType, PaymentMethod } from '../../hooks/useBillingSettings';
 import { useAircraft } from '../../hooks/useAircraft';
 import { UserRole } from '../../types';
-import { supabase } from '../../lib/supabase';
 
 interface BillingRatesSettingsProps {
   canEdit: boolean;
@@ -16,42 +14,11 @@ const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm f
 
 const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-interface StripeConnectStatus {
-  connected: boolean;
-  accountId: string | null;
-  scope: string | null;
-  livemode: boolean;
-  connectedAt: string | null;
-  updatedAt: string | null;
-  configured: boolean;
-  hasClientId: boolean;
-  hasSecretKey: boolean;
-  callbackUrl: string;
-}
-
 export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
   const { flightTypes, paymentMethods, loading, saveBillingSettings } = useBillingSettings();
   const { aircraft } = useAircraft();
   const [draftFlightTypes, setDraftFlightTypes] = useState<FlightType[]>([]);
   const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
-  const [stripeLoading, setStripeLoading] = useState(false);
-
-  const loadStripeStatus = useCallback(async () => {
-    setStripeLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
-        body: { action: 'status' },
-      });
-      if (error) throw error;
-      setStripeStatus(data ?? null);
-    } catch (error: any) {
-      console.error('Error loading Stripe connection:', error);
-      toast.error(error?.message || 'Failed to load Stripe connection');
-    } finally {
-      setStripeLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     setDraftFlightTypes(flightTypes);
@@ -60,28 +27,6 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   useEffect(() => {
     setDraftPaymentMethods(paymentMethods);
   }, [paymentMethods]);
-
-  useEffect(() => {
-    loadStripeStatus();
-  }, [loadStripeStatus]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const result = params.get('stripe_connect');
-    if (!result) return;
-
-    if (result === 'success') {
-      toast.success('Stripe account linked');
-      loadStripeStatus();
-    } else {
-      toast.error(params.get('stripe_error') || 'Stripe account could not be linked');
-    }
-
-    params.delete('stripe_connect');
-    params.delete('stripe_error');
-    const cleanQuery = params.toString();
-    window.history.replaceState({}, '', `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ''}`);
-  }, [loadStripeStatus]);
 
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
@@ -163,42 +108,6 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
-  const connectStripe = async () => {
-    if (!canEdit) return;
-    setStripeLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke<{ url?: string; error?: string; callbackUrl?: string }>('stripe-connect', {
-        body: { action: 'start' },
-      });
-      if (error) throw error;
-      if (!data?.url) throw new Error(data?.error || 'Stripe did not return a link URL');
-      window.location.href = data.url;
-    } catch (error: any) {
-      console.error('Error starting Stripe connection:', error);
-      toast.error(error?.message || 'Failed to start Stripe connection');
-    } finally {
-      setStripeLoading(false);
-    }
-  };
-
-  const disconnectStripe = async () => {
-    if (!canEdit || !window.confirm('Disconnect Stripe from the CRM? Existing records will remain, but new online payment setup will stop using this linked account.')) return;
-    setStripeLoading(true);
-    try {
-      const { error } = await supabase.functions.invoke('stripe-connect', {
-        body: { action: 'disconnect' },
-      });
-      if (error) throw error;
-      toast.success('Stripe disconnected');
-      await loadStripeStatus();
-    } catch (error: any) {
-      console.error('Error disconnecting Stripe:', error);
-      toast.error(error?.message || 'Failed to disconnect Stripe');
-    } finally {
-      setStripeLoading(false);
-    }
-  };
-
   const activePaymentMethods = draftPaymentMethods.filter(method => method.active);
   const activeFlightTypes = draftFlightTypes.filter(type => type.active);
 
@@ -230,87 +139,6 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         </h2>
         <p className="text-gray-600">Configure flight types, payment methods and the rate rules used when flights are logged.</p>
       </div>
-
-      <section className="rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
-              <CreditCard className="h-5 w-5 mr-2 text-blue-600" />
-              Stripe Connection
-            </h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Link the club Stripe account so online payment features can be managed from the CRM without exposing Stripe secrets in the browser.
-            </p>
-            {stripeStatus?.callbackUrl && (
-              <p className="mt-3 text-xs text-gray-500">
-                Stripe redirect URI: <span className="font-mono text-gray-700 break-all">{stripeStatus.callbackUrl}</span>
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={loadStripeStatus}
-              disabled={stripeLoading}
-              className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${stripeLoading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            {stripeStatus?.connected ? (
-              canEdit && (
-                <button
-                  type="button"
-                  onClick={disconnectStripe}
-                  disabled={stripeLoading}
-                  className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-                >
-                  <Unlink className="h-4 w-4" />
-                  Disconnect
-                </button>
-              )
-            ) : (
-              canEdit && (
-                <button
-                  type="button"
-                  onClick={connectStripe}
-                  disabled={stripeLoading}
-                  className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {stripeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-                  Connect Stripe
-                </button>
-              )
-            )}
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-blue-100 bg-white p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
-            <p className={`mt-1 text-sm font-semibold ${stripeStatus?.connected ? 'text-green-700' : 'text-amber-700'}`}>
-              {stripeStatus?.connected ? 'Connected' : 'Not connected'}
-            </p>
-          </div>
-          <div className="rounded-lg border border-blue-100 bg-white p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Account</p>
-            <p className="mt-1 break-all text-sm font-medium text-gray-800">{stripeStatus?.accountId || 'No Stripe account linked'}</p>
-          </div>
-          <div className="rounded-lg border border-blue-100 bg-white p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Mode</p>
-            <p className="mt-1 text-sm font-medium text-gray-800">
-              {stripeStatus?.connected ? (stripeStatus.livemode ? 'Live payments' : 'Test mode') : 'Waiting for setup'}
-            </p>
-          </div>
-        </div>
-
-        {stripeStatus && !stripeStatus.configured && (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Add <span className="font-mono">STRIPE_CONNECT_CLIENT_ID</span> and <span className="font-mono">STRIPE_SECRET_KEY</span> to Supabase Edge Function secrets, then add the redirect URI above in Stripe Connect OAuth settings.
-          </div>
-        )}
-      </section>
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
