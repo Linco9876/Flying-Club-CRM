@@ -283,41 +283,136 @@ const sendTrialBookingConfirmationEmail = async ({
     year: "numeric",
     timeZone,
   }).format(new Date(booking.startTime));
-  const timeLabel = `${new Intl.DateTimeFormat("en-AU", {
+  const startTimeLabel = new Intl.DateTimeFormat("en-AU", {
     hour: "numeric",
     minute: "2-digit",
     timeZone,
-  }).format(new Date(booking.startTime))} - ${new Intl.DateTimeFormat("en-AU", {
+  }).format(new Date(booking.startTime));
+  const finishTimeLabel = new Intl.DateTimeFormat("en-AU", {
     hour: "numeric",
     minute: "2-digit",
     timeZone,
-  }).format(new Date(booking.endTime))}`;
+  }).format(new Date(booking.endTime));
   const flightMinutes = Number(product.duration_minutes || 0);
   const blockMinutes = flightMinutes + 30;
+  const bookingUrl = `${siteOrigin()}/trial-flight-voucher?voucherCode=${encodeURIComponent(voucher.code)}`;
+  const preheader = `Confirmed for ${dateLabel} at ${startTimeLabel}.`;
+  const plainText = [
+    `Hi ${toName},`,
+    "",
+    `Your ${product.name || "trial instructional flight"} is booked.`,
+    "",
+    `Date: ${dateLabel}`,
+    `Arrive: ${startTimeLabel}`,
+    `Allow: ${blockMinutes ? `about ${blockMinutes} minutes` : "time for your trial flight"}`,
+    `Flight: ${flightMinutes ? `${flightMinutes} minutes` : "as listed on your voucher"}`,
+    "",
+    `Manage booking: ${bookingUrl}`,
+    `Voucher code: ${voucher.code}`,
+    "",
+    "Please wear comfortable clothing and enclosed shoes. Contact Bendigo Flying Club if you need help.",
+  ].join("\n");
   const html = `<!doctype html>
 <html>
-  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  </head>
+  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;-webkit-font-smoothing:antialiased;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preheader)}</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4fb;padding:28px 12px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.14);">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:660px;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.14);">
             <tr>
-              <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:30px;color:#ffffff;">
-                <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
-                <h1 style="margin:0;font-size:28px;line-height:1.2;">Your trial flight is booked</h1>
+              <td style="background:#06152f;background-image:linear-gradient(135deg,#06152f,#0d3b78);padding:30px;color:#ffffff;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="vertical-align:middle;">
+                      <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
+                      <h1 style="margin:0;font-size:30px;line-height:1.18;color:#ffffff;">Your trial flight is booked</h1>
+                      <p style="margin:12px 0 0;font-size:15px;line-height:1.6;color:#dbeafe;">We look forward to welcoming you at the club.</p>
+                    </td>
+                    <td align="right" width="76" style="vertical-align:top;">
+                      <div style="display:inline-block;width:56px;height:56px;border-radius:18px;background:#ffffff;color:#0d3b78;text-align:center;line-height:56px;font-weight:900;font-size:18px;box-shadow:0 10px 24px rgba(0,0,0,.18);">BFC</div>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
             <tr>
-              <td style="padding:28px 30px;">
-                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(toName)},</p>
-                <p style="margin:0 0 18px;line-height:1.65;color:#334155;">Your ${escapeHtml(product.name || "trial instructional flight")} has been booked.</p>
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
-                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Date</strong><span style="color:#475569;">${escapeHtml(dateLabel)}</span></td></tr>
-                  <tr><td style="padding:16px 18px;border-bottom:1px solid #dbeafe;"><strong style="display:block;color:#0f172a;">Arrival / reserved booking block</strong><span style="color:#475569;">${escapeHtml(timeLabel)}</span></td></tr>
-                  <tr><td style="padding:16px 18px;"><strong style="display:block;color:#0f172a;">Trial flight time</strong><span style="color:#475569;">${escapeHtml(flightMinutes ? `${flightMinutes} minutes` : "As listed on your voucher")}</span></td></tr>
+              <td style="padding:30px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#0f172a;">Hi ${escapeHtml(toName)},</p>
+                <p style="margin:0 0 22px;font-size:16px;line-height:1.65;color:#334155;">Your ${escapeHtml(product.name || "trial instructional flight")} is confirmed.</p>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;">
+                  <tr>
+                    <td style="padding:0 0 12px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
+                        <tr>
+                          <td width="54" style="padding:18px 0 18px 18px;vertical-align:top;">
+                            <div style="width:38px;height:38px;border-radius:12px;background:#dbeafe;color:#1d4ed8;text-align:center;line-height:38px;font-weight:900;">1</div>
+                          </td>
+                          <td style="padding:18px 18px 18px 12px;">
+                            <p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:800;">Date</p>
+                            <p style="margin:0;font-size:18px;line-height:1.35;color:#0f172a;font-weight:800;">${escapeHtml(dateLabel)}</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 0 12px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
+                        <tr>
+                          <td width="54" style="padding:18px 0 18px 18px;vertical-align:top;">
+                            <div style="width:38px;height:38px;border-radius:12px;background:#dbeafe;color:#1d4ed8;text-align:center;line-height:38px;font-weight:900;">2</div>
+                          </td>
+                          <td style="padding:18px 18px 18px 12px;">
+                            <p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:800;">Arrival time</p>
+                            <p style="margin:0;font-size:18px;line-height:1.35;color:#0f172a;font-weight:800;">${escapeHtml(startTimeLabel)}</p>
+                            <p style="margin:6px 0 0;font-size:13px;line-height:1.5;color:#64748b;">Expected finish around ${escapeHtml(finishTimeLabel)}.</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
+                        <tr>
+                          <td width="54" style="padding:18px 0 18px 18px;vertical-align:top;">
+                            <div style="width:38px;height:38px;border-radius:12px;background:#dbeafe;color:#1d4ed8;text-align:center;line-height:38px;font-weight:900;">3</div>
+                          </td>
+                          <td style="padding:18px 18px 18px 12px;">
+                            <p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:800;">Flight</p>
+                            <p style="margin:0;font-size:18px;line-height:1.35;color:#0f172a;font-weight:800;">${escapeHtml(flightMinutes ? `${flightMinutes} minutes` : "As listed on your voucher")}</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
                 </table>
-                <p style="margin:0 0 14px;line-height:1.65;color:#334155;">Please arrive at the start of the reserved booking block. It includes ${escapeHtml(blockMinutes ? `${blockMinutes} minutes total` : "the flight time plus 30 minutes")} for the flight, pre-flight briefing, aircraft changeover and paperwork.</p>
-                <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">Voucher code: ${escapeHtml(voucher.code)}. Contact Bendigo Flying Club if you need help changing this booking.</p>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;">
+                  <tr>
+                    <td align="center" style="border-radius:14px;background:#2563eb;">
+                      <a href="${escapeHtml(bookingUrl)}" style="display:block;padding:15px 20px;color:#ffffff;text-decoration:none;font-weight:800;font-size:15px;">View or reschedule booking</a>
+                    </td>
+                  </tr>
+                </table>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 18px;border-radius:18px;background:#f1f5f9;">
+                  <tr>
+                    <td style="padding:18px;">
+                      <p style="margin:0 0 8px;font-size:14px;font-weight:800;color:#0f172a;">Before you arrive</p>
+                      <p style="margin:0;color:#475569;font-size:14px;line-height:1.65;">Please wear comfortable clothing and enclosed shoes. If you need to change your booking, you can reschedule online up to 3 days before the flight.</p>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0;color:#64748b;font-size:13px;line-height:1.65;">Voucher code: <strong style="color:#0f172a;">${escapeHtml(voucher.code)}</strong></p>
+                <p style="margin:8px 0 0;color:#64748b;font-size:13px;line-height:1.65;">Need help? Contact Bendigo Flying Club and we will be happy to assist.</p>
               </td>
             </tr>
           </table>
@@ -338,6 +433,7 @@ const sendTrialBookingConfirmationEmail = async ({
       to: [{ email: to, name: toName }],
       subject: "Your Bendigo Flying Club trial flight is booked",
       htmlContent: html,
+      textContent: plainText,
     }),
   });
 
