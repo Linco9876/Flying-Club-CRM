@@ -156,7 +156,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (data?.error) throw new Error(data.error);
       setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
       setVoucher(data.voucher || (voucher ? { ...voucher, status: 'redeemed' } : voucher));
-      toast.success('Voucher linked to your account');
+      toast.success('Voucher details saved');
       if (isVoucherAccountUser) await loadAvailability();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not redeem voucher');
@@ -191,7 +191,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
 
   const bookSlot = async (slot: VoucherSlot) => {
     if (!user) {
-      toast.error('Sign in to your voucher account before booking a time');
+      toast.error('Sign in before booking a time');
       return;
     }
     setLoading(true);
@@ -250,9 +250,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       if (data?.error) throw new Error(data.error);
       setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
       setSetupResendEmail(data.email || '');
-      toast.success(data.setupEmailSent ? 'Setup link resent' : 'Setup link generated');
+      toast.success(data.setupEmailSent ? 'Booking link resent' : 'Booking link generated');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not resend setup link');
+      toast.error(error instanceof Error ? error.message : 'Could not resend booking link');
     } finally {
       setLoading(false);
     }
@@ -296,9 +296,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const flightDurationLabel = voucher?.product.durationMinutes
     ? `${voucher.product.durationMinutes} min trial flight`
     : 'Trial flight';
-  const bookingBlockLabel = voucher?.product.bookingBlockMinutes
-    ? `${voucher.product.bookingBlockMinutes} min reserved block`
-    : 'Reserved booking block';
 
   const formatSlotDateHeading = (slotOrValue: VoucherSlot | string) => {
     if (typeof slotOrValue !== 'string' && slotOrValue.localDateLabel) return slotOrValue.localDateLabel;
@@ -430,9 +427,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     if (!redeemed?.setupLink) return;
     try {
       await navigator.clipboard.writeText(redeemed.setupLink);
-      toast.success('Setup link copied');
+      toast.success('Booking link copied');
     } catch {
-      toast.error('Could not copy setup link');
+      toast.error('Could not copy booking link');
     }
   };
 
@@ -453,9 +450,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
             <div className="rounded-2xl border border-white/10 bg-white/10 p-3 text-sm text-blue-50 sm:text-right">
               <p className="font-semibold">{user.name || user.email}</p>
               <p className="mt-0.5 text-xs text-blue-100/80">{user.email}</p>
-              {isFullPortalUserOnVoucherPage && (
-                <p className="mt-1 text-xs font-semibold text-amber-100">Normal portal account</p>
-              )}
               <button
                 type="button"
                 onClick={logout}
@@ -474,16 +468,10 @@ export const TrialVoucherRedeemPage: React.FC = () => {
             </div>
             <h2 className="text-3xl font-bold">Redeem your trial instructional flight</h2>
             <p className="mt-4 leading-7 text-blue-100">
-              Enter the code from your voucher email. Once verified, we only need your full name, email and phone to create your restricted booking account.
+              Enter the code from your voucher email, add your contact details, then choose a suitable flight time.
             </p>
-            <div className="mt-6 rounded-2xl bg-white/10 p-4 text-sm text-blue-50">
-              Voucher bookings reserve the flight time plus 30 minutes for arrival, briefing and paperwork. Available times are based on aircraft and qualified instructor availability.
-            </div>
             <div className="mt-3 rounded-2xl border border-amber-200/30 bg-amber-200/10 p-4 text-sm leading-6 text-amber-50">
               Online voucher bookings are available from two days ahead. For today or tomorrow, please call Bendigo Flying Club so we can confirm availability directly.
-            </div>
-            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-6 text-blue-50">
-              This account is only for choosing the trial flight time. If your email is already used for a normal club member account, use a different email for the voucher or contact the club to link it manually.
             </div>
           </section>
 
@@ -515,21 +503,16 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       <p className="mt-1 text-sm leading-6 text-slate-700">{voucher.product.description}</p>
                     </div>
                   </div>
-                  <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+                  <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                     <div className="rounded-xl bg-white p-3">
                       <p className="text-xs font-semibold uppercase text-slate-500">Flight</p>
                       <p className="font-bold">{voucher.product.durationMinutes} min</p>
                     </div>
                     <div className="rounded-xl bg-white p-3">
-                      <p className="text-xs font-semibold uppercase text-slate-500">Booking block</p>
-                      <p className="font-bold">{voucher.product.bookingBlockMinutes} min</p>
-                    </div>
-                    <div className="rounded-xl bg-white p-3">
-                      <p className="text-xs font-semibold uppercase text-slate-500">Aircraft</p>
-                      <p className="font-bold">{voucher.product.aircraftMode === 'tecnam' ? 'Any Tecnam' : voucher.product.aircraftMode === 'archer' ? 'PA-28 Archer' : 'Selected'}</p>
+                      <p className="text-xs font-semibold uppercase text-slate-500">Location</p>
+                      <p className="font-bold">Bendigo Flying Club</p>
                     </div>
                   </div>
-                  <p className="mt-4 text-sm leading-6 text-slate-700">{voucher.product.bookingInstructions}</p>
                 </div>
 
                 {!redeemed && voucher.status === 'issued' ? (
@@ -538,7 +521,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
                     <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="Phone" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
                     <button onClick={redeemVoucher} disabled={loading} className="rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-                      Create booking account
+                      Continue
                     </button>
                   </div>
                 ) : (
@@ -547,16 +530,16 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <p className="mt-1 text-sm">
                       {user
                         ? isFullPortalUserOnVoucherPage
-                          ? 'This voucher is linked, but booking must be completed from the restricted voucher account. Sign out, then use the setup link from the voucher email.'
-                          : 'Choose an available time below. Your booking block includes the flight plus 30 minutes for briefing and paperwork.'
+                          ? 'This voucher is linked. Sign out, then use the voucher email to continue booking.'
+                          : 'Choose an available time below.'
                         : redeemed?.setupEmailSent
-                          ? 'We have emailed your setup link. Set your password and sign in to your restricted voucher account before choosing a flight time.'
-                          : 'Set your password and sign in to your restricted voucher account before choosing a flight time.'}
+                          ? 'We have emailed your booking link. Follow the link to choose your flight time.'
+                          : 'Continue to choose your flight time.'}
                     </p>
                     {redeemed?.setupLink && (
                       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                         <a href={redeemed.setupLink} className="inline-flex justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                          Set password / continue
+                          Continue booking
                         </a>
                         <button
                           type="button"
@@ -564,7 +547,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                           className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
                         >
                           <Copy className="h-4 w-4" />
-                          Copy setup link
+                          Copy booking link
                         </button>
                       </div>
                     )}
@@ -573,9 +556,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
 
                 {isFullPortalUserOnVoucherPage && (redeemed || voucher.status === 'redeemed') && voucher.status !== 'booked' && !bookedSlot && (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-                    <h3 className="font-bold">Use the voucher booking account</h3>
+                    <h3 className="font-bold">Continue from the voucher email</h3>
                     <p className="mt-1 text-sm leading-6">
-                      You are currently signed in to a normal Bendigo Flying Club portal account. Sign out, then use the setup link from the voucher email to sign in to the restricted voucher booking account.
+                      Sign out, then use the link in the voucher email to choose a flight time.
                     </p>
                     <button
                       type="button"
@@ -591,11 +574,11 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
                     <h3 className="font-bold">Sign in before booking</h3>
                     <p className="mt-1 text-sm">
-                      Your voucher is linked to a restricted booking account. The final booking is only available from the account attached to this voucher.
+                      Use the booking link from your voucher email to choose a flight time.
                     </p>
                     {setupResendEmail && (
                       <p className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-amber-800">
-                        Setup link sent to {setupResendEmail}. Check junk mail if it does not arrive.
+                        Booking link sent to {setupResendEmail}. Check junk mail if it does not arrive.
                       </p>
                     )}
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -603,7 +586,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         href="/"
                         className="inline-flex justify-center rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
                       >
-                        Sign in to voucher account
+                        Sign in
                       </a>
                       <button
                         type="button"
@@ -611,7 +594,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         disabled={loading}
                         className="inline-flex justify-center rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
                       >
-                        Resend setup link
+                        Resend booking link
                       </button>
                     </div>
                   </div>
@@ -623,7 +606,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       <div>
                         <h3 className="font-bold text-slate-950">{rescheduling ? 'Choose a new time' : 'Available times'}</h3>
                         <p className="text-sm text-slate-600">
-                          {slots.length} available time{slots.length === 1 ? '' : 's'} found. Aircraft and instructor availability are checked together.
+                          {slots.length} available time{slots.length === 1 ? '' : 's'} found.
                         </p>
                         <p className="mt-1 text-xs font-bold uppercase tracking-wide text-blue-700">
                           Times shown in Bendigo local time
@@ -752,7 +735,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                                   <div>
                                     <p className="text-base font-black text-slate-950">{formatSlotTime(slot)}</p>
                                     <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{formatSlotDate(slot)} · Bendigo local time</p>
-                                    <p className="mt-1 text-xs font-semibold text-blue-700">{bookingBlockLabel}</p>
                                   </div>
                                   <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">{rescheduling ? 'Reschedule' : 'Book'}</span>
                                 </div>
@@ -786,7 +768,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <p className="mt-1 text-sm">
                       {formatSlotDate(bookedSlot)} at {formatSlotTime(bookedSlot)}
                     </p>
-                    <p className="mt-1 text-sm font-semibold">{bookingBlockLabel} including {flightDurationLabel.toLowerCase()}.</p>
+                    <p className="mt-1 text-sm font-semibold">{flightDurationLabel}.</p>
                     <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-emerald-800">
                       {confirmationEmailSent
                         ? 'A confirmation email has been sent with these booking details.'

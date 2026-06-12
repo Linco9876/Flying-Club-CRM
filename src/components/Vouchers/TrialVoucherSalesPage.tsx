@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Gift, Loader2, Mail, Plane, ShieldCheck, Ticket } from 'lucide-react';
+import { ArrowRight, Gift, Loader2, Mail, Plane, Ticket } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { TrialFlightVoucherAircraftMode } from '../../types';
 import toast from 'react-hot-toast';
@@ -28,9 +28,6 @@ interface CheckoutStatus {
   deliveredAt?: string | null;
   warning?: string;
 }
-
-const aircraftLabel = (mode: TrialFlightVoucherAircraftMode) =>
-  mode === 'tecnam' ? 'Any Tecnam' : mode === 'archer' ? 'PA-28 Archer' : 'Selected aircraft';
 
 const standardVoucherNames: Record<'tecnam' | 'archer', string> = {
   tecnam: 'Tecnam Trial Instructional Flight',
@@ -77,8 +74,8 @@ export const TrialVoucherSalesPage: React.FC = () => {
         mode,
         name: standardVoucherNames[mode],
         description: mode === 'archer'
-          ? 'A PA-28 Archer trial instructional flight voucher is planned, but the club still needs the Archer aircraft, instructor, and pricing setup completed before it can be sold online.'
-          : 'A Tecnam trial instructional flight voucher is planned, but the club still needs product setup completed before it can be sold online.',
+          ? 'A PA-28 Archer trial instructional flight voucher option is coming soon.'
+          : 'A Tecnam trial instructional flight voucher option is coming soon.',
       }));
   }, [products]);
 
@@ -160,7 +157,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
         return `Payment received. Your ${checkoutStatus.productName} email is queued for delivery to ${checkoutStatus.emailTo || 'the nominated email address'}.`;
       }
       if (checkoutStatus?.paymentStatus === 'pending') {
-        return `Stripe has returned from checkout and we are waiting for payment confirmation for ${checkoutStatus.productName}. This usually updates within a few seconds.`;
+        return `We are waiting for payment confirmation for ${checkoutStatus.productName}. This usually updates within a few seconds.`;
       }
       return 'Checkout returned successfully. If payment was completed, your voucher email will be confirmed shortly.';
     }
@@ -179,8 +176,6 @@ export const TrialVoucherSalesPage: React.FC = () => {
       ? [
           `Preferred voucher: ${product.name}`,
           `Flight time: ${product.durationMinutes} minutes`,
-          `Booking block: ${product.bookingBlockMinutes} minutes`,
-          `Aircraft: ${aircraftLabel(product.aircraftMode)}`,
           `Advertised price: ${formatPrice(product.price)}`,
         ]
       : [
@@ -290,7 +285,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
   const startCheckout = async () => {
     if (!selectedProduct) return;
     if (!selectedProduct.bookingAvailable) {
-      toast.error(selectedProduct.bookingSetupMessage || 'This voucher is temporarily unavailable for booking.');
+      toast.error('This voucher is temporarily unavailable online.');
       return;
     }
     if (!selectedProduct.checkoutAvailable) {
@@ -316,7 +311,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      if (!data?.checkoutUrl) throw new Error('Stripe checkout did not return a payment link');
+      if (!data?.checkoutUrl) throw new Error('Could not open the payment page');
       window.location.href = data.checkoutUrl;
     } catch (error) {
       console.error('Failed to start voucher checkout:', error);
@@ -359,12 +354,12 @@ export const TrialVoucherSalesPage: React.FC = () => {
             </p>
             <div className="mt-6 grid gap-3 text-sm text-blue-50">
               <div className="flex gap-3 rounded-2xl bg-white/10 p-4">
-                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-200" />
-                <p>Each booking reserves the flight time plus 30 minutes for arrival, briefing and paperwork.</p>
+                <Mail className="mt-0.5 h-5 w-5 shrink-0 text-blue-200" />
+                <p>Send the voucher to yourself, or schedule it to arrive for the recipient.</p>
               </div>
               <div className="flex gap-3 rounded-2xl bg-white/10 p-4">
-                <Plane className="mt-0.5 h-5 w-5 shrink-0 text-blue-200" />
-                <p>Available times are checked against the voucher aircraft type and qualified instructor availability.</p>
+                <Ticket className="mt-0.5 h-5 w-5 shrink-0 text-blue-200" />
+                <p>The recipient can use their voucher code to choose a suitable flight time online.</p>
               </div>
             </div>
             {checkoutMessage && (
@@ -398,7 +393,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-950">
                 <h4 className="text-lg font-bold">Voucher options could not load</h4>
                 <p className="mt-2 text-sm leading-6 text-amber-800">
-                  The public voucher service did not respond, so we cannot safely show live voucher availability or checkout right now.
+                  Voucher options could not be loaded right now.
                 </p>
                 <p className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-amber-800">
                   {productsError}
@@ -432,18 +427,14 @@ export const TrialVoucherSalesPage: React.FC = () => {
                       </div>
                       <p className="shrink-0 text-xl font-black text-blue-700">{formatPrice(product.price)}</p>
                     </div>
-                    <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+                    <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                       <div className="rounded-xl bg-slate-50 p-3">
                         <p className="text-xs font-semibold uppercase text-slate-500">Flight</p>
                         <p className="font-bold">{product.durationMinutes} min</p>
                       </div>
                       <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Booking block</p>
-                        <p className="font-bold">{product.bookingBlockMinutes} min</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Aircraft</p>
-                        <p className="font-bold">{aircraftLabel(product.aircraftMode)}</p>
+                        <p className="text-xs font-semibold uppercase text-slate-500">Delivery</p>
+                        <p className="font-bold">Email voucher</p>
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
@@ -480,12 +471,12 @@ export const TrialVoucherSalesPage: React.FC = () => {
                     </div>
                     {!product.bookingAvailable && (
                       <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
-                        {product.bookingSetupMessage || 'This voucher needs eligible aircraft and instructor availability configured before it can be sold online.'}
+                        This voucher is temporarily unavailable online. Please contact the club.
                       </div>
                     )}
                     {product.bookingAvailable && !product.checkoutAvailable && (
                       <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-                        This voucher can be issued by the club now, but online card payment is not enabled yet. Use "Contact to purchase" and the club can email the voucher to you or schedule it for the recipient.
+                        Contact the club and we can issue this voucher for you.
                       </div>
                     )}
                   </article>
@@ -501,18 +492,14 @@ export const TrialVoucherSalesPage: React.FC = () => {
                         Coming soon
                       </span>
                     </div>
-                    <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+                    <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                       <div className="rounded-xl bg-white p-3">
                         <p className="text-xs font-semibold uppercase text-slate-500">Flight</p>
                         <p className="font-bold">To be confirmed</p>
                       </div>
                       <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Booking block</p>
-                        <p className="font-bold">Flight + 30 min</p>
-                      </div>
-                      <div className="rounded-xl bg-white p-3">
-                        <p className="text-xs font-semibold uppercase text-slate-500">Aircraft</p>
-                        <p className="font-bold">{aircraftLabel(option.mode)}</p>
+                        <p className="text-xs font-semibold uppercase text-slate-500">Delivery</p>
+                        <p className="font-bold">Email voucher</p>
                       </div>
                     </div>
                     <div className="mt-4">
@@ -542,7 +529,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
             )}
 
             <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-              Online card checkout appears automatically for voucher products that have a Stripe Price ID configured. Otherwise, contact the club and we can issue the voucher manually.
+              Prefer to speak with someone first? Contact Bendigo Flying Club and we can arrange the voucher for you.
             </div>
           </section>
         </main>
