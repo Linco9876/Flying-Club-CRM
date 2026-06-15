@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Copy, CreditCard, ExternalLink, Loader2, RefreshCw, Settings, Unlink } from 'lucide-react';
+import { CheckCircle2, CreditCard, ExternalLink, Loader2, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 
@@ -19,13 +19,6 @@ interface StripeConnectStatus {
   hasSecretKey: boolean;
   callbackUrl: string;
 }
-
-const setupSteps = [
-  'Configure the CRM platform Stripe secret key once',
-  'Each club connects its own Stripe account from this screen',
-  'Stripe hosts the secure onboarding and verification flow',
-  'Voucher checkout, top-ups, and flight payments use that club account',
-];
 
 export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ canEdit }) => {
   const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
@@ -105,149 +98,113 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
     }
   };
 
-  const copyRedirectUri = async () => {
-    if (!stripeStatus?.callbackUrl) return;
-    await navigator.clipboard.writeText(stripeStatus.callbackUrl);
-    toast.success('Stripe redirect URI copied');
-  };
-
   const connected = Boolean(stripeStatus?.connected);
   const configured = Boolean(stripeStatus?.configured);
+  const statusLabel = connected ? 'Stripe is connected' : configured ? 'Ready to connect' : 'Setup needed';
+  const statusDetail = connected
+    ? 'Online voucher payments, pilot top-ups and card payments can use this club Stripe account.'
+    : configured
+      ? 'Connect the club Stripe account to start taking online payments.'
+      : 'The CRM owner needs to finish the platform Stripe setup before this club can connect.';
 
   return (
-    <section className="overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm">
-      <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-5 text-white">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold flex items-center">
-              <CreditCard className="h-5 w-5 mr-2 text-blue-200" />
-              Stripe Connect Platform
-            </h3>
-            <p className="mt-1 max-w-3xl text-sm text-blue-100">
-              Set Stripe up as a CRM platform, then let each flying club link its own Stripe account with a simple Connect button. Pilots and students never need to see the setup.
-            </p>
-          </div>
-          <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${connected ? 'bg-green-400/15 text-green-100 ring-1 ring-green-300/30' : 'bg-amber-400/15 text-amber-100 ring-1 ring-amber-300/30'}`}>
-            {connected ? 'Club connected' : configured ? 'Platform ready' : 'Platform setup needed'}
-          </span>
-        </div>
-      </div>
-
-      <div className="p-5 space-y-5">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Connection</p>
-            <p className={`mt-1 text-sm font-semibold ${connected ? 'text-green-700' : 'text-amber-700'}`}>
-              {connected ? 'This club is linked' : 'No club account linked'}
-            </p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Connected account</p>
-            <p className="mt-1 break-all text-sm font-medium text-gray-800">{stripeStatus?.accountId || 'No account linked yet'}</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Platform mode</p>
-            <p className="mt-1 text-sm font-medium text-gray-800">
-              {connected ? (stripeStatus?.livemode ? 'Live connected payments' : 'Test connected payments') : configured ? 'Ready for club onboarding' : 'Platform keys required'}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-sm font-semibold text-gray-900">Platform flow</p>
-            <div className="mt-3 space-y-2">
-              {setupSteps.map(step => (
-                <div key={step} className="flex items-start gap-2 text-sm text-gray-700">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-green-600" />
-                  <span>{step}</span>
-                </div>
-              ))}
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <div className={`flex h-12 w-12 flex-none items-center justify-center rounded-xl ${connected ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+              <CreditCard className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold text-gray-900">Stripe payments</h3>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${connected ? 'bg-green-100 text-green-800' : configured ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                  {statusLabel}
+                </span>
+              </div>
+              <p className="mt-1 max-w-2xl text-sm text-gray-600">{statusDetail}</p>
+              {connected && stripeStatus?.connectedAt && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Connected {new Date(stripeStatus.connectedAt).toLocaleDateString()}
+                  {stripeStatus.livemode ? ' in live mode.' : ' in test mode.'}
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="rounded-lg border border-gray-200 p-4">
-            <p className="text-sm font-semibold text-gray-900">Platform callback URL</p>
-            <p className="mt-1 text-xs text-gray-500">This is kept for older OAuth callbacks. The current setup uses Stripe-hosted onboarding links, so no Client ID is needed.</p>
-            <div className="mt-3 flex items-center gap-2 rounded-md bg-gray-50 p-2">
-              <code className="min-w-0 flex-1 break-all text-xs text-gray-700">{stripeStatus?.callbackUrl || 'Loading...'}</code>
-              <button
-                type="button"
-                onClick={copyRedirectUri}
-                disabled={!stripeStatus?.callbackUrl}
-                className="rounded-md border border-gray-200 bg-white p-2 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
-                title="Copy redirect URI"
-              >
-                <Copy className="h-4 w-4" />
-              </button>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            {connected ? (
+              canEdit && (
+                <button
+                  type="button"
+                  onClick={disconnectStripe}
+                  disabled={stripeLoading}
+                  className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                >
+                  <Unlink className="h-4 w-4" />
+                  Disconnect
+                </button>
+              )
+            ) : (
+              canEdit && (
+                <button
+                  type="button"
+                  onClick={connectStripe}
+                  disabled={stripeLoading || !configured}
+                  className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {stripeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+                  Connect Stripe
+                </button>
+              )
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              Vouchers
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Take trial flight voucher payments online.</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              Account top-ups
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Let members add funds to their pilot account.</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <ShieldCheck className="h-4 w-4 text-blue-600" />
+              Secure checkout
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Stripe handles card details and verification.</p>
           </div>
         </div>
 
         {stripeStatus && !configured && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            <p className="font-semibold">Platform setup is required once by the CRM owner.</p>
-            <p className="mt-1">
-              Add <span className="font-mono">STRIPE_SECRET_KEY</span> to Supabase Edge Function secrets for the platform account. After that, each club only needs to click the Connect button.
-            </p>
+          <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Stripe is not ready yet.</p>
+            <p className="mt-1">The CRM platform Stripe key needs to be added before this club can connect payments.</p>
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+          <p className="text-xs text-gray-500">
+            {connected ? 'Payments are linked to this club Stripe account.' : 'You will be sent to Stripe to finish setup.'}
+          </p>
           <button
             type="button"
             onClick={loadStripeStatus}
             disabled={stripeLoading}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-60"
           >
             <RefreshCw className={`h-4 w-4 ${stripeLoading ? 'animate-spin' : ''}`} />
             Refresh status
           </button>
-
-          {connected ? (
-            canEdit && (
-              <button
-                type="button"
-                onClick={disconnectStripe}
-                disabled={stripeLoading}
-                className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-              >
-                <Unlink className="h-4 w-4" />
-                Disconnect Stripe
-              </button>
-            )
-          ) : (
-            canEdit && (
-              <button
-                type="button"
-                onClick={connectStripe}
-                disabled={stripeLoading || !configured}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {stripeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-                Connect this club's Stripe
-              </button>
-            )
-          )}
-
-          <a
-            href="https://dashboard.stripe.com/apikeys"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            <Settings className="h-4 w-4" />
-            Platform API keys
-          </a>
-          <a
-            href="https://dashboard.stripe.com/connect"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            <ExternalLink className="h-4 w-4" />
-            Connect dashboard
-          </a>
         </div>
       </div>
     </section>
