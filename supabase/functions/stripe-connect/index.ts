@@ -30,7 +30,7 @@ const callbackUrl = (supabaseUrl: string) => `${supabaseUrl.replace(/\/$/, "")}/
 
 const settingsUrl = (params: Record<string, string>) => {
   const url = new URL(`${appUrl()}/settings`);
-  url.searchParams.set("tab", "billing");
+  url.searchParams.set("tab", "integrations");
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return url.toString();
 };
@@ -91,6 +91,27 @@ const stripeFormPost = async (url: string, form: URLSearchParams, secretKey: str
   return body;
 };
 
+const createConnectedAccount = async (secretKey: string) => {
+  const form = new URLSearchParams();
+  form.set("type", "standard");
+  form.set("business_profile[name]", "Bendigo Flying Club");
+  form.set("business_profile[url]", appUrl());
+  form.set("metadata[crm]", "bendigo-flying-club-portal");
+  return stripeFormPost("https://api.stripe.com/v1/accounts", form, secretKey);
+};
+
+const createAccountLink = async (accountId: string, secretKey: string) => {
+  const form = new URLSearchParams();
+  form.set("account", accountId);
+  form.set("type", "account_onboarding");
+  form.set("return_url", settingsUrl({ stripe_connect: "success" }));
+  form.set("refresh_url", settingsUrl({
+    stripe_connect: "error",
+    stripe_error: "The Stripe onboarding link expired. Click Connect this club's Stripe again.",
+  }));
+  return stripeFormPost("https://api.stripe.com/v1/account_links", form, secretKey);
+};
+
 const getStatus = async (adminClient: SupabaseAdminClient, supabaseUrl: string) => {
   const { data, error } = await adminClient
     .from("stripe_connect_settings")
@@ -100,7 +121,6 @@ const getStatus = async (adminClient: SupabaseAdminClient, supabaseUrl: string) 
 
   if (error) throw error;
 
-  const clientId = Deno.env.get("STRIPE_CONNECT_CLIENT_ID");
   const secretKey = Deno.env.get("STRIPE_SECRET_KEY");
   return {
     connected: Boolean(data?.stripe_user_id),
@@ -109,8 +129,8 @@ const getStatus = async (adminClient: SupabaseAdminClient, supabaseUrl: string) 
     livemode: Boolean(data?.livemode),
     connectedAt: data?.connected_at || null,
     updatedAt: data?.updated_at || null,
-    configured: Boolean(clientId && secretKey),
-    hasClientId: Boolean(clientId),
+    configured: Boolean(secretKey),
+    hasClientId: Boolean(Deno.env.get("STRIPE_CONNECT_CLIENT_ID")),
     hasSecretKey: Boolean(secretKey),
     callbackUrl: callbackUrl(supabaseUrl),
   };
@@ -215,36 +235,49 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "start") {
-      const clientId = Deno.env.get("STRIPE_CONNECT_CLIENT_ID");
       const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-      if (!clientId || !stripeSecretKey) {
+      if (!stripeSecretKey) {
         return json({
-          error: "Stripe Connect is not configured yet. Add STRIPE_CONNECT_CLIENT_ID and STRIPE_SECRET_KEY to Supabase Edge Function secrets.",
+          error: "Stripe Connect is not configured yet. Add STRIPE_SECRET_KEY to Supabase Edge Function secrets.",
           configured: false,
           callbackUrl: callbackUrl(supabaseUrl),
         }, 503);
       }
 
-      const state = `${crypto.randomUUID()}-${crypto.randomUUID()}`.replace(/-/g, "");
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      const { error: insertError } = await adminClient
-        .from("stripe_connect_oauth_states")
-        .insert({
-          state,
-          requested_by: auth.userId,
-          redirect_to: `${appUrl()}/settings?tab=billing`,
-          expires_at: expiresAt,
-        });
-      if (insertError) throw insertError;
+      const { data: existing, error: existingError } = await adminClient
+        .from("stripe_connect_settings")
+        .select("stripe_user_id")
+        .eq("id", true)
+        .maybeSingle();
+      if (existingError) throw existingError;
 
-      const authorizeUrl = new URL("https://connect.stripe.com/oauth/authorize");
-      authorizeUrl.searchParams.set("response_type", "code");
-      authorizeUrl.searchParams.set("client_id", clientId);
-      authorizeUrl.searchParams.set("scope", "read_write");
-      authorizeUrl.searchParams.set("redirect_uri", callbackUrl(supabaseUrl));
-      authorizeUrl.searchParams.set("state", state);
+      let accountId = cleanStripeId(existing?.stripe_user_id);
+      if (!/^acct_[A-Za-z0-9_]+$/.test(accountId)) {
+        const account = await createConnectedAccount(stripeSecretKey);
+        accountId = cleanStripeId(account?.id);
+        if (!/^acct_[A-Za-z0-9_]+$/.test(accountId)) {
+          throw new Error("Stripe did not return a connected account ID.");
+        }
 
-      return json({ url: authorizeUrl.toString(), callbackUrl: callbackUrl(supabaseUrl) });
+        const { error: upsertError } = await adminClient
+          .from("stripe_connect_settings")
+          .upsert({
+            id: true,
+            stripe_user_id: accountId,
+            stripe_publishable_key: null,
+            scope: "account_link",
+            livemode: Boolean(account?.livemode),
+            connected_by: auth.userId,
+            connected_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "id" });
+        if (upsertError) throw upsertError;
+      }
+
+      const accountLink = await createAccountLink(accountId, stripeSecretKey);
+      if (!accountLink?.url) throw new Error("Stripe did not return an onboarding link.");
+
+      return json({ url: accountLink.url, accountId, callbackUrl: callbackUrl(supabaseUrl) });
     }
 
     if (action === "disconnect") {

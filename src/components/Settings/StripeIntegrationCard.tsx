@@ -21,9 +21,9 @@ interface StripeConnectStatus {
 }
 
 const setupSteps = [
-  'Configure the CRM platform Stripe keys once',
-  'Add the callback URL to the platform Connect settings',
+  'Configure the CRM platform Stripe secret key once',
   'Each club connects its own Stripe account from this screen',
+  'Stripe hosts the secure onboarding and verification flow',
   'Voucher checkout, top-ups, and flight payments use that club account',
 ];
 
@@ -168,7 +168,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
 
           <div className="rounded-lg border border-gray-200 p-4">
             <p className="text-sm font-semibold text-gray-900">Platform callback URL</p>
-            <p className="mt-1 text-xs text-gray-500">Add this URL to the CRM platform's Stripe Connect settings so clubs can return safely after linking their accounts.</p>
+            <p className="mt-1 text-xs text-gray-500">This is kept for older OAuth callbacks. The current setup uses Stripe-hosted onboarding links, so no Client ID is needed.</p>
             <div className="mt-3 flex items-center gap-2 rounded-md bg-gray-50 p-2">
               <code className="min-w-0 flex-1 break-all text-xs text-gray-700">{stripeStatus?.callbackUrl || 'Loading...'}</code>
               <button
@@ -188,7 +188,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-semibold">Platform setup is required once by the CRM owner.</p>
             <p className="mt-1">
-              Add <span className="font-mono">STRIPE_SECRET_KEY</span> and <span className="font-mono">STRIPE_CONNECT_CLIENT_ID</span> to Supabase Edge Function secrets for the platform account. After that, each club only needs to click the Connect button.
+              Add <span className="font-mono">STRIPE_SECRET_KEY</span> to Supabase Edge Function secrets for the platform account. After that, each club only needs to click the Connect button.
             </p>
           </div>
         )}
@@ -240,13 +240,13 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
             Platform API keys
           </a>
           <a
-            href="https://dashboard.stripe.com/settings/connect/onboarding-options/oauth"
+            href="https://dashboard.stripe.com/connect"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             <ExternalLink className="h-4 w-4" />
-            Connect settings
+            Connect dashboard
           </a>
         </div>
       </div>
