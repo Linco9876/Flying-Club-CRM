@@ -193,6 +193,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
     stripeConnected && Boolean(product.stripePriceId?.trim()) && Number(product.price || 0) > 0;
   const checkoutReadyProducts = activeProducts.filter(productCheckoutReady);
   const checkoutSetupComplete = activeProducts.length > 0 && checkoutReadyProducts.length === activeProducts.length;
+  const onlineRevenueReadyValue = checkoutReadyProducts.reduce((total, product) => total + Number(product.price || 0), 0);
+  const bookedVoucherCount = vouchers.filter(voucher => voucher.status === 'booked').length;
   const hasTecnamProduct = products.some(product => product.aircraftMode === 'tecnam');
   const hasArcherProduct = products.some(product => product.aircraftMode === 'archer');
   const now = Date.now();
@@ -851,6 +853,13 @@ export const TrialFlightVouchersPage: React.FC = () => {
     return items.length > maxVisible ? `${visible} +${items.length - maxVisible} more` : visible;
   };
 
+  const formatMoney = (value: number) =>
+    new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency: 'AUD',
+      maximumFractionDigits: value % 1 === 0 ? 0 : 2,
+    }).format(value || 0);
+
   const normaliseEndorsementType = (value?: string | null) => String(value || '').trim().toLowerCase();
 
   const instructorHasAircraftEndorsement = (instructorId: string, aircraftId: string) => {
@@ -1141,19 +1150,19 @@ export const TrialFlightVouchersPage: React.FC = () => {
     },
     {
       label: 'Manual issue',
-      value: manualIssueReady ? 'Ready' : `${bookableStandardProducts.length}/${requiredVoucherReadiness.length}`,
-      complete: manualIssueReady,
-      detail: manualIssueReady
-        ? 'Tecnam and Archer vouchers can be issued by staff once payment is handled outside Stripe.'
-        : 'Finish aircraft and instructor setup before staff issue both voucher types.',
+      value: activeProducts.length > 0 ? 'Ready' : 'No live products',
+      complete: activeProducts.length > 0,
+      detail: activeProducts.length > 0
+        ? 'Staff can issue active vouchers for cash, EFT, complimentary or external payments.'
+        : 'Create and activate at least one voucher product before issuing vouchers.',
     },
     {
       label: 'Online sales',
-      value: publicSalesReady ? 'Ready' : `${checkoutReadyStandardProducts.length}/${requiredVoucherReadiness.length}`,
-      complete: publicSalesReady,
-      detail: publicSalesReady
-        ? 'Both standard voucher types are bookable, priced, connected to Stripe, and ready for public checkout.'
-        : 'Public sales remain gated until Stripe is connected and both standard voucher types have price, Stripe Price ID, aircraft, and instructor readiness.',
+      value: checkoutSetupComplete ? 'Ready' : `${checkoutReadyProducts.length}/${activeProducts.length || 0}`,
+      complete: checkoutSetupComplete,
+      detail: checkoutSetupComplete
+        ? `All active voucher products can be bought online. Current online menu value: ${formatMoney(onlineRevenueReadyValue)}.`
+        : 'Online buttons only appear for products with Stripe connection, price, Price ID, serviceable aircraft and eligible instructors.',
     },
     {
       label: 'Scheduled email',
@@ -1198,7 +1207,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       label: 'Online checkout is ready',
       complete: checkoutSetupComplete,
       detail: checkoutSetupComplete
-        ? 'All active voucher products have prices and connected-account Stripe Price IDs.'
+        ? `${checkoutReadyProducts.length} active voucher product${checkoutReadyProducts.length === 1 ? '' : 's'} can be purchased online.`
         : `${checkoutReadyProducts.length} of ${activeProducts.length} active voucher product${activeProducts.length === 1 ? '' : 's'} are ready with Stripe connection, price and Price ID.`,
       href: '/trial-flight-gift-vouchers',
       action: 'Preview sales page',
@@ -1224,21 +1233,25 @@ export const TrialFlightVouchersPage: React.FC = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">Trial instructional flights</p>
             <h1 className="mt-2 text-2xl font-bold">Gift Vouchers</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">
-              Create Tecnam or Archer trial flight vouchers, choose eligible aircraft and instructors, then issue a code for the purchaser or recipient to redeem.
+              Manage public voucher sales, manual voucher issue, Stripe checkout, email delivery and booking redemption from one place.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4 lg:min-w-[30rem]">
             <div className="rounded-xl bg-white/10 px-3 py-2">
-              <p className="text-lg font-bold">{products.length}</p>
-              <p className="text-xs text-blue-100">Products</p>
+              <p className="text-lg font-bold">{activeProducts.length}</p>
+              <p className="text-xs text-blue-100">Live products</p>
             </div>
             <div className="rounded-xl bg-white/10 px-3 py-2">
-              <p className="text-lg font-bold">{vouchers.length}</p>
-              <p className="text-xs text-blue-100">Issued</p>
+              <p className="text-lg font-bold">{checkoutReadyProducts.length}</p>
+              <p className="text-xs text-blue-100">Online ready</p>
             </div>
             <div className="rounded-xl bg-white/10 px-3 py-2">
-              <p className="text-lg font-bold">{vouchers.filter(voucher => voucher.status === 'redeemed').length}</p>
-              <p className="text-xs text-blue-100">Redeemed</p>
+              <p className="text-lg font-bold">{bookedVoucherCount}</p>
+              <p className="text-xs text-blue-100">Booked</p>
+            </div>
+            <div className="rounded-xl bg-white/10 px-3 py-2">
+              <p className="text-lg font-bold">{formatMoney(onlineRevenueReadyValue)}</p>
+              <p className="text-xs text-blue-100">Online menu</p>
             </div>
           </div>
         </div>
@@ -1275,9 +1288,117 @@ export const TrialFlightVouchersPage: React.FC = () => {
       <section className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Voucher readiness</h2>
+            <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Live sales products</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
-              Bendigo Flying Club sells trial instructional flights in the Tecnam fleet and the PA-28 Archer. These checks show whether each voucher can be booked and whether it is ready for online Stripe checkout.
+              These active products are what customers see on the public voucher page. Online products can take card payment immediately; manual products can still be issued by staff.
+            </p>
+          </div>
+          <a
+            href="/trial-flight-gift-vouchers"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+          >
+            <ExternalLink className="h-4 w-4" />
+            View public page
+          </a>
+        </div>
+
+        <div className="mt-4 grid gap-3 xl:grid-cols-3">
+          {activeProducts.map(product => {
+            const checkout = checkoutStatus(product);
+            const booking = bookingReadiness(product);
+            const productAircraft = getProductAircraft(product);
+            const serviceableAircraftNames = productAircraft.serviceableAircraft.map(aircraftLabel);
+            const instructorNames = productInstructorNames(product);
+            const readyForCheckout = productCheckoutReady(product) && booking.ready;
+
+            return (
+              <article
+                key={product.id}
+                className={`rounded-2xl border p-4 shadow-sm ${
+                  readyForCheckout
+                    ? 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-400/25 dark:bg-emerald-950/15'
+                    : booking.ready
+                      ? 'border-blue-200 bg-blue-50/80 dark:border-blue-400/25 dark:bg-blue-950/15'
+                      : 'border-amber-200 bg-amber-50/80 dark:border-amber-400/25 dark:bg-amber-950/15'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{modeLabel(product.aircraftMode)}</p>
+                    <h3 className="mt-1 truncate text-base font-bold text-gray-950 dark:text-gray-100">{product.name}</h3>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                      {product.durationMinutes} min flight · {product.durationMinutes + 30} min booking block
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-lg font-black text-blue-700 dark:text-blue-200">{formatMoney(product.price)}</p>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${checkout.className}`}>
+                    {checkout.label}
+                  </span>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                    booking.ready
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200'
+                      : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200'
+                  }`}>
+                    {booking.ready ? 'Booking ready' : 'No bookable times'}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="rounded-xl bg-white/80 p-2 ring-1 ring-black/5 dark:bg-[#111827] dark:ring-white/10">
+                    <p className="text-base font-bold text-gray-950 dark:text-gray-100">{booking.serviceableAircraftCount}</p>
+                    <p className="text-gray-500 dark:text-gray-400">Aircraft</p>
+                  </div>
+                  <div className="rounded-xl bg-white/80 p-2 ring-1 ring-black/5 dark:bg-[#111827] dark:ring-white/10">
+                    <p className="text-base font-bold text-gray-950 dark:text-gray-100">{booking.qualifiedInstructorCount}</p>
+                    <p className="text-gray-500 dark:text-gray-400">Instructors</p>
+                  </div>
+                  <div className="rounded-xl bg-white/80 p-2 ring-1 ring-black/5 dark:bg-[#111827] dark:ring-white/10">
+                    <p className="text-base font-bold text-gray-950 dark:text-gray-100">{product.stripePriceId ? 'Yes' : 'No'}</p>
+                    <p className="text-gray-500 dark:text-gray-400">Stripe</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 space-y-2 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                  <p className="rounded-xl bg-white/70 px-3 py-2 dark:bg-[#111827]">
+                    <span className="font-bold text-gray-900 dark:text-gray-100">Aircraft:</span>{' '}
+                    {compactList(serviceableAircraftNames, 'No serviceable aircraft detected')}
+                  </p>
+                  <p className="rounded-xl bg-white/70 px-3 py-2 dark:bg-[#111827]">
+                    <span className="font-bold text-gray-900 dark:text-gray-100">Instructors:</span>{' '}
+                    {compactList(instructorNames, 'No instructors selected')}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => startEdit(product)}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#111827] dark:text-gray-200 dark:hover:bg-[#20242b]"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Edit product
+                </button>
+              </article>
+            );
+          })}
+          {activeProducts.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-[#363b45] dark:text-gray-400 xl:col-span-3">
+              No active voucher products are currently visible on the public sales page.
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Standard fleet readiness</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+              These checks make sure at least one Tecnam option and one Archer option are ready. Extra voucher products can still be sold when they appear above as checkout ready.
             </p>
           </div>
           <button
@@ -1561,7 +1682,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Voucher products</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Define what can be sold before Stripe is connected.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Create, price and publish the voucher products shown on the public sales page.</p>
             </div>
             <button
               type="button"
@@ -1915,7 +2036,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                           </span>
                         </div>
                         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          {modeLabel(product.aircraftMode)} - {product.durationMinutes} min flight, {product.durationMinutes + 30} min booking block - ${product.price.toFixed(2)}
+                          {modeLabel(product.aircraftMode)} - {product.durationMinutes} min flight, {product.durationMinutes + 30} min booking block - {formatMoney(product.price)}
                         </p>
                         {product.stripePriceId && (
                           <p className="mt-1 text-xs font-mono text-gray-500 dark:text-gray-400">
