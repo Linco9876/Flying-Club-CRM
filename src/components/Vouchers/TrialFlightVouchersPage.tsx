@@ -143,6 +143,7 @@ interface StripePriceValidationResult {
 interface StripePriceCreationResult {
   created: boolean;
   productId: string;
+  accountId?: string;
   stripeProduct?: {
     id: string;
     name?: string;
@@ -158,6 +159,14 @@ interface StripePriceCreationResult {
   };
 }
 
+interface StripeConnectStatus {
+  connected: boolean;
+  configured: boolean;
+  livemode: boolean;
+  accountId: string | null;
+  connectedAt: string | null;
+}
+
 export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
@@ -168,6 +177,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const [instructorEndorsements, setInstructorEndorsements] = useState<InstructorEndorsementRow[]>([]);
   const [issueForm, setIssueForm] = useState(emptyIssueForm);
   const [saving, setSaving] = useState(false);
+  const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
+  const [stripeStatusLoading, setStripeStatusLoading] = useState(true);
   const [stripeValidation, setStripeValidation] = useState<StripePriceValidationResult | null>(null);
   const [stripeValidationLoading, setStripeValidationLoading] = useState(false);
   const [stripeCreationLoading, setStripeCreationLoading] = useState(false);
@@ -176,8 +187,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const activeProducts = products.filter(product => product.isActive);
   const selectedProduct = products.find(product => product.id === issueForm.productId);
   const minimumRecipientDeliveryAt = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 5 * 60_000)), []);
+  const stripeConnected = Boolean(stripeStatus?.configured && stripeStatus?.connected);
+  const stripeReadyLabel = stripeStatusLoading ? 'Checking' : stripeConnected ? 'Connected' : 'Needs setup';
   const productCheckoutReady = (product: TrialFlightVoucherProduct) =>
-    Boolean(product.stripePriceId?.trim()) && Number(product.price || 0) > 0;
+    stripeConnected && Boolean(product.stripePriceId?.trim()) && Number(product.price || 0) > 0;
   const checkoutReadyProducts = activeProducts.filter(productCheckoutReady);
   const checkoutSetupComplete = activeProducts.length > 0 && checkoutReadyProducts.length === activeProducts.length;
   const hasTecnamProduct = products.some(product => product.aircraftMode === 'tecnam');
@@ -249,6 +262,31 @@ export const TrialFlightVouchersPage: React.FC = () => {
   useEffect(() => {
     setStripeValidation(null);
   }, [productForm.price, productForm.stripePriceId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadStripeStatus = async () => {
+      setStripeStatusLoading(true);
+      try {
+        const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
+          body: { action: 'status' },
+        });
+        if (error) throw error;
+        if (active) setStripeStatus(data ?? null);
+      } catch (error) {
+        console.warn('Failed to load Stripe connection status:', error);
+        if (active) setStripeStatus(null);
+      } finally {
+        if (active) setStripeStatusLoading(false);
+      }
+    };
+
+    void loadStripeStatus();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const updateArraySelection = (field: 'aircraftIds' | 'instructorIds', id: string, checked: boolean) => {
     setProductForm(form => ({
@@ -414,6 +452,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
   };
 
   const handleValidateStripePrice = async () => {
+    if (!stripeConnected) {
+      toast.error('Connect this club Stripe account in Settings > Integrations first');
+      return;
+    }
     const stripePriceId = productForm.stripePriceId?.trim() || '';
     if (!stripePriceId) {
       toast.error('Paste a Stripe Price ID first');
@@ -451,6 +493,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
   };
 
   const handleCreateStripePrice = async () => {
+    if (!stripeConnected) {
+      toast.error('Connect this club Stripe account in Settings > Integrations first');
+      return;
+    }
     if (!editingProductId) {
       toast.error('Save the voucher product before connecting it to Stripe');
       return;
@@ -938,8 +984,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
   };
   const productFormStripeId = productForm.stripePriceId?.trim() || '';
   const productFormPrice = Number(productForm.price || 0);
-  const productFormCheckoutReady = productForm.isActive && productFormPrice > 0 && isValidStripePriceId(productFormStripeId) && Boolean(productFormStripeId);
+  const productFormCheckoutReady = stripeConnected && productForm.isActive && productFormPrice > 0 && isValidStripePriceId(productFormStripeId) && Boolean(productFormStripeId);
   const productFormStripeIssues = [
+    ...(!stripeConnected ? ['Connect Stripe in Settings > Integrations.'] : []),
     ...(productFormPrice <= 0 ? ['Enter the public AUD sale price.'] : []),
     ...(!productFormStripeId ? ['Create a Stripe product/price and paste the Price ID.'] : []),
     ...(productFormStripeId && !isValidStripePriceId(productFormStripeId) ? ['Stripe Price ID should look like price_123...'] : []),
@@ -965,6 +1012,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const checkoutStatus = (product: TrialFlightVoucherProduct) => {
     if (!product.isActive) return { label: 'Manual setup', className: 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300' };
+    if (!stripeConnected) return { label: 'Stripe not connected', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100' };
     if (productCheckoutReady(product)) return { label: 'Online checkout ready', className: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200' };
     if (!product.stripePriceId?.trim() && Number(product.price || 0) <= 0) {
       return { label: 'Missing price and Stripe ID', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-100' };
@@ -1040,6 +1088,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       ...(readiness.instructorCount > 0 && readiness.qualifiedInstructorCount === 0
         ? ['Select an instructor who holds the required endorsement for at least one serviceable aircraft.']
         : []),
+      ...(!stripeConnected ? ['Connect Stripe in Settings > Integrations before online sales can open.'] : []),
       ...(Number(product.price || 0) <= 0 ? ['Enter the real AUD sale price before online checkout is enabled.'] : []),
       ...(!product.stripePriceId?.trim() ? ['Paste the matching Stripe Price ID, for example price_..., once the Stripe product is created.'] : []),
     ];
@@ -1055,7 +1104,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
       ...(!product ? [`Create a ${modeLabel(mode)} voucher product.`] : []),
       ...(product && !product.isActive ? ['Product exists but is inactive.'] : []),
       ...(readiness?.issues ?? []),
-      ...(product && !productCheckoutReady(product) ? ['Add a real price and Stripe Price ID before online sales can open.'] : []),
+      ...(product && !stripeConnected ? ['Connect this club Stripe account before online sales can open.'] : []),
+      ...(product && stripeConnected && !productCheckoutReady(product) ? ['Add a real price and Stripe Price ID before online sales can open.'] : []),
     ];
 
     return {
@@ -1080,6 +1130,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const publicSalesReady = requiredVoucherReadiness.length > 0 && checkoutReadyStandardProducts.length === requiredVoucherReadiness.length;
   const standardReadinessSummary = [
     {
+      label: 'Stripe',
+      value: stripeReadyLabel,
+      complete: stripeConnected,
+      detail: stripeStatusLoading
+        ? 'Checking the club Stripe connection.'
+        : stripeConnected
+          ? `Voucher checkout will use this club's ${stripeStatus?.livemode ? 'live' : 'test'} Stripe account.`
+          : 'Connect this club Stripe account in Settings > Integrations.',
+    },
+    {
       label: 'Manual issue',
       value: manualIssueReady ? 'Ready' : `${bookableStandardProducts.length}/${requiredVoucherReadiness.length}`,
       complete: manualIssueReady,
@@ -1092,8 +1152,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
       value: publicSalesReady ? 'Ready' : `${checkoutReadyStandardProducts.length}/${requiredVoucherReadiness.length}`,
       complete: publicSalesReady,
       detail: publicSalesReady
-        ? 'Both standard voucher types are bookable and have Stripe Price IDs.'
-        : 'Public sales remain gated until both standard voucher types have price, Stripe Price ID, aircraft, and instructor readiness.',
+        ? 'Both standard voucher types are bookable, priced, connected to Stripe, and ready for public checkout.'
+        : 'Public sales remain gated until Stripe is connected and both standard voucher types have price, Stripe Price ID, aircraft, and instructor readiness.',
     },
     {
       label: 'Scheduled email',
@@ -1124,11 +1184,22 @@ export const TrialFlightVouchersPage: React.FC = () => {
       action: 'Add Archer',
     },
     {
+      label: 'Stripe account is connected',
+      complete: stripeConnected,
+      detail: stripeStatusLoading
+        ? 'Checking the Stripe connection for this club.'
+        : stripeConnected
+          ? `Connected to ${stripeStatus?.livemode ? 'live' : 'test'} Stripe payments.`
+          : 'Connect this club Stripe account in Settings > Integrations before online voucher checkout can open.',
+      href: '/settings?tab=integrations',
+      action: 'Open integrations',
+    },
+    {
       label: 'Online checkout is ready',
       complete: checkoutSetupComplete,
       detail: checkoutSetupComplete
-        ? 'All active voucher products have prices and Stripe Price IDs.'
-        : `${checkoutReadyProducts.length} of ${activeProducts.length} active voucher product${activeProducts.length === 1 ? '' : 's'} have a usable price and Stripe Price ID.`,
+        ? 'All active voucher products have prices and connected-account Stripe Price IDs.'
+        : `${checkoutReadyProducts.length} of ${activeProducts.length} active voucher product${activeProducts.length === 1 ? '' : 's'} are ready with Stripe connection, price and Price ID.`,
       href: '/trial-flight-gift-vouchers',
       action: 'Preview sales page',
     },
@@ -1173,7 +1244,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         </div>
       </div>
 
-      <section className="mb-6 grid gap-3 lg:grid-cols-3">
+      <section className="mb-6 grid gap-3 lg:grid-cols-4">
         {standardReadinessSummary.map(item => (
           <div
             key={item.label}
@@ -1375,19 +1446,17 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   : 'text-amber-800 dark:text-amber-100'
               }`}>
                 {checkoutReadyProducts.length} of {activeProducts.length} active voucher product{activeProducts.length === 1 ? '' : 's'} are ready for online checkout.
-                Public purchase buttons only appear for active products with a real price and a Stripe Price ID.
+                Public purchase buttons only appear for active products with a connected Stripe account, real price, Stripe Price ID, serviceable aircraft and eligible instructor.
               </p>
             </div>
           </div>
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
             <a
-              href="https://dashboard.stripe.com/apikeys"
-              target="_blank"
-              rel="noreferrer"
+              href="/settings?tab=integrations"
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#635bff] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#5147f0]"
             >
               <ExternalLink className="h-4 w-4" />
-              Connect Stripe
+              Stripe settings
             </a>
             <a
               href="/trial-flight-gift-vouchers"
@@ -1403,15 +1472,21 @@ export const TrialFlightVouchersPage: React.FC = () => {
         <div className="mt-4 grid gap-3 text-xs leading-5 text-gray-700 dark:text-gray-300 lg:grid-cols-3">
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
             <p className="font-bold text-gray-950 dark:text-gray-100">Products</p>
-            <p className="mt-1">Keep Tecnam and PA-28 Archer products active, priced, and linked to eligible aircraft and instructors. Add a Stripe Price ID when the product should sell online.</p>
+            <p className="mt-1">Keep Tecnam and PA-28 Archer products active, priced, and linked to eligible aircraft and instructors. Create a Stripe product/price from this page when the product should sell online.</p>
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
-            <p className="font-bold text-gray-950 dark:text-gray-100">Supabase</p>
-            <p className="mt-1">Deploy the voucher migrations plus `trial-voucher-public`, `trial-voucher-admin`, `create-trial-voucher-checkout`, `send-trial-voucher-email`, and `trial-voucher-stripe-webhook` functions.</p>
+            <p className="font-bold text-gray-950 dark:text-gray-100">Stripe connection</p>
+            <p className="mt-1">
+              {stripeStatusLoading
+                ? 'Checking Stripe connection...'
+                : stripeConnected
+                  ? `Stripe is connected for ${stripeStatus?.livemode ? 'live' : 'test'} checkout.`
+                  : 'Connect this club Stripe account in Settings > Integrations before public checkout is available.'}
+            </p>
           </div>
           <div className="rounded-xl border border-white/70 bg-white/70 p-3 dark:border-[#2c2f36] dark:bg-[#111827]">
-            <p className="font-bold text-gray-950 dark:text-gray-100">Secrets</p>
-            <p className="mt-1">Use Connect Stripe to open the Stripe key screen, then add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` to Supabase Edge Function secrets. Also set `TRIAL_VOUCHER_INTERNAL_SECRET`, Brevo email secrets, and the Stripe webhook URL. Scheduled recipient delivery needs `TRIAL_VOUCHER_CRON_SECRET` in Supabase Edge Function secrets, GitHub Actions secrets, and Supabase Vault as `trial_voucher_cron_secret`.</p>
+            <p className="font-bold text-gray-950 dark:text-gray-100">Email delivery</p>
+            <p className="mt-1">Voucher emails send immediately unless a future recipient delivery time is chosen. Scheduled delivery can be checked from the Recent vouchers section.</p>
           </div>
         </div>
       </div>
@@ -1572,7 +1647,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                     {productFormCheckoutReady ? 'Online checkout ready for this product' : 'Online checkout setup'}
                   </p>
                   <p className="mt-1 text-xs leading-5 opacity-85">
-                    Manual vouchers can still be issued without Stripe. Public online purchase buttons only appear after the product is active, has a real AUD price, and has a Stripe Price ID.
+                    Manual vouchers can still be issued without Stripe. Public online purchase buttons only appear after Stripe is connected, the product is active, has a real AUD price, and has a connected-account Stripe Price ID.
                   </p>
                   {!productFormCheckoutReady && (
                     <ul className="mt-2 space-y-1 text-xs leading-5">
@@ -1586,7 +1661,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleValidateStripePrice}
-                    disabled={stripeValidationLoading || !productFormStripeId}
+                    disabled={stripeValidationLoading || !stripeConnected || !productFormStripeId}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-gray-800 ring-1 ring-black/5 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#111827] dark:text-gray-100 dark:ring-white/10"
                   >
                     <ShieldCheck className="h-3.5 w-3.5" />
@@ -1595,9 +1670,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleCreateStripePrice}
-                    disabled={stripeCreationLoading || !editingProductId || Boolean(productFormStripeId) || productFormPrice <= 0}
+                    disabled={stripeCreationLoading || !stripeConnected || !editingProductId || Boolean(productFormStripeId) || productFormPrice <= 0}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#635bff] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#5147f0] disabled:cursor-not-allowed disabled:opacity-50"
-                    title={!editingProductId ? 'Save this voucher product first' : undefined}
+                    title={!stripeConnected ? 'Connect Stripe in Settings > Integrations first' : !editingProductId ? 'Save this voucher product first' : undefined}
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
                     {stripeCreationLoading ? 'Connecting...' : 'Create & link Stripe'}

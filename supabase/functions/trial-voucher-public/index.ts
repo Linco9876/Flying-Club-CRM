@@ -5,6 +5,7 @@ import {
   instructorHasTrialVoucherAircraftEndorsement,
   trialVoucherProductBookingSetup,
 } from "../_shared/trialVoucherReadiness.ts";
+import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
 
 type SupabaseAdminClient = any;
 
@@ -543,7 +544,12 @@ const toPublicVoucher = (voucher: any, product: any) => ({
   },
 });
 
-const toPublicProduct = (product: any, aircraftRows: any[] = [], endorsementRows: any[] = []) => {
+const toPublicProduct = (
+  product: any,
+  aircraftRows: any[] = [],
+  endorsementRows: any[] = [],
+  stripeConnected = false,
+) => {
   const setup = trialVoucherProductBookingSetup(product, aircraftRows, endorsementRows);
   return {
     id: product.id,
@@ -553,7 +559,7 @@ const toPublicProduct = (product: any, aircraftRows: any[] = [], endorsementRows
     durationMinutes: product.duration_minutes,
     bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
     price: Number(product.price || 0),
-    checkoutAvailable: Boolean(product.stripe_price_id) && Number(product.price || 0) > 0 && setup.bookingAvailable,
+    checkoutAvailable: stripeConnected && Boolean(product.stripe_price_id) && Number(product.price || 0) > 0 && setup.bookingAvailable,
     bookingAvailable: setup.bookingAvailable,
     bookingSetupMessage: setup.issue,
     bookingInstructions: product.booking_instructions,
@@ -596,15 +602,15 @@ const sendVoucherEmailFromCheckoutStatus = async ({
   return body;
 };
 
-const retrieveStripeCheckoutSession = async (sessionId: string) => {
+const retrieveStripeCheckoutSession = async (adminClient: SupabaseAdminClient, sessionId: string) => {
   const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
   if (!stripeSecretKey) return null;
+  const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+  if (!connectedAccountId) return null;
 
   const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${stripeSecretKey}`,
-    },
+    headers: stripeHeaders(stripeSecretKey, connectedAccountId),
   });
 
   if (!response.ok) {
@@ -630,7 +636,7 @@ const reconcileCheckoutSession = async ({
     return { reconciled: false, email: null };
   }
 
-  const stripeSession = await retrieveStripeCheckoutSession(sessionId);
+  const stripeSession = await retrieveStripeCheckoutSession(adminClient, sessionId);
   if (!stripeSession) return { reconciled: false, email: null };
   if (stripeSession.id !== sessionId) throw new Error("Stripe checkout session mismatch");
   if (stripeSession.client_reference_id && stripeSession.client_reference_id !== voucher.id) {
@@ -922,7 +928,13 @@ Deno.serve(async (req: Request) => {
         : { data: [], error: null };
 
       if (endorsementError) return json({ error: endorsementError.message }, 500);
-      return json({ products: (products || []).map((product: any) => toPublicProduct(product, aircraftRows || [], endorsementRows || [])) });
+      const stripeConnected = Boolean(await getConnectedStripeAccountId(adminClient));
+      return json({
+        stripeConnected,
+        products: (products || []).map((product: any) =>
+          toPublicProduct(product, aircraftRows || [], endorsementRows || [], stripeConnected)
+        ),
+      });
     }
 
     if (action === "checkout-status") {

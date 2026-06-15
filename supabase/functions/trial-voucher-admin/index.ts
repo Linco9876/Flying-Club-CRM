@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
 
 type SupabaseAdminClient = any;
 
@@ -89,10 +90,18 @@ Deno.serve(async (req: Request) => {
         return json({ error: "Stripe Price ID must start with price_." }, 400);
       }
 
+      const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+      if (!connectedAccountId) {
+        return json({
+          error: "Connect this club's Stripe account in Settings > Integrations before validating voucher prices.",
+          configured: true,
+          connected: false,
+          valid: false,
+        }, 409);
+      }
+
       const stripeResponse = await fetch(`https://api.stripe.com/v1/prices/${encodeURIComponent(stripePriceId)}?expand[]=product`, {
-        headers: {
-          Authorization: `Bearer ${stripeSecretKey}`,
-        },
+        headers: stripeHeaders(stripeSecretKey, connectedAccountId),
       });
       const stripePrice = await stripeResponse.json();
 
@@ -119,6 +128,8 @@ Deno.serve(async (req: Request) => {
 
       return json({
         configured: true,
+        connected: true,
+        accountId: connectedAccountId,
         valid: issues.length === 0,
         issues,
         price: {
@@ -143,6 +154,15 @@ Deno.serve(async (req: Request) => {
           error: "Stripe secret key is not configured in Supabase Edge Function secrets.",
           configured: false,
         }, 503);
+      }
+
+      const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+      if (!connectedAccountId) {
+        return json({
+          error: "Connect this club's Stripe account in Settings > Integrations before creating voucher prices.",
+          configured: true,
+          connected: false,
+        }, 409);
       }
 
       const productId = cleanText(body.productId);
@@ -180,10 +200,9 @@ Deno.serve(async (req: Request) => {
 
       const stripeProductResponse = await fetch("https://api.stripe.com/v1/products", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${stripeSecretKey}`,
+        headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
-        },
+        }),
         body: productForm,
       });
       const stripeProduct = await stripeProductResponse.json();
@@ -203,10 +222,9 @@ Deno.serve(async (req: Request) => {
 
       const stripePriceResponse = await fetch("https://api.stripe.com/v1/prices", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${stripeSecretKey}`,
+        headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
-        },
+        }),
         body: priceForm,
       });
       const stripePrice = await stripePriceResponse.json();
@@ -231,6 +249,7 @@ Deno.serve(async (req: Request) => {
       return json({
         created: true,
         productId: product.id,
+        accountId: connectedAccountId,
         stripeProduct: {
           id: stripeProduct.id,
           name: stripeProduct.name,

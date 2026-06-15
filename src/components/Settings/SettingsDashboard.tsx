@@ -64,6 +64,12 @@ export const SettingsDashboard: React.FC = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const getRequestedSectionId = () => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('tab') || params.get('section');
+  };
+
   const allSections: SettingsSection[] = [
     { id: 'organisation', label: 'Organisation', category: 'Club Setup', keywords: ['business', 'logo', 'currency', 'timezone', 'operating hours'], icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
     { id: 'portal', label: 'Portal & UX', category: 'Club Setup', keywords: ['theme', 'student portal', 'date format', 'time format'], icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
@@ -108,14 +114,20 @@ export const SettingsDashboard: React.FC = () => {
     return groups;
   }, {});
 
-  // Set default section based on user role (only on mount)
+  // Set default section based on user role, while honouring deep links such as /settings?tab=integrations.
   useEffect(() => {
+    const requestedSectionId = getRequestedSectionId();
+    if (requestedSectionId && sections.some(section => section.id === requestedSectionId)) {
+      setActiveSection(requestedSectionId);
+      return;
+    }
+
     if (user?.role === 'student' || user?.role === 'instructor' || user?.role === 'senior_instructor' || user?.role === 'pilot') {
       setActiveSection('account-info');
     } else {
       setActiveSection('organisation');
     }
-  }, [user?.role]);
+  }, [user?.role, authorizedSections.map(section => section.id).join('|')]);
 
   // Ensure the active section is available to the user
   useEffect(() => {
@@ -153,6 +165,11 @@ export const SettingsDashboard: React.FC = () => {
     if (hasUnsavedChanges) {
       const confirmLeave = window.confirm('You have unsaved changes. Are you sure you want to leave this section?');
       if (!confirmLeave) return;
+    }
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', sectionId);
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     }
     setActiveSection(sectionId);
     setHasUnsavedChanges(false);

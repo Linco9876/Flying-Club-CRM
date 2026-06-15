@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
+import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,6 +61,10 @@ Deno.serve(async (req: Request) => {
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+    if (!connectedAccountId) {
+      return json({ error: "Online checkout is not connected yet. Please contact Bendigo Flying Club to purchase this voucher." }, 503);
+    }
 
     const body = await req.json();
     const productId = cleanText(body.productId);
@@ -183,10 +188,9 @@ Deno.serve(async (req: Request) => {
 
     const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${stripeSecretKey}`,
+      headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
         "Content-Type": "application/x-www-form-urlencoded",
-      },
+      }),
       body: form,
     });
 
