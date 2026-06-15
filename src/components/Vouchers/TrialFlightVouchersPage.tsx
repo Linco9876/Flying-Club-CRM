@@ -65,6 +65,31 @@ const toDateTimeLocalValue = (date: Date) => {
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 };
 
+const toDateInputValue = (date: Date) => {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10);
+};
+
+const defaultVoucherExpiryDate = () => {
+  const expiry = new Date();
+  expiry.setFullYear(expiry.getFullYear() + 3);
+  return toDateInputValue(expiry);
+};
+
+const emptyIssueForm = () => ({
+  productId: '',
+  purchaserName: '',
+  purchaserEmail: '',
+  purchaserPhone: '',
+  recipientName: '',
+  recipientEmail: '',
+  sendToRecipient: false,
+  recipientDeliveryAt: '',
+  expiresAt: defaultVoucherExpiryDate(),
+  paymentStatus: 'paid' as TrialFlightVoucherPaymentStatus,
+  notes: '',
+});
+
 const extractFunctionErrorMessage = async (error: unknown, fallback: string) => {
   const defaultMessage = error && typeof error === 'object' && 'message' in error
     ? String((error as { message?: unknown }).message || fallback)
@@ -141,19 +166,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [instructorEndorsements, setInstructorEndorsements] = useState<InstructorEndorsementRow[]>([]);
-  const [issueForm, setIssueForm] = useState({
-    productId: '',
-    purchaserName: '',
-    purchaserEmail: '',
-    purchaserPhone: '',
-    recipientName: '',
-    recipientEmail: '',
-    sendToRecipient: false,
-    recipientDeliveryAt: '',
-    expiresAt: '',
-    paymentStatus: 'paid' as TrialFlightVoucherPaymentStatus,
-    notes: '',
-  });
+  const [issueForm, setIssueForm] = useState(emptyIssueForm);
   const [saving, setSaving] = useState(false);
   const [stripeValidation, setStripeValidation] = useState<StripePriceValidationResult | null>(null);
   const [stripeValidationLoading, setStripeValidationLoading] = useState(false);
@@ -567,19 +580,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         notes: issueForm.notes,
         createdBy: user?.id,
       });
-      setIssueForm({
-        productId: '',
-        purchaserName: '',
-        purchaserEmail: '',
-        purchaserPhone: '',
-        recipientName: '',
-        recipientEmail: '',
-        sendToRecipient: false,
-        recipientDeliveryAt: '',
-        expiresAt: '',
-        paymentStatus: 'paid',
-        notes: '',
-      });
+      setIssueForm(emptyIssueForm());
     } finally {
       setSaving(false);
     }
@@ -2039,7 +2040,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   type="button"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Mark paid & send now
+                  Mark paid now
                 </button>
               </div>
             </div>
