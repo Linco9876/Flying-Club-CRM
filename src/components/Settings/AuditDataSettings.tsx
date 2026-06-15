@@ -440,7 +440,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
   };
 
   return (
-    <div className="p-6 space-y-8">
+    <div className="min-w-0 space-y-8 p-4 sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2 flex items-center">
@@ -459,7 +459,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         </button>
       </div>
 
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Available tables</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">{availableTables.length}</p>
@@ -477,12 +477,12 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section className="min-w-0 space-y-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Data Export</h3>
           <p className="text-sm text-gray-500 mt-1">Exports are downloaded in your browser from data your current admin session can read.</p>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">
           <div className="rounded-lg border border-green-200 bg-green-50 p-4">
             <h4 className="text-sm font-medium text-gray-900 mb-2">Safer System Data</h4>
             <p className="text-xs text-gray-600 mb-3">Downloads CRM tables as JSON, redacting contact, emergency, medical and credential fields by default.</p>
@@ -591,18 +591,18 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         </div>
       )}
 
-      <section className="space-y-4">
+      <section className="min-w-0 space-y-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Data Inventory</h3>
           <p className="text-sm text-gray-500 mt-1">A quick check of the main operational tables included in export.</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {tableSummaries.map(summary => {
             const meta = exportTables.find(table => table.table === summary.table);
             return (
-              <div key={summary.table} className="rounded-lg border border-gray-200 bg-white p-4">
+              <div key={summary.table} className="min-w-0 rounded-lg border border-gray-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <h4 className="text-sm font-medium text-gray-900">{summary.label}</h4>
                     <p className="text-xs text-gray-500 mt-1">{meta?.description}</p>
                   </div>
@@ -610,20 +610,20 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
                     {summary.error ? 'Unavailable' : `${summary.count}`}
                   </span>
                 </div>
-                {summary.error && <p className="mt-2 text-xs text-amber-700">{summary.error}</p>}
+                {summary.error && <p className="mt-2 break-words text-xs text-amber-700">{summary.error}</p>}
               </div>
             );
           })}
         </div>
       </section>
 
-      <section className="space-y-4">
+      <section className="min-w-0 space-y-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Audit Log</h3>
           <p className="text-sm text-gray-500 mt-1">Admin-only audit trail for booking, flight log, billing, training, and member profile edits/deletes.</p>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="min-w-0 rounded-lg border border-gray-200 bg-white p-4">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
@@ -664,7 +664,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
           <div className="mt-4 text-sm text-gray-600">Showing {filteredAuditLog.length} entries</div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white">
           {loading ? (
             <div className="p-8 flex items-center justify-center text-gray-500">
               <Loader2 className="h-5 w-5 mr-2 animate-spin" />
@@ -676,8 +676,8 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
               <p className="text-sm text-gray-500">No audit entries found for the selected filters.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+            <div className="max-w-full overflow-x-auto">
+              <table className="min-w-[980px] divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>

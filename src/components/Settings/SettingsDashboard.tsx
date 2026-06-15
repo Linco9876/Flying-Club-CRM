@@ -177,7 +177,7 @@ export const SettingsDashboard: React.FC = () => {
         <p className="text-sm text-gray-600 sm:text-base">Configure system preferences and organizational settings</p>
       </div>
 
-      <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100vh-200px)] lg:flex-row lg:gap-6">
+      <div className="flex min-h-0 min-w-0 flex-col gap-4 lg:h-[calc(100vh-200px)] lg:flex-row lg:gap-6">
         {/* Left Sidebar */}
         <div className="flex max-h-[42vh] w-full flex-col rounded-lg border border-gray-200 bg-white shadow-md lg:max-h-none lg:w-80">
           {/* Search */}
@@ -232,8 +232,8 @@ export const SettingsDashboard: React.FC = () => {
         </div>
 
         {/* Right Content Pane */}
-        <div className="flex min-h-[60vh] flex-1 flex-col rounded-lg border border-gray-200 bg-white shadow-md">
-          <div className="flex-1 overflow-y-auto">
+        <div className="flex min-h-[60vh] min-w-0 flex-1 flex-col rounded-lg border border-gray-200 bg-white shadow-md">
+          <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
             <ActiveComponent 
               canEdit={canEdit(activeSection)}
               onFormChange={() => setHasUnsavedChanges(true)}
