@@ -783,7 +783,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
 
-  const downloadVoucherCertificate = (voucher: TrialFlightVoucher) => {
+  const downloadVoucherCertificate = async (voucher: TrialFlightVoucher) => {
     const product = products.find(item => item.id === voucher.productId);
     const redeemUrl = getRedeemUrl(voucher.code);
     const recipient = voucher.recipientName || 'Gift voucher recipient';
@@ -793,80 +793,129 @@ export const TrialFlightVouchersPage: React.FC = () => {
     const aircraft = product ? modeLabel(product.aircraftMode) : 'Eligible aircraft';
     const expiry = voucher.expiresAt ? voucher.expiresAt.toLocaleDateString() : 'No expiry recorded';
     const fileName = `${productName}-${voucher.code}`.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
-    const html = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(productName)} - ${escapeHtml(voucher.code)}</title>
-    <style>
-      @page { size: A4; margin: 16mm; }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #eef4fb; color: #0f172a; font-family: Arial, Helvetica, sans-serif; }
-      .page { min-height: calc(297mm - 32mm); display: flex; align-items: center; justify-content: center; }
-      .voucher { width: 100%; max-width: 900px; overflow: hidden; border-radius: 28px; background: white; box-shadow: 0 24px 70px rgba(15, 23, 42, .18); border: 1px solid #dbeafe; }
-      .hero { padding: 42px; color: white; background: linear-gradient(135deg, #07152e, #0d3b78 60%, #2563eb); }
-      .eyebrow { margin: 0 0 10px; font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: #bfdbfe; font-weight: 700; }
-      h1 { margin: 0; font-size: 40px; line-height: 1.05; }
-      .subtitle { margin: 14px 0 0; color: #dbeafe; font-size: 18px; line-height: 1.5; }
-      .body { padding: 34px 42px 38px; }
-      .code { margin: 0 0 24px; padding: 20px; border-radius: 20px; background: #eff6ff; border: 1px solid #bfdbfe; }
-      .code-label { margin: 0 0 6px; color: #2563eb; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
-      .code-value { margin: 0; font-size: 34px; letter-spacing: 2px; font-weight: 900; }
-      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 22px 0; }
-      .item { padding: 16px; border: 1px solid #e2e8f0; border-radius: 18px; background: #f8fafc; }
-      .item strong { display: block; margin-bottom: 5px; font-size: 13px; text-transform: uppercase; color: #64748b; letter-spacing: 1px; }
-      .item span { font-size: 17px; font-weight: 700; color: #0f172a; }
-      .steps { margin: 24px 0 0; padding: 18px 20px; border-radius: 18px; background: #f8fbff; border: 1px solid #dbeafe; color: #334155; line-height: 1.65; }
-      .url { margin-top: 18px; padding: 14px; border-radius: 14px; background: #f1f5f9; color: #334155; font-size: 13px; word-break: break-all; }
-      .footer { margin-top: 26px; color: #64748b; font-size: 13px; line-height: 1.6; }
-      @media print { body { background: white; } .voucher { box-shadow: none; } }
-    </style>
-  </head>
-  <body>
-    <main class="page">
-      <section class="voucher">
-        <div class="hero">
-          <p class="eyebrow">Bendigo Flying Club</p>
-          <h1>Trial Flight Gift Voucher</h1>
-          <p class="subtitle">${escapeHtml(productName)} for ${escapeHtml(recipient)}</p>
-        </div>
-        <div class="body">
-          <div class="code">
-            <p class="code-label">Voucher Code</p>
-            <p class="code-value">${escapeHtml(voucher.code)}</p>
-          </div>
-          <div class="grid">
-            <div class="item"><strong>Flight</strong><span>${escapeHtml(duration)}</span></div>
-            <div class="item"><strong>Booking block</strong><span>${escapeHtml(bookingBlock)}</span></div>
-            <div class="item"><strong>Aircraft</strong><span>${escapeHtml(aircraft)}</span></div>
-            <div class="item"><strong>Expiry</strong><span>${escapeHtml(expiry)}</span></div>
-          </div>
-          <div class="steps">
-            <strong>How to book</strong>
-            <ol>
-              <li>Visit the Bendigo Flying Club portal using the link below.</li>
-              <li>Enter the voucher code and create the restricted booking account with full name, email and phone.</li>
-              <li>Choose an available time. The system checks eligible aircraft and instructor availability together.</li>
-            </ol>
-          </div>
-          <div class="url">${escapeHtml(redeemUrl)}</div>
-          <p class="footer">This voucher reserves the trial flight time plus 30 minutes for arrival, briefing and paperwork. Please contact Bendigo Flying Club if you need help booking or changing the flight.</p>
-        </div>
-      </section>
-    </main>
-  </body>
-</html>`;
 
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${fileName || 'trial-flight-voucher'}.html`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    toast.success('Voucher certificate downloaded');
+    try {
+      const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+      const pdfDoc = await PDFDocument.create();
+      pdfDoc.setTitle(`${productName} - ${voucher.code}`);
+      pdfDoc.setAuthor('Bendigo Flying Club');
+      pdfDoc.setSubject('Trial flight voucher certificate');
+      pdfDoc.setCreator('Bendigo Flying Club Members Flight Management System');
+
+      const page = pdfDoc.addPage([842, 595]);
+      const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const width = page.getWidth();
+      const height = page.getHeight();
+      const navy = rgb(0.03, 0.08, 0.18);
+      const blue = rgb(0.12, 0.36, 0.82);
+      const paleBlue = rgb(0.91, 0.96, 1);
+      const borderBlue = rgb(0.68, 0.80, 0.96);
+      const slate = rgb(0.24, 0.30, 0.40);
+      const lightSlate = rgb(0.95, 0.97, 0.99);
+
+      const wrapText = (text: string, fontSize: number, maxWidth: number, font = regular) => {
+        const words = String(text || '').split(/\s+/).filter(Boolean);
+        const lines: string[] = [];
+        let line = '';
+        for (const word of words) {
+          const next = line ? `${line} ${word}` : word;
+          if (font.widthOfTextAtSize(next, fontSize) <= maxWidth || !line) {
+            line = next;
+          } else {
+            lines.push(line);
+            line = word;
+          }
+        }
+        if (line) lines.push(line);
+        return lines;
+      };
+
+      const drawText = (text: string, x: number, y: number, options: { size?: number; font?: typeof regular; color?: ReturnType<typeof rgb>; maxWidth?: number; lineHeight?: number } = {}) => {
+        const size = options.size ?? 12;
+        const font = options.font ?? regular;
+        const color = options.color ?? navy;
+        const lines = options.maxWidth ? wrapText(text, size, options.maxWidth, font) : [text];
+        const lineHeight = options.lineHeight ?? size + 4;
+        lines.forEach((line, index) => {
+          page.drawText(line, { x, y: y - index * lineHeight, size, font, color });
+        });
+        return y - Math.max(lines.length - 1, 0) * lineHeight;
+      };
+
+      const drawDetailBox = (label: string, value: string, x: number, y: number, boxWidth: number) => {
+        page.drawRectangle({
+          x,
+          y: y - 58,
+          width: boxWidth,
+          height: 58,
+          color: lightSlate,
+          borderColor: rgb(0.86, 0.90, 0.95),
+          borderWidth: 1,
+        });
+        drawText(label.toUpperCase(), x + 14, y - 18, { size: 8.5, font: bold, color: rgb(0.39, 0.45, 0.55) });
+        drawText(value, x + 14, y - 38, { size: 13, font: bold, color: navy, maxWidth: boxWidth - 28, lineHeight: 14 });
+      };
+
+      page.drawRectangle({ x: 0, y: 0, width, height, color: rgb(0.93, 0.96, 1) });
+      page.drawRectangle({ x: 34, y: 34, width: width - 68, height: height - 68, color: rgb(1, 1, 1), borderColor: borderBlue, borderWidth: 1.2 });
+      page.drawRectangle({ x: 34, y: height - 196, width: width - 68, height: 162, color: navy });
+      page.drawRectangle({ x: 34, y: height - 196, width: width - 68, height: 8, color: blue });
+
+      drawText('BENDIGO FLYING CLUB', 68, height - 78, { size: 10, font: bold, color: rgb(0.74, 0.86, 1) });
+      drawText('Trial Flight Gift Voucher', 68, height - 120, { size: 34, font: bold, color: rgb(1, 1, 1) });
+      drawText(`${productName} for ${recipient}`, 68, height - 152, { size: 15, color: rgb(0.86, 0.92, 1), maxWidth: 600 });
+
+      page.drawRectangle({ x: 564, y: height - 157, width: 210, height: 78, color: paleBlue, borderColor: rgb(0.54, 0.70, 0.94), borderWidth: 1 });
+      drawText('VOUCHER CODE', 584, height - 105, { size: 8.5, font: bold, color: blue });
+      drawText(voucher.code, 584, height - 133, { size: 20, font: bold, color: navy, maxWidth: 170 });
+
+      const boxY = height - 240;
+      const boxWidth = 172;
+      drawDetailBox('Flight', duration, 68, boxY, boxWidth);
+      drawDetailBox('Booking block', bookingBlock, 254, boxY, boxWidth);
+      drawDetailBox('Aircraft', aircraft, 440, boxY, boxWidth);
+      drawDetailBox('Expiry', expiry, 626, boxY, 148);
+
+      drawText('How to book', 68, height - 328, { size: 16, font: bold, color: navy });
+      const steps = [
+        'Visit the Bendigo Flying Club portal using the link below.',
+        'Enter the voucher code and create the restricted booking account with full name, email and phone.',
+        'Choose an available time. The system checks eligible aircraft and instructor availability together.',
+      ];
+      steps.forEach((step, index) => {
+        const y = height - 360 - index * 34;
+        page.drawCircle({ x: 78, y: y + 2, size: 10, color: blue });
+        drawText(String(index + 1), 75, y - 2, { size: 9, font: bold, color: rgb(1, 1, 1) });
+        drawText(step, 98, y + 6, { size: 12, color: slate, maxWidth: 660 });
+      });
+
+      page.drawRectangle({ x: 68, y: 96, width: 706, height: 54, color: lightSlate, borderColor: rgb(0.86, 0.90, 0.95), borderWidth: 1 });
+      drawText('BOOKING LINK', 84, 130, { size: 8.5, font: bold, color: rgb(0.39, 0.45, 0.55) });
+      drawText(redeemUrl, 84, 112, { size: 10.5, color: slate, maxWidth: 674, lineHeight: 13 });
+
+      drawText(
+        'This voucher reserves the trial flight time plus 30 minutes for arrival, briefing and paperwork. Please contact Bendigo Flying Club if you need help booking or changing the flight.',
+        68,
+        72,
+        { size: 9.5, color: rgb(0.39, 0.45, 0.55), maxWidth: 706, lineHeight: 12 }
+      );
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fileName || 'trial-flight-voucher'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Voucher PDF downloaded');
+    } catch (error) {
+      console.error('Failed to download voucher PDF:', error);
+      toast.error('Failed to create voucher PDF');
+    }
   };
 
   const modeLabel = (mode: TrialFlightVoucherAircraftMode) =>
