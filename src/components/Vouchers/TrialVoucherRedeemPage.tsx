@@ -69,7 +69,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         body: { action: 'my-voucher' },
       });
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
       setVoucher(data.voucher);
       setCode(data.voucher?.code || '');
       setRedeemed({ setupLink: null, setupEmailSent: false });
@@ -81,6 +80,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         await openPasswordSetup(data.voucher?.code || code);
         return;
       }
+      if (data?.error) throw new Error(data.error);
       const shouldChooseTime = isVoucherAccountUser && data.voucher?.status === 'redeemed' && !data.booking;
       if (linkedSlots.length > 0 || !shouldChooseTime) {
         setSlots(linkedSlots);
@@ -211,6 +211,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         body: { action: mode === 'reschedule' ? 'reschedule-availability' : 'availability', code: nextCode },
       });
       if (error) throw error;
+      if (data?.passwordSetupRequired) {
+        setSlots([]);
+        if (data.booking) setBookedSlot(data.booking);
+        await openPasswordSetup(nextCode);
+        return;
+      }
       if (data?.error) throw new Error(data.error);
       setSlots(data.slots || []);
       if (data.booking) setBookedSlot(data.booking);
@@ -243,6 +249,10 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         },
       });
       if (error) throw error;
+      if (data?.passwordSetupRequired) {
+        await openPasswordSetup(code);
+        return;
+      }
       if (data?.error) throw new Error(data.error);
       setBookedSlot(data.booking || slot);
       setConfirmationEmailSent(Boolean(data.confirmationEmailSent));

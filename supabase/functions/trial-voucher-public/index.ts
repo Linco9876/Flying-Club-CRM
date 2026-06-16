@@ -1215,7 +1215,7 @@ Deno.serve(async (req: Request) => {
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
       const passwordStatus = assertVoucherPasswordSet(voucherAccount);
-      if (!passwordStatus.ok) return json(passwordStatus, 409);
+      if (!passwordStatus.ok) return json({ ...passwordStatus, voucher: publicVoucher, slots: [] });
 
       if (!["redeemed"].includes(voucher.status)) {
         return json({ error: "This voucher is not available for booking" }, 409);
@@ -1241,7 +1241,15 @@ Deno.serve(async (req: Request) => {
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
       const passwordStatus = assertVoucherPasswordSet(voucherAccount);
-      if (!passwordStatus.ok) return json(passwordStatus, 409);
+      if (!passwordStatus.ok) {
+        const currentBooking = await getActiveBookingForReschedule(adminClient, voucher.booked_booking_id);
+        return json({
+          ...passwordStatus,
+          voucher: publicVoucher,
+          slots: [],
+          booking: currentBooking ? await getBookingSummary(adminClient, currentBooking.id) : null,
+        });
+      }
 
       const currentBooking = await getActiveBookingForReschedule(adminClient, voucher.booked_booking_id);
       if (!currentBooking) return json({ error: "The current booking could not be found. Contact Bendigo Flying Club for help." }, 404);
@@ -1275,7 +1283,7 @@ Deno.serve(async (req: Request) => {
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
       const passwordStatus = assertVoucherPasswordSet(voucherAccount);
-      if (!passwordStatus.ok) return json(passwordStatus, 409);
+      if (!passwordStatus.ok) return json({ ...passwordStatus, voucher: publicVoucher });
 
       const currentBooking = await getActiveBookingForReschedule(adminClient, voucher.booked_booking_id);
       if (!currentBooking) return json({ error: "The current booking could not be found. Contact Bendigo Flying Club for help." }, 404);
@@ -1383,7 +1391,7 @@ Deno.serve(async (req: Request) => {
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
       const passwordStatus = assertVoucherPasswordSet(voucherAccount);
-      if (!passwordStatus.ok) return json(passwordStatus, 409);
+      if (!passwordStatus.ok) return json({ ...passwordStatus, voucher: publicVoucher });
 
       const startTime = new Date(String(body.startTime || ""));
       const aircraftId = String(body.aircraftId || "");
