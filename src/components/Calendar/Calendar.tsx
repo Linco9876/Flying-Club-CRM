@@ -24,6 +24,7 @@ import {
   User,
   RefreshCw,
   CalendarDays,
+  Loader2,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -259,6 +260,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   // Action menu and flight log states
   const [actionMenuBooking, setActionMenuBooking] = useState<Booking | null>(null);
   const [actionMenuPosition, setActionMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [bookingMenuLoading, setBookingMenuLoading] = useState<{ bookingId: string; x: number; y: number } | null>(null);
+  const bookingMenuOpenTokenRef = useRef(0);
   const [showFlightLogModal, setShowFlightLogModal] = useState(false);
   const [flightLogBooking, setFlightLogBooking] = useState<Booking | null>(null);
   const [flightLogMode, setFlightLogMode] = useState<'create' | 'edit'>('create');
@@ -294,6 +297,9 @@ export const Calendar: React.FC<CalendarProps> = ({
       setDraggedBookingOriginal(null);
       setDragPreview(null);
       setResizingBooking(null);
+      bookingMenuOpenTokenRef.current += 1;
+      setBookingMenuLoading(null);
+      setActionMenuBooking(null);
       setWasResizing(false);
       setWasMovingBooking(false);
     },
@@ -650,6 +656,24 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   }, [onRefresh]);
 
+  const openBookingActionMenu = useCallback((booking: Booking, position: { x: number; y: number }) => {
+    const x = Math.min(position.x || window.innerWidth - 20, window.innerWidth - 20);
+    const y = Math.min(position.y || 160, window.innerHeight - 20);
+    const openToken = bookingMenuOpenTokenRef.current + 1;
+    bookingMenuOpenTokenRef.current = openToken;
+
+    setActionMenuBooking(null);
+    setActionMenuPosition({ x, y });
+    setBookingMenuLoading({ bookingId: booking.id, x, y });
+
+    window.setTimeout(() => {
+      if (bookingMenuOpenTokenRef.current !== openToken) return;
+      setActionMenuBooking(booking);
+      setActionMenuPosition({ x, y });
+      setBookingMenuLoading((current) => current?.bookingId === booking.id ? null : current);
+    }, 80);
+  }, []);
+
   const getBookingFlightLogId = (booking: Booking) => booking.flightLog?.id || '';
 
   const handleDeleteBookingFlightLog = async (booking: Booking) => {
@@ -837,11 +861,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         key={booking.id}
         type="button"
         onClick={(event) => {
-          setActionMenuBooking(booking);
-          setActionMenuPosition({
-            x: Math.min(event.clientX || window.innerWidth - 20, window.innerWidth - 20),
-            y: Math.min(event.clientY || 160, window.innerHeight - 20),
-          });
+          openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
         }}
         className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card block w-full rounded-xl border-2 p-3 text-left shadow-sm transition-transform active:scale-[0.99]`}
       >
@@ -2377,8 +2397,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         return;
                       }
 
-                      setActionMenuBooking(booking);
-                      setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                      openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
                     }}
                   >
                     {canDragOrResizeBooking(booking) && (
@@ -3000,8 +3019,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        setActionMenuBooking(booking);
-                        setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                        openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
                       }}
                     >
                       {canDragOrResizeBooking(booking) && (
@@ -3079,8 +3097,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        setActionMenuBooking(booking);
-                        setActionMenuPosition({ x: e.clientX, y: e.clientY });
+                        openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
                       }}
                     >
                       {canDragOrResizeBooking(booking) && (
@@ -3276,8 +3293,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 <button
                   type="button"
                   onClick={(event) => {
-                    setActionMenuBooking(booking);
-                    setActionMenuPosition({ x: event.clientX, y: event.clientY });
+                    openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
                   }}
                   className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
                 >
@@ -3631,12 +3647,34 @@ export const Calendar: React.FC<CalendarProps> = ({
         )}
       </div>
 
-      {actionMenuBooking && (
+      {(actionMenuBooking || bookingMenuLoading) && (
         <div
           className="fixed inset-0 z-40"
-          onMouseDown={(e) => { e.stopPropagation(); setActionMenuBooking(null); }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            bookingMenuOpenTokenRef.current += 1;
+            setActionMenuBooking(null);
+            setBookingMenuLoading(null);
+          }}
           onClick={(e) => e.stopPropagation()}
         />
+      )}
+
+      {bookingMenuLoading && !actionMenuBooking && (
+        <div
+          className="fixed z-50 min-w-[210px] rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-xl dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100"
+          style={{
+            left: Math.min(Math.max(bookingMenuLoading.x, 8), Math.max(8, window.innerWidth - 230)),
+            top: Math.min(Math.max(bookingMenuLoading.y, 8), Math.max(8, window.innerHeight - 72)),
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            <span>Loading booking...</span>
+          </div>
+        </div>
       )}
 
       {actionMenuBooking && (
@@ -3704,7 +3742,11 @@ export const Calendar: React.FC<CalendarProps> = ({
           }
           isFlightLogged={isBookingFlightLogged(actionMenuBooking)}
           canApprove={canApproveCalendarBooking(actionMenuBooking)}
-          onClose={() => setActionMenuBooking(null)}
+          onClose={() => {
+            bookingMenuOpenTokenRef.current += 1;
+            setActionMenuBooking(null);
+            setBookingMenuLoading(null);
+          }}
         />
       )}
 
