@@ -14,7 +14,9 @@ import {
   DollarSign,
   Gift,
   Menu,
-  X
+  X,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -25,6 +27,10 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
   const { user } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('crm-sidebar-collapsed') === 'true';
+  });
 
   const allMenuItems = [
     { id: 'students', label: 'Members', icon: Users, roles: ['admin', 'instructor'] },
@@ -52,7 +58,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     setIsMobileMenuOpen(false);
   };
 
-  const renderMenuItems = () => (
+  const toggleCollapsed = () => {
+    setIsCollapsed(current => {
+      const next = !current;
+      window.localStorage.setItem('crm-sidebar-collapsed', String(next));
+      return next;
+    });
+  };
+
+  const renderMenuItems = (collapsed = false) => (
     <ul className="space-y-2">
       {filteredMenuItems.map((item) => {
         const Icon = item.icon;
@@ -62,14 +76,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
           <li key={item.id}>
             <button
               onClick={() => handleMenuItemClick(item.id)}
-              className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
+              title={collapsed ? item.label : undefined}
+              aria-label={item.label}
+              className={`flex w-full items-center rounded-lg text-sm font-medium transition-all duration-200 ${
                 isActive
                   ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
+              } ${collapsed ? 'justify-center px-3 py-3' : 'px-4 py-3'}`}
             >
-              <Icon className={`mr-3 h-5 w-5 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
-              {item.label}
+              <Icon className={`h-5 w-5 shrink-0 ${collapsed ? '' : 'mr-3'} ${isActive ? 'text-blue-600' : 'text-gray-400'}`} />
+              {!collapsed && <span className="truncate">{item.label}</span>}
             </button>
           </li>
         );
@@ -89,9 +105,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
       </button>
 
       {/* Desktop Sidebar */}
-      <aside className="app-sidebar sticky top-16 hidden h-[calc(100vh-4rem)] w-64 shrink-0 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white shadow-md lg:block">
-        <nav className="px-4 py-8">
-          {renderMenuItems()}
+      <aside className={`app-sidebar sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white shadow-md transition-[width] duration-200 lg:block ${isCollapsed ? 'w-20' : 'w-64'}`}>
+        <nav className={`${isCollapsed ? 'px-3' : 'px-4'} py-5`}>
+          <div className={`mb-4 flex ${isCollapsed ? 'justify-center' : 'justify-end'}`}>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50 hover:text-gray-900"
+              aria-label={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              title={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            >
+              {isCollapsed ? <ChevronsRight className="h-5 w-5" /> : <ChevronsLeft className="h-5 w-5" />}
+            </button>
+          </div>
+          {renderMenuItems(isCollapsed)}
         </nav>
       </aside>
 
@@ -117,7 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
               </button>
             </div>
             <nav className="flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-              {renderMenuItems()}
+              {renderMenuItems(false)}
             </nav>
           </div>
         </div>

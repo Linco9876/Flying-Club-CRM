@@ -2650,30 +2650,67 @@ export const StudentProfilePage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4">
-                <label className="block">
-                  <span className="block text-xs font-semibold uppercase tracking-wide text-blue-700 mb-2">Course</span>
-                  <select
-                    value={selectedTrainingCourseId}
-                    onChange={(event) => setSelectedTrainingCourseId(event.target.value)}
-                    className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {trainingCourseOptions.length === 0 ? (
-                      <option value="">No courses available</option>
-                    ) : (
-                      trainingCourseOptions.map(course => {
-                        const count = studentTrainingRecords.filter(record => record.courseId === course.id).length;
-                        return (
-                          <option key={course.id} value={course.id}>
-                            {course.title}{count > 0 ? ` (${count} record${count === 1 ? '' : 's'})` : ''}
-                          </option>
-                        );
-                      })
-                    )}
-                  </select>
-                </label>
+              <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-3 sm:p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <span className="block text-xs font-semibold uppercase tracking-wide text-blue-700">Course</span>
+                    <p className="mt-1 text-sm font-medium text-blue-950">
+                      {selectedTrainingCourse?.title || 'Select a course'}
+                    </p>
+                  </div>
+                  <label className="block md:hidden">
+                    <span className="sr-only">Course</span>
+                    <select
+                      value={selectedTrainingCourseId}
+                      onChange={(event) => setSelectedTrainingCourseId(event.target.value)}
+                      className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {trainingCourseOptions.length === 0 ? (
+                        <option value="">No courses available</option>
+                      ) : (
+                        trainingCourseOptions.map(course => {
+                          const count = studentTrainingRecords.filter(record => record.courseId === course.id).length;
+                          return (
+                            <option key={course.id} value={course.id}>
+                              {course.title}{count > 0 ? ` (${count} record${count === 1 ? '' : 's'})` : ''}
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-3 hidden gap-2 overflow-x-auto pb-1 md:flex">
+                  {trainingCourseOptions.length === 0 ? (
+                    <span className="rounded-lg border border-dashed border-blue-200 bg-white/70 px-3 py-2 text-sm font-medium text-blue-700">
+                      No courses available
+                    </span>
+                  ) : (
+                    trainingCourseOptions.map(course => {
+                      const count = studentTrainingRecords.filter(record => record.courseId === course.id).length;
+                      const isSelected = selectedTrainingCourseId === course.id;
+                      return (
+                        <button
+                          key={course.id}
+                          type="button"
+                          onClick={() => setSelectedTrainingCourseId(course.id)}
+                          className={`shrink-0 rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
+                            isSelected
+                              ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                              : 'border-blue-200 bg-white text-blue-800 hover:border-blue-300 hover:bg-blue-100'
+                          }`}
+                        >
+                          <span className="block max-w-[15rem] truncate">{course.title}</span>
+                          <span className={`mt-0.5 block text-xs font-medium ${isSelected ? 'text-blue-100' : 'text-blue-600'}`}>
+                            {count} record{count === 1 ? '' : 's'}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
                 {selectedTrainingCourse && (
-                  <p className="mt-2 text-xs text-blue-700">
+                  <p className="mt-3 text-xs text-blue-700">
                     {selectedCourseHasSyllabusMatrix
                       ? `Showing ${selectedTrainingCourse.title}. This course uses the CASA syllabus matrix plus lesson records.`
                       : `Showing ${selectedTrainingCourse.title}. Matrix columns use this course's assessment criteria and grading types.`}
