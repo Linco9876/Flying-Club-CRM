@@ -620,9 +620,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               </label>
               <select
                 value={formData.flight_type_id}
-                onChange={(e) => setFormData(prev => ({ ...prev, flight_type_id: e.target.value }))}
-                className={fieldClass}
+                onChange={(e) => {
+                  if (!isVoucherBooking) setFormData(prev => ({ ...prev, flight_type_id: e.target.value }));
+                }}
+                className={`${fieldClass} ${
+                  isVoucherBooking
+                    ? 'border-amber-300 bg-amber-50 text-amber-900 cursor-not-allowed'
+                    : ''
+                }`}
                 required
+                disabled={isVoucherBooking}
               >
                 <option value="">Select flight type</option>
                 {flightTypes.filter(ft => ft.active).map(ft => (
