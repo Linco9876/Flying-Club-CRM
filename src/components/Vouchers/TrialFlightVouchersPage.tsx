@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Pencil, Plane, Plus, Save, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Pencil, Plane, Plus, Save, Search, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
@@ -167,6 +167,8 @@ interface StripeConnectStatus {
   connectedAt: string | null;
 }
 
+type VoucherAdminTab = 'products' | 'issue' | 'recent';
+
 export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
@@ -183,6 +185,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const [stripeValidation, setStripeValidation] = useState<StripePriceValidationResult | null>(null);
   const [stripeValidationLoading, setStripeValidationLoading] = useState(false);
   const [stripeCreationLoading, setStripeCreationLoading] = useState(false);
+  const [activeVoucherTab, setActiveVoucherTab] = useState<VoucherAdminTab>('products');
+  const [voucherSearch, setVoucherSearch] = useState('');
 
   const instructors = getInstructors();
   const activeProducts = products.filter(product => product.isActive);
@@ -212,7 +216,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const futureRecipientVouchers = scheduledRecipientVouchers.filter(voucher =>
     voucher.recipientDeliveryAt && voucher.recipientDeliveryAt.getTime() > now
   );
-  const visibleRecentVouchers = [...vouchers]
+  const sortedVouchers = [...vouchers]
     .sort((a, b) => {
       const aDue = dueRecipientVouchers.some(voucher => voucher.id === a.id);
       const bDue = dueRecipientVouchers.some(voucher => voucher.id === b.id);
@@ -223,8 +227,28 @@ export const TrialFlightVouchersPage: React.FC = () => {
       if (aUndelivered !== bUndelivered) return aUndelivered ? -1 : 1;
 
       return (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0);
-    })
-    .slice(0, 8);
+    });
+  const visibleRecentVouchers = sortedVouchers.filter(voucher => {
+    const query = voucherSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      voucher.code,
+      voucher.productName,
+      voucher.purchaserName,
+      voucher.purchaserEmail,
+      voucher.recipientName,
+      voucher.recipientEmail,
+      voucher.redeemedByName,
+      voucher.redeemedByEmail,
+      voucher.status,
+      voucher.paymentStatus,
+      voucher.stripeCheckoutSessionId,
+      voucher.bookedBooking?.aircraftRegistration,
+      voucher.bookedBooking?.instructorName,
+    ]
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(query));
+  });
 
   const aircraftByMode = useMemo(() => {
     const tecnams = aircraft.filter(isTecnamAircraft);
@@ -1728,7 +1752,38 @@ export const TrialFlightVouchersPage: React.FC = () => {
       </>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="mb-6 overflow-x-auto">
+        <div className="inline-flex min-w-full rounded-2xl border border-gray-200 bg-white p-1 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:min-w-0">
+          {[
+            { id: 'products' as const, label: 'Voucher products', count: products.length },
+            { id: 'issue' as const, label: 'Issue voucher', count: activeProducts.length },
+            { id: 'recent' as const, label: 'Recent vouchers', count: vouchers.length },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveVoucherTab(tab.id)}
+              className={`flex min-w-[10rem] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition sm:flex-none ${
+                activeVoucherTab === tab.id
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-[#20242b]'
+              }`}
+            >
+              {tab.label}
+              <span className={`rounded-full px-2 py-0.5 text-xs ${
+                activeVoucherTab === tab.id
+                  ? 'bg-white/20 text-white'
+                  : 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300'
+              }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {activeVoucherTab === 'products' && (
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -2261,8 +2316,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </div>
           )}
         </section>
+        )}
 
-        <section className="space-y-6">
+        {activeVoucherTab === 'issue' && (
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
             <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Issue voucher</h2>
             <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Create and email vouchers for cash sales, EFTs, or other external payments without using Stripe checkout.</p>
@@ -2387,12 +2443,14 @@ export const TrialFlightVouchersPage: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
 
+        {activeVoucherTab === 'recent' && (
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
             <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Recent vouchers</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Scheduled recipient emails are sent automatically; this button checks anything due now.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Search vouchers, check their status and resend voucher emails.</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                     dueRecipientVouchers.length > 0
@@ -2416,6 +2474,27 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 {dueRecipientVouchers.length > 0 ? `Send due now (${dueRecipientVouchers.length})` : 'Check due emails'}
               </button>
             </div>
+            <label className="mb-3 block">
+              <span className="sr-only">Search vouchers</span>
+              <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-[#2c2f36] dark:bg-[#111827]">
+                <Search className="h-4 w-4 shrink-0 text-gray-400" />
+                <input
+                  value={voucherSearch}
+                  onChange={event => setVoucherSearch(event.target.value)}
+                  placeholder="Search by code, purchaser, recipient, status or Stripe session..."
+                  className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100"
+                />
+                {voucherSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setVoucherSearch('')}
+                    className="rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-[#20242b]"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </label>
             {dueRecipientVouchers.length > 0 && (
               <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
                 {dueRecipientVouchers.length} scheduled recipient email{dueRecipientVouchers.length === 1 ? ' is' : 's are'} due and not marked delivered. The cards needing attention are shown first.
@@ -2648,9 +2727,14 @@ export const TrialFlightVouchersPage: React.FC = () => {
               );
               })}
               {vouchers.length === 0 && <p className="text-sm text-gray-500">No vouchers issued yet.</p>}
+              {vouchers.length > 0 && visibleRecentVouchers.length === 0 && (
+                <p className="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-[#363b45] dark:text-gray-400">
+                  No vouchers match that search.
+                </p>
+              )}
             </div>
           </div>
-        </section>
+        )}
       </div>
     </div>
   );
