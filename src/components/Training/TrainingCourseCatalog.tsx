@@ -1065,10 +1065,10 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[18rem_minmax(0,1fr)]">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="grid min-h-[calc(100vh-12rem)] items-start gap-4 xl:grid-cols-[18rem_minmax(0,1fr)]">
+        <div className="rounded-xl border border-slate-200 bg-white p-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)] xl:overflow-hidden">
           <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Lessons</p>
-          <div className="max-h-[36rem] space-y-1 overflow-y-auto pr-1">
+          <div className="space-y-1 pr-1 xl:max-h-[calc(100vh-12rem)] xl:overflow-y-auto">
             {course.lessons.map((lesson, index) => {
               const isActive = lesson.id === selectedLesson?.id;
               return (
@@ -1205,7 +1205,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                 />
               </div>
               {rowSearch.trim() && (
-                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                <div className="mt-3 space-y-2 pr-1 xl:max-h-[calc(100vh-24rem)] xl:overflow-y-auto">
                   {addableRows.length === 0 ? (
                     <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">No matching unused matrix rows.</p>
                   ) : (
