@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CheckCircle, ChevronLeft, ChevronRight, Copy, Gift, Loader2, Plane, Ticket } from 'lucide-react';
+import { CalendarDays, CheckCircle, ChevronLeft, ChevronRight, Gift, Loader2, Plane, Ticket } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -54,7 +54,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [bookedSlot, setBookedSlot] = useState<VoucherSlot | null>(null);
   const [form, setForm] = useState({ fullName: '', email: '', phone: '' });
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
-  const [setupResendEmail, setSetupResendEmail] = useState('');
   const [selectedSlotDate, setSelectedSlotDate] = useState('all');
   const [availabilityAutoLoadedForCode, setAvailabilityAutoLoadedForCode] = useState('');
   const [availabilityHydrating, setAvailabilityHydrating] = useState(false);
@@ -154,13 +153,15 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      if (!data?.setupLink) {
+        throw new Error('Voucher linked, but the password setup link could not be generated. Please contact Bendigo Flying Club.');
+      }
       setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
       setVoucher(data.voucher || (voucher ? { ...voucher, status: 'redeemed' } : voucher));
-      toast.success('Voucher details saved');
-      if (isVoucherAccountUser) await loadAvailability();
+      toast.success('Voucher linked. Opening password setup...');
+      window.location.assign(data.setupLink);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not redeem voucher');
-    } finally {
       setLoading(false);
     }
   };
@@ -236,26 +237,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     setRescheduling(false);
     setSlots([]);
     setSelectedSlotDate('all');
-  };
-
-  const resendSetupLink = async () => {
-    if (!voucher || !code) return;
-    setLoading(true);
-    try {
-      const redirectTo = `${window.location.origin}/trial-flight-voucher?voucherCode=${encodeURIComponent(code)}`;
-      const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
-        body: { action: 'resend-setup', code, redirectTo },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
-      setSetupResendEmail(data.email || '');
-      toast.success(data.setupEmailSent ? 'Booking link resent' : 'Booking link generated');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not resend booking link');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const formatSlotDate = (slotOrValue: VoucherSlot | string) => {
@@ -423,16 +404,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availabilityAutoLoadedForCode, canChooseTime, code, rescheduling, slots.length]);
 
-  const copySetupLink = async () => {
-    if (!redeemed?.setupLink) return;
-    try {
-      await navigator.clipboard.writeText(redeemed.setupLink);
-      toast.success('Booking link copied');
-    } catch {
-      toast.error('Could not copy booking link');
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-8 sm:px-6 lg:px-8">
@@ -528,37 +499,18 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
                     <h3 className="font-bold">Your voucher is linked.</h3>
                     <p className="mt-1 text-sm">
-                      {user
-                        ? isFullPortalUserOnVoucherPage
-                          ? 'This voucher is linked. Sign out, then use the voucher email to continue booking.'
-                          : 'Choose an available time below.'
-                        : redeemed?.setupEmailSent
-                          ? 'We have emailed your booking link. Follow the link to choose your flight time.'
-                          : 'Continue to choose your flight time.'}
+                      {user && isVoucherAccountUser
+                        ? 'Choose an available time below.'
+                        : 'Opening the password setup page now. After you set your password, available times will load automatically.'}
                     </p>
-                    {redeemed?.setupLink && (
-                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                        <a href={redeemed.setupLink} className="inline-flex justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
-                          Continue booking
-                        </a>
-                        <button
-                          type="button"
-                          onClick={copySetupLink}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
-                        >
-                          <Copy className="h-4 w-4" />
-                          Copy booking link
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
 
                 {isFullPortalUserOnVoucherPage && (redeemed || voucher.status === 'redeemed') && voucher.status !== 'booked' && !bookedSlot && (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-                    <h3 className="font-bold">Continue from the voucher email</h3>
+                    <h3 className="font-bold">Voucher account required</h3>
                     <p className="mt-1 text-sm leading-6">
-                      Sign out, then use the link in the voucher email to choose a flight time.
+                      This voucher must be booked through its own restricted voucher account. Sign out and open the voucher link again to continue.
                     </p>
                     <button
                       type="button"
@@ -572,31 +524,10 @@ export const TrialVoucherRedeemPage: React.FC = () => {
 
                 {(redeemed || voucher.status === 'redeemed') && !user && voucher.status !== 'booked' && !bookedSlot && (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-                    <h3 className="font-bold">Sign in before booking</h3>
+                    <h3 className="font-bold">Password setup required</h3>
                     <p className="mt-1 text-sm">
-                      Use the booking link from your voucher email to choose a flight time.
+                      Open the secure password setup link from your voucher email, then this page will show available times.
                     </p>
-                    {setupResendEmail && (
-                      <p className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-amber-800">
-                        Booking link sent to {setupResendEmail}. Check junk mail if it does not arrive.
-                      </p>
-                    )}
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                      <a
-                        href="/"
-                        className="inline-flex justify-center rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-700"
-                      >
-                        Sign in
-                      </a>
-                      <button
-                        type="button"
-                        onClick={resendSetupLink}
-                        disabled={loading}
-                        className="inline-flex justify-center rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
-                      >
-                        Resend booking link
-                      </button>
-                    </div>
                   </div>
                 )}
 
