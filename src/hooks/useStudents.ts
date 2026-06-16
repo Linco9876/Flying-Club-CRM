@@ -142,6 +142,7 @@ export const useStudents = () => {
           dateOfBirth: studentData?.date_of_birth ? new Date(studentData.date_of_birth) : user.date_of_birth ? new Date(user.date_of_birth) : undefined,
           preferredAircraftId: user.preferred_aircraft_id,
           isActive: user.is_active ?? true,
+          portalAccessScope: user.portal_access_scope || 'full',
           prepaidBalance: studentData?.prepaid_balance ? parseFloat(studentData.prepaid_balance) : 0,
           endorsements: endorsementsMap.get(user.id) || []
         };
@@ -467,26 +468,41 @@ export const useStudents = () => {
     }
   };
 
-  const setStudentActive = async (id: string, isActive: boolean) => {
+  const setStudentActive = async (
+    id: string,
+    isActive: boolean,
+    options?: { restoreAsFullStudent?: boolean }
+  ) => {
     try {
+      const updateData: Record<string, unknown> = {
+        is_active: isActive,
+        updated_at: new Date().toISOString()
+      };
+
+      if (isActive && options?.restoreAsFullStudent) {
+        updateData.portal_access_scope = 'full';
+        updateData.role = 'student';
+      }
+
       const { error } = await supabase
         .from('users')
-        .update({
-          is_active: isActive,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', id);
 
       if (error) throw error;
 
       const { data: updatedMember, error: verifyError } = await supabase
         .from('users')
-        .select('id, is_active')
+        .select('id, is_active, portal_access_scope')
         .eq('id', id)
         .maybeSingle();
 
       if (verifyError) throw verifyError;
-      if (!updatedMember || updatedMember.is_active !== isActive) {
+      if (
+        !updatedMember ||
+        updatedMember.is_active !== isActive ||
+        (isActive && options?.restoreAsFullStudent && updatedMember.portal_access_scope !== 'full')
+      ) {
         throw new Error(isActive
           ? 'Member restore was blocked or did not apply'
           : 'Member archive was blocked or did not apply'

@@ -49,6 +49,11 @@ export const StudentList: React.FC = () => {
   const [viewMode, setViewMode] = useState<'detailed' | 'slim'>('detailed');
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const canManageMembers = user?.role === 'admin' || user?.roles?.includes('admin');
+  const canReinstateTrialVoucherMembers =
+    canManageMembers ||
+    user?.role === 'instructor' ||
+    user?.role === 'senior_instructor' ||
+    user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor');
 
   const normaliseSearch = (value?: string | null) =>
     (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -356,24 +361,26 @@ export const StudentList: React.FC = () => {
               Docs
             </button>
 
-            {canManageMembers && (
+            {(canManageMembers || (isArchived && student.portalAccessScope === 'trial_voucher' && canReinstateTrialVoucherMembers)) && (
               <>
                 <div className="my-1 border-t border-gray-100" />
                 {isArchived ? (
                   <button type="button" onClick={() => runMemberAction(() => handleRestoreMember(student))} className={menuItemClass}>
                     <RotateCcw className="h-3.5 w-3.5 text-green-600" />
-                    Restore
+                    {student.portalAccessScope === 'trial_voucher' ? 'Restore as student' : 'Restore'}
                   </button>
-                ) : (
+                ) : canManageMembers ? (
                   <button type="button" onClick={() => runMemberAction(() => handleArchiveMember(student))} className={menuItemClass}>
                     <Archive className="h-3.5 w-3.5 text-amber-600" />
                     Archive
                   </button>
+                ) : null}
+                {canManageMembers && (
+                  <button type="button" onClick={() => runMemberAction(() => handleRemoveMember(student))} className={`${menuItemClass} text-red-700 hover:bg-red-50`}>
+                    <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                    Remove
+                  </button>
                 )}
-                <button type="button" onClick={() => runMemberAction(() => handleRemoveMember(student))} className={`${menuItemClass} text-red-700 hover:bg-red-50`}>
-                  <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                  Remove
-                </button>
               </>
             )}
           </div>
@@ -420,6 +427,15 @@ export const StudentList: React.FC = () => {
   };
 
   const handleRestoreMember = async (student: Student) => {
+    if (student.portalAccessScope === 'trial_voucher') {
+      const confirmed = window.confirm(
+        `Restore ${student.name} as a regular student?\n\nThis will give them normal CRM login access. Only do this if they are continuing after their trial flight.`
+      );
+      if (!confirmed) return;
+      await setStudentActive(student.id, true, { restoreAsFullStudent: true });
+      return;
+    }
+
     await setStudentActive(student.id, true);
   };
 
