@@ -56,6 +56,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
   const [selectedSlotDate, setSelectedSlotDate] = useState('all');
   const [availabilityAutoLoadedForCode, setAvailabilityAutoLoadedForCode] = useState('');
+  const [setupRedirectForCode, setSetupRedirectForCode] = useState('');
   const [availabilityHydrating, setAvailabilityHydrating] = useState(false);
   const [rescheduling, setRescheduling] = useState(false);
   const isVoucherAccountUser = Boolean(user?.portalAccessScope === 'trial_voucher');
@@ -165,6 +166,36 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const openPasswordSetup = async (nextCode = code) => {
+    if (!nextCode.trim()) return;
+    setLoading(true);
+    try {
+      const redirectTo = `${window.location.origin}/trial-flight-voucher?voucherCode=${encodeURIComponent(nextCode)}`;
+      const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+        body: { action: 'resend-setup', code: nextCode, redirectTo },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (!data?.setupLink) {
+        throw new Error('The password setup link could not be generated. Please contact Bendigo Flying Club.');
+      }
+      setRedeemed({ setupLink: data.setupLink, setupEmailSent: Boolean(data.setupEmailSent) });
+      toast.success('Opening password setup...');
+      window.location.assign(data.setupLink);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not open password setup');
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!voucher || !code || user || voucher.status !== 'redeemed' || bookedSlot) return;
+    if (setupRedirectForCode === code) return;
+    setSetupRedirectForCode(code);
+    void openPasswordSetup(code);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookedSlot, code, setupRedirectForCode, user, voucher?.status]);
 
   const loadAvailability = async (nextCode = code, mode: 'booking' | 'reschedule' = 'booking') => {
     if (!nextCode.trim()) return;
@@ -526,7 +557,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
                     <h3 className="font-bold">Password setup required</h3>
                     <p className="mt-1 text-sm">
-                      Open the secure password setup link from your voucher email, then this page will show available times.
+                      This voucher has been linked to an account, but the password still needs to be set before available times can be shown. Opening password setup now...
                     </p>
                   </div>
                 )}
