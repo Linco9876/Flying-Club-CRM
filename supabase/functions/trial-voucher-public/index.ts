@@ -1111,6 +1111,28 @@ Deno.serve(async (req: Request) => {
       return json({ voucher: publicVoucher, slots, booking });
     }
 
+    if (action === "complete-password-setup") {
+      const { user } = await getAuthenticatedUser(req, supabaseUrl);
+      if (!user) return json({ error: "You need to sign in to complete voucher account setup" }, 401);
+
+      const voucherAccount = await assertVoucherAccount(adminClient, user.id);
+      if (!voucherAccount.ok) return json({ voucherAccount: false });
+
+      const completedAt = new Date().toISOString();
+      const { error: updateError } = await adminClient
+        .from("users")
+        .update({ trial_voucher_password_set_at: completedAt })
+        .eq("id", user.id);
+
+      if (updateError) return json({ error: updateError.message }, 500);
+
+      return json({
+        voucherAccount: true,
+        passwordSetupComplete: true,
+        completedAt,
+      });
+    }
+
     if (!code) return json({ error: "Voucher code is required" }, 400);
 
     const { data: voucher, error: voucherError } = await adminClient

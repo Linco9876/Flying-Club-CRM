@@ -220,6 +220,17 @@ export const ResetPasswordPage: React.FC = () => {
     const userId = authData.user?.id;
     if (!userId) return;
 
+    const { data: completion, error: completionError } = await supabase.functions.invoke('trial-voucher-public', {
+      body: { action: 'complete-password-setup' },
+    });
+
+    if (!completionError && completion?.passwordSetupComplete) return;
+    if (!completionError && completion?.voucherAccount === false) return;
+
+    if (completionError) {
+      console.error('Voucher password setup completion function failed:', completionError);
+    }
+
     const { data: profile } = await supabase
       .from('users')
       .select('portal_access_scope')
