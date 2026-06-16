@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { CreditCard, DollarSign, GripVertical, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CreditCard, DollarSign, GripVertical, Loader2, Lock, Plus, Trash2, Users } from 'lucide-react';
 import { useBillingSettings, FlightType, PaymentMethod } from '../../hooks/useBillingSettings';
 import { useAircraft } from '../../hooks/useAircraft';
 import { UserRole } from '../../types';
+import { supabase } from '../../lib/supabase';
+import toast from 'react-hot-toast';
 
 interface BillingRatesSettingsProps {
   canEdit: boolean;
@@ -14,11 +16,36 @@ const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm f
 
 const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+interface StripeConnectStatus {
+  connected: boolean;
+  configured: boolean;
+  livemode: boolean;
+  accountId: string | null;
+}
+
 export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
   const { flightTypes, paymentMethods, loading, saveBillingSettings } = useBillingSettings();
   const { aircraft } = useAircraft();
   const [draftFlightTypes, setDraftFlightTypes] = useState<FlightType[]>([]);
   const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
+  const [stripeLoading, setStripeLoading] = useState(false);
+
+  const loadStripeStatus = useCallback(async () => {
+    setStripeLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
+        body: { action: 'status' },
+      });
+      if (error) throw error;
+      setStripeStatus(data ?? null);
+    } catch (error) {
+      console.warn('Failed to load Stripe billing status:', error);
+      setStripeStatus(null);
+    } finally {
+      setStripeLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     setDraftFlightTypes(flightTypes);
@@ -27,6 +54,10 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   useEffect(() => {
     setDraftPaymentMethods(paymentMethods);
   }, [paymentMethods]);
+
+  useEffect(() => {
+    void loadStripeStatus();
+  }, [loadStripeStatus]);
 
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
@@ -48,6 +79,11 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   };
 
   const updatePaymentMethod = (id: string, updates: Partial<PaymentMethod>) => {
+    const method = draftPaymentMethods.find(item => item.id === id);
+    if (method?.systemKey === 'stripe_card' && updates.active === true && !stripeStatus?.connected) {
+      toast.error('Connect Stripe in Settings > Integrations before enabling Stripe for flight payments.');
+      return;
+    }
     setDraftPaymentMethods(current => current.map(method => method.id === id ? { ...method, ...updates } : method));
     onFormChange();
   };
@@ -90,6 +126,8 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         active: true,
         displayOrder: current.length + 1,
         allowAccountTopup: true,
+        isSystem: false,
+        systemKey: null,
       },
     ]);
     onFormChange();
@@ -108,8 +146,11 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
+  const visiblePaymentMethods = draftPaymentMethods.filter(method => method.active || method.isSystem);
   const activePaymentMethods = draftPaymentMethods.filter(method => method.active);
   const activeFlightTypes = draftFlightTypes.filter(type => type.active);
+  const stripeMethod = draftPaymentMethods.find(method => method.systemKey === 'stripe_card');
+  const stripeConnected = Boolean(stripeStatus?.connected);
 
   const rateSummary = useMemo(() => {
     return aircraft.flatMap(item => (item.rates || []).map(rate => ({
@@ -158,16 +199,27 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         </div>
 
         <div className="space-y-3">
-          {activePaymentMethods.map(method => (
+          {visiblePaymentMethods.map(method => {
+            const isStripeMethod = method.systemKey === 'stripe_card';
+            const methodCanEdit = canEdit && !method.isSystem;
+            return (
             <div key={method.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
               <div className="grid grid-cols-1 md:grid-cols-[1.2fr_2fr_auto] gap-3 items-start">
-                <input
-                  value={method.name}
-                  onChange={event => updatePaymentMethod(method.id, { name: event.target.value })}
-                  disabled={!canEdit}
-                  className={inputClass}
-                  placeholder="Payment method"
-                />
+                <div>
+                  <input
+                    value={method.name}
+                    onChange={event => updatePaymentMethod(method.id, { name: event.target.value })}
+                    disabled={!methodCanEdit}
+                    className={inputClass}
+                    placeholder="Payment method"
+                  />
+                  {method.isSystem && (
+                    <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                      <Lock className="h-3.5 w-3.5" />
+                      System method
+                    </p>
+                  )}
+                </div>
                 <input
                   value={method.description}
                   onChange={event => updatePaymentMethod(method.id, { description: event.target.value })}
@@ -175,7 +227,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   className={inputClass}
                   placeholder="Description shown to staff"
                 />
-                {canEdit && (
+                {canEdit && !method.isSystem && (
                   <button
                     onClick={() => removePaymentMethod(method.id)}
                     className="p-2 text-red-600 hover:bg-red-50 rounded-md"
@@ -184,21 +236,67 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
+                {method.isSystem && (
+                  <span className={`inline-flex items-center justify-center rounded-md px-3 py-2 text-xs font-semibold ${
+                    method.active
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-gray-200 text-gray-700'
+                  }`}>
+                    {method.active ? 'Active' : 'Off'}
+                  </span>
+                )}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
+                {isStripeMethod && (
+                  <label className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium ${
+                    method.active
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-gray-300 bg-white text-gray-700'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={method.active}
+                      disabled={!canEdit || !stripeConnected}
+                      onChange={event => updatePaymentMethod(method.id, { active: event.target.checked })}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    Allow Stripe for flight charges
+                  </label>
+                )}
                 <label className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700">
                   <input
                     type="checkbox"
                     checked={method.allowAccountTopup !== false}
-                    disabled={!canEdit}
+                    disabled={!canEdit || isStripeMethod}
                     onChange={event => updatePaymentMethod(method.id, { allowAccountTopup: event.target.checked })}
                     className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   Allow for pilot account top-ups
                 </label>
+                {isStripeMethod && (
+                  <span className={`rounded-md px-3 py-2 text-xs font-medium ${
+                    stripeLoading
+                      ? 'bg-blue-50 text-blue-700'
+                      : stripeConnected
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-amber-50 text-amber-800'
+                  }`}>
+                    {stripeLoading
+                      ? 'Checking Stripe connection...'
+                      : stripeConnected
+                        ? `Stripe connected${stripeStatus?.livemode ? ' live' : ' test'}`
+                        : 'Connect Stripe in Integrations first'}
+                  </span>
+                )}
               </div>
             </div>
-          ))}
+          );
+          })}
+          {!stripeMethod && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Stripe payment method has not been added to this database yet. Run the latest migration, then refresh this page.
+            </div>
+          )}
         </div>
       </section>
 

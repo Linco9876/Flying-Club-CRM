@@ -20,6 +20,8 @@ export interface PaymentMethod {
   active: boolean;
   displayOrder: number;
   allowAccountTopup: boolean;
+  isSystem?: boolean;
+  systemKey?: string | null;
 }
 
 export interface AircraftRate {
@@ -86,7 +88,9 @@ export const useBillingSettings = () => {
           description: pm.description || '',
           active: pm.active !== false,
           displayOrder: pm.display_order,
-          allowAccountTopup: pm.allow_account_topup !== false
+          allowAccountTopup: pm.allow_account_topup !== false,
+          isSystem: pm.is_system === true,
+          systemKey: pm.system_key ?? null
         })));
       }
     } catch (error) {
@@ -191,7 +195,9 @@ export const useBillingSettings = () => {
           description: data.description || '',
           active: data.active !== false,
           displayOrder: data.display_order,
-          allowAccountTopup: data.allow_account_topup !== false
+          allowAccountTopup: data.allow_account_topup !== false,
+          isSystem: data.is_system === true,
+          systemKey: data.system_key ?? null
         }]);
         toast.success('Payment method added');
       }
@@ -209,6 +215,8 @@ export const useBillingSettings = () => {
       if (updates.active !== undefined) dbUpdates.active = updates.active;
       if (updates.displayOrder !== undefined) dbUpdates.display_order = updates.displayOrder;
       if (updates.allowAccountTopup !== undefined) dbUpdates.allow_account_topup = updates.allowAccountTopup;
+      if (updates.isSystem !== undefined) dbUpdates.is_system = updates.isSystem;
+      if (updates.systemKey !== undefined) dbUpdates.system_key = updates.systemKey;
 
       const { error } = await supabase
         .from('payment_methods')
@@ -254,11 +262,13 @@ export const useBillingSettings = () => {
 
       for (const [index, method] of validPaymentMethods.entries()) {
         const dbMethod = {
-          name: method.name.trim(),
+          name: method.systemKey === 'stripe_card' ? 'Stripe Card Payment' : method.name.trim(),
           description: method.description?.trim() || null,
           active: method.active,
-          allow_account_topup: method.allowAccountTopup !== false,
+          allow_account_topup: method.systemKey === 'stripe_card' ? false : method.allowAccountTopup !== false,
           display_order: index + 1,
+          is_system: method.isSystem === true,
+          system_key: method.systemKey || null,
           updated_at: new Date().toISOString(),
         };
         const { data, error } = originalPaymentMethodIds.has(method.id)
