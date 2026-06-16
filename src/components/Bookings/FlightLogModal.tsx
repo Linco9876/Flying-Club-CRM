@@ -71,6 +71,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const endTime = booking.endTime instanceof Date ? booking.endTime : new Date(booking.endTime);
   const isDualFlight = !!booking.instructorId;
   const isVoucherBooking = !!booking.trialFlightVoucherId || isVoucherPaymentMethod(booking.paymentType);
+  const voucherFlightType = flightTypes.find((type) => isVoucherPaymentMethod(type.name));
+  const defaultFlightTypeId = booking.flightTypeId || (isVoucherBooking ? voucherFlightType?.id || '' : '');
   const fieldClass = 'w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500';
   const labelClass = 'block text-xs font-medium text-gray-700 mb-1';
 
@@ -119,8 +121,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     takeoffs: undefined as number | undefined,
     landings: undefined as number | undefined,
     comments: '',
-    flight_type_id: booking.flightTypeId || '',
-    payment_type: derivePaymentType(booking.flightTypeId || ''),
+    flight_type_id: defaultFlightTypeId,
+    payment_type: derivePaymentType(defaultFlightTypeId),
     observations: '',
     hobbs_start: undefined as number | undefined,
     hobbs_end: undefined as number | undefined,
@@ -162,10 +164,21 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   // Re-derive payment type when billing data loads (paymentMethods/flightTypes async) or flight type changes
   useEffect(() => {
-    if (!formData.flight_type_id || !flightTypes.length) return;
+    if (!flightTypes.length) return;
+
+    if (isVoucherBooking && !formData.flight_type_id && voucherFlightType?.id) {
+      setFormData(prev => ({
+        ...prev,
+        flight_type_id: voucherFlightType.id,
+        payment_type: derivePaymentType(voucherFlightType.id),
+      }));
+      return;
+    }
+
+    if (!formData.flight_type_id) return;
     const derived = derivePaymentType(formData.flight_type_id);
     setFormData(prev => ({ ...prev, payment_type: derived }));
-  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking, booking.paymentType]);
+  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking, booking.paymentType, voucherFlightType?.id]);
 
   useEffect(() => {
     if (mode !== 'edit') return;
