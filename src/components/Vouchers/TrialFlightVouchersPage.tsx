@@ -174,6 +174,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const { products, vouchers, loading, refetch, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
+  const [showProductForm, setShowProductForm] = useState(false);
   const [instructorEndorsements, setInstructorEndorsements] = useState<InstructorEndorsementRow[]>([]);
   const [issueForm, setIssueForm] = useState(emptyIssueForm);
   const [saving, setSaving] = useState(false);
@@ -301,6 +302,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const startEdit = (product: TrialFlightVoucherProduct) => {
     setEditingProductId(product.id);
+    setShowProductForm(true);
     setStripeValidation(null);
     setProductForm({
       name: product.name,
@@ -320,6 +322,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
   const applyPreset = (aircraftMode: TrialFlightVoucherAircraftMode) => {
     setEditingProductId(undefined);
+    setShowProductForm(true);
     setStripeValidation(null);
     setProductForm(buildPresetProduct(aircraftMode, instructors.map(instructor => instructor.id)));
     toast.success(`${modeLabel(aircraftMode)} voucher template loaded`);
@@ -447,6 +450,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       await saveProduct(productForm, editingProductId);
       setProductForm(emptyProduct());
       setEditingProductId(undefined);
+      setShowProductForm(false);
       setStripeValidation(null);
     } finally {
       setSaving(false);
@@ -1233,7 +1237,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">Trial instructional flights</p>
             <h1 className="mt-2 text-2xl font-bold">Gift Vouchers</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">
-              Manage public voucher sales, manual voucher issue, Stripe checkout, email delivery and booking redemption from one place.
+              Sell, issue and manage trial flight vouchers.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4 lg:min-w-[30rem]">
@@ -1257,6 +1261,50 @@ export const TrialFlightVouchersPage: React.FC = () => {
         </div>
       </div>
 
+      <section className="mb-6 grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Stripe</p>
+          <p className="mt-1 text-xl font-bold text-gray-950 dark:text-gray-100">{stripeReadyLabel}</p>
+          <p className="mt-2 text-sm leading-5 text-gray-600 dark:text-gray-300">
+            {stripeStatusLoading
+              ? 'Checking payment connection...'
+              : stripeConnected
+                ? `${stripeStatus?.livemode ? 'Live' : 'Test'} checkout is connected.`
+                : 'Connect Stripe before selling vouchers online.'}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Online sales</p>
+          <p className="mt-1 text-xl font-bold text-gray-950 dark:text-gray-100">
+            {checkoutReadyProducts.length}/{activeProducts.length || 0} ready
+          </p>
+          <p className="mt-2 text-sm leading-5 text-gray-600 dark:text-gray-300">
+            Customers can buy checkout-ready products on the public voucher page.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">Scheduled emails</p>
+          <p className="mt-1 text-xl font-bold text-gray-950 dark:text-gray-100">
+            {dueRecipientVouchers.length > 0 ? `${dueRecipientVouchers.length} due` : `${futureRecipientVouchers.length} scheduled`}
+          </p>
+          {dueRecipientVouchers.length > 0 ? (
+            <button
+              type="button"
+              onClick={handleProcessDueEmails}
+              disabled={saving}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+            >
+              <Mail className="h-4 w-4" />
+              Send due now
+            </button>
+          ) : (
+            <p className="mt-2 text-sm leading-5 text-gray-600 dark:text-gray-300">No voucher emails need action now.</p>
+          )}
+        </div>
+      </section>
+
+      {false && (
+      <>
       <section className="mb-6 grid gap-3 lg:grid-cols-4">
         {standardReadinessSummary.map(item => (
           <div
@@ -1677,6 +1725,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
         </div>
       </section>
 
+      </>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -1689,6 +1740,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
               onClick={() => {
                 setEditingProductId(undefined);
                 setProductForm(emptyProduct());
+                setShowProductForm(true);
               }}
               className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-[#2c2f36] dark:text-gray-200 dark:hover:bg-[#111827]"
             >
@@ -1696,6 +1748,81 @@ export const TrialFlightVouchersPage: React.FC = () => {
               New
             </button>
           </div>
+
+          <div className="space-y-2">
+            {products.map(product => {
+              const checkout = checkoutStatus(product);
+              const booking = bookingReadiness(product);
+              return (
+                <div
+                  key={product.id}
+                  className={`rounded-xl border p-3 transition ${
+                    editingProductId === product.id
+                      ? 'border-blue-300 bg-blue-50 dark:border-blue-400/40 dark:bg-blue-950/20'
+                      : 'border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#111827]'
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-gray-950 dark:text-gray-100">{product.name || 'Untitled voucher'}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                          product.isActive
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                            : 'bg-gray-100 text-gray-600 dark:bg-[#20242b] dark:text-gray-300'
+                        }`}>
+                          {product.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${checkout.className}`}>
+                          {checkout.label}
+                        </span>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                          booking.ready
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200'
+                            : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200'
+                        }`}>
+                          {booking.ready ? 'Bookable' : 'No availability'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {modeLabel(product.aircraftMode)} - {product.durationMinutes} min flight - {formatMoney(product.price)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(product)}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242b]"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleProductActive(product)}
+                        disabled={saving}
+                        className={`inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-60 ${
+                          product.isActive
+                            ? 'border border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-400/30 dark:text-amber-200 dark:hover:bg-amber-950/30'
+                            : 'border border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/30 dark:text-emerald-200 dark:hover:bg-emerald-950/30'
+                        }`}
+                      >
+                        {product.isActive ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {products.length === 0 && (
+              <p className="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-[#363b45] dark:text-gray-400">
+                No voucher products yet. Create a voucher product before issuing vouchers.
+              </p>
+            )}
+          </div>
+
+          {showProductForm && (
+          <>
 
           <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-3 dark:border-blue-400/20 dark:bg-blue-950/20">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1984,11 +2111,29 @@ export const TrialFlightVouchersPage: React.FC = () => {
             </div>
           </div>
 
-          <button onClick={handleSaveProduct} disabled={saving} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 sm:w-auto">
-            <Save className="h-4 w-4" />
-            {editingProductId ? 'Save product' : 'Create product'}
-          </button>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button onClick={handleSaveProduct} disabled={saving} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 sm:w-auto">
+              <Save className="h-4 w-4" />
+              {editingProductId ? 'Save product' : 'Create product'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowProductForm(false);
+                setEditingProductId(undefined);
+                setProductForm(emptyProduct());
+                setStripeValidation(null);
+              }}
+              className="inline-flex w-full items-center justify-center rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242b] sm:w-auto"
+            >
+              Cancel
+            </button>
+          </div>
 
+          </>
+          )}
+
+          {false && (
           <div className="mt-6 border-t border-gray-200 pt-4 dark:border-[#2c2f36]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
@@ -2114,6 +2259,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
               )}
             </div>
           </div>
+          )}
         </section>
 
         <section className="space-y-6">
