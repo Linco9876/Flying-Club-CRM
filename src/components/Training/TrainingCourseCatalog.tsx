@@ -69,6 +69,8 @@ interface NewCourseState {
 }
 
 type CourseBuildMode = 'simple' | 'advanced';
+type CourseBuilderStep = 'details' | 'rules' | 'assessment' | 'resources';
+type LessonBuilderStep = 'details' | 'content' | 'assessment';
 
 interface NewLessonState {
   name: string;
@@ -501,6 +503,17 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
 
 const gradingOptions: LessonGradingSystem[] = ['NC/S/C/-', 'Pass or Fail', 'Out of 100'];
 const resourceTypeOptions: TrainingResource['type'][] = ['document', 'video', 'link', 'checklist'];
+const courseBuilderSteps: Array<{ id: CourseBuilderStep; label: string; description: string }> = [
+  { id: 'details', label: '1. Basics', description: 'Name, version, overview and objectives' },
+  { id: 'rules', label: '2. Rules', description: 'Sign-off, declarations and endorsements' },
+  { id: 'assessment', label: '3. Assessment', description: 'Course criteria and pass targets' },
+  { id: 'resources', label: '4. Resources', description: 'Optional documents, links and references' },
+];
+const lessonBuilderSteps: Array<{ id: LessonBuilderStep; label: string; description: string }> = [
+  { id: 'details', label: '1. Lesson details', description: 'Name, sequence, stage and duration' },
+  { id: 'content', label: '2. Lesson content', description: 'Objectives, exercises, theory and notes' },
+  { id: 'assessment', label: '3. Assessment', description: 'Test flight flag, matrix and pass marks' },
+];
 
 const getDefaultPassingGrade = (system: LessonGradingSystem) => {
   switch (system) {
@@ -1300,6 +1313,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   // Create course form
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newCourseMode, setNewCourseMode] = useState<CourseBuildMode>('simple');
+  const [createCourseStep, setCreateCourseStep] = useState<CourseBuilderStep>('details');
   const [newCourse, setNewCourse] = useState<CourseFormState>(emptyCourseForm);
   // Course-level criteria (shared across all lessons)
   const [courseCriteria, setCourseCriteria] = useState<EditableCriterion[]>([]);
@@ -1307,6 +1321,7 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   // Edit course form
   const [showEditCourseForm, setShowEditCourseForm] = useState(false);
+  const [editCourseStep, setEditCourseStep] = useState<CourseBuilderStep>('details');
   const [editCourse, setEditCourse] = useState<CourseFormState>(emptyCourseForm);
   const [editCourseCriteria, setEditCourseCriteria] = useState<EditableCriterion[]>([]);
   const [editCourseExams, setEditCourseExams] = useState<EditableExam[]>([]);
@@ -1318,6 +1333,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   // Lesson form
   const [showLessonForm, setShowLessonForm] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+  const [lessonBuilderStep, setLessonBuilderStep] = useState<LessonBuilderStep>('details');
   const [newLesson, setNewLesson] = useState<NewLessonState>(emptyLessonForm);
   // Per-lesson pass marks: criterionId → passingGrade
   const [lessonPassMarks, setLessonPassMarks] = useState<Record<string, string>>({});
@@ -1503,6 +1519,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     setNewLesson(emptyLessonForm());
     setLessonPassMarks({});
     setEditingLessonId(null);
+    setLessonBuilderStep('details');
   };
 
   const handleModuleSelect = (moduleId: string) => {
@@ -1524,6 +1541,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const handleOpenEditCourse = () => {
     if (!selectedModule) return;
     queueFormScroll('edit-course');
+    setEditCourseStep('details');
     setEditCourse({
       title: selectedModule.title,
       category: selectedModule.category,
@@ -1917,6 +1935,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setShowCreateForm(false);
       setNewCourse(emptyCourseForm());
       setNewCourseMode('simple');
+      setCreateCourseStep('details');
       setCourseCriteria([]);
       setCourseResources([]);
       toast.success('New course created');
@@ -1929,6 +1948,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     setShowCreateForm(false);
     setNewCourse(emptyCourseForm());
     setNewCourseMode('simple');
+    setCreateCourseStep('details');
     setCourseCriteria([]);
     setCourseResources([]);
   };
@@ -1972,6 +1992,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       )
     );
     setEditingLessonId(null);
+    setLessonBuilderStep('details');
     setShowLessonForm(true);
     setShowEditCourseForm(false);
   };
@@ -2138,7 +2159,10 @@ export const TrainingCourseCatalog: React.FC = () => {
               </p>
             </div>
             <button
-              onClick={() => setShowCreateForm(true)}
+              onClick={() => {
+                setCreateCourseStep('details');
+                setShowCreateForm(true);
+              }}
               className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500"
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -2257,6 +2281,27 @@ export const TrainingCourseCatalog: React.FC = () => {
               );
             })}
           </div>
+          <div className="mb-5 grid gap-2 md:grid-cols-4">
+            {courseBuilderSteps.map((step) => {
+              const active = createCourseStep === step.id;
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => setCreateCourseStep(step.id)}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    active
+                      ? 'border-blue-500 bg-white text-blue-950 shadow-sm ring-2 ring-blue-200'
+                      : 'border-blue-200 bg-blue-100/40 text-blue-800 hover:bg-white'
+                  }`}
+                >
+                  <span className="block text-sm font-bold">{step.label}</span>
+                  <span className="mt-1 block text-xs leading-4 opacity-80">{step.description}</span>
+                </button>
+              );
+            })}
+          </div>
+          {createCourseStep === 'details' && (
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex flex-col text-sm font-medium text-blue-900">
               Course title
@@ -2357,6 +2402,10 @@ export const TrainingCourseCatalog: React.FC = () => {
                 className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </label>
+          </div>
+          )}
+          {createCourseStep === 'rules' && (
+          <div className="grid gap-4 md:grid-cols-2">
             <label className="flex items-start gap-3 rounded-lg border border-blue-200 bg-white p-4 text-sm text-blue-900 md:col-span-2">
               <input
                 type="checkbox"
@@ -2496,7 +2545,9 @@ export const TrainingCourseCatalog: React.FC = () => {
               )}
             </div>
           </div>
+          )}
           {/* Assessment criteria for new course */}
+          {createCourseStep === 'assessment' && (
           <div className="mt-6 rounded-lg border border-blue-200 bg-white p-4">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2 text-blue-900">
@@ -2573,6 +2624,8 @@ export const TrainingCourseCatalog: React.FC = () => {
               ))}
             </div>
           </div>
+          )}
+          {createCourseStep === 'resources' && (
           <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-slate-900">
@@ -2653,8 +2706,27 @@ export const TrainingCourseCatalog: React.FC = () => {
               </div>
             )}
           </div>
+          )}
           <div className="mt-6 flex justify-end gap-3">
             <button onClick={handleCancelCreate} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-100">Cancel</button>
+            {createCourseStep !== 'details' && (
+              <button
+                type="button"
+                onClick={() => setCreateCourseStep(courseBuilderSteps[Math.max(0, courseBuilderSteps.findIndex((step) => step.id === createCourseStep) - 1)].id)}
+                className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-50"
+              >
+                Back
+              </button>
+            )}
+            {createCourseStep !== 'resources' && (
+              <button
+                type="button"
+                onClick={() => setCreateCourseStep(courseBuilderSteps[Math.min(courseBuilderSteps.length - 1, courseBuilderSteps.findIndex((step) => step.id === createCourseStep) + 1)].id)}
+                className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-50"
+              >
+                Next
+              </button>
+            )}
             <button onClick={handleCreateCourse} className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />Create course
             </button>
@@ -3009,6 +3081,27 @@ export const TrainingCourseCatalog: React.FC = () => {
                     </div>
                     <button onClick={() => setShowEditCourseForm(false)} className="text-sm text-gray-500 underline-offset-2 hover:underline">Cancel</button>
                   </div>
+                  <div className="mb-5 grid gap-2 md:grid-cols-4">
+                    {courseBuilderSteps.map((step) => {
+                      const active = editCourseStep === step.id;
+                      return (
+                        <button
+                          key={step.id}
+                          type="button"
+                          onClick={() => setEditCourseStep(step.id)}
+                          className={`rounded-xl border px-3 py-3 text-left transition ${
+                            active
+                              ? 'border-blue-500 bg-blue-50 text-blue-950 shadow-sm ring-2 ring-blue-100'
+                              : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-white'
+                          }`}
+                        >
+                          <span className="block text-sm font-bold">{step.label}</span>
+                          <span className="mt-1 block text-xs leading-4 opacity-80">{step.description}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {editCourseStep === 'details' && (
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="flex flex-col text-sm font-medium text-gray-700">
                       Course title
@@ -3065,6 +3158,10 @@ export const TrainingCourseCatalog: React.FC = () => {
                       Tags (comma separated)
                       <input type="text" value={editCourse.tags} onChange={(e) => setEditCourse((p) => ({ ...p, tags: e.target.value }))} className="mt-1 rounded-md border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" />
                     </label>
+                  </div>
+                  )}
+                  {editCourseStep === 'rules' && (
+                  <div className="grid gap-4 md:grid-cols-2">
                     <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 md:col-span-2">
                       <input
                         type="checkbox"
@@ -3204,7 +3301,9 @@ export const TrainingCourseCatalog: React.FC = () => {
                       )}
                     </div>
                   </div>
+                  )}
                   {/* Assessment criteria editor */}
+                  {editCourseStep === 'assessment' && (
                   <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2 text-gray-700">
@@ -3279,6 +3378,9 @@ export const TrainingCourseCatalog: React.FC = () => {
                       ))}
                     </div>
                   </div>
+                  )}
+                  {editCourseStep === 'resources' && (
+                  <>
                   <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2 text-amber-950">
@@ -3420,8 +3522,28 @@ export const TrainingCourseCatalog: React.FC = () => {
                       </div>
                     )}
                   </div>
+                  </>
+                  )}
                   <div className="mt-5 flex justify-end gap-3">
                     <button onClick={() => setShowEditCourseForm(false)} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    {editCourseStep !== 'details' && (
+                      <button
+                        type="button"
+                        onClick={() => setEditCourseStep(courseBuilderSteps[Math.max(0, courseBuilderSteps.findIndex((step) => step.id === editCourseStep) - 1)].id)}
+                        className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Back
+                      </button>
+                    )}
+                    {editCourseStep !== 'resources' && (
+                      <button
+                        type="button"
+                        onClick={() => setEditCourseStep(courseBuilderSteps[Math.min(courseBuilderSteps.length - 1, courseBuilderSteps.findIndex((step) => step.id === editCourseStep) + 1)].id)}
+                        className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Next
+                      </button>
+                    )}
                     <button onClick={handleSaveEditCourse} className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
                       <Pencil className="mr-2 h-4 w-4" />Save changes
                     </button>
@@ -3443,6 +3565,27 @@ export const TrainingCourseCatalog: React.FC = () => {
                       Cancel
                     </button>
                   </div>
+                  <div className="mt-5 grid gap-2 md:grid-cols-3">
+                    {lessonBuilderSteps.map((step) => {
+                      const active = lessonBuilderStep === step.id;
+                      return (
+                        <button
+                          key={step.id}
+                          type="button"
+                          onClick={() => setLessonBuilderStep(step.id)}
+                          className={`rounded-xl border px-3 py-3 text-left transition ${
+                            active
+                              ? 'border-blue-500 bg-white text-blue-950 shadow-sm'
+                              : 'border-blue-200 bg-blue-100/50 text-blue-800 hover:bg-white'
+                          }`}
+                        >
+                          <span className="block text-sm font-semibold">{step.label}</span>
+                          <span className="mt-1 block text-xs leading-5 opacity-80">{step.description}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {lessonBuilderStep === 'details' && (
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <label className="flex flex-col text-sm font-medium text-blue-900">
                       Lesson name
@@ -3533,7 +3676,12 @@ export const TrainingCourseCatalog: React.FC = () => {
                           </select>
                         </label>
                       </div>
-                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    </div>
+                  </div>
+                  )}
+                  {lessonBuilderStep === 'content' && (
+                  <div className="mt-4 space-y-4">
+                    <div className="grid gap-3 rounded-lg border border-blue-200 bg-white p-4 md:grid-cols-3">
                         <label className="flex flex-col text-xs font-medium text-blue-900">
                           Key exercises
                           <textarea
@@ -3564,21 +3712,25 @@ export const TrainingCourseCatalog: React.FC = () => {
                             className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
                           />
                         </label>
-                      </div>
                     </div>
-                    <RichTextEditor
-                      label="Flight exercises"
-                      value={newLesson.flightExercises}
-                      onChange={(value) => setNewLesson((prev) => ({ ...prev, flightExercises: value }))}
-                      placeholder="Use bullet points or paragraphs to describe each flight exercise."
-                    />
-                    <RichTextEditor
-                      label="Theory focus"
-                      value={newLesson.theory}
-                      onChange={(value) => setNewLesson((prev) => ({ ...prev, theory: value }))}
-                      placeholder="Summarise the key theory discussion points, references or briefing sequence."
-                    />
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <RichTextEditor
+                        label="Flight exercises"
+                        value={newLesson.flightExercises}
+                        onChange={(value) => setNewLesson((prev) => ({ ...prev, flightExercises: value }))}
+                        placeholder="Use bullet points or paragraphs to describe each flight exercise."
+                      />
+                      <RichTextEditor
+                        label="Theory focus"
+                        value={newLesson.theory}
+                        onChange={(value) => setNewLesson((prev) => ({ ...prev, theory: value }))}
+                        placeholder="Summarise the key theory discussion points, references or briefing sequence."
+                      />
+                    </div>
                   </div>
+                  )}
+                  {lessonBuilderStep === 'assessment' && (
+                  <div className="mt-4 space-y-6">
                   <label className="mt-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-white p-4 text-sm text-amber-950">
                     <input
                       type="checkbox"
@@ -3717,6 +3869,8 @@ export const TrainingCourseCatalog: React.FC = () => {
                       </div>
                     )}
                   </div>
+                  </div>
+                  )}
                   <div className="mt-6 flex justify-end gap-3">
                     <button
                       onClick={handleCancelLesson}
@@ -3724,6 +3878,24 @@ export const TrainingCourseCatalog: React.FC = () => {
                     >
                       Cancel
                     </button>
+                    {lessonBuilderStep !== 'details' && (
+                      <button
+                        type="button"
+                        onClick={() => setLessonBuilderStep(lessonBuilderSteps[Math.max(0, lessonBuilderSteps.findIndex((step) => step.id === lessonBuilderStep) - 1)].id)}
+                        className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-50"
+                      >
+                        Back
+                      </button>
+                    )}
+                    {lessonBuilderStep !== 'assessment' && (
+                      <button
+                        type="button"
+                        onClick={() => setLessonBuilderStep(lessonBuilderSteps[Math.min(lessonBuilderSteps.length - 1, lessonBuilderSteps.findIndex((step) => step.id === lessonBuilderStep) + 1)].id)}
+                        className="rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-medium text-blue-900 transition hover:bg-blue-50"
+                      >
+                        Next
+                      </button>
+                    )}
                     <button
                       onClick={handleCreateLesson}
                       className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
