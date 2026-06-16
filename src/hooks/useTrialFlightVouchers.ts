@@ -216,7 +216,7 @@ export const useTrialFlightVouchers = () => {
     const payload = {
       name: product.name,
       description: product.description,
-      aircraft_mode: product.aircraftMode,
+      aircraft_mode: 'specific',
       aircraft_ids: product.aircraftIds,
       instructor_ids: product.instructorIds,
       duration_minutes: product.durationMinutes,

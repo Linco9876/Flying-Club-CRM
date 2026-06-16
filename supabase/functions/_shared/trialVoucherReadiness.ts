@@ -5,16 +5,7 @@ const normaliseEndorsementType = (value: unknown) => String(value || "").trim().
 
 export const aircraftMatchesTrialVoucherProduct = (aircraft: any, product: any) => {
   const attachedIds = new Set<string>(product.aircraft_ids || []);
-  if (attachedIds.size > 0) return attachedIds.has(aircraft.id);
-
-  const label = `${aircraft.registration || ""} ${aircraft.make || ""} ${aircraft.model || ""}`.toLowerCase();
-  const compactLabel = label.replace(/[^a-z0-9]/g, "");
-  if (product.aircraft_mode === "specific") return false;
-  if (product.aircraft_mode === "tecnam") return label.includes("tecnam");
-  if (product.aircraft_mode === "archer") {
-    return label.includes("archer") || compactLabel.includes("pa28") || compactLabel.includes("piperpa28");
-  }
-  return false;
+  return attachedIds.size > 0 && attachedIds.has(aircraft.id);
 };
 
 export const instructorHasTrialVoucherAircraftEndorsement = (

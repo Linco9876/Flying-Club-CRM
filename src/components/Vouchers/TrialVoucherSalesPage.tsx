@@ -29,11 +29,6 @@ interface CheckoutStatus {
   warning?: string;
 }
 
-const standardVoucherNames: Record<'tecnam' | 'archer', string> = {
-  tecnam: 'Tecnam Trial Instructional Flight',
-  archer: 'PA-28 Archer Trial Instructional Flight',
-};
-
 const formatPrice = (price: number) =>
   price > 0
     ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(price)
@@ -66,18 +61,11 @@ export const TrialVoucherSalesPage: React.FC = () => {
     recipientDeliveryAt: '',
   });
   const minimumDeliveryAt = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 5 * 60_000)), []);
-  const missingStandardOptions = useMemo(() => {
-    const activeModes = new Set(products.map(product => product.aircraftMode));
-    return (['tecnam', 'archer'] as const)
-      .filter(mode => !activeModes.has(mode))
-      .map(mode => ({
-        mode,
-        name: standardVoucherNames[mode],
-        description: mode === 'archer'
-          ? 'A PA-28 Archer trial instructional flight voucher option is coming soon.'
-          : 'A Tecnam trial instructional flight voucher option is coming soon.',
-      }));
-  }, [products]);
+  const missingStandardOptions: Array<{
+    mode: TrialFlightVoucherAircraftMode;
+    name: string;
+    description: string;
+  }> = [];
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
