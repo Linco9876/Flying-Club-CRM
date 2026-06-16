@@ -843,6 +843,14 @@ export const TrialFlightVouchersPage: React.FC = () => {
         return y - Math.max(lines.length - 1, 0) * lineHeight;
       };
 
+      const fittedFontSize = (text: string, font: typeof regular, maxWidth: number, preferredSize: number, minSize: number) => {
+        let size = preferredSize;
+        while (size > minSize && font.widthOfTextAtSize(text, size) > maxWidth) {
+          size -= 0.5;
+        }
+        return size;
+      };
+
       const drawDetailBox = (label: string, value: string, x: number, y: number, boxWidth: number) => {
         page.drawRectangle({
           x,
@@ -864,11 +872,16 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
       drawText('BENDIGO FLYING CLUB', 68, height - 78, { size: 10, font: bold, color: rgb(0.74, 0.86, 1) });
       drawText('Trial Flight Gift Voucher', 68, height - 120, { size: 34, font: bold, color: rgb(1, 1, 1) });
-      drawText(`${productName} for ${recipient}`, 68, height - 152, { size: 15, color: rgb(0.86, 0.92, 1), maxWidth: 600 });
+      drawText(`${productName} for ${recipient}`, 68, height - 152, { size: 15, color: rgb(0.86, 0.92, 1), maxWidth: 440 });
 
-      page.drawRectangle({ x: 564, y: height - 157, width: 210, height: 78, color: paleBlue, borderColor: rgb(0.54, 0.70, 0.94), borderWidth: 1 });
-      drawText('VOUCHER CODE', 584, height - 105, { size: 8.5, font: bold, color: blue });
-      drawText(voucher.code, 584, height - 133, { size: 20, font: bold, color: navy, maxWidth: 170 });
+      const codeBoxX = 518;
+      const codeBoxWidth = 256;
+      const codeTextX = codeBoxX + 18;
+      const codeMaxWidth = codeBoxWidth - 36;
+      const codeFontSize = fittedFontSize(voucher.code, bold, codeMaxWidth, 20, 12);
+      page.drawRectangle({ x: codeBoxX, y: height - 157, width: codeBoxWidth, height: 78, color: paleBlue, borderColor: rgb(0.54, 0.70, 0.94), borderWidth: 1 });
+      drawText('VOUCHER CODE', codeTextX, height - 105, { size: 8.5, font: bold, color: blue });
+      drawText(voucher.code, codeTextX, height - 133, { size: codeFontSize, font: bold, color: navy });
 
       const boxY = height - 240;
       const boxWidth = 172;
