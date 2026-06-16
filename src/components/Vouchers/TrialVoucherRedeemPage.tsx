@@ -76,6 +76,11 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setRescheduling(false);
       const linkedSlots = data.slots || [];
       setBookedSlot(data.booking || null);
+      if (data.passwordSetupRequired) {
+        setSlots([]);
+        await openPasswordSetup(data.voucher?.code || code);
+        return;
+      }
       const shouldChooseTime = isVoucherAccountUser && data.voucher?.status === 'redeemed' && !data.booking;
       if (linkedSlots.length > 0 || !shouldChooseTime) {
         setSlots(linkedSlots);
@@ -113,7 +118,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         email: current.email || data.voucher?.recipientEmail || '',
       }));
       if (isVoucherAccountUser && data.voucher?.status === 'redeemed') {
-        await loadAvailability(data.voucher?.code || nextCode);
+        await loadLinkedVoucher();
       }
     } catch (error) {
       setVoucher(null);

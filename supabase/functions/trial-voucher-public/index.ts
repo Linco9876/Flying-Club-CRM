@@ -733,7 +733,7 @@ const getBookingSummary = async (adminClient: SupabaseAdminClient, bookingId?: s
 const assertVoucherAccount = async (adminClient: SupabaseAdminClient, userId: string) => {
   const { data: linkedUser, error } = await adminClient
     .from("users")
-    .select("id,email,name,portal_access_scope,is_active")
+    .select("id,email,name,portal_access_scope,is_active,trial_voucher_password_set_at")
     .eq("id", userId)
     .maybeSingle();
 
@@ -746,6 +746,18 @@ const assertVoucherAccount = async (adminClient: SupabaseAdminClient, userId: st
   }
 
   return { ok: true, user: linkedUser };
+};
+
+const assertVoucherPasswordSet = (voucherAccount: { user?: any }) => {
+  if (!voucherAccount.user?.trial_voucher_password_set_at) {
+    return {
+      ok: false,
+      error: "Set your voucher account password before viewing available times.",
+      passwordSetupRequired: true,
+    };
+  }
+
+  return { ok: true };
 };
 
 const getActiveBookingForReschedule = async (adminClient: SupabaseAdminClient, bookingId?: string | null) => {
@@ -1082,6 +1094,18 @@ Deno.serve(async (req: Request) => {
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
 
       const publicVoucher = toPublicVoucher(voucher, product);
+      const passwordStatus = assertVoucherPasswordSet(voucherAccount);
+      if (!passwordStatus.ok) {
+        const booking = voucher.status === "booked" ? await getBookingSummary(adminClient, voucher.booked_booking_id) : null;
+        return json({
+          voucher: publicVoucher,
+          slots: [],
+          booking,
+          passwordSetupRequired: true,
+          error: passwordStatus.error,
+        });
+      }
+
       const slots = voucher.status === "redeemed" ? await buildAvailableSlots(adminClient, product) : [];
       const booking = voucher.status === "booked" ? await getBookingSummary(adminClient, voucher.booked_booking_id) : null;
       return json({ voucher: publicVoucher, slots, booking });
@@ -1190,6 +1214,8 @@ Deno.serve(async (req: Request) => {
       }
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
+      const passwordStatus = assertVoucherPasswordSet(voucherAccount);
+      if (!passwordStatus.ok) return json(passwordStatus, 409);
 
       if (!["redeemed"].includes(voucher.status)) {
         return json({ error: "This voucher is not available for booking" }, 409);
@@ -1214,6 +1240,8 @@ Deno.serve(async (req: Request) => {
       }
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
+      const passwordStatus = assertVoucherPasswordSet(voucherAccount);
+      if (!passwordStatus.ok) return json(passwordStatus, 409);
 
       const currentBooking = await getActiveBookingForReschedule(adminClient, voucher.booked_booking_id);
       if (!currentBooking) return json({ error: "The current booking could not be found. Contact Bendigo Flying Club for help." }, 404);
@@ -1246,6 +1274,8 @@ Deno.serve(async (req: Request) => {
       }
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
+      const passwordStatus = assertVoucherPasswordSet(voucherAccount);
+      if (!passwordStatus.ok) return json(passwordStatus, 409);
 
       const currentBooking = await getActiveBookingForReschedule(adminClient, voucher.booked_booking_id);
       if (!currentBooking) return json({ error: "The current booking could not be found. Contact Bendigo Flying Club for help." }, 404);
@@ -1352,6 +1382,8 @@ Deno.serve(async (req: Request) => {
       }
       const voucherAccount = await assertVoucherAccount(adminClient, user.id);
       if (!voucherAccount.ok) return json({ error: voucherAccount.error }, 403);
+      const passwordStatus = assertVoucherPasswordSet(voucherAccount);
+      if (!passwordStatus.ok) return json(passwordStatus, 409);
 
       const startTime = new Date(String(body.startTime || ""));
       const aircraftId = String(body.aircraftId || "");

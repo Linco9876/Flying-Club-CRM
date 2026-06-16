@@ -215,6 +215,30 @@ export const ResetPasswordPage: React.FC = () => {
     return { redirectTo: '/', keepSignedIn: false };
   };
 
+  const markTrialVoucherPasswordSet = async () => {
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData.user?.id;
+    if (!userId) return;
+
+    const { data: profile } = await supabase
+      .from('users')
+      .select('portal_access_scope')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile?.portal_access_scope !== 'trial_voucher') return;
+
+    const { error } = await supabase
+      .from('users')
+      .update({ trial_voucher_password_set_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Failed to mark trial voucher password setup complete:', error);
+      throw new Error('Password was updated, but the voucher account setup could not be completed. Please contact Bendigo Flying Club.');
+    }
+  };
+
   useEffect(() => {
     if (!isValidToken) return;
     if (window.location.hash || window.location.search) {
@@ -248,6 +272,7 @@ export const ResetPasswordPage: React.FC = () => {
 
       if (error) throw error;
 
+      await markTrialVoucherPasswordSet();
       const redirect = await getPostResetRedirect();
       toast.success(redirect.keepSignedIn ? 'Password updated. Opening your voucher booking page...' : 'Password updated successfully! Redirecting to login...');
 
@@ -265,6 +290,7 @@ export const ResetPasswordPage: React.FC = () => {
       const message = error.message || 'Failed to update password';
 
       if (message.toLowerCase().includes('same as the old')) {
+        await markTrialVoucherPasswordSet();
         const redirect = await getPostResetRedirect();
         toast.success(redirect.keepSignedIn ? 'That password is already current. Opening your voucher booking page...' : 'That password is already current for this account. Redirecting to login...');
         if (!redirect.keepSignedIn) {
