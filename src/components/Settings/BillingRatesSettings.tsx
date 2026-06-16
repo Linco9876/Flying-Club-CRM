@@ -80,8 +80,12 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
   const updatePaymentMethod = (id: string, updates: Partial<PaymentMethod>) => {
     const method = draftPaymentMethods.find(item => item.id === id);
-    if (method?.systemKey === 'stripe_card' && updates.active === true && !stripeStatus?.connected) {
-      toast.error('Connect Stripe in Settings > Integrations before enabling Stripe for flight payments.');
+    if (
+      method?.systemKey === 'stripe_card' &&
+      !stripeStatus?.connected &&
+      (updates.active === true || updates.allowAccountTopup === true)
+    ) {
+      toast.error('Connect Stripe in Settings > Integrations before enabling Stripe payments.');
       return;
     }
     setDraftPaymentMethods(current => current.map(method => method.id === id ? { ...method, ...updates } : method));
@@ -267,7 +271,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   <input
                     type="checkbox"
                     checked={method.allowAccountTopup !== false}
-                    disabled={!canEdit || isStripeMethod}
+                    disabled={!canEdit || (isStripeMethod && !stripeConnected)}
                     onChange={event => updatePaymentMethod(method.id, { allowAccountTopup: event.target.checked })}
                     className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />

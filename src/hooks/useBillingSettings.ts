@@ -265,7 +265,7 @@ export const useBillingSettings = () => {
           name: method.systemKey === 'stripe_card' ? 'Stripe Card Payment' : method.name.trim(),
           description: method.description?.trim() || null,
           active: method.active,
-          allow_account_topup: method.systemKey === 'stripe_card' ? false : method.allowAccountTopup !== false,
+          allow_account_topup: method.allowAccountTopup !== false,
           display_order: index + 1,
           is_system: method.isSystem === true,
           system_key: method.systemKey || null,
