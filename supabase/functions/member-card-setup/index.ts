@@ -35,9 +35,10 @@ const safeReturnUrl = (value: unknown, fallbackPath: string) => {
 };
 
 const consentText = [
-  "I authorise Bendigo Flying Club to securely store my card with Stripe and charge that saved card for flight charges that have been logged and confirmed in the Members Flight Management System.",
+  "I authorise Bendigo Flying Club to securely store my card with Stripe and charge my saved card for flight charges, aircraft hire, training flights, and related flying charges that are logged and confirmed in the Members Flight Management System.",
+  "I understand the final amount may be calculated after the flight from the aircraft rate, flight type, tach/flight time, instructor charges, and any approved adjustments.",
   "I understand my card details are stored by Stripe, not by the CRM, and I can remove or replace my saved card from my portal.",
-  "I understand failed payments may leave the flight charge outstanding and may need to be paid by another method.",
+  "If a charge fails, I remain responsible for the outstanding balance.",
 ].join(" ");
 
 const getAuthUser = async (adminClient: any, req: Request) => {

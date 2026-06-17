@@ -289,7 +289,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700 dark:text-gray-200">
-                {stripeCardStatus?.consentText || 'I authorise Bendigo Flying Club to securely store my card with Stripe and charge confirmed flight charges to that saved card.'}
+                {stripeCardStatus?.consentText || 'I authorise Bendigo Flying Club to securely store my card with Stripe and charge my saved card for flight charges, aircraft hire, training flights, and related flying charges that are logged and confirmed in the Members Flight Management System. I understand the final amount may be calculated after the flight from the aircraft rate, flight type, tach/flight time, instructor charges, and any approved adjustments. I understand my card details are stored by Stripe, not by the CRM, and I can remove or replace my saved card from my portal. If a charge fails, I remain responsible for the outstanding balance.'}
               </span>
             </label>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
