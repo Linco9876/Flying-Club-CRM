@@ -1,5 +1,5 @@
 const STAFF_ROLES = new Set(['admin', 'senior_instructor', 'instructor']);
-const MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const MODEL = '@cf/meta/llama-3.2-3b-instruct';
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
