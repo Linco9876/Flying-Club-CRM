@@ -262,6 +262,30 @@ export const useBillingAccounts = () => {
     }
   };
 
+  const createFlightPaymentCheckout = async (flightLogId: string) => {
+    try {
+      const returnUrl = `${window.location.origin}/billing`;
+      const { data, error } = await supabase.functions.invoke('create-flight-payment-checkout', {
+        body: {
+          flightLogId,
+          successUrl: `${returnUrl}?stripe_flight=success`,
+          cancelUrl: `${returnUrl}?stripe_flight=cancelled`,
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.checkoutUrl) throw new Error('Stripe checkout did not return a payment link');
+
+      toast.success('Stripe checkout link ready');
+      await fetchAll();
+      return data as { checkoutUrl: string; sessionId: string; flightLogId: string };
+    } catch (err) {
+      console.error('Error creating Stripe flight payment checkout:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to create Stripe payment link');
+      throw err;
+    }
+  };
+
   const verifyTransaction = async (transactionId: string) => {
     try {
       // Fetch transaction to get amount and user
@@ -360,6 +384,7 @@ export const useBillingAccounts = () => {
     loading,
     addTopUp,
     markFlightPaid,
+    createFlightPaymentCheckout,
     verifyTransaction,
     rejectTransaction,
     refetch: fetchAll,

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX } from 'lucide-react';
+import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2 } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { format, parseISO } from 'date-fns';
@@ -187,7 +187,7 @@ const RejectModal: React.FC<{
 };
 
 export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { transactions, unpaidFlights, loading, markFlightPaid, verifyTransaction, rejectTransaction } = billing;
+  const { transactions, unpaidFlights, loading, markFlightPaid, createFlightPaymentCheckout, verifyTransaction, rejectTransaction } = billing;
   const { paymentMethods } = useBillingSettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
@@ -197,6 +197,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const [markingPaid, setMarkingPaid] = useState<{ flightId: string; description: string; amount: number | null; paymentType: string | null } | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [creatingStripeCheckoutId, setCreatingStripeCheckoutId] = useState<string | null>(null);
   const itemsPerPage = 25;
 
   const allRows = useMemo(() => {
@@ -338,6 +339,16 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     }
   };
 
+  const handleCreateStripeCheckout = async (flightLogId: string) => {
+    setCreatingStripeCheckoutId(flightLogId);
+    try {
+      const checkout = await createFlightPaymentCheckout(flightLogId);
+      window.open(checkout.checkoutUrl, '_blank', 'noopener,noreferrer');
+    } finally {
+      setCreatingStripeCheckoutId(null);
+    }
+  };
+
   const rejectingRow = rejectingId ? allRows.find(r => r.id === rejectingId) : null;
 
   const statusBadge = (row: typeof allRows[0]) => {
@@ -384,15 +395,33 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const rowActions = (row: typeof allRows[0], compact = false) => (
     <>
       {row.rowType === 'unpaid' && row.flightLogId && (
-        <button
-          onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}
-          className={`flex items-center justify-center gap-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${
-            compact ? 'w-full px-3 py-2' : 'px-2.5 py-1.5'
-          }`}
-        >
-          <CheckCircle className="h-3.5 w-3.5" />
-          Mark Paid
-        </button>
+        <div className={`flex items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
+          {row.paymentType?.toLowerCase().includes('stripe') && (
+            <button
+              onClick={() => handleCreateStripeCheckout(row.flightLogId!)}
+              disabled={creatingStripeCheckoutId === row.flightLogId}
+              className={`flex items-center justify-center gap-1 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors ${
+                compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+              }`}
+            >
+              {creatingStripeCheckoutId === row.flightLogId ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CreditCard className="h-3.5 w-3.5" />
+              )}
+              Stripe Link
+            </button>
+          )}
+          <button
+            onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}
+            className={`flex items-center justify-center gap-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${
+              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+            }`}
+          >
+            <CheckCircle className="h-3.5 w-3.5" />
+            Mark Paid
+          </button>
+        </div>
       )}
       {row.isTopup && row.verifiedStatus === 'pending' && (
         <div className={`flex items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
