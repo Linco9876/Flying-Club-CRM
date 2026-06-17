@@ -187,7 +187,7 @@ const RejectModal: React.FC<{
 };
 
 export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { transactions, unpaidFlights, loading, markFlightPaid, createFlightPaymentCheckout, verifyTransaction, rejectTransaction } = billing;
+  const { transactions, unpaidFlights, loading, markFlightPaid, createFlightPaymentCheckout, chargeFlightSavedCard, verifyTransaction, rejectTransaction } = billing;
   const { paymentMethods } = useBillingSettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
@@ -198,6 +198,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [creatingStripeCheckoutId, setCreatingStripeCheckoutId] = useState<string | null>(null);
+  const [chargingSavedCardId, setChargingSavedCardId] = useState<string | null>(null);
   const itemsPerPage = 25;
 
   const allRows = useMemo(() => {
@@ -363,6 +364,16 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     }
   };
 
+  const handleChargeSavedCard = async (flightLogId: string) => {
+    if (!window.confirm('Charge this member’s saved Stripe card for the confirmed flight amount?')) return;
+    setChargingSavedCardId(flightLogId);
+    try {
+      await chargeFlightSavedCard(flightLogId);
+    } finally {
+      setChargingSavedCardId(null);
+    }
+  };
+
   const rejectingRow = rejectingId ? allRows.find(r => r.id === rejectingId) : null;
 
   const statusBadge = (row: typeof allRows[0]) => {
@@ -411,20 +422,36 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
       {row.rowType === 'unpaid' && row.flightLogId && (
         <div className={`flex items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
           {row.paymentType?.toLowerCase().includes('stripe') && (
-            <button
-              onClick={() => handleCreateStripeCheckout(row.flightLogId!)}
-              disabled={creatingStripeCheckoutId === row.flightLogId}
-              className={`flex items-center justify-center gap-1 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors ${
-                compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
-              }`}
-            >
-              {creatingStripeCheckoutId === row.flightLogId ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CreditCard className="h-3.5 w-3.5" />
-              )}
-              Stripe Link
-            </button>
+            <>
+              <button
+                onClick={() => handleChargeSavedCard(row.flightLogId!)}
+                disabled={chargingSavedCardId === row.flightLogId}
+                className={`flex items-center justify-center gap-1 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors ${
+                  compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+                }`}
+              >
+                {chargingSavedCardId === row.flightLogId ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CreditCard className="h-3.5 w-3.5" />
+                )}
+                Charge Card
+              </button>
+              <button
+                onClick={() => handleCreateStripeCheckout(row.flightLogId!)}
+                disabled={creatingStripeCheckoutId === row.flightLogId}
+                className={`flex items-center justify-center gap-1 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors ${
+                  compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+                }`}
+              >
+                {creatingStripeCheckoutId === row.flightLogId ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CreditCard className="h-3.5 w-3.5" />
+                )}
+                Stripe Link
+              </button>
+            </>
           )}
           <button
             onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}

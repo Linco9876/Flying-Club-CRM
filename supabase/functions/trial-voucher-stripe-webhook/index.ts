@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
 
 type SupabaseAdminClient = any;
 
@@ -88,12 +89,34 @@ const stripeCurrency = (value: unknown) => {
   return currency || "AUD";
 };
 
+const firstJoinRow = (value: unknown) => Array.isArray(value) ? value[0] : value;
+
 const stripePaymentFields = (session: any) => {
   const amount = stripeAmountToDollars(session.amount_total);
   return {
     ...(amount === null ? {} : { payment_amount: amount }),
     payment_currency: stripeCurrency(session.currency),
   };
+};
+
+const fetchStripeObject = async ({
+  adminClient,
+  stripeSecretKey,
+  path,
+}: {
+  adminClient: SupabaseAdminClient;
+  stripeSecretKey: string;
+  path: string;
+}) => {
+  const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+  if (!connectedAccountId) throw new Error("Stripe is not connected for this club");
+
+  const response = await fetch(`https://api.stripe.com${path}`, {
+    headers: stripeHeaders(stripeSecretKey, connectedAccountId),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message || `Stripe request failed with ${response.status}`);
+  return body;
 };
 
 const getFlightLogForSession = async (adminClient: SupabaseAdminClient, session: any) => {
@@ -289,6 +312,202 @@ const getStripePaymentMethod = async (adminClient: SupabaseAdminClient, session:
   return data || { id: null, name: "Stripe Card Payment" };
 };
 
+const handleMemberCardSetupEvent = async ({
+  adminClient,
+  stripeSecretKey,
+  event,
+  session,
+}: {
+  adminClient: SupabaseAdminClient;
+  stripeSecretKey: string;
+  event: any;
+  session: any;
+}) => {
+  const setupRecordId = asString(session.metadata?.setup_session_id);
+  const userId = asString(session.metadata?.user_id || session.client_reference_id);
+  const sessionId = asString(session.id);
+
+  if (!setupRecordId || !userId) throw new Error("Stripe card setup session is missing CRM metadata");
+
+  if (event.type === "checkout.session.expired") {
+    await adminClient
+      .from("member_stripe_card_setup_sessions")
+      .update({ status: "expired", updated_at: new Date().toISOString() })
+      .eq("id", setupRecordId)
+      .eq("user_id", userId);
+    return json({ received: true, cardSetup: "expired" });
+  }
+
+  if (event.type !== "checkout.session.completed") {
+    return json({ received: true, ignored: true });
+  }
+
+  const setupIntentId = asString(session.setup_intent);
+  if (!setupIntentId) throw new Error("Stripe Checkout did not include a SetupIntent");
+
+  const setupIntent = await fetchStripeObject({
+    adminClient,
+    stripeSecretKey,
+    path: `/v1/setup_intents/${encodeURIComponent(setupIntentId)}`,
+  });
+  const paymentMethodId = asString(setupIntent.payment_method);
+  if (!paymentMethodId) throw new Error("Stripe SetupIntent did not include a payment method");
+
+  const paymentMethod = await fetchStripeObject({
+    adminClient,
+    stripeSecretKey,
+    path: `/v1/payment_methods/${encodeURIComponent(paymentMethodId)}`,
+  });
+
+  const { data: setupRecord, error: setupError } = await adminClient
+    .from("member_stripe_card_setup_sessions")
+    .select("id,user_id,stripe_customer_id,consent_text,consent_accepted_at,consent_ip,consent_user_agent")
+    .eq("id", setupRecordId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (setupError) throw setupError;
+  if (!setupRecord) throw new Error("CRM card setup consent record was not found");
+
+  await adminClient
+    .from("member_stripe_payment_methods")
+    .update({ active: false, is_default: false, updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("active", true);
+
+  const card = paymentMethod.card || {};
+  const { error: upsertError } = await adminClient
+    .from("member_stripe_payment_methods")
+    .upsert({
+      user_id: userId,
+      stripe_customer_id: asString(setupIntent.customer || session.customer || setupRecord.stripe_customer_id),
+      stripe_payment_method_id: paymentMethodId,
+      stripe_setup_intent_id: setupIntentId,
+      card_brand: asString(card.brand) || null,
+      card_last4: asString(card.last4) || null,
+      card_exp_month: Number(card.exp_month) || null,
+      card_exp_year: Number(card.exp_year) || null,
+      active: true,
+      is_default: true,
+      consent_text: setupRecord.consent_text,
+      consent_accepted_at: setupRecord.consent_accepted_at,
+      consent_ip: setupRecord.consent_ip,
+      consent_user_agent: setupRecord.consent_user_agent,
+      removed_at: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "stripe_payment_method_id" });
+  if (upsertError) throw upsertError;
+
+  await adminClient
+    .from("member_stripe_card_setup_sessions")
+    .update({
+      stripe_checkout_session_id: sessionId || null,
+      status: "completed",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", setupRecordId);
+
+  return json({ received: true, cardSetup: "completed" });
+};
+
+const handleFlightLogPaymentIntentEvent = async ({
+  adminClient,
+  event,
+  paymentIntent,
+}: {
+  adminClient: SupabaseAdminClient;
+  event: any;
+  paymentIntent: any;
+}) => {
+  const flightLogId = asString(paymentIntent.metadata?.flight_log_id);
+  if (!flightLogId) return json({ received: true, ignored: true });
+
+  const { data: flightLog, error: flightError } = await adminClient
+    .from("flight_logs")
+    .select(`
+      id,
+      student_id,
+      start_time,
+      calculated_cost,
+      payment_status,
+      aircraft!flight_logs_aircraft_id_fkey(registration)
+    `)
+    .eq("id", flightLogId)
+    .maybeSingle();
+  if (flightError) throw flightError;
+  if (!flightLog) throw new Error("Flight log not found for Stripe PaymentIntent");
+
+  const paymentMethod = await getStripePaymentMethod(adminClient, { metadata: paymentIntent.metadata || {} });
+  const now = new Date().toISOString();
+  const amount = stripeAmountToDollars(paymentIntent.amount_received || paymentIntent.amount) ?? Number(flightLog.calculated_cost || 0);
+
+  if (event.type === "payment_intent.succeeded") {
+    const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
+    const aircraftRegistration = asString(aircraft?.registration) || "aircraft";
+    const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";
+    const description = `Stripe saved card payment - ${aircraftRegistration} flight on ${flightDate}`;
+
+    const { error: updateError } = await adminClient
+      .from("flight_logs")
+      .update({
+        payment_status: "paid",
+        payment_type: paymentMethod?.name || "Stripe Card Payment",
+        stripe_payment_intent_id: paymentIntent.id,
+        stripe_payment_status: paymentIntent.status,
+        stripe_paid_at: now,
+        stripe_payment_error: null,
+        updated_at: now,
+      })
+      .eq("id", flightLog.id);
+    if (updateError) throw updateError;
+
+    const { data: existingTx, error: existingTxError } = await adminClient
+      .from("account_transactions")
+      .select("id")
+      .eq("flight_log_id", flightLog.id)
+      .eq("type", "flight_charge")
+      .maybeSingle();
+    if (existingTxError) throw existingTxError;
+
+    if (!existingTx && amount > 0) {
+      const { error: txError } = await adminClient
+        .from("account_transactions")
+        .insert({
+          user_id: flightLog.student_id,
+          type: "flight_charge",
+          amount,
+          description,
+          flight_log_id: flightLog.id,
+          payment_method_id: paymentMethod?.id || null,
+          balance_after: null,
+          verified_status: "verified",
+        });
+      if (txError) throw txError;
+    }
+
+    return json({ received: true, flightLogId: flightLog.id, paymentStatus: "paid" });
+  }
+
+  if (event.type === "payment_intent.payment_failed") {
+    const lastError = paymentIntent.last_payment_error?.message || "Stripe payment failed";
+    await adminClient
+      .from("flight_logs")
+      .update({
+        payment_status: "pending",
+        payment_type: paymentMethod?.name || "Stripe Card Payment",
+        stripe_payment_intent_id: paymentIntent.id,
+        stripe_payment_status: paymentIntent.status || "failed",
+        stripe_payment_error: lastError,
+        updated_at: now,
+      })
+      .eq("id", flightLog.id)
+      .neq("payment_status", "paid");
+
+    return json({ received: true, flightLogId: flightLog.id, paymentStatus: "failed" });
+  }
+
+  return json({ received: true, ignored: true });
+};
+
 const handleFlightLogStripeEvent = async ({
   adminClient,
   event,
@@ -447,9 +666,10 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
+  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
   const internalSecret = Deno.env.get("TRIAL_VOUCHER_INTERNAL_SECRET");
 
-  if (!supabaseUrl || !serviceRoleKey || !webhookSecret || !internalSecret) {
+  if (!supabaseUrl || !serviceRoleKey || !webhookSecret || !internalSecret || !stripeSecretKey) {
     return json({ error: "Stripe voucher webhook is not fully configured" }, 503);
   }
 
@@ -487,8 +707,21 @@ Deno.serve(async (req: Request) => {
       "checkout.session.async_payment_succeeded",
       "checkout.session.async_payment_failed",
       "checkout.session.expired",
+      "payment_intent.succeeded",
+      "payment_intent.payment_failed",
     ].includes(event.type)) {
       return json({ received: true, ignored: true });
+    }
+
+    if (["payment_intent.succeeded", "payment_intent.payment_failed"].includes(event.type)) {
+      if (asString(session.metadata?.crm_payment_type) === "flight_log_off_session") {
+        return await handleFlightLogPaymentIntentEvent({ adminClient, event, paymentIntent: session });
+      }
+      return json({ received: true, ignored: true });
+    }
+
+    if (asString(session.metadata?.crm_payment_type) === "member_card_setup" || asString(session.metadata?.setup_session_id)) {
+      return await handleMemberCardSetupEvent({ adminClient, stripeSecretKey, event, session });
     }
 
     if (asString(session.metadata?.crm_payment_type) === "flight_log" || asString(session.metadata?.flight_log_id)) {

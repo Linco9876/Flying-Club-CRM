@@ -286,6 +286,30 @@ export const useBillingAccounts = () => {
     }
   };
 
+  const chargeFlightSavedCard = async (flightLogId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('charge-flight-saved-card', {
+        body: { flightLogId },
+      });
+
+      if (error) throw error;
+
+      if ((data as any)?.ok) {
+        toast.success('Saved card charged and flight marked paid');
+      } else if ((data as any)?.requiresAction) {
+        toast.error('The cardholder needs to authenticate this card payment');
+      } else {
+        toast('Stripe payment is pending confirmation');
+      }
+      await fetchAll();
+      return data as { ok?: boolean; status?: string; paymentIntentId?: string; requiresAction?: boolean };
+    } catch (err) {
+      console.error('Error charging saved card:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to charge saved card');
+      throw err;
+    }
+  };
+
   const verifyTransaction = async (transactionId: string) => {
     try {
       // Fetch transaction to get amount and user
@@ -385,6 +409,7 @@ export const useBillingAccounts = () => {
     addTopUp,
     markFlightPaid,
     createFlightPaymentCheckout,
+    chargeFlightSavedCard,
     verifyTransaction,
     rejectTransaction,
     refetch: fetchAll,

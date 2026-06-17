@@ -11,6 +11,8 @@ on:
       - "supabase/functions/trial-voucher-admin/**"
       - "supabase/functions/create-trial-voucher-checkout/**"
       - "supabase/functions/create-flight-payment-checkout/**"
+      - "supabase/functions/member-card-setup/**"
+      - "supabase/functions/charge-flight-saved-card/**"
       - "supabase/functions/stripe-connect/**"
       - "supabase/functions/send-trial-voucher-email/**"
       - "supabase/functions/trial-voucher-stripe-webhook/**"
@@ -71,6 +73,8 @@ jobs:
           npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-admin/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/create-trial-voucher-checkout/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/create-flight-payment-checkout/index.ts
+          npx --yes deno check --node-modules-dir=false supabase/functions/member-card-setup/index.ts
+          npx --yes deno check --node-modules-dir=false supabase/functions/charge-flight-saved-card/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/stripe-connect/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/send-trial-voucher-email/index.ts
           npx --yes deno check --node-modules-dir=false supabase/functions/trial-voucher-stripe-webhook/index.ts
@@ -93,6 +97,8 @@ jobs:
             trial-voucher-admin \
             create-trial-voucher-checkout \
             create-flight-payment-checkout \
+            member-card-setup \
+            charge-flight-saved-card \
             stripe-connect \
             send-trial-voucher-email \
             trial-voucher-stripe-webhook \
