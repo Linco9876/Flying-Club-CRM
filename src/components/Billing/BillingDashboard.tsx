@@ -8,6 +8,7 @@ import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import toast from 'react-hot-toast';
 
 const creditTypes = new Set(['topup', 'refund']);
@@ -117,8 +118,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const checkoutWindow = window.open('about:blank', '_blank');
     if (checkoutWindow) {
       checkoutWindow.opener = null;
-      checkoutWindow.document.title = 'Opening Stripe...';
-      checkoutWindow.document.body.innerHTML = '<p style="font-family: system-ui, sans-serif; padding: 24px;">Opening secure Stripe card setup...</p>';
+      writeStripeLoadingPage(checkoutWindow, {
+        title: 'Opening secure card setup',
+        message: 'Preparing your encrypted Stripe card setup page for future flight payments.',
+      });
     }
 
     setStripeCardLoading(true);

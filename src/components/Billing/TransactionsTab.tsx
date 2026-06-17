@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2 } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -166,8 +167,10 @@ const SplitPaymentModal: React.FC<{
         const checkoutWindow = window.open('about:blank', '_blank');
         if (checkoutWindow) {
           checkoutWindow.opener = null;
-          checkoutWindow.document.title = 'Opening Stripe...';
-          checkoutWindow.document.body.innerHTML = '<p style="font-family: system-ui, sans-serif; padding: 24px;">Opening secure Stripe checkout...</p>';
+          writeStripeLoadingPage(checkoutWindow, {
+            title: 'Opening secure checkout',
+            message: 'Preparing the Stripe payment page for this flight charge.',
+          });
         }
         try {
           const checkout = await onStripeCheckout(flightId, amount);
@@ -569,8 +572,10 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     const checkoutWindow = window.open('about:blank', '_blank');
     if (checkoutWindow) {
       checkoutWindow.opener = null;
-      checkoutWindow.document.title = 'Opening Stripe...';
-      checkoutWindow.document.body.innerHTML = '<p style="font-family: system-ui, sans-serif; padding: 24px;">Opening secure Stripe checkout...</p>';
+      writeStripeLoadingPage(checkoutWindow, {
+        title: 'Opening secure checkout',
+        message: 'Preparing the Stripe payment page for this flight charge.',
+      });
     }
 
     setCreatingStripeCheckoutId(flightLogId);
