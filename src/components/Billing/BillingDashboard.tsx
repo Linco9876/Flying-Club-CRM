@@ -15,6 +15,20 @@ const creditTypes = new Set(['topup', 'refund']);
 const getSignedTransactionAmount = (type: string, amount: number) =>
   creditTypes.has(type) ? Math.abs(amount) : -Math.abs(amount);
 
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 interface BillingDashboardProps {
   mode?: 'auto' | 'own' | 'financial';
 }
@@ -110,14 +124,18 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     setStripeCardLoading(true);
     try {
       const returnUrl = `${window.location.origin}/billing`;
-      const { data, error } = await supabase.functions.invoke<{ checkoutUrl?: string }>('member-card-setup', {
-        body: {
-          action: 'start',
-          consentAccepted: true,
-          successUrl: `${returnUrl}?card_setup=success`,
-          cancelUrl: `${returnUrl}?card_setup=cancelled`,
-        },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke<{ checkoutUrl?: string }>('member-card-setup', {
+          body: {
+            action: 'start',
+            consentAccepted: true,
+            successUrl: `${returnUrl}?card_setup=success`,
+            cancelUrl: `${returnUrl}?card_setup=cancelled`,
+          },
+        }),
+        30000,
+        'Stripe card setup is taking too long. Please close the Stripe window and try again.'
+      );
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to start card setup'));
       if (!data?.checkoutUrl) throw new Error('Stripe did not return a setup link');
       if (checkoutWindow) {

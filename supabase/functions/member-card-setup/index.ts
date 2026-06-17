@@ -16,6 +16,23 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const cleanText = (value: unknown) => String(value || "").trim();
 const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
+const STRIPE_TIMEOUT_MS = 15000;
+
+const fetchStripe = async (url: string, init: RequestInit, label: string) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STRIPE_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    const message = error instanceof DOMException && error.name === "AbortError"
+      ? `${label} timed out. Please try again.`
+      : `${label} failed before Stripe responded.`;
+    throw Object.assign(new Error(message), { status: 504 });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const isDevelopmentOrigin = (origin: string) =>
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
   /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?$/i.test(origin);
@@ -119,12 +136,12 @@ Deno.serve(async (req: Request) => {
       const card = await getDefaultCard(adminClient, user.id);
       if (!card) return json({ ok: true, removed: false });
 
-      const detachResponse = await fetch(`https://api.stripe.com/v1/payment_methods/${encodeURIComponent(card.stripe_payment_method_id)}/detach`, {
+      const detachResponse = await fetchStripe(`https://api.stripe.com/v1/payment_methods/${encodeURIComponent(card.stripe_payment_method_id)}/detach`, {
         method: "POST",
         headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
         }),
-      });
+      }, "Stripe card removal");
 
       if (!detachResponse.ok) {
         const detachBody = await detachResponse.json().catch(() => ({}));
@@ -165,13 +182,13 @@ Deno.serve(async (req: Request) => {
       if (profile?.name) customerForm.set("name", profile.name);
       customerForm.set("metadata[crm_user_id]", user.id);
 
-      const customerResponse = await fetch("https://api.stripe.com/v1/customers", {
+      const customerResponse = await fetchStripe("https://api.stripe.com/v1/customers", {
         method: "POST",
         headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
         }),
         body: customerForm,
-      });
+      }, "Stripe customer setup");
       const customer = await customerResponse.json();
       if (!customerResponse.ok) return json({ error: customer?.error?.message || "Stripe customer could not be created." }, 502);
       stripeCustomerId = customer.id;
@@ -207,13 +224,13 @@ Deno.serve(async (req: Request) => {
     form.set("setup_intent_data[metadata][user_id]", user.id);
     form.set("setup_intent_data[metadata][setup_session_id]", setupRecord.id);
 
-    const checkoutResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    const checkoutResponse = await fetchStripe("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",
       headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
         "Content-Type": "application/x-www-form-urlencoded",
       }),
       body: form,
-    });
+    }, "Stripe card setup page");
     const session = await checkoutResponse.json();
     if (!checkoutResponse.ok) {
       await adminClient
