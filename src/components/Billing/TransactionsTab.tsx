@@ -295,7 +295,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         'Australia',
         makeInvoiceNumber(r.id, index),
         [
-          r.rowType === 'unpaid' ? 'Unpaid flight' : r.isTopup ? 'Account top-up' : 'CRM transaction',
+          r.rowType === 'unpaid' ? 'Outstanding flight' : r.isTopup ? 'Account top-up' : 'CRM transaction',
           r.paymentMethod ? `Payment method: ${r.paymentMethod}` : null,
           r.balanceAfter != null ? `Balance after: $${r.balanceAfter.toFixed(2)}` : null,
         ].filter(Boolean).join(' | '),
@@ -309,9 +309,9 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         '200',
         'OUTPUT',
         'CRM Type',
-        r.rowType === 'unpaid' ? 'Unpaid' : r.isTopup ? 'Top-up' : r.rowType === 'debit' ? 'Flight charge' : 'Credit',
+        r.rowType === 'unpaid' ? 'Outstanding' : r.isTopup ? 'Top-up' : r.rowType === 'debit' ? 'Flight charge' : 'Credit',
         'Payment Status',
-        r.rowType === 'unpaid' ? 'Unpaid' :
+        r.rowType === 'unpaid' ? 'Outstanding' :
         r.isTopup ? (r.verifiedStatus === 'verified' ? 'Verified' : r.verifiedStatus === 'rejected' ? 'Rejected' : 'Pending') :
         'Recorded',
         'AUD',
@@ -344,7 +344,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     if (row.rowType === 'unpaid') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-          <AlertCircle className="h-3 w-3" /> Unpaid
+          <AlertCircle className="h-3 w-3" /> Outstanding
         </span>
       );
     }
@@ -516,7 +516,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
               <option value="all">All Types</option>
               <option value="credit">Top-ups only</option>
               <option value="debit">Charges only</option>
-              <option value="unpaid">Unpaid flights</option>
+              <option value="unpaid">Outstanding flights</option>
             </select>
           </label>
         </div>
