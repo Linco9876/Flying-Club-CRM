@@ -861,23 +861,55 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
     }
   };
 
-  const handleUpdateRowDescription = async (row: SyllabusMatrixRow, nextDescription: string) => {
-    const trimmed = nextDescription.trim();
-    if (!canEdit || !trimmed || trimmed === row.description) return;
+  const handleUpdateMatrixRow = async (
+    row: SyllabusMatrixRow,
+    updates: Partial<Pick<SyllabusMatrixRow, 'code' | 'unitCode' | 'elementCode' | 'description'>>
+  ) => {
+    if (!canEdit) return;
 
     setSavingKey(`row-${row.id}`);
     try {
+      const code = updates.code !== undefined ? updates.code.trim() : row.code;
+      const unitCode = updates.unitCode !== undefined ? updates.unitCode.trim() : row.unitCode ?? '';
+      const elementCode = updates.elementCode !== undefined ? updates.elementCode.trim() : row.elementCode ?? '';
+      const description = updates.description !== undefined ? updates.description.trim() : row.description;
+
+      if (!code) {
+        toast.error('Matrix code is required');
+        return;
+      }
+      if (!description) {
+        toast.error('Matrix wording is required');
+        return;
+      }
+
+      const dbUpdates = {
+        code,
+        unit_code: unitCode || null,
+        element_code: elementCode || null,
+        parent_code: elementCode || unitCode || code,
+        description,
+      };
+
+      const hasChanges =
+        code !== row.code ||
+        (unitCode || undefined) !== row.unitCode ||
+        (elementCode || undefined) !== row.elementCode ||
+        description !== row.description;
+
+      if (!hasChanges) return;
+
       const { error: updateError } = await supabase
         .from('syllabus_matrix_rows')
-        .update({ description: trimmed })
+        .update(dbUpdates)
         .eq('id', row.id);
       if (updateError) throw updateError;
 
       await onMatrixChanged();
-      toast.success('Matrix wording updated');
+      toast.success('Matrix item updated');
     } catch (err) {
       console.error('Failed to update matrix row:', err);
-      toast.error('Failed to update matrix wording');
+      toast.error('Failed to update matrix item');
     } finally {
       setSavingKey(null);
     }
@@ -963,34 +995,51 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
           <p className="mt-1 text-xs text-indigo-700">
             Use this for advanced syllabus courses. Add each competency item once, then attach it to the lessons where it must be assessed.
           </p>
+          <div className="mt-3 grid gap-2 text-xs text-indigo-800 md:grid-cols-3">
+            <p><span className="font-semibold">Code</span> is the unique item reference, such as C2.1.001 or A1.2.</p>
+            <p><span className="font-semibold">Unit</span> is the larger competency area, such as C2 or A1.</p>
+            <p><span className="font-semibold">Element</span> is the section inside that unit, such as C2.1.</p>
+          </div>
         </div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-[120px_120px_140px_minmax(0,1fr)_auto]">
-        <input
-          value={newMatrixRow.code}
-          onChange={(event) => setNewMatrixRow((current) => ({ ...current, code: event.target.value }))}
-          placeholder="Code"
-          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-        />
-        <input
-          value={newMatrixRow.unitCode}
-          onChange={(event) => setNewMatrixRow((current) => ({ ...current, unitCode: event.target.value }))}
-          placeholder="Unit"
-          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-        />
-        <input
-          value={newMatrixRow.elementCode}
-          onChange={(event) => setNewMatrixRow((current) => ({ ...current, elementCode: event.target.value }))}
-          placeholder="Element"
-          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-        />
-        <textarea
-          value={newMatrixRow.description}
-          onChange={(event) => setNewMatrixRow((current) => ({ ...current, description: event.target.value }))}
-          placeholder="Plain-English competency wording"
-          rows={2}
-          className="min-h-10 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-        />
+        <label className="space-y-1">
+          <span className="block text-[11px] font-semibold uppercase tracking-wide text-indigo-800">Code</span>
+          <input
+            value={newMatrixRow.code}
+            onChange={(event) => setNewMatrixRow((current) => ({ ...current, code: event.target.value }))}
+            placeholder="C2.1.001"
+            className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="block text-[11px] font-semibold uppercase tracking-wide text-indigo-800">Unit</span>
+          <input
+            value={newMatrixRow.unitCode}
+            onChange={(event) => setNewMatrixRow((current) => ({ ...current, unitCode: event.target.value }))}
+            placeholder="C2"
+            className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="block text-[11px] font-semibold uppercase tracking-wide text-indigo-800">Element</span>
+          <input
+            value={newMatrixRow.elementCode}
+            onChange={(event) => setNewMatrixRow((current) => ({ ...current, elementCode: event.target.value }))}
+            placeholder="C2.1"
+            className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="block text-[11px] font-semibold uppercase tracking-wide text-indigo-800">Matrix wording</span>
+          <textarea
+            value={newMatrixRow.description}
+            onChange={(event) => setNewMatrixRow((current) => ({ ...current, description: event.target.value }))}
+            placeholder="Plain-English competency wording"
+            rows={2}
+            className="min-h-10 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+          />
+        </label>
         <button
           type="button"
           disabled={savingKey === 'new-matrix-row'}
@@ -1122,12 +1171,42 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                           {row.elementCode || row.unitCode || row.code}
                         </p>
                         {canEdit ? (
-                          <textarea
-                            defaultValue={formatSyllabusMatrixText(row.description)}
-                            onBlur={(event) => handleUpdateRowDescription(row, event.target.value)}
-                            rows={2}
-                            className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-5 text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                          />
+                          <div className="mt-2 space-y-2">
+                            <div className="grid gap-2 sm:grid-cols-[120px_120px_140px]">
+                              <label className="space-y-1">
+                                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Code</span>
+                                <input
+                                  defaultValue={row.code}
+                                  onBlur={(event) => handleUpdateMatrixRow(row, { code: event.target.value })}
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Unit</span>
+                                <input
+                                  defaultValue={row.unitCode ?? ''}
+                                  onBlur={(event) => handleUpdateMatrixRow(row, { unitCode: event.target.value })}
+                                  placeholder="C2"
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Element</span>
+                                <input
+                                  defaultValue={row.elementCode ?? ''}
+                                  onBlur={(event) => handleUpdateMatrixRow(row, { elementCode: event.target.value })}
+                                  placeholder="C2.1"
+                                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                />
+                              </label>
+                            </div>
+                            <textarea
+                              defaultValue={formatSyllabusMatrixText(row.description)}
+                              onBlur={(event) => handleUpdateMatrixRow(row, { description: event.target.value })}
+                              rows={2}
+                              className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-5 text-slate-900 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            />
+                          </div>
                         ) : (
                           <p className="mt-1 text-sm font-medium text-slate-900">{formatSyllabusMatrixText(row.description)}</p>
                         )}
