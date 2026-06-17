@@ -340,10 +340,24 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   };
 
   const handleCreateStripeCheckout = async (flightLogId: string) => {
+    const checkoutWindow = window.open('about:blank', '_blank');
+    if (checkoutWindow) {
+      checkoutWindow.opener = null;
+      checkoutWindow.document.title = 'Opening Stripe...';
+      checkoutWindow.document.body.innerHTML = '<p style="font-family: system-ui, sans-serif; padding: 24px;">Opening secure Stripe checkout...</p>';
+    }
+
     setCreatingStripeCheckoutId(flightLogId);
     try {
       const checkout = await createFlightPaymentCheckout(flightLogId);
-      window.open(checkout.checkoutUrl, '_blank', 'noopener,noreferrer');
+      if (checkoutWindow) {
+        checkoutWindow.location.href = checkout.checkoutUrl;
+      } else {
+        window.location.href = checkout.checkoutUrl;
+      }
+    } catch (error) {
+      checkoutWindow?.close();
+      throw error;
     } finally {
       setCreatingStripeCheckoutId(null);
     }
