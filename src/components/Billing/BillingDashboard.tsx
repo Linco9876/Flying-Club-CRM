@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { supabase } from '../../lib/supabase';
+import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import toast from 'react-hot-toast';
 
 const creditTypes = new Set(['topup', 'refund']);
@@ -59,7 +60,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       const { data, error } = await supabase.functions.invoke<StripeCardStatus>('member-card-setup', {
         body: { action: 'status' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load saved card status'));
       setStripeCardStatus(data ?? null);
     } catch (error: any) {
       console.warn('Failed to load saved card status:', error);
@@ -117,7 +118,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
           cancelUrl: `${returnUrl}?card_setup=cancelled`,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to start card setup'));
       if (!data?.checkoutUrl) throw new Error('Stripe did not return a setup link');
       if (checkoutWindow) {
         checkoutWindow.location.href = data.checkoutUrl;
@@ -140,7 +141,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       const { error } = await supabase.functions.invoke('member-card-setup', {
         body: { action: 'remove' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to remove saved card'));
       toast.success('Saved card removed');
       setStripeConsentAccepted(false);
       await loadStripeCardStatus();

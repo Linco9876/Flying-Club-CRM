@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { getSupabaseFunctionErrorMessage } from '../lib/supabaseFunctionErrors';
 
 export interface AccountTransaction {
   id: string;
@@ -273,7 +274,7 @@ export const useBillingAccounts = () => {
         },
       });
 
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create Stripe payment link'));
       if (!data?.checkoutUrl) throw new Error('Stripe checkout did not return a payment link');
 
       toast.success('Stripe checkout link ready');
@@ -292,7 +293,7 @@ export const useBillingAccounts = () => {
         body: { flightLogId },
       });
 
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to charge saved card'));
 
       if ((data as any)?.ok) {
         toast.success('Saved card charged and flight marked paid');
