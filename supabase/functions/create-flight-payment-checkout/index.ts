@@ -40,6 +40,7 @@ const dollarsToCents = (value: unknown) => {
   if (!Number.isFinite(amount)) return null;
   return Math.round(amount * 100);
 };
+const centsToDollars = (value: number) => Math.round((value / 100 + Number.EPSILON) * 100) / 100;
 
 const firstJoinRow = (value: unknown) => Array.isArray(value) ? value[0] : value;
 
@@ -96,6 +97,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json();
     const flightLogId = cleanText(body.flightLogId);
+    const requestedAmountCents = dollarsToCents(body.amount);
     const successUrl = safeReturnUrl(body.successUrl, "/billing?stripe_flight=success");
     const cancelUrl = safeReturnUrl(body.cancelUrl, "/billing?stripe_flight=cancelled");
 
@@ -124,10 +126,30 @@ Deno.serve(async (req: Request) => {
     if (!flightLog) return json({ error: "Flight log not found." }, 404);
     if (flightLog.payment_status === "paid") return json({ error: "This flight is already marked as paid." }, 409);
 
-    const amountCents = dollarsToCents(flightLog.calculated_cost);
-    if (!amountCents || amountCents <= 0) {
+    const fullAmountCents = dollarsToCents(flightLog.calculated_cost);
+    if (!fullAmountCents || fullAmountCents <= 0) {
       return json({ error: "This flight does not have a charge to collect." }, 409);
     }
+
+    const { data: paymentRows, error: paymentsError } = await adminClient
+      .from("account_transactions")
+      .select("amount")
+      .eq("flight_log_id", flightLog.id)
+      .eq("type", "flight_charge")
+      .eq("verified_status", "verified");
+    if (paymentsError) throw paymentsError;
+
+    const paidCents = (paymentRows || []).reduce((total: number, tx: any) => {
+      const cents = dollarsToCents(tx.amount);
+      return total + (cents || 0);
+    }, 0);
+    const remainingCents = Math.max(0, fullAmountCents - paidCents);
+    if (remainingCents <= 0) return json({ error: "This flight is already fully paid." }, 409);
+
+    const amountCents = requestedAmountCents && requestedAmountCents > 0
+      ? Math.min(requestedAmountCents, remainingCents)
+      : remainingCents;
+    if (amountCents <= 0) return json({ error: "Enter an amount greater than $0." }, 400);
 
     const student = firstJoinRow(flightLog.users) as { name?: unknown; email?: unknown } | undefined;
     const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
@@ -153,6 +175,8 @@ Deno.serve(async (req: Request) => {
     form.set("metadata[student_id]", flightLog.student_id || "");
     form.set("metadata[booking_id]", flightLog.booking_id || "");
     form.set("metadata[payment_method_id]", stripeMethod.id);
+    form.set("metadata[split_payment_amount]", centsToDollars(amountCents).toFixed(2));
+    form.set("metadata[split_payment_remaining_before]", centsToDollars(remainingCents).toFixed(2));
     if (studentEmail) form.set("customer_email", studentEmail);
 
     const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {

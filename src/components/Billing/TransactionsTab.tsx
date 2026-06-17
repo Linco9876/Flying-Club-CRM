@@ -114,6 +114,210 @@ const MarkPaidModal: React.FC<{
   );
 };
 
+const SplitPaymentModal: React.FC<{
+  flightId: string;
+  description: string;
+  userName: string;
+  totalAmount: number;
+  amountPaid: number;
+  amountRemaining: number;
+  pilotBalance: number;
+  onClose: () => void;
+  onPilotAccountPayment: (flightLogId: string, amount: number) => Promise<void>;
+  onStripeCheckout: (flightLogId: string, amount: number) => Promise<{ checkoutUrl: string }>;
+  onSavedCardPayment: (flightLogId: string, amount: number) => Promise<unknown>;
+}> = ({
+  flightId,
+  description,
+  userName,
+  totalAmount,
+  amountPaid,
+  amountRemaining,
+  pilotBalance,
+  onClose,
+  onPilotAccountPayment,
+  onStripeCheckout,
+  onSavedCardPayment,
+}) => {
+  const [pilotAmount, setPilotAmount] = useState('');
+  const [checkoutAmount, setCheckoutAmount] = useState(amountRemaining.toFixed(2));
+  const [savedCardAmount, setSavedCardAmount] = useState(amountRemaining.toFixed(2));
+  const [busyAction, setBusyAction] = useState<'pilot' | 'checkout' | 'card' | null>(null);
+
+  const normaliseAmount = (value: string) => {
+    const amount = Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than $0');
+    if (amount > amountRemaining + 0.005) throw new Error(`Amount cannot exceed the remaining $${amountRemaining.toFixed(2)}`);
+    return amount;
+  };
+
+  const runAction = async (action: 'pilot' | 'checkout' | 'card') => {
+    try {
+      setBusyAction(action);
+      if (action === 'pilot') {
+        const amount = normaliseAmount(pilotAmount);
+        await onPilotAccountPayment(flightId, amount);
+        onClose();
+        return;
+      }
+
+      if (action === 'checkout') {
+        const amount = normaliseAmount(checkoutAmount);
+        const checkoutWindow = window.open('about:blank', '_blank');
+        if (checkoutWindow) {
+          checkoutWindow.opener = null;
+          checkoutWindow.document.title = 'Opening Stripe...';
+          checkoutWindow.document.body.innerHTML = '<p style="font-family: system-ui, sans-serif; padding: 24px;">Opening secure Stripe checkout...</p>';
+        }
+        try {
+          const checkout = await onStripeCheckout(flightId, amount);
+          if (checkoutWindow) {
+            checkoutWindow.location.href = checkout.checkoutUrl;
+          } else {
+            window.location.href = checkout.checkoutUrl;
+          }
+          onClose();
+        } catch (error) {
+          checkoutWindow?.close();
+          throw error;
+        }
+        return;
+      }
+
+      const amount = normaliseAmount(savedCardAmount);
+      if (!window.confirm(`Charge ${userName}'s saved card $${amount.toFixed(2)}?`)) return;
+      await onSavedCardPayment(flightId, amount);
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Split payment failed');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const progress = totalAmount > 0 ? Math.min(100, (amountPaid / totalAmount) * 100) : 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+        <div className="p-5 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900">Split Payment</h3>
+          <p className="text-sm text-gray-500 mt-0.5">{userName}</p>
+          <p className="text-sm text-gray-600 mt-2 line-clamp-2">{description}</p>
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Total</p>
+                <p className="text-lg font-bold text-gray-900">${totalAmount.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Paid</p>
+                <p className="text-lg font-bold text-green-700">${amountPaid.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Remaining</p>
+                <p className="text-lg font-bold text-amber-700">${amountRemaining.toFixed(2)}</p>
+              </div>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+              <div className="h-full rounded-full bg-green-500" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <section className="rounded-xl border border-gray-200 p-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">Pilot account</h4>
+                <p className="text-xs text-gray-500">Available balance: ${pilotBalance.toFixed(2)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPilotAmount(Math.min(pilotBalance, amountRemaining).toFixed(2))}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                Use available
+              </button>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={pilotAmount}
+                onChange={event => setPilotAmount(event.target.value)}
+                placeholder="0.00"
+                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                disabled={busyAction !== null || !pilotAmount}
+                onClick={() => runAction('pilot')}
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {busyAction === 'pilot' ? 'Applying...' : 'Apply'}
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-gray-200 p-4">
+            <h4 className="text-sm font-semibold text-gray-900">Stripe checkout link</h4>
+            <p className="text-xs text-gray-500">Use this for one card now, or repeat it later for a second card.</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={checkoutAmount}
+                onChange={event => setCheckoutAmount(event.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                disabled={busyAction !== null || !checkoutAmount}
+                onClick={() => runAction('checkout')}
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {busyAction === 'checkout' ? 'Opening...' : 'Open Stripe'}
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-gray-200 p-4">
+            <h4 className="text-sm font-semibold text-gray-900">Saved Stripe card</h4>
+            <p className="text-xs text-gray-500">Only works if the member has saved a card and accepted the card-on-file authority.</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={savedCardAmount}
+                onChange={event => setSavedCardAmount(event.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                disabled={busyAction !== null || !savedCardAmount}
+                onClick={() => runAction('card')}
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {busyAction === 'card' ? 'Charging...' : 'Charge'}
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <div className="flex justify-end border-t border-gray-100 p-5">
+          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RejectModal: React.FC<{
   transactionId: string;
   userName: string;
@@ -187,7 +391,7 @@ const RejectModal: React.FC<{
 };
 
 export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { transactions, unpaidFlights, loading, markFlightPaid, createFlightPaymentCheckout, chargeFlightSavedCard, verifyTransaction, rejectTransaction } = billing;
+  const { transactions, unpaidFlights, pilotAccounts, loading, markFlightPaid, createFlightPaymentCheckout, chargeFlightSavedCard, applyPilotAccountPayment, verifyTransaction, rejectTransaction } = billing;
   const { paymentMethods } = useBillingSettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
@@ -199,17 +403,30 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [creatingStripeCheckoutId, setCreatingStripeCheckoutId] = useState<string | null>(null);
   const [chargingSavedCardId, setChargingSavedCardId] = useState<string | null>(null);
+  const [splitPayment, setSplitPayment] = useState<{
+    flightId: string;
+    userId: string;
+    userName: string;
+    description: string;
+    totalAmount: number;
+    amountPaid: number;
+    amountRemaining: number;
+  } | null>(null);
   const itemsPerPage = 25;
 
   const allRows = useMemo(() => {
     const rows: Array<{
       id: string;
       flightLogId: string | null;
+      userId: string;
       date: string;
       userName: string;
       userEmail: string;
       description: string;
       amount: number | null;
+      totalAmount: number | null;
+      amountPaid: number;
+      amountRemaining: number | null;
       paymentMethod: string | null;
       balanceAfter: number | null;
       rowType: 'credit' | 'debit' | 'unpaid';
@@ -221,11 +438,15 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
       ...transactions.map(t => ({
         id: t.id,
         flightLogId: null,
+        userId: t.userId,
         date: t.createdAt,
         userName: t.userName,
         userEmail: t.userEmail,
         description: t.description,
         amount: t.type === 'topup' || t.type === 'refund' ? t.amount : -t.amount,
+        totalAmount: null,
+        amountPaid: 0,
+        amountRemaining: null,
         paymentMethod: t.paymentMethodName,
         balanceAfter: t.balanceAfter,
         rowType: (t.type === 'topup' || t.type === 'refund' ? 'credit' : 'debit') as 'credit' | 'debit',
@@ -237,11 +458,15 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
       ...unpaidFlights.map(f => ({
         id: `unpaid-${f.id}`,
         flightLogId: f.id,
+        userId: f.userId,
         date: f.flightDate,
         userName: f.userName,
         userEmail: f.userEmail,
         description: `Flight – ${f.aircraftRegistration} (${f.flightDuration.toFixed(1)} hrs)${f.flightTypeName ? ` · ${f.flightTypeName}` : ''}`,
-        amount: f.calculatedCost != null ? -f.calculatedCost : null,
+        amount: f.amountRemaining != null ? -f.amountRemaining : null,
+        totalAmount: f.calculatedCost,
+        amountPaid: f.amountPaid,
+        amountRemaining: f.amountRemaining,
         paymentMethod: null,
         balanceAfter: null,
         rowType: 'unpaid' as const,
@@ -278,7 +503,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const totalDebits = transactions
     .filter(t => t.type === 'flight_charge' || t.type === 'adjustment')
     .reduce((s, t) => s + t.amount, 0);
-  const totalUnpaidValue = unpaidFlights.reduce((s, f) => s + (f.calculatedCost ?? 0), 0);
+  const totalUnpaidValue = unpaidFlights.reduce((s, f) => s + (f.amountRemaining ?? f.calculatedCost ?? 0), 0);
   const pendingCount = transactions.filter(t => t.type === 'topup' && t.verifiedStatus === 'pending').length;
 
   const handleExport = () => {
@@ -362,6 +587,10 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     } finally {
       setCreatingStripeCheckoutId(null);
     }
+  };
+
+  const handleCreateSplitStripeCheckout = async (flightLogId: string, amount: number) => {
+    return createFlightPaymentCheckout(flightLogId, amount);
   };
 
   const handleChargeSavedCard = async (flightLogId: string) => {
@@ -461,6 +690,23 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           >
             <CheckCircle className="h-3.5 w-3.5" />
             Mark Paid
+          </button>
+          <button
+            onClick={() => setSplitPayment({
+              flightId: row.flightLogId!,
+              userId: row.userId,
+              userName: row.userName,
+              description: row.description,
+              totalAmount: row.totalAmount ?? Math.abs(row.amount ?? 0),
+              amountPaid: row.amountPaid,
+              amountRemaining: row.amountRemaining ?? Math.abs(row.amount ?? 0),
+            })}
+            className={`flex items-center justify-center gap-1 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors ${
+              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+            }`}
+          >
+            <CreditCard className="h-3.5 w-3.5" />
+            Split Pay
           </button>
         </div>
       )}
@@ -787,6 +1033,22 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           paymentMethods={paymentMethods}
           onClose={() => setMarkingPaid(null)}
           onConfirm={markFlightPaid}
+        />
+      )}
+
+      {splitPayment && (
+        <SplitPaymentModal
+          flightId={splitPayment.flightId}
+          description={splitPayment.description}
+          userName={splitPayment.userName}
+          totalAmount={splitPayment.totalAmount}
+          amountPaid={splitPayment.amountPaid}
+          amountRemaining={splitPayment.amountRemaining}
+          pilotBalance={pilotAccounts.find(account => account.userId === splitPayment.userId)?.balance ?? 0}
+          onClose={() => setSplitPayment(null)}
+          onPilotAccountPayment={applyPilotAccountPayment}
+          onStripeCheckout={handleCreateSplitStripeCheckout}
+          onSavedCardPayment={chargeFlightSavedCard}
         />
       )}
 

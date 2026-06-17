@@ -83,6 +83,7 @@ const stripeAmountToDollars = (value: unknown) => {
   const cents = Number(value);
   return Number.isFinite(cents) ? cents / 100 : null;
 };
+const roundCurrency = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 const stripeCurrency = (value: unknown) => {
   const currency = asString(value).trim().toUpperCase();
@@ -133,6 +134,7 @@ const getFlightLogForSession = async (adminClient: SupabaseAdminClient, session:
         calculated_cost,
         payment_status,
         payment_type,
+        stripe_payment_intent_id,
         stripe_checkout_session_id,
         aircraft!flight_logs_aircraft_id_fkey(registration),
         users!flight_logs_student_id_fkey(name, email),
@@ -155,10 +157,11 @@ const getFlightLogForSession = async (adminClient: SupabaseAdminClient, session:
       student_id,
       start_time,
       flight_duration,
-      calculated_cost,
-      payment_status,
-      payment_type,
-      stripe_checkout_session_id,
+        calculated_cost,
+        payment_status,
+        payment_type,
+        stripe_payment_intent_id,
+        stripe_checkout_session_id,
       aircraft!flight_logs_aircraft_id_fkey(registration),
       users!flight_logs_student_id_fkey(name, email),
       flight_types(name)
@@ -312,6 +315,34 @@ const getStripePaymentMethod = async (adminClient: SupabaseAdminClient, session:
   return data || { id: null, name: "Stripe Card Payment" };
 };
 
+const getVerifiedFlightPaymentTotal = async (adminClient: SupabaseAdminClient, flightLogId: string) => {
+  const { data, error } = await adminClient
+    .from("account_transactions")
+    .select("amount")
+    .eq("flight_log_id", flightLogId)
+    .eq("type", "flight_charge")
+    .eq("verified_status", "verified");
+  if (error) throw error;
+  return (data || []).reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+};
+
+const hasFlightPaymentReference = async (
+  adminClient: SupabaseAdminClient,
+  flightLogId: string,
+  reference: string,
+) => {
+  if (!reference) return false;
+  const { data, error } = await adminClient
+    .from("account_transactions")
+    .select("id")
+    .eq("flight_log_id", flightLogId)
+    .eq("type", "flight_charge")
+    .ilike("description", `%${reference}%`)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+};
+
 const handleMemberCardSetupEvent = async ({
   adminClient,
   stripeSecretKey,
@@ -444,31 +475,27 @@ const handleFlightLogPaymentIntentEvent = async ({
     const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
     const aircraftRegistration = asString(aircraft?.registration) || "aircraft";
     const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";
-    const description = `Stripe saved card payment - ${aircraftRegistration} flight on ${flightDate}`;
+    const description = `Stripe saved card payment (${paymentIntent.id}) - ${aircraftRegistration} flight on ${flightDate}`;
+    const alreadyRecorded = await hasFlightPaymentReference(adminClient, flightLog.id, paymentIntent.id);
+    const paidBefore = await getVerifiedFlightPaymentTotal(adminClient, flightLog.id);
+    const paidAfter = paidBefore + (alreadyRecorded ? 0 : amount);
+    const isFullyPaid = paidAfter + 0.005 >= Number(flightLog.calculated_cost || 0);
 
     const { error: updateError } = await adminClient
       .from("flight_logs")
       .update({
-        payment_status: "paid",
+        payment_status: isFullyPaid ? "paid" : "pending",
         payment_type: paymentMethod?.name || "Stripe Card Payment",
         stripe_payment_intent_id: paymentIntent.id,
         stripe_payment_status: paymentIntent.status,
-        stripe_paid_at: now,
+        stripe_paid_at: isFullyPaid ? now : null,
         stripe_payment_error: null,
         updated_at: now,
       })
       .eq("id", flightLog.id);
     if (updateError) throw updateError;
 
-    const { data: existingTx, error: existingTxError } = await adminClient
-      .from("account_transactions")
-      .select("id")
-      .eq("flight_log_id", flightLog.id)
-      .eq("type", "flight_charge")
-      .maybeSingle();
-    if (existingTxError) throw existingTxError;
-
-    if (!existingTx && amount > 0) {
+    if (!alreadyRecorded && amount > 0) {
       const { error: txError } = await adminClient
         .from("account_transactions")
         .insert({
@@ -484,7 +511,7 @@ const handleFlightLogPaymentIntentEvent = async ({
       if (txError) throw txError;
     }
 
-    return json({ received: true, flightLogId: flightLog.id, paymentStatus: "paid" });
+    return json({ received: true, flightLogId: flightLog.id, paymentStatus: isFullyPaid ? "paid" : "pending" });
   }
 
   if (event.type === "payment_intent.payment_failed") {
@@ -573,28 +600,24 @@ const handleFlightLogStripeEvent = async ({
       ? new Date(flightLog.start_time).toLocaleDateString("en-AU")
       : "flight";
     const aircraftRegistration = asString(flightLog.aircraft?.registration) || "aircraft";
-    const description = `Stripe card payment - ${aircraftRegistration} flight on ${flightDate}`;
+    const description = `Stripe card payment (${sessionId}) - ${aircraftRegistration} flight on ${flightDate}`;
+    const alreadyRecorded = await hasFlightPaymentReference(adminClient, flightLog.id, sessionId);
+    const paidBefore = await getVerifiedFlightPaymentTotal(adminClient, flightLog.id);
+    const paidAfter = paidBefore + (alreadyRecorded ? 0 : paidAmount);
+    const isFullyPaid = roundCurrency(paidAfter) + 0.005 >= Number(flightLog.calculated_cost || 0);
 
     const { error: updateError } = await adminClient
       .from("flight_logs")
       .update({
         ...updateBase,
-        payment_status: "paid",
+        payment_status: isFullyPaid ? "paid" : "pending",
         payment_type: paymentMethod?.name || "Stripe Card Payment",
-        stripe_paid_at: new Date().toISOString(),
+        stripe_paid_at: isFullyPaid ? new Date().toISOString() : null,
       })
       .eq("id", flightLog.id);
     if (updateError) throw updateError;
 
-    const { data: existingTx, error: existingTxError } = await adminClient
-      .from("account_transactions")
-      .select("id")
-      .eq("flight_log_id", flightLog.id)
-      .eq("type", "flight_charge")
-      .maybeSingle();
-    if (existingTxError) throw existingTxError;
-
-    if (!existingTx && paidAmount > 0) {
+    if (!alreadyRecorded && paidAmount > 0) {
       const { error: txError } = await adminClient
         .from("account_transactions")
         .insert({
@@ -614,7 +637,7 @@ const handleFlightLogStripeEvent = async ({
     return json({
       received: true,
       flightLogId: flightLog.id,
-      paymentStatus: "paid",
+      paymentStatus: isFullyPaid ? "paid" : "pending",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected Stripe flight payment webhook error";

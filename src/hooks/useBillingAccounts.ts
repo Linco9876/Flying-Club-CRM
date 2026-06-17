@@ -29,6 +29,8 @@ export interface UnpaidFlight {
   flightDate: string;
   flightDuration: number;
   calculatedCost: number | null;
+  amountPaid: number;
+  amountRemaining: number | null;
   flightTypeId: string | null;
   flightTypeName: string | null;
   paymentType: string | null;
@@ -106,7 +108,7 @@ export const useBillingAccounts = () => {
     }
   };
 
-  const fetchUnpaidFlights = async () => {
+const fetchUnpaidFlights = async () => {
     try {
       const { data, error } = await supabase
         .from('flight_logs')
@@ -128,8 +130,29 @@ export const useBillingAccounts = () => {
 
       if (error) throw error;
 
+      const flightIds = (data || []).map((row: any) => row.id);
+      const paidByFlight: Record<string, number> = {};
+      if (flightIds.length > 0) {
+        const { data: paymentRows, error: paymentsError } = await supabase
+          .from('account_transactions')
+          .select('flight_log_id, amount, type, verified_status')
+          .eq('type', 'flight_charge')
+          .eq('verified_status', 'verified')
+          .in('flight_log_id', flightIds);
+
+        if (paymentsError) throw paymentsError;
+        (paymentRows || []).forEach((tx: any) => {
+          const flightId = tx.flight_log_id;
+          paidByFlight[flightId] = (paidByFlight[flightId] ?? 0) + parseFloat(tx.amount ?? 0);
+        });
+      }
+
       setUnpaidFlights(
-        (data || []).map((row: any) => ({
+        (data || []).map((row: any) => {
+          const calculatedCost = row.calculated_cost != null ? parseFloat(row.calculated_cost) : null;
+          const amountPaid = paidByFlight[row.id] ?? 0;
+          const amountRemaining = calculatedCost == null ? null : Math.max(0, Math.round((calculatedCost - amountPaid + Number.EPSILON) * 100) / 100);
+          return {
           id: row.id,
           userId: row.student_id,
           userName: row.users?.name ?? 'Unknown',
@@ -137,11 +160,14 @@ export const useBillingAccounts = () => {
           aircraftRegistration: row.aircraft?.registration ?? 'Unknown',
           flightDate: row.start_time,
           flightDuration: parseFloat(row.flight_duration ?? 0),
-          calculatedCost: row.calculated_cost != null ? parseFloat(row.calculated_cost) : null,
+          calculatedCost,
+          amountPaid,
+          amountRemaining,
           flightTypeId: row.flight_type_id ?? null,
           flightTypeName: row.flight_types?.name ?? null,
           paymentType: row.payment_type ?? null,
-        }))
+        };
+      })
       );
     } catch (err) {
       console.error('Error fetching unpaid flights:', err);
@@ -245,6 +271,46 @@ export const useBillingAccounts = () => {
     }
   };
 
+  const getPilotAccountPaymentMethodId = async () => {
+    const { data, error } = await supabase
+      .from('payment_methods')
+      .select('id,name')
+      .eq('active', true);
+    if (error) throw error;
+    return (data || []).find((method: any) => {
+      const name = String(method.name || '').toLowerCase();
+      return name.includes('pilot account') || name.includes('pre-paid') || name.includes('prepaid');
+    })?.id ?? null;
+  };
+
+  const updateFlightPaidIfSettled = async (flightLogId: string, paymentType = 'Split payment') => {
+    const { data: flightLog, error: flightError } = await supabase
+      .from('flight_logs')
+      .select('calculated_cost')
+      .eq('id', flightLogId)
+      .maybeSingle();
+    if (flightError) throw flightError;
+    const cost = parseFloat(flightLog?.calculated_cost ?? 0);
+    if (!Number.isFinite(cost) || cost <= 0) return;
+
+    const { data: txRows, error: txError } = await supabase
+      .from('account_transactions')
+      .select('amount')
+      .eq('flight_log_id', flightLogId)
+      .eq('type', 'flight_charge')
+      .eq('verified_status', 'verified');
+    if (txError) throw txError;
+
+    const paid = (txRows || []).reduce((sum: number, tx: any) => sum + parseFloat(tx.amount ?? 0), 0);
+    await supabase
+      .from('flight_logs')
+      .update({
+        payment_status: paid + 0.005 >= cost ? 'paid' : 'pending',
+        payment_type: paid + 0.005 >= cost ? paymentType : 'Split payment',
+      })
+      .eq('id', flightLogId);
+  };
+
   const markFlightPaid = async (flightLogId: string, paymentType: string) => {
     try {
       const { error } = await supabase
@@ -263,12 +329,13 @@ export const useBillingAccounts = () => {
     }
   };
 
-  const createFlightPaymentCheckout = async (flightLogId: string) => {
+  const createFlightPaymentCheckout = async (flightLogId: string, amount?: number) => {
     try {
       const returnUrl = `${window.location.origin}/billing`;
       const { data, error } = await supabase.functions.invoke('create-flight-payment-checkout', {
         body: {
           flightLogId,
+          amount,
           successUrl: `${returnUrl}?stripe_flight=success`,
           cancelUrl: `${returnUrl}?stripe_flight=cancelled`,
         },
@@ -287,10 +354,10 @@ export const useBillingAccounts = () => {
     }
   };
 
-  const chargeFlightSavedCard = async (flightLogId: string) => {
+  const chargeFlightSavedCard = async (flightLogId: string, amount?: number) => {
     try {
       const { data, error } = await supabase.functions.invoke('charge-flight-saved-card', {
-        body: { flightLogId },
+        body: { flightLogId, amount },
       });
 
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to charge saved card'));
@@ -307,6 +374,82 @@ export const useBillingAccounts = () => {
     } catch (err) {
       console.error('Error charging saved card:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to charge saved card');
+      throw err;
+    }
+  };
+
+  const applyPilotAccountPayment = async (flightLogId: string, amount: number) => {
+    try {
+      const paymentAmount = Math.round((amount + Number.EPSILON) * 100) / 100;
+      if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+        throw new Error('Enter a payment amount greater than $0');
+      }
+
+      const { data: flightLog, error: flightError } = await supabase
+        .from('flight_logs')
+        .select('id, student_id, start_time, calculated_cost, payment_status, aircraft!flight_logs_aircraft_id_fkey(registration)')
+        .eq('id', flightLogId)
+        .maybeSingle();
+      if (flightError) throw flightError;
+      if (!flightLog) throw new Error('Flight log not found');
+      if (flightLog.payment_status === 'paid') throw new Error('This flight is already paid');
+
+      const { data: txRows, error: txError } = await supabase
+        .from('account_transactions')
+        .select('amount')
+        .eq('flight_log_id', flightLogId)
+        .eq('type', 'flight_charge')
+        .eq('verified_status', 'verified');
+      if (txError) throw txError;
+
+      const cost = parseFloat(flightLog.calculated_cost ?? 0);
+      const paid = (txRows || []).reduce((sum: number, tx: any) => sum + parseFloat(tx.amount ?? 0), 0);
+      const remaining = Math.max(0, Math.round((cost - paid + Number.EPSILON) * 100) / 100);
+      if (paymentAmount > remaining + 0.005) {
+        throw new Error(`Payment is greater than the remaining balance of $${remaining.toFixed(2)}`);
+      }
+
+      const { data: student, error: studentError } = await supabase
+        .from('students')
+        .select('prepaid_balance')
+        .eq('id', flightLog.student_id)
+        .maybeSingle();
+      if (studentError) throw studentError;
+      const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
+      if (paymentAmount > currentBalance + 0.005) {
+        throw new Error(`Pilot account balance is only $${currentBalance.toFixed(2)}`);
+      }
+
+      const newBalance = Math.round((currentBalance - paymentAmount + Number.EPSILON) * 100) / 100;
+      const paymentMethodId = await getPilotAccountPaymentMethodId();
+      const aircraft = Array.isArray(flightLog.aircraft) ? flightLog.aircraft[0] : flightLog.aircraft;
+      const description = `Pilot account split payment - ${aircraft?.registration ?? 'aircraft'} flight on ${new Date(flightLog.start_time).toLocaleDateString('en-AU')}`;
+
+      const { error: insertError } = await supabase
+        .from('account_transactions')
+        .insert({
+          user_id: flightLog.student_id,
+          type: 'flight_charge',
+          amount: paymentAmount,
+          description,
+          flight_log_id: flightLogId,
+          payment_method_id: paymentMethodId,
+          balance_after: newBalance,
+          verified_status: 'verified',
+        });
+      if (insertError) throw insertError;
+
+      const { error: balanceError } = await supabase
+        .from('students')
+        .upsert({ id: flightLog.student_id, prepaid_balance: newBalance }, { onConflict: 'id' });
+      if (balanceError) throw balanceError;
+
+      await updateFlightPaidIfSettled(flightLogId);
+      toast.success('Pilot account payment applied');
+      await fetchAll();
+    } catch (err) {
+      console.error('Error applying pilot account payment:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to apply pilot account payment');
       throw err;
     }
   };
@@ -411,6 +554,7 @@ export const useBillingAccounts = () => {
     markFlightPaid,
     createFlightPaymentCheckout,
     chargeFlightSavedCard,
+    applyPilotAccountPayment,
     verifyTransaction,
     rejectTransaction,
     refetch: fetchAll,

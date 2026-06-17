@@ -21,6 +21,7 @@ const dollarsToCents = (value: unknown) => {
   return Math.round(amount * 100);
 };
 const firstJoinRow = (value: unknown) => Array.isArray(value) ? value[0] : value;
+const centsToDollars = (value: number) => Math.round((value / 100 + Number.EPSILON) * 100) / 100;
 
 const getAuthUser = async (adminClient: any, req: Request) => {
   const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "").trim();
@@ -46,27 +47,31 @@ const markFlightPaid = async ({
   paymentMethod,
   paymentIntent,
   amountDollars,
+  totalPaidDollars,
 }: {
   adminClient: any;
   flightLog: any;
   paymentMethod: any;
   paymentIntent: any;
   amountDollars: number;
+  totalPaidDollars: number;
 }) => {
   const now = new Date().toISOString();
   const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
   const aircraftRegistration = cleanText(aircraft?.registration) || "aircraft";
   const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";
-  const description = `Stripe saved card payment - ${aircraftRegistration} flight on ${flightDate}`;
+  const description = `Stripe saved card payment (${paymentIntent.id}) - ${aircraftRegistration} flight on ${flightDate}`;
+  const flightCost = Number(flightLog.calculated_cost || 0);
+  const isFullyPaid = totalPaidDollars + amountDollars + 0.005 >= flightCost;
 
   const { error: updateError } = await adminClient
     .from("flight_logs")
     .update({
-      payment_status: "paid",
+      payment_status: isFullyPaid ? "paid" : "pending",
       payment_type: paymentMethod?.name || "Stripe Card Payment",
       stripe_payment_intent_id: paymentIntent.id,
       stripe_payment_status: paymentIntent.status,
-      stripe_paid_at: now,
+      stripe_paid_at: isFullyPaid ? now : null,
       stripe_charge_attempted_at: now,
       stripe_payment_error: null,
       updated_at: now,
@@ -79,6 +84,7 @@ const markFlightPaid = async ({
     .select("id")
     .eq("flight_log_id", flightLog.id)
     .eq("type", "flight_charge")
+    .ilike("description", `%${paymentIntent.id}%`)
     .maybeSingle();
   if (existingTxError) throw existingTxError;
 
@@ -123,6 +129,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json();
     const flightLogId = cleanText(body.flightLogId);
+    const requestedAmountCents = dollarsToCents(body.amount);
     if (!flightLogId) return json({ error: "Flight log ID is required." }, 400);
 
     const { data: stripeMethod, error: methodError } = await adminClient
@@ -154,10 +161,29 @@ Deno.serve(async (req: Request) => {
     if (!flightLog) return json({ error: "Flight log not found." }, 404);
     if (flightLog.payment_status === "paid") return json({ error: "This flight is already paid." }, 409);
 
-    const amountCents = dollarsToCents(flightLog.calculated_cost);
-    if (!amountCents || amountCents <= 0) {
+    const fullAmountCents = dollarsToCents(flightLog.calculated_cost);
+    if (!fullAmountCents || fullAmountCents <= 0) {
       return json({ error: "This flight does not have a charge to collect." }, 409);
     }
+
+    const { data: paymentRows, error: paymentsError } = await adminClient
+      .from("account_transactions")
+      .select("amount")
+      .eq("flight_log_id", flightLog.id)
+      .eq("type", "flight_charge")
+      .eq("verified_status", "verified");
+    if (paymentsError) throw paymentsError;
+
+    const paidCents = (paymentRows || []).reduce((total: number, tx: any) => {
+      const cents = dollarsToCents(tx.amount);
+      return total + (cents || 0);
+    }, 0);
+    const remainingCents = Math.max(0, fullAmountCents - paidCents);
+    if (remainingCents <= 0) return json({ error: "This flight is already fully paid." }, 409);
+    const amountCents = requestedAmountCents && requestedAmountCents > 0
+      ? Math.min(requestedAmountCents, remainingCents)
+      : remainingCents;
+    if (amountCents <= 0) return json({ error: "Enter an amount greater than $0." }, 400);
 
     const { data: savedCard, error: cardError } = await adminClient
       .from("member_stripe_payment_methods")
@@ -192,6 +218,8 @@ Deno.serve(async (req: Request) => {
     form.set("metadata[student_id]", flightLog.student_id || "");
     form.set("metadata[payment_method_id]", stripeMethod.id);
     form.set("metadata[charged_by_user_id]", user.id);
+    form.set("metadata[split_payment_amount]", centsToDollars(amountCents).toFixed(2));
+    form.set("metadata[split_payment_remaining_before]", centsToDollars(remainingCents).toFixed(2));
 
     const paymentResponse = await fetch("https://api.stripe.com/v1/payment_intents", {
       method: "POST",
@@ -227,6 +255,7 @@ Deno.serve(async (req: Request) => {
         paymentMethod: stripeMethod,
         paymentIntent,
         amountDollars: amountCents / 100,
+        totalPaidDollars: paidCents / 100,
       });
       return json({ ok: true, status: paymentIntent.status, paymentIntentId: paymentIntent.id });
     }
