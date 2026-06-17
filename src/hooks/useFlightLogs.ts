@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../utils/billing';
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
+const roundCurrency = (value: number) => Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
 
 const toLocalDateOnly = (value: string) => {
   const date = new Date(value);
@@ -205,6 +206,9 @@ export function useFlightLogs(userId?: string) {
         dual_time: roundFlightDecimal(logData.dual_time),
         solo_time: roundFlightDecimal(logData.solo_time),
       };
+      const requestedCostOverride = typeof normalisedLogData.calculated_cost === 'number' && Number.isFinite(normalisedLogData.calculated_cost)
+        ? roundCurrency(normalisedLogData.calculated_cost)
+        : undefined;
 
       const { data: rateData } = normalisedLogData.flight_type_id
         ? await supabase
@@ -222,13 +226,34 @@ export function useFlightLogs(userId?: string) {
         flatSurcharge: parseFloat(rateData.flat_surcharge || 0),
         weekendSurcharge: parseFloat(rateData.weekend_surcharge || 0),
       } : null;
-      const calculatedCost = calculateFlightCost({
+      const rateCalculatedCost = calculateFlightCost({
         rate: selectedRate as any,
         durationHours: normalisedLogData.flight_duration,
         isDual: !!normalisedLogData.instructor_id,
         passengerCount: normalisedLogData.passengers,
         startTime: normalisedLogData.start_time,
       });
+      let canOverrideCost = false;
+      if (requestedCostOverride !== undefined) {
+        const { data: roleRows } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id);
+
+        if (roleRows?.some((row: any) => row.role === 'admin')) {
+          canOverrideCost = true;
+        } else {
+          const { data: profile } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+          canOverrideCost = profile?.role === 'admin';
+        }
+      }
+      const calculatedCost = requestedCostOverride !== undefined && canOverrideCost
+        ? requestedCostOverride
+        : rateCalculatedCost;
       const noCharge = isNoChargeRate(selectedRate?.chargeType);
       let paymentMethodId = rateData?.default_payment_method_id ?? rateData?.flight_types?.forced_payment_method_id ?? null;
       if (!paymentMethodId && normalisedLogData.payment_type) {

@@ -6,6 +6,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useAircraftRates } from '../../hooks/useAircraftRates';
+import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { calculateFlightCost, isVoucherPaymentMethod } from '../../utils/billing';
@@ -58,6 +59,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   flightLogId,
 }) => {
   const { createFlightLog, updateFlightLog, checkTachOverlap } = useFlightLogs();
+  const { user: currentUser } = useAuth();
   const { settings } = useFlightLogSettings();
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
@@ -80,6 +82,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const [tachAutoFilled, setTachAutoFilled] = useState(false);
   const [loadedFlightLogId, setLoadedFlightLogId] = useState<string>(flightLogId || '');
   const [showOverlapWarning, setShowOverlapWarning] = useState(false);
+  const [adminChargeOverride, setAdminChargeOverride] = useState<number | ''>('');
+  const [adminChargeTouched, setAdminChargeTouched] = useState(false);
   const [overlappingLogs, setOverlappingLogs] = useState<Array<{
     id: string;
     start_tach: number;
@@ -144,6 +148,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
   const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
   const isPaymentForced = isVoucherBooking || (!isFree && !!selectedFlightType?.forcedPaymentMethodId);
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.roles?.includes('admin');
   const estimatedCost = calculateFlightCost({
     rate: selectedRate,
     durationHours: formData.flight_duration === '' ? 0 : formData.flight_duration,
@@ -151,12 +156,18 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     passengerCount: formData.passengers,
     startTime: formData.start_time,
   });
+  const showAdminChargeOverride = mode === 'create' && isAdmin && !!formData.flight_type_id && formData.flight_duration !== '' && !isVoucherBooking;
+  const finalCharge = showAdminChargeOverride && adminChargeOverride !== ''
+    ? Number(adminChargeOverride)
+    : estimatedCost;
 
   useEffect(() => {
     setIsSubmitting(false);
     setTachAutoFilled(false);
     setLoadedFlightLogId(flightLogId || '');
     setShowOverlapWarning(false);
+    setAdminChargeOverride('');
+    setAdminChargeTouched(false);
     setOverlappingLogs([]);
     setPendingLogData(null);
     setFormData(buildDefaultFormData());
@@ -179,6 +190,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     const derived = derivePaymentType(formData.flight_type_id);
     setFormData(prev => ({ ...prev, payment_type: derived }));
   }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking, booking.paymentType, voucherFlightType?.id]);
+
+  useEffect(() => {
+    if (!showAdminChargeOverride || adminChargeTouched) return;
+    setAdminChargeOverride(Number(estimatedCost.toFixed(2)));
+  }, [showAdminChargeOverride, adminChargeTouched, estimatedCost]);
 
   useEffect(() => {
     if (mode !== 'edit') return;
@@ -350,6 +366,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
     if (!formData.flight_type_id) return 'Please select a flight type';
+    if (showAdminChargeOverride && adminChargeOverride !== '' && (!Number.isFinite(adminChargeOverride) || adminChargeOverride < 0)) return 'Flight charge cannot be negative';
     if (!isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a payment type';
     if (isTakeoffsLandingsMandatory && (formData.takeoffs === undefined || formData.landings === undefined)) return 'Please enter takeoffs and landings';
     if (isFieldMandatory('comments') && !formData.comments.trim()) return 'Please enter debrief comments';
@@ -421,6 +438,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         comments: isFieldEnabled('comments') ? formData.comments || undefined : undefined,
         flight_type_id: formData.flight_type_id || undefined,
         payment_type: formData.payment_type || undefined,
+        ...(showAdminChargeOverride && { calculated_cost: Number(finalCharge.toFixed(2)) }),
         ...(isTakeoffsLandingsEnabled && { landings: formData.landings }),
         ...(isFieldEnabled('observations') && { observations: formData.observations }),
         ...(isFieldEnabled('hobbs_start') && { hobbs_start: formData.hobbs_start }),
@@ -685,15 +703,59 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
           {formData.flight_type_id && formData.flight_duration !== '' && (
             <div className="rounded-lg border border-gray-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-              {isVoucherBooking ? 'Voucher value used for this flight: ' : 'Estimated charge: '}
-              <span className="font-semibold">${estimatedCost.toFixed(2)}</span>
-              {selectedRate && (
-                <span className="ml-2 text-xs text-blue-700">
-                  {selectedRate.chargeType === 'tach'
-                    ? `${isDualFlight ? 'Dual' : 'Solo'} tach rate`
-                    : selectedRate.chargeType.replace('_', ' ')}
-                </span>
-              )}
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  {isVoucherBooking ? 'Voucher value used for this flight: ' : 'Estimated charge: '}
+                  <span className="font-semibold">${estimatedCost.toFixed(2)}</span>
+                  {selectedRate && (
+                    <span className="ml-2 text-xs text-blue-700">
+                      {selectedRate.chargeType === 'tach'
+                        ? `${isDualFlight ? 'Dual' : 'Solo'} tach rate`
+                        : selectedRate.chargeType.replace('_', ' ')}
+                    </span>
+                  )}
+                </div>
+                {showAdminChargeOverride && (
+                  <div className="flex flex-col gap-1 md:min-w-[220px]">
+                    <label className="text-xs font-semibold text-blue-900">Admin final charge</label>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-700">$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={adminChargeOverride}
+                          onChange={(event) => {
+                            setAdminChargeTouched(true);
+                            const nextValue = event.target.value;
+                            if (nextValue === '') {
+                              setAdminChargeOverride('');
+                              return;
+                            }
+                            const parsedValue = Number(nextValue);
+                            setAdminChargeOverride(Number.isFinite(parsedValue) ? parsedValue : '');
+                          }}
+                          className="w-full rounded-md border border-blue-200 bg-white py-1.5 pl-6 pr-2 text-sm font-semibold text-blue-950 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminChargeOverride(Number(estimatedCost.toFixed(2)));
+                          setAdminChargeTouched(false);
+                        }}
+                        className="rounded-md border border-blue-200 bg-white px-2 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                      >
+                        Use rate
+                      </button>
+                    </div>
+                    {Number(finalCharge.toFixed(2)) !== Number(estimatedCost.toFixed(2)) && (
+                      <p className="text-xs text-blue-700">This log will charge ${finalCharge.toFixed(2)} instead of the rate price.</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
