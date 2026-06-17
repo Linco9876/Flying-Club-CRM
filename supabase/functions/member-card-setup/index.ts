@@ -195,6 +195,7 @@ Deno.serve(async (req: Request) => {
     const cancelUrl = safeReturnUrl(body.cancelUrl, "/billing?card_setup=cancelled");
     const form = new URLSearchParams();
     form.set("mode", "setup");
+    form.set("currency", "aud");
     form.set("customer", stripeCustomerId);
     form.set("success_url", `${successUrl}${successUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`);
     form.set("cancel_url", cancelUrl);
