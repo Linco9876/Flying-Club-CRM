@@ -277,6 +277,13 @@ export interface StudentExamResult {
   fileType?: string;
   fileSize?: number;
   storagePath?: string;
+  answerSheetOnly?: boolean;
+  kdrRequired?: boolean;
+  kdrCompleted?: boolean;
+  kdrCompletionMethod?: 'verbal' | 'written' | 'not_required';
+  kdrNotes?: string;
+  kdrSignedOffBy?: string;
+  kdrSignedOffAt?: Date;
   createdAt: Date;
 }
 
@@ -328,6 +335,8 @@ export interface TrainingModule {
   assessmentCriteria: LessonAssessmentCriterion[];
   /** Whether this course normally asks students to acknowledge submitted lesson records */
   requiresStudentAcknowledgement?: boolean;
+  /** Require repeated competency evidence before recommending solo or flight-test gate lessons */
+  twoOccasionCompetencyRuleEnabled?: boolean;
   requiresFlyingDeclaration?: boolean;
   flyingDeclarationTitle?: string;
   flyingDeclarationText?: string;

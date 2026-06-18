@@ -1,0 +1,82 @@
+name: Send overdue training record alerts
+
+on:
+  schedule:
+    # GitHub schedules are UTC. This runs daily in the early evening Bendigo time.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-overdue-training-record-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger overdue training record reminders
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          fail_or_warn() {
+            message="$1"
+            if [ "${GITHUB_EVENT_NAME:-}" = "schedule" ]; then
+              echo "::warning::${message}"
+              exit 0
+            fi
+            echo "${message}" >&2
+            exit 1
+          }
+
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            fail_or_warn "Missing SUPABASE_URL GitHub secret."
+          fi
+
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            fail_or_warn "Missing SUPABASE_SERVICE_ROLE_KEY GitHub secret."
+          fi
+
+          response_file="$(mktemp)"
+          status_code="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              "${SUPABASE_URL%/}/functions/v1/send-overdue-training-record-alerts"
+          )"
+
+          echo "overdue-training-record-alerts status: ${status_code}"
+          cat "$response_file"
+          echo
+
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            fail_or_warn "Overdue training record alerts endpoint returned HTTP ${status_code}."
+          fi
+
+          python3 - "$response_file" "${GITHUB_EVENT_NAME:-}" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          event_name = sys.argv[2] if len(sys.argv) > 2 else ""
+          with open(path, "r", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          failed = int(payload.get("failed") or 0)
+          sent = int(payload.get("sent") or 0)
+          logs = int(payload.get("logs") or 0)
+
+          print(f"Overdue training record alert summary: logs={logs} sent={sent} failed={failed}")
+
+          if failed > 0:
+              message = "One or more overdue training record alert emails failed to send."
+              if event_name == "schedule":
+                  print(f"::warning::{message}")
+                  sys.exit(0)
+              print(message, file=sys.stderr)
+              sys.exit(1)
+          PY

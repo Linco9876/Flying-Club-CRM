@@ -38,6 +38,7 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     requiresStudentAcknowledgement: row.requires_student_acknowledgement === undefined || row.requires_student_acknowledgement === null
       ? true
       : Boolean(row.requires_student_acknowledgement),
+    twoOccasionCompetencyRuleEnabled: Boolean(row.two_occasion_competency_rule_enabled),
     requiresFlyingDeclaration: Boolean(row.requires_flying_declaration),
     flyingDeclarationTitle: (row.flying_declaration_title as string) ?? 'Flying Declaration',
     flyingDeclarationText: (row.flying_declaration_text as string) ?? '',
@@ -106,6 +107,7 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     tags: module.tags,
     assessment_criteria: module.assessmentCriteria,
     requires_student_acknowledgement: module.requiresStudentAcknowledgement ?? true,
+    two_occasion_competency_rule_enabled: module.twoOccasionCompetencyRuleEnabled ?? false,
     requires_flying_declaration: module.requiresFlyingDeclaration ?? false,
     flying_declaration_title: module.flyingDeclarationTitle || 'Flying Declaration',
     flying_declaration_text: module.flyingDeclarationText || '',
@@ -235,6 +237,7 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       tags: ['draft'],
       assessmentCriteria: [],
       requiresStudentAcknowledgement: true,
+      twoOccasionCompetencyRuleEnabled: false,
       requiresFlyingDeclaration: false,
       flyingDeclarationTitle: 'Flying Declaration',
       flyingDeclarationText: '',

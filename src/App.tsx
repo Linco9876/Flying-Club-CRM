@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
@@ -17,6 +17,7 @@ import { can, getAuthorizedMenuItems } from './utils/rbac';
 import { applyPortalTheme, getStoredPortalTheme, storePortalTheme } from './utils/theme';
 import { KioskLoginForm } from './components/Kiosk/KioskLoginForm';
 import { KioskCalendarShell } from './components/Kiosk/KioskCalendarShell';
+import { supabase } from './lib/supabase';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
 const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboard').then(module => ({ default: module.ProfileDashboard })));
@@ -72,6 +73,99 @@ const PageLoader = () => (
     </div>
   </div>
 );
+
+const OverdueTrainingRecordsLoginAlert = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!user) return;
+    const roles = user.roles?.length ? user.roles : [user.role];
+    const isInstructor = roles.some((role) => ['admin', 'senior_instructor', 'instructor'].includes(role));
+    if (!isInstructor) return;
+
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = `bfc_overdue_training_records_alert:${user.id}:${todayKey}`;
+    if (localStorage.getItem(storageKey)) return;
+
+    let cancelled = false;
+
+    const loadOutstandingCount = async () => {
+      const { data: logs, error } = await supabase
+        .from('flight_logs')
+        .select('id, booking_id, start_time')
+        .eq('instructor_id', user.id)
+        .eq('training_record_status', 'pending')
+        .lt('start_time', new Date().toISOString())
+        .order('start_time', { ascending: true })
+        .limit(100);
+
+      if (error || cancelled || !logs?.length) return;
+
+      const logIds = logs.map((log) => log.id).filter(Boolean);
+      const bookingIds = logs.map((log) => log.booking_id).filter(Boolean);
+      const { data: linkedRecords } =
+        logIds.length > 0 || bookingIds.length > 0
+          ? await supabase
+              .from('training_records')
+              .select('flight_log_id, booking_id')
+              .or([
+                logIds.length > 0 ? `flight_log_id.in.(${logIds.join(',')})` : '',
+                bookingIds.length > 0 ? `booking_id.in.(${bookingIds.join(',')})` : '',
+              ].filter(Boolean).join(','))
+          : { data: [] };
+
+      if (cancelled) return;
+      const recordedFlightLogIds = new Set((linkedRecords ?? []).map((record: any) => record.flight_log_id).filter(Boolean));
+      const recordedBookingIds = new Set((linkedRecords ?? []).map((record: any) => record.booking_id).filter(Boolean));
+      const outstanding = logs.filter((log: any) =>
+        !recordedFlightLogIds.has(log.id) &&
+        !(log.booking_id && recordedBookingIds.has(log.booking_id))
+      );
+
+      if (outstanding.length === 0) return;
+      localStorage.setItem(storageKey, 'shown');
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const olderThanSevenDays = outstanding.filter((log: any) => new Date(log.start_time).getTime() < sevenDaysAgo).length;
+      toast.custom((toastInstance) => (
+        <div className="max-w-sm rounded-xl border border-amber-200 bg-white p-4 shadow-xl">
+          <p className="text-sm font-semibold text-gray-900">Outstanding training records</p>
+          <p className="mt-1 text-sm text-gray-600">
+            You have {outstanding.length} training {outstanding.length === 1 ? 'record' : 'records'} waiting to be submitted.
+            {olderThanSevenDays > 0 ? ` ${olderThanSevenDays} are over 7 days old.` : ''}
+          </p>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => toast.dismiss(toastInstance.id)}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(toastInstance.id);
+                navigate('/training/outstanding-records');
+              }}
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+            >
+              Open records
+            </button>
+          </div>
+        </div>
+      ), { duration: 12000 });
+    };
+
+    void loadOutstandingCount();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, user]);
+
+  return null;
+};
 
 const AppShell = ({
   activeSidebarView,
@@ -808,6 +902,7 @@ function App() {
       <AuthProvider>
         <TrainingModulesProvider>
           <AppContent />
+          <OverdueTrainingRecordsLoginAlert />
           <Toaster
             position="top-right"
             toastOptions={{

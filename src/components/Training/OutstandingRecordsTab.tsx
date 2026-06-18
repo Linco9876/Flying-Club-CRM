@@ -20,6 +20,7 @@ import {
   normaliseSyllabusLessonKey,
   useSyllabusMatrix,
 } from '../../hooks/useSyllabusMatrix';
+import { getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 
@@ -417,8 +418,27 @@ export const OutstandingRecordsTab: React.FC = () => {
     }, {});
   }, [matrixCriterionOutcomes]);
 
+  const effectiveCriteriaGrades = hasMatrixAssessment ? matrixDerivedCriteriaGrades : form.criteriaGrades;
+
+  const twoOccasionReadiness = useMemo(() => getTwoOccasionReadiness({
+    course: selectedCourse,
+    records: trainingRecords,
+    studentId: activeStudentId,
+    nextLesson: lessonWillProceed ? nextLessonAfterSelected : null,
+    currentRecordGrades: effectiveCriteriaGrades,
+  }), [
+    activeStudentId,
+    effectiveCriteriaGrades,
+    lessonWillProceed,
+    nextLessonAfterSelected,
+    selectedCourse,
+    trainingRecords,
+  ]);
+
   const nextLessonForRecord = lessonWillProceed
-    ? (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
+    ? twoOccasionReadiness.blocked
+      ? (selectedLesson?.name || selectedLesson?.sequenceTitle || 'Repeat current lesson')
+      : (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
     : selectedLesson
       ? (selectedLesson.name || selectedLesson.sequenceTitle || 'Repeat current lesson')
       : '';
@@ -1946,23 +1966,35 @@ export const OutstandingRecordsTab: React.FC = () => {
                   )}
 
                   <div className={`rounded-lg border px-4 py-3 text-sm ${
-                    lessonPassed
+                    twoOccasionReadiness.blocked
+                      ? 'border-indigo-200 bg-indigo-50'
+                      : lessonPassed
                       ? 'border-emerald-200 bg-emerald-50'
                       : lessonWillProceed
                         ? 'border-blue-200 bg-blue-50'
                         : 'border-amber-200 bg-amber-50'
                   }`}>
                     <p className={`font-semibold ${
-                      lessonPassed
+                      twoOccasionReadiness.blocked
+                        ? 'text-indigo-800'
+                        : lessonPassed
                         ? 'text-emerald-800'
                         : lessonWillProceed
                           ? 'text-blue-800'
                           : 'text-amber-800'
                     }`}>
-                      {lessonPassed ? 'Lesson pass achieved' : lessonWillProceed ? 'Lesson proceeding with carry-forward items' : 'Lesson not passed yet'}
+                      {twoOccasionReadiness.blocked
+                        ? `Two-occasion rule: not ready to recommend ${twoOccasionReadiness.targetLessonName}`
+                        : lessonPassed
+                          ? 'Lesson pass achieved'
+                          : lessonWillProceed
+                            ? 'Lesson proceeding with carry-forward items'
+                            : 'Lesson not passed yet'}
                     </p>
                     <p className={`mt-1 text-xs ${
-                      lessonPassed
+                      twoOccasionReadiness.blocked
+                        ? 'text-indigo-700'
+                        : lessonPassed
                         ? 'text-emerald-700'
                         : lessonWillProceed
                           ? 'text-blue-700'
@@ -1970,6 +2002,12 @@ export const OutstandingRecordsTab: React.FC = () => {
                     }`}>
                       Next lesson on record: {nextLessonForRecord || 'Not set'}
                     </p>
+                    {twoOccasionReadiness.blocked && (
+                      <p className="mt-2 text-xs text-indigo-700">
+                        Needs two {twoOccasionReadiness.targetGrade} occasions before this gate. Still short: {twoOccasionReadiness.missing.slice(0, 4).map(item => `${item.name} (${item.count}/2)`).join(', ')}
+                        {twoOccasionReadiness.missing.length > 4 ? ` and ${twoOccasionReadiness.missing.length - 4} more` : ''}.
+                      </p>
+                    )}
                   </div>
 
                   {selectedLessonIsFlightTest && (

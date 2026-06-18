@@ -27,6 +27,7 @@ import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
 import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
+import { getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 
 interface StudentInfoForm {
   name: string;
@@ -60,12 +61,16 @@ interface ExamFormState {
   score: string;
   examDate: string;
   notes: string;
+  kdrCompleted: boolean;
+  kdrNotes: string;
 }
 
 interface ExamEditFormState {
   score: string;
   examDate: string;
   notes: string;
+  kdrCompleted: boolean;
+  kdrNotes: string;
   removeExistingFile: boolean;
 }
 
@@ -239,6 +244,8 @@ export const StudentProfilePage: React.FC = () => {
     score: '',
     examDate: new Date().toISOString().slice(0, 10),
     notes: '',
+    kdrCompleted: true,
+    kdrNotes: '',
   });
 
   const { students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
@@ -386,6 +393,13 @@ export const StudentProfilePage: React.FC = () => {
         fileType: row.file_type || undefined,
         fileSize: Number(row.file_size || 0),
         storagePath: row.storage_path || undefined,
+        answerSheetOnly: row.answer_sheet_only !== false,
+        kdrRequired: row.kdr_required !== false,
+        kdrCompleted: Boolean(row.kdr_completed),
+        kdrCompletionMethod: row.kdr_completion_method || 'verbal',
+        kdrNotes: row.kdr_notes || '',
+        kdrSignedOffBy: row.kdr_signed_off_by || undefined,
+        kdrSignedOffAt: row.kdr_signed_off_at ? new Date(row.kdr_signed_off_at) : undefined,
         createdAt: row.created_at ? new Date(row.created_at) : new Date(),
       })));
     } catch (error) {
@@ -491,6 +505,13 @@ export const StudentProfilePage: React.FC = () => {
         file_type: examUploadFile?.type || null,
         file_size: examUploadFile?.size || 0,
         storage_path: storagePath,
+        answer_sheet_only: true,
+        kdr_required: true,
+        kdr_completed: examForm.kdrCompleted,
+        kdr_completion_method: examForm.kdrCompleted ? 'verbal' : 'verbal',
+        kdr_notes: examForm.kdrNotes.trim(),
+        kdr_signed_off_by: examForm.kdrCompleted ? user.id : null,
+        kdr_signed_off_at: examForm.kdrCompleted ? new Date().toISOString() : null,
       });
 
       if (error) throw error;
@@ -501,6 +522,8 @@ export const StudentProfilePage: React.FC = () => {
         score: '',
         examDate: new Date().toISOString().slice(0, 10),
         notes: '',
+        kdrCompleted: true,
+        kdrNotes: '',
       });
       setExamUploadFile(null);
       await fetchStudentExamResults();
@@ -537,6 +560,8 @@ export const StudentProfilePage: React.FC = () => {
       score: String(result.score),
       examDate: result.examDate.toISOString().slice(0, 10),
       notes: result.notes || '',
+      kdrCompleted: Boolean(result.kdrCompleted),
+      kdrNotes: result.kdrNotes || '',
       removeExistingFile: false,
     });
     setExamEditFile(null);
@@ -583,6 +608,11 @@ export const StudentProfilePage: React.FC = () => {
           result: score >= editingExamResult.passMark ? 'pass' : 'fail',
           exam_date: examEditForm.examDate || new Date().toISOString().slice(0, 10),
           notes: examEditForm.notes.trim(),
+          kdr_completed: examEditForm.kdrCompleted,
+          kdr_completion_method: examEditForm.kdrCompleted ? 'verbal' : 'verbal',
+          kdr_notes: examEditForm.kdrNotes.trim(),
+          kdr_signed_off_by: examEditForm.kdrCompleted ? user?.id || editingExamResult.kdrSignedOffBy || null : null,
+          kdr_signed_off_at: examEditForm.kdrCompleted ? (editingExamResult.kdrSignedOffAt?.toISOString() || new Date().toISOString()) : null,
           file_name: nextFileName,
           file_type: nextFileType,
           file_size: nextFileSize,
@@ -904,6 +934,17 @@ export const StudentProfilePage: React.FC = () => {
     });
 
     if (passed) {
+      const readiness = getTwoOccasionReadiness({
+        course,
+        records: trainingRecords,
+        studentId: record.studentId,
+        nextLesson,
+        currentRecordGrades: criteriaGrades,
+        excludeRecordId: record.id,
+      });
+      if (readiness.blocked) {
+        return lesson.name || lesson.sequenceTitle || 'Repeat current lesson';
+      }
       return nextLesson?.name || nextLesson?.sequenceTitle || 'Course complete';
     }
 
@@ -2067,13 +2108,36 @@ export const StudentProfilePage: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </label>
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                  <label className="flex items-start gap-3 text-sm text-indigo-950">
+                    <input
+                      type="checkbox"
+                      checked={examForm.kdrCompleted}
+                      onChange={event => setExamForm(form => ({ ...form, kdrCompleted: event.target.checked }))}
+                      className="mt-1 h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>
+                      <span className="block font-semibold">KDR verbally reviewed with student</span>
+                      <span className="mt-1 block text-xs text-indigo-700">
+                        Keep this lightweight: upload the answer sheet only, then note any key knowledge-deficiency points discussed.
+                      </span>
+                    </span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={examForm.kdrNotes}
+                    onChange={event => setExamForm(form => ({ ...form, kdrNotes: event.target.value }))}
+                    placeholder="Optional KDR note, e.g. reviewed airspace and radio phraseology errors."
+                    className="mt-3 w-full rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
                 <label className="block rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 hover:border-blue-300 hover:bg-blue-50">
                   <span className="flex items-center gap-2 text-sm font-medium text-gray-800">
                     <Upload className="h-4 w-4 text-blue-600" />
-                    Upload exam file
+                    Upload answer sheet
                   </span>
                   <span className="mt-1 block text-xs text-gray-500">
-                    Optional. Attach the completed written exam, scan, photo or PDF.
+                    Optional. Attach the student's marked answer sheet, scan, photo or PDF. Do not upload the question paper.
                   </span>
                   <input
                     type="file"
@@ -2147,6 +2211,19 @@ export const StudentProfilePage: React.FC = () => {
                         </span>
                       </div>
                       {result.notes && <p className="mt-3 text-sm text-gray-700">{result.notes}</p>}
+                      <div className={`mt-3 rounded-md border px-3 py-2 text-xs ${
+                        result.kdrCompleted
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-amber-200 bg-amber-50 text-amber-800'
+                      }`}>
+                        <span className="font-semibold">
+                          {result.kdrCompleted ? 'KDR verbally reviewed' : 'KDR not marked complete'}
+                        </span>
+                        {result.kdrSignedOffAt && (
+                          <span> · {result.kdrSignedOffAt.toLocaleDateString()}</span>
+                        )}
+                        {result.kdrNotes && <p className="mt-1 text-gray-700">{result.kdrNotes}</p>}
+                      </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         {result.storagePath && (
                           <button
@@ -3794,13 +3871,37 @@ export const StudentProfilePage: React.FC = () => {
                 />
               </label>
 
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                <label className="flex items-start gap-3 text-sm text-indigo-950">
+                  <input
+                    type="checkbox"
+                    checked={examEditForm.kdrCompleted}
+                    onChange={event => setExamEditForm(form => form ? { ...form, kdrCompleted: event.target.checked } : form)}
+                    className="mt-1 h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>
+                    <span className="block font-semibold">KDR verbally reviewed with student</span>
+                    <span className="mt-1 block text-xs text-indigo-700">
+                      Store only the marked answer sheet and a short KDR evidence note.
+                    </span>
+                  </span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={examEditForm.kdrNotes}
+                  onChange={event => setExamEditForm(form => form ? { ...form, kdrNotes: event.target.value } : form)}
+                  placeholder="Optional KDR note."
+                  className="mt-3 w-full rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+
               <label className="block rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 hover:border-blue-300 hover:bg-blue-50">
                 <span className="flex items-center gap-2 text-sm font-medium text-gray-800">
                   <Upload className="h-4 w-4 text-blue-600" />
-                  Replace exam file
+                  Replace answer sheet
                 </span>
                 <span className="mt-1 block text-xs text-gray-500">
-                  Optional. Uploading a new file replaces the current one.
+                  Optional. Uploading a new file replaces the current marked answer sheet.
                 </span>
                 <input
                   type="file"

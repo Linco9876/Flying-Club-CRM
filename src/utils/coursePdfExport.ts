@@ -861,8 +861,8 @@ export async function exportCoursePdf({
     drawText('No exam results recorded for this course.', { x: margin, y: cursor }, { size: 9, color: grey });
     cursor -= 20;
   } else {
-    const columns = [70, 70, 90, 320, 150];
-    const headers = ['Score', 'Result', 'Date', 'Exam', 'Uploaded evidence'];
+    const columns = [60, 60, 80, 230, 130, 140];
+    const headers = ['Score', 'Result', 'Date', 'Exam', 'Answer sheet', 'KDR'];
     let x = margin;
     page.drawRectangle({ x: margin, y: cursor - 18, width: width - margin * 2, height: 18, color: lightGrey, borderColor: borderGrey, borderWidth: 0.5 });
     headers.forEach((header, i) => {
@@ -880,11 +880,14 @@ export async function exportCoursePdf({
         formatDate(exam.examDate),
         exam.examName,
         exam.fileName || 'No file attached',
+        exam.kdrCompleted
+          ? `Verbal KDR${exam.kdrSignedOffAt ? ` ${formatDate(exam.kdrSignedOffAt)}` : ''}`
+          : 'Not recorded',
       ];
       const rowColor = exam.result === 'pass' ? green : amber;
       page.drawRectangle({ x: margin, y: cursor - 18, width: width - margin * 2, height: 18, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.35 });
       rowText.forEach((text, i) => {
-        page.drawText(text.slice(0, i === 3 ? 56 : 28), { x: x + 4, y: cursor - 12, size: 8, font: i === 1 ? bold : regular, color: i === 1 ? rowColor : dark });
+        page.drawText(text.slice(0, i === 3 ? 42 : i === 4 || i === 5 ? 26 : 20), { x: x + 4, y: cursor - 12, size: 8, font: i === 1 ? bold : regular, color: i === 1 ? rowColor : dark });
         x += columns[i];
       });
       cursor -= 18;

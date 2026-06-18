@@ -54,6 +54,7 @@ interface NewCourseState {
   estimatedDurationHours: number;
   prerequisites: string;
   requiresStudentAcknowledgement: boolean;
+  twoOccasionCompetencyRuleEnabled: boolean;
   requiresFlyingDeclaration: boolean;
   flyingDeclarationTitle: string;
   flyingDeclarationText: string;
@@ -561,6 +562,24 @@ const makeUniqueCriterionId = (name: string, usedIds: Set<string>) => {
   return candidate;
 };
 
+const isGeneratedCriterionId = (id: string) => /^criterion-\d+(-[a-z0-9]+)?$/i.test(id);
+
+const updateCriterionName = (
+  criteria: EditableCriterion[],
+  criterionId: string,
+  name: string
+) => {
+  const usedIds = new Set(criteria.map((criterion) => criterion.id).filter((id) => id !== criterionId));
+  return criteria.map((criterion) => {
+    if (criterion.id !== criterionId) return criterion;
+    const trimmed = name.trim();
+    if (!trimmed || !isGeneratedCriterionId(criterion.id)) {
+      return { ...criterion, name };
+    }
+    return { ...criterion, id: makeUniqueCriterionId(trimmed, usedIds), name };
+  });
+};
+
 const normaliseCriterionPassingGrade = (system: LessonGradingSystem, value: string) => {
   const trimmed = value.trim();
   if (system === 'Out of 100') {
@@ -665,6 +684,7 @@ const emptyCourseForm = (): CourseFormState => ({
   estimatedDurationHours: 6,
   prerequisites: '',
   requiresStudentAcknowledgement: true,
+  twoOccasionCompetencyRuleEnabled: false,
   requiresFlyingDeclaration: false,
   flyingDeclarationTitle: 'Flying Declaration',
   flyingDeclarationText: defaultFlyingDeclarationText,
@@ -1630,6 +1650,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       estimatedDurationHours: selectedModule.estimatedDurationHours,
       prerequisites: selectedModule.prerequisites.join('\n'),
       requiresStudentAcknowledgement: selectedModule.requiresStudentAcknowledgement ?? true,
+      twoOccasionCompetencyRuleEnabled: selectedModule.twoOccasionCompetencyRuleEnabled ?? false,
       requiresFlyingDeclaration: selectedModule.requiresFlyingDeclaration ?? false,
       flyingDeclarationTitle: selectedModule.flyingDeclarationTitle || 'Flying Declaration',
       flyingDeclarationText: selectedModule.flyingDeclarationText || defaultFlyingDeclarationText,
@@ -1736,6 +1757,7 @@ export const TrainingCourseCatalog: React.FC = () => {
         estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
         prerequisites,
         requiresStudentAcknowledgement: editCourse.requiresStudentAcknowledgement,
+        twoOccasionCompetencyRuleEnabled: editCourse.twoOccasionCompetencyRuleEnabled,
         requiresFlyingDeclaration: editCourse.requiresFlyingDeclaration,
         flyingDeclarationTitle: editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
         flyingDeclarationText: editCourse.flyingDeclarationText.trim(),
@@ -1984,6 +2006,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       status: newCourse.status,
       estimatedDurationHours: Math.max(1, Number(newCourse.estimatedDurationHours) || 1),
       requiresStudentAcknowledgement: newCourse.requiresStudentAcknowledgement,
+      twoOccasionCompetencyRuleEnabled: newCourse.twoOccasionCompetencyRuleEnabled,
       requiresFlyingDeclaration: newCourse.requiresFlyingDeclaration,
       flyingDeclarationTitle: newCourse.flyingDeclarationTitle.trim() || 'Flying Declaration',
       flyingDeclarationText: newCourse.flyingDeclarationText.trim(),
@@ -2499,6 +2522,20 @@ export const TrainingCourseCatalog: React.FC = () => {
                 </span>
               </span>
             </label>
+            <label className="flex items-start gap-3 rounded-lg border border-indigo-200 bg-white p-4 text-sm text-indigo-950 md:col-span-2">
+              <input
+                type="checkbox"
+                checked={newCourse.twoOccasionCompetencyRuleEnabled}
+                onChange={(event) => setNewCourse((prev) => ({ ...prev, twoOccasionCompetencyRuleEnabled: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>
+                <span className="block font-semibold">Require two competency occasions before solo and flight-test recommendations</span>
+                <span className="mt-1 block text-xs text-indigo-700">
+                  Before a first solo lesson is recommended, the student must have two previous S results. Before a flight-test lesson is recommended, they must have two previous C results.
+                </span>
+              </span>
+            </label>
             <div className="rounded-lg border border-amber-200 bg-white p-4 text-sm text-amber-950 md:col-span-2">
               <label className="flex items-start gap-3">
                 <input
@@ -2668,7 +2705,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                     </button>
                   </div>
                   <input type="text" placeholder="e.g. Airmanship" value={criterion.name}
-                    onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, name: e.target.value } : c))}
+                    onChange={(e) => setCourseCriteria((p) => updateCriterionName(p, criterion.id, e.target.value))}
                     className="flex-1 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
                   <select value={criterion.gradingSystem}
                     onChange={(e) => setCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, gradingSystem: e.target.value as LessonGradingSystem, passingGrade: getDefaultPassingGrade(e.target.value as LessonGradingSystem) } : c))}
@@ -3246,6 +3283,20 @@ export const TrainingCourseCatalog: React.FC = () => {
                         </span>
                       </span>
                     </label>
+                    <label className="flex items-start gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 md:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={editCourse.twoOccasionCompetencyRuleEnabled}
+                        onChange={(e) => setEditCourse((p) => ({ ...p, twoOccasionCompetencyRuleEnabled: e.target.checked }))}
+                        className="mt-1 h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>
+                        <span className="block font-semibold text-indigo-950">Require two competency occasions before solo and flight-test recommendations</span>
+                        <span className="mt-1 block text-xs text-indigo-700">
+                          First solo waits for two S outcomes in prior records. Flight tests wait for two C outcomes in prior records.
+                        </span>
+                      </span>
+                    </label>
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 md:col-span-2">
                       <label className="flex items-start gap-3">
                         <input
@@ -3411,7 +3462,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                             </button>
                           </div>
                           <input type="text" placeholder="Criterion name" value={criterion.name}
-                            onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, name: e.target.value } : c))}
+                            onChange={(e) => setEditCourseCriteria((p) => updateCriterionName(p, criterion.id, e.target.value))}
                             className="flex-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none" />
                           <select value={criterion.gradingSystem}
                             onChange={(e) => setEditCourseCriteria((p) => p.map((c) => c.id === criterion.id ? { ...c, gradingSystem: e.target.value as LessonGradingSystem, passingGrade: getDefaultPassingGrade(e.target.value as LessonGradingSystem) } : c))}
