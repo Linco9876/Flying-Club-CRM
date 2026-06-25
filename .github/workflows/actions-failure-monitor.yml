@@ -4,7 +4,6 @@ on:
   workflow_run:
     workflows:
       - Daily CRM backup
-      - Deploy to GitHub Pages
     types:
       - completed
 

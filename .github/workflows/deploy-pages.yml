@@ -1,9 +1,8 @@
 name: Deploy to GitHub Pages
 
+# Cloudflare Pages is the production frontend host for portal.bendigoflyingclub.com.au.
+# Keep this workflow manual-only as an optional legacy/fallback GitHub Pages deploy.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
