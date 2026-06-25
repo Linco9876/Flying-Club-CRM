@@ -235,10 +235,6 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       return <div className="p-3 text-sm text-gray-500 sm:p-6">Billing history is not available in the student portal.</div>;
     }
 
-    if (!billing.xeroConnected) {
-      return null;
-    }
-
     const account = billing.pilotAccounts.find(item => item.userId === user?.id);
     const transactions = billing.transactions.filter(item => item.userId === user?.id);
     const accountTopUpPaymentMethods = paymentMethods.filter(method => method.active && method.allowAccountTopup !== false);
@@ -262,6 +258,44 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       if (normalised === 'AUTHORISED' || normalised === 'SUBMITTED') return 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200';
       return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200';
     };
+
+    if (!billing.xeroConnected) {
+      return (
+        <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Billing</h1>
+            <p className="text-gray-600 dark:text-gray-400">Live billing information is provided by Xero.</p>
+          </div>
+
+          <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                  <Wallet className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-amber-950 dark:text-amber-100">Billing is not connected to Xero</h2>
+                  <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                    The CRM could not confirm an active Xero connection, so it is hiding balances and invoices rather than showing stale or fake amounts.
+                  </p>
+                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                    An admin can reconnect Xero from Settings &gt; Integrations. If Xero was just connected, refresh this page.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void billing.refetch()}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+            </div>
+          </section>
+        </div>
+      );
+    }
 
     const handlePayXeroInvoice = async (invoice: XeroPortalInvoice) => {
       if (invoice.amountDue <= 0.005) return;
