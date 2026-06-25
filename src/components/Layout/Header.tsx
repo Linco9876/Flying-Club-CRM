@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Calendar, CreditCard, Plane, User, LogOut } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
-import { supabase } from '../../lib/supabase';
+import { fetchOwnXeroBalance } from '../../lib/xeroMemberBalance';
 
 const formatCurrency = (amount: number, decimals: number) =>
   new Intl.NumberFormat('en-AU', {
@@ -18,35 +18,38 @@ export const Header: React.FC = () => {
   const { user, logout } = useAuth();
   const { settings } = useOrganisationSettings();
   const { settings: portalSettings } = usePortalUxSettings();
-  const [balance, setBalance] = React.useState(0);
+  const [balance, setBalance] = React.useState<number | null>(null);
+  const [showBalanceTab, setShowBalanceTab] = React.useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const businessName = settings?.club_name?.trim() || 'Bendigo Flying Club';
   const avatarUrl = user?.avatar?.trim();
-  const balanceLabel = formatCurrency(balance, portalSettings.currency_decimals);
+  const balanceLabel = balance == null ? '-' : formatCurrency(balance, portalSettings.currency_decimals);
 
   React.useEffect(() => {
     let mounted = true;
 
     const fetchBalance = async () => {
       if (!user?.id) {
-        if (mounted) setBalance(0);
+        if (mounted) {
+          setBalance(null);
+          setShowBalanceTab(false);
+        }
         return;
       }
 
-      const { data, error } = await supabase
-        .from('students')
-        .select('prepaid_balance')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (!mounted) return;
-      if (error) {
+      try {
+        const data = await fetchOwnXeroBalance();
+        if (!mounted) return;
+        const showLinkedBalance = Boolean(data.connected && data.linked);
+        setShowBalanceTab(showLinkedBalance);
+        setBalance(showLinkedBalance ? Number(data.availableCredit ?? 0) : null);
+      } catch (error) {
+        if (!mounted) return;
         console.error('Failed to load header balance:', error);
-        setBalance(0);
-        return;
+        setBalance(null);
+        setShowBalanceTab(false);
       }
-      setBalance(data ? Number(data.prepaid_balance || 0) : 0);
     };
 
     fetchBalance();
@@ -58,7 +61,7 @@ export const Header: React.FC = () => {
   const topNavItems = [
     { label: 'Profile', path: '/', icon: User, active: location.pathname === '/' || location.pathname === '/profile' },
     { label: 'Calendar', path: '/calendar', icon: Calendar, active: location.pathname.startsWith('/calendar') },
-    { label: 'Balance', value: balanceLabel, path: '/billing', icon: CreditCard, active: location.pathname.startsWith('/billing') }
+    ...(showBalanceTab ? [{ label: 'Balance', value: balanceLabel, path: '/billing', icon: CreditCard, active: location.pathname.startsWith('/billing') }] : [])
   ];
 
   return (

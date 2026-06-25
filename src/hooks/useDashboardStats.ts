@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchOwnXeroBalance } from '../lib/xeroMemberBalance';
 
 export interface DashboardStats {
   totalStudents: number;
@@ -233,7 +234,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
       }
 
       if (userRole === 'student' || userRole === 'pilot') {
-        const [myHoursResult, myNextBookingResult, balanceResult, myBookingsTodayResult] = await Promise.all([
+        const [myHoursResult, myNextBookingResult, xeroBalanceResult, myBookingsTodayResult] = await Promise.all([
           supabase
             .from('flight_logs')
             .select('flight_duration')
@@ -251,11 +252,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
             .order('start_time', { ascending: true })
             .limit(1)
             .maybeSingle(),
-          supabase
-            .from('students')
-            .select('prepaid_balance')
-            .eq('id', userId)
-            .maybeSingle(),
+          fetchOwnXeroBalance(),
           supabase
             .from('bookings')
             .select('id', { count: 'exact' })
@@ -266,7 +263,9 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         ]);
 
         myFlightHours = (myHoursResult.data || []).reduce((sum, log) => sum + (log.flight_duration || 0), 0);
-        myPrepaidBalance = balanceResult.data ? parseFloat(balanceResult.data.prepaid_balance || 0) : 0;
+        myPrepaidBalance = xeroBalanceResult.connected && xeroBalanceResult.linked
+          ? Number(xeroBalanceResult.availableCredit ?? 0)
+          : 0;
 
         if (myNextBookingResult.data) {
           const nb = myNextBookingResult.data as any;
