@@ -116,7 +116,7 @@ export const useBillingAccounts = () => {
     }
   };
 
-const fetchUnpaidFlights = async () => {
+const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
     try {
       const { data, error } = await supabase
         .from('flight_logs')
@@ -165,8 +165,7 @@ const fetchUnpaidFlights = async () => {
         });
       }
 
-      setUnpaidFlights(
-        (data || []).map((row: any) => {
+      const mappedFlights = (data || []).map((row: any) => {
           const calculatedCost = row.calculated_cost != null ? parseFloat(row.calculated_cost) : null;
           const amountPaid = paidByFlight[row.id] ?? 0;
           const amountRemaining = calculatedCost == null ? null : Math.max(0, Math.round((calculatedCost - amountPaid + Number.EPSILON) * 100) / 100);
@@ -192,8 +191,27 @@ const fetchUnpaidFlights = async () => {
           xeroInvoiceNumber: row.xero_invoice_number ?? null,
           xeroPaymentId: row.xero_payment_id ?? null,
         };
-      })
-      );
+      });
+
+      setUnpaidFlights(mappedFlights);
+
+      const xeroFlightIds = mappedFlights
+        .filter((flight: UnpaidFlight) => flight.xeroInvoiceId)
+        .map((flight: UnpaidFlight) => flight.id);
+      if (!skipXeroRefresh && xeroFlightIds.length > 0) {
+        try {
+          const { data: refreshData, error: refreshError } = await supabase.functions.invoke('xero-sync', {
+            body: { action: 'refresh-paid-flight-invoices', flightLogIds: xeroFlightIds },
+          });
+          if (refreshError) throw refreshError;
+          if ((refreshData as any)?.paidCount > 0) {
+            await fetchUnpaidFlights(true);
+            await fetchTransactions();
+          }
+        } catch (refreshErr) {
+          console.warn('Unable to refresh Xero invoice payment statuses:', refreshErr);
+        }
+      }
     } catch (err) {
       console.error('Error fetching unpaid flights:', err);
     }

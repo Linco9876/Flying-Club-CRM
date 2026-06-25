@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, AlertCircle, TrendingUp, TrendingDown, CheckCircle } from 'lucide-react';
+import { X, Download, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { useBillingAccounts } from '../../hooks/useBillingAccounts';
-import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -37,13 +35,8 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
   userEmail,
   currentBalance,
 }) => {
-  const { markFlightPaid } = useBillingAccounts();
-  const { paymentMethods } = useBillingSettings();
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [markingPaid, setMarkingPaid] = useState<{ flightLogId: string; amount: number; paymentType: string | null } | null>(null);
-  const [markPaymentMethodId, setMarkPaymentMethodId] = useState('');
-  const [markSaving, setMarkSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !userId) return;
@@ -100,21 +93,6 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
       console.error('Error fetching account history:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleMarkPaid = async () => {
-    if (!markingPaid || !markPaymentMethodId) return;
-    const selected = paymentMethods.find(pm => pm.id === markPaymentMethodId);
-    if (!selected) return;
-    setMarkSaving(true);
-    try {
-      await markFlightPaid(markingPaid.flightLogId, selected.name);
-      setMarkingPaid(null);
-      setMarkPaymentMethodId('');
-      await fetchHistory();
-    } finally {
-      setMarkSaving(false);
     }
   };
 
@@ -257,49 +235,8 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
                         {row.rowType === 'credit' ? 'Top-up' : row.rowType === 'unpaid' ? 'Unpaid' : 'Payment'}
                       </span>
                     </td>
-                    <td className="py-3 whitespace-nowrap">
-                      {row.rowType === 'unpaid' && row.flightLogId && (
-                        markingPaid?.flightLogId === row.flightLogId ? (
-                          <div className="flex items-center gap-1.5">
-                            <select
-                              value={markPaymentMethodId}
-                              onChange={e => setMarkPaymentMethodId(e.target.value)}
-                              className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-                              autoFocus
-                            >
-                              <option value="">— Method —</option>
-                              {paymentMethods.filter(pm => pm.active).map(pm => (
-                                <option key={pm.id} value={pm.id}>{pm.name}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={handleMarkPaid}
-                              disabled={markSaving || !markPaymentMethodId}
-                              className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors"
-                            >
-                              {markSaving ? '...' : 'Confirm'}
-                            </button>
-                            <button
-                              onClick={() => { setMarkingPaid(null); setMarkPaymentMethodId(''); }}
-                              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              const preselected = paymentMethods.find(pm => pm.name === row.paymentType);
-                              setMarkingPaid({ flightLogId: row.flightLogId!, amount: Math.abs(row.amount), paymentType: row.paymentType ?? null });
-                              setMarkPaymentMethodId(preselected?.id ?? '');
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                          >
-                            <CheckCircle className="h-3 w-3" />
-                            Mark Paid
-                          </button>
-                        )
-                      )}
+                    <td className="py-3 whitespace-nowrap text-xs text-gray-400">
+                      {row.rowType === 'unpaid' ? 'Paid via Xero' : ''}
                     </td>
                   </tr>
                 ))}

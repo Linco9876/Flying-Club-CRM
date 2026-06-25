@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2, FileText, BadgeDollarSign } from 'lucide-react';
+import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2, FileText, ExternalLink } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
-import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -48,72 +47,8 @@ const makeInvoiceNumber = (rowId: string, index: number) => {
   return `BFC-${format(new Date(), 'yyyyMMdd')}-${String(index + 1).padStart(3, '0')}${cleanId ? `-${cleanId}` : ''}`;
 };
 
-const MarkPaidModal: React.FC<{
-  flightId: string;
-  description: string;
-  amount: number | null;
-  preselectedPaymentType: string | null;
-  paymentMethods: { id: string; name: string }[];
-  onClose: () => void;
-  onConfirm: (flightLogId: string, paymentType: string) => Promise<void>;
-}> = ({ flightId, description, amount, preselectedPaymentType, paymentMethods, onClose, onConfirm }) => {
-  const preselected = paymentMethods.find(pm => pm.name === preselectedPaymentType);
-  const [paymentMethodId, setPaymentMethodId] = useState(preselected?.id ?? '');
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!paymentMethodId) return;
-    const selected = paymentMethods.find(pm => pm.id === paymentMethodId);
-    if (!selected) return;
-    setSaving(true);
-    try {
-      await onConfirm(flightId, selected.name);
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm">
-        <div className="p-6 border-b border-gray-100">
-          <h3 className="text-base font-semibold text-gray-900">Mark as Paid</h3>
-          <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{description}</p>
-          {amount != null && (
-            <p className="text-sm font-semibold text-gray-800 mt-1">${Math.abs(amount).toFixed(2)}</p>
-          )}
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method <span className="text-red-500">*</span></label>
-            <select
-              value={paymentMethodId}
-              onChange={e => setPaymentMethodId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              autoFocus
-            >
-              <option value="">— Select —</option>
-              {paymentMethods.filter(pm => pm.active).map(pm => (
-                <option key={pm.id} value={pm.id}>{pm.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving || !paymentMethodId} className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors">
-              {saving ? 'Saving...' : 'Confirm Payment'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
+const getXeroInvoiceUrl = (invoiceId: string) =>
+  `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoiceId)}`;
 
 const SplitPaymentModal: React.FC<{
   flightId: string;
@@ -321,6 +256,81 @@ const SplitPaymentModal: React.FC<{
   );
 };
 
+const PaymentChoiceModal: React.FC<{
+  row: {
+    flightLogId: string | null;
+    userId: string;
+    userName: string;
+    description: string;
+    totalAmount: number | null;
+    amount: number | null;
+    amountPaid: number;
+    amountRemaining: number | null;
+  };
+  charging: boolean;
+  creatingLink: boolean;
+  onClose: () => void;
+  onChargeCard: () => Promise<void>;
+  onStripeLink: () => Promise<void>;
+  onSplitPayment: () => void;
+}> = ({ row, charging, creatingLink, onClose, onChargeCard, onStripeLink, onSplitPayment }) => {
+  const remaining = row.amountRemaining ?? Math.abs(row.amount ?? 0);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+        <div className="border-b border-gray-100 p-5">
+          <h3 className="text-base font-semibold text-gray-900">Take payment</h3>
+          <p className="mt-1 text-sm text-gray-500">{row.userName}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-gray-600">{row.description}</p>
+          <p className="mt-3 text-sm font-semibold text-amber-700">Remaining ${remaining.toFixed(2)}</p>
+        </div>
+        <div className="space-y-3 p-5">
+          <button
+            type="button"
+            onClick={onChargeCard}
+            disabled={charging}
+            className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-left hover:bg-gray-50 disabled:opacity-60"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">Charge saved card</span>
+              <span className="block text-xs text-gray-500">Uses the member's stored Stripe card authority.</span>
+            </span>
+            {charging ? <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> : <CreditCard className="h-4 w-4 text-indigo-600" />}
+          </button>
+          <button
+            type="button"
+            onClick={onStripeLink}
+            disabled={creatingLink}
+            className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-left hover:bg-gray-50 disabled:opacity-60"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">Open Stripe payment link</span>
+              <span className="block text-xs text-gray-500">Pay now by card, including a different card.</span>
+            </span>
+            {creatingLink ? <Loader2 className="h-4 w-4 animate-spin text-blue-600" /> : <ExternalLink className="h-4 w-4 text-blue-600" />}
+          </button>
+          <button
+            type="button"
+            onClick={onSplitPayment}
+            className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-left hover:bg-gray-50"
+          >
+            <span>
+              <span className="block text-sm font-semibold text-gray-900">Split payment</span>
+              <span className="block text-xs text-gray-500">Use prepaid credit plus one or more card payments.</span>
+            </span>
+            <CreditCard className="h-4 w-4 text-slate-700" />
+          </button>
+        </div>
+        <div className="flex justify-end border-t border-gray-100 p-5">
+          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RejectModal: React.FC<{
   transactionId: string;
   userName: string;
@@ -394,20 +404,26 @@ const RejectModal: React.FC<{
 };
 
 export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { transactions, unpaidFlights, pilotAccounts, loading, markFlightPaid, createFlightPaymentCheckout, chargeFlightSavedCard, syncFlightInvoiceToXero, applyXeroPaymentsForFlight, applyPilotAccountPayment, verifyTransaction, rejectTransaction } = billing;
-  const { paymentMethods } = useBillingSettings();
+  const { transactions, unpaidFlights, pilotAccounts, loading, createFlightPaymentCheckout, chargeFlightSavedCard, applyPilotAccountPayment, verifyTransaction, rejectTransaction } = billing;
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'unpaid'>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [markingPaid, setMarkingPaid] = useState<{ flightId: string; description: string; amount: number | null; paymentType: string | null } | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [creatingStripeCheckoutId, setCreatingStripeCheckoutId] = useState<string | null>(null);
   const [chargingSavedCardId, setChargingSavedCardId] = useState<string | null>(null);
-  const [syncingXeroInvoiceId, setSyncingXeroInvoiceId] = useState<string | null>(null);
-  const [syncingXeroPaymentId, setSyncingXeroPaymentId] = useState<string | null>(null);
+  const [paymentChoice, setPaymentChoice] = useState<{
+    flightLogId: string | null;
+    userId: string;
+    userName: string;
+    description: string;
+    totalAmount: number | null;
+    amount: number | null;
+    amountPaid: number;
+    amountRemaining: number | null;
+  } | null>(null);
   const [splitPayment, setSplitPayment] = useState<{
     flightId: string;
     userId: string;
@@ -625,24 +641,6 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     }
   };
 
-  const handleSyncXeroInvoice = async (flightLogId: string) => {
-    setSyncingXeroInvoiceId(flightLogId);
-    try {
-      await syncFlightInvoiceToXero(flightLogId);
-    } finally {
-      setSyncingXeroInvoiceId(null);
-    }
-  };
-
-  const handleApplyXeroPayments = async (flightLogId: string) => {
-    setSyncingXeroPaymentId(flightLogId);
-    try {
-      await applyXeroPaymentsForFlight(flightLogId);
-    } finally {
-      setSyncingXeroPaymentId(null);
-    }
-  };
-
   const rejectingRow = rejectingId ? allRows.find(r => r.id === rejectingId) : null;
 
   const statusBadge = (row: typeof allRows[0]) => {
@@ -690,87 +688,38 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     <>
       {row.rowType === 'unpaid' && row.flightLogId && (
         <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
-          <button
-            onClick={() => handleSyncXeroInvoice(row.flightLogId!)}
-            disabled={syncingXeroInvoiceId === row.flightLogId}
-            className={`flex items-center justify-center gap-1 text-xs font-medium bg-sky-700 text-white rounded-lg hover:bg-sky-800 disabled:opacity-60 transition-colors ${
-              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
-            }`}
-            title={row.xeroInvoiceNumber ? `Xero invoice ${row.xeroInvoiceNumber}` : 'Create/update Xero invoice'}
-          >
-            {syncingXeroInvoiceId === row.flightLogId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-            {row.xeroInvoiceId ? 'Sync Xero' : 'Xero Invoice'}
-          </button>
           {row.xeroInvoiceId && (
+            <a
+              href={getXeroInvoiceUrl(row.xeroInvoiceId)}
+              target="_blank"
+              rel="noreferrer"
+              className={`flex items-center justify-center gap-1 text-xs font-medium bg-sky-700 text-white rounded-lg hover:bg-sky-800 transition-colors ${
+                compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+              }`}
+              title={row.xeroInvoiceNumber ? `Open Xero invoice ${row.xeroInvoiceNumber}` : 'Open Xero invoice'}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              View Invoice
+            </a>
+          )}
+          {row.paymentType?.toLowerCase().includes('stripe') && (
             <button
-              onClick={() => handleApplyXeroPayments(row.flightLogId!)}
-              disabled={syncingXeroPaymentId === row.flightLogId}
-              className={`flex items-center justify-center gap-1 text-xs font-medium bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-60 transition-colors ${
+              onClick={() => setPaymentChoice(row)}
+              className={`flex items-center justify-center gap-1 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors ${
                 compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
               }`}
             >
-              {syncingXeroPaymentId === row.flightLogId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BadgeDollarSign className="h-3.5 w-3.5" />}
-              Xero Payment
+              <CreditCard className="h-3.5 w-3.5" />
+              Take Payment
             </button>
           )}
-          {row.paymentType?.toLowerCase().includes('stripe') && (
-            <>
-              <button
-                onClick={() => handleChargeSavedCard(row.flightLogId!)}
-                disabled={chargingSavedCardId === row.flightLogId}
-                className={`flex items-center justify-center gap-1 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors ${
-                  compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
-                }`}
-              >
-                {chargingSavedCardId === row.flightLogId ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CreditCard className="h-3.5 w-3.5" />
-                )}
-                Charge Card
-              </button>
-              <button
-                onClick={() => handleCreateStripeCheckout(row.flightLogId!)}
-                disabled={creatingStripeCheckoutId === row.flightLogId}
-                className={`flex items-center justify-center gap-1 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors ${
-                  compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
-                }`}
-              >
-                {creatingStripeCheckoutId === row.flightLogId ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CreditCard className="h-3.5 w-3.5" />
-                )}
-                Stripe Link
-              </button>
-            </>
+          {!row.xeroInvoiceId && (
+            <span className={`flex items-center justify-center gap-1 text-xs font-medium text-gray-500 ${
+              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+            }`}>
+              Awaiting Xero invoice
+            </span>
           )}
-          <button
-            onClick={() => setMarkingPaid({ flightId: row.flightLogId!, description: row.description, amount: row.amount, paymentType: row.paymentType })}
-            className={`flex items-center justify-center gap-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${
-              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
-            }`}
-          >
-            <CheckCircle className="h-3.5 w-3.5" />
-            Mark Paid
-          </button>
-          <button
-            onClick={() => setSplitPayment({
-              flightId: row.flightLogId!,
-              userId: row.userId,
-              userName: row.userName,
-              description: row.description,
-              totalAmount: row.totalAmount ?? Math.abs(row.amount ?? 0),
-              amountPaid: row.amountPaid,
-              amountRemaining: row.amountRemaining ?? Math.abs(row.amount ?? 0),
-            })}
-            className={`flex items-center justify-center gap-1 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors ${
-              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
-            }`}
-          >
-            <CreditCard className="h-3.5 w-3.5" />
-            Split Pay
-          </button>
         </div>
       )}
       {row.isTopup && row.verifiedStatus === 'pending' && (
@@ -1105,15 +1054,35 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         )}
       </div>
 
-      {markingPaid && (
-        <MarkPaidModal
-          flightId={markingPaid.flightId}
-          description={markingPaid.description}
-          amount={markingPaid.amount}
-          preselectedPaymentType={markingPaid.paymentType}
-          paymentMethods={paymentMethods}
-          onClose={() => setMarkingPaid(null)}
-          onConfirm={markFlightPaid}
+      {paymentChoice && (
+        <PaymentChoiceModal
+          row={paymentChoice}
+          charging={chargingSavedCardId === paymentChoice.flightLogId}
+          creatingLink={creatingStripeCheckoutId === paymentChoice.flightLogId}
+          onClose={() => setPaymentChoice(null)}
+          onChargeCard={async () => {
+            if (!paymentChoice.flightLogId) return;
+            await handleChargeSavedCard(paymentChoice.flightLogId);
+            setPaymentChoice(null);
+          }}
+          onStripeLink={async () => {
+            if (!paymentChoice.flightLogId) return;
+            await handleCreateStripeCheckout(paymentChoice.flightLogId);
+            setPaymentChoice(null);
+          }}
+          onSplitPayment={() => {
+            if (!paymentChoice.flightLogId) return;
+            setSplitPayment({
+              flightId: paymentChoice.flightLogId,
+              userId: paymentChoice.userId,
+              userName: paymentChoice.userName,
+              description: paymentChoice.description,
+              totalAmount: paymentChoice.totalAmount ?? Math.abs(paymentChoice.amount ?? 0),
+              amountPaid: paymentChoice.amountPaid,
+              amountRemaining: paymentChoice.amountRemaining ?? Math.abs(paymentChoice.amount ?? 0),
+            });
+            setPaymentChoice(null);
+          }}
         />
       )}
 

@@ -1727,6 +1727,70 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
   return { invoiceId, payments, feeTransactions, skipped: (txRows || []).length - payments.length };
 };
 
+const refreshPaidFlightInvoices = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  flightLogIds: string[] = [],
+) => {
+  let query = adminClient
+    .from("flight_logs")
+    .select("id, xero_invoice_id, xero_invoice_number")
+    .not("xero_invoice_id", "is", null)
+    .or("payment_status.is.null,payment_status.eq.unpaid,payment_status.eq.pending")
+    .limit(50);
+
+  const ids = flightLogIds.map(clean).filter(Boolean);
+  if (ids.length > 0) {
+    query = query.in("id", ids);
+  }
+
+  const { data: flights, error } = await query;
+  if (error) throw error;
+
+  const updated: any[] = [];
+  for (const flight of flights || []) {
+    const invoiceId = clean(flight.xero_invoice_id);
+    if (!invoiceId) continue;
+    const invoice = await getXeroInvoice(ctx, invoiceId);
+    const invoiceStatus = clean(invoice?.Status).toUpperCase();
+    const payments = Array.isArray(invoice?.Payments) ? invoice.Payments : [];
+    const latestPaymentId = clean(payments[payments.length - 1]?.PaymentID);
+    const update: Record<string, unknown> = {
+      xero_invoice_status: invoiceStatus || null,
+      xero_invoice_number: clean(invoice?.InvoiceNumber) || clean(flight.xero_invoice_number) || null,
+      xero_invoice_synced_at: new Date().toISOString(),
+    };
+
+    if (invoiceStatus === "PAID") {
+      update.payment_status = "paid";
+      if (latestPaymentId) {
+        update.xero_payment_id = latestPaymentId;
+        update.xero_payment_synced_at = new Date().toISOString();
+      }
+    }
+
+    const { error: updateError } = await adminClient
+      .from("flight_logs")
+      .update(update)
+      .eq("id", flight.id);
+    if (updateError) throw updateError;
+
+    updated.push({
+      flightLogId: flight.id,
+      invoiceId,
+      invoiceNumber: update.xero_invoice_number,
+      status: invoiceStatus || null,
+      markedPaid: invoiceStatus === "PAID",
+    });
+  }
+
+  return {
+    checked: (flights || []).length,
+    updated,
+    paidCount: updated.filter(row => row.markedPaid).length,
+  };
+};
+
 const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, voucherId: string, queueId: string | null = null) => {
   await markQueue(adminClient, queueId, { status: "processing" });
   const voucher = await getVoucher(adminClient, voucherId);
@@ -2233,6 +2297,11 @@ Deno.serve(async (req: Request) => {
       const flightLogId = clean(body.flightLogId);
       if (!flightLogId) return json({ error: "Missing flightLogId" }, 400);
       return json(await applyFlightPayments(adminClient, ctx, flightLogId));
+    }
+
+    if (action === "refresh-paid-flight-invoices") {
+      const flightLogIds = Array.isArray(body.flightLogIds) ? body.flightLogIds.map(clean).filter(Boolean) : [];
+      return json(await refreshPaidFlightInvoices(adminClient, ctx, flightLogIds));
     }
 
     if (action === "sync-transaction") {
