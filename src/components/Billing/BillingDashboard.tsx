@@ -448,7 +448,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 const amountDue = Number(invoice.amountDue || 0);
                 const invoiceUrl = invoice.url || `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoice.invoiceId)}`;
                 return (
-                  <div key={invoice.invoiceId} className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.4fr)_0.7fr_0.7fr_auto] lg:items-center">
+                  <div key={invoice.invoiceId} className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1fr)_7.5rem_7.5rem_12rem] lg:items-center">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -465,17 +465,17 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                         Invoice {formatInvoiceDate(invoice.date)} · Due {formatInvoiceDate(invoice.dueDate)}
                       </p>
                     </div>
-                    <div>
+                    <div className="lg:text-right">
                       <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total</p>
                       <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{currencyFormatter(Number(invoice.total || 0))}</p>
                     </div>
-                    <div>
+                    <div className="lg:text-right">
                       <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Owing</p>
                       <p className={`text-sm font-semibold ${amountDue > 0.005 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
                         {currencyFormatter(amountDue)}
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                    <div className="flex min-w-0 flex-wrap gap-2 lg:justify-end">
                       <a
                         href={invoiceUrl}
                         target="_blank"
