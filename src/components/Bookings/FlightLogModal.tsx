@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { X, Lock, Copy, ExternalLink, Mail, QrCode, Loader2 } from 'lucide-react';
-import QRCode from 'qrcode';
 import { FlightPaymentLinkResult, useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -57,6 +56,20 @@ const toLocalDateTimeInputValue = (value: Date | string) => {
 };
 
 const localDateTimeInputToIso = (value: string) => new Date(value).toISOString();
+
+const generateQrDataUrl = async (checkoutUrl: string) => {
+  const qrCodeModule = await import('qrcode');
+  const qrCode = qrCodeModule.default ?? qrCodeModule;
+
+  return qrCode.toDataURL(checkoutUrl, {
+    margin: 1,
+    width: 256,
+    color: {
+      dark: '#0f172a',
+      light: '#ffffff',
+    },
+  });
+};
 
 export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   booking,
@@ -217,14 +230,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       }
 
       try {
-        const dataUrl = await QRCode.toDataURL(paymentLinkResult.checkoutUrl, {
-          margin: 1,
-          width: 256,
-          color: {
-            dark: '#0f172a',
-            light: '#ffffff',
-          },
-        });
+        const dataUrl = await generateQrDataUrl(paymentLinkResult.checkoutUrl);
 
         if (!cancelled) {
           setPaymentQrDataUrl(dataUrl);
@@ -253,14 +259,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       }
 
       try {
-        const dataUrl = await QRCode.toDataURL(topUpLinkResult.checkoutUrl, {
-          margin: 1,
-          width: 256,
-          color: {
-            dark: '#0f172a',
-            light: '#ffffff',
-          },
-        });
+        const dataUrl = await generateQrDataUrl(topUpLinkResult.checkoutUrl);
 
         if (!cancelled) {
           setTopUpQrDataUrl(dataUrl);

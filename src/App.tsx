@@ -11,7 +11,6 @@ import { Sidebar } from './components/Layout/Sidebar';
 import { AppErrorBoundary } from './components/Layout/AppErrorBoundary';
 import { PortalSectionLoader } from './components/Layout/PortalSectionLoader';
 import { LoginForm } from './components/Auth/LoginForm';
-import BookingForm from './components/Bookings/BookingForm';
 import { format, addDays, addWeeks, addMonths } from 'date-fns';
 import { usePortalUxSettings, useUserPreferences } from './hooks/useSettings';
 import { applyPortalTheme, getStoredPortalTheme, storePortalTheme } from './utils/theme';
@@ -21,6 +20,7 @@ import { supabase } from './lib/supabase';
 import { Plane } from 'lucide-react';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
+const BookingForm = lazy(() => import('./components/Bookings/BookingForm'));
 const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboard').then(module => ({ default: module.ProfileDashboard })));
 const Calendar = lazy(() => import('./components/Calendar/Calendar').then(module => ({ default: module.Calendar })));
 const StudentList = lazy(() => import('./components/Students/StudentList').then(module => ({ default: module.StudentList })));
@@ -531,18 +531,20 @@ const KioskAuthenticatedRoute: React.FC<{
       </Suspense>
 
       {showBookingForm && (
-        <BookingForm
-          isOpen={showBookingForm}
-          onClose={() => {
-            setShowBookingForm(false);
-            setBookingFormData({});
-            setEditingBooking(null);
-          }}
-          prefilledData={bookingFormData}
-          onSubmit={handleBookingSubmit}
-          booking={editingBooking}
-          isEdit={!!editingBooking}
-        />
+        <Suspense fallback={null}>
+          <BookingForm
+            isOpen={showBookingForm}
+            onClose={() => {
+              setShowBookingForm(false);
+              setBookingFormData({});
+              setEditingBooking(null);
+            }}
+            prefilledData={bookingFormData}
+            onSubmit={handleBookingSubmit}
+            booking={editingBooking}
+            isEdit={!!editingBooking}
+          />
+        </Suspense>
       )}
     </KioskCalendarShell>
   );
@@ -836,18 +838,20 @@ const AuthenticatedApp: React.FC<{
             </AppErrorBoundary>
             
             {showBookingForm && (
-              <BookingForm
-                isOpen={showBookingForm}
-                onClose={() => {
-                  setShowBookingForm(false);
-                  setBookingFormData({});
-                  setEditingBooking(null);
-                }}
-                prefilledData={bookingFormData}
-                onSubmit={handleBookingSubmit}
-                booking={editingBooking}
-                isEdit={!!editingBooking}
-              />
+              <Suspense fallback={null}>
+                <BookingForm
+                  isOpen={showBookingForm}
+                  onClose={() => {
+                    setShowBookingForm(false);
+                    setBookingFormData({});
+                    setEditingBooking(null);
+                  }}
+                  prefilledData={bookingFormData}
+                  onSubmit={handleBookingSubmit}
+                  booking={editingBooking}
+                  isEdit={!!editingBooking}
+                />
+              </Suspense>
             )}
             
             {showTrainingRecordForm && (

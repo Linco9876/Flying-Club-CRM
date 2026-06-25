@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import { BookOpen, Clock, Download, TrendingUp, Navigation } from 'lucide-react';
 import { useFlightLogs, FlightLog } from '../../hooks/useFlightLogs';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -71,7 +70,8 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
     });
   };
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const XLSX = await import('xlsx');
     const rows = enrichedLogs.map(log => ({
       Date: formatDate(log.start_time),
       'Aircraft Type': log.aircraft ? `${log.aircraft.make} ${log.aircraft.model}` : '',
