@@ -62,7 +62,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [stripeCardLoading, setStripeCardLoading] = useState(true);
   const [stripeConsentAccepted, setStripeConsentAccepted] = useState(false);
   const [xeroInvoices, setXeroInvoices] = useState<XeroPortalInvoice[]>([]);
-  const [xeroInvoicesLoading, setXeroInvoicesLoading] = useState(false);
+  const [xeroInvoicesLoading, setXeroInvoicesLoading] = useState(true);
+  const [xeroInvoicesChecked, setXeroInvoicesChecked] = useState(false);
+  const [ownXeroConnected, setOwnXeroConnected] = useState<boolean | null>(null);
   const [xeroInvoicesLinked, setXeroInvoicesLinked] = useState(true);
   const [invoicePaymentLoadingId, setInvoicePaymentLoadingId] = useState<string | null>(null);
   const billing = useBillingAccounts();
@@ -104,17 +106,24 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   }, [loadStripeCardStatus, showOwnBillingOnly]);
 
   const loadXeroInvoices = useCallback(async () => {
-    if (!showOwnBillingOnly || !user?.id) return;
+    if (!showOwnBillingOnly || !user?.id) {
+      setXeroInvoicesLoading(false);
+      setXeroInvoicesChecked(true);
+      return;
+    }
     setXeroInvoicesLoading(true);
     try {
       const data = await fetchOwnXeroInvoices();
+      setOwnXeroConnected(Boolean(data.connected));
       setXeroInvoices(data.invoices || []);
       setXeroInvoicesLinked(data.linked !== false);
     } catch (error: any) {
       console.warn('Failed to load Xero invoices:', error);
       toast.error(error?.message || 'Failed to load Xero invoices');
+      setOwnXeroConnected(false);
       setXeroInvoices([]);
     } finally {
+      setXeroInvoicesChecked(true);
       setXeroInvoicesLoading(false);
     }
   }, [showOwnBillingOnly, user?.id]);
@@ -216,7 +225,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     }
   };
 
-  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && (stripeCardLoading || xeroInvoicesLoading));
+  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && (stripeCardLoading || xeroInvoicesLoading || !xeroInvoicesChecked));
   if (pageLoading) {
     return (
       <div className="p-3 sm:p-6">
@@ -259,7 +268,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200';
     };
 
-    if (!billing.xeroConnected) {
+    const xeroConnectedForOwnBilling = ownXeroConnected ?? billing.xeroConnected;
+    if (!xeroConnectedForOwnBilling) {
       return (
         <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
           <div>
@@ -285,7 +295,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
               </div>
               <button
                 type="button"
-                onClick={() => void billing.refetch()}
+                onClick={() => {
+                  setXeroInvoicesChecked(false);
+                  void Promise.all([billing.refetch(), loadXeroInvoices()]);
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
                 <RefreshCw className="h-4 w-4" />
