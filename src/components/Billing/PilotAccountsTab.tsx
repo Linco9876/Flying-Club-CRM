@@ -24,7 +24,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseFloat(amount);
-    if (!parsed || parsed <= 0) return;
+    if (!parsed || parsed < 1000 || parsed % 1000 !== 0) return;
     setSaving(true);
     try {
       await onConfirm(parsed, description, paymentMethodId || undefined, transactionDate);
@@ -46,16 +46,17 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount ($)</label>
             <input
               type="number"
-              min="0.01"
-              step="0.01"
+              min="1000"
+              step="1000"
               value={amount}
               onChange={e => setAmount(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="0.00"
+              placeholder="1000"
               required
               autoFocus
             />
           </div>
+          <p className="text-xs text-gray-500">Prepaid clients need a positive Xero credit balance. Top-ups can only be recorded in $1,000 increments.</p>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Top-up Date</label>
             <input
@@ -99,7 +100,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !Number(amount) || Number(amount) < 1000 || Number(amount) % 1000 !== 0}
               className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
             >
               {saving ? 'Adding...' : 'Add Top-up'}
@@ -235,7 +236,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                     <td className="px-5 py-3.5 whitespace-nowrap">
                       <span className={`text-sm font-semibold ${
                         account.balance < 0 ? 'text-red-600' :
-                        account.balance < billing.minimumPrepaidPack ? 'text-amber-600' :
+                        account.balance <= 0 ? 'text-amber-600' :
                         'text-green-600'
                       }`}>
                         ${account.balance.toFixed(2)}
@@ -245,8 +246,8 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                           <AlertCircle className="h-3 w-3" /> Overdrawn
                         </span>
                       )}
-                      {account.balance >= 0 && account.balance < billing.minimumPrepaidPack && (
-                        <span className="ml-2 text-xs text-amber-500">Needs $1000 overpayment pack</span>
+                      {account.balance <= 0 && (
+                        <span className="ml-2 text-xs text-amber-500">Needs positive Xero credit</span>
                       )}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">

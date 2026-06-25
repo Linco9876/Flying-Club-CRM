@@ -42,6 +42,7 @@ const dollarsToCents = (value: unknown) => {
 };
 
 const centsToDollars = (value: number) => Math.round((value / 100 + Number.EPSILON) * 100) / 100;
+const TOPUP_INCREMENT_CENTS = 100000;
 
 const escapeHtml = (value: unknown) =>
   String(value ?? "")
@@ -126,7 +127,7 @@ const buildTopupEmail = ({
               <td style="padding:28px;">
                 <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(memberName)},</p>
                 <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#374151;">
-                  Your pilot account needs more funds before the prepaid flight can be logged. Use the secure link below to add <strong>$${amount.toFixed(2)}</strong>.
+                  Your pilot account needs a positive Xero credit balance and enough funds to cover prepaid flying. Top-ups are only available in <strong>$1,000 increments</strong>. Use the secure link below to add <strong>$${amount.toFixed(2)}</strong>.
                 </p>
                 <p style="margin:0 0 24px;">
                   <a href="${escapeHtml(checkoutUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;border-radius:14px;padding:14px 22px;">Add funds securely</a>
@@ -177,8 +178,8 @@ Deno.serve(async (req) => {
     const successUrl = safeReturnUrl(body.successUrl, "/billing?topup=success");
     const cancelUrl = safeReturnUrl(body.cancelUrl, "/billing?topup=cancelled");
 
-    if (!amountCents || amountCents < 100000) {
-      return json({ error: "Top-up amount must be at least $1000.00." }, 400);
+    if (!amountCents || amountCents < TOPUP_INCREMENT_CENTS || amountCents % TOPUP_INCREMENT_CENTS !== 0) {
+      return json({ error: "Top-up amount must be a multiple of $1000.00." }, 400);
     }
 
     const isSelf = requestedUserId === authData.user.id;

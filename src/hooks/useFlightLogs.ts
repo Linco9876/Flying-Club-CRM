@@ -461,12 +461,13 @@ export function useFlightLogs(userId?: string) {
           throw new Error('Prepaid payments require Xero to be connected for this club.');
         }
         const availableCredit = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
-        const minimumPrepaidPack = Number(xeroBalance.minimumPrepaidPack ?? 1000);
-        if (availableCredit + 0.005 < minimumPrepaidPack && !prepaidPaymentAcknowledged) {
-          throw new Error(`Prepaid is locked until the member has at least $${minimumPrepaidPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+        const topUpIncrement = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+        if (availableCredit <= 0.005 && !prepaidPaymentAcknowledged) {
+          throw new Error(`Prepaid is locked until the member has a positive Xero credit balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
         if (availableCredit + 0.005 < calculatedCost && !prepaidPaymentAcknowledged) {
-          throw new Error(`This member only has $${availableCredit.toFixed(2)} available in Xero overpayments, so prepaid cannot cover this flight. Add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+          const requiredTopUp = Math.max(topUpIncrement, Math.ceil((calculatedCost - availableCredit) / topUpIncrement) * topUpIncrement);
+          throw new Error(`This member only has $${availableCredit.toFixed(2)} available in Xero credit, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
         prepaidBalanceAfter = Math.round((availableCredit - calculatedCost + Number.EPSILON) * 100) / 100;
       }
@@ -513,7 +514,7 @@ export function useFlightLogs(userId?: string) {
         }
 
         if (!txError && prepaidPayment && prepaidBalanceAfter !== null && prepaidBalanceAfter < -0.005) {
-          const topUpAmount = 1000;
+          const topUpAmount = Math.ceil(Math.abs(prepaidBalanceAfter) / 1000) * 1000;
           const { data: topUpData, error: topUpError } = await supabase.functions.invoke('create-member-topup-checkout', {
             body: {
               userId: normalisedLogData.student_id,

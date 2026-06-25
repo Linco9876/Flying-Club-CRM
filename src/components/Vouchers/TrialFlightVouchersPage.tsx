@@ -2557,7 +2557,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   </select>
                   {selectedPrepaidMember && selectedProduct && (
                     <div className="rounded-lg bg-sky-100 px-3 py-2 text-xs leading-5 text-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
-                      Xero credit is checked when the voucher is issued. The member needs at least the voucher value available and at least $1000 approved prepaid credit to use the prepaid rate.
+                      Xero credit is checked when the voucher is issued. The member needs a positive Xero credit balance and enough available credit to cover the voucher. Top-ups can only be made in $1,000 increments.
                     </div>
                   )}
                 </div>

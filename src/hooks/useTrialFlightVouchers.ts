@@ -490,12 +490,13 @@ export const useTrialFlightVouchers = () => {
       throw new Error('Prepaid voucher payments require Xero to be connected for this club.');
     }
     const currentBalance = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
-    const minimumPrepaidPack = Number(xeroBalance.minimumPrepaidPack ?? 1000);
-    if (currentBalance + 0.005 < minimumPrepaidPack) {
-      throw new Error(`Prepaid is locked until the member has at least $${minimumPrepaidPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+    const topUpIncrement = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+    if (currentBalance <= 0.005) {
+      throw new Error(`Prepaid is locked until the member has a positive Xero credit balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
     }
     if (amount > currentBalance + 0.005) {
-      throw new Error(`Selected prepaid account only has $${currentBalance.toFixed(2)} available in Xero overpayments, so it cannot cover this voucher. Add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+      const requiredTopUp = Math.max(topUpIncrement, Math.ceil((amount - currentBalance) / topUpIncrement) * topUpIncrement);
+      throw new Error(`Selected prepaid account only has $${currentBalance.toFixed(2)} available in Xero credit, so it cannot cover this voucher. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
     }
 
     const paymentMethodId = await getPilotAccountPaymentMethodId();

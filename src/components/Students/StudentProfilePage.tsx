@@ -864,8 +864,9 @@ export const StudentProfilePage: React.FC = () => {
     event.preventDefault();
     if (!student || !canManageBilling) return;
     const amount = Number(topUpAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error('Enter a valid top-up amount');
+    const topUpIncrement = billing.minimumPrepaidPack ?? 1000;
+    if (!Number.isFinite(amount) || amount < topUpIncrement || amount % topUpIncrement !== 0) {
+      toast.error(`Top-ups must be made in $${topUpIncrement.toFixed(currencyDecimals)} increments.`);
       return;
     }
 
@@ -2381,7 +2382,7 @@ export const StudentProfilePage: React.FC = () => {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Xero Credit</p>
-              <p className={`text-2xl font-bold mt-2 ${accountBalance < 0 ? 'text-red-600' : accountBalance < (billing.minimumPrepaidPack ?? 1000) ? 'text-amber-600' : 'text-gray-900'}`}>
+              <p className={`text-2xl font-bold mt-2 ${accountBalance < 0 ? 'text-red-600' : accountBalance <= 0 ? 'text-amber-600' : 'text-gray-900'}`}>
                 {formatCurrency(accountBalance)}
               </p>
               <p className="text-sm text-gray-500 mt-1">Live member credit from Xero</p>
@@ -2410,11 +2411,11 @@ export const StudentProfilePage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
                   <input
                     type="number"
-                    min="0.01"
-                    step="0.01"
+                    min={billing.minimumPrepaidPack ?? 1000}
+                    step={billing.minimumPrepaidPack ?? 1000}
                     value={topUpAmount}
                     onChange={event => setTopUpAmount(event.target.value)}
-                    placeholder="0.00"
+                    placeholder={String(billing.minimumPrepaidPack ?? 1000)}
                     className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -2458,6 +2459,7 @@ export const StudentProfilePage: React.FC = () => {
                 </button>
               </div>
               <p className="mt-2 text-xs text-gray-500">Top-ups are recorded as pending until verified by an admin.</p>
+              <p className="mt-1 text-xs text-gray-500">Prepaid clients need a positive Xero credit balance. Top-ups can only be recorded in {formatCurrency(billing.minimumPrepaidPack ?? 1000)} increments.</p>
             </form>
           )}
 

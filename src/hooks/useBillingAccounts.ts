@@ -300,6 +300,10 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
 
   const addTopUp = async (userId: string, amount: number, description: string, paymentMethodId?: string, transactionDate?: string) => {
     try {
+      if (!Number.isFinite(amount) || amount < 1000 || amount % 1000 !== 0) {
+        throw new Error('Top-ups must be made in $1000 increments.');
+      }
+
       const createdAt = transactionDate
         ? new Date(`${transactionDate}T12:00:00`).toISOString()
         : new Date().toISOString();
@@ -324,7 +328,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
       await fetchAll();
     } catch (err) {
       console.error('Error adding top-up:', err);
-      toast.error('Failed to add top-up');
+      toast.error(err instanceof Error ? err.message : 'Failed to add top-up');
       throw err;
     }
   };
@@ -505,12 +509,13 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
         throw new Error('Prepaid account payments require Xero to be connected for this club.');
       }
       const currentBalance = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
-      const minimumPack = Number(xeroBalance.minimumPrepaidPack ?? minimumPrepaidPack);
-      if (currentBalance + 0.005 < minimumPack) {
-        throw new Error(`Prepaid is locked until the member has at least $${minimumPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPack.toFixed(2)} package first.`);
+      const topUpIncrement = Number(xeroBalance.minimumPrepaidPack ?? minimumPrepaidPack);
+      if (currentBalance <= 0.005) {
+        throw new Error(`Prepaid is locked until the member has a positive Xero credit balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
       }
       if (paymentAmount > currentBalance + 0.005) {
-        throw new Error(`This member only has $${currentBalance.toFixed(2)} available in Xero overpayments, so prepaid cannot cover this amount. Add a $${minimumPack.toFixed(2)} package first.`);
+        const requiredTopUp = Math.max(topUpIncrement, Math.ceil((paymentAmount - currentBalance) / topUpIncrement) * topUpIncrement);
+        throw new Error(`This member only has $${currentBalance.toFixed(2)} available in Xero credit, so prepaid cannot cover this amount. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
       }
 
       const newBalance = Math.round((currentBalance - paymentAmount + Number.EPSILON) * 100) / 100;

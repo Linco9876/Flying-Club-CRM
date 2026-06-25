@@ -205,7 +205,7 @@ const fetchContactCredit = async (ctx: any, contactId: string) => {
     overpaymentCredit,
     prepaymentCredit,
     availableCredit,
-    eligibleForPrepaid: overpaymentCredit + 0.005 >= MINIMUM_PREPAID_PACK,
+    eligibleForPrepaid: availableCredit > 0.005,
   };
 };
 

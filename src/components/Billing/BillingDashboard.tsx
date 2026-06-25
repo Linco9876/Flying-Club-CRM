@@ -194,14 +194,15 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const currencyFormatter = (amount: number) =>
       `$${amount.toFixed(portalSettings.currency_decimals)}`;
     const dateLocale = portalSettings.date_format === 'MM/dd/yyyy' ? 'en-US' : 'en-AU';
-    const prepaidEligible = approvedBalance + 0.005 >= billing.minimumPrepaidPack;
+    const prepaidEligible = approvedBalance > 0.005;
 
     const handleTopUpSubmit = async (event: React.FormEvent) => {
       event.preventDefault();
       if (!user?.id) return;
 
       const amount = Number(topUpAmount);
-      if (!Number.isFinite(amount) || amount <= 0) {
+      if (!Number.isFinite(amount) || amount < billing.minimumPrepaidPack || amount % billing.minimumPrepaidPack !== 0) {
+        toast.error(`Top-ups must be made in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`);
         return;
       }
 
@@ -243,7 +244,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <p className="text-sm text-blue-700 dark:text-blue-300">Prepaid rate access</p>
             <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">{prepaidEligible ? 'Unlocked' : 'Locked'}</p>
             <p className="mt-1 text-xs text-blue-800 dark:text-blue-200">
-              Requires at least {currencyFormatter(billing.minimumPrepaidPack)} held in Xero overpayments before prepaid rates unlock.
+              Requires a positive Xero credit balance. Top-ups are made in {currencyFormatter(billing.minimumPrepaidPack)} increments.
             </p>
           </div>
         </div>
@@ -349,7 +350,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-300" />
             <div>
               <h2 className="font-semibold text-gray-900 dark:text-gray-100">Add funds</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Submitted funds appear as pending until an admin approves the payment.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Submitted funds appear as pending until an admin approves the payment. Top-ups must be in {currencyFormatter(billing.minimumPrepaidPack)} increments.</p>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1.4fr)_auto] md:items-end">
@@ -357,11 +358,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Amount</span>
               <input
                 type="number"
-                min="0.01"
-                step="0.01"
+                min={billing.minimumPrepaidPack}
+                step={billing.minimumPrepaidPack}
                 value={topUpAmount}
                 onChange={event => setTopUpAmount(event.target.value)}
-                placeholder="0.00"
+                placeholder={String(billing.minimumPrepaidPack)}
                 className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
                 required
               />
@@ -401,7 +402,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             </label>
             <button
               type="submit"
-              disabled={submittingTopUp || !Number(topUpAmount) || Number(topUpAmount) <= 0}
+              disabled={submittingTopUp || !Number(topUpAmount) || Number(topUpAmount) < billing.minimumPrepaidPack || Number(topUpAmount) % billing.minimumPrepaidPack !== 0}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-[#363b45]"
             >
               <Plus className="h-4 w-4" />

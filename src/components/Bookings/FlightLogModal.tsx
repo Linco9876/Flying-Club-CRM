@@ -566,10 +566,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     }
 
     const availableCredit = Number(balance.overpaymentCredit ?? balance.availableCredit ?? 0);
-    const minimumPrepaidPack = Number(balance.minimumPrepaidPack ?? 1000);
-    const requiredAmount = Math.max(minimumPrepaidPack, Number(finalCharge || estimatedCost || 0));
+    const topUpIncrement = Number(balance.minimumPrepaidPack ?? 1000);
+    const chargeAmount = Number(finalCharge || estimatedCost || 0);
+    const requiredTopUp = Math.max(topUpIncrement, Math.ceil(Math.max(0, chargeAmount - availableCredit) / topUpIncrement) * topUpIncrement);
 
-    if (availableCredit + 0.005 >= requiredAmount) return true;
+    if (availableCredit > 0.005 && availableCredit + 0.005 >= chargeAmount) return true;
 
     setTopUpLinkResult({
       checkoutUrl: '',
@@ -577,7 +578,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       emailSent: false,
       emailError: null,
       emailTo: users.find(item => item.id === logData.student_id)?.email || null,
-      amount: minimumPrepaidPack,
+      amount: requiredTopUp,
     });
     setPendingPrepaidLogData(logData);
     return false;
@@ -1359,7 +1360,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <div>
               <h3 className="text-base font-semibold text-amber-950">Not enough prepaid funds</h3>
               <p className="mt-0.5 text-xs text-amber-800">
-                This Pre-paid flight needs Pilot Account funds available in Xero before it can be logged.
+                Prepaid clients need a positive Xero credit balance and enough credit to cover the flight.
               </p>
             </div>
             <button
@@ -1377,9 +1378,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
           <div className="space-y-4 px-4 py-4">
             <div className="rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm text-gray-800">
               <p>
-                The member needs to add at least{' '}
+                The member needs to add{' '}
                 <span className="font-semibold">${Number(topUpLinkResult.amount || 1000).toFixed(2)}</span>{' '}
-                to their account first.
+                to their account first. Top-ups can only be made in $1,000 increments.
               </p>
               {topUpLinkResult.checkoutUrl ? (
                 <div className="mt-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-green-900">

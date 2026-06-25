@@ -294,14 +294,15 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       }
 
       const availableCredit = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
-      const minimumPrepaidPack = Number(xeroBalance.minimumPrepaidPack ?? 1000);
-      if (availableCredit + 0.005 < minimumPrepaidPack) {
-        toast.error(`Prepaid is locked until the member has at least $${minimumPrepaidPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+      const topUpIncrement = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+      if (availableCredit <= 0.005) {
+        toast.error(`Prepaid is locked until the member has a positive Xero credit balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         return;
       }
 
       if (availableCredit + 0.005 < recalculatedCost) {
-        toast.error(`This member only has $${availableCredit.toFixed(2)} available in Xero overpayments, so prepaid cannot cover this flight. Add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+        const requiredTopUp = Math.max(topUpIncrement, Math.ceil((recalculatedCost - availableCredit) / topUpIncrement) * topUpIncrement);
+        toast.error(`This member only has $${availableCredit.toFixed(2)} available in Xero credit, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         return;
       }
 
