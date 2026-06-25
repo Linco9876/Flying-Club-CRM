@@ -294,6 +294,88 @@
     animation: portal-boot-progress 1.45s ease-in-out infinite;
   }
 
+  .portal-section-loader {
+    animation: portal-section-loader-fade 180ms ease-out both;
+  }
+
+  .portal-section-loader-card {
+    transform: translateZ(0);
+    animation: portal-section-loader-card 260ms ease-out both;
+  }
+
+  .portal-section-loader-sky {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 18% 18%, rgb(59 130 246 / 0.16), transparent 12rem),
+      radial-gradient(circle at 88% 18%, rgb(251 191 36 / 0.18), transparent 10rem),
+      linear-gradient(135deg, rgb(239 246 255 / 0.82), rgb(255 255 255 / 0.2) 42%, rgb(248 250 252 / 0.82));
+    opacity: 0.9;
+  }
+
+  html[data-portal-theme='dark'] .portal-section-loader-sky,
+  html[data-portal-theme='semi-dark'] .portal-section-loader-sky {
+    background:
+      radial-gradient(circle at 18% 18%, rgb(59 130 246 / 0.2), transparent 12rem),
+      radial-gradient(circle at 88% 18%, rgb(251 191 36 / 0.12), transparent 10rem),
+      linear-gradient(135deg, rgb(30 41 59 / 0.86), rgb(15 23 42 / 0.34) 42%, rgb(2 6 23 / 0.78));
+  }
+
+  .portal-section-loader-orbit {
+    position: relative;
+  }
+
+  .portal-section-loader-orbit::before {
+    position: absolute;
+    inset: 0.45rem;
+    content: '';
+    border-radius: 9999px;
+    border: 1px dashed currentColor;
+    opacity: 0.35;
+    animation: portal-boot-spin 7s linear infinite;
+  }
+
+  .portal-section-loader-plane {
+    top: 0.8rem;
+    right: 0.85rem;
+    transform-origin: -2rem 2.2rem;
+    animation: portal-section-loader-plane 2.4s ease-in-out infinite;
+  }
+
+  .portal-section-loader-progress {
+    width: 42%;
+    animation: portal-boot-progress 1.25s ease-in-out infinite;
+  }
+
+  @keyframes portal-section-loader-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes portal-section-loader-card {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 0.5rem, 0) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes portal-section-loader-plane {
+    0%, 100% {
+      transform: rotate(-12deg) translate3d(0, 0, 0);
+    }
+    50% {
+      transform: rotate(12deg) translate3d(0.2rem, -0.18rem, 0);
+    }
+  }
+
   @keyframes portal-boot-cloud-drift {
     from {
       transform: translate3d(-1.25rem, -0.4rem, 0);
@@ -331,7 +413,12 @@
     .portal-boot-cloud,
     .portal-boot-orbit::before,
     .portal-boot-plane,
-    .portal-boot-progress {
+    .portal-boot-progress,
+    .portal-section-loader,
+    .portal-section-loader-card,
+    .portal-section-loader-orbit::before,
+    .portal-section-loader-plane,
+    .portal-section-loader-progress {
       animation: none;
     }
   }
