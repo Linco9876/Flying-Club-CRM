@@ -13,11 +13,11 @@ import { LoginForm } from './components/Auth/LoginForm';
 import BookingForm from './components/Bookings/BookingForm';
 import { format, addDays, addWeeks, addMonths } from 'date-fns';
 import { usePortalUxSettings, useUserPreferences } from './hooks/useSettings';
-import { can, getAuthorizedMenuItems } from './utils/rbac';
 import { applyPortalTheme, getStoredPortalTheme, storePortalTheme } from './utils/theme';
 import { KioskLoginForm } from './components/Kiosk/KioskLoginForm';
 import { KioskCalendarShell } from './components/Kiosk/KioskCalendarShell';
 import { supabase } from './lib/supabase';
+import { Plane } from 'lucide-react';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
 const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboard').then(module => ({ default: module.ProfileDashboard })));
@@ -56,6 +56,11 @@ const buildCopiedBookingFormData = (booking: Booking) => ({
   paymentType: booking.paymentType || '',
   flightTypeId: booking.flightTypeId || '',
   notes: booking.notes || '',
+  isGuestBooking: booking.isGuestBooking || false,
+  guestName: booking.guestName || '',
+  guestEmail: booking.guestEmail || '',
+  guestPhone: booking.guestPhone || '',
+  trialFlightVoucherId: booking.trialFlightVoucherId || '',
   copiedFromBookingId: booking.id,
 });
 
@@ -65,14 +70,36 @@ const getRecurringDateOffset = (date: Date, frequency: string, index: number) =>
   return addWeeks(date, index);
 };
 
-const PageLoader = () => (
-  <div className="flex min-h-[18rem] items-center justify-center">
-    <div className="text-center">
-      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600" />
-      <p className="text-sm text-gray-500">Loading...</p>
+const PortalBootScreen = ({
+  message = 'Preparing your flight desk',
+  detail = 'Loading schedule, members and records...',
+}: {
+  message?: string;
+  detail?: string;
+}) => (
+  <div className="portal-boot-screen fixed inset-0 z-[9999] flex min-h-screen items-center justify-center overflow-hidden bg-[#07111f] px-6 text-white">
+    <div className="portal-boot-sky" />
+    <div className="portal-boot-cloud portal-boot-cloud-a" />
+    <div className="portal-boot-cloud portal-boot-cloud-b" />
+    <div className="portal-boot-cloud portal-boot-cloud-c" />
+    <div className="relative z-10 w-full max-w-md text-center">
+      <div className="portal-boot-orbit mx-auto mb-7 flex h-28 w-28 items-center justify-center rounded-full border border-white/15 bg-white/10 shadow-2xl shadow-blue-950/60 backdrop-blur">
+        <div className="portal-boot-runway" />
+        <img src="/favicon.svg" alt="" className="relative z-10 h-16 w-16 drop-shadow-xl" />
+        <Plane className="portal-boot-plane absolute h-6 w-6 text-white" />
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-[0.32em] text-blue-200/90">Bendigo Flying Club</p>
+      <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">Members Flight Management System</h1>
+      <p className="mt-3 text-sm leading-6 text-blue-100/80">{message}</p>
+      <div className="mx-auto mt-7 h-1.5 max-w-xs overflow-hidden rounded-full bg-white/10">
+        <div className="portal-boot-progress h-full rounded-full bg-gradient-to-r from-sky-300 via-white to-amber-200" />
+      </div>
+      <p className="mt-3 text-xs text-blue-100/60">{detail}</p>
     </div>
   </div>
 );
+
+const PageLoader = () => <PortalBootScreen message="Loading this section" detail="Final checks before the panel opens..." />;
 
 const OverdueTrainingRecordsLoginAlert = () => {
   const { user } = useAuth();
@@ -167,6 +194,32 @@ const OverdueTrainingRecordsLoginAlert = () => {
   return null;
 };
 
+const AppNotifications = () => {
+  const location = useLocation();
+  const isKioskRoute = location.pathname.startsWith('/kiosk');
+
+  if (isKioskRoute) {
+    return null;
+  }
+
+  return (
+    <>
+      <OverdueTrainingRecordsLoginAlert />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#fff',
+            color: '#374151',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+          },
+        }}
+      />
+    </>
+  );
+};
+
 const AppShell = ({
   activeSidebarView,
   children,
@@ -256,14 +309,7 @@ const AppContent: React.FC = () => {
   }
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+    return <PortalBootScreen message="Checking your secure session" detail="Connecting to Bendigo Flying Club..." />;
   }
 
   if (user?.portalAccessScope === 'trial_voucher' && normalisedPathname !== '/trial-flight-voucher') {
@@ -390,17 +436,22 @@ const KioskAuthenticatedRoute: React.FC<{
     const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
 
     if (editingBooking) {
-      await updateBooking(editingBooking.id, {
-        studentId: bookingData.studentId,
-        instructorId: bookingData.instructorId || undefined,
-        aircraftId: bookingData.aircraftId,
-        startTime,
-        endTime,
-        paymentType: bookingData.paymentType,
-        notes: bookingData.notes,
-        status: editingBooking.status,
-        flightTypeId: bookingData.flightTypeId || undefined,
-      });
+        await updateBooking(editingBooking.id, {
+          studentId: bookingData.studentId,
+          instructorId: bookingData.instructorId || undefined,
+          aircraftId: bookingData.aircraftId,
+          startTime,
+          endTime,
+          paymentType: bookingData.paymentType,
+          notes: bookingData.notes,
+          status: editingBooking.status,
+          flightTypeId: bookingData.flightTypeId || undefined,
+          isGuestBooking: bookingData.isGuestBooking || false,
+          guestName: bookingData.guestName || undefined,
+          guestEmail: bookingData.guestEmail || undefined,
+          guestPhone: bookingData.guestPhone || undefined,
+          trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+        });
     } else {
       const recurrence = bookingData.recurrence;
       const occurrenceCount = recurrence?.enabled ? Math.max(1, Math.min(Number(recurrence.count) || 1, 52)) : 1;
@@ -409,18 +460,23 @@ const KioskAuthenticatedRoute: React.FC<{
       for (let index = 0; index < occurrenceCount; index += 1) {
         const occurrenceStart = getRecurringDateOffset(startTime, recurrence?.frequency, index);
         const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
-        await addBooking({
-          studentId: bookingData.studentId,
-          instructorId: bookingData.instructorId || undefined,
-          aircraftId: bookingData.aircraftId,
-          startTime: occurrenceStart,
-          endTime: occurrenceEnd,
-          paymentType: bookingData.paymentType,
-          notes: bookingData.notes,
-          status: bookingData.status || 'confirmed' as const,
-          flightTypeId: bookingData.flightTypeId || undefined,
-        }, { silent: occurrenceCount > 1 });
-      }
+          await addBooking({
+            studentId: bookingData.studentId,
+            instructorId: bookingData.instructorId || undefined,
+            aircraftId: bookingData.aircraftId,
+            startTime: occurrenceStart,
+            endTime: occurrenceEnd,
+            paymentType: bookingData.paymentType,
+            notes: bookingData.notes,
+            status: bookingData.status || 'confirmed' as const,
+            flightTypeId: bookingData.flightTypeId || undefined,
+            isGuestBooking: bookingData.isGuestBooking || false,
+            guestName: bookingData.guestName || undefined,
+            guestEmail: bookingData.guestEmail || undefined,
+            guestPhone: bookingData.guestPhone || undefined,
+            trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+          }, { silent: occurrenceCount > 1 });
+        }
 
       if (occurrenceCount > 1) {
         toast.success(`${occurrenceCount} recurring bookings created`);
@@ -521,8 +577,8 @@ const AuthenticatedApp: React.FC<{
   const activeView = getViewForPath(location.pathname);
   const bookingsEnabled = activeView === 'calendar' || showBookingForm || showTrainingRecordForm || Boolean(editingBooking || selectedBookingForRecord);
   const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
-  const { settings: portalSettings } = usePortalUxSettings();
-  const { preferences: userPreferences } = useUserPreferences(user?.id || '');
+  const { settings: portalSettings, loading: portalSettingsLoading } = usePortalUxSettings();
+  const { preferences: userPreferences, loading: userPreferencesLoading } = useUserPreferences(user?.id || '');
   const effectiveTheme = userPreferences?.theme || getStoredPortalTheme(user?.id) || getStoredPortalTheme() || portalSettings.theme || 'auto';
   const backgroundColor = userPreferences?.background_color || '#f3f4f6';
 
@@ -592,6 +648,11 @@ const AuthenticatedApp: React.FC<{
           notes: bookingData.notes,
           status: editingBooking.status,
           flightTypeId: bookingData.flightTypeId || undefined,
+          isGuestBooking: bookingData.isGuestBooking || false,
+          guestName: bookingData.guestName || undefined,
+          guestEmail: bookingData.guestEmail || undefined,
+          guestPhone: bookingData.guestPhone || undefined,
+          trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
         });
       } else {
         const recurrence = bookingData.recurrence;
@@ -611,6 +672,11 @@ const AuthenticatedApp: React.FC<{
             notes: bookingData.notes,
             status: bookingData.status || 'confirmed' as const,
             flightTypeId: bookingData.flightTypeId || undefined,
+            isGuestBooking: bookingData.isGuestBooking || false,
+            guestName: bookingData.guestName || undefined,
+            guestEmail: bookingData.guestEmail || undefined,
+            guestPhone: bookingData.guestPhone || undefined,
+            trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
           }, { silent: occurrenceCount > 1 });
         }
 
@@ -661,16 +727,9 @@ const AuthenticatedApp: React.FC<{
     }
   }, [location.pathname, navigate]);
 
-  React.useEffect(() => {
-    if (can(user, requiredAction, requiredResource)) return;
-
-    const firstAllowedView = getAuthorizedMenuItems(user)[0]?.id || 'dashboard';
-    const firstAllowedPath = getPathForView(firstAllowedView);
-
-    if (location.pathname !== firstAllowedPath) {
-      navigate(firstAllowedPath, { replace: true });
-    }
-  }, [activeView, location.pathname, navigate, requiredAction, requiredResource, user]);
+  if (portalSettingsLoading || userPreferencesLoading) {
+    return <PortalBootScreen message="Applying your portal preferences" detail="Setting up theme, calendar defaults and account options..." />;
+  }
 
   const renderActiveView = (view: string) => {
     switch (view) {
@@ -902,18 +961,7 @@ function App() {
       <AuthProvider>
         <TrainingModulesProvider>
           <AppContent />
-          <OverdueTrainingRecordsLoginAlert />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: {
-                background: '#fff',
-                color: '#374151',
-                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-              },
-            }}
-          />
+          <AppNotifications />
         </TrainingModulesProvider>
       </AuthProvider>
     </Router>
