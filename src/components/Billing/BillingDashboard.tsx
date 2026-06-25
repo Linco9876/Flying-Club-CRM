@@ -3,13 +3,14 @@ import { TransactionsTab } from './TransactionsTab';
 import { PilotAccountsTab } from './PilotAccountsTab';
 import { XeroSyncQueueCard } from '../Settings/XeroSyncQueueCard';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
-import { CreditCard, ExternalLink, GitBranch, Loader2, Plus, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
+import { CreditCard, ExternalLink, FileText, GitBranch, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { fetchOwnXeroInvoices, payOwnXeroInvoice, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import toast from 'react-hot-toast';
 
@@ -60,6 +61,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [stripeCardStatus, setStripeCardStatus] = useState<StripeCardStatus | null>(null);
   const [stripeCardLoading, setStripeCardLoading] = useState(true);
   const [stripeConsentAccepted, setStripeConsentAccepted] = useState(false);
+  const [xeroInvoices, setXeroInvoices] = useState<XeroPortalInvoice[]>([]);
+  const [xeroInvoicesLoading, setXeroInvoicesLoading] = useState(false);
+  const [xeroInvoicesLinked, setXeroInvoicesLinked] = useState(true);
+  const [invoicePaymentLoadingId, setInvoicePaymentLoadingId] = useState<string | null>(null);
   const billing = useBillingAccounts();
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -98,11 +103,32 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     void loadStripeCardStatus();
   }, [loadStripeCardStatus, showOwnBillingOnly]);
 
+  const loadXeroInvoices = useCallback(async () => {
+    if (!showOwnBillingOnly || !user?.id) return;
+    setXeroInvoicesLoading(true);
+    try {
+      const data = await fetchOwnXeroInvoices();
+      setXeroInvoices(data.invoices || []);
+      setXeroInvoicesLinked(data.linked !== false);
+    } catch (error: any) {
+      console.warn('Failed to load Xero invoices:', error);
+      toast.error(error?.message || 'Failed to load Xero invoices');
+      setXeroInvoices([]);
+    } finally {
+      setXeroInvoicesLoading(false);
+    }
+  }, [showOwnBillingOnly, user?.id]);
+
+  useEffect(() => {
+    void loadXeroInvoices();
+  }, [loadXeroInvoices]);
+
   useEffect(() => {
     if (!showOwnBillingOnly) return;
     const params = new URLSearchParams(window.location.search);
     const result = params.get('card_setup');
-    if (!result) return;
+    const invoicePaymentResult = params.get('xero_invoice');
+    if (!result && !invoicePaymentResult) return;
 
     if (result === 'success') {
       toast.success('Card saved for future flight payments');
@@ -111,11 +137,19 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       toast('Card setup cancelled');
     }
 
+    if (invoicePaymentResult === 'success') {
+      toast.success('Invoice payment received. Xero will update shortly.');
+      void loadXeroInvoices();
+    } else if (invoicePaymentResult === 'cancelled') {
+      toast('Invoice payment cancelled');
+    }
+
     params.delete('card_setup');
+    params.delete('xero_invoice');
     params.delete('session_id');
     const cleanQuery = params.toString();
     window.history.replaceState({}, '', `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ''}`);
-  }, [loadStripeCardStatus, showOwnBillingOnly]);
+  }, [loadStripeCardStatus, loadXeroInvoices, showOwnBillingOnly]);
 
   const handleSaveStripeCard = async () => {
     if (!stripeConsentAccepted) {
@@ -182,7 +216,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     }
   };
 
-  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && stripeCardLoading);
+  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && (stripeCardLoading || xeroInvoicesLoading));
   if (pageLoading) {
     return (
       <div className="p-3 sm:p-6">
@@ -216,6 +250,75 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       `$${amount.toFixed(portalSettings.currency_decimals)}`;
     const dateLocale = portalSettings.date_format === 'MM/dd/yyyy' ? 'en-US' : 'en-AU';
     const prepaidEligible = approvedBalance > 0.005;
+    const outstandingInvoiceTotal = xeroInvoices.reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0);
+    const formatInvoiceDate = (value: string) => {
+      if (!value) return '-';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value.slice(0, 10) : date.toLocaleDateString(dateLocale);
+    };
+    const getInvoiceStatusClass = (status: string, amountDue: number) => {
+      const normalised = status.toUpperCase();
+      if (amountDue <= 0.005 || normalised === 'PAID') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200';
+      if (normalised === 'AUTHORISED' || normalised === 'SUBMITTED') return 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200';
+      return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200';
+    };
+
+    const handlePayXeroInvoice = async (invoice: XeroPortalInvoice) => {
+      if (invoice.amountDue <= 0.005) return;
+      const checkoutWindow = window.open('about:blank', '_blank');
+      if (checkoutWindow) {
+        checkoutWindow.opener = null;
+        writeStripeLoadingPage(checkoutWindow, {
+          title: 'Preparing invoice payment',
+          message: 'Checking Xero credit first, then opening Stripe only for anything still owing.',
+        });
+      }
+
+      setInvoicePaymentLoadingId(invoice.invoiceId);
+      try {
+        const returnUrl = `${window.location.origin}/billing`;
+        const result = await payOwnXeroInvoice({
+          invoiceId: invoice.invoiceId,
+          useCredit: true,
+          successUrl: `${returnUrl}?xero_invoice=success`,
+          cancelUrl: `${returnUrl}?xero_invoice=cancelled`,
+        });
+
+        if (result.paidWithCredit || result.invoice) {
+          checkoutWindow?.close();
+          toast.success(result.creditApplied && result.creditApplied > 0
+            ? `Applied ${currencyFormatter(result.creditApplied)} Xero credit`
+            : 'Invoice is already settled');
+          await loadXeroInvoices();
+          return;
+        }
+
+        if (!result.checkoutUrl) {
+          checkoutWindow?.close();
+          toast.success(result.creditApplied && result.creditApplied > 0
+            ? `Applied ${currencyFormatter(result.creditApplied)} Xero credit`
+            : 'No card payment needed');
+          await loadXeroInvoices();
+          return;
+        }
+
+        if (result.creditApplied && result.creditApplied > 0) {
+          toast.success(`Applied ${currencyFormatter(result.creditApplied)} Xero credit. Opening card payment for the remaining amount.`);
+        }
+
+        if (checkoutWindow) {
+          checkoutWindow.location.href = result.checkoutUrl;
+        } else {
+          window.location.href = result.checkoutUrl;
+        }
+      } catch (error: any) {
+        checkoutWindow?.close();
+        console.error('Failed to prepare Xero invoice payment:', error);
+        toast.error(error?.message || 'Failed to prepare invoice payment');
+      } finally {
+        setInvoicePaymentLoadingId(null);
+      }
+    };
 
     const handleTopUpSubmit = async (event: React.FormEvent) => {
       event.preventDefault();
@@ -269,6 +372,103 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             </p>
           </div>
         </div>
+
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+          <div className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36] sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-slate-100 p-2 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Xero invoices</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  All invoices linked to your Xero contact, including invoices created outside the CRM.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+                Owing {currencyFormatter(outstandingInvoiceTotal)}
+              </span>
+              <button
+                type="button"
+                onClick={loadXeroInvoices}
+                disabled={xeroInvoicesLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242c]"
+              >
+                <RefreshCw className={`h-4 w-4 ${xeroInvoicesLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {!xeroInvoicesLinked ? (
+            <div className="p-5 text-sm text-amber-800 dark:text-amber-200">
+              Your CRM account is not linked to a Xero contact yet, so invoices cannot be shown here.
+            </div>
+          ) : xeroInvoices.length === 0 ? (
+            <p className="p-5 text-sm text-gray-500 dark:text-gray-400">No Xero invoices found for your account.</p>
+          ) : (
+            <div className="divide-y divide-gray-100 dark:divide-[#2c2f36]">
+              {xeroInvoices.map(invoice => {
+                const amountDue = Number(invoice.amountDue || 0);
+                const invoiceUrl = invoice.url || `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoice.invoiceId)}`;
+                return (
+                  <div key={invoice.invoiceId} className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.4fr)_0.7fr_0.7fr_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {invoice.invoiceNumber || 'Xero invoice'}
+                        </p>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${getInvoiceStatusClass(invoice.status, amountDue)}`}>
+                          {amountDue <= 0.005 ? 'Paid' : invoice.status || 'Open'}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
+                        {invoice.reference || 'No reference'}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Invoice {formatInvoiceDate(invoice.date)} · Due {formatInvoiceDate(invoice.dueDate)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total</p>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{currencyFormatter(Number(invoice.total || 0))}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Owing</p>
+                      <p className={`text-sm font-semibold ${amountDue > 0.005 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                        {currencyFormatter(amountDue)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <a
+                        href={invoiceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242c]"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Invoice
+                      </a>
+                      {amountDue > 0.005 && (
+                        <button
+                          type="button"
+                          onClick={() => handlePayXeroInvoice(invoice)}
+                          disabled={invoicePaymentLoadingId === invoice.invoiceId}
+                          className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                        >
+                          {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                          Pay
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

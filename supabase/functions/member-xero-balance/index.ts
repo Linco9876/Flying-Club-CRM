@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
 
 type SupabaseAdminClient = any;
 
@@ -20,6 +21,28 @@ const money = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILO
 const basicAuthHeader = (clientId: string, clientSecret: string) =>
   `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
 const MINIMUM_PREPAID_PACK = 1000;
+const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
+const isDevelopmentOrigin = (origin: string) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
+  /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?$/i.test(origin);
+const isAllowedReturnOrigin = (origin: string) => origin === siteOrigin() || isDevelopmentOrigin(origin);
+const safeReturnUrl = (value: unknown, fallbackPath: string) => {
+  const fallback = `${siteOrigin()}${fallbackPath}`;
+  const raw = clean(value);
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw, siteOrigin());
+    if (!isAllowedReturnOrigin(url.origin)) return fallback;
+    return url.toString();
+  } catch {
+    return fallback;
+  }
+};
+const dollarsToCents = (value: unknown) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  return Math.round(amount * 100);
+};
 
 const isStaffRole = (role: string) => ["admin", "senior_instructor", "instructor"].includes(role);
 
@@ -165,6 +188,9 @@ const getRemainingCreditAmount = (item: any) => {
   return Math.max(0, money(remainingCredit));
 };
 
+const getCreditId = (item: any, kind: "overpayment" | "prepayment") =>
+  clean(kind === "overpayment" ? item?.OverpaymentID : item?.PrepaymentID);
+
 const normaliseCredits = (items: any[], contactId: string) =>
   (items || []).reduce((sum: number, item: any) => {
     const itemContactId = clean(item?.Contact?.ContactID || item?.ContactID);
@@ -173,6 +199,47 @@ const normaliseCredits = (items: any[], contactId: string) =>
     if (["VOIDED", "DELETED", "CANCELLED"].includes(status)) return sum;
     return sum + getRemainingCreditAmount(item);
   }, 0);
+
+const normaliseCreditItems = (items: any[], contactId: string, kind: "overpayment" | "prepayment") =>
+  (items || [])
+    .map((item: any) => {
+      const itemContactId = clean(item?.Contact?.ContactID || item?.ContactID);
+      const status = clean(item?.Status).toUpperCase();
+      const amount = getRemainingCreditAmount(item);
+      return {
+        id: getCreditId(item, kind),
+        kind,
+        status,
+        amount,
+        contactId: itemContactId,
+      };
+    })
+    .filter((item) =>
+      item.id &&
+      item.contactId === contactId &&
+      item.amount > 0.005 &&
+      !["VOIDED", "DELETED", "CANCELLED"].includes(item.status)
+    );
+
+const fetchContactCreditItems = async (ctx: any, contactId: string) => {
+  const [overpaymentResult, prepaymentResult] = await Promise.all([
+    xeroRequest({
+      path: "Overpayments",
+      tenantId: ctx.connection.tenant_id,
+      accessToken: ctx.connection.access_token,
+    }),
+    xeroRequest({
+      path: "Prepayments",
+      tenantId: ctx.connection.tenant_id,
+      accessToken: ctx.connection.access_token,
+    }),
+  ]);
+
+  return [
+    ...normaliseCreditItems(overpaymentResult?.Overpayments || [], contactId, "overpayment"),
+    ...normaliseCreditItems(prepaymentResult?.Prepayments || [], contactId, "prepayment"),
+  ];
+};
 
 const fetchContactCredit = async (ctx: any, contactId: string) => {
   if (!ctx.connected) {
@@ -206,6 +273,216 @@ const fetchContactCredit = async (ctx: any, contactId: string) => {
     prepaymentCredit,
     availableCredit,
     eligibleForPrepaid: availableCredit > 0.005,
+  };
+};
+
+const xeroStringLiteral = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+const getInvoiceUrl = async (ctx: any, invoiceId: string) => {
+  try {
+    const result = await xeroRequest({
+      path: `Invoices/${encodeURIComponent(invoiceId)}/OnlineInvoice`,
+      tenantId: ctx.connection.tenant_id,
+      accessToken: ctx.connection.access_token,
+    });
+    const onlineInvoice = Array.isArray(result?.OnlineInvoices) ? result.OnlineInvoices[0] : result?.OnlineInvoice;
+    return clean(onlineInvoice?.OnlineInvoiceUrl || onlineInvoice?.Url);
+  } catch (error) {
+    console.warn("Unable to fetch Xero online invoice URL:", error);
+    return "";
+  }
+};
+
+const mapInvoice = async (ctx: any, invoice: any) => {
+  const invoiceId = clean(invoice?.InvoiceID);
+  const amountDue = money(invoice?.AmountDue);
+  return {
+    invoiceId,
+    invoiceNumber: clean(invoice?.InvoiceNumber),
+    reference: clean(invoice?.Reference),
+    status: clean(invoice?.Status),
+    date: clean(invoice?.DateString || invoice?.Date),
+    dueDate: clean(invoice?.DueDateString || invoice?.DueDate),
+    currency: clean(invoice?.CurrencyCode) || "AUD",
+    total: money(invoice?.Total),
+    amountPaid: money(invoice?.AmountPaid),
+    amountCredited: money(invoice?.AmountCredited),
+    amountDue,
+    url: invoiceId ? await getInvoiceUrl(ctx, invoiceId) : "",
+  };
+};
+
+const listContactInvoices = async (ctx: any, contactId: string) => {
+  const where = encodeURIComponent(`Type=="ACCREC"&&Contact.ContactID==Guid("${xeroStringLiteral(contactId)}")`);
+  const result = await xeroRequest({
+    path: `Invoices?where=${where}&order=Date%20DESC`,
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+  });
+  const invoices = Array.isArray(result?.Invoices) ? result.Invoices : [];
+  return Promise.all(invoices.map((invoice: any) => mapInvoice(ctx, invoice)));
+};
+
+const getContactInvoice = async (ctx: any, invoiceId: string, contactId: string) => {
+  const result = await xeroRequest({
+    path: `Invoices/${encodeURIComponent(invoiceId)}`,
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+  });
+  const invoice = Array.isArray(result?.Invoices) ? result.Invoices[0] : null;
+  if (!invoice) throw new Error("Xero invoice not found.");
+  const invoiceContactId = clean(invoice?.Contact?.ContactID || invoice?.ContactID);
+  if (invoiceContactId !== contactId) {
+    throw Object.assign(new Error("This invoice does not belong to your linked Xero contact."), { status: 403 });
+  }
+  return invoice;
+};
+
+const allocateCreditToInvoice = async (ctx: any, invoiceId: string, credit: any, amount: number) => {
+  const path = credit.kind === "overpayment"
+    ? `Overpayments/${encodeURIComponent(credit.id)}/Allocations`
+    : `Prepayments/${encodeURIComponent(credit.id)}/Allocations`;
+  const result = await xeroRequest({
+    method: "PUT",
+    path,
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    body: {
+      Allocations: [{
+        Invoice: { InvoiceID: invoiceId },
+        Amount: amount,
+        Date: new Date().toISOString().slice(0, 10),
+      }],
+    },
+  });
+  return Array.isArray(result?.Allocations) ? result.Allocations[0] : null;
+};
+
+const applyAvailableCreditToInvoice = async (ctx: any, invoiceId: string, contactId: string, amountDue: number) => {
+  let remaining = money(amountDue);
+  let applied = 0;
+  const allocations: Array<Record<string, unknown>> = [];
+  if (remaining <= 0) return { applied, allocations, remaining: 0 };
+
+  const credits = await fetchContactCreditItems(ctx, contactId);
+  for (const credit of credits) {
+    if (remaining <= 0.005) break;
+    const amount = Math.min(remaining, money(credit.amount));
+    if (amount <= 0) continue;
+    const allocation = await allocateCreditToInvoice(ctx, invoiceId, credit, amount);
+    allocations.push({
+      creditId: credit.id,
+      kind: credit.kind,
+      amount,
+      allocationId: clean(allocation?.AllocationID),
+    });
+    applied = money(applied + amount);
+    remaining = money(remaining - amount);
+  }
+
+  return { applied, allocations, remaining };
+};
+
+const createInvoicePaymentCheckout = async ({
+  adminClient,
+  ctx,
+  member,
+  invoice,
+  amount,
+  successUrl,
+  cancelUrl,
+}: {
+  adminClient: SupabaseAdminClient;
+  ctx: any;
+  member: any;
+  invoice: any;
+  amount: number;
+  successUrl: string;
+  cancelUrl: string;
+}) => {
+  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+  if (!stripeSecretKey) throw new Error("Stripe is not configured.");
+
+  const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+  if (!connectedAccountId) throw new Error("Stripe is not connected for this club.");
+
+  const { data: stripeMethod, error: methodError } = await adminClient
+    .from("payment_methods")
+    .select("id,name,active,system_key")
+    .eq("system_key", "stripe_card")
+    .maybeSingle();
+  if (methodError) throw methodError;
+  if (!stripeMethod?.active) {
+    throw new Error("Activate Stripe Card Payment in Billing & Rates before taking invoice payments.");
+  }
+
+  const invoiceId = clean(invoice?.InvoiceID);
+  const invoiceNumber = clean(invoice?.InvoiceNumber);
+  const amountCents = dollarsToCents(amount);
+  if (!amountCents || amountCents <= 0) throw new Error("Invoice payment amount must be greater than $0.");
+
+  const { data: paymentRecord, error: recordError } = await adminClient
+    .from("xero_invoice_portal_payments")
+    .insert({
+      user_id: member.id,
+      xero_contact_id: clean(member.xero_contact_id),
+      xero_invoice_id: invoiceId,
+      xero_invoice_number: invoiceNumber || null,
+      amount,
+      currency: clean(invoice?.CurrencyCode) || "AUD",
+      status: "pending",
+    })
+    .select("id")
+    .single();
+  if (recordError) throw recordError;
+
+  const form = new URLSearchParams();
+  form.set("mode", "payment");
+  form.set("line_items[0][price_data][currency]", (clean(invoice?.CurrencyCode) || "AUD").toLowerCase());
+  form.set("line_items[0][price_data][unit_amount]", String(amountCents));
+  form.set("line_items[0][price_data][product_data][name]", invoiceNumber ? `Xero invoice ${invoiceNumber}` : "Xero invoice payment");
+  form.set("line_items[0][price_data][product_data][description]", `Bendigo Flying Club invoice payment`);
+  form.set("line_items[0][quantity]", "1");
+  form.set("success_url", `${successUrl}${successUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`);
+  form.set("cancel_url", cancelUrl);
+  form.set("client_reference_id", paymentRecord.id);
+  if (clean(member.email)) form.set("customer_email", clean(member.email));
+  form.set("metadata[crm_payment_type]", "xero_invoice_payment");
+  form.set("metadata[payment_record_id]", paymentRecord.id);
+  form.set("metadata[user_id]", member.id);
+  form.set("metadata[xero_contact_id]", clean(member.xero_contact_id));
+  form.set("metadata[xero_invoice_id]", invoiceId);
+  form.set("metadata[xero_invoice_number]", invoiceNumber);
+  form.set("metadata[payment_method_id]", stripeMethod.id);
+
+  const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    method: "POST",
+    headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Idempotency-Key": stripeIdempotencyKey("xero-invoice-checkout", paymentRecord.id, invoiceId, amountCents),
+    }),
+    body: form,
+  });
+
+  const session = await stripeResponse.json();
+  if (!stripeResponse.ok) {
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "failed",
+      error: session?.error?.message || "Stripe checkout could not be created.",
+      updated_at: new Date().toISOString(),
+    }).eq("id", paymentRecord.id);
+    throw new Error(session?.error?.message || "Stripe checkout could not be created.");
+  }
+
+  await adminClient.from("xero_invoice_portal_payments").update({
+    stripe_checkout_session_id: session.id,
+    updated_at: new Date().toISOString(),
+  }).eq("id", paymentRecord.id);
+
+  return {
+    checkoutUrl: session.url,
+    sessionId: session.id,
+    paymentRecordId: paymentRecord.id,
   };
 };
 
@@ -292,6 +569,76 @@ Deno.serve(async (req: Request) => {
       availableCredit: 0,
       eligibleForPrepaid: false,
     };
+
+    if (action === "invoices") {
+      if (!contactId) {
+        return json({
+          connected: true,
+          userId: member.id,
+          linked: false,
+          invoices: [],
+          minimumPrepaidPack: MINIMUM_PREPAID_PACK,
+          ...credit,
+        });
+      }
+
+      return json({
+        connected: true,
+        userId: member.id,
+        name: clean(member.name),
+        email: clean(member.email),
+        xeroContactId: contactId,
+        linked: true,
+        minimumPrepaidPack: MINIMUM_PREPAID_PACK,
+        ...credit,
+        invoices: await listContactInvoices(ctx, contactId),
+      });
+    }
+
+    if (action === "pay-invoice") {
+      if (!contactId) return json({ error: "This member is not linked to a Xero contact." }, 409);
+      const invoiceId = clean(body.invoiceId);
+      if (!invoiceId) return json({ error: "Missing invoiceId" }, 400);
+
+      let invoice = await getContactInvoice(ctx, invoiceId, contactId);
+      let amountDue = money(invoice?.AmountDue);
+      const creditResult = body.useCredit === false
+        ? { applied: 0, allocations: [], remaining: amountDue }
+        : await applyAvailableCreditToInvoice(ctx, invoiceId, contactId, amountDue);
+
+      if (creditResult.applied > 0) {
+        invoice = await getContactInvoice(ctx, invoiceId, contactId);
+        amountDue = money(invoice?.AmountDue);
+      } else {
+        amountDue = money(creditResult.remaining);
+      }
+
+      if (amountDue <= 0.005) {
+        return json({
+          paidWithCredit: creditResult.applied > 0,
+          creditApplied: creditResult.applied,
+          allocations: creditResult.allocations,
+          invoice: await mapInvoice(ctx, invoice),
+        });
+      }
+
+      const checkout = await createInvoicePaymentCheckout({
+        adminClient,
+        ctx,
+        member,
+        invoice,
+        amount: amountDue,
+        successUrl: safeReturnUrl(body.successUrl, "/billing?xero_invoice=success"),
+        cancelUrl: safeReturnUrl(body.cancelUrl, "/billing?xero_invoice=cancelled"),
+      });
+
+      return json({
+        creditApplied: creditResult.applied,
+        allocations: creditResult.allocations,
+        amountToPay: amountDue,
+        ...checkout,
+      });
+    }
 
     return json({
       connected: true,

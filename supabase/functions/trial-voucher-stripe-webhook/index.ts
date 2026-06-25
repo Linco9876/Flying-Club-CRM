@@ -89,6 +89,10 @@ const stripeCurrency = (value: unknown) => {
   const currency = asString(value).trim().toUpperCase();
   return currency || "AUD";
 };
+const clean = asString;
+const money = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const basicAuthHeader = (clientId: string, clientSecret: string) =>
+  `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
 
 const firstJoinRow = (value: unknown) => Array.isArray(value) ? value[0] : value;
 
@@ -118,6 +122,95 @@ const fetchStripeObject = async ({
   const body = await response.json();
   if (!response.ok) throw new Error(body?.error?.message || `Stripe request failed with ${response.status}`);
   return body;
+};
+
+const xeroRequest = async ({
+  method = "GET",
+  path,
+  tenantId,
+  accessToken,
+  body,
+}: {
+  method?: string;
+  path: string;
+  tenantId: string;
+  accessToken: string;
+  body?: Record<string, unknown>;
+}) => {
+  const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Xero-tenant-id": tenantId,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    const message = payload?.Message || payload?.Title || payload?.Detail || `Xero request failed with HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return payload;
+};
+
+const refreshXeroAccessToken = async (adminClient: SupabaseAdminClient, connection: any) => {
+  const clientId = Deno.env.get("XERO_CLIENT_ID");
+  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET");
+  if (!clientId || !clientSecret) throw new Error("Xero client ID and secret are not configured.");
+  if (!connection?.refresh_token) throw new Error("Xero is not connected.");
+
+  const expiresAt = connection.expires_at ? new Date(connection.expires_at).getTime() : 0;
+  if (connection.access_token && expiresAt - Date.now() > 120_000) return connection;
+
+  const form = new URLSearchParams();
+  form.set("grant_type", "refresh_token");
+  form.set("refresh_token", connection.refresh_token);
+
+  const response = await fetch("https://identity.xero.com/connect/token", {
+    method: "POST",
+    headers: {
+      Authorization: basicAuthHeader(clientId, clientSecret),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form,
+  });
+  const token = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(token?.error_description || token?.error || `Xero token refresh failed with HTTP ${response.status}`);
+  }
+
+  const expiresInSeconds = Number(token?.expires_in || 0);
+  const update = {
+    access_token: clean(token.access_token),
+    refresh_token: clean(token.refresh_token) || connection.refresh_token,
+    token_type: clean(token.token_type) || connection.token_type,
+    scope: clean(token.scope) || connection.scope,
+    expires_at: expiresInSeconds > 0 ? new Date(Date.now() + expiresInSeconds * 1000).toISOString() : null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await adminClient.from("xero_connection_settings").update(update).eq("id", true);
+  if (error) throw error;
+  return { ...connection, ...update };
+};
+
+const getXeroPaymentContext = async (adminClient: SupabaseAdminClient) => {
+  const [{ data: connection, error: connectionError }, { data: settings, error: settingsError }] = await Promise.all([
+    adminClient.from("xero_connection_settings").select("*").eq("id", true).maybeSingle(),
+    adminClient.from("xero_sync_settings").select("*").eq("id", true).maybeSingle(),
+  ]);
+  if (connectionError) throw connectionError;
+  if (settingsError) throw settingsError;
+  if (!connection?.tenant_id || connection?.disconnected_at) throw new Error("Xero is not connected.");
+  const accountCode = clean(settings?.stripe_payment_account_code);
+  if (!accountCode) throw new Error("Set the Xero Stripe clearing account before taking invoice payments.");
+  return {
+    connection: await refreshXeroAccessToken(adminClient, connection),
+    settings: settings || {},
+    stripeClearingAccountCode: accountCode,
+  };
 };
 
 const getFlightLogForSession = async (adminClient: SupabaseAdminClient, session: any) => {
@@ -415,6 +508,119 @@ const handleMemberTopupStripeEvent = async ({
   if (insertError) throw insertError;
 
   return json({ received: true, userId, topupStatus: "verified" });
+};
+
+const handleXeroInvoicePaymentStripeEvent = async ({
+  adminClient,
+  event,
+  session,
+  sessionId,
+}: {
+  adminClient: SupabaseAdminClient;
+  event: any;
+  session: any;
+  sessionId: string;
+}) => {
+  const paymentRecordId = asString(session.metadata?.payment_record_id || session.client_reference_id);
+  const invoiceId = asString(session.metadata?.xero_invoice_id);
+  if (!paymentRecordId || !invoiceId) throw new Error("Xero invoice payment checkout is missing CRM metadata.");
+
+  const { data: record, error: recordError } = await adminClient
+    .from("xero_invoice_portal_payments")
+    .select("*")
+    .eq("id", paymentRecordId)
+    .maybeSingle();
+  if (recordError) throw recordError;
+  if (!record) throw new Error("Xero invoice payment record not found.");
+  if (record.xero_payment_id && record.status === "paid") {
+    return json({ received: true, duplicate: true, paymentRecordId });
+  }
+
+  if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "failed",
+      stripe_checkout_session_id: sessionId || record.stripe_checkout_session_id,
+      stripe_payment_intent_id: asString(session.payment_intent) || null,
+      error: event.type,
+      updated_at: new Date().toISOString(),
+    }).eq("id", record.id).neq("status", "paid");
+    return json({ received: true, paymentRecordId, status: "failed" });
+  }
+
+  if (session.payment_status && session.payment_status !== "paid") {
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "pending",
+      stripe_checkout_session_id: sessionId || record.stripe_checkout_session_id,
+      stripe_payment_intent_id: asString(session.payment_intent) || null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", record.id);
+    return json({ received: true, paymentRecordId, status: "pending" });
+  }
+
+  const ctx = await getXeroPaymentContext(adminClient);
+  const invoiceResult = await xeroRequest({
+    path: `Invoices/${encodeURIComponent(invoiceId)}`,
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+  });
+  const invoice = Array.isArray(invoiceResult?.Invoices) ? invoiceResult.Invoices[0] : null;
+  if (!invoice) throw new Error("Xero invoice not found for Stripe payment.");
+  const invoiceContactId = asString(invoice?.Contact?.ContactID || invoice?.ContactID);
+  if (invoiceContactId !== asString(record.xero_contact_id)) {
+    throw new Error("Xero invoice contact no longer matches the CRM payment record.");
+  }
+
+  const amountPaidToStripe = stripeAmountToDollars(session.amount_total) ?? Number(record.amount || 0);
+  const amountDue = money(invoice?.AmountDue);
+  const amountToApply = Math.min(money(amountPaidToStripe), amountDue);
+  if (amountToApply <= 0) {
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "needs_review",
+      stripe_checkout_session_id: sessionId || record.stripe_checkout_session_id,
+      stripe_payment_intent_id: asString(session.payment_intent) || null,
+      error: "Stripe payment succeeded but the Xero invoice has no amount due. Review refund or allocation manually.",
+      updated_at: new Date().toISOString(),
+    }).eq("id", record.id);
+    return json({ received: true, paymentRecordId, status: "needs_review" });
+  }
+
+  const paymentResult = await xeroRequest({
+    method: "POST",
+    path: "Payments",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    body: {
+      Payments: [{
+        Invoice: { InvoiceID: invoiceId },
+        Account: { Code: ctx.stripeClearingAccountCode },
+        Date: new Date().toISOString().slice(0, 10),
+        Amount: amountToApply,
+        Reference: `Stripe invoice payment ${sessionId}`,
+      }],
+    },
+  });
+  const xeroPayment = paymentResult?.Payments?.[0];
+  const xeroPaymentId = asString(xeroPayment?.PaymentID);
+  if (!xeroPaymentId) throw new Error("Xero did not return a payment ID.");
+
+  await adminClient.from("xero_invoice_portal_payments").update({
+    status: money(amountPaidToStripe) > amountToApply + 0.005 ? "needs_review" : "paid",
+    stripe_checkout_session_id: sessionId || record.stripe_checkout_session_id,
+    stripe_payment_intent_id: asString(session.payment_intent) || null,
+    xero_payment_id: xeroPaymentId,
+    amount: amountToApply,
+    error: money(amountPaidToStripe) > amountToApply + 0.005
+      ? `Stripe collected ${money(amountPaidToStripe).toFixed(2)} but only ${amountToApply.toFixed(2)} was applied to Xero. Review the difference.`
+      : null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", record.id);
+
+  return json({
+    received: true,
+    paymentRecordId: record.id,
+    xeroPaymentId,
+    amountApplied: amountToApply,
+  });
 };
 
 const handleMemberCardSetupEvent = async ({
@@ -835,6 +1041,10 @@ Deno.serve(async (req: Request) => {
 
     if (asString(session.metadata?.crm_payment_type) === "member_topup") {
       return await handleMemberTopupStripeEvent({ adminClient, event, session, sessionId });
+    }
+
+    if (asString(session.metadata?.crm_payment_type) === "xero_invoice_payment") {
+      return await handleXeroInvoicePaymentStripeEvent({ adminClient, event, session, sessionId });
     }
 
     if (asString(session.metadata?.crm_payment_type) === "flight_log" || asString(session.metadata?.flight_log_id)) {
