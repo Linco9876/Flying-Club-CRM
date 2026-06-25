@@ -3,7 +3,8 @@ import { PilotStatisticsTab } from './PilotStatisticsTab';
 import { InstructorStatisticsTab } from './InstructorStatisticsTab';
 import { AircraftStatisticsTab } from './AircraftStatisticsTab';
 import { ReportsOverviewTab } from './ReportsOverviewTab';
-import { BarChart3, Users, User, Plane, Download, Filter, Activity } from 'lucide-react';
+import { FatigueManagementExportTab } from './FatigueManagementExportTab';
+import { BarChart3, Users, User, Plane, Download, Filter, Activity, ShieldCheck } from 'lucide-react';
 
 export const ReportsDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -12,7 +13,8 @@ export const ReportsDashboard: React.FC = () => {
     { id: 'overview', label: 'Overview', description: 'Operational snapshot', icon: <BarChart3 className="h-4 w-4" /> },
     { id: 'pilot', label: 'Pilot Statistics', description: 'Bookings, hours and activity', icon: <Users className="h-4 w-4" /> },
     { id: 'instructor', label: 'Instructor Statistics', description: 'Instructing hours and students', icon: <User className="h-4 w-4" /> },
-    { id: 'aircraft', label: 'Aircraft Statistics', description: 'Fleet utilisation and landings', icon: <Plane className="h-4 w-4" /> }
+    { id: 'aircraft', label: 'Aircraft Statistics', description: 'Fleet utilisation and landings', icon: <Plane className="h-4 w-4" /> },
+    { id: 'fatigue', label: 'Fatigue Export', description: 'Instructor fatigue management evidence', icon: <ShieldCheck className="h-4 w-4" /> }
   ];
 
   const activeTabMeta = tabs.find(tab => tab.id === activeTab) ?? tabs[0];
@@ -74,6 +76,7 @@ export const ReportsDashboard: React.FC = () => {
         {activeTab === 'pilot' && <PilotStatisticsTab />}
         {activeTab === 'instructor' && <InstructorStatisticsTab />}
         {activeTab === 'aircraft' && <AircraftStatisticsTab />}
+        {activeTab === 'fatigue' && <FatigueManagementExportTab />}
       </div>
     </div>
   );
