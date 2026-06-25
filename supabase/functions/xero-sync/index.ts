@@ -919,7 +919,11 @@ const getAccountTransaction = async (adminClient: SupabaseAdminClient, transacti
 const getTopupFundingAccountCode = (ctx: any, paymentMethod: any) => {
   const paymentSystemKey = clean(paymentMethod?.system_key).toLowerCase();
   const paymentMethodName = clean(paymentMethod?.name).toLowerCase();
-  const isStripePaymentMethod = paymentSystemKey === "stripe_card_payment" || paymentMethodName.includes("stripe");
+  const isStripePaymentMethod =
+    paymentSystemKey === "stripe_card" ||
+    paymentSystemKey === "stripe_card_payment" ||
+    paymentSystemKey === "stripe" ||
+    paymentMethodName.includes("stripe");
 
   if (isStripePaymentMethod) {
     return clean(ctx.settings?.stripe_payment_account_code);
