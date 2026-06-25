@@ -30,6 +30,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { useGuestBookingConversion } from '../../hooks/useGuestBookingConversion';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings, useOrganisationSettings, useUserPreferences } from '../../hooks/useSettings';
 import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
@@ -88,21 +89,42 @@ const CALENDAR_RESOURCE_LAYOUT_KEY = 'calendar_resource_layout';
 const MIN_CALENDAR_SLOT_HEIGHT = 18;
 const MAX_CALENDAR_SLOT_HEIGHT = 48;
 const MIN_CALENDAR_VISIBLE_SLOTS = 12;
+const TOUCH_HOLD_TO_DRAG_MS = 260;
+const TOUCH_CANCEL_MOVE_THRESHOLD_PX = 10;
 
 interface CalendarResourceLayoutPreference {
   hiddenIds?: string[];
   orderedIds?: string[];
 }
 
+interface TouchSlotSelectionState {
+  pointerId: number;
+  slot: number;
+  resourceId: string;
+  resourceType: 'aircraft' | 'instructor';
+  date: Date;
+  dayIndex?: number;
+  startX: number;
+  startY: number;
+  activated: boolean;
+}
+
+interface TouchBookingInteractionState {
+  pointerId: number;
+  booking: Booking;
+  resourceType: 'aircraft' | 'instructor';
+  startX: number;
+  startY: number;
+  activated: boolean;
+  mode: 'move' | 'resize-top' | 'resize-bottom';
+  pressX: number;
+  pressY: number;
+}
+
 const parseCalendarDateParam = (value: string | null) => {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const getStoredCalendarDate = (key: string) => {
-  if (typeof window === 'undefined') return null;
-  return parseCalendarDateParam(window.sessionStorage.getItem(key));
 };
 
 export const Calendar: React.FC<CalendarProps> = ({
@@ -122,7 +144,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [searchParams, setSearchParams] = useSearchParams();
   const { aircraft } = useAircraft();
   const { users } = useUsers();
-  const { deleteFlightLog } = useFlightLogs();
+  const { deleteFlightLog, getFlightLogDeleteImpact } = useFlightLogs();
+  const { convertGuestBookingToMember } = useGuestBookingConversion();
   const instructors = useMemo(
     () => users.filter(u => u.roles?.includes('instructor') || u.roles?.includes('senior_instructor')),
     [users]
@@ -131,13 +154,20 @@ export const Calendar: React.FC<CalendarProps> = ({
   const lastKnownUsersRef = useRef<typeof users>([]);
   const lastKnownInstructorsRef = useRef<typeof instructors>([]);
   useEffect(() => {
-    if (aircraft.length > 0) lastKnownAircraftRef.current = aircraft;
+    const activeAircraft = aircraft.filter(item => !item.isArchived);
+    if (activeAircraft.length > 0) lastKnownAircraftRef.current = activeAircraft;
     if (users.length > 0) lastKnownUsersRef.current = users;
     if (instructors.length > 0) lastKnownInstructorsRef.current = instructors;
   }, [aircraft, users, instructors]);
-  const displayAircraft = aircraft.length > 0 ? aircraft : lastKnownAircraftRef.current;
+  const activeAircraft = useMemo(() => aircraft.filter(item => !item.isArchived), [aircraft]);
+  const displayAircraft = activeAircraft.length > 0 ? activeAircraft : lastKnownAircraftRef.current;
+  const aircraftForLookup = aircraft.length > 0 ? aircraft : displayAircraft;
   const displayUsers = users.length > 0 ? users : lastKnownUsersRef.current;
   const displayInstructors = instructors.length > 0 ? instructors : lastKnownInstructorsRef.current;
+  const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
+  const isStaffCalendarUser = userRoles.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role));
+  const isStudentOrPilotCalendarUser = userRoles.some(role => role === 'student' || role === 'pilot');
+  const isLimitedCalendarUser = isStudentOrPilotCalendarUser && !isStaffCalendarUser;
   const { settings: calendarSettings } = useCalendarSettings();
   const { preferences: userPreferences, updatePreferencesSilent } = useUserPreferences(user?.id || '');
   const { settings: organisationSettings } = useOrganisationSettings();
@@ -180,13 +210,11 @@ export const Calendar: React.FC<CalendarProps> = ({
   const hasAvailabilityData =
     !availabilityLoading || lastAvailabilityRef.current.hasLoaded;
   const preferredAircraftId = user?.preferredAircraftId;
-  const selectedDateStorageKey = `bfc_calendar_selected_date_${isKioskMode ? 'kiosk' : 'app'}_${user?.id || 'guest'}`;
-
   // Per-resource visibility & ordering (loaded from/synced to DB)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
-  const [currentDate, setCurrentDate] = useState(() => parseCalendarDateParam(searchParams.get('date')) || getStoredCalendarDate(selectedDateStorageKey) || new Date());
-  const [datePickerMonth, setDatePickerMonth] = useState(() => parseCalendarDateParam(searchParams.get('date')) || getStoredCalendarDate(selectedDateStorageKey) || new Date());
+  const [currentDate, setCurrentDate] = useState(() => parseCalendarDateParam(searchParams.get('date')) || new Date());
+  const [datePickerMonth, setDatePickerMonth] = useState(() => parseCalendarDateParam(searchParams.get('date')) || new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef<HTMLDivElement | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('day');
@@ -252,6 +280,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceType: 'aircraft' | 'instructor';
     dayIndex?: number;
   } | null>(null);
+  const touchSlotSelectionRef = useRef<TouchSlotSelectionState | null>(null);
+  const touchSlotSelectionTimerRef = useRef<number | null>(null);
+  const touchBookingInteractionRef = useRef<TouchBookingInteractionState | null>(null);
+  const touchBookingInteractionTimerRef = useRef<number | null>(null);
 
   // Dynamic slot height based on viewport and settings
   const [slotHeight, setSlotHeight] = useState<number>(MIN_CALENDAR_SLOT_HEIGHT);
@@ -329,10 +361,6 @@ export const Calendar: React.FC<CalendarProps> = ({
   }, [searchParams]);
 
   useEffect(() => {
-    window.sessionStorage.setItem(selectedDateStorageKey, format(currentDate, 'yyyy-MM-dd'));
-  }, [currentDate, selectedDateStorageKey]);
-
-  useEffect(() => {
     if (!showDatePicker) return;
 
     const handleClickOutside = (event: MouseEvent) => {
@@ -373,16 +401,16 @@ export const Calendar: React.FC<CalendarProps> = ({
   useEffect(() => {
     if (viewMode !== 'week') return;
     if (hasAutoSelectedWeekResources.current) return;
-    if (aircraft.length === 0 && instructors.length === 0) return;
-    if (!selectedAircraftId && aircraft.length > 0) {
-      const preferredAircraft = aircraft.find(a => a.id === preferredAircraftId);
-      setSelectedAircraftId(preferredAircraft?.id || aircraft[0].id);
+    if (displayAircraft.length === 0 && displayInstructors.length === 0) return;
+    if (!selectedAircraftId && displayAircraft.length > 0) {
+      const preferredAircraft = displayAircraft.find(a => a.id === preferredAircraftId);
+      setSelectedAircraftId(preferredAircraft?.id || displayAircraft[0].id);
     }
-    if (!selectedInstructorId && instructors.length > 0) {
-      setSelectedInstructorId(instructors[0].id);
+    if (!selectedInstructorId && displayInstructors.length > 0) {
+      setSelectedInstructorId(displayInstructors[0].id);
     }
     hasAutoSelectedWeekResources.current = true;
-  }, [aircraft, instructors, preferredAircraftId, selectedAircraftId, selectedInstructorId, viewMode]);
+  }, [displayAircraft, displayInstructors, preferredAircraftId, selectedAircraftId, selectedInstructorId, viewMode]);
 
   useEffect(() => {
     setHighlightUnlogged(calendarSettings?.highlight_unlogged_bookings ?? false);
@@ -424,8 +452,8 @@ export const Calendar: React.FC<CalendarProps> = ({
       localLayout = undefined;
     }
 
-    const aircraftIds = aircraft.map(a => a.id);
-    const instructorIds = instructors.map(i => i.id);
+    const aircraftIds = displayAircraft.map(a => a.id);
+    const instructorIds = displayInstructors.map(i => i.id);
     const defaultOrder = calendarSettings.resource_display_order === 'instructors-first'
       ? [...instructorIds, ...aircraftIds]
       : [...aircraftIds, ...instructorIds];
@@ -461,14 +489,14 @@ export const Calendar: React.FC<CalendarProps> = ({
     calendarSettings?.resource_display_order,
     userPreferences?.preferences,
     getResourceLayoutStorageKey,
-    aircraft.length,
-    instructors.length,
+    displayAircraft.length,
+    displayInstructors.length,
   ]);
 
   // When aircraft/instructors load, ensure orderedIds includes all current resources
   useEffect(() => {
-    const aircraftIds = aircraft.map(a => a.id);
-    const instructorIds = instructors.map(i => i.id);
+    const aircraftIds = displayAircraft.map(a => a.id);
+    const instructorIds = displayInstructors.map(i => i.id);
     const allIds = calendarSettings?.resource_display_order === 'instructors-first'
       ? [...instructorIds, ...aircraftIds]
       : [...aircraftIds, ...instructorIds];
@@ -478,7 +506,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       return [...prev, ...newIds];
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aircraft.length, instructors.length, calendarSettings?.resource_display_order]);
+  }, [displayAircraft.length, displayInstructors.length, calendarSettings?.resource_display_order]);
 
 
   // Compute slot height on mount and resize
@@ -603,17 +631,29 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const getHirerName = (booking: Booking) => {
+    if (booking.hirerName) return booking.hirerName;
     const hirerId = booking.studentId || booking.pilotId;
     return displayUsers.find((u) => u.id === hirerId)?.name || 'Unknown Hirer';
   };
 
+  const getBookingHirerId = (booking: Booking) => booking.studentId || booking.pilotId || '';
+
+  const isOwnBooking = (booking: Booking) => Boolean(user?.id && getBookingHirerId(booking) === user.id);
+
+  const canSeePrivateBookingDetails = (booking: Booking) =>
+    !isLimitedCalendarUser || isOwnBooking(booking);
+
+  const canUseBookingActions = (booking: Booking) =>
+    isStaffCalendarUser || isOwnBooking(booking);
+
   const getInstructorName = (booking: Booking) => {
+    if (booking.instructorName) return booking.instructorName;
     if (!booking.instructorId) return '';
     return displayUsers.find((u) => u.id === booking.instructorId)?.name || 'Unknown Instructor';
   };
 
   const getAircraftName = (booking: Booking) => {
-    const bookedAircraft = displayAircraft.find((a) => a.id === booking.aircraftId);
+    const bookedAircraft = aircraftForLookup.find((a) => a.id === booking.aircraftId);
     if (!bookedAircraft) return 'Unknown Aircraft';
     return `${bookedAircraft.registration} ${bookedAircraft.make || ''} ${bookedAircraft.model || ''}`.trim();
   };
@@ -683,17 +723,28 @@ export const Calendar: React.FC<CalendarProps> = ({
       return;
     }
 
-    if (!window.confirm('Delete this flight log? The booking will be marked as unlogged.')) {
+    const impact = await getFlightLogDeleteImpact(flightLogId);
+    let xeroMode: 'auto' | 'void-delete' | 'credit-note' | 'crm-only' = 'crm-only';
+    let confirmMessage = 'Delete this flight log? The booking will be marked as unlogged.';
+
+    if (impact.requiresXeroAction) {
+      xeroMode = impact.recommendedAction;
+      confirmMessage = impact.recommendedAction === 'credit-note'
+        ? `${impact.summary}\n\n${impact.detail}\n\nA reversing credit note will be created in Xero before the CRM record is removed.${impact.hasStripePayments ? '\n\nAdmin note: This reverses the accounting in Xero but does not refund the card automatically.' : ''}\n\nContinue?`
+        : `${impact.summary}\n\n${impact.detail}\n\nThe Xero invoice will be voided or deleted before the CRM record is removed.\n\nContinue?`;
+    }
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
-    const { error } = await deleteFlightLog(flightLogId);
+    const { error } = await deleteFlightLog(flightLogId, { xeroMode });
     if (error) {
       toast.error(error);
       return;
     }
 
-    toast.success('Flight log deleted');
+    toast.success(impact.requiresXeroAction ? 'Flight log reversed in Xero and removed from the CRM' : 'Flight log deleted');
   };
 
   const truncateNotes = (notes?: string, maxLength = 84) => {
@@ -777,7 +828,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const estimatedHeight = getBookingCardEstimatedHeight(booking);
     const showSecondaryResource = estimatedHeight >= 64;
     const showNotes = estimatedHeight >= 88;
-    const notes = showNotes
+    const notes = showNotes && canSeePrivateBookingDetails(booking)
       ? truncateNotes(booking.notes, estimatedHeight >= 120 ? 84 : 48)
       : '';
     const hirerName = getHirerName(booking);
@@ -842,7 +893,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const renderMobileAgendaCard = (booking: Booking) => {
     const instructorName = getInstructorName(booking);
     const aircraftName = getAircraftName(booking);
-    const notes = truncateNotes(booking.notes, 110);
+    const notes = canSeePrivateBookingDetails(booking) ? truncateNotes(booking.notes, 110) : '';
     const isLogged = booking.flight_logged || Boolean(booking.flightLog);
     const statusLabel = booking.hasConflict
       ? 'Waitlist'
@@ -861,6 +912,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         key={booking.id}
         type="button"
         onClick={(event) => {
+          if (!canUseBookingActions(booking)) return;
           openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
         }}
         className={`${getBookingColorClasses(booking)} ${getBookingAttentionClasses(booking)} calendar-booking-card block w-full rounded-xl border-2 p-3 text-left shadow-sm transition-transform active:scale-[0.99]`}
@@ -961,6 +1013,11 @@ export const Calendar: React.FC<CalendarProps> = ({
       persistResourceLayout(next, orderedIds);
       return next;
     });
+  }, [orderedIds, persistResourceLayout]);
+
+  const handleShowAllResources = useCallback(() => {
+    setHiddenIds(new Set());
+    persistResourceLayout(new Set(), orderedIds);
   }, [orderedIds, persistResourceLayout]);
 
   const handleReorderResources = useCallback((newOrderIds: string[]) => {
@@ -1067,7 +1124,14 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceId: string,
     resourceType: 'aircraft' | 'instructor'
   ) => {
-    onNewBookingWithTime?.(date, startTime, endTime, resourceId, resourceType);
+    try {
+      onNewBookingWithTime?.(date, startTime, endTime, resourceId, resourceType);
+      return true;
+    } catch (error) {
+      console.error('Failed to open booking form from calendar selection:', error);
+      toast.error('Could not open the booking form. Please try again.');
+      return false;
+    }
   };
 
   const handleNewTimeAllocation = (
@@ -1077,13 +1141,19 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceId: string,
     resourceType: 'aircraft' | 'instructor'
   ) => {
-    if (resourceType === 'instructor' && canCreateInstructorDowntime) {
-      setDowntimeChoice({ date, startTime, endTime, instructorId: resourceId });
-      setDowntimeReason('Temporary off period');
-      return;
-    }
+    try {
+      if (resourceType === 'instructor' && canCreateInstructorDowntime) {
+        setDowntimeChoice({ date, startTime, endTime, instructorId: resourceId });
+        setDowntimeReason('Temporary off period');
+        return true;
+      }
 
-    openBookingFormForSelection(date, startTime, endTime, resourceId, resourceType);
+      return openBookingFormForSelection(date, startTime, endTime, resourceId, resourceType);
+    } catch (error) {
+      console.error('Failed to allocate new booking time from calendar:', error);
+      toast.error('Could not start a new booking from the calendar. Please try again.');
+      return false;
+    }
   };
 
   const handleCreateInstructorDowntime = async () => {
@@ -1547,6 +1617,57 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
   };
 
+  const clearTouchSlotSelectionIntent = useCallback(() => {
+    if (touchSlotSelectionTimerRef.current) {
+      window.clearTimeout(touchSlotSelectionTimerRef.current);
+      touchSlotSelectionTimerRef.current = null;
+    }
+    touchSlotSelectionRef.current = null;
+  }, []);
+
+  const clearTouchBookingInteractionIntent = useCallback(() => {
+    if (touchBookingInteractionTimerRef.current) {
+      window.clearTimeout(touchBookingInteractionTimerRef.current);
+      touchBookingInteractionTimerRef.current = null;
+    }
+    touchBookingInteractionRef.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    clearTouchSlotSelectionIntent();
+    clearTouchBookingInteractionIntent();
+  }, [clearTouchBookingInteractionIntent, clearTouchSlotSelectionIntent]);
+
+  const findCalendarSlotFromPoint = useCallback((clientX: number, clientY: number) => {
+    const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const slotElement = element?.closest('[data-calendar-slot="true"]') as HTMLElement | null;
+    if (!slotElement) return null;
+
+    const slot = Number(slotElement.dataset.slot);
+    const resourceId = slotElement.dataset.resourceId;
+    const resourceType = slotElement.dataset.resourceType as 'aircraft' | 'instructor' | undefined;
+    const dateValue = slotElement.dataset.date;
+    const dayIndexValue = slotElement.dataset.dayIndex;
+    const dayIndex = dayIndexValue == null ? undefined : Number(dayIndexValue);
+
+    if (
+      !Number.isFinite(slot) ||
+      !resourceId ||
+      (resourceType !== 'aircraft' && resourceType !== 'instructor') ||
+      !dateValue
+    ) {
+      return null;
+    }
+
+    return {
+      slot,
+      resourceId,
+      resourceType,
+      date: new Date(dateValue),
+      dayIndex: Number.isFinite(dayIndex) ? dayIndex : undefined,
+    };
+  }, []);
+
   const resetBookingInteractionState = useCallback(() => {
     setDraggedBooking(null);
     setDraggedBookingOriginal(null);
@@ -1555,7 +1676,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     setPendingBookingDrag(null);
     setHasBookingInteractionMoved(false);
     setTimeout(() => setWasResizing(false), 100);
-  }, []);
+    clearTouchBookingInteractionIntent();
+  }, [clearTouchBookingInteractionIntent]);
 
   const startBookingDragIntent = (
     e: React.MouseEvent,
@@ -1854,6 +1976,134 @@ export const Calendar: React.FC<CalendarProps> = ({
     resetBookingInteractionState,
   ]);
 
+  useEffect(() => {
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+
+      const pendingSelection = touchSlotSelectionRef.current;
+      if (pendingSelection && pendingSelection.pointerId === event.pointerId) {
+        const movedDistance = Math.hypot(
+          event.clientX - pendingSelection.startX,
+          event.clientY - pendingSelection.startY
+        );
+
+        if (!pendingSelection.activated) {
+          if (movedDistance >= TOUCH_CANCEL_MOVE_THRESHOLD_PX) {
+            clearTouchSlotSelectionIntent();
+          }
+          return;
+        }
+
+        const slotTarget = findCalendarSlotFromPoint(event.clientX, event.clientY);
+        if (
+          slotTarget &&
+          slotTarget.resourceId === pendingSelection.resourceId &&
+          slotTarget.resourceType === pendingSelection.resourceType &&
+          slotTarget.dayIndex === pendingSelection.dayIndex
+        ) {
+          setDragEnd({
+            hour: slotTarget.slot,
+            resourceId: slotTarget.resourceId,
+            resourceType: slotTarget.resourceType,
+            dayIndex: slotTarget.dayIndex,
+          });
+          event.preventDefault();
+        }
+      }
+
+      const pendingBooking = touchBookingInteractionRef.current;
+      if (pendingBooking && pendingBooking.pointerId === event.pointerId) {
+        const movedDistance = Math.hypot(
+          event.clientX - pendingBooking.startX,
+          event.clientY - pendingBooking.startY
+        );
+
+        if (!pendingBooking.activated) {
+          if (movedDistance >= TOUCH_CANCEL_MOVE_THRESHOLD_PX) {
+            clearTouchBookingInteractionIntent();
+          }
+          return;
+        }
+
+        const slotTarget = findCalendarSlotFromPoint(event.clientX, event.clientY);
+        if (slotTarget) {
+          updateBookingPreviewForSlot(
+            slotTarget.slot,
+            slotTarget.resourceId,
+            slotTarget.resourceType,
+            slotTarget.date
+          );
+          event.preventDefault();
+        }
+      }
+    };
+
+    const handleWindowPointerEnd = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+
+      const pendingSelection = touchSlotSelectionRef.current;
+      if (pendingSelection && pendingSelection.pointerId === event.pointerId) {
+        const activated = pendingSelection.activated;
+        const originalSelection = { ...pendingSelection };
+        clearTouchSlotSelectionIntent();
+
+        if (activated) {
+          handleMouseUp(originalSelection.date);
+        } else {
+          handleTimeSlotClick(
+            originalSelection.slot,
+            originalSelection.resourceId,
+            originalSelection.resourceType,
+            originalSelection.date
+          );
+        }
+        return;
+      }
+
+      const pendingBooking = touchBookingInteractionRef.current;
+      if (pendingBooking && pendingBooking.pointerId === event.pointerId) {
+        const activated = pendingBooking.activated;
+        const booking = pendingBooking.booking;
+        const pressX = pendingBooking.pressX;
+        const pressY = pendingBooking.pressY;
+        const canOpenMenu = canUseBookingActions(booking);
+        clearTouchBookingInteractionIntent();
+
+        if (activated) {
+          if (hasBookingInteractionMoved) {
+            handleBookingDrop();
+          } else {
+            resetBookingInteractionState();
+          }
+          return;
+        }
+
+        if (canOpenMenu) {
+          openBookingActionMenu(booking, { x: pressX, y: pressY });
+        }
+      }
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove, { passive: false });
+    window.addEventListener('pointerup', handleWindowPointerEnd);
+    window.addEventListener('pointercancel', handleWindowPointerEnd);
+
+    return () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerEnd);
+      window.removeEventListener('pointercancel', handleWindowPointerEnd);
+    };
+  }, [
+    canUseBookingActions,
+    clearTouchBookingInteractionIntent,
+    clearTouchSlotSelectionIntent,
+    findCalendarSlotFromPoint,
+    handleBookingDrop,
+    hasBookingInteractionMoved,
+    resetBookingInteractionState,
+    updateBookingPreviewForSlot,
+  ]);
+
   const handleMouseDown = (
     slot: number,
     resourceId: string,
@@ -1887,22 +2137,128 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const handleMouseUp = (date: Date) => {
-    if (isDragging && dragStart && dragEnd && onNewBookingWithTime) {
-      const startSlot = Math.min(dragStart.hour, dragEnd.hour);
-      const endSlot = Math.max(dragStart.hour, dragEnd.hour) + 1;
-      const startTime = formatTimeSlot(startSlot);
-      const endTime = formatTimeSlot(endSlot);
-      handleNewTimeAllocation(
-        date,
-        startTime,
-        endTime,
-        dragStart.resourceId,
-        dragStart.resourceType
-      );
+    try {
+      if (isDragging && dragStart && dragEnd && onNewBookingWithTime) {
+        const startSlot = Math.min(dragStart.hour, dragEnd.hour);
+        const endSlot = Math.max(dragStart.hour, dragEnd.hour) + 1;
+        const startTime = formatTimeSlot(startSlot);
+        const endTime = formatTimeSlot(endSlot);
+        handleNewTimeAllocation(
+          date,
+          startTime,
+          endTime,
+          dragStart.resourceId,
+          dragStart.resourceType
+        );
+      }
+    } catch (error) {
+      console.error('Calendar drag-create failed on mouse up:', error);
+      toast.error('Could not create a booking from that drag selection. Please try again.');
+    } finally {
+      setIsDragging(false);
+      setDragStart(null);
+      setDragEnd(null);
     }
-    setIsDragging(false);
-    setDragStart(null);
-    setDragEnd(null);
+  };
+
+  const handleTouchSlotPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+    slot: number,
+    resourceId: string,
+    resourceType: 'aircraft' | 'instructor',
+    date: Date,
+    dayIndex?: number
+  ) => {
+    if (event.pointerType !== 'touch') return;
+    if (actionMenuBooking) {
+      setActionMenuBooking(null);
+      return;
+    }
+    if (draggedBooking || resizingBooking) return;
+    if (isResourceUnavailable(resourceId, resourceType, slot, date)) return;
+
+    clearTouchSlotSelectionIntent();
+    touchSlotSelectionRef.current = {
+      pointerId: event.pointerId,
+      slot,
+      resourceId,
+      resourceType,
+      date,
+      dayIndex,
+      startX: event.clientX,
+      startY: event.clientY,
+      activated: false,
+    };
+
+    touchSlotSelectionTimerRef.current = window.setTimeout(() => {
+      const current = touchSlotSelectionRef.current;
+      if (!current || current.pointerId !== event.pointerId) return;
+      current.activated = true;
+      setIsDragging(true);
+      setDragStart({
+        hour: current.slot,
+        resourceId: current.resourceId,
+        resourceType: current.resourceType,
+        dayIndex: current.dayIndex,
+      });
+      setDragEnd({
+        hour: current.slot,
+        resourceId: current.resourceId,
+        resourceType: current.resourceType,
+        dayIndex: current.dayIndex,
+      });
+      navigator.vibrate?.(10);
+    }, TOUCH_HOLD_TO_DRAG_MS);
+  };
+
+  const handleTouchBookingPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+    booking: Booking,
+    resourceType: 'aircraft' | 'instructor',
+    mode: 'move' | 'resize-top' | 'resize-bottom' = 'move'
+  ) => {
+    if (event.pointerType !== 'touch') return;
+    if (!canUseBookingActions(booking)) return;
+    if (mode === 'move' && !canDragOrResizeBooking(booking)) return;
+    if ((mode === 'resize-top' || mode === 'resize-bottom') && !canDragOrResizeBooking(booking)) return;
+
+    event.stopPropagation();
+    clearTouchBookingInteractionIntent();
+
+    touchBookingInteractionRef.current = {
+      pointerId: event.pointerId,
+      booking,
+      resourceType,
+      startX: event.clientX,
+      startY: event.clientY,
+      pressX: event.clientX,
+      pressY: event.clientY,
+      activated: mode !== 'move',
+      mode,
+    };
+
+    if (mode === 'move') {
+      touchBookingInteractionTimerRef.current = window.setTimeout(() => {
+        const current = touchBookingInteractionRef.current;
+        if (!current || current.pointerId !== event.pointerId) return;
+        current.activated = true;
+        handleBookingDragStart(booking, resourceType);
+        navigator.vibrate?.(10);
+      }, TOUCH_HOLD_TO_DRAG_MS);
+      return;
+    }
+
+    setWasResizing(true);
+    setResizingBooking({ booking, handle: mode === 'resize-top' ? 'top' : 'bottom' });
+    setDraggedBookingOriginal(booking);
+    setHasBookingInteractionMoved(false);
+    updateDragPreview({
+      startTime: new Date(booking.startTime),
+      endTime: new Date(booking.endTime),
+      resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
+      resourceType,
+    });
+    navigator.vibrate?.(10);
   };
 
   const isTimeSlotInDragRange = (
@@ -1922,6 +2278,66 @@ export const Calendar: React.FC<CalendarProps> = ({
     const minSlot = Math.min(dragStart.hour, dragEnd.hour);
     const maxSlot = Math.max(dragStart.hour, dragEnd.hour);
     return slot >= minSlot && slot <= maxSlot;
+  };
+
+  const getTimeSlotDragRangeMeta = (
+    slot: number,
+    resourceId: string,
+    resourceType: 'aircraft' | 'instructor',
+    dayIndex?: number
+  ) => {
+    if (
+      !isDragging ||
+      !dragStart ||
+      !dragEnd ||
+      resourceId !== dragStart.resourceId ||
+      resourceType !== dragStart.resourceType ||
+      dayIndex !== dragStart.dayIndex
+    ) {
+      return {
+        active: false,
+        isStart: false,
+        isEnd: false,
+      };
+    }
+
+    const startSlot = Math.min(dragStart.hour, dragEnd.hour);
+    const endSlot = Math.max(dragStart.hour, dragEnd.hour);
+
+    return {
+      active: slot >= startSlot && slot <= endSlot,
+      isStart: slot === startSlot,
+      isEnd: slot === endSlot,
+    };
+  };
+
+  const getTimeSlotSelectionPreviewStyle = ({
+    active,
+    isStart,
+    isEnd,
+  }: {
+    active: boolean;
+    isStart: boolean;
+    isEnd: boolean;
+  }) => {
+    if (!active) return undefined;
+
+    return {
+      backgroundColor: 'rgba(96, 165, 250, 0.2)',
+      boxSizing: 'border-box' as const,
+      borderLeft: '2px solid rgba(37, 99, 235, 0.92)',
+      borderRight: '2px solid rgba(37, 99, 235, 0.92)',
+      ...(isStart ? {
+        borderTop: '2px solid rgba(37, 99, 235, 0.92)',
+        borderTopLeftRadius: '0.5rem',
+        borderTopRightRadius: '0.5rem',
+      } : {}),
+      ...(isEnd ? {
+        borderBottom: '2px solid rgba(37, 99, 235, 0.92)',
+        borderBottomLeftRadius: '0.5rem',
+        borderBottomRightRadius: '0.5rem',
+      } : {}),
+    };
   };
 
   const renderTodayButton = () => (
@@ -1991,7 +2407,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:py-1"
         >
           <option value="">Select Aircraft</option>
-          {aircraft.map((a) => (
+          {displayAircraft.map((a) => (
             <option key={a.id} value={a.id}>
               {a.registration} - {a.make} {a.model}
             </option>
@@ -2009,7 +2425,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:py-1"
         >
           <option value="">Select Instructor</option>
-          {instructors.map((instructor) => (
+          {displayInstructors.map((instructor) => (
             <option key={instructor.id} value={instructor.id}>
               {instructor.name}
             </option>
@@ -2023,10 +2439,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     const result: ManagedResource[] = [];
 
     if (resourceFilter === 'aircraft' || resourceFilter === 'both') {
-      aircraft.forEach(a => result.push({ id: a.id, name: a.registration, type: 'aircraft', status: a.status }));
+      displayAircraft.forEach(a => result.push({ id: a.id, name: a.registration, type: 'aircraft', status: a.status }));
     }
     if (resourceFilter === 'instructors' || resourceFilter === 'both') {
-      instructors.forEach(i => result.push({ id: i.id, name: i.name || i.email, type: 'instructor' }));
+      displayInstructors.forEach(i => result.push({ id: i.id, name: i.name || i.email, type: 'instructor' }));
     }
 
     return result;
@@ -2052,6 +2468,7 @@ export const Calendar: React.FC<CalendarProps> = ({
         orderedIds={orderedIds}
         onHide={handleHideResource}
         onShow={handleShowResource}
+        onShowAll={handleShowAllResources}
         onReorder={handleReorderResources}
         compact={isKioskMode}
       />
@@ -2222,11 +2639,12 @@ export const Calendar: React.FC<CalendarProps> = ({
                       prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
                     );
 
-                    const isInDragRange = isTimeSlotInDragRange(
+                    const dragRangeMeta = getTimeSlotDragRangeMeta(
                       slot,
                       resource.id,
                       resource.type
                     );
+                    const isInDragRange = dragRangeMeta.active;
                     const hourIndex = Math.floor(slot / slotsPerHour);
                     const isAlternateHour = hourIndex % 2 === 1;
                     const cursorClass = unavailability
@@ -2240,6 +2658,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                       ? 'calendar-slot-alt bg-blue-50 hover:bg-blue-100'
                       : 'calendar-slot-base hover:bg-gray-50';
                     const borderClasses = resourceBorderClasses;
+                    const selectionPreviewStyle = getTimeSlotSelectionPreviewStyle(dragRangeMeta);
 
                     return (
                       <div
@@ -2249,11 +2668,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                         data-resource-id={resource.id}
                         data-resource-type={resource.type}
                         data-date={currentDate.toISOString()}
+                        data-day-index=""
                         className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
                         style={{
                           height: slotHeight,
                           gridColumn: resourceIndex + 2,
                           gridRow: slotIndex + 1,
+                          touchAction: 'manipulation',
+                          ...selectionPreviewStyle,
                         }}
                         onClick={() =>
                           !unavailability &&
@@ -2274,6 +2696,16 @@ export const Calendar: React.FC<CalendarProps> = ({
                           )
                         }
                         onMouseUp={() => handleMouseUp(currentDate)}
+                        onPointerDown={(event) =>
+                          !unavailability &&
+                          handleTouchSlotPointerDown(
+                            event,
+                            slot,
+                            resource.id,
+                            resource.type,
+                            currentDate
+                          )
+                        }
                         onMouseEnter={(e) => {
                           if (draggedBooking || resizingBooking) {
                             handleBookingDragOver(e, slot, resource.id, resource.type, currentDate);
@@ -2372,13 +2804,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                       marginTop: position.marginTop,
                       ...getBookingBlockStyle(position),
                       ...getBookingLaneStyle(booking),
+                      touchAction: 'manipulation',
                     }}
-                    title={`${booking.notes || 'Booking'}`}
+                    title={canSeePrivateBookingDetails(booking) ? `${booking.notes || 'Booking'}` : 'Booking'}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      if (canDragOrResizeBooking(booking)) {
+                      if (canUseBookingActions(booking) && canDragOrResizeBooking(booking)) {
                         startBookingDragIntent(e, booking, resource.type);
                       }
+                    }}
+                    onPointerDown={(event) => {
+                      handleTouchBookingPointerDown(event, booking, resource.type);
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -2397,24 +2833,32 @@ export const Calendar: React.FC<CalendarProps> = ({
                         return;
                       }
 
-                      openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
+                      if (canUseBookingActions(booking)) {
+                        openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
+                      }
                     }}
                   >
-                    {canDragOrResizeBooking(booking) && (
+                    {canUseBookingActions(booking) && canDragOrResizeBooking(booking) && (
                       <>
                         <div
-                          className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                          className="absolute top-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto md:h-2"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleResizeStart(e, booking, 'top', resource.type);
                           }}
+                          onPointerDown={(event) => {
+                            handleTouchBookingPointerDown(event, booking, resource.type, 'resize-top');
+                          }}
                           title="Drag to change start time"
                         />
                         <div
-                          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                          className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto md:h-2"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleResizeStart(e, booking, 'bottom', resource.type);
+                          }}
+                          onPointerDown={(event) => {
+                            handleTouchBookingPointerDown(event, booking, resource.type, 'resize-bottom');
                           }}
                           title="Drag to change end time"
                         />
@@ -2505,7 +2949,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       ? aircraft.find((a) => a.id === selectedAircraftId)
       : undefined;
     const selectedInstructor = hasInstructor
-      ? instructors.find((i) => i.id === selectedInstructorId)
+      ? displayInstructors.find((i) => i.id === selectedInstructorId)
       : undefined;
 
     return (
@@ -2699,12 +3143,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                         prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
                       );
 
-                      const isInDragRange = isTimeSlotInDragRange(
+                      const dragRangeMeta = getTimeSlotDragRangeMeta(
                         slot,
                         selectedAircraftId,
                         'aircraft',
                         dayIndex
                       );
+                      const isInDragRange = dragRangeMeta.active;
                       const columnIndex = dayIndex * columnsPerDay + columnOffset;
                       const cursorClass = unavailability
                         ? 'cursor-not-allowed'
@@ -2716,6 +3161,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         : isAlternateHour
                         ? 'calendar-slot-alt bg-blue-50 hover:bg-blue-100'
                         : 'calendar-slot-base hover:bg-gray-50';
+                      const selectionPreviewStyle = getTimeSlotSelectionPreviewStyle(dragRangeMeta);
 
                       daySlots.push(
                         <div
@@ -2725,11 +3171,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                           data-resource-id={selectedAircraftId}
                           data-resource-type="aircraft"
                           data-date={day.toISOString()}
+                          data-day-index={dayIndex}
                           className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
                             gridRow: slotIndex + 1,
+                            touchAction: 'manipulation',
+                            ...selectionPreviewStyle,
                           }}
                           onClick={() =>
                             !unavailability &&
@@ -2751,6 +3200,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                             )
                           }
                           onMouseUp={() => handleMouseUp(day)}
+                          onPointerDown={(event) =>
+                            !unavailability &&
+                            handleTouchSlotPointerDown(
+                              event,
+                              slot,
+                              selectedAircraftId,
+                              'aircraft',
+                              day,
+                              dayIndex
+                            )
+                          }
                           onMouseEnter={(e) => {
                             if (draggedBooking || resizingBooking) {
                               handleBookingDragOver(e, slot, selectedAircraftId, 'aircraft', day);
@@ -2791,12 +3251,13 @@ export const Calendar: React.FC<CalendarProps> = ({
                         prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
                       );
 
-                      const isInDragRange = isTimeSlotInDragRange(
+                      const dragRangeMeta = getTimeSlotDragRangeMeta(
                         slot,
                         selectedInstructorId,
                         'instructor',
                         dayIndex
                       );
+                      const isInDragRange = dragRangeMeta.active;
                       const columnIndex = dayIndex * columnsPerDay + columnOffset;
                       const cursorClass = unavailability
                         ? 'cursor-not-allowed'
@@ -2808,6 +3269,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                         : isAlternateHour
                         ? 'calendar-slot-alt bg-blue-50 hover:bg-blue-100'
                         : 'calendar-slot-base hover:bg-gray-50';
+                      const selectionPreviewStyle = getTimeSlotSelectionPreviewStyle(dragRangeMeta);
 
                       daySlots.push(
                         <div
@@ -2817,11 +3279,14 @@ export const Calendar: React.FC<CalendarProps> = ({
                           data-resource-id={selectedInstructorId}
                           data-resource-type="instructor"
                           data-date={day.toISOString()}
+                          data-day-index={dayIndex}
                           className={`calendar-slot-cell border-r border-gray-200 relative${borderClasses} ${cursorClass} ${backgroundClass}`}
                           style={{
                             height: slotHeight,
                             gridColumn: columnIndex + 2,
                             gridRow: slotIndex + 1,
+                            touchAction: 'manipulation',
+                            ...selectionPreviewStyle,
                           }}
                           onClick={() =>
                             !unavailability &&
@@ -2843,6 +3308,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                             )
                           }
                           onMouseUp={() => handleMouseUp(day)}
+                          onPointerDown={(event) =>
+                            !unavailability &&
+                            handleTouchSlotPointerDown(
+                              event,
+                              slot,
+                              selectedInstructorId,
+                              'instructor',
+                              day,
+                              dayIndex
+                            )
+                          }
                           onMouseEnter={(e) => {
                             if (draggedBooking || resizingBooking) {
                               handleBookingDragOver(e, slot, selectedInstructorId, 'instructor', day);
@@ -2998,13 +3474,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                         marginTop: position.marginTop,
                         ...getBookingBlockStyle(position),
                         ...getBookingLaneStyle(booking),
+                        touchAction: 'manipulation',
                       }}
-                      title={`${booking.notes || 'Booking'}`}
+                    title={canSeePrivateBookingDetails(booking) ? `${booking.notes || 'Booking'}` : 'Booking'}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        if (canDragOrResizeBooking(booking)) {
+                        if (canUseBookingActions(booking) && canDragOrResizeBooking(booking)) {
                           startBookingDragIntent(e, booking, 'aircraft');
                         }
+                      }}
+                      onPointerDown={(event) => {
+                        handleTouchBookingPointerDown(event, booking, 'aircraft');
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -3019,24 +3499,32 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
+                        if (canUseBookingActions(booking)) {
+                          openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
+                        }
                       }}
                     >
-                      {canDragOrResizeBooking(booking) && (
+                      {canUseBookingActions(booking) && canDragOrResizeBooking(booking) && (
                         <>
                           <div
-                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            className="absolute top-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto md:h-2"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'top', 'aircraft');
                             }}
+                            onPointerDown={(event) => {
+                              handleTouchBookingPointerDown(event, booking, 'aircraft', 'resize-top');
+                            }}
                             title="Drag to change start time"
                           />
                           <div
-                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto md:h-2"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'bottom', 'aircraft');
+                            }}
+                            onPointerDown={(event) => {
+                              handleTouchBookingPointerDown(event, booking, 'aircraft', 'resize-bottom');
                             }}
                             title="Drag to change end time"
                           />
@@ -3076,13 +3564,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                         marginTop: position.marginTop,
                         ...getBookingBlockStyle(position),
                         ...getBookingLaneStyle(booking),
+                        touchAction: 'manipulation',
                       }}
-                      title={`${booking.notes || 'Booking'}`}
+                      title={canSeePrivateBookingDetails(booking) ? `${booking.notes || 'Booking'}` : 'Booking'}
                       onMouseDown={(e) => {
                         e.stopPropagation();
-                        if (canDragOrResizeBooking(booking)) {
+                        if (canUseBookingActions(booking) && canDragOrResizeBooking(booking)) {
                           startBookingDragIntent(e, booking, 'instructor');
                         }
+                      }}
+                      onPointerDown={(event) => {
+                        handleTouchBookingPointerDown(event, booking, 'instructor');
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -3097,24 +3589,32 @@ export const Calendar: React.FC<CalendarProps> = ({
                           return;
                         }
 
-                        openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
+                        if (canUseBookingActions(booking)) {
+                          openBookingActionMenu(booking, { x: e.clientX, y: e.clientY });
+                        }
                       }}
                     >
-                      {canDragOrResizeBooking(booking) && (
+                      {canUseBookingActions(booking) && canDragOrResizeBooking(booking) && (
                         <>
                           <div
-                            className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            className="absolute top-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto md:h-2"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'top', 'instructor');
                             }}
+                            onPointerDown={(event) => {
+                              handleTouchBookingPointerDown(event, booking, 'instructor', 'resize-top');
+                            }}
                             title="Drag to change start time"
                           />
                           <div
-                            className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto"
+                            className="absolute bottom-0 left-0 right-0 h-4 cursor-ns-resize hover:bg-white hover:bg-opacity-30 z-20 pointer-events-auto md:h-2"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleResizeStart(e, booking, 'bottom', 'instructor');
+                            }}
+                            onPointerDown={(event) => {
+                              handleTouchBookingPointerDown(event, booking, 'instructor', 'resize-bottom');
                             }}
                             title="Drag to change end time"
                           />
@@ -3241,7 +3741,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           const isPast = isPastBooking(booking);
           const isLogged = booking.flight_logged || Boolean(booking.flightLog);
           const instructorName = getInstructorName(booking);
-          const notes = truncateNotes(booking.notes, 96);
+          const notes = canSeePrivateBookingDetails(booking) ? truncateNotes(booking.notes, 96) : '';
 
           return (
             <div
@@ -3290,15 +3790,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                         ? 'Unlogged'
                         : booking.status.replace('_', ' ')}
                 </span>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
-                  }}
-                  className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                >
-                  Actions
-                </button>
+                {canUseBookingActions(booking) && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      openBookingActionMenu(booking, { x: event.clientX, y: event.clientY });
+                    }}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    Actions
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -3633,8 +4135,8 @@ export const Calendar: React.FC<CalendarProps> = ({
         <MonthView
           currentDate={currentDate}
           bookings={bookings}
-          aircraft={aircraft}
-          instructors={instructors}
+          aircraft={displayAircraft}
+          instructors={displayInstructors}
           defaultAircraftId={preferredAircraftId}
           onDayClick={(date) => {
             setCurrentDate(date);
@@ -3681,6 +4183,8 @@ export const Calendar: React.FC<CalendarProps> = ({
         <BookingActionMenu
           booking={actionMenuBooking}
           position={actionMenuPosition}
+          canEdit={canUseBookingActions(actionMenuBooking)}
+          canLogFlight={canUseBookingActions(actionMenuBooking)}
           onEdit={() => {
             if (isBookingFlightLogged(actionMenuBooking)) {
               toast.error('Delete the flight log before editing this booking');
@@ -3689,22 +4193,20 @@ export const Calendar: React.FC<CalendarProps> = ({
             if (onEditBooking) {
               const bookingToEdit = actionMenuBooking;
               const bookingDate = format(new Date(bookingToEdit.startTime), 'yyyy-MM-dd');
-              window.sessionStorage.setItem(selectedDateStorageKey, bookingDate);
               setCurrentDate(new Date(`${bookingDate}T12:00:00`));
               setActionMenuBooking(null);
               window.setTimeout(() => onEditBooking(bookingToEdit), 0);
             }
           }}
-          onCopy={() => {
+          onCopy={canUseBookingActions(actionMenuBooking) ? () => {
             if (onCopyBooking) {
               const bookingToCopy = actionMenuBooking;
               const bookingDate = format(new Date(bookingToCopy.startTime), 'yyyy-MM-dd');
-              window.sessionStorage.setItem(selectedDateStorageKey, bookingDate);
               setCurrentDate(new Date(`${bookingDate}T12:00:00`));
               setActionMenuBooking(null);
               window.setTimeout(() => onCopyBooking(bookingToCopy), 0);
             }
-          }}
+          } : undefined}
           onLogFlight={() => {
             setFlightLogBooking(actionMenuBooking);
             setFlightLogMode('create');
@@ -3727,12 +4229,25 @@ export const Calendar: React.FC<CalendarProps> = ({
               void Promise.resolve(onDeleteBooking(actionMenuBooking.id));
             }
           }}
-          onViewHirerProfile={!isKioskMode && (actionMenuBooking.studentId || actionMenuBooking.pilotId)
+          onViewHirerProfile={!isKioskMode && canUseBookingActions(actionMenuBooking) && !actionMenuBooking.isGuestBooking && (actionMenuBooking.studentId || actionMenuBooking.pilotId)
             ? () => {
                 const hirerId = actionMenuBooking.studentId || actionMenuBooking.pilotId;
                 if (!hirerId) return;
                 setActionMenuBooking(null);
                 navigate(`/students/${hirerId}`);
+              }
+            : undefined}
+          onConvertGuestToMember={!isKioskMode && canUseBookingActions(actionMenuBooking) && actionMenuBooking.isGuestBooking
+            ? () => {
+                const bookingToConvert = actionMenuBooking;
+                setActionMenuBooking(null);
+                void (async () => {
+                  const result = await convertGuestBookingToMember(bookingToConvert.id);
+                  await Promise.resolve(onRefresh?.());
+                  if (result.memberId) {
+                    navigate(`/students/${result.memberId}`);
+                  }
+                })();
               }
             : undefined}
           onApprove={
