@@ -25,8 +25,8 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
     fatigueRulesEnabled: true,
     fatigueLateFinishTime: '22:00',
     fatigueEarlyStartTime: '07:00',
-    fatigueMinRestHours: 10,
-    fatigueMaxDutyHoursPerDay: 10,
+    fatigueMinRestHours: 12,
+    fatigueMaxDutyHoursPerDay: 11,
     fatigueMaxFlightHoursPerDay: 7,
     fatigueMaxLateFinishes7Days: 3,
     fatigueIncludeSupervision: true,
@@ -50,8 +50,8 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigueRulesEnabled: settings.fatigue_rules_enabled ?? true,
         fatigueLateFinishTime: settings.fatigue_late_finish_time ?? '22:00',
         fatigueEarlyStartTime: settings.fatigue_early_start_time ?? '07:00',
-        fatigueMinRestHours: settings.fatigue_min_rest_hours ?? 10,
-        fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 10,
+        fatigueMinRestHours: settings.fatigue_min_rest_hours ?? 12,
+        fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 11,
         fatigueMaxFlightHoursPerDay: settings.fatigue_max_flight_hours_per_day ?? 7,
         fatigueMaxLateFinishes7Days: settings.fatigue_max_late_finishes_7_days ?? 3,
         fatigueIncludeSupervision: settings.fatigue_include_supervision ?? true,
@@ -103,8 +103,8 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigueRulesEnabled: settings.fatigue_rules_enabled ?? true,
         fatigueLateFinishTime: settings.fatigue_late_finish_time ?? '22:00',
         fatigueEarlyStartTime: settings.fatigue_early_start_time ?? '07:00',
-        fatigueMinRestHours: settings.fatigue_min_rest_hours ?? 10,
-        fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 10,
+        fatigueMinRestHours: settings.fatigue_min_rest_hours ?? 12,
+        fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 11,
         fatigueMaxFlightHoursPerDay: settings.fatigue_max_flight_hours_per_day ?? 7,
         fatigueMaxLateFinishes7Days: settings.fatigue_max_late_finishes_7_days ?? 3,
         fatigueIncludeSupervision: settings.fatigue_include_supervision ?? true,
@@ -331,7 +331,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
                   Apply instructor fatigue checks to bookings
                 </label>
                 <p className="mt-1 text-xs text-blue-900">
-                  Reference: CASA plain English fatigue guide. These are configurable local controls for rostering and supervision; they do not replace the operator's full fatigue management obligations.
+                  Reference: CASA CAO 48.1 Plain English Guide, Appendix 6 flight training. These checks use CRM-known bookings and do not replace the operator's full fatigue management obligations or an instructor's fitness-for-duty assessment.
                 </p>
               </div>
             </div>
@@ -442,6 +442,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
                   <span className="block text-xs text-gray-500">Turn off to warn only while you are testing the limits.</span>
                 </span>
               </label>
+            </div>
+
+            <div className="rounded-lg border border-blue-200 bg-white/70 p-3 text-xs leading-5 text-blue-950">
+              The booking validator applies CASA Appendix 6 flight-training planning checks for daily FDP by start time, 12 hours off-duty between CRM duties, 7 hours daily flight/supervision time, 60 hours duty in 7 days, 100 hours duty in 14 days, 100 hours flight time in 28 days, 1000 hours flight time in 365 days, a 36-hour off-duty gap in 7 days, and 6 off-duty days in 28 days. It can only assess bookings recorded in this CRM.
             </div>
           </div>
         </div>

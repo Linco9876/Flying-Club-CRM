@@ -75,7 +75,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
         <div className="mt-3 grid gap-3 text-sm text-slate-700 md:grid-cols-3">
           <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
             <p className="font-semibold text-slate-950">Fatigue management</p>
-            <p className="mt-1 text-xs leading-5">Booking fatigue controls are configured in Bookings & Rules and reference the CASA plain English fatigue management guide. The CRM stores the local rule set and applies it to instructor bookings.</p>
+            <p className="mt-1 text-xs leading-5">Booking fatigue controls are configured in Bookings & Rules and reference CASA CAO 48.1 Appendix 6 flight training. The CRM applies the local rule set to instructor bookings it knows about; outside flying and actual fitness for duty must still be managed operationally.</p>
           </div>
           <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
             <p className="font-semibold text-slate-950">Flight tests and reviews</p>

@@ -175,6 +175,38 @@ export const useBookings = (enabled = true) => {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
 
+  const startOfLocalDay = (date: Date) => {
+    const value = new Date(date);
+    value.setHours(0, 0, 0, 0);
+    return value;
+  };
+
+  const addLocalDays = (date: Date, days: number) => {
+    const value = new Date(date);
+    value.setDate(value.getDate() + days);
+    return value;
+  };
+
+  const hoursBetween = (start: Date, end: Date) =>
+    Math.max(0, (end.getTime() - start.getTime()) / (60 * 60 * 1000));
+
+  const getCasaAppendix6FdpLimitHours = (startTime: Date) => {
+    const startMinutes = minutesSinceMidnight(startTime);
+    if (startMinutes >= 5 * 60 && startMinutes < 6 * 60) return 9;
+    if (startMinutes >= 6 * 60 && startMinutes < 8 * 60) return 10;
+    if (startMinutes >= 8 * 60 && startMinutes < 11 * 60) return 11;
+    if (startMinutes >= 11 * 60 && startMinutes < 14 * 60) return 10;
+    if (startMinutes >= 14 * 60 && startMinutes < 23 * 60) return 9;
+    return 8;
+  };
+
+  const getLatestCasaAppendix6Finish = (startTime: Date) => {
+    const latest = startOfLocalDay(startTime);
+    latest.setDate(latest.getDate() + 1);
+    latest.setHours(1, 0, 0, 0);
+    return latest;
+  };
+
   const getInstructorFatigueWarnings = (
     bookingData: Pick<Booking, 'instructorId' | 'startTime' | 'endTime'>,
     excludingBookingId?: string
@@ -221,16 +253,24 @@ export const useBookings = (enabled = true) => {
     if (sameDayBookings.length > 0) {
       const firstStart = new Date(Math.min(...sameDayBookings.map(existing => existing.startTime.getTime())));
       const lastEnd = new Date(Math.max(...sameDayBookings.map(existing => existing.endTime.getTime())));
-      const dutySpanHours = (lastEnd.getTime() - firstStart.getTime()) / (60 * 60 * 1000);
+      const dutySpanHours = hoursBetween(firstStart, lastEnd);
       const bookedHours = sameDayBookings.reduce((total, existing) =>
-        total + Math.max(0, (existing.endTime.getTime() - existing.startTime.getTime()) / (60 * 60 * 1000)), 0
+        total + hoursBetween(existing.startTime, existing.endTime), 0
       );
+      const casaFdpLimitHours = getCasaAppendix6FdpLimitHours(firstStart);
+      const localDutyLimitHours = Math.max(0, Number(bookingRules.fatigue_max_duty_hours_per_day || casaFdpLimitHours));
+      const effectiveDutyLimitHours = Math.min(localDutyLimitHours || casaFdpLimitHours, casaFdpLimitHours);
 
-      if (dutySpanHours > Number(bookingRules.fatigue_max_duty_hours_per_day || 0)) {
-        warnings.push(`Instructor duty span would be ${dutySpanHours.toFixed(1)} hours, above the ${bookingRules.fatigue_max_duty_hours_per_day} hour fatigue limit.`);
+      if (dutySpanHours > effectiveDutyLimitHours) {
+        warnings.push(`Instructor duty span would be ${dutySpanHours.toFixed(1)} hours. CASA Appendix 6 flight training limit for a duty starting at ${firstStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} is ${casaFdpLimitHours} hours, and the local cap is ${localDutyLimitHours || casaFdpLimitHours} hours.`);
       }
       if (bookedHours > Number(bookingRules.fatigue_max_flight_hours_per_day || 0)) {
         warnings.push(`Instructor booked flight/supervision time would be ${bookedHours.toFixed(1)} hours, above the ${bookingRules.fatigue_max_flight_hours_per_day} hour daily limit.`);
+      }
+
+      const latestFinish = getLatestCasaAppendix6Finish(firstStart);
+      if (lastEnd > latestFinish) {
+        warnings.push(`Instructor duty would finish after 01:00 local time following the duty start, outside the CASA Appendix 6 planning window.`);
       }
     }
 
@@ -282,6 +322,64 @@ export const useBookings = (enabled = true) => {
     ).length;
     if (lateFinishes > Number(bookingRules.fatigue_max_late_finishes_7_days || 0)) {
       warnings.push(`Instructor would have ${lateFinishes} late finishes in 7 days; limit is ${bookingRules.fatigue_max_late_finishes_7_days}.`);
+    }
+
+    const rollingHours = (days: number) => {
+      const start = addLocalDays(startOfLocalDay(candidate.startTime), -(days - 1));
+      const end = new Date(candidate.endTime);
+      return consideredBookings.reduce((total, existing) => {
+        if (existing.endTime <= start || existing.startTime > end) return total;
+        const overlapStart = existing.startTime < start ? start : existing.startTime;
+        const overlapEnd = existing.endTime > end ? end : existing.endTime;
+        return total + hoursBetween(overlapStart, overlapEnd);
+      }, 0);
+    };
+
+    const rolling7DutyHours = rollingHours(7);
+    if (rolling7DutyHours > 60) {
+      warnings.push(`Instructor CRM-booked duty would be ${rolling7DutyHours.toFixed(1)} hours in 7 days; CASA Appendix 6 cumulative duty limit is 60 hours.`);
+    }
+
+    const rolling14DutyHours = rollingHours(14);
+    if (rolling14DutyHours > 100) {
+      warnings.push(`Instructor CRM-booked duty would be ${rolling14DutyHours.toFixed(1)} hours in 14 days; CASA Appendix 6 cumulative duty limit is 100 hours.`);
+    }
+
+    const rolling28FlightHours = rollingHours(28);
+    if (rolling28FlightHours > 100) {
+      warnings.push(`Instructor CRM-booked flight/supervision time would be ${rolling28FlightHours.toFixed(1)} hours in 28 days; CASA cumulative flight-time limit is 100 hours.`);
+    }
+
+    const rolling365FlightHours = rollingHours(365);
+    if (rolling365FlightHours > 1000) {
+      warnings.push(`Instructor CRM-booked flight/supervision time would be ${rolling365FlightHours.toFixed(1)} hours in 365 days; CASA cumulative flight-time limit is 1000 hours.`);
+    }
+
+    const sevenDayStart = addLocalDays(startOfLocalDay(candidate.startTime), -6);
+    const sevenDayEnd = new Date(candidate.endTime);
+    const dutiesInSevenDays = consideredBookings
+      .filter(existing => existing.endTime > sevenDayStart && existing.startTime <= sevenDayEnd)
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    let has36HourGap = dutiesInSevenDays.length === 0;
+    let previousEnd = sevenDayStart;
+    for (const duty of dutiesInSevenDays) {
+      if (hoursBetween(previousEnd, duty.startTime) >= 36) has36HourGap = true;
+      if (duty.endTime > previousEnd) previousEnd = duty.endTime;
+    }
+    if (hoursBetween(previousEnd, sevenDayEnd) >= 36) has36HourGap = true;
+    if (!has36HourGap) {
+      warnings.push('Instructor has no 36-hour off-duty gap in the rolling 7-day CRM roster window.');
+    }
+
+    const twentyEightDayStart = addLocalDays(startOfLocalDay(candidate.startTime), -27);
+    let offDutyDays = 0;
+    for (let day = new Date(twentyEightDayStart); day <= startOfLocalDay(candidate.startTime); day = addLocalDays(day, 1)) {
+      const nextDay = addLocalDays(day, 1);
+      const hasDuty = consideredBookings.some(existing => existing.startTime < nextDay && existing.endTime > day);
+      if (!hasDuty) offDutyDays += 1;
+    }
+    if (offDutyDays < 6) {
+      warnings.push(`Instructor has only ${offDutyDays} CRM-rostered off-duty days in the rolling 28-day window; CASA Appendix 6 requires at least 6.`);
     }
 
     return Array.from(new Set(warnings));
