@@ -7,6 +7,7 @@ import { CreditCard, ExternalLink, GitBranch, Loader2, Plus, ShieldCheck, Trash2
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
@@ -57,12 +58,12 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [topUpDate, setTopUpDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [submittingTopUp, setSubmittingTopUp] = useState(false);
   const [stripeCardStatus, setStripeCardStatus] = useState<StripeCardStatus | null>(null);
-  const [stripeCardLoading, setStripeCardLoading] = useState(false);
+  const [stripeCardLoading, setStripeCardLoading] = useState(true);
   const [stripeConsentAccepted, setStripeConsentAccepted] = useState(false);
   const billing = useBillingAccounts();
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
-  const { paymentMethods } = useBillingSettings();
+  const { paymentMethods, loading: paymentMethodsLoading } = useBillingSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
   const isAdminBilling = userRoles.includes('admin');
   const isStudentOrPilotOnly = userRoles.some(role => ['student', 'pilot'].includes(role)) &&
@@ -70,7 +71,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const showOwnBillingOnly = mode === 'own' || (mode === 'auto' && !isAdminBilling);
 
   const loadStripeCardStatus = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setStripeCardLoading(false);
+      return;
+    }
     setStripeCardLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke<StripeCardStatus>('member-card-setup', {
@@ -87,7 +91,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   }, [user?.id]);
 
   useEffect(() => {
-    if (!showOwnBillingOnly) return;
+    if (!showOwnBillingOnly) {
+      setStripeCardLoading(false);
+      return;
+    }
     void loadStripeCardStatus();
   }, [loadStripeCardStatus, showOwnBillingOnly]);
 
@@ -174,6 +181,20 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       setStripeCardLoading(false);
     }
   };
+
+  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && stripeCardLoading);
+  if (pageLoading) {
+    return (
+      <div className="p-3 sm:p-6">
+        <PortalSectionLoader
+          message={showOwnBillingOnly ? 'Loading your balance' : 'Loading financial dashboard'}
+          detail={showOwnBillingOnly
+            ? 'Checking Xero credit, saved card status and recent transactions...'
+            : 'Loading transactions, pilot accounts, payment methods and Xero sync status...'}
+        />
+      </div>
+    );
+  }
 
   if (showOwnBillingOnly) {
     if (isStudentOrPilotOnly && !portalSettings.show_invoices_in_portal) {
