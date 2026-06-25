@@ -434,16 +434,20 @@ export function useFlightLogs(userId?: string) {
         : rateCalculatedCost;
       const noCharge = isNoChargeRate(selectedRate?.chargeType);
       let paymentMethodId = rateData?.default_payment_method_id ?? rateData?.flight_types?.forced_payment_method_id ?? null;
-      if (!paymentMethodId && normalisedLogData.payment_type) {
-        const { data: paymentMethod } = await supabase
-          .from('payment_methods')
-          .select('id')
-          .ilike('name', normalisedLogData.payment_type)
-          .maybeSingle();
-        paymentMethodId = paymentMethod?.id ?? null;
-      }
       const voucherPayment = isVoucherPaymentMethod(normalisedLogData.payment_type);
       const prepaidPayment = isPrepaidPaymentMethod(normalisedLogData.payment_type);
+      if (!paymentMethodId && normalisedLogData.payment_type) {
+        const query = supabase
+          .from('payment_methods')
+          .select('id, system_key, active')
+          .eq('active', true);
+
+        const { data: paymentMethods } = prepaidPayment
+          ? await query.eq('system_key', 'pilot_account').limit(1)
+          : await query.ilike('name', normalisedLogData.payment_type).limit(1);
+
+        paymentMethodId = paymentMethods?.[0]?.id ?? null;
+      }
       const selectedPaymentMethodSystemKey = String(rateData?.payment_methods?.system_key || '').toLowerCase();
       const selectedPaymentMethodName = String(rateData?.payment_methods?.name || normalisedLogData.payment_type || '').toLowerCase();
       const shouldCreateStripePaymentLink = !voucherPayment

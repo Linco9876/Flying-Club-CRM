@@ -1642,11 +1642,12 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
 
   const payments: any[] = [];
   const feeTransactions: any[] = [];
+  const skippedPayments: string[] = [];
   for (const tx of txRows || []) {
     const methodName = String(tx.payment_methods?.name || "").toLowerCase();
     const systemKey = String(tx.payment_methods?.system_key || "").toLowerCase();
     const isStripe = systemKey === "stripe" || methodName.includes("stripe") || methodName.includes("card");
-    const isPrepaid = methodName.includes("pilot account") || methodName.includes("prepaid") || methodName.includes("pre-paid");
+    const isPrepaid = systemKey === "pilot_account" || methodName.includes("pilot account") || methodName.includes("prepaid") || methodName.includes("pre-paid");
     const paymentLabel = isStripe ? "Stripe payment" : isPrepaid ? "Prepaid payment" : "Flight payment";
     let paymentIdForRow = clean(tx.xero_payment_id);
     if (!tx.xero_payment_id) {
@@ -1656,6 +1657,18 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
           ? clean(ctx.settings?.prepaid_payment_account_code)
           : "";
       if (!accountCode) {
+        const reason = !tx.payment_method_id
+          ? "Payment method is missing on the flight charge transaction."
+          : isPrepaid
+            ? "Set the Xero prepaid payment clearing account before applying prepaid flight payments."
+            : isStripe
+              ? "Set the Xero Stripe clearing account before applying card flight payments."
+              : `Payment method ${clean(tx.payment_methods?.name) || tx.payment_method_id} is not mapped to a Xero clearing account.`;
+        skippedPayments.push(reason);
+        await adminClient.from("account_transactions").update({
+          xero_sync_status: "needs_review",
+          xero_sync_error: reason,
+        }).eq("id", tx.id);
         continue;
       }
 
@@ -1708,6 +1721,10 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
         }).eq("id", tx.id);
       }
     }
+  }
+
+  if (skippedPayments.length > 0) {
+    throw makeXeroNeedsReviewError(skippedPayments.join(" "));
   }
 
   if (payments.length > 0) {
