@@ -13,6 +13,15 @@ const getPrimaryRoleFromRoles = (roles: UserRole[]): UserRole =>
 const hasStudentRoleConflict = (roles: UserRole[]) =>
   roles.includes('student') && roles.length > 1;
 
+const mergeUserRoles = (roles: UserRole[], rowRole?: UserRole, isSeniorInstructor?: boolean) => {
+  const mergedRoles = Array.from(new Set([
+    ...roles,
+    ...(rowRole ? [rowRole] : []),
+    ...(isSeniorInstructor ? ['senior_instructor' as UserRole] : []),
+  ]));
+  return mergedRoles.length > 0 ? mergedRoles : ['student' as UserRole];
+};
+
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error) return error.message;
   if (error && typeof error === 'object' && 'message' in error) {
@@ -45,7 +54,9 @@ export const useUsers = () => {
         .from('user_roles')
         .select('user_id, role');
 
-      if (rolesError) throw rolesError;
+      if (rolesError) {
+        console.warn('Could not load user role assignments; falling back to primary user roles.', rolesError);
+      }
 
       const rolesMap = new Map<string, UserRole[]>();
       (rolesData || []).forEach((r: any) => {
@@ -55,8 +66,11 @@ export const useUsers = () => {
         rolesMap.get(r.user_id)!.push(r.role);
       });
 
-      const mappedUsers: User[] = (usersData || []).map(u => {
-        const userRoles = rolesMap.get(u.id) || ['student'];
+      const mappedUsers: User[] = (usersData || [])
+        .filter((u: any) => (u.portal_access_scope || 'full') !== 'guest_placeholder')
+        .map(u => {
+        const roleFromUserRow = u.role as UserRole | undefined;
+        const userRoles = mergeUserRoles(rolesMap.get(u.id) || [], roleFromUserRow, u.is_senior_instructor);
         const primaryRole = getPrimaryRoleFromRoles(userRoles);
 
         return {
@@ -81,7 +95,13 @@ export const useUsers = () => {
           coverPhoto: u.cover_url,
           isActive: u.is_active ?? true,
           portalAccessScope: u.portal_access_scope || 'full',
-          isSeniorInstructor: u.is_senior_instructor || false
+          isSeniorInstructor: u.is_senior_instructor || false,
+          xeroContactId: u.xero_contact_id || undefined,
+          xeroContactName: u.xero_contact_name || undefined,
+          xeroContactEmail: u.xero_contact_email || undefined,
+          xeroContactSyncStatus: u.xero_contact_sync_status || 'not_linked',
+          xeroContactSyncError: u.xero_contact_sync_error || null,
+          xeroContactLastSyncedAt: u.xero_contact_last_synced_at || null,
         };
       });
 
