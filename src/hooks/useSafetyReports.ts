@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useSafetySettings } from './useSafetySettings';
 import toast from 'react-hot-toast';
+import { usePageLoadState } from '../context/PageLoadContext';
 
 export type SafetyReportType = 'incident' | 'hazard' | 'risk_assessment' | 'near_miss' | 'accident';
 export type SafetyReportSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -61,6 +62,12 @@ export const useSafetyReports = () => {
   const { settings, categories } = useSafetySettings();
   const [reports, setReports] = useState<SafetyReport[]>([]);
   const [loading, setLoading] = useState(true);
+
+  usePageLoadState(
+    loading,
+    'Loading safety',
+    'Preparing safety reports, involved members and incident status...'
+  );
 
   const fetchReports = async () => {
     try {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { usePageLoadState } from '../context/PageLoadContext';
 
 export interface OutstandingFlightLog {
   id: string;
@@ -25,6 +26,11 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
   const [outstandingLogs, setOutstandingLogs] = useState<OutstandingFlightLog[]>([]);
   const [dismissedLogs, setDismissedLogs] = useState<OutstandingFlightLog[]>([]);
   const [loading, setLoading] = useState(true);
+  usePageLoadState(
+    loading,
+    'Loading outstanding records',
+    'Finding flights that still need training records or instructor action...'
+  );
 
   const fetch = useCallback(async () => {
     if (!instructorId && !fetchAll) {

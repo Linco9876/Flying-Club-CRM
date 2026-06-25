@@ -4,6 +4,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { TrainingModulesProvider } from './context/TrainingModulesContext';
+import { PageLoadGate } from './context/PageLoadContext';
 import { useBookings } from './hooks/useBookings';
 import { Booking } from './types';
 import { Header } from './components/Layout/Header';
@@ -240,9 +241,11 @@ const AppShell = ({
       <div className="flex items-start lg:ml-0 ml-0">
         <Sidebar activeView={activeSidebarView} onViewChange={onViewChange} />
         <main className={`${mainClassName} relative`}>
-          <Suspense fallback={<PageLoader />}>
-            {children}
-          </Suspense>
+          <PageLoadGate routeKey={activeSidebarView}>
+            <Suspense fallback={<PageLoader />}>
+              {children}
+            </Suspense>
+          </PageLoadGate>
         </main>
       </div>
       <Suspense fallback={null}>
@@ -275,25 +278,31 @@ const AppContent: React.FC = () => {
 
   if (normalisedPathname === '/declaration-sign') {
     return (
-      <Suspense fallback={<PageLoader />}>
-        <DeclarationSigningPage />
-      </Suspense>
+      <PageLoadGate routeKey="declaration-sign">
+        <Suspense fallback={<PageLoader />}>
+          <DeclarationSigningPage />
+        </Suspense>
+      </PageLoadGate>
     );
   }
 
   if (isPasswordRecovery) {
     return (
-      <Suspense fallback={<PageLoader />}>
-        <ResetPasswordPage />
-      </Suspense>
+      <PageLoadGate routeKey="reset-password">
+        <Suspense fallback={<PageLoader />}>
+          <ResetPasswordPage />
+        </Suspense>
+      </PageLoadGate>
     );
   }
 
   if (normalisedPathname === '/trial-flight-voucher') {
     return (
-      <Suspense fallback={<PageLoader />}>
-        <TrialVoucherRedeemPage />
-      </Suspense>
+      <PageLoadGate routeKey="trial-flight-voucher">
+        <Suspense fallback={<PageLoader />}>
+          <TrialVoucherRedeemPage />
+        </Suspense>
+      </PageLoadGate>
     );
   }
 
@@ -303,9 +312,11 @@ const AppContent: React.FC = () => {
     }
 
     return (
-      <Suspense fallback={<PageLoader />}>
-        <TrialVoucherSalesPage />
-      </Suspense>
+      <PageLoadGate routeKey="trial-flight-gift-vouchers">
+        <Suspense fallback={<PageLoader />}>
+          <TrialVoucherSalesPage />
+        </Suspense>
+      </PageLoadGate>
     );
   }
 
@@ -492,43 +503,45 @@ const KioskAuthenticatedRoute: React.FC<{
 
   return (
     <KioskCalendarShell onExit={handleExit}>
-      <Suspense fallback={<PageLoader />}>
-        <Calendar
-          bookings={bookings}
-          onNewBooking={handleNewBooking}
-          onNewBookingWithTime={handleNewBookingWithResource}
-          onEditBooking={(booking) => {
-            setEditingBooking(booking);
-            setBookingFormData({});
-            setShowBookingForm(true);
-          }}
-          onCopyBooking={(booking) => {
-            setEditingBooking(null);
-            setBookingFormData(buildCopiedBookingFormData(booking));
-            setShowBookingForm(true);
-          }}
-          onUpdateBooking={async (bookingId, updates, silent) => {
-            await updateBooking(bookingId, updates, silent);
-          }}
-          onDeleteBooking={async (bookingId) => {
-            try {
-              await deleteBooking(bookingId);
-            } catch (error) {
-              console.error('Error deleting booking:', error);
-            }
-          }}
-          onApproveBooking={async (bookingId) => {
-            try {
-              await approveBooking(bookingId);
-            } catch (error) {
-              console.error('Error approving booking:', error);
-              throw error;
-            }
-          }}
-          onRefresh={refetchBookings}
-          isKioskMode
-        />
-      </Suspense>
+      <PageLoadGate routeKey="kiosk-calendar">
+        <Suspense fallback={<PageLoader />}>
+          <Calendar
+            bookings={bookings}
+            onNewBooking={handleNewBooking}
+            onNewBookingWithTime={handleNewBookingWithResource}
+            onEditBooking={(booking) => {
+              setEditingBooking(booking);
+              setBookingFormData({});
+              setShowBookingForm(true);
+            }}
+            onCopyBooking={(booking) => {
+              setEditingBooking(null);
+              setBookingFormData(buildCopiedBookingFormData(booking));
+              setShowBookingForm(true);
+            }}
+            onUpdateBooking={async (bookingId, updates, silent) => {
+              await updateBooking(bookingId, updates, silent);
+            }}
+            onDeleteBooking={async (bookingId) => {
+              try {
+                await deleteBooking(bookingId);
+              } catch (error) {
+                console.error('Error deleting booking:', error);
+              }
+            }}
+            onApproveBooking={async (bookingId) => {
+              try {
+                await approveBooking(bookingId);
+              } catch (error) {
+                console.error('Error approving booking:', error);
+                throw error;
+              }
+            }}
+            onRefresh={refetchBookings}
+            isKioskMode
+          />
+        </Suspense>
+      </PageLoadGate>
 
       {showBookingForm && (
         <Suspense fallback={null}>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { fetchUserXeroBalance } from '../lib/xeroMemberBalance';
+import { usePageLoadState } from '../context/PageLoadContext';
 import {
   TrialFlightVoucher,
   TrialFlightVoucherAddon,
@@ -150,6 +151,11 @@ export const useTrialFlightVouchers = () => {
   const [addons, setAddons] = useState<TrialFlightVoucherAddon[]>([]);
   const [vouchers, setVouchers] = useState<TrialFlightVoucher[]>([]);
   const [loading, setLoading] = useState(true);
+  usePageLoadState(
+    loading,
+    'Loading gift vouchers',
+    'Preparing voucher products, recent vouchers, add-ons and Stripe status...'
+  );
 
   const fetchAll = useCallback(async () => {
     setLoading(true);

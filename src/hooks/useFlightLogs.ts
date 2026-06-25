@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../utils/billing';
 import { fetchUserXeroBalance } from '../lib/xeroMemberBalance';
 import { useAuth } from '../context/AuthContext';
+import { usePageLoadState } from '../context/PageLoadContext';
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 const roundCurrency = (value: number) => Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
@@ -156,6 +157,11 @@ export function useFlightLogs(userId?: string) {
   const { user: currentUser } = useAuth();
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
+  usePageLoadState(
+    loading,
+    'Loading flight logs',
+    'Preparing flight history, billing status and aircraft log entries...'
+  );
   const [error, setError] = useState<string | null>(null);
 
   const fetchFlightLogs = async () => {

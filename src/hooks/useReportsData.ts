@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { usePageLoadState } from '../context/PageLoadContext';
 
 export interface ReportFlightLog {
   id: string;
@@ -62,6 +63,11 @@ export function useReportsData(): ReportsData {
   const [aircraft, setAircraft] = useState<ReportAircraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  usePageLoadState(
+    loading,
+    'Loading reports',
+    'Preparing flight logs, bookings, members and aircraft usage data...'
+  );
 
   const fetchAll = async () => {
     try {

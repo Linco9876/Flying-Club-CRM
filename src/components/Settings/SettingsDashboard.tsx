@@ -46,6 +46,7 @@ import FlightLogSettings from './FlightLogSettings';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { TrainingSyllabusSettings } from './TrainingSyllabusSettings';
 import toast from 'react-hot-toast';
+import { usePageLoadState } from '../../context/PageLoadContext';
 
 interface SettingsSection {
   id: string;
@@ -177,6 +178,12 @@ export const SettingsDashboard: React.FC = () => {
 
   const activeComponent = sections.find(s => s.id === activeSection)?.component;
   const ActiveComponent = activeComponent || OrganisationSettings;
+
+  usePageLoadState(
+    isLoading,
+    'Loading settings',
+    'Saving or preparing the selected settings section...'
+  );
 
   const canEdit = (sectionId: string) => {
     if (user?.role === 'admin') return true;

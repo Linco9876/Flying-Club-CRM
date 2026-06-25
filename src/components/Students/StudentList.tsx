@@ -31,14 +31,15 @@ import { InviteUserResult, useInvitations } from '../../hooks/useInvitations';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useAuth } from '../../context/AuthContext';
+import { usePageLoadState } from '../../context/PageLoadContext';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { students, loading, addStudent, updateStudent, deleteStudent, setStudentActive, refetch } = useStudents();
   const { inviteUser } = useInvitations();
-  const { trainingRecords } = useTrainingRecords();
-  const { flightLogs } = useFlightLogs();
+  const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
+  const { flightLogs, loading: flightLogsLoading } = useFlightLogs();
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
@@ -54,6 +55,11 @@ export const StudentList: React.FC = () => {
     user?.role === 'instructor' ||
     user?.role === 'senior_instructor' ||
     user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor');
+  usePageLoadState(
+    loading || trainingRecordsLoading || flightLogsLoading,
+    'Loading members',
+    'Preparing member cards, roles, recent activity and training counts...'
+  );
 
   const normaliseSearch = (value?: string | null) =>
     (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();

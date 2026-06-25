@@ -35,6 +35,7 @@ import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings, useOrganisationSettings, useUserPreferences } from '../../hooks/useSettings';
 import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
 import { useAuth } from '../../context/AuthContext';
+import { usePageLoadState } from '../../context/PageLoadContext';
 import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
@@ -142,8 +143,8 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { aircraft } = useAircraft();
-  const { users } = useUsers();
+  const { aircraft, loading: aircraftLoading } = useAircraft();
+  const { users, loading: usersLoading } = useUsers();
   const { deleteFlightLog, getFlightLogDeleteImpact } = useFlightLogs();
   const { convertGuestBookingToMember } = useGuestBookingConversion();
   const instructors = useMemo(
@@ -168,9 +169,9 @@ export const Calendar: React.FC<CalendarProps> = ({
   const isStaffCalendarUser = userRoles.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role));
   const isStudentOrPilotCalendarUser = userRoles.some(role => role === 'student' || role === 'pilot');
   const isLimitedCalendarUser = isStudentOrPilotCalendarUser && !isStaffCalendarUser;
-  const { settings: calendarSettings } = useCalendarSettings();
-  const { preferences: userPreferences, updatePreferencesSilent } = useUserPreferences(user?.id || '');
-  const { settings: organisationSettings } = useOrganisationSettings();
+  const { settings: calendarSettings, loading: calendarSettingsLoading } = useCalendarSettings();
+  const { preferences: userPreferences, loading: userPreferencesLoading, updatePreferencesSilent } = useUserPreferences(user?.id || '');
+  const { settings: organisationSettings, loading: organisationSettingsLoading } = useOrganisationSettings();
   const {
     weeklySchedules,
     absences,
@@ -209,6 +210,18 @@ export const Calendar: React.FC<CalendarProps> = ({
       : scheduleChanges;
   const hasAvailabilityData =
     !availabilityLoading || lastAvailabilityRef.current.hasLoaded;
+  const initialCalendarLoading =
+    aircraftLoading ||
+    usersLoading ||
+    calendarSettingsLoading ||
+    userPreferencesLoading ||
+    organisationSettingsLoading ||
+    (!hasAvailabilityData && availabilityLoading);
+  usePageLoadState(
+    initialCalendarLoading,
+    isKioskMode ? 'Loading kiosk calendar' : 'Loading calendar',
+    'Preparing bookings, aircraft, instructors, availability and calendar preferences...'
+  );
   const preferredAircraftId = user?.preferredAircraftId;
   // Per-resource visibility & ordering (loaded from/synced to DB)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());

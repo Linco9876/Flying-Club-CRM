@@ -27,6 +27,7 @@ import { MaintenanceCompleteModal } from './MaintenanceCompleteModal';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
 import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
+import { usePageLoadState } from '../../context/PageLoadContext';
 import { Defect } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -576,6 +577,12 @@ export const MaintenanceBoard: React.FC = () => {
   const [defectHistory, setDefectHistory] = useState<any[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showOneTimeMilestoneForm, setShowOneTimeMilestoneForm] = useState(false);
+
+  usePageLoadState(
+    loading || milestonesLoading || templatesLoading,
+    'Loading maintenance',
+    'Preparing aircraft defects, maintenance milestones, templates and settings...'
+  );
 
   const selectedAircraftInfo = selectedDefect
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)

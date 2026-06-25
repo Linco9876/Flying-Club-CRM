@@ -41,6 +41,7 @@ import {
 } from '../../types';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { useAuth } from '../../context/AuthContext';
+import { usePageLoadState } from '../../context/PageLoadContext';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { formatSyllabusMatrixText, matrixStandardLabel, useSyllabusMatrix } from '../../hooks/useSyllabusMatrix';
 import { supabase } from '../../lib/supabase';
@@ -1398,7 +1399,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
 
 export const TrainingCourseCatalog: React.FC = () => {
   const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
-  const { settings: trainingSettings } = useTrainingSettings();
+  const { settings: trainingSettings, loading: trainingSettingsLoading } = useTrainingSettings();
   const { user } = useAuth();
   const endorsementTypes = trainingSettings.endorsementTypes || [];
   const editCourseFormRef = useRef<HTMLDivElement | null>(null);
@@ -1408,6 +1409,11 @@ export const TrainingCourseCatalog: React.FC = () => {
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
   const [courseDetailTab, setCourseDetailTab] = useState<'overview' | 'matrix'>('overview');
+  usePageLoadState(
+    modulesLoading || trainingSettingsLoading,
+    'Loading training courses',
+    'Preparing courses, lessons, matrices, endorsements and syllabus settings...'
+  );
 
   // Create course form
   const [showCreateForm, setShowCreateForm] = useState(false);

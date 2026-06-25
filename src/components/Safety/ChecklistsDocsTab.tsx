@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import toast from 'react-hot-toast';
+import { usePageLoadState } from '../../context/PageLoadContext';
 
 interface SafetyDocument {
   id: string;
@@ -29,6 +30,12 @@ export const ChecklistsDocsTab: React.FC = () => {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const canUpload = hasAnyRole(user, ['admin', 'instructor']);
+
+  usePageLoadState(
+    loading,
+    'Loading safety documents',
+    'Preparing checklists, procedures and uploaded safety references...'
+  );
 
   const fetchDocuments = async () => {
     try {

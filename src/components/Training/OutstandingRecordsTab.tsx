@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
+import { usePageLoadState } from '../../context/PageLoadContext';
 import {
   matrixStandardLabel,
   matrixStandardMeetsRequirement,
@@ -173,16 +174,16 @@ function bestGrade(current: string | undefined, next: string | undefined, system
 export const OutstandingRecordsTab: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const { settings: trainingSettings } = useTrainingSettings();
+  const { settings: trainingSettings, loading: trainingSettingsLoading } = useTrainingSettings();
   const isAdmin = user?.role === 'admin';
   const { outstandingLogs, dismissedLogs, loading, dismissRecord, restoreRecord, markRecorded, refetch } = useOutstandingRecords(
     isAdmin ? undefined : user?.id,
     isAdmin
   );
-  const { trainingRecords, addTrainingRecord, updateTrainingRecord } = useTrainingRecords();
+  const { trainingRecords, loading: trainingRecordsLoading, addTrainingRecord, updateTrainingRecord } = useTrainingRecords();
   const { modules: courses, loading: coursesLoading } = useTrainingModules();
-  const { aircraft: aircraftList } = useAircraft();
-  const { users } = useUsers();
+  const { aircraft: aircraftList, loading: aircraftLoading } = useAircraft();
+  const { users, loading: usersLoading } = useUsers();
 
   const [activeLog, setActiveLog] = useState<OutstandingFlightLog | null>(null);
   const [activeDraftRecord, setActiveDraftRecord] = useState<typeof trainingRecords[number] | null>(null);
@@ -233,6 +234,17 @@ export const OutstandingRecordsTab: React.FC = () => {
     loading: matrixLoading,
     saveAssessments: saveMatrixAssessments,
   } = useSyllabusMatrix(form.courseId || undefined, activeStudentId);
+  usePageLoadState(
+    loading ||
+      trainingSettingsLoading ||
+      trainingRecordsLoading ||
+      coursesLoading ||
+      aircraftLoading ||
+      usersLoading ||
+      (step === 'form' && Boolean(form.courseId) && matrixLoading),
+    'Loading outstanding records',
+    'Preparing flights, students, instructors, courses and lesson matrix data...'
+  );
 
   // Criteria come from the course level, pass marks from the lesson
   const activeCriteria: LessonAssessmentCriterion[] = selectedCourse?.assessmentCriteria ?? [];

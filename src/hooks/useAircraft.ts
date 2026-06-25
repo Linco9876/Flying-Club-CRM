@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Aircraft, Defect } from '../types';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { usePageLoadState } from '../context/PageLoadContext';
 
 let staffAircraftCache: Aircraft[] | null = null;
 let publicAircraftCache: Aircraft[] | null = null;
@@ -61,6 +62,11 @@ export const useAircraft = () => {
   const [aircraft, setAircraft] = useState<Aircraft[]>(() => activeAircraftCache || []);
   const [loading, setLoading] = useState(() => !activeAircraftCache);
   const [error, setError] = useState<string | null>(null);
+  usePageLoadState(
+    loading,
+    'Loading aircraft',
+    'Preparing aircraft, defects, documents and maintenance status...'
+  );
 
   const fetchAircraft = async () => {
     try {

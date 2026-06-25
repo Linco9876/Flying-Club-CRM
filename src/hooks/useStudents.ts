@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Student, Endorsement, UserRole } from '../types';
 import toast from 'react-hot-toast';
 import { fetchPilotStatusEndorsementTypes, reconcilePilotStatusForUser } from '../utils/pilotStatus';
+import { usePageLoadState } from '../context/PageLoadContext';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error) return error.message;
@@ -22,6 +23,11 @@ export const useStudents = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  usePageLoadState(
+    loading,
+    'Loading members',
+    'Preparing member profiles, roles, endorsements and contact details...'
+  );
 
   const writeStudentRow = async (
     mode: 'insert' | 'update',

@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
+import { usePageLoadState } from '../../context/PageLoadContext';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import { fetchOwnXeroInvoices, payOwnXeroInvoice, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
@@ -226,6 +227,13 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   };
 
   const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && (stripeCardLoading || xeroInvoicesLoading || !xeroInvoicesChecked));
+  usePageLoadState(
+    pageLoading,
+    showOwnBillingOnly ? 'Loading your balance' : 'Loading financial dashboard',
+    showOwnBillingOnly
+      ? 'Checking Xero credit, saved card status and recent transactions...'
+      : 'Loading transactions, payment methods, Xero invoices and sync status...'
+  );
   if (pageLoading) {
     return (
       <div className="p-3 sm:p-6">

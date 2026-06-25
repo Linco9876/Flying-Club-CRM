@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
 import { useAuth } from '../../context/AuthContext';
+import { usePageLoadState } from '../../context/PageLoadContext';
 
 export const AircraftList: React.FC = () => {
   const navigate = useNavigate();
@@ -39,6 +40,12 @@ export const AircraftList: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  usePageLoadState(
+    loading || milestonesLoading,
+    'Loading aircraft',
+    'Preparing fleet status, defects, documents and maintenance milestones...'
+  );
 
   const handleAddAircraft = async (aircraftData: Omit<Aircraft, 'id' | 'defects'>) => {
     await addAircraft(aircraftData);
@@ -71,7 +78,7 @@ export const AircraftList: React.FC = () => {
     setDuplicatingAircraft(null);
   };
 
-  if (loading) {
+  if (loading || milestonesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />

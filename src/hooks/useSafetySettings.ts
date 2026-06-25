@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { usePageLoadState } from '../context/PageLoadContext';
 
 export interface SafetyComplianceSettings {
   id?: string;
@@ -68,6 +69,11 @@ export const useSafetySettings = () => {
   const [settings, setSettings] = useState<SafetyComplianceSettings>(DEFAULT_SAFETY_SETTINGS);
   const [categories, setCategories] = useState<SafetyReportCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  usePageLoadState(
+    loading,
+    'Loading safety',
+    'Preparing safety rules, report categories and compliance settings...'
+  );
 
   const fetchData = async () => {
     try {

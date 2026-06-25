@@ -16,6 +16,7 @@ import { useDashboardStats } from '../../hooks/useDashboardStats';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { usePageLoadState } from '../../context/PageLoadContext';
 import { supabase } from '../../lib/supabase';
 
 interface ProfileStudentDetails {
@@ -46,9 +47,10 @@ export const ProfileDashboard: React.FC = () => {
   const { user } = useAuth();
   const { stats, loading } = useDashboardStats(user?.id, user?.role, 'user');
   const { settings: portalSettings } = usePortalUxSettings();
-  const { trainingRecords } = useTrainingRecords(user?.id);
-  const { modules: trainingCourses } = useTrainingModules();
+  const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords(user?.id);
+  const { modules: trainingCourses, loading: trainingCoursesLoading } = useTrainingModules();
   const [studentDetails, setStudentDetails] = useState<ProfileStudentDetails | null>(null);
+  const [studentDetailsLoading, setStudentDetailsLoading] = useState(true);
   const timePattern = portalSettings.time_format === '12h' ? 'h:mm a' : 'HH:mm';
   const datePattern = portalSettings.date_format || 'dd/MM/yyyy';
   const studentTrainingRecords = useMemo(
@@ -105,7 +107,11 @@ export const ProfileDashboard: React.FC = () => {
     let mounted = true;
 
     const fetchStudentDetails = async () => {
-      if (!user?.id) return;
+      if (!user?.id) {
+        setStudentDetailsLoading(false);
+        return;
+      }
+      setStudentDetailsLoading(true);
 
       const { data, error } = await supabase
         .from('students')
@@ -118,6 +124,7 @@ export const ProfileDashboard: React.FC = () => {
       if (error) {
         console.error('Failed to load profile student details:', error);
         setStudentDetails(null);
+        setStudentDetailsLoading(false);
         return;
       }
 
@@ -136,6 +143,7 @@ export const ProfileDashboard: React.FC = () => {
       } : {
         emergencyContact: user.emergencyContact
       });
+      setStudentDetailsLoading(false);
     };
 
     fetchStudentDetails();
@@ -143,6 +151,12 @@ export const ProfileDashboard: React.FC = () => {
       mounted = false;
     };
   }, [user?.id]);
+
+  usePageLoadState(
+    loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading,
+    'Loading your profile',
+    'Preparing your schedule, training progress, compliance details and reminders...'
+  );
 
   const renewalItems = useMemo(() => {
     const now = new Date();
@@ -198,7 +212,7 @@ export const ProfileDashboard: React.FC = () => {
     ];
   }, [datePattern, isStudentUser, studentDetails]);
 
-  if (loading) {
+  if (loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
