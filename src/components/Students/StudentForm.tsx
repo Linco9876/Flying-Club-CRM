@@ -30,7 +30,6 @@ const buildFormData = (student?: Student) => ({
   lastFlightReview: student?.lastFlightReview?.toISOString().split('T')[0] || '',
   occupation: student?.occupation || '',
   alternatePhone: student?.alternatePhone || '',
-  prepaidBalance: student?.prepaidBalance || 0,
   emergencyContact: {
     name: student?.emergencyContact?.name || '',
     phone: student?.emergencyContact?.phone || '',
@@ -271,7 +270,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Use first available aircraft</option>
-                  {aircraft.map(a => (
+                  {aircraft.filter(a => !a.isArchived).map(a => (
                     <option key={a.id} value={a.id}>{a.registration} - {a.make} {a.model}</option>
                   ))}
                 </select>

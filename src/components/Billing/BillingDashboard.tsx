@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { TransactionsTab } from './TransactionsTab';
 import { PilotAccountsTab } from './PilotAccountsTab';
+import { XeroSyncQueueCard } from '../Settings/XeroSyncQueueCard';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
-import { CreditCard, ExternalLink, Loader2, Plus, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
+import { CreditCard, ExternalLink, GitBranch, Loader2, Plus, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
@@ -179,6 +180,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       return <div className="p-3 text-sm text-gray-500 sm:p-6">Billing history is not available in the student portal.</div>;
     }
 
+    if (!billing.xeroConnected) {
+      return null;
+    }
+
     const account = billing.pilotAccounts.find(item => item.userId === user?.id);
     const transactions = billing.transactions.filter(item => item.userId === user?.id);
     const accountTopUpPaymentMethods = paymentMethods.filter(method => method.active && method.allowAccountTopup !== false);
@@ -186,10 +191,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const pendingTopUpAmount = transactions
       .filter(transaction => transaction.type === 'topup' && transaction.verifiedStatus === 'pending')
       .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
-    const theoreticalBalance = approvedBalance + pendingTopUpAmount;
     const currencyFormatter = (amount: number) =>
       `$${amount.toFixed(portalSettings.currency_decimals)}`;
     const dateLocale = portalSettings.date_format === 'MM/dd/yyyy' ? 'en-US' : 'en-AU';
+    const prepaidEligible = approvedBalance + 0.005 >= billing.minimumPrepaidPack;
 
     const handleTopUpSubmit = async (event: React.FormEvent) => {
       event.preventDefault();
@@ -222,12 +227,12 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Billing</h1>
-          <p className="text-gray-600 dark:text-gray-400">Review your account balance and billing history.</p>
+          <p className="text-gray-600 dark:text-gray-400">Review your live Xero credit, pending top-ups, and billing history.</p>
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Approved balance</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Live Xero credit</p>
             <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{currencyFormatter(approvedBalance)}</p>
           </div>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
@@ -235,8 +240,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <p className="mt-1 text-2xl font-bold text-amber-900 dark:text-amber-100">{currencyFormatter(pendingTopUpAmount)}</p>
           </div>
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-5 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
-            <p className="text-sm text-blue-700 dark:text-blue-300">Theoretical balance</p>
-            <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">{currencyFormatter(theoreticalBalance)}</p>
+            <p className="text-sm text-blue-700 dark:text-blue-300">Prepaid rate access</p>
+            <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">{prepaidEligible ? 'Unlocked' : 'Locked'}</p>
+            <p className="mt-1 text-xs text-blue-800 dark:text-blue-200">
+              Requires at least {currencyFormatter(billing.minimumPrepaidPack)} held in Xero overpayments before prepaid rates unlock.
+            </p>
           </div>
         </div>
 
@@ -447,7 +455,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
   const tabs = [
     { id: 'transactions', label: 'Transactions', icon: <CreditCard className="h-4 w-4" /> },
-    { id: 'accounts', label: 'Pilot Accounts', icon: <Users className="h-4 w-4" /> }
+    { id: 'accounts', label: 'Pilot Accounts', icon: <Users className="h-4 w-4" /> },
+    ...(isAdminBilling && !showOwnBillingOnly
+      ? [{ id: 'xero-sync', label: 'Xero Sync', icon: <GitBranch className="h-4 w-4" /> }]
+      : []),
   ];
 
   return (
@@ -481,6 +492,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       <div>
         {activeTab === 'transactions' && <TransactionsTab billing={billing} />}
         {activeTab === 'accounts' && <PilotAccountsTab billing={billing} />}
+        {activeTab === 'xero-sync' && isAdminBilling && !showOwnBillingOnly && <XeroSyncQueueCard />}
       </div>
     </div>
   );

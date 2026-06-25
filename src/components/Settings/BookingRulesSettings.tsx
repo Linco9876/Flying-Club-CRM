@@ -21,7 +21,16 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
     enforceCancellationNotice: true,
     preventPastBookings: true,
     enforceMaxDuration: true,
-    maxBookingDurationHours: 8
+    maxBookingDurationHours: 8,
+    fatigueRulesEnabled: true,
+    fatigueLateFinishTime: '22:00',
+    fatigueEarlyStartTime: '07:00',
+    fatigueMinRestHours: 10,
+    fatigueMaxDutyHoursPerDay: 10,
+    fatigueMaxFlightHoursPerDay: 7,
+    fatigueMaxLateFinishes7Days: 3,
+    fatigueIncludeSupervision: true,
+    fatigueBlockOnBreach: true
   });
 
   useEffect(() => {
@@ -37,7 +46,16 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         enforceCancellationNotice: settings.enforce_cancellation_notice,
         preventPastBookings: settings.prevent_past_bookings ?? true,
         enforceMaxDuration: settings.enforce_max_duration ?? true,
-        maxBookingDurationHours: settings.max_booking_duration_hours ?? 8
+        maxBookingDurationHours: settings.max_booking_duration_hours ?? 8,
+        fatigueRulesEnabled: settings.fatigue_rules_enabled ?? true,
+        fatigueLateFinishTime: settings.fatigue_late_finish_time ?? '22:00',
+        fatigueEarlyStartTime: settings.fatigue_early_start_time ?? '07:00',
+        fatigueMinRestHours: settings.fatigue_min_rest_hours ?? 10,
+        fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 10,
+        fatigueMaxFlightHoursPerDay: settings.fatigue_max_flight_hours_per_day ?? 7,
+        fatigueMaxLateFinishes7Days: settings.fatigue_max_late_finishes_7_days ?? 3,
+        fatigueIncludeSupervision: settings.fatigue_include_supervision ?? true,
+        fatigueBlockOnBreach: settings.fatigue_block_on_breach ?? true
       });
     }
   }, [settings]);
@@ -55,7 +73,16 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         enforce_cancellation_notice: formData.enforceCancellationNotice,
         prevent_past_bookings: formData.preventPastBookings,
         enforce_max_duration: formData.enforceMaxDuration,
-        max_booking_duration_hours: formData.maxBookingDurationHours
+        max_booking_duration_hours: formData.maxBookingDurationHours,
+        fatigue_rules_enabled: formData.fatigueRulesEnabled,
+        fatigue_late_finish_time: formData.fatigueLateFinishTime,
+        fatigue_early_start_time: formData.fatigueEarlyStartTime,
+        fatigue_min_rest_hours: formData.fatigueMinRestHours,
+        fatigue_max_duty_hours_per_day: formData.fatigueMaxDutyHoursPerDay,
+        fatigue_max_flight_hours_per_day: formData.fatigueMaxFlightHoursPerDay,
+        fatigue_max_late_finishes_7_days: formData.fatigueMaxLateFinishes7Days,
+        fatigue_include_supervision: formData.fatigueIncludeSupervision,
+        fatigue_block_on_breach: formData.fatigueBlockOnBreach
       });
       await (window as any).__bookingFieldsEmbeddedSave?.();
     };
@@ -72,7 +99,16 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         enforceCancellationNotice: settings.enforce_cancellation_notice,
         preventPastBookings: settings.prevent_past_bookings ?? true,
         enforceMaxDuration: settings.enforce_max_duration ?? true,
-        maxBookingDurationHours: settings.max_booking_duration_hours ?? 8
+        maxBookingDurationHours: settings.max_booking_duration_hours ?? 8,
+        fatigueRulesEnabled: settings.fatigue_rules_enabled ?? true,
+        fatigueLateFinishTime: settings.fatigue_late_finish_time ?? '22:00',
+        fatigueEarlyStartTime: settings.fatigue_early_start_time ?? '07:00',
+        fatigueMinRestHours: settings.fatigue_min_rest_hours ?? 10,
+        fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 10,
+        fatigueMaxFlightHoursPerDay: settings.fatigue_max_flight_hours_per_day ?? 7,
+        fatigueMaxLateFinishes7Days: settings.fatigue_max_late_finishes_7_days ?? 3,
+        fatigueIncludeSupervision: settings.fatigue_include_supervision ?? true,
+        fatigueBlockOnBreach: settings.fatigue_block_on_breach ?? true
       });
       (window as any).__bookingFieldsEmbeddedCancel?.();
     };
@@ -274,6 +310,138 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
                   </p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Fatigue Management</h3>
+          <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-start space-x-3">
+              <input
+                type="checkbox"
+                id="fatigueRulesEnabled"
+                checked={formData.fatigueRulesEnabled}
+                onChange={(e) => handleInputChange('fatigueRulesEnabled', e.target.checked)}
+                disabled={!canEdit}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+              />
+              <div>
+                <label htmlFor="fatigueRulesEnabled" className="text-sm font-semibold text-gray-900">
+                  Apply instructor fatigue checks to bookings
+                </label>
+                <p className="mt-1 text-xs text-blue-900">
+                  Reference: CASA plain English fatigue guide. These are configurable local controls for rostering and supervision; they do not replace the operator's full fatigue management obligations.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Late finish starts after</label>
+                <input
+                  type="time"
+                  value={formData.fatigueLateFinishTime}
+                  onChange={(e) => handleInputChange('fatigueLateFinishTime', e.target.value)}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Early start before</label>
+                <input
+                  type="time"
+                  value={formData.fatigueEarlyStartTime}
+                  onChange={(e) => handleInputChange('fatigueEarlyStartTime', e.target.value)}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Minimum rest between instructor duties (hours)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="24"
+                  value={formData.fatigueMinRestHours}
+                  onChange={(e) => handleInputChange('fatigueMinRestHours', parseFloat(e.target.value))}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Maximum instructor duty span per day (hours)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="16"
+                  step="0.5"
+                  value={formData.fatigueMaxDutyHoursPerDay}
+                  onChange={(e) => handleInputChange('fatigueMaxDutyHoursPerDay', parseFloat(e.target.value))}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Maximum booked flight/supervision time per day (hours)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="12"
+                  step="0.5"
+                  value={formData.fatigueMaxFlightHoursPerDay}
+                  onChange={(e) => handleInputChange('fatigueMaxFlightHoursPerDay', parseFloat(e.target.value))}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Maximum late finishes in 7 days</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  value={formData.fatigueMaxLateFinishes7Days}
+                  onChange={(e) => handleInputChange('fatigueMaxLateFinishes7Days', parseInt(e.target.value))}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={formData.fatigueIncludeSupervision}
+                  onChange={(e) => handleInputChange('fatigueIncludeSupervision', e.target.checked)}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span>
+                  Count supervision and instructor bookings in fatigue limits
+                  <span className="block text-xs text-gray-500">Use this for senior instructors supervising other instructors as part of their duty day.</span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={formData.fatigueBlockOnBreach}
+                  onChange={(e) => handleInputChange('fatigueBlockOnBreach', e.target.checked)}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span>
+                  Block bookings that breach fatigue rules
+                  <span className="block text-xs text-gray-500">Turn off to warn only while you are testing the limits.</span>
+                </span>
+              </label>
             </div>
           </div>
         </div>

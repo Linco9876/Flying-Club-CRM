@@ -18,15 +18,56 @@ export const useBookings = (enabled = true) => {
   const isStudentOrPilot = user?.role === 'student' || user?.role === 'pilot';
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
   const isStudentOnlyUser = userRoles.includes('student') && !userRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
+  const isStaffUser = userRoles.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role));
+  const shouldUsePublicCalendarView = isStudentOrPilot && !isStaffUser;
+  const bookingSelectFields = shouldUsePublicCalendarView
+    ? '*'
+    : [
+        'id',
+        'student_id',
+        'instructor_id',
+        'aircraft_id',
+        'start_time',
+        'end_time',
+        'payment_type',
+        'notes',
+        'status',
+        'has_conflict',
+        'deleted_at',
+        'flight_logged',
+        'flight_type_id',
+        'trial_flight_voucher_id',
+        'is_guest_booking',
+        'guest_name',
+        'guest_email',
+        'guest_phone',
+      ].join(',');
+  const flightLogCalendarFields = [
+    'id',
+    'booking_id',
+    'landings',
+    'duration',
+    'tach_start',
+    'tach_end',
+    'engine_start',
+    'engine_end',
+    'total_cost',
+    'notes',
+    'flight_duration',
+    'start_tach',
+    'end_tach',
+    'calculated_cost',
+  ].join(',');
   const mapBookingRow = (row: any, flightLog?: FlightLog): Booking => ({
     id: row.id,
     studentId: row.student_id,
+    pilotId: row.student_id,
     instructorId: row.instructor_id,
     aircraftId: row.aircraft_id,
     startTime: new Date(row.start_time),
     endTime: new Date(row.end_time),
-    paymentType: row.payment_type,
-    notes: row.notes,
+    paymentType: row.payment_type || '',
+    notes: row.notes || undefined,
     status: row.deleted_at ? 'cancelled' : row.status,
     hasConflict: row.has_conflict || false,
     deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
@@ -34,7 +75,57 @@ export const useBookings = (enabled = true) => {
     flight_logged: row.flight_logged || false,
     flightTypeId: row.flight_type_id || undefined,
     trialFlightVoucherId: row.trial_flight_voucher_id || undefined,
+    hirerName: row.guest_name || row.hirer_name || undefined,
+    instructorName: row.instructor_name || undefined,
+    isGuestBooking: row.is_guest_booking || false,
+    guestName: row.guest_name || undefined,
+    guestEmail: row.guest_email || undefined,
+    guestPhone: row.guest_phone || undefined,
   });
+
+  const ensureGuestPlaceholderAccount = async () => {
+    const { data, error } = await supabase.functions.invoke<{ userId?: string }>('ensure-guest-account', {
+      body: {},
+    });
+
+    if (error) throw error;
+    if (!data?.userId) throw new Error('Guest booking account could not be prepared.');
+    return data.userId;
+  };
+
+  const resolveGuestVoucherHolder = async (
+    voucherId: string,
+    options: { allowUnredeemedGuest?: boolean } = {}
+  ) => {
+    const { data, error } = await supabase
+      .from('trial_flight_vouchers')
+      .select(`
+        id,
+        code,
+        status,
+        redeemed_by_user_id,
+        recipient_name,
+        recipient_email,
+        purchaser_name,
+        purchaser_email,
+        purchaser_phone
+      `)
+      .eq('id', voucherId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) throw new Error('Linked voucher could not be found.');
+    if (!data.redeemed_by_user_id && !options.allowUnredeemedGuest) {
+      throw new Error(`Voucher ${data.code || voucherId} has not been redeemed into a member account yet.`);
+    }
+
+    return {
+      userId: data.redeemed_by_user_id as string | undefined,
+      guestName: (data.recipient_name || data.purchaser_name || '').trim(),
+      guestEmail: (data.recipient_email || data.purchaser_email || '').trim(),
+      guestPhone: (data.purchaser_phone || '').trim(),
+    };
+  };
 
   const validateTimingRules = (
     startTime: Date,
@@ -69,6 +160,147 @@ export const useBookings = (enabled = true) => {
     }
   };
 
+  const parseLocalTime = (time: string | undefined, fallback: string) => {
+    const [hour, minute] = (time || fallback).slice(0, 5).split(':').map(Number);
+    return {
+      hour: Number.isFinite(hour) ? hour : Number(fallback.slice(0, 2)),
+      minute: Number.isFinite(minute) ? minute : Number(fallback.slice(3, 5)),
+    };
+  };
+
+  const minutesSinceMidnight = (date: Date) => date.getHours() * 60 + date.getMinutes();
+
+  const sameLocalDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  const getInstructorFatigueWarnings = (
+    bookingData: Pick<Booking, 'instructorId' | 'startTime' | 'endTime'>,
+    excludingBookingId?: string
+  ) => {
+    if (!bookingRules?.fatigue_rules_enabled || !bookingData.instructorId) return [];
+
+    const candidate = {
+      id: '__candidate__',
+      instructorId: bookingData.instructorId,
+      startTime: new Date(bookingData.startTime),
+      endTime: new Date(bookingData.endTime),
+      status: 'confirmed' as Booking['status'],
+      hasConflict: false,
+    };
+    const instructorBookings = bookings
+      .filter(existing =>
+        existing.id !== excludingBookingId &&
+        existing.instructorId === bookingData.instructorId &&
+        !existing.deletedAt &&
+        existing.status !== 'cancelled' &&
+        existing.status !== 'no-show' &&
+        !existing.hasConflict
+      )
+      .map(existing => ({
+        id: existing.id,
+        instructorId: existing.instructorId,
+        startTime: new Date(existing.startTime),
+        endTime: new Date(existing.endTime),
+        status: existing.status,
+        hasConflict: existing.hasConflict,
+      }));
+    const consideredBookings = [...instructorBookings, candidate];
+    const warnings: string[] = [];
+    const lateTime = parseLocalTime(bookingRules.fatigue_late_finish_time, '22:00');
+    const earlyTime = parseLocalTime(bookingRules.fatigue_early_start_time, '07:00');
+    const lateFinishMinutes = lateTime.hour * 60 + lateTime.minute;
+    const earlyStartMinutes = earlyTime.hour * 60 + earlyTime.minute;
+    const minRestMs = Math.max(0, Number(bookingRules.fatigue_min_rest_hours || 0)) * 60 * 60 * 1000;
+
+    const sameDayBookings = consideredBookings.filter(existing =>
+      sameLocalDay(existing.startTime, candidate.startTime) ||
+      sameLocalDay(existing.endTime, candidate.startTime)
+    );
+    if (sameDayBookings.length > 0) {
+      const firstStart = new Date(Math.min(...sameDayBookings.map(existing => existing.startTime.getTime())));
+      const lastEnd = new Date(Math.max(...sameDayBookings.map(existing => existing.endTime.getTime())));
+      const dutySpanHours = (lastEnd.getTime() - firstStart.getTime()) / (60 * 60 * 1000);
+      const bookedHours = sameDayBookings.reduce((total, existing) =>
+        total + Math.max(0, (existing.endTime.getTime() - existing.startTime.getTime()) / (60 * 60 * 1000)), 0
+      );
+
+      if (dutySpanHours > Number(bookingRules.fatigue_max_duty_hours_per_day || 0)) {
+        warnings.push(`Instructor duty span would be ${dutySpanHours.toFixed(1)} hours, above the ${bookingRules.fatigue_max_duty_hours_per_day} hour fatigue limit.`);
+      }
+      if (bookedHours > Number(bookingRules.fatigue_max_flight_hours_per_day || 0)) {
+        warnings.push(`Instructor booked flight/supervision time would be ${bookedHours.toFixed(1)} hours, above the ${bookingRules.fatigue_max_flight_hours_per_day} hour daily limit.`);
+      }
+    }
+
+    const sortedBookings = [...consideredBookings].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+    const candidateIndex = sortedBookings.findIndex(existing => existing.id === candidate.id);
+    const neighbours = [
+      candidateIndex > 0 ? sortedBookings[candidateIndex - 1] : null,
+      candidateIndex >= 0 && candidateIndex < sortedBookings.length - 1 ? sortedBookings[candidateIndex + 1] : null,
+    ].filter(Boolean) as typeof sortedBookings;
+
+    neighbours.forEach((neighbour) => {
+      const restMs = neighbour.startTime > candidate.endTime
+        ? neighbour.startTime.getTime() - candidate.endTime.getTime()
+        : candidate.startTime.getTime() - neighbour.endTime.getTime();
+      if (restMs >= 0 && restMs < minRestMs) {
+        warnings.push(`Instructor would have only ${(restMs / (60 * 60 * 1000)).toFixed(1)} hours rest between duties; minimum is ${bookingRules.fatigue_min_rest_hours} hours.`);
+      }
+    });
+
+    const candidateIsLate = minutesSinceMidnight(candidate.endTime) >= lateFinishMinutes;
+    const candidateIsEarly = minutesSinceMidnight(candidate.startTime) < earlyStartMinutes;
+    const hasEarlyNearLate = consideredBookings.some(existing => {
+      if (existing.id === candidate.id) return false;
+      const dayGap = Math.abs(new Date(existing.startTime.getFullYear(), existing.startTime.getMonth(), existing.startTime.getDate()).getTime() -
+        new Date(candidate.startTime.getFullYear(), candidate.startTime.getMonth(), candidate.startTime.getDate()).getTime()) / (24 * 60 * 60 * 1000);
+      if (dayGap > 1) return false;
+      return candidateIsLate && minutesSinceMidnight(existing.startTime) < earlyStartMinutes;
+    });
+    const hasLateNearEarly = consideredBookings.some(existing => {
+      if (existing.id === candidate.id) return false;
+      const dayGap = Math.abs(new Date(existing.startTime.getFullYear(), existing.startTime.getMonth(), existing.startTime.getDate()).getTime() -
+        new Date(candidate.startTime.getFullYear(), candidate.startTime.getMonth(), candidate.startTime.getDate()).getTime()) / (24 * 60 * 60 * 1000);
+      if (dayGap > 1) return false;
+      return candidateIsEarly && minutesSinceMidnight(existing.endTime) >= lateFinishMinutes;
+    });
+    if (hasEarlyNearLate || hasLateNearEarly) {
+      warnings.push(`Instructor has an early/late combination inside the fatigue window (${bookingRules.fatigue_early_start_time} early start / ${bookingRules.fatigue_late_finish_time} late finish).`);
+    }
+
+    const windowStart = new Date(candidate.startTime);
+    windowStart.setDate(windowStart.getDate() - 6);
+    windowStart.setHours(0, 0, 0, 0);
+    const windowEnd = new Date(candidate.startTime);
+    windowEnd.setHours(23, 59, 59, 999);
+    const lateFinishes = consideredBookings.filter(existing =>
+      existing.startTime >= windowStart &&
+      existing.startTime <= windowEnd &&
+      minutesSinceMidnight(existing.endTime) >= lateFinishMinutes
+    ).length;
+    if (lateFinishes > Number(bookingRules.fatigue_max_late_finishes_7_days || 0)) {
+      warnings.push(`Instructor would have ${lateFinishes} late finishes in 7 days; limit is ${bookingRules.fatigue_max_late_finishes_7_days}.`);
+    }
+
+    return Array.from(new Set(warnings));
+  };
+
+  const assertFatigueRules = (
+    bookingData: Pick<Booking, 'instructorId' | 'startTime' | 'endTime'>,
+    excludingBookingId?: string
+  ) => {
+    const warnings = getInstructorFatigueWarnings(bookingData, excludingBookingId);
+    if (warnings.length === 0) return;
+
+    const message = warnings.join(' ');
+    if (bookingRules?.fatigue_block_on_breach !== false) {
+      throw new Error(message);
+    }
+    toast(message);
+  };
+
   const fetchBookings = async () => {
     if (!enabled) {
       setBookings([]);
@@ -85,8 +317,8 @@ export const useBookings = (enabled = true) => {
       );
 
       const bookingsPromise = supabase
-        .from('bookings')
-        .select('*')
+        .from(shouldUsePublicCalendarView ? 'calendar_booking_public' : 'bookings')
+        .select(bookingSelectFields)
         .order('start_time', { ascending: false });
 
       const { data: bookingsData, error: bookingsError } = await Promise.race([
@@ -101,9 +333,26 @@ export const useBookings = (enabled = true) => {
         return;
       }
 
-      const { data: flightLogsData, error: flightLogsError } = await supabase
-        .from('flight_logs')
-        .select('*');
+      const bookingIds = (bookingsData || [])
+        .map((booking: any) => booking.id)
+        .filter(Boolean);
+
+      let flightLogsData: any[] = [];
+      let flightLogsError: any = null;
+      if (bookingIds.length > 0) {
+        const chunkSize = 150;
+        for (let index = 0; index < bookingIds.length; index += chunkSize) {
+          const response = await supabase
+            .from('flight_logs')
+            .select(flightLogCalendarFields)
+            .in('booking_id', bookingIds.slice(index, index + chunkSize));
+          if (response.error) {
+            flightLogsError = response.error;
+            break;
+          }
+          flightLogsData = [...flightLogsData, ...(response.data || [])];
+        }
+      }
 
       if (flightLogsError) {
         console.error('Flight logs error:', flightLogsError);
@@ -113,12 +362,12 @@ export const useBookings = (enabled = true) => {
         id: fl.id,
         bookingId: fl.booking_id,
         landings: fl.landings,
-        duration: fl.duration,
-        tachStart: parseFloat(fl.tach_start),
-        tachEnd: parseFloat(fl.tach_end),
+        duration: parseFloat(fl.duration ?? fl.flight_duration ?? 0),
+        tachStart: parseFloat(fl.tach_start ?? fl.start_tach ?? 0),
+        tachEnd: parseFloat(fl.tach_end ?? fl.end_tach ?? 0),
         engineStart: parseFloat(fl.engine_start),
         engineEnd: parseFloat(fl.engine_end),
-        totalCost: parseFloat(fl.total_cost),
+        totalCost: parseFloat(fl.total_cost ?? fl.calculated_cost ?? 0),
         notes: fl.notes
       } as FlightLog]) || []);
 
@@ -295,6 +544,24 @@ export const useBookings = (enabled = true) => {
     try {
       console.log('Creating booking with data:', bookingData);
 
+      let resolvedStudentId = bookingData.studentId;
+      let resolvedGuestName = bookingData.guestName?.trim() || '';
+      let resolvedGuestEmail = bookingData.guestEmail?.trim() || '';
+      let resolvedGuestPhone = bookingData.guestPhone?.trim() || '';
+      if (bookingData.isGuestBooking && bookingData.trialFlightVoucherId) {
+        const voucherHolder = await resolveGuestVoucherHolder(bookingData.trialFlightVoucherId, {
+          allowUnredeemedGuest: true,
+        });
+        resolvedStudentId = voucherHolder.userId || resolvedStudentId;
+        resolvedGuestName = resolvedGuestName || voucherHolder.guestName;
+        resolvedGuestEmail = resolvedGuestEmail || voucherHolder.guestEmail;
+        resolvedGuestPhone = resolvedGuestPhone || voucherHolder.guestPhone;
+      }
+
+      if (bookingData.isGuestBooking && !resolvedStudentId) {
+        resolvedStudentId = await ensureGuestPlaceholderAccount();
+      }
+
       if ((user?.role === 'student' || user?.role === 'pilot') && !portalSettings.allow_self_booking) {
         throw new Error('Student self-booking is disabled. Please contact the club.');
       }
@@ -312,11 +579,16 @@ export const useBookings = (enabled = true) => {
       }
 
       // Validate required fields
-      if (!bookingData.studentId || bookingData.studentId.trim() === '') {
+      if (!resolvedStudentId || resolvedStudentId.trim() === '') {
         throw new Error('Student is required');
       }
       if (!bookingData.aircraftId || bookingData.aircraftId.trim() === '') {
         throw new Error('Aircraft is required');
+      }
+      if (bookingData.isGuestBooking) {
+        if (!resolvedGuestName) throw new Error('Guest name is required');
+        if (!resolvedGuestEmail) throw new Error('Guest email is required');
+        if (!bookingData.trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
       }
 
       if (isStudentOnlyUser && !bookingData.instructorId) {
@@ -324,6 +596,7 @@ export const useBookings = (enabled = true) => {
       }
 
       await assertInstructorAvailable(bookingData);
+      assertFatigueRules(bookingData);
 
       // Student-only users need approval; pilots can hire without instructor approval.
       let needsApproval = isStudentOnlyUser ||
@@ -338,7 +611,7 @@ export const useBookings = (enabled = true) => {
       const bookingStatus = needsApproval ? 'pending_approval' : bookingData.status;
 
       const insertData = {
-        student_id: bookingData.studentId,
+        student_id: resolvedStudentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
         aircraft_id: bookingData.aircraftId,
         start_time: bookingData.startTime.toISOString(),
@@ -348,6 +621,11 @@ export const useBookings = (enabled = true) => {
         status: bookingStatus,
         has_conflict: isWaitlisted,
         flight_type_id: bookingData.flightTypeId || null,
+        trial_flight_voucher_id: bookingData.trialFlightVoucherId || null,
+        is_guest_booking: bookingData.isGuestBooking || false,
+        guest_name: bookingData.isGuestBooking ? resolvedGuestName || null : null,
+        guest_email: bookingData.isGuestBooking ? resolvedGuestEmail || null : null,
+        guest_phone: bookingData.isGuestBooking ? resolvedGuestPhone || null : null,
       };
 
       console.log('Insert data:', insertData);
@@ -422,11 +700,29 @@ export const useBookings = (enabled = true) => {
   const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>, silent = false) => {
     try {
       const updateData: any = {};
-      if (bookingData.studentId !== undefined) {
-        if (!bookingData.studentId || bookingData.studentId.trim() === '') {
+      let resolvedStudentId = bookingData.studentId;
+      let resolvedGuestName = bookingData.guestName?.trim();
+      let resolvedGuestEmail = bookingData.guestEmail?.trim();
+      let resolvedGuestPhone = bookingData.guestPhone?.trim();
+      if (bookingData.isGuestBooking && bookingData.trialFlightVoucherId) {
+        const voucherHolder = await resolveGuestVoucherHolder(bookingData.trialFlightVoucherId, {
+          allowUnredeemedGuest: true,
+        });
+        resolvedStudentId = voucherHolder.userId || resolvedStudentId;
+        resolvedGuestName = resolvedGuestName || voucherHolder.guestName;
+        resolvedGuestEmail = resolvedGuestEmail || voucherHolder.guestEmail;
+        resolvedGuestPhone = resolvedGuestPhone || voucherHolder.guestPhone;
+      }
+
+      if (bookingData.isGuestBooking && !resolvedStudentId) {
+        resolvedStudentId = await ensureGuestPlaceholderAccount();
+      }
+
+      if (resolvedStudentId !== undefined) {
+        if (!resolvedStudentId || resolvedStudentId.trim() === '') {
           throw new Error('Student is required');
         }
-        updateData.student_id = bookingData.studentId;
+        updateData.student_id = resolvedStudentId;
       }
       if (bookingData.instructorId !== undefined) {
         updateData.instructor_id = bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null;
@@ -443,10 +739,21 @@ export const useBookings = (enabled = true) => {
       if (bookingData.notes !== undefined) updateData.notes = bookingData.notes || null;
       if (bookingData.status !== undefined) updateData.status = bookingData.status;
       if (bookingData.flightTypeId !== undefined) updateData.flight_type_id = bookingData.flightTypeId || null;
+      if (bookingData.trialFlightVoucherId !== undefined) updateData.trial_flight_voucher_id = bookingData.trialFlightVoucherId || null;
+      if (bookingData.isGuestBooking !== undefined) updateData.is_guest_booking = bookingData.isGuestBooking;
+      if (bookingData.guestName !== undefined || bookingData.trialFlightVoucherId) updateData.guest_name = resolvedGuestName || null;
+      if (bookingData.guestEmail !== undefined || bookingData.trialFlightVoucherId) updateData.guest_email = resolvedGuestEmail || null;
+      if (bookingData.guestPhone !== undefined || bookingData.trialFlightVoucherId) updateData.guest_phone = resolvedGuestPhone || null;
+
+      if (bookingData.isGuestBooking) {
+        if (!resolvedGuestName) throw new Error('Guest name is required');
+        if (!resolvedGuestEmail) throw new Error('Guest email is required');
+        if (!bookingData.trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
+      }
 
       const currentBooking = bookings.find(b => b.id === id);
       const candidateBooking = currentBooking
-        ? { ...currentBooking, ...bookingData }
+        ? { ...currentBooking, ...bookingData, ...(resolvedStudentId !== undefined ? { studentId: resolvedStudentId } : {}) }
         : null;
       const conflicts = candidateBooking ? findConfirmedConflicts(candidateBooking, id) : [];
       const isWaitlisted = conflicts.length > 0;
@@ -464,6 +771,7 @@ export const useBookings = (enabled = true) => {
         bookingData.endTime !== undefined
       )) {
         await assertInstructorAvailable(candidateBooking);
+        assertFatigueRules(candidateBooking, id);
       }
       if (isWaitlisted && bookingRules?.allow_double_booking === false) {
         throw new Error('This time overlaps an existing booking and waiting-list overlaps are disabled');

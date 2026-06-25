@@ -179,8 +179,8 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
                 <p className="text-2xl font-bold text-orange-600">{dualTime.toFixed(1)}</p>
               </div>
               <div className="bg-purple-50 p-4 rounded-lg">
-                <p className="text-sm font-medium text-purple-900">Prepaid Balance</p>
-                <p className="text-2xl font-bold text-purple-600">${student.prepaidBalance.toFixed(2)}</p>
+                <p className="text-sm font-medium text-purple-900">Active Endorsements</p>
+                <p className="text-2xl font-bold text-purple-600">{student.endorsements.filter(e => e.isActive).length}</p>
               </div>
             </div>
           </div>

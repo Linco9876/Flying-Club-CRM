@@ -3,8 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Plane, ArrowLeft, Calendar, Pencil, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useFlightLogs } from '../../hooks/useFlightLogs';
 import toast from 'react-hot-toast';
 import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../../utils/billing';
+import { fetchUserXeroBalance } from '../../lib/xeroMemberBalance';
 
 interface FlightLog {
   id: string;
@@ -60,6 +62,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
   const aircraftId = aircraftIdOverride || routeAircraftId;
   const navigate = useNavigate();
   const { aircraft: allAircraft } = useAircraft();
+  const { deleteFlightLog, getFlightLogDeleteImpact } = useFlightLogs();
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -210,56 +213,28 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
   };
 
   const handleDeleteLog = async (log: FlightLog) => {
-    if (!window.confirm('Delete this flight log?')) return;
+    const impact = await getFlightLogDeleteImpact(log.id);
+    const xeroMode: 'auto' | 'void-delete' | 'credit-note' | 'crm-only' = impact.requiresXeroAction
+      ? impact.recommendedAction
+      : 'crm-only';
+    const confirmMessage = impact.requiresXeroAction
+      ? impact.recommendedAction === 'credit-note'
+        ? `${impact.summary}\n\n${impact.detail}\n\nA reversing credit note will be created in Xero before the CRM record is removed.${impact.hasStripePayments ? '\n\nAdmin note: This reverses the accounting in Xero but does not refund the card automatically.' : ''}\n\nContinue?`
+        : `${impact.summary}\n\n${impact.detail}\n\nThe Xero invoice will be voided or deleted before the CRM record is removed.\n\nContinue?`
+      : 'Delete this flight log?';
 
-    const { data: chargeTransactions } = await supabase
-      .from('account_transactions')
-      .select('id, user_id, amount, type')
-      .eq('flight_log_id', log.id);
+    if (!window.confirm(confirmMessage)) return;
 
-    const prepaidCharges = (chargeTransactions || []).filter((tx: any) => tx.type === 'flight_charge');
-    if (prepaidCharges.length > 0) {
-      const refundByUser = prepaidCharges.reduce<Record<string, number>>((acc, tx: any) => {
-        acc[tx.user_id] = (acc[tx.user_id] || 0) + parseFloat(tx.amount || 0);
-        return acc;
-      }, {});
-
-      for (const [userId, refundAmount] of Object.entries(refundByUser)) {
-        const { data: student } = await supabase
-          .from('students')
-          .select('prepaid_balance')
-          .eq('id', userId)
-          .maybeSingle();
-        const newBalance = parseFloat(student?.prepaid_balance || 0) + refundAmount;
-        await supabase.from('students').upsert({ id: userId, prepaid_balance: newBalance }, { onConflict: 'id' });
-      }
-
-      await supabase
-        .from('account_transactions')
-        .delete()
-        .in('id', prepaidCharges.map((tx: any) => tx.id));
-    }
-
-    const { error: deleteError } = await supabase
-      .from('flight_logs')
-      .delete()
-      .eq('id', log.id);
+    const { error: deleteError } = await deleteFlightLog(log.id, { xeroMode });
 
     if (deleteError) {
-      toast.error('Failed to delete flight log');
+      toast.error(deleteError);
       return;
-    }
-
-    if (log.booking_id) {
-      await supabase
-        .from('bookings')
-        .update({ flight_logged: false })
-        .eq('id', log.booking_id);
     }
 
     setActionLog(null);
     await fetchFlightLogs();
-    toast.success('Flight log deleted');
+    toast.success(impact.requiresXeroAction ? 'Flight log reversed in Xero and removed from the CRM' : 'Flight log deleted');
   };
 
   const handleSaveLog = async (e: React.FormEvent) => {
@@ -301,8 +276,39 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       startTime: new Date(editForm.start_time).toISOString(),
     });
 
-    setSavingLog(true);
     const voucherPayment = isVoucherPaymentMethod(editForm.payment_type);
+    const prepaidPayment = isPrepaidPaymentMethod(editForm.payment_type);
+    let prepaidBalanceAfter: number | null = null;
+
+    if (!voucherPayment && prepaidPayment && recalculatedCost > 0) {
+      const chargeUserId = editingLog.student_id;
+      if (!chargeUserId) {
+        toast.error('Prepaid payments need a linked member on the flight log.');
+        return;
+      }
+
+      const xeroBalance = await fetchUserXeroBalance(chargeUserId);
+      if (!xeroBalance.connected) {
+        toast.error('Prepaid payments require Xero to be connected for this club.');
+        return;
+      }
+
+      const availableCredit = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
+      const minimumPrepaidPack = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+      if (availableCredit + 0.005 < minimumPrepaidPack) {
+        toast.error(`Prepaid is locked until the member has at least $${minimumPrepaidPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+        return;
+      }
+
+      if (availableCredit + 0.005 < recalculatedCost) {
+        toast.error(`This member only has $${availableCredit.toFixed(2)} available in Xero overpayments, so prepaid cannot cover this flight. Add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+        return;
+      }
+
+      prepaidBalanceAfter = Math.round((availableCredit - recalculatedCost + Number.EPSILON) * 100) / 100;
+    }
+
+    setSavingLog(true);
     const { error: updateError } = await supabase
       .from('flight_logs')
       .update({
@@ -315,7 +321,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
         payment_type: editForm.payment_type || null,
         calculated_cost: recalculatedCost,
         total_cost: recalculatedCost,
-        payment_status: recalculatedCost <= 0 ? 'free' : voucherPayment || isPrepaidPaymentMethod(editForm.payment_type) ? 'paid' : 'pending',
+        payment_status: recalculatedCost <= 0 ? 'free' : voucherPayment || prepaidPayment ? 'paid' : 'pending',
         observations: editForm.observations || null,
       })
       .eq('id', editingLog.id);
@@ -327,7 +333,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       return;
     }
 
-    if (!voucherPayment && isPrepaidPaymentMethod(editForm.payment_type)) {
+    if (!voucherPayment && prepaidPayment) {
       const { data: charge } = await supabase
         .from('account_transactions')
         .select('id, amount, user_id')
@@ -336,19 +342,10 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
         .maybeSingle();
 
       if (charge) {
-        const previousAmount = parseFloat(charge.amount || 0);
-        const delta = recalculatedCost - previousAmount;
-        const { data: student } = await supabase
-          .from('students')
-          .select('prepaid_balance')
-          .eq('id', charge.user_id)
-          .maybeSingle();
-        const newBalance = parseFloat(student?.prepaid_balance || 0) - delta;
         await supabase
           .from('account_transactions')
-          .update({ amount: recalculatedCost, balance_after: newBalance })
+          .update({ amount: recalculatedCost, balance_after: prepaidBalanceAfter })
           .eq('id', charge.id);
-        await supabase.from('students').upsert({ id: charge.user_id, prepaid_balance: newBalance }, { onConflict: 'id' });
       }
     }
 

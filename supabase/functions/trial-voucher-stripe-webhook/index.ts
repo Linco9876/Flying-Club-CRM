@@ -326,6 +326,29 @@ const getVerifiedFlightPaymentTotal = async (adminClient: SupabaseAdminClient, f
   return (data || []).reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
 };
 
+const getApplicableFlightPaymentAmount = ({
+  flightCost,
+  paidBefore,
+  receivedAmount,
+  alreadyRecorded,
+}: {
+  flightCost: number;
+  paidBefore: number;
+  receivedAmount: number;
+  alreadyRecorded: boolean;
+}) => {
+  if (alreadyRecorded) {
+    return { appliedAmount: 0, paidAfter: paidBefore };
+  }
+
+  const remaining = Math.max(0, roundCurrency(flightCost - paidBefore));
+  const appliedAmount = Math.max(0, Math.min(roundCurrency(receivedAmount), remaining));
+  return {
+    appliedAmount,
+    paidAfter: roundCurrency(paidBefore + appliedAmount),
+  };
+};
+
 const hasFlightPaymentReference = async (
   adminClient: SupabaseAdminClient,
   flightLogId: string,
@@ -341,6 +364,57 @@ const hasFlightPaymentReference = async (
     .maybeSingle();
   if (error) throw error;
   return Boolean(data);
+};
+
+const handleMemberTopupStripeEvent = async ({
+  adminClient,
+  event,
+  session,
+  sessionId,
+}: {
+  adminClient: SupabaseAdminClient;
+  event: any;
+  session: any;
+  sessionId: string;
+}) => {
+  const userId = asString(session.metadata?.user_id || session.client_reference_id);
+  if (!userId) throw new Error("Member top-up checkout is missing the user id.");
+
+  const paymentMethod = await getStripePaymentMethod(adminClient, session);
+  const amount = stripeAmountToDollars(session.amount_total) ?? Number(session.metadata?.topup_amount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Member top-up checkout has no valid amount.");
+
+  if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
+    return json({ received: true, userId, topupStatus: "failed" });
+  }
+
+  if (session.payment_status && session.payment_status !== "paid") {
+    return json({ received: true, userId, topupStatus: "pending" });
+  }
+
+  const { data: existing, error: existingError } = await adminClient
+    .from("account_transactions")
+    .select("id")
+    .eq("stripe_checkout_session_id", sessionId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return json({ received: true, userId, duplicate: true, topupTransactionId: existing.id });
+
+  const { error: insertError } = await adminClient
+    .from("account_transactions")
+    .insert({
+      user_id: userId,
+      type: "topup",
+      amount: roundCurrency(amount),
+      description: `Stripe pilot account top-up (${sessionId})`,
+      payment_method_id: paymentMethod?.id || null,
+      balance_after: null,
+      verified_status: "verified",
+      stripe_checkout_session_id: sessionId,
+    });
+  if (insertError) throw insertError;
+
+  return json({ received: true, userId, topupStatus: "verified" });
 };
 
 const handleMemberCardSetupEvent = async ({
@@ -478,8 +552,14 @@ const handleFlightLogPaymentIntentEvent = async ({
     const description = `Stripe saved card payment (${paymentIntent.id}) - ${aircraftRegistration} flight on ${flightDate}`;
     const alreadyRecorded = await hasFlightPaymentReference(adminClient, flightLog.id, paymentIntent.id);
     const paidBefore = await getVerifiedFlightPaymentTotal(adminClient, flightLog.id);
-    const paidAfter = paidBefore + (alreadyRecorded ? 0 : amount);
-    const isFullyPaid = paidAfter + 0.005 >= Number(flightLog.calculated_cost || 0);
+    const flightCost = Number(flightLog.calculated_cost || 0);
+    const { appliedAmount, paidAfter } = getApplicableFlightPaymentAmount({
+      flightCost,
+      paidBefore,
+      receivedAmount: amount,
+      alreadyRecorded,
+    });
+    const isFullyPaid = paidAfter + 0.005 >= flightCost;
 
     const { error: updateError } = await adminClient
       .from("flight_logs")
@@ -495,13 +575,13 @@ const handleFlightLogPaymentIntentEvent = async ({
       .eq("id", flightLog.id);
     if (updateError) throw updateError;
 
-    if (!alreadyRecorded && amount > 0) {
+    if (!alreadyRecorded && appliedAmount > 0) {
       const { error: txError } = await adminClient
         .from("account_transactions")
         .insert({
           user_id: flightLog.student_id,
           type: "flight_charge",
-          amount,
+          amount: appliedAmount,
           description,
           flight_log_id: flightLog.id,
           payment_method_id: paymentMethod?.id || null,
@@ -603,8 +683,14 @@ const handleFlightLogStripeEvent = async ({
     const description = `Stripe card payment (${sessionId}) - ${aircraftRegistration} flight on ${flightDate}`;
     const alreadyRecorded = await hasFlightPaymentReference(adminClient, flightLog.id, sessionId);
     const paidBefore = await getVerifiedFlightPaymentTotal(adminClient, flightLog.id);
-    const paidAfter = paidBefore + (alreadyRecorded ? 0 : paidAmount);
-    const isFullyPaid = roundCurrency(paidAfter) + 0.005 >= Number(flightLog.calculated_cost || 0);
+    const flightCost = Number(flightLog.calculated_cost || 0);
+    const { appliedAmount, paidAfter } = getApplicableFlightPaymentAmount({
+      flightCost,
+      paidBefore,
+      receivedAmount: paidAmount,
+      alreadyRecorded,
+    });
+    const isFullyPaid = roundCurrency(paidAfter) + 0.005 >= flightCost;
 
     const { error: updateError } = await adminClient
       .from("flight_logs")
@@ -617,13 +703,13 @@ const handleFlightLogStripeEvent = async ({
       .eq("id", flightLog.id);
     if (updateError) throw updateError;
 
-    if (!alreadyRecorded && paidAmount > 0) {
+    if (!alreadyRecorded && appliedAmount > 0) {
       const { error: txError } = await adminClient
         .from("account_transactions")
         .insert({
           user_id: flightLog.student_id,
           type: "flight_charge",
-          amount: paidAmount,
+          amount: appliedAmount,
           description,
           flight_log_id: flightLog.id,
           payment_method_id: paymentMethod?.id || null,
@@ -747,6 +833,10 @@ Deno.serve(async (req: Request) => {
       return await handleMemberCardSetupEvent({ adminClient, stripeSecretKey, event, session });
     }
 
+    if (asString(session.metadata?.crm_payment_type) === "member_topup") {
+      return await handleMemberTopupStripeEvent({ adminClient, event, session, sessionId });
+    }
+
     if (asString(session.metadata?.crm_payment_type) === "flight_log" || asString(session.metadata?.flight_log_id)) {
       return await handleFlightLogStripeEvent({ adminClient, event, session, sessionId });
     }
@@ -768,6 +858,7 @@ Deno.serve(async (req: Request) => {
         .from("trial_flight_vouchers")
         .update({
           payment_status: "failed",
+          payment_source: "stripe",
           stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
           stripe_payment_intent_id: asString(session.payment_intent) || null,
           updated_at: new Date().toISOString(),
@@ -784,6 +875,7 @@ Deno.serve(async (req: Request) => {
         .from("trial_flight_vouchers")
         .update({
           payment_status: "failed",
+          payment_source: "stripe",
           stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
           stripe_payment_intent_id: asString(session.payment_intent) || null,
           ...stripePaymentFields(session),
@@ -801,6 +893,7 @@ Deno.serve(async (req: Request) => {
         .from("trial_flight_vouchers")
         .update({
           payment_status: "pending",
+          payment_source: "stripe",
           stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
           stripe_payment_intent_id: asString(session.payment_intent) || null,
           ...stripePaymentFields(session),
@@ -817,6 +910,7 @@ Deno.serve(async (req: Request) => {
       .update({
         status: voucher.status === "draft" ? "issued" : voucher.status,
         payment_status: "paid",
+        payment_source: "stripe",
         stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
         stripe_payment_intent_id: asString(session.payment_intent) || null,
         ...stripePaymentFields(session),

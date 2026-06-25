@@ -177,7 +177,7 @@ export function useTrainingSettings() {
       ] = await Promise.all([
         supabase.from('endorsements').update({ type: rename.to }).eq('type', rename.from),
         supabase.from('training_courses').update({ completion_endorsement_type: rename.to }).eq('completion_endorsement_type', rename.from),
-        supabase.from('aircraft').update({ required_endorsement_type: rename.to }).eq('required_endorsement_type', rename.from),
+        supabase.rpc('rename_aircraft_endorsement_requirement', { old_value: rename.from, new_value: rename.to }),
       ]);
 
       if (endorsementsResult.error) throw endorsementsResult.error;

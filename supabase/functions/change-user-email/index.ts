@@ -43,6 +43,51 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    const requestBody = await req.json().catch(() => ({}));
+    const action = typeof requestBody?.action === "string" ? requestBody.action.trim() : "";
+
+    if (action === "sync_verified_email") {
+      const confirmedEmail = String(callerUser.email || "").trim().toLowerCase();
+      if (!confirmedEmail || !isValidEmail(confirmedEmail)) {
+        return jsonResponse({ error: "Authenticated user does not have a valid email" }, 400);
+      }
+
+      const { data: existingProfile, error: existingProfileError } = await adminClient
+        .from("users")
+        .select("id,email")
+        .eq("id", callerUser.id)
+        .maybeSingle();
+
+      if (existingProfileError) return jsonResponse({ error: existingProfileError.message }, 500);
+      if (!existingProfile) return jsonResponse({ error: "User profile not found" }, 404);
+
+      const { data: emailOwner, error: emailOwnerError } = await adminClient
+        .from("users")
+        .select("id")
+        .eq("email", confirmedEmail)
+        .neq("id", callerUser.id)
+        .maybeSingle();
+
+      if (emailOwnerError) return jsonResponse({ error: emailOwnerError.message }, 500);
+      if (emailOwner) return jsonResponse({ error: "Another CRM member already uses this email" }, 409);
+
+      const { error: profileUpdateError } = await adminClient
+        .from("users")
+        .update({
+          email: confirmedEmail,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", callerUser.id);
+
+      if (profileUpdateError) return jsonResponse({ error: profileUpdateError.message }, 500);
+
+      return jsonResponse({
+        synced: true,
+        userId: callerUser.id,
+        email: confirmedEmail,
+      });
+    }
+
     const { data: callerRoles, error: callerRolesError } = await adminClient
       .from("user_roles")
       .select("role")
@@ -52,7 +97,7 @@ Deno.serve(async (req: Request) => {
     const isAdmin = (callerRoles || []).some((roleRow) => roleRow.role === "admin");
     if (!isAdmin) return jsonResponse({ error: "Only admins can change another user's login email" }, 403);
 
-    const { userId, newEmail, redirectTo } = await req.json();
+    const { userId, newEmail, redirectTo } = requestBody;
     const cleanUserId = typeof userId === "string" ? userId.trim() : "";
     const cleanEmail = typeof newEmail === "string" ? newEmail.trim().toLowerCase() : "";
     const cleanRedirectTo = typeof redirectTo === "string" && redirectTo.trim()

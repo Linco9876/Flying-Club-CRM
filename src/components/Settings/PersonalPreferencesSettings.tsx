@@ -663,7 +663,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                   className={inputClass}
                 >
                   <option value="">Use first available aircraft</option>
-                  {aircraft.map(a => (
+                  {aircraft.filter(a => !a.isArchived).map(a => (
                     <option key={a.id} value={a.id}>{a.registration} - {a.make} {a.model}</option>
                   ))}
                 </select>

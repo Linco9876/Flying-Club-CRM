@@ -223,7 +223,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                 <option value="">
                   {loading ? 'Loading aircraft...' : aircraft.length === 0 ? 'No aircraft available' : 'Select aircraft'}
                 </option>
-                {aircraft.map(a => (
+                {aircraft.filter(a => !a.isArchived).map(a => (
                   <option key={a.id} value={a.id}>
                     {a.registration} - {a.make} {a.model}
                   </option>

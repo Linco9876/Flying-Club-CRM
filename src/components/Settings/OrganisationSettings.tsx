@@ -95,8 +95,29 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       );
       setLogoFile(null);
     };
-    return () => { delete (window as any).__organisationSettingsSave; };
-  }, [formData, logoFile, logoPreview, updateSettings]);
+    (window as any).__organisationSettingsCancel = () => {
+      setFormData({
+        clubName: settings?.club_name ?? '',
+        address: settings?.address ?? '',
+        timezone: settings?.timezone ?? 'Australia/Melbourne',
+        currency: settings?.currency ?? 'AUD',
+        contactEmail: settings?.contact_email ?? '',
+        contactPhone: settings?.contact_phone ?? '',
+        website: settings?.website ?? '',
+        studentPortalUrl: settings?.student_portal_url ?? '',
+        bookingDayStart: settings?.booking_day_start ?? '06:00',
+        bookingDayEnd: settings?.booking_day_end ?? '22:00',
+        defaultSlotLength: settings?.default_slot_length ?? 30,
+      });
+      setLogoFile(null);
+      setLogoPreview(settings?.logo_url ?? null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    return () => {
+      delete (window as any).__organisationSettingsSave;
+      delete (window as any).__organisationSettingsCancel;
+    };
+  }, [formData, logoFile, logoPreview, settings, updateSettings]);
 
   if (loading) {
     return (

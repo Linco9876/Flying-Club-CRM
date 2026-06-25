@@ -30,7 +30,7 @@ export const trialVoucherProductBookingSetup = (
   endorsementRows: any[] = [],
 ) => {
   const matchingAircraft = aircraftRows.filter((aircraft: any) =>
-    aircraftMatchesTrialVoucherProduct(aircraft, product)
+    aircraftMatchesTrialVoucherProduct(aircraft, product) && aircraft.is_archived !== true
   );
   const serviceableAircraft = matchingAircraft.filter((aircraft: any) => aircraft.status === "serviceable");
   const instructorIds = product.instructor_ids || [];

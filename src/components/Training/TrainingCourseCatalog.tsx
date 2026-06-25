@@ -1436,6 +1436,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const [newLesson, setNewLesson] = useState<NewLessonState>(emptyLessonForm);
   // Per-lesson pass marks: criterionId → passingGrade
   const [lessonPassMarks, setLessonPassMarks] = useState<Record<string, string>>({});
+  const [lessonRepeatPassRequirements, setLessonRepeatPassRequirements] = useState<Record<string, boolean>>({});
   const [expandedLessons, setExpandedLessons] = useState<Record<string, boolean>>({});
   const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
 
@@ -1445,6 +1446,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setShowLessonForm(false);
       setNewLesson(emptyLessonForm());
       setLessonPassMarks({});
+      setLessonRepeatPassRequirements({});
       return;
     }
 
@@ -1453,6 +1455,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setShowLessonForm(false);
       setNewLesson(emptyLessonForm());
       setLessonPassMarks({});
+      setLessonRepeatPassRequirements({});
     }
   }, [modules, selectedModuleId]);
 
@@ -1617,6 +1620,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const resetLessonForm = () => {
     setNewLesson(emptyLessonForm());
     setLessonPassMarks({});
+    setLessonRepeatPassRequirements({});
     setEditingLessonId(null);
     setLessonBuilderStep('details');
   };
@@ -1812,6 +1816,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     });
     // Populate pass marks from existing lesson data
     setLessonPassMarks(lesson.passMarks ?? {});
+    setLessonRepeatPassRequirements(lesson.passMarkRepeatRequirements ?? {});
     setEditingLessonId(lesson.id);
     setShowLessonForm(true);
     setShowEditCourseForm(false);
@@ -2093,6 +2098,7 @@ export const TrainingCourseCatalog: React.FC = () => {
         ])
       )
     );
+    setLessonRepeatPassRequirements({});
     setEditingLessonId(null);
     setLessonBuilderStep('details');
     setShowLessonForm(true);
@@ -2135,6 +2141,7 @@ export const TrainingCourseCatalog: React.FC = () => {
 
     // Validate pass marks for course criteria
     const passMarks: Record<string, string> = {};
+    const passMarkRepeatRequirements: Record<string, boolean> = {};
     for (const criterion of selectedModule.assessmentCriteria) {
       const grade = lessonPassMarks[criterion.id]?.trim() || getDefaultPassingGrade(criterion.gradingSystem);
       if (criterion.gradingSystem === 'Out of 100') {
@@ -2148,6 +2155,10 @@ export const TrainingCourseCatalog: React.FC = () => {
         const allowed = getPassingGradeOptions(criterion.gradingSystem);
         const validated = allowed.includes(grade) ? grade : getDefaultPassingGrade(criterion.gradingSystem);
         passMarks[criterion.id] = validated;
+      }
+
+      if (lessonRepeatPassRequirements[criterion.id]) {
+        passMarkRepeatRequirements[criterion.id] = true;
       }
     }
 
@@ -2167,6 +2178,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       instructorNotes: instructorNotes || flightExercisesPlain,
       assessmentCriteria: [] as LessonAssessmentCriterion[],
       passMarks,
+      passMarkRepeatRequirements,
       isFlightTest: newLesson.isFlightTest,
     };
 
@@ -3962,28 +3974,57 @@ export const TrainingCourseCatalog: React.FC = () => {
                       <div className="mt-3 space-y-3">
                         {selectedModule.assessmentCriteria.map((criterion) => {
                           const currentMark = lessonPassMarks[criterion.id] ?? getDefaultPassingGrade(criterion.gradingSystem);
+                          const requiresRepeat = Boolean(lessonRepeatPassRequirements[criterion.id]);
                           return (
-                            <div key={criterion.id} className="flex items-center gap-4 rounded-lg border border-blue-100 bg-white px-4 py-3">
-                              <div className="flex-1 text-sm font-medium text-blue-900">{criterion.name}</div>
-                              <span className="text-xs text-gray-400">{criterion.gradingSystem}</span>
+                            <div key={criterion.id} className="grid gap-3 rounded-lg border border-blue-100 bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-md bg-blue-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-700 ring-1 ring-blue-100">
+                                    {criterion.id}
+                                  </span>
+                                  <span className="text-sm font-medium text-blue-900">{criterion.name}</span>
+                                </div>
+                                <p className="mt-1 text-xs text-gray-500">{criterion.gradingSystem}</p>
+                              </div>
                               {criterion.gradingSystem === 'Out of 100' ? (
                                 <input
                                   type="number" min={0} max={100} step={1}
                                   value={currentMark}
                                   onChange={(e) => setLessonPassMarks((prev) => ({ ...prev, [criterion.id]: e.target.value }))}
-                                  className="w-20 rounded-md border border-blue-200 px-2 py-1.5 text-sm text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                                  className="w-full rounded-md border border-blue-200 px-2 py-1.5 text-sm text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200 md:w-20"
+                                  aria-label={`Pass mark for ${criterion.name}`}
                                 />
                               ) : (
                                 <select
                                   value={currentMark}
                                   onChange={(e) => setLessonPassMarks((prev) => ({ ...prev, [criterion.id]: e.target.value }))}
                                   className="rounded-md border border-blue-200 px-2 py-1.5 text-sm text-gray-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200"
+                                  aria-label={`Pass mark for ${criterion.name}`}
                                 >
                                   {getPassingGradeOptions(criterion.gradingSystem).map((opt) => (
                                     <option key={opt} value={opt}>{opt}</option>
                                   ))}
                                 </select>
                               )}
+                              <label className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${
+                                requiresRepeat
+                                  ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                  : 'border-gray-200 bg-gray-50 text-gray-600'
+                              }`}>
+                                <input
+                                  type="checkbox"
+                                  checked={requiresRepeat}
+                                  onChange={(event) => setLessonRepeatPassRequirements((prev) => ({
+                                    ...prev,
+                                    [criterion.id]: event.target.checked,
+                                  }))}
+                                  className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                                />
+                                <span>
+                                  <span className="block font-semibold">Require twice</span>
+                                  <span className="block leading-4">Needs 2 consecutive passes before next lesson is recommended.</span>
+                                </span>
+                              </label>
                             </div>
                           );
                         })}
@@ -4221,15 +4262,27 @@ export const TrainingCourseCatalog: React.FC = () => {
                                         className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm"
                                       >
                                         <div className="flex flex-wrap items-center justify-between gap-2">
-                                          <span className="font-medium text-slate-900">{criterion.name}</span>
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200">
+                                              {criterion.id}
+                                            </span>
+                                            <span className="font-medium text-slate-900">{criterion.name}</span>
+                                          </div>
                                           <span className="text-xs text-slate-500">{criterion.gradingSystem}</span>
                                         </div>
-                                        <p className="mt-1 text-xs text-slate-500">
-                                          {lesson.passMarks?.[criterion.id] === '-' ? 'Not assessed' : 'Passing grade'}{' '}
-                                          <span className="font-medium text-slate-700">
-                                            {lesson.passMarks?.[criterion.id] ?? criterion.passingGrade}
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                          <span>
+                                            {lesson.passMarks?.[criterion.id] === '-' ? 'Not assessed' : 'Passing grade'}{' '}
+                                            <span className="font-medium text-slate-700">
+                                              {lesson.passMarks?.[criterion.id] ?? criterion.passingGrade}
+                                            </span>
                                           </span>
-                                        </p>
+                                          {lesson.passMarkRepeatRequirements?.[criterion.id] && (
+                                            <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 ring-1 ring-amber-200">
+                                              2x consecutive required
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     ))}
                                   </div>

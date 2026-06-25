@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,14 +47,12 @@ const markFlightPaid = async ({
   paymentMethod,
   paymentIntent,
   amountDollars,
-  totalPaidDollars,
 }: {
   adminClient: any;
   flightLog: any;
   paymentMethod: any;
   paymentIntent: any;
   amountDollars: number;
-  totalPaidDollars: number;
 }) => {
   const now = new Date().toISOString();
   const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
@@ -62,7 +60,29 @@ const markFlightPaid = async ({
   const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";
   const description = `Stripe saved card payment (${paymentIntent.id}) - ${aircraftRegistration} flight on ${flightDate}`;
   const flightCost = Number(flightLog.calculated_cost || 0);
-  const isFullyPaid = totalPaidDollars + amountDollars + 0.005 >= flightCost;
+
+  const { data: existingTx, error: existingTxError } = await adminClient
+    .from("account_transactions")
+    .select("id")
+    .eq("flight_log_id", flightLog.id)
+    .eq("type", "flight_charge")
+    .ilike("description", `%${paymentIntent.id}%`)
+    .maybeSingle();
+  if (existingTxError) throw existingTxError;
+
+  const { data: currentPayments, error: currentPaymentsError } = await adminClient
+    .from("account_transactions")
+    .select("amount")
+    .eq("flight_log_id", flightLog.id)
+    .eq("type", "flight_charge")
+    .eq("verified_status", "verified");
+  if (currentPaymentsError) throw currentPaymentsError;
+
+  const paidBefore = (currentPayments || []).reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+  const remaining = Math.max(0, centsToDollars(dollarsToCents(flightCost - paidBefore) || 0));
+  const appliedAmount = existingTx ? 0 : Math.max(0, Math.min(amountDollars, remaining));
+  const totalPaidDollars = paidBefore + appliedAmount;
+  const isFullyPaid = totalPaidDollars + 0.005 >= flightCost;
 
   const { error: updateError } = await adminClient
     .from("flight_logs")
@@ -79,22 +99,13 @@ const markFlightPaid = async ({
     .eq("id", flightLog.id);
   if (updateError) throw updateError;
 
-  const { data: existingTx, error: existingTxError } = await adminClient
-    .from("account_transactions")
-    .select("id")
-    .eq("flight_log_id", flightLog.id)
-    .eq("type", "flight_charge")
-    .ilike("description", `%${paymentIntent.id}%`)
-    .maybeSingle();
-  if (existingTxError) throw existingTxError;
-
-  if (!existingTx && amountDollars > 0) {
+  if (!existingTx && appliedAmount > 0) {
     const { error: txError } = await adminClient
       .from("account_transactions")
       .insert({
         user_id: flightLog.student_id,
         type: "flight_charge",
-        amount: amountDollars,
+        amount: appliedAmount,
         description,
         flight_log_id: flightLog.id,
         payment_method_id: paymentMethod?.id || null,
@@ -196,6 +207,9 @@ Deno.serve(async (req: Request) => {
     if (!savedCard) {
       return json({ error: "This member has not saved a card for automatic flight payments." }, 409);
     }
+    if (!savedCard.consent_accepted_at) {
+      return json({ error: "This member's saved card authority is incomplete. Ask them to save their card again before charging it." }, 409);
+    }
 
     const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
     const student = firstJoinRow(flightLog.users) as { name?: unknown; email?: unknown } | undefined;
@@ -225,6 +239,14 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Idempotency-Key": stripeIdempotencyKey(
+          "flight-saved-card",
+          flightLog.id,
+          flightLog.student_id,
+          amountCents,
+          remainingCents,
+          user.id,
+        ),
       }),
       body: form,
     });
@@ -255,7 +277,6 @@ Deno.serve(async (req: Request) => {
         paymentMethod: stripeMethod,
         paymentIntent,
         amountDollars: amountCents / 100,
-        totalPaidDollars: paidCents / 100,
       });
       return json({ ok: true, status: paymentIntent.status, paymentIntentId: paymentIntent.id });
     }

@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Aircraft, Defect } from '../types';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 
-let aircraftCache: Aircraft[] | null = null;
+let staffAircraftCache: Aircraft[] | null = null;
+let publicAircraftCache: Aircraft[] | null = null;
 
 const DEFECT_ATTACHMENT_BUCKET = 'defect-attachments';
 
@@ -52,13 +54,18 @@ const getSignedDefectAttachmentUrls = async (photos?: string[] | null) => {
 };
 
 export const useAircraft = () => {
-  const [aircraft, setAircraft] = useState<Aircraft[]>(() => aircraftCache || []);
-  const [loading, setLoading] = useState(() => !aircraftCache);
+  const { user } = useAuth();
+  const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
+  const canSeePrivateAircraftData = roles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
+  const activeAircraftCache = canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache;
+  const [aircraft, setAircraft] = useState<Aircraft[]>(() => activeAircraftCache || []);
+  const [loading, setLoading] = useState(() => !activeAircraftCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAircraft = async () => {
     try {
-      if (!aircraftCache) {
+      const cachedAircraft = canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache;
+      if (!cachedAircraft) {
         setLoading(true);
       }
       const { data: aircraftData, error: aircraftError } = await supabase
@@ -68,16 +75,22 @@ export const useAircraft = () => {
 
       if (aircraftError) throw aircraftError;
 
+      const defectColumns = canSeePrivateAircraftData
+        ? '*'
+        : 'id, aircraft_id, date_reported, description, status, photos, severity, location, tach_hours, hobbs_hours';
+
       const { data: defectsData, error: defectsError } = await supabase
         .from('defects')
-        .select('*')
+        .select(defectColumns)
         .eq('status', 'open');
 
       if (defectsError) throw defectsError;
 
-      const { data: ratesData, error: ratesError } = await supabase
-        .from('aircraft_rates')
-        .select('*, flight_types(name), payment_methods(name)');
+      const { data: ratesData, error: ratesError } = canSeePrivateAircraftData
+        ? await supabase
+            .from('aircraft_rates')
+            .select('*, flight_types(name), payment_methods(name)')
+        : { data: [], error: null };
 
       if (ratesError) throw ratesError;
 
@@ -92,14 +105,14 @@ export const useAircraft = () => {
         aircraftDefects.push({
           id: d.id,
           aircraftId: d.aircraft_id,
-          reportedBy: d.reported_by,
+          reportedBy: canSeePrivateAircraftData ? d.reported_by : undefined,
           dateReported: new Date(d.date_reported),
           summary: d.summary || undefined,
           description: d.description,
           status: d.status,
           photos: d.signedPhotos,
-          melNotes: d.mel_notes,
-          fixNotes: d.fix_notes,
+          melNotes: canSeePrivateAircraftData ? d.mel_notes : undefined,
+          fixNotes: canSeePrivateAircraftData ? d.fix_notes : undefined,
           severity: d.severity,
           location: d.location,
           tachHours: d.tach_hours,
@@ -164,6 +177,22 @@ export const useAircraft = () => {
           maxWeight: a.max_weight ? parseFloat(a.max_weight) : undefined,
           tachStart: a.total_hours ? parseFloat(a.total_hours) : 0,
           requiredEndorsementType: a.required_endorsement_type || null,
+          requiredEndorsementTypes: Array.isArray(a.required_endorsement_types)
+            ? a.required_endorsement_types.filter(Boolean)
+            : a.required_endorsement_type
+              ? [a.required_endorsement_type]
+              : [],
+          iconKey: a.icon_key || null,
+          xeroTrackingCategoryId: a.xero_tracking_category_id || null,
+          xeroTrackingCategoryName: a.xero_tracking_category_name || null,
+          xeroTrackingOptionId: a.xero_tracking_option_id || null,
+          xeroTrackingOptionName: a.xero_tracking_option_name || null,
+          xeroTrackingLastSyncedAt: a.xero_tracking_last_synced_at ? new Date(a.xero_tracking_last_synced_at) : undefined,
+          xeroTrackingSyncError: a.xero_tracking_sync_error || null,
+          isArchived: Boolean(a.is_archived),
+          archivedAt: a.archived_at ? new Date(a.archived_at) : undefined,
+          archivedBy: a.archived_by || null,
+          archiveReason: a.archive_reason || null,
           defects: defectsMap.get(a.id) || [],
           rates: rates?.rows || [],
           aircraftRates: rates?.aircraft,
@@ -171,7 +200,11 @@ export const useAircraft = () => {
         };
       });
 
-      aircraftCache = combinedAircraft;
+      if (canSeePrivateAircraftData) {
+        staffAircraftCache = combinedAircraft;
+      } else {
+        publicAircraftCache = combinedAircraft;
+      }
       setAircraft(combinedAircraft);
       setError(null);
     } catch (err) {
@@ -443,7 +476,20 @@ export const useAircraft = () => {
           fuel_capacity: aircraftData.fuelCapacity || null,
           empty_weight: aircraftData.emptyWeight || null,
           max_weight: aircraftData.maxWeight || null,
-          required_endorsement_type: aircraftData.requiredEndorsementType || null
+          required_endorsement_type: aircraftData.requiredEndorsementTypes?.[0] || aircraftData.requiredEndorsementType || null,
+          required_endorsement_types: aircraftData.requiredEndorsementTypes || (
+            aircraftData.requiredEndorsementType ? [aircraftData.requiredEndorsementType] : []
+          ),
+          icon_key: aircraftData.iconKey || null,
+          xero_tracking_category_id: aircraftData.xeroTrackingCategoryId || null,
+          xero_tracking_category_name: aircraftData.xeroTrackingCategoryName || null,
+          xero_tracking_option_id: aircraftData.xeroTrackingOptionId || null,
+          xero_tracking_option_name: aircraftData.xeroTrackingOptionName || null,
+          xero_tracking_last_synced_at: aircraftData.xeroTrackingLastSyncedAt
+            ? aircraftData.xeroTrackingLastSyncedAt.toISOString()
+            : null,
+          xero_tracking_sync_error: aircraftData.xeroTrackingSyncError || null,
+          is_archived: false
         })
         .select()
         .single();
@@ -532,7 +578,27 @@ export const useAircraft = () => {
       if (aircraftData.fuelCapacity !== undefined) updateData.fuel_capacity = aircraftData.fuelCapacity;
       if (aircraftData.emptyWeight !== undefined) updateData.empty_weight = aircraftData.emptyWeight;
       if (aircraftData.maxWeight !== undefined) updateData.max_weight = aircraftData.maxWeight;
-      if (aircraftData.requiredEndorsementType !== undefined) updateData.required_endorsement_type = aircraftData.requiredEndorsementType || null;
+      if (aircraftData.requiredEndorsementType !== undefined || aircraftData.requiredEndorsementTypes !== undefined) {
+        const requiredTypes = aircraftData.requiredEndorsementTypes
+          ?? (aircraftData.requiredEndorsementType ? [aircraftData.requiredEndorsementType] : []);
+        updateData.required_endorsement_types = requiredTypes;
+        updateData.required_endorsement_type = requiredTypes[0] || null;
+      }
+      if (aircraftData.iconKey !== undefined) updateData.icon_key = aircraftData.iconKey || null;
+      if (aircraftData.xeroTrackingCategoryId !== undefined) updateData.xero_tracking_category_id = aircraftData.xeroTrackingCategoryId || null;
+      if (aircraftData.xeroTrackingCategoryName !== undefined) updateData.xero_tracking_category_name = aircraftData.xeroTrackingCategoryName || null;
+      if (aircraftData.xeroTrackingOptionId !== undefined) updateData.xero_tracking_option_id = aircraftData.xeroTrackingOptionId || null;
+      if (aircraftData.xeroTrackingOptionName !== undefined) updateData.xero_tracking_option_name = aircraftData.xeroTrackingOptionName || null;
+      if (aircraftData.xeroTrackingLastSyncedAt !== undefined) {
+        updateData.xero_tracking_last_synced_at = aircraftData.xeroTrackingLastSyncedAt
+          ? aircraftData.xeroTrackingLastSyncedAt.toISOString()
+          : null;
+      }
+      if (aircraftData.xeroTrackingSyncError !== undefined) updateData.xero_tracking_sync_error = aircraftData.xeroTrackingSyncError || null;
+      if (aircraftData.isArchived !== undefined) updateData.is_archived = aircraftData.isArchived;
+      if (aircraftData.archivedAt !== undefined) updateData.archived_at = aircraftData.archivedAt ? aircraftData.archivedAt.toISOString() : null;
+      if (aircraftData.archivedBy !== undefined) updateData.archived_by = aircraftData.archivedBy || null;
+      if (aircraftData.archiveReason !== undefined) updateData.archive_reason = aircraftData.archiveReason || null;
 
       const { error } = await supabase
         .from('aircraft')
@@ -615,16 +681,73 @@ export const useAircraft = () => {
     try {
       const { error } = await supabase
         .from('aircraft')
-        .delete()
+        .update({
+          is_archived: true,
+          archived_at: new Date().toISOString(),
+          archived_by: user?.id || null,
+          archive_reason: 'Archived from fleet'
+        })
         .eq('id', id);
 
       if (error) throw error;
 
+      staffAircraftCache = null;
+      publicAircraftCache = null;
       await fetchAircraft();
-      toast.success('Aircraft deleted successfully');
+      toast.success('Aircraft archived');
     } catch (err) {
-      console.error('Error deleting aircraft:', err);
-      toast.error('Failed to delete aircraft');
+      console.error('Error archiving aircraft:', err);
+      toast.error('Failed to archive aircraft');
+      throw err;
+    }
+  };
+
+  const archiveAircraft = async (id: string, userId?: string, reason?: string) => {
+    try {
+      const { error } = await supabase
+        .from('aircraft')
+        .update({
+          is_archived: true,
+          archived_at: new Date().toISOString(),
+          archived_by: userId || null,
+          archive_reason: reason?.trim() || null
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      staffAircraftCache = null;
+      publicAircraftCache = null;
+      await fetchAircraft();
+      toast.success('Aircraft archived');
+    } catch (err) {
+      console.error('Error archiving aircraft:', err);
+      toast.error('Failed to archive aircraft');
+      throw err;
+    }
+  };
+
+  const restoreAircraft = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('aircraft')
+        .update({
+          is_archived: false,
+          archived_at: null,
+          archived_by: null,
+          archive_reason: null
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      staffAircraftCache = null;
+      publicAircraftCache = null;
+      await fetchAircraft();
+      toast.success('Aircraft restored');
+    } catch (err) {
+      console.error('Error restoring aircraft:', err);
+      toast.error('Failed to restore aircraft');
       throw err;
     }
   };
@@ -679,8 +802,13 @@ export const useAircraft = () => {
   };
 
   useEffect(() => {
+    const cachedAircraft = canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache;
+    if (cachedAircraft) {
+      setAircraft(cachedAircraft);
+      setLoading(false);
+    }
     fetchAircraft();
-  }, []);
+  }, [canSeePrivateAircraftData]);
 
   return {
     aircraft,
@@ -693,6 +821,8 @@ export const useAircraft = () => {
     addAircraft,
     updateAircraft,
     deleteAircraft,
+    archiveAircraft,
+    restoreAircraft,
     deleteDefect,
     refetch: fetchAircraft
   };

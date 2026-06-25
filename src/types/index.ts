@@ -1,5 +1,7 @@
 ﻿export type UserRole = 'admin' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
 
+export type PortalAccessScope = 'full' | 'trial_voucher' | 'guest_placeholder';
+
 export interface User {
   id: string;
   email: string;
@@ -23,7 +25,13 @@ export interface User {
   isAvailable?: boolean;
   isSeniorInstructor?: boolean;
   isActive?: boolean;
-  portalAccessScope?: 'full' | 'trial_voucher';
+  portalAccessScope?: PortalAccessScope;
+  xeroContactId?: string;
+  xeroContactName?: string;
+  xeroContactEmail?: string;
+  xeroContactSyncStatus?: 'not_linked' | 'linked' | 'queued' | 'syncing' | 'synced' | 'needs_review' | 'failed';
+  xeroContactSyncError?: string | null;
+  xeroContactLastSyncedAt?: string | null;
 }
 
 export interface Student extends User {
@@ -35,7 +43,6 @@ export interface Student extends User {
   lastFlightReview?: Date;
   occupation?: string;
   alternatePhone?: string;
-  prepaidBalance: number;
   endorsements: Endorsement[];
 }
 
@@ -71,7 +78,19 @@ export interface Aircraft {
   maxWeight?: number;
   tachStart?: number;
   requiredEndorsementType?: string | null;
+  requiredEndorsementTypes?: string[];
+  iconKey?: 'tecnam' | 'piper' | 'cessna' | 'sling' | 'twin' | string | null;
+  xeroTrackingCategoryId?: string | null;
+  xeroTrackingCategoryName?: string | null;
+  xeroTrackingOptionId?: string | null;
+  xeroTrackingOptionName?: string | null;
+  xeroTrackingLastSyncedAt?: Date;
+  xeroTrackingSyncError?: string | null;
   isAvailable?: boolean;
+  isArchived?: boolean;
+  archivedAt?: Date;
+  archivedBy?: string | null;
+  archiveReason?: string | null;
   defects: Defect[];
   rates?: AircraftRate[];
   aircraftRates?: {
@@ -103,6 +122,12 @@ export interface Booking {
   flight_logged?: boolean;
   flightTypeId?: string;
   trialFlightVoucherId?: string;
+  hirerName?: string;
+  instructorName?: string;
+  isGuestBooking?: boolean;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
 }
 
 export type TrialFlightVoucherAircraftMode = 'tecnam' | 'archer' | 'specific';
@@ -118,10 +143,21 @@ export interface TrialFlightVoucherProduct {
   instructorIds: string[];
   durationMinutes: number;
   price: number;
+  addons?: TrialFlightVoucherAddon[];
   stripePriceId?: string;
   emailSubject: string;
   emailBody: string;
   bookingInstructions: string;
+  isActive: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface TrialFlightVoucherAddon {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
   isActive: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -144,6 +180,7 @@ export interface TrialFlightVoucher {
   paymentStatus?: TrialFlightVoucherPaymentStatus;
   paymentAmount?: number;
   paymentCurrency?: string;
+  selectedAddons?: TrialFlightVoucherAddon[];
   stripeCheckoutSessionId?: string;
   stripePaymentIntentId?: string;
   paidAt?: Date;
@@ -316,6 +353,8 @@ export interface TrainingLesson {
   assessmentCriteria: LessonAssessmentCriterion[];
   /** Map of course criterion id → passing grade for this specific lesson */
   passMarks: Record<string, string>;
+  /** Map of course criterion id → whether this lesson requires two consecutive passing records before advancing */
+  passMarkRepeatRequirements?: Record<string, boolean>;
   isFlightTest?: boolean;
 }
 

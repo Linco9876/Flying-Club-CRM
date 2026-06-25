@@ -89,6 +89,7 @@ function dbLessonToLesson(row: Record<string, unknown>): TrainingLesson {
     theory: (row.theory as string) ?? '',
     assessmentCriteria: (row.assessment_criteria as TrainingLesson['assessmentCriteria']) ?? [],
     passMarks: (row.pass_marks as Record<string, string>) ?? {},
+    passMarkRepeatRequirements: (row.pass_mark_repeat_requirements as Record<string, boolean>) ?? {},
     isFlightTest: Boolean(row.is_flight_test),
   };
 }
@@ -145,6 +146,7 @@ function lessonToDbRow(lesson: TrainingLesson, courseId: string, sortOrder: numb
     instructor_notes: lesson.instructorNotes,
     assessment_criteria: lesson.assessmentCriteria,
     pass_marks: lesson.passMarks ?? {},
+    pass_mark_repeat_requirements: lesson.passMarkRepeatRequirements ?? {},
     is_flight_test: lesson.isFlightTest ?? false,
   };
 }
@@ -310,23 +312,53 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       throw courseErr;
     }
 
-    // Sync lessons: delete all existing, re-insert in order
-    const { error: deleteErr } = await supabase
-      .from('training_lessons')
-      .delete()
-      .eq('course_id', moduleId);
+    // Preserve existing lesson IDs so linked syllabus matrix requirements and
+    // student records are not deleted by cascading foreign keys on every save.
+    const existingLessonIds = new Set(current.lessons.map((lesson) => lesson.id));
+    const updatedExistingLessonIds = new Set(
+      updated.lessons
+        .map((lesson) => lesson.id)
+        .filter((lessonId) => existingLessonIds.has(lessonId))
+    );
+    const removedLessonIds = current.lessons
+      .map((lesson) => lesson.id)
+      .filter((lessonId) => !updatedExistingLessonIds.has(lessonId));
 
-    if (deleteErr) {
-      toast.error('Failed to sync lessons');
-      throw deleteErr;
+    if (removedLessonIds.length > 0) {
+      const { error: deleteErr } = await supabase
+        .from('training_lessons')
+        .delete()
+        .eq('course_id', moduleId)
+        .in('id', removedLessonIds);
+
+      if (deleteErr) {
+        toast.error('Failed to remove lessons');
+        throw deleteErr;
+      }
     }
 
-    if (updated.lessons.length > 0) {
-      const rows = updated.lessons.map((l, i) => lessonToDbRow(l, moduleId, i));
-      const { error: insertErr } = await supabase.from('training_lessons').insert(rows);
-      if (insertErr) {
-        toast.error('Failed to save lessons');
-        throw insertErr;
+    for (const [index, lesson] of updated.lessons.entries()) {
+      const row = lessonToDbRow(lesson, moduleId, index);
+      if (existingLessonIds.has(lesson.id)) {
+        const { error: updateErr } = await supabase
+          .from('training_lessons')
+          .update(row)
+          .eq('course_id', moduleId)
+          .eq('id', lesson.id);
+
+        if (updateErr) {
+          toast.error('Failed to save lesson changes');
+          throw updateErr;
+        }
+      } else {
+        const { error: insertErr } = await supabase
+          .from('training_lessons')
+          .insert(row);
+
+        if (insertErr) {
+          toast.error('Failed to save new lesson');
+          throw insertErr;
+        }
       }
     }
 

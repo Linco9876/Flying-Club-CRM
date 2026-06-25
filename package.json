@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "audit:migrations": "node scripts/audit-supabase-migrations.mjs",
     "check:vouchers": "node scripts/check-voucher-readiness.mjs",
     "smoke:vouchers": "node scripts/smoke-voucher-live.mjs",
     "test:vouchers": "npx --yes deno test --node-modules-dir=false supabase/functions/_shared/trialVoucherReadiness.test.ts",
@@ -20,6 +21,7 @@
     "date-fns": "^4.1.0",
     "lucide-react": "^0.344.0",
     "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-big-calendar": "^1.19.4",
     "react-dom": "^18.3.1",

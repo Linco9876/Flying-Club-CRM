@@ -14,6 +14,7 @@ interface ResourceManagerPanelProps {
   orderedIds: string[];
   onHide: (id: string) => void;
   onShow: (id: string) => void;
+  onShowAll?: () => void;
   onReorder: (newOrder: string[]) => void;
   compact?: boolean;
 }
@@ -24,6 +25,7 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
   orderedIds,
   onHide,
   onShow,
+  onShowAll,
   onReorder,
   compact = false,
 }) => {
@@ -107,8 +109,21 @@ export const ResourceManagerPanel: React.FC<ResourceManagerPanelProps> = ({
 
           <div className="fixed left-4 right-4 top-48 z-40 max-h-[calc(100vh-13rem)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72 sm:max-h-none dark:border-[#363b45] dark:bg-[#171a21]">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 dark:border-[#2c2f36] dark:bg-[#11141a]">
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Manage Resources</p>
-              <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Drag to reorder, click eye to hide</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Manage Resources</p>
+                  <p className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">Drag to reorder, click eye to hide</p>
+                </div>
+                {hiddenCount > 0 && onShowAll && (
+                  <button
+                    type="button"
+                    onClick={onShowAll}
+                    className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33]"
+                  >
+                    Show all
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Visible resources — draggable */}

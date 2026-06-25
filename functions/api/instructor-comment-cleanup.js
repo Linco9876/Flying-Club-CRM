@@ -70,6 +70,24 @@ const normaliseForLength = (value) => String(value || '').replace(/\s+/g, ' ').t
 
 const originalWordCount = (value) => normaliseForLength(value).split(/\s+/).filter(Boolean).length;
 
+const sentenceCount = (value) => {
+  const text = normaliseForLength(value);
+  if (!text) return 0;
+  const punctuated = text.match(/[.!?]+(\s|$)/g)?.length || 0;
+  if (punctuated > 0) return punctuated;
+  return text.split(/\n+/).filter(Boolean).length || 1;
+};
+
+const lightlyCleanOriginal = (value) => {
+  const cleaned = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .trim();
+  if (!cleaned) return '';
+  const capitalised = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return /[.!?]$/.test(capitalised) ? capitalised : `${capitalised}.`;
+};
+
 const cleanedRewrite = (value) =>
   String(value || '')
     .replace(/^["']|["']$/g, '')
@@ -81,17 +99,17 @@ const normaliseMode = (value) => value === 'readability' ? 'readability' : 'gram
 const buildPrompt = ({ mode, targetWordLimit, contextLines, comment }) => {
   const isReadability = mode === 'readability';
   const taskLine = isReadability
-    ? 'Rewrite the comment so it is easier and nicer to read while staying short.'
-    : 'Lightly copy-edit the comment for grammar, spelling, punctuation, flow, and professional tone only.';
+    ? 'Make the comment a little easier to read while staying short and faithful.'
+    : 'Lightly copy-edit the comment for grammar, spelling, punctuation, and professional tone only.';
   const modeRules = isReadability
     ? [
-        '- You may lightly restructure the sentence for clarity.',
-        '- Do not add a second sentence unless the original needs it to read clearly.',
-        '- If the original is already clear, make only small improvements.',
+        '- Keep the same broad structure as the original comment.',
+        '- You may lightly reorder words for clarity, but keep the same facts and tone.',
+        '- If the original is already clear, only fix grammar and punctuation.',
       ]
     : [
         '- Stay very close to the original wording and sentence structure.',
-        '- Do not rewrite style unless needed for grammar or clarity.',
+        '- Do not change the style unless needed for grammar.',
       ];
 
   return [
@@ -101,10 +119,17 @@ const buildPrompt = ({ mode, targetWordLimit, contextLines, comment }) => {
     '',
     'Strict rules:',
     '- Preserve the original meaning exactly.',
+    '- Preserve the original sentiment exactly.',
+    '- Preserve the original level of detail exactly.',
+    '- Preserve every observation from the original.',
+    '- Do not summarise the comment.',
+    '- Do not remove sentences or reduce a multi-point comment to one point.',
+    '- Return the final comment as one paragraph unless the original clearly uses headings or bullet points.',
     '- Keep it concise. Do not bloat the comment.',
     `- Maximum ${targetWordLimit} words.`,
     '- Do not invent or infer examples, causes, consequences, recommendations, new weaknesses, new strengths, exercises, grades, safety concerns, deviations, or next steps.',
     '- Do not turn praise into criticism.',
+    '- Do not insert the student name unless the original comment includes it.',
     '- Do not add "however", "to improve", "should focus", or similar coaching unless the original comment already says that.',
     '- Use Australian English.',
     '- Return only the rewritten comment, with no heading, markdown, or explanation.',
@@ -113,7 +138,7 @@ const buildPrompt = ({ mode, targetWordLimit, contextLines, comment }) => {
     'Example:',
     'Original: Very light on controls and had a great understanding of the fundamentals of flight',
     isReadability
-      ? 'Good rewrite: Lincoln had a great understanding of the fundamentals of flight and was very light on the controls.'
+      ? 'Good rewrite: Very light on the controls and showed a great understanding of the fundamentals of flight.'
       : 'Good rewrite: Very light on the controls and showed a great understanding of the fundamentals of flight.',
     'Bad rewrite: Any version that invents minor deviations, pitch/roll problems, or extra next steps.',
     '',
@@ -159,9 +184,10 @@ export const onRequestPost = async ({ request, env }) => {
       .join('\n');
 
     const sourceWordCount = originalWordCount(comment);
+    const sourceSentenceCount = sentenceCount(comment);
     const targetWordLimit = mode === 'readability'
-      ? Math.max(sourceWordCount + 8, Math.ceil(sourceWordCount * 1.3))
-      : Math.max(sourceWordCount + 10, Math.ceil(sourceWordCount * 1.35));
+      ? Math.max(sourceWordCount + 12, Math.ceil(sourceWordCount * 1.25))
+      : Math.max(sourceWordCount + 10, Math.ceil(sourceWordCount * 1.2));
     const prompt = buildPrompt({ mode, targetWordLimit, contextLines, comment });
 
     const result = await env.AI.run(MODEL, {
@@ -172,22 +198,40 @@ export const onRequestPost = async ({ request, env }) => {
         },
         { role: 'user', content: prompt },
       ],
-      max_tokens: 180,
-      temperature: mode === 'readability' ? 0.15 : 0.1,
+      max_tokens: Math.min(260, Math.max(120, Math.ceil(sourceWordCount * 2.4))),
+      temperature: 0,
     });
 
     const rewritten = cleanedRewrite(result?.response || result?.result?.response || result?.text || '');
-    if (!rewritten) return json({ error: 'AI did not return a usable comment. Please try again.' }, 502);
+    const fallbackRewrite = lightlyCleanOriginal(comment);
+    if (!rewritten) {
+      return json({
+        rewrittenComment: fallbackRewrite,
+        model: MODEL,
+        mode,
+        usedFallback: true,
+      });
+    }
 
     const rewrittenWordCount = originalWordCount(rewritten);
-    const tooLong = rewrittenWordCount > targetWordLimit + 5;
+    const tooLong = rewrittenWordCount > targetWordLimit;
+    const tooShort = sourceWordCount >= 25 && rewrittenWordCount < Math.ceil(sourceWordCount * 0.72);
+    const lostSentenceStructure = sourceSentenceCount >= 3 && sentenceCount(rewritten) < Math.max(2, Math.ceil(sourceSentenceCount * 0.6));
     const inventedCoaching = /\b(however|to improve|should focus|minor deviations|desired flight path|pitch and roll|more stable|controlled flight path)\b/i.test(rewritten)
       && !/\b(however|to improve|should focus|minor deviations|desired flight path|pitch and roll|more stable|controlled flight path)\b/i.test(comment);
 
-    if (tooLong || inventedCoaching) {
+    if (tooLong || tooShort || lostSentenceStructure || inventedCoaching) {
       return json({
-        error: 'AI rewrite changed the meaning too much. Please try a shorter comment or edit manually.',
-      }, 422);
+        rewrittenComment: fallbackRewrite,
+        model: MODEL,
+        mode,
+        usedFallback: true,
+        fallbackReason: tooLong
+          ? 'rewrite_too_long'
+          : tooShort || lostSentenceStructure
+            ? 'rewrite_dropped_detail'
+            : 'meaning_guardrail',
+      });
     }
 
     return json({

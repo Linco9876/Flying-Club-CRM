@@ -97,6 +97,7 @@ jobs:
             trial-voucher-admin \
             create-trial-voucher-checkout \
             create-flight-payment-checkout \
+            create-member-topup-checkout \
             member-card-setup \
             charge-flight-saved-card \
             stripe-connect \

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { getSupabaseFunctionErrorMessage } from '../lib/supabaseFunctionErrors';
+import { fetchAllMemberXeroBalances, fetchUserXeroBalance } from '../lib/xeroMemberBalance';
 
 export interface AccountTransaction {
   id: string;
@@ -34,6 +35,11 @@ export interface UnpaidFlight {
   flightTypeId: string | null;
   flightTypeName: string | null;
   paymentType: string | null;
+  xeroSyncStatus: string | null;
+  xeroSyncError: string | null;
+  xeroInvoiceId: string | null;
+  xeroInvoiceNumber: string | null;
+  xeroPaymentId: string | null;
 }
 
 export interface PilotAccount {
@@ -51,6 +57,8 @@ export const useBillingAccounts = () => {
   const [unpaidFlights, setUnpaidFlights] = useState<UnpaidFlight[]>([]);
   const [pilotAccounts, setPilotAccounts] = useState<PilotAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [xeroConnected, setXeroConnected] = useState(false);
+  const [minimumPrepaidPack, setMinimumPrepaidPack] = useState(1000);
 
   useEffect(() => {
     fetchAll();
@@ -121,6 +129,16 @@ const fetchUnpaidFlights = async () => {
           flight_type_id,
           payment_status,
           payment_type,
+          xero_sync_status,
+          xero_sync_error,
+          xero_invoice_id,
+          xero_invoice_number,
+          xero_payment_id,
+          booking:booking_id(
+            is_guest_booking,
+            guest_name,
+            guest_email
+          ),
           aircraft!flight_logs_aircraft_id_fkey(registration),
           users!flight_logs_student_id_fkey(name, email),
           flight_types(name)
@@ -152,11 +170,13 @@ const fetchUnpaidFlights = async () => {
           const calculatedCost = row.calculated_cost != null ? parseFloat(row.calculated_cost) : null;
           const amountPaid = paidByFlight[row.id] ?? 0;
           const amountRemaining = calculatedCost == null ? null : Math.max(0, Math.round((calculatedCost - amountPaid + Number.EPSILON) * 100) / 100);
+          const booking = Array.isArray(row.booking) ? row.booking[0] : row.booking;
+          const isGuestBooking = Boolean(booking?.is_guest_booking);
           return {
           id: row.id,
           userId: row.student_id,
-          userName: row.users?.name ?? 'Unknown',
-          userEmail: row.users?.email ?? '',
+          userName: isGuestBooking ? (booking?.guest_name ?? 'Guest') : (row.users?.name ?? 'Unknown'),
+          userEmail: isGuestBooking ? (booking?.guest_email ?? '') : (row.users?.email ?? ''),
           aircraftRegistration: row.aircraft?.registration ?? 'Unknown',
           flightDate: row.start_time,
           flightDuration: parseFloat(row.flight_duration ?? 0),
@@ -166,6 +186,11 @@ const fetchUnpaidFlights = async () => {
           flightTypeId: row.flight_type_id ?? null,
           flightTypeName: row.flight_types?.name ?? null,
           paymentType: row.payment_type ?? null,
+          xeroSyncStatus: row.xero_sync_status ?? null,
+          xeroSyncError: row.xero_sync_error ?? null,
+          xeroInvoiceId: row.xero_invoice_id ?? null,
+          xeroInvoiceNumber: row.xero_invoice_number ?? null,
+          xeroPaymentId: row.xero_payment_id ?? null,
         };
       })
       );
@@ -180,6 +205,7 @@ const fetchUnpaidFlights = async () => {
       const { data: users, error: usersError } = await supabase
         .from('users')
         .select('id, name, email')
+        .neq('portal_access_scope', 'guest_placeholder')
         .order('name');
 
       if (usersError) throw usersError;
@@ -202,14 +228,28 @@ const fetchUnpaidFlights = async () => {
         txByUser[uid].count += 1;
       });
 
-      // Read authoritative balance from students table
-      const { data: students } = await supabase
-        .from('students')
-        .select('id, prepaid_balance');
-
-      (students || []).forEach((s: any) => {
-        balanceMap[s.id] = parseFloat(s.prepaid_balance ?? 0);
-      });
+      try {
+        const xeroData = await fetchAllMemberXeroBalances();
+        setXeroConnected(Boolean(xeroData.connected));
+        setMinimumPrepaidPack(Number(xeroData.minimumPrepaidPack ?? 1000));
+        (xeroData.balances || []).forEach((account) => {
+          if (account.userId) {
+            balanceMap[account.userId] = Number(account.availableCredit ?? 0);
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (/not authorised|only staff/i.test(message)) {
+          const self = await fetchUserXeroBalance((await supabase.auth.getUser()).data.user?.id || '');
+          setXeroConnected(Boolean(self.connected));
+          setMinimumPrepaidPack(Number(self.minimumPrepaidPack ?? 1000));
+          if (self.userId) {
+            balanceMap[self.userId] = Number(self.availableCredit ?? 0);
+          }
+        } else {
+          throw error;
+        }
+      }
 
       // Get unpaid flight counts per user
       const { data: unpaid, error: unpaidError } = await supabase
@@ -378,6 +418,39 @@ const fetchUnpaidFlights = async () => {
     }
   };
 
+  const syncFlightInvoiceToXero = async (flightLogId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('xero-sync', {
+        body: { action: 'sync-flight-invoice', flightLogId },
+      });
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to sync Xero invoice'));
+      toast.success(`Xero invoice ${((data as any)?.invoiceNumber || (data as any)?.invoiceId || '').toString().trim() || 'created'}`);
+      await fetchAll();
+      return data;
+    } catch (err) {
+      console.error('Error syncing Xero invoice:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to sync Xero invoice');
+      throw err;
+    }
+  };
+
+  const applyXeroPaymentsForFlight = async (flightLogId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('xero-sync', {
+        body: { action: 'apply-flight-payments', flightLogId },
+      });
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to apply Xero payments'));
+      const count = Array.isArray((data as any)?.payments) ? (data as any).payments.length : 0;
+      toast.success(count > 0 ? `${count} Xero payment${count === 1 ? '' : 's'} applied` : 'No eligible payments to apply');
+      await fetchAll();
+      return data;
+    } catch (err) {
+      console.error('Error applying Xero payments:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to apply Xero payments');
+      throw err;
+    }
+  };
+
   const applyPilotAccountPayment = async (flightLogId: string, amount: number) => {
     try {
       const paymentAmount = Math.round((amount + Number.EPSILON) * 100) / 100;
@@ -409,15 +482,17 @@ const fetchUnpaidFlights = async () => {
         throw new Error(`Payment is greater than the remaining balance of $${remaining.toFixed(2)}`);
       }
 
-      const { data: student, error: studentError } = await supabase
-        .from('students')
-        .select('prepaid_balance')
-        .eq('id', flightLog.student_id)
-        .maybeSingle();
-      if (studentError) throw studentError;
-      const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
+      const xeroBalance = await fetchUserXeroBalance(flightLog.student_id);
+      if (!xeroBalance.connected) {
+        throw new Error('Prepaid account payments require Xero to be connected for this club.');
+      }
+      const currentBalance = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
+      const minimumPack = Number(xeroBalance.minimumPrepaidPack ?? minimumPrepaidPack);
+      if (currentBalance + 0.005 < minimumPack) {
+        throw new Error(`Prepaid is locked until the member has at least $${minimumPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPack.toFixed(2)} package first.`);
+      }
       if (paymentAmount > currentBalance + 0.005) {
-        throw new Error(`Pilot account balance is only $${currentBalance.toFixed(2)}`);
+        throw new Error(`This member only has $${currentBalance.toFixed(2)} available in Xero overpayments, so prepaid cannot cover this amount. Add a $${minimumPack.toFixed(2)} package first.`);
       }
 
       const newBalance = Math.round((currentBalance - paymentAmount + Number.EPSILON) * 100) / 100;
@@ -439,11 +514,6 @@ const fetchUnpaidFlights = async () => {
         });
       if (insertError) throw insertError;
 
-      const { error: balanceError } = await supabase
-        .from('students')
-        .upsert({ id: flightLog.student_id, prepaid_balance: newBalance }, { onConflict: 'id' });
-      if (balanceError) throw balanceError;
-
       await updateFlightPaidIfSettled(flightLogId);
       toast.success('Pilot account payment applied');
       await fetchAll();
@@ -456,40 +526,36 @@ const fetchUnpaidFlights = async () => {
 
   const verifyTransaction = async (transactionId: string) => {
     try {
-      // Fetch transaction to get amount and user
       const { data: tx, error: fetchError } = await supabase
         .from('account_transactions')
-        .select('amount, user_id, verified_status')
+        .select('id, amount, user_id, verified_status, type')
         .eq('id', transactionId)
         .maybeSingle();
 
       if (fetchError) throw fetchError;
       if (!tx) throw new Error('Transaction not found');
 
-      // Apply amount to student balance
-      const { data: student } = await supabase
-        .from('students')
-        .select('prepaid_balance')
-        .eq('id', tx.user_id)
-        .maybeSingle();
-
-      const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
-      const newBalance = currentBalance + parseFloat(tx.amount);
-
       const { error: verifyError } = await supabase
         .from('account_transactions')
-        .update({ verified_status: 'verified', balance_after: newBalance })
+        .update({ verified_status: 'verified', balance_after: null })
         .eq('id', transactionId);
 
       if (verifyError) throw verifyError;
 
-      const { error: balanceError } = await supabase
-        .from('students')
-        .upsert({ id: tx.user_id, prepaid_balance: newBalance }, { onConflict: 'id' });
+      let suffix = '';
+      if (tx.type === 'topup') {
+        const { error } = await supabase.functions.invoke('xero-sync', {
+          body: { action: 'sync-transaction', transactionId },
+        });
+        if (error) {
+          console.error('Verified top-up but failed to sync Xero credit:', error);
+          suffix = '. Xero sync still needs attention';
+        } else {
+          suffix = ' and synced to Xero';
+        }
+      }
 
-      if (balanceError) throw balanceError;
-
-      toast.success('Payment verified — balance updated');
+      toast.success(`Payment verified${suffix}`);
       await fetchAll();
     } catch (err) {
       console.error('Error verifying transaction:', err);
@@ -500,16 +566,6 @@ const fetchUnpaidFlights = async () => {
 
   const rejectTransaction = async (transactionId: string, notes: string) => {
     try {
-      // Reverse the balance: find the transaction to get amount and user_id
-      const { data: tx, error: fetchError } = await supabase
-        .from('account_transactions')
-        .select('amount, user_id')
-        .eq('id', transactionId)
-        .maybeSingle();
-
-      if (fetchError) throw fetchError;
-      if (!tx) throw new Error('Transaction not found');
-
       const { error: rejectError } = await supabase
         .from('account_transactions')
         .update({ verified_status: 'rejected', rejection_notes: notes })
@@ -517,26 +573,7 @@ const fetchUnpaidFlights = async () => {
 
       if (rejectError) throw rejectError;
 
-      if (tx.verified_status === 'verified') {
-        // Pending top-ups have not touched the approved balance yet.
-        const { data: student } = await supabase
-          .from('students')
-          .select('prepaid_balance')
-          .eq('id', tx.user_id)
-          .maybeSingle();
-
-        const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
-        const reversedBalance = currentBalance - parseFloat(tx.amount);
-
-        const { error: balanceError } = await supabase
-          .from('students')
-          .update({ prepaid_balance: reversedBalance })
-          .eq('id', tx.user_id);
-
-        if (balanceError) throw balanceError;
-      }
-
-      toast.success(tx.verified_status === 'verified' ? 'Payment rejected and balance reversed' : 'Payment rejected');
+      toast.success('Payment rejected');
       await fetchAll();
     } catch (err) {
       console.error('Error rejecting transaction:', err);
@@ -550,10 +587,14 @@ const fetchUnpaidFlights = async () => {
     unpaidFlights,
     pilotAccounts,
     loading,
+    xeroConnected,
+    minimumPrepaidPack,
     addTopUp,
     markFlightPaid,
     createFlightPaymentCheckout,
     chargeFlightSavedCard,
+    syncFlightInvoiceToXero,
+    applyXeroPaymentsForFlight,
     applyPilotAccountPayment,
     verifyTransaction,
     rejectTransaction,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { storePortalTheme } from '../utils/theme';
@@ -47,6 +47,15 @@ export interface BookingRulesSettings {
   prevent_past_bookings: boolean;
   enforce_max_duration: boolean;
   max_booking_duration_hours: number;
+  fatigue_rules_enabled: boolean;
+  fatigue_late_finish_time: string;
+  fatigue_early_start_time: string;
+  fatigue_min_rest_hours: number;
+  fatigue_max_duty_hours_per_day: number;
+  fatigue_max_flight_hours_per_day: number;
+  fatigue_max_late_finishes_7_days: number;
+  fatigue_include_supervision: boolean;
+  fatigue_block_on_breach: boolean;
 }
 
 export interface NotificationSettings {
@@ -156,6 +165,10 @@ export const usePortalUxSettings = () => {
   const [settings, setSettings] = useState<PortalUxSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const resolvedSettings = useMemo(
+    () => settings ?? ({ id: '', ...defaultPortalUxSettings } as PortalUxSettings),
+    [settings]
+  );
 
   const fetchSettings = async () => {
     try {
@@ -182,17 +195,19 @@ export const usePortalUxSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<PortalUxSettings>) => {
-    if (!settings) return;
-
     const { data: userData } = await supabase.auth.getUser();
-    const { error } = await supabase
-      .from('portal_ux_settings')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString(),
-        updated_by: userData.user?.id,
-      })
-      .eq('id', settings.id);
+    const payload = {
+      ...defaultPortalUxSettings,
+      ...(settings ?? {}),
+      ...updates,
+      updated_at: new Date().toISOString(),
+      updated_by: userData.user?.id,
+    };
+
+    const query = settings?.id
+      ? supabase.from('portal_ux_settings').update(payload).eq('id', settings.id)
+      : supabase.from('portal_ux_settings').insert(payload);
+    const { error } = await query;
 
     if (error) {
       toast.error('Failed to save Portal & UX settings');
@@ -205,7 +220,7 @@ export const usePortalUxSettings = () => {
   };
 
   return {
-    settings: settings ?? ({ id: '', ...defaultPortalUxSettings } as PortalUxSettings),
+    settings: resolvedSettings,
     loading,
     error,
     updateSettings,
@@ -261,8 +276,6 @@ export const useOrganisationSettings = () => {
   };
 
   const updateSettings = async (updates: Partial<OrganisationSettings>, logoFile?: File | null) => {
-    if (!settings) return;
-
     try {
       const { data: userData } = await supabase.auth.getUser();
 
@@ -271,15 +284,27 @@ export const useOrganisationSettings = () => {
         logoUrl = await uploadLogo(logoFile) ?? undefined;
       }
 
-      const { error } = await supabase
-        .from('organisation_settings')
-        .update({
-          ...updates,
-          ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
-          updated_at: new Date().toISOString(),
-          updated_by: userData.user?.id,
-        })
-        .eq('id', settings.id);
+      const payload = {
+        club_name: updates.club_name ?? settings?.club_name ?? '',
+        address: updates.address ?? settings?.address ?? '',
+        timezone: updates.timezone ?? settings?.timezone ?? 'Australia/Melbourne',
+        currency: updates.currency ?? settings?.currency ?? 'AUD',
+        contact_email: updates.contact_email ?? settings?.contact_email ?? '',
+        contact_phone: updates.contact_phone ?? settings?.contact_phone ?? '',
+        website: updates.website ?? settings?.website ?? '',
+        student_portal_url: updates.student_portal_url ?? settings?.student_portal_url ?? '',
+        booking_day_start: updates.booking_day_start ?? settings?.booking_day_start ?? '06:00',
+        booking_day_end: updates.booking_day_end ?? settings?.booking_day_end ?? '22:00',
+        default_slot_length: updates.default_slot_length ?? settings?.default_slot_length ?? 30,
+        ...(logoUrl !== undefined ? { logo_url: logoUrl } : {}),
+        updated_at: new Date().toISOString(),
+        updated_by: userData.user?.id,
+      };
+
+      const query = settings?.id
+        ? supabase.from('organisation_settings').update(payload).eq('id', settings.id)
+        : supabase.from('organisation_settings').insert(payload);
+      const { error } = await query;
 
       if (error) throw error;
 
@@ -325,19 +350,28 @@ export const useCalendarSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<CalendarSettings>) => {
-    if (!settings) return;
-
     try {
       const { data: userData } = await supabase.auth.getUser();
+      const payload = {
+        default_view: updates.default_view ?? settings?.default_view ?? 'day',
+        show_current_time_indicator: updates.show_current_time_indicator ?? settings?.show_current_time_indicator ?? true,
+        snap_duration: updates.snap_duration ?? settings?.snap_duration ?? 15,
+        double_height_slots: updates.double_height_slots ?? settings?.double_height_slots ?? false,
+        resource_display_order: updates.resource_display_order ?? settings?.resource_display_order ?? 'aircraft-first',
+        conflict_rules: updates.conflict_rules ?? settings?.conflict_rules ?? 'waitlist',
+        week_starts_on: updates.week_starts_on ?? settings?.week_starts_on ?? 'monday',
+        show_weekends: updates.show_weekends ?? settings?.show_weekends ?? true,
+        highlight_unlogged_bookings: updates.highlight_unlogged_bookings ?? settings?.highlight_unlogged_bookings ?? false,
+        hidden_resources: updates.hidden_resources ?? settings?.hidden_resources ?? [],
+        resource_order: updates.resource_order ?? settings?.resource_order ?? [],
+        updated_at: new Date().toISOString(),
+        updated_by: userData.user?.id
+      };
 
-      const { error } = await supabase
-        .from('calendar_settings')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-          updated_by: userData.user?.id
-        })
-        .eq('id', settings.id);
+      const query = settings?.id
+        ? supabase.from('calendar_settings').update(payload).eq('id', settings.id)
+        : supabase.from('calendar_settings').insert(payload);
+      const { error } = await query;
 
       if (error) throw error;
 
@@ -351,23 +385,32 @@ export const useCalendarSettings = () => {
   };
 
   const updateSettingsSilent = async (updates: Partial<CalendarSettings>) => {
-    if (!settings) return;
-
     try {
       const { data: userData } = await supabase.auth.getUser();
+      const payload = {
+        default_view: updates.default_view ?? settings?.default_view ?? 'day',
+        show_current_time_indicator: updates.show_current_time_indicator ?? settings?.show_current_time_indicator ?? true,
+        snap_duration: updates.snap_duration ?? settings?.snap_duration ?? 15,
+        double_height_slots: updates.double_height_slots ?? settings?.double_height_slots ?? false,
+        resource_display_order: updates.resource_display_order ?? settings?.resource_display_order ?? 'aircraft-first',
+        conflict_rules: updates.conflict_rules ?? settings?.conflict_rules ?? 'waitlist',
+        week_starts_on: updates.week_starts_on ?? settings?.week_starts_on ?? 'monday',
+        show_weekends: updates.show_weekends ?? settings?.show_weekends ?? true,
+        highlight_unlogged_bookings: updates.highlight_unlogged_bookings ?? settings?.highlight_unlogged_bookings ?? false,
+        hidden_resources: updates.hidden_resources ?? settings?.hidden_resources ?? [],
+        resource_order: updates.resource_order ?? settings?.resource_order ?? [],
+        updated_at: new Date().toISOString(),
+        updated_by: userData.user?.id
+      };
 
-      const { error } = await supabase
-        .from('calendar_settings')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-          updated_by: userData.user?.id
-        })
-        .eq('id', settings.id);
+      const query = settings?.id
+        ? supabase.from('calendar_settings').update(payload).eq('id', settings.id)
+        : supabase.from('calendar_settings').insert(payload);
+      const { error } = await query;
 
       if (error) throw error;
 
-      setSettings(prev => prev ? { ...prev, ...updates } : prev);
+      setSettings(prev => prev ? { ...prev, ...updates } : { id: '', ...payload } as CalendarSettings);
     } catch (err: any) {
       // silent
     }
@@ -406,19 +449,37 @@ export const useBookingRulesSettings = () => {
   }, []);
 
   const updateSettings = async (updates: Partial<BookingRulesSettings>) => {
-    if (!settings) return;
-
     try {
       const { data: userData } = await supabase.auth.getUser();
+      const payload = {
+        min_booking_notice_hours: updates.min_booking_notice_hours ?? settings?.min_booking_notice_hours ?? 0,
+        max_booking_advance_days: updates.max_booking_advance_days ?? settings?.max_booking_advance_days ?? 365,
+        allow_double_booking: updates.allow_double_booking ?? settings?.allow_double_booking ?? false,
+        require_instructor_approval: updates.require_instructor_approval ?? settings?.require_instructor_approval ?? false,
+        cancellation_notice_hours: updates.cancellation_notice_hours ?? settings?.cancellation_notice_hours ?? 0,
+        enforce_min_notice: updates.enforce_min_notice ?? settings?.enforce_min_notice ?? false,
+        enforce_max_advance: updates.enforce_max_advance ?? settings?.enforce_max_advance ?? false,
+        enforce_cancellation_notice: updates.enforce_cancellation_notice ?? settings?.enforce_cancellation_notice ?? false,
+        prevent_past_bookings: updates.prevent_past_bookings ?? settings?.prevent_past_bookings ?? false,
+        enforce_max_duration: updates.enforce_max_duration ?? settings?.enforce_max_duration ?? false,
+        max_booking_duration_hours: updates.max_booking_duration_hours ?? settings?.max_booking_duration_hours ?? 8,
+        fatigue_rules_enabled: updates.fatigue_rules_enabled ?? settings?.fatigue_rules_enabled ?? true,
+        fatigue_late_finish_time: updates.fatigue_late_finish_time ?? settings?.fatigue_late_finish_time ?? '22:00',
+        fatigue_early_start_time: updates.fatigue_early_start_time ?? settings?.fatigue_early_start_time ?? '07:00',
+        fatigue_min_rest_hours: updates.fatigue_min_rest_hours ?? settings?.fatigue_min_rest_hours ?? 10,
+        fatigue_max_duty_hours_per_day: updates.fatigue_max_duty_hours_per_day ?? settings?.fatigue_max_duty_hours_per_day ?? 10,
+        fatigue_max_flight_hours_per_day: updates.fatigue_max_flight_hours_per_day ?? settings?.fatigue_max_flight_hours_per_day ?? 7,
+        fatigue_max_late_finishes_7_days: updates.fatigue_max_late_finishes_7_days ?? settings?.fatigue_max_late_finishes_7_days ?? 3,
+        fatigue_include_supervision: updates.fatigue_include_supervision ?? settings?.fatigue_include_supervision ?? true,
+        fatigue_block_on_breach: updates.fatigue_block_on_breach ?? settings?.fatigue_block_on_breach ?? true,
+        updated_at: new Date().toISOString(),
+        updated_by: userData.user?.id
+      };
 
-      const { error } = await supabase
-        .from('booking_rules_settings')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString(),
-          updated_by: userData.user?.id
-        })
-        .eq('id', settings.id);
+      const query = settings?.id
+        ? supabase.from('booking_rules_settings').update(payload).eq('id', settings.id)
+        : supabase.from('booking_rules_settings').insert(payload);
+      const { error } = await query;
 
       if (error) throw error;
 

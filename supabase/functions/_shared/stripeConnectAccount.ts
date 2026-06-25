@@ -24,3 +24,13 @@ export const stripeHeaders = (
   ...(accountId ? { "Stripe-Account": accountId } : {}),
   ...extraHeaders,
 });
+
+export const stripeIdempotencyKey = (...parts: Array<string | number | null | undefined>) => {
+  const raw = parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(":")
+    .replace(/[^A-Za-z0-9:_-]+/g, "-");
+
+  return raw.slice(0, 255);
+};

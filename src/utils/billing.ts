@@ -11,8 +11,12 @@ export interface BillingCalculationInput {
 }
 
 export const isPrepaidPaymentMethod = (paymentType?: string | null) => {
-  const value = (paymentType || '').toLowerCase().replace(/[-_]/g, ' ');
-  return value.includes('pre') && value.includes('paid');
+  const value = (paymentType || '').toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+  return (
+    value.includes('pilot account') ||
+    value.includes('prepaid') ||
+    value.includes('pre paid')
+  );
 };
 
 export const isVoucherPaymentMethod = (paymentType?: string | null) => {

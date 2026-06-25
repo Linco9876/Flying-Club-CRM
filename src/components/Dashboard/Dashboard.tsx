@@ -332,7 +332,7 @@ export const Dashboard: React.FC = () => {
               subtitle={stats.nextBooking ? `${format(stats.nextBooking.startTime, timePattern)} · ${stats.nextBooking.aircraftRegistration}` : 'No upcoming bookings'}
             />
             <StatCard
-              title="Prepaid Balance"
+              title="Xero Credit"
               value={formatCurrency(stats.myPrepaidBalance)}
               icon={<DollarSign className="h-6 w-6 text-orange-600" />}
               iconBg="bg-orange-100"

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -186,6 +186,7 @@ Deno.serve(async (req: Request) => {
         method: "POST",
         headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": stripeIdempotencyKey("member-card-customer", user.id),
         }),
         body: customerForm,
       }, "Stripe customer setup");
@@ -228,6 +229,7 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Idempotency-Key": stripeIdempotencyKey("member-card-setup-session", setupRecord.id, user.id),
       }),
       body: form,
     }, "Stripe card setup page");

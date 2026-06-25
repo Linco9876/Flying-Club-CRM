@@ -70,6 +70,24 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
         <p className="text-gray-600">Configure safety thresholds and compliance automation</p>
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Compliance scope</h3>
+        <div className="mt-3 grid gap-3 text-sm text-slate-700 md:grid-cols-3">
+          <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
+            <p className="font-semibold text-slate-950">Fatigue management</p>
+            <p className="mt-1 text-xs leading-5">Booking fatigue controls are configured in Bookings & Rules and reference the CASA plain English fatigue management guide. The CRM stores the local rule set and applies it to instructor bookings.</p>
+          </div>
+          <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
+            <p className="font-semibold text-slate-950">Flight tests and reviews</p>
+            <p className="mt-1 text-xs leading-5">Flight tests are course-defined lessons. When logged through training records, the record keeps the test outcome, evidence, signatures and acknowledgement history.</p>
+          </div>
+          <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
+            <p className="font-semibold text-slate-950">Instructor S&amp;P checks</p>
+            <p className="mt-1 text-xs leading-5">The Instructor Approvals tab uses the S&amp;P intervals below. Overdue or missing checks are flagged as requiring senior instructor supervision.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Pilot Currency Thresholds */}
       <div className="space-y-6">
         <div>
@@ -136,34 +154,34 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
 
         {/* Instructor Checks */}
         <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Instructor Check Intervals</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Instructor S&amp;P Check Intervals</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Instructor SOP Check (months)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Instructor S&amp;P Check (months)</label>
               <input
                 type="number"
-                min="6"
+                min="1"
                 max="36"
                 value={formData.instructorSopCheckMonths}
                 onChange={(e) => handleInputChange('instructorSopCheckMonths', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
               />
-              <p className="text-xs text-gray-500 mt-1">Regular instructor standards check interval</p>
+              <p className="text-xs text-gray-500 mt-1">Regular instructor standards and proficiency check interval. Default: 3 months.</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Senior Instructor SOP Check (months)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Senior Instructor S&amp;P Check (months)</label>
               <input
                 type="number"
-                min="12"
+                min="1"
                 max="48"
                 value={formData.seniorInstructorSopCheckMonths}
                 onChange={(e) => handleInputChange('seniorInstructorSopCheckMonths', parseInt(e.target.value))}
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
               />
-              <p className="text-xs text-gray-500 mt-1">Senior instructor standards check interval</p>
+              <p className="text-xs text-gray-500 mt-1">Senior instructor standards and proficiency check interval. Default: 12 months.</p>
             </div>
           </div>
         </div>

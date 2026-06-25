@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft, Defect } from '../../types';
-import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText, MoreVertical, Pencil, Copy, ShieldCheck } from 'lucide-react';
+import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText, MoreVertical, Pencil, Copy, ShieldCheck, Archive, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
@@ -15,7 +15,9 @@ export const AircraftList: React.FC = () => {
   const { user } = useAuth();
   const canManage = user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor'
     || user?.roles?.some(role => role === 'admin' || role === 'instructor' || role === 'senior_instructor');
-  const { aircraft, loading, addAircraft, updateAircraft, reportDefect } = useAircraft();
+  const isAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
+  const canSeeMaintenancePlanning = canManage;
+  const { aircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft();
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
@@ -25,6 +27,7 @@ export const AircraftList: React.FC = () => {
   const [viewingAircraft, setViewingAircraft] = useState<Aircraft | null>(null);
   const [selectedAircraftForDefect, setSelectedAircraftForDefect] = useState<string>('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [archiveFilter, setArchiveFilter] = useState<'active' | 'archived' | 'all'>('active');
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,7 +95,30 @@ export const AircraftList: React.FC = () => {
   };
 
   const openViewModal = (aircraft: Aircraft) => {
+    if (!canManage) {
+      setViewingAircraft(aircraft);
+      setShowViewModal(true);
+      return;
+    }
     navigate(`/aircraft/${aircraft.id}`);
+  };
+
+  const handleArchiveAircraft = async (aircraftItem: Aircraft) => {
+    const confirmed = window.confirm(
+      `Archive ${aircraftItem.registration}?\n\nIt will be removed from calendar booking options, but flight logs, student records, defects and maintenance history will be retained.`
+    );
+    if (!confirmed) return;
+    await archiveAircraft(aircraftItem.id, user?.id);
+    setOpenMenuId(null);
+  };
+
+  const handleRestoreAircraft = async (aircraftItem: Aircraft) => {
+    const confirmed = window.confirm(
+      `Restore ${aircraftItem.registration}?\n\nIt will become available again in calendar resource lists and booking forms if it is serviceable.`
+    );
+    if (!confirmed) return;
+    await restoreAircraft(aircraftItem.id);
+    setOpenMenuId(null);
   };
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -164,6 +190,16 @@ export const AircraftList: React.FC = () => {
     return soonest;
   };
 
+  const activeAircraft = aircraft.filter(item => !item.isArchived);
+  const archivedAircraft = aircraft.filter(item => item.isArchived);
+  const visibleAircraft = isAdmin
+    ? aircraft.filter(item => {
+        if (archiveFilter === 'archived') return item.isArchived;
+        if (archiveFilter === 'all') return true;
+        return !item.isArchived;
+      })
+    : activeAircraft;
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -179,9 +215,36 @@ export const AircraftList: React.FC = () => {
         )}
       </div>
 
+      {isAdmin && (
+        <div className="mb-5 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-gray-50 p-2">
+          {([
+            ['active', `Active ${activeAircraft.length}`],
+            ['archived', `Archived ${archivedAircraft.length}`],
+            ['all', `All ${aircraft.length}`],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setArchiveFilter(value)}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                archiveFilter === value
+                  ? 'bg-white text-blue-700 shadow-sm'
+                  : 'text-gray-600 hover:bg-white hover:text-gray-900'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {aircraft.map(aircraftItem => (
-          <div key={aircraftItem.id} className="bg-white rounded-lg shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow">
+        {visibleAircraft.map(aircraftItem => (
+          <div key={aircraftItem.id} className={`rounded-lg border p-6 shadow-md transition-shadow hover:shadow-lg ${
+            aircraftItem.isArchived
+              ? 'border-gray-300 bg-gray-50 opacity-90'
+              : 'border-gray-200 bg-white'
+          }`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
                 <div className="p-2 bg-blue-100 rounded-lg">
@@ -192,49 +255,76 @@ export const AircraftList: React.FC = () => {
                   <p className="text-sm text-gray-600">{aircraftItem.make} {aircraftItem.model}</p>
                 </div>
               </div>
-              {getStatusIcon(aircraftItem.status)}
+              {aircraftItem.isArchived ? <Archive className="h-5 w-5 text-gray-500" /> : getStatusIcon(aircraftItem.status)}
             </div>
 
             <div className="space-y-3">
-              <div className={`px-3 py-2 rounded-lg border ${getStatusColor(aircraftItem.status)}`}>
+              <div className={`px-3 py-2 rounded-lg border ${aircraftItem.isArchived ? 'border-gray-300 bg-gray-100 text-gray-700' : getStatusColor(aircraftItem.status)}`}>
                 <span className="text-xs font-medium uppercase tracking-wide">
-                  {aircraftItem.status}
+                  {aircraftItem.isArchived ? 'Archived' : aircraftItem.status}
                 </span>
               </div>
 
-              {aircraftItem.requiredEndorsementType && (
+              {aircraftItem.isArchived && (
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+                  Removed from new bookings
+                  {aircraftItem.archivedAt && (
+                    <span className="block">Archived {aircraftItem.archivedAt.toLocaleDateString('en-AU')}</span>
+                  )}
+                </div>
+              )}
+
+              {(aircraftItem.requiredEndorsementTypes?.length || aircraftItem.requiredEndorsementType) ? (
                 <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Solo hire endorsement</p>
-                    <p className="text-sm font-medium text-emerald-950">{aircraftItem.requiredEndorsementType}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {(aircraftItem.requiredEndorsementTypes?.length
+                        ? aircraftItem.requiredEndorsementTypes
+                        : aircraftItem.requiredEndorsementType
+                          ? [aircraftItem.requiredEndorsementType]
+                          : []
+                      ).map(type => (
+                        <span key={type} className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-emerald-950">
+                          {type}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-gray-500">Total Hours</p>
                   <p className="font-semibold text-gray-900">{aircraftItem.totalHours}</p>
                 </div>
-                <div>
-                  <p className="text-gray-500">Next Milestone</p>
-                  {!milestonesLoading && getNextMilestone(aircraftItem.id) ? (
-                    <p className="font-semibold text-gray-900 text-xs">
-                      {getNextMilestone(aircraftItem.id)!.title}
-                      <span className={`block ${getNextMilestone(aircraftItem.id)!.remaining < 10 ? 'text-red-600' : 'text-gray-600'}`}>
-                        {getNextMilestone(aircraftItem.id)!.type === 'hours'
-                          ? `${getNextMilestone(aircraftItem.id)!.remaining.toFixed(1)} hrs`
-                          : `${getNextMilestone(aircraftItem.id)!.remaining} days`}
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="font-semibold text-gray-500">-</p>
-                  )}
-                </div>
+                {canSeeMaintenancePlanning ? (
+                  <div>
+                    <p className="text-gray-500">Next Milestone</p>
+                    {!milestonesLoading && getNextMilestone(aircraftItem.id) ? (
+                      <p className="font-semibold text-gray-900 text-xs">
+                        {getNextMilestone(aircraftItem.id)!.title}
+                        <span className={`block ${getNextMilestone(aircraftItem.id)!.remaining < 10 ? 'text-red-600' : 'text-gray-600'}`}>
+                          {getNextMilestone(aircraftItem.id)!.type === 'hours'
+                            ? `${getNextMilestone(aircraftItem.id)!.remaining.toFixed(1)} hrs`
+                            : `${getNextMilestone(aircraftItem.id)!.remaining} days`}
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="font-semibold text-gray-500">-</p>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-gray-500">Open Defects</p>
+                    <p className="font-semibold text-gray-900">{aircraftItem.defects.length}</p>
+                  </div>
+                )}
               </div>
 
-              {aircraftItem.nextMaintenance && (
+              {canSeeMaintenancePlanning && aircraftItem.nextMaintenance && (
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="text-xs text-gray-600">Next Maintenance</p>
                   <p className="text-sm font-medium text-gray-900">
@@ -249,6 +339,26 @@ export const AircraftList: React.FC = () => {
                   <p className="text-xs text-red-700 mt-1">
                     {aircraftItem.defects[0].summary || aircraftItem.defects[0].description}
                   </p>
+                  {!canManage && (
+                    <p className="mt-1 text-[11px] text-red-600">
+                      Reported {aircraftItem.defects[0].dateReported.toLocaleDateString('en-AU')}
+                    </p>
+                  )}
+                  {!canManage && aircraftItem.defects[0].photos && aircraftItem.defects[0].photos.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {aircraftItem.defects[0].photos.slice(0, 3).map((photo, index) => (
+                        <a
+                          key={`${photo}-${index}`}
+                          href={photo}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50"
+                        >
+                          Attachment {index + 1}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -295,14 +405,40 @@ export const AircraftList: React.FC = () => {
                             <Copy className="h-4 w-4 mr-2 text-gray-400" />
                             Duplicate
                           </button>
-                          <div className="border-t border-gray-100 my-1" />
-                          <button
-                            onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
-                            className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Flag className="h-4 w-4 mr-2" />
-                            Report Defect
-                          </button>
+                          {!aircraftItem.isArchived && (
+                            <>
+                              <div className="border-t border-gray-100 my-1" />
+                              <button
+                                onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
+                                className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                              >
+                                <Flag className="h-4 w-4 mr-2" />
+                                Report Defect
+                              </button>
+                            </>
+                          )}
+                          {isAdmin && (
+                            <>
+                              <div className="border-t border-gray-100 my-1" />
+                              {aircraftItem.isArchived ? (
+                                <button
+                                  onClick={() => void handleRestoreAircraft(aircraftItem)}
+                                  className="flex items-center w-full px-3 py-2 text-sm text-green-700 hover:bg-green-50 transition-colors"
+                                >
+                                  <RotateCcw className="h-4 w-4 mr-2" />
+                                  Restore
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => void handleArchiveAircraft(aircraftItem)}
+                                  className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                  <Archive className="h-4 w-4 mr-2" />
+                                  Archive
+                                </button>
+                              )}
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -313,6 +449,12 @@ export const AircraftList: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {visibleAircraft.length === 0 && (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-600">
+          No aircraft match this view.
+        </div>
+      )}
 
       <AircraftForm
         isOpen={showAircraftForm}
@@ -396,6 +538,33 @@ export const AircraftList: React.FC = () => {
                 </div>
               </div>
 
+              {(viewingAircraft.xeroTrackingCategoryName || viewingAircraft.xeroTrackingOptionName) && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 mb-1">Xero Tracking Category</h3>
+                      <p className="text-gray-900">{viewingAircraft.xeroTrackingCategoryName || 'Not linked'}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 mb-1">Xero Aircraft Option</h3>
+                      <p className="text-gray-900">{viewingAircraft.xeroTrackingOptionName || 'Not linked'}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-1">Xero Link Status</h3>
+                    {viewingAircraft.xeroTrackingSyncError ? (
+                      <p className="text-amber-700">{viewingAircraft.xeroTrackingSyncError}</p>
+                    ) : viewingAircraft.xeroTrackingLastSyncedAt ? (
+                      <p className="text-emerald-700">
+                        Last linked on {viewingAircraft.xeroTrackingLastSyncedAt.toLocaleString()}
+                      </p>
+                    ) : (
+                      <p className="text-gray-900">Saved on this aircraft. Open Edit Aircraft and refresh Xero to verify it live.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {(viewingAircraft.fuelCapacity || viewingAircraft.emptyWeight || viewingAircraft.maxWeight) && (
                 <div className="grid grid-cols-3 gap-6">
                   <div>
@@ -441,8 +610,24 @@ export const AircraftList: React.FC = () => {
                               {defect.description}
                             </p>
                             <p className="text-xs text-red-700 mt-1">
-                              Reported: {defect.dateReported.toLocaleDateString()} by {defect.reportedBy}
+                              Reported: {defect.dateReported.toLocaleDateString('en-AU')}
+                              {canManage ? ` by ${defect.reportedBy}` : ''}
                             </p>
+                            {defect.photos && defect.photos.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {defect.photos.map((photo, photoIndex) => (
+                                  <a
+                                    key={`${photo}-${photoIndex}`}
+                                    href={photo}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                                  >
+                                    Attachment {photoIndex + 1}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(defect.status)}`}>
                             {defect.status.toUpperCase()}

@@ -110,31 +110,12 @@ export const StudentAcknowledgementModal: React.FC = () => {
 
   const acknowledgeRecord = async (record: TrainingRecord, silent = false) => {
     if (!user) return;
-    const latestRevision = record.auditLog
-      ?.filter(entry => entry.action === 'record_revised_after_student_acknowledgement')
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
     const acknowledgementTime = new Date();
     await updateTrainingRecord(record.id, {
       studentAck: true,
       studentAckName: user.name || user.email,
       studentAckTimestamp: acknowledgementTime,
       status: settings.lockRecordAfterStudentAck ? 'locked' : 'submitted',
-      auditLog: [
-        ...(record.auditLog || []),
-        {
-          id: createAuditId(),
-          timestamp: acknowledgementTime,
-          userId: user.id,
-          userName: user.name || user.email || 'Student',
-          action: latestRevision ? 'student_acknowledged_revised_record' : 'student_acknowledged_record',
-          changes: latestRevision ? {
-            revisedRecordAcknowledged: true,
-            revisionTimestamp: latestRevision.timestamp.toISOString(),
-          } : {
-            recordAcknowledged: true,
-          },
-        },
-      ],
     });
     if (!silent) toast.success('Lesson record acknowledged');
   };
@@ -199,17 +180,27 @@ export const StudentAcknowledgementModal: React.FC = () => {
     return (
       <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
         <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
-          <div className="border-b border-gray-200 px-6 py-5">
-            <div className="flex items-center gap-2 text-amber-700">
-              <AlertTriangle className="h-5 w-5" />
-              <p className="text-sm font-semibold uppercase tracking-wide">Flying declaration required</p>
+          <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-5">
+            <div>
+              <div className="flex items-center gap-2 text-amber-700">
+                <AlertTriangle className="h-5 w-5" />
+                <p className="text-sm font-semibold uppercase tracking-wide">Flying declaration required</p>
+              </div>
+              <h2 className="mt-1 text-xl font-semibold text-gray-900">
+                {course.flyingDeclarationTitle || 'Flying Declaration'}
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                You are enrolled in {course.title}. Please read and digitally sign the required declaration before continuing your course records.
+              </p>
             </div>
-            <h2 className="mt-1 text-xl font-semibold text-gray-900">
-              {course.flyingDeclarationTitle || 'Flying Declaration'}
-            </h2>
-            <p className="mt-1 text-sm text-gray-500">
-              You are enrolled in {course.title}. Please read and digitally sign the required declaration before continuing your course records.
-            </p>
+            <button
+              type="button"
+              onClick={() => setDismissed(true)}
+              className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              title="Remind me later"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -269,15 +260,24 @@ export const StudentAcknowledgementModal: React.FC = () => {
             <p className="text-xs text-gray-500">
               {pendingDeclarations.length > 1 ? `${pendingDeclarations.length - 1} more declaration${pendingDeclarations.length - 1 === 1 ? '' : 's'} will appear after this one.` : 'This declaration will stop appearing once signed.'}
             </p>
-            <button
-              type="button"
-              onClick={handleSignDeclaration}
-              disabled={isSigning || !activeDeclaration.needsStudentSignature}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-            >
-              {isSigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-              {activeDeclaration.needsStudentSignature ? 'Sign declaration' : 'Waiting for parent/guardian'}
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => setDismissed(true)}
+                className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Remind me later
+              </button>
+              <button
+                type="button"
+                onClick={handleSignDeclaration}
+                disabled={isSigning || !activeDeclaration.needsStudentSignature}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {isSigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                {activeDeclaration.needsStudentSignature ? 'Sign declaration' : 'Waiting for parent/guardian'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

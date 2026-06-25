@@ -462,7 +462,7 @@ const getAuthenticatedUser = async (req: Request, supabaseUrl: string) => {
 const getProductBookingSetup = async (adminClient: SupabaseAdminClient, product: any) => {
   const instructorIds = product.instructor_ids || [];
   const [{ data: aircraftRows, error: aircraftError }, { data: endorsementRows, error: endorsementError }] = await Promise.all([
-    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
+    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type,is_archived"),
     instructorIds.length > 0
       ? adminClient
         .from("endorsements")
@@ -548,9 +548,20 @@ const toPublicProduct = (
   product: any,
   aircraftRows: any[] = [],
   endorsementRows: any[] = [],
+  addonRows: any[] = [],
   stripeConnected = false,
 ) => {
   const setup = trialVoucherProductBookingSetup(product, aircraftRows, endorsementRows);
+  const productAircraftIds = new Set(product.aircraft_ids || []);
+  const aircraftOptions = (aircraftRows || [])
+    .filter((aircraft: any) => productAircraftIds.has(aircraft.id) && aircraft.is_archived !== true)
+    .map((aircraft: any) => ({
+      id: aircraft.id,
+      label: [aircraft.make, aircraft.model].filter(Boolean).join(" ") || aircraft.registration,
+      make: aircraft.make || "",
+      model: aircraft.model || "",
+      iconKey: aircraft.icon_key || "",
+    }));
   return {
     id: product.id,
     name: product.name,
@@ -563,6 +574,13 @@ const toPublicProduct = (
     bookingAvailable: setup.bookingAvailable,
     bookingSetupMessage: setup.issue,
     bookingInstructions: product.booking_instructions,
+    aircraftOptions,
+    addons: addonRows.map((addon: any) => ({
+      id: addon.id,
+      name: addon.name,
+      description: addon.description || "",
+      price: Number(addon.price || 0),
+    })),
   };
 };
 
@@ -651,6 +669,7 @@ const reconcileCheckoutSession = async ({
       .from("trial_flight_vouchers")
       .update({
         payment_status: "failed",
+        payment_source: "stripe",
         stripe_payment_intent_id: asString(stripeSession.payment_intent) || null,
         updated_at: new Date().toISOString(),
       })
@@ -664,6 +683,7 @@ const reconcileCheckoutSession = async ({
       .from("trial_flight_vouchers")
       .update({
         payment_status: "pending",
+        payment_source: "stripe",
         stripe_payment_intent_id: asString(stripeSession.payment_intent) || null,
         ...stripePaymentFields(stripeSession),
         updated_at: new Date().toISOString(),
@@ -677,6 +697,7 @@ const reconcileCheckoutSession = async ({
     .update({
       status: voucher.status === "draft" ? "issued" : voucher.status,
       payment_status: "paid",
+      payment_source: "stripe",
       stripe_payment_intent_id: asString(stripeSession.payment_intent) || null,
       ...stripePaymentFields(stripeSession),
       paid_at: new Date().toISOString(),
@@ -788,7 +809,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
     { data: users, error: usersError },
     { data: endorsements, error: endorsementsError },
   ] = await Promise.all([
-    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
+    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type,is_archived"),
     adminClient.from("bookings").select("id,aircraft_id,instructor_id,start_time,end_time,status,deleted_at,has_conflict"),
     adminClient.from("instructor_weekly_schedules").select("*"),
     adminClient.from("instructor_schedule_changes").select("*"),
@@ -810,6 +831,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
 
   const eligibleAircraft = (aircraftRows || [])
     .filter((aircraft: any) => aircraft.status === "serviceable")
+    .filter((aircraft: any) => aircraft.is_archived !== true)
     .filter((aircraft: any) => aircraftMatchesTrialVoucherProduct(aircraft, product))
     .sort((a: any, b: any) => String(a.registration || "").localeCompare(String(b.registration || "")));
   const userMap = new Map((users || []).map((user: any) => [user.id, user.name]));
@@ -917,17 +939,52 @@ Deno.serve(async (req: Request) => {
     const code = normaliseCode(body.code);
 
     if (action === "products") {
-      const [{ data: products, error: productsError }, { data: aircraftRows, error: aircraftError }] = await Promise.all([
+      const [
+        { data: products, error: productsError },
+        { data: aircraftRows, error: aircraftError },
+        { data: directAdminRows, error: directAdminError },
+        { data: adminRoleRows, error: adminRoleError },
+        { data: addonRows, error: addonError },
+        { data: productAddonRows, error: productAddonError },
+        { data: organisationSettings, error: organisationError },
+      ] = await Promise.all([
         adminClient
           .from("trial_flight_voucher_products")
           .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,booking_instructions,is_active")
           .eq("is_active", true)
           .order("duration_minutes", { ascending: true }),
-        adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type"),
+        adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type,is_archived,icon_key"),
+        adminClient.from("users").select("id,email,is_active").eq("role", "admin"),
+        adminClient.from("user_roles").select("user_id").eq("role", "admin"),
+        adminClient.from("trial_flight_voucher_addons").select("id,name,description,price,is_active").eq("is_active", true).order("name"),
+        adminClient.from("trial_flight_voucher_product_addons").select("product_id,addon_id"),
+        adminClient.from("organisation_settings").select("contact_email").maybeSingle(),
       ]);
 
       if (productsError) return json({ error: productsError.message }, 500);
       if (aircraftError) return json({ error: aircraftError.message }, 500);
+      if (addonError) console.warn("Could not load voucher add-ons:", addonError);
+      if (productAddonError) console.warn("Could not load voucher product add-ons:", productAddonError);
+      if (directAdminError) console.warn("Could not load direct admin contact emails:", directAdminError);
+      if (adminRoleError) console.warn("Could not load admin role contact emails:", adminRoleError);
+      if (organisationError) console.warn("Could not load organisation contact email:", organisationError);
+
+      const roleAdminIds = Array.from(new Set((adminRoleRows || []).map((row: any) => row.user_id).filter(Boolean)));
+      const { data: roleAdminRows, error: roleAdminUsersError } = roleAdminIds.length > 0
+        ? await adminClient.from("users").select("id,email,is_active").in("id", roleAdminIds)
+        : { data: [], error: null };
+      if (roleAdminUsersError) console.warn("Could not load admin user contact emails:", roleAdminUsersError);
+
+      const organisationContactEmail = String(organisationSettings?.contact_email || "").trim().toLowerCase();
+      const adminContactEmails = Array.from(new Set(
+        [...(directAdminRows || []), ...(roleAdminRows || [])]
+          .filter((row: any) => row?.is_active !== false)
+          .map((row: any) => String(row?.email || "").trim().toLowerCase())
+          .filter((email: string) => email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      ));
+      const contactEmails = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(organisationContactEmail)
+        ? [organisationContactEmail]
+        : adminContactEmails;
 
       const instructorIds = Array.from(new Set(
         (products || []).flatMap((product: any) => product.instructor_ids || [])
@@ -941,10 +998,18 @@ Deno.serve(async (req: Request) => {
 
       if (endorsementError) return json({ error: endorsementError.message }, 500);
       const stripeConnected = Boolean(await getConnectedStripeAccountId(adminClient));
+      const addonById = new Map((addonRows || []).map((addon: any) => [addon.id, addon]));
+      const addonsByProduct = new Map<string, any[]>();
+      (productAddonRows || []).forEach((row: any) => {
+        const addon = addonById.get(row.addon_id);
+        if (!addon) return;
+        addonsByProduct.set(row.product_id, [...(addonsByProduct.get(row.product_id) || []), addon]);
+      });
       return json({
         stripeConnected,
+        contactEmails,
         products: (products || []).map((product: any) =>
-          toPublicProduct(product, aircraftRows || [], endorsementRows || [], stripeConnected)
+          toPublicProduct(product, aircraftRows || [], endorsementRows || [], addonsByProduct.get(product.id) || [], stripeConnected)
         ),
       });
     }
@@ -957,6 +1022,7 @@ Deno.serve(async (req: Request) => {
         .from("trial_flight_vouchers")
         .select(`
           id,
+          code,
           status,
           payment_status,
           purchaser_email,
@@ -994,6 +1060,7 @@ Deno.serve(async (req: Request) => {
         .from("trial_flight_vouchers")
         .select(`
           id,
+          code,
           status,
           payment_status,
           purchaser_email,
@@ -1048,6 +1115,7 @@ Deno.serve(async (req: Request) => {
           status: voucher.status,
           paymentStatus: voucher.payment_status,
           productName: product?.name || "Trial flight voucher",
+          code: voucher.code,
           emailTo,
           sendToRecipient: Boolean(voucher.send_to_recipient),
           recipientDeliveryAt: voucher.recipient_delivery_at,
@@ -1533,7 +1601,7 @@ Deno.serve(async (req: Request) => {
       if (userError) return json({ error: userError.message }, 500);
 
       await adminClient.from("user_roles").upsert({ user_id: userId, role: "student" }, { onConflict: "user_id,role" });
-      await adminClient.from("students").upsert({ id: userId, prepaid_balance: 0 }, { onConflict: "id" });
+      await adminClient.from("students").upsert({ id: userId }, { onConflict: "id" });
     } else {
       await adminClient.from("users").update({
         name: fullName,
@@ -1542,7 +1610,7 @@ Deno.serve(async (req: Request) => {
         portal_access_scope: "trial_voucher",
       }).eq("id", userId);
       await adminClient.from("user_roles").upsert({ user_id: userId, role: "student" }, { onConflict: "user_id,role" });
-      await adminClient.from("students").upsert({ id: userId, prepaid_balance: 0 }, { onConflict: "id" });
+      await adminClient.from("students").upsert({ id: userId }, { onConflict: "id" });
     }
 
     const { error: redeemError } = await adminClient

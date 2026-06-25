@@ -102,6 +102,19 @@ const buildVoucherEmail = ({
   const flyerName = voucher.recipient_name || (sentToPurchaser ? "the recipient" : recipientName) || "the recipient";
   const greetingName = recipientName || "there";
   const productText = product.email_body || product.description || "This voucher includes a trial instructional flight with a qualified Bendigo Flying Club instructor.";
+  const selectedAddons = Array.isArray(voucher.selected_addons) ? voucher.selected_addons : [];
+  const addonListHtml = selectedAddons.length > 0
+    ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;border:1px solid #e2e8f0;border-radius:18px;background:#ffffff;">
+                  <tr>
+                    <td style="padding:18px;">
+                      <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#2563eb;font-weight:700;">Purchased add-ons</p>
+                      <ul style="margin:0;padding-left:20px;color:#334155;line-height:1.65;">
+                        ${selectedAddons.map((addon: any) => `<li><strong>${escapeHtml(addon.name)}</strong>${addon.description ? ` - ${escapeHtml(addon.description)}` : ""}</li>`).join("")}
+                      </ul>
+                    </td>
+                  </tr>
+                </table>`
+    : "";
   const purchaserForwardingNote = sentToPurchaser
     ? voucher.recipient_name
       ? `This voucher has been sent to the purchaser so they can forward it to ${escapeHtml(voucher.recipient_name)} whenever they are ready.`
@@ -148,6 +161,7 @@ const buildVoucherEmail = ({
                     </td>
                   </tr>
                 </table>
+                ${addonListHtml}
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;">
                   <tr>
                     <td style="padding:12px 0;width:50%;border-bottom:1px solid #e2e8f0;">

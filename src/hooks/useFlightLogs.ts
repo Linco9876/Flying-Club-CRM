@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../utils/billing';
+import { fetchUserXeroBalance } from '../lib/xeroMemberBalance';
+import { useAuth } from '../context/AuthContext';
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 const roundCurrency = (value: number) => Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
@@ -98,9 +100,60 @@ export interface CreateFlightLogData {
   passengers?: number;
   calculated_cost?: number;
   payment_status?: 'free' | 'pending' | 'paid';
+  prepaid_payment_acknowledged?: boolean;
 }
 
+export interface FlightPaymentLinkResult {
+  checkoutUrl: string;
+  sessionId: string;
+  emailSent?: boolean;
+  emailError?: string | null;
+  emailTo?: string | null;
+}
+
+export interface FlightLogDeleteImpact {
+  requiresXeroAction: boolean;
+  recommendedAction: 'crm-only' | 'void-delete' | 'credit-note';
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+  invoiceStatus: string | null;
+  hasXeroPayments: boolean;
+  hasStripePayments: boolean;
+  summary: string;
+  detail: string;
+}
+
+interface DeleteFlightLogOptions {
+  xeroMode?: 'auto' | 'void-delete' | 'credit-note' | 'crm-only';
+}
+
+const getSupabaseFunctionErrorMessage = async (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object') {
+    const maybeMessage = 'message' in error ? (error as { message?: unknown }).message : undefined;
+    if (typeof maybeMessage === 'string' && maybeMessage.trim()) return maybeMessage;
+
+    const context = 'context' in error ? (error as { context?: unknown }).context : undefined;
+    if (context instanceof Response) {
+      try {
+        const body = await context.clone().json();
+        if (body?.error) return String(body.error);
+        if (body?.message) return String(body.message);
+      } catch {
+        try {
+          const text = await context.clone().text();
+          if (text.trim()) return text;
+        } catch {
+          // ignore parsing issues and fall back below
+        }
+      }
+    }
+  }
+  return fallback;
+};
+
 export function useFlightLogs(userId?: string) {
+  const { user: currentUser } = useAuth();
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +192,129 @@ export function useFlightLogs(userId?: string) {
   useEffect(() => {
     fetchFlightLogs();
   }, [userId]);
+
+  const buildDeleteImpact = async (id: string): Promise<FlightLogDeleteImpact> => {
+    const { data: log, error: logError } = await supabase
+      .from('flight_logs')
+      .select('id, xero_invoice_id, xero_invoice_number, xero_invoice_status, xero_payment_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (logError) throw logError;
+    if (!log) throw new Error('Flight log not found');
+
+    const { data: txRows, error: txError } = await supabase
+      .from('account_transactions')
+      .select('id, xero_payment_id, payment_methods(system_key, name)')
+      .eq('flight_log_id', id)
+      .eq('type', 'flight_charge');
+
+    if (txError) throw txError;
+
+    const hasXeroPayments = Boolean(log.xero_payment_id) || (txRows || []).some((tx: any) => Boolean(tx.xero_payment_id));
+    const hasStripePayments = (txRows || []).some((tx: any) => {
+      const systemKey = String(tx?.payment_methods?.system_key || '').toLowerCase();
+      const methodName = String(tx?.payment_methods?.name || '').toLowerCase();
+      return systemKey === 'stripe_card' || systemKey === 'stripe' || methodName.includes('stripe');
+    });
+    const hasInvoice = Boolean(log.xero_invoice_id);
+
+    if (!hasInvoice && !hasXeroPayments) {
+      return {
+        requiresXeroAction: false,
+        recommendedAction: 'crm-only',
+        invoiceId: null,
+        invoiceNumber: null,
+        invoiceStatus: null,
+        hasXeroPayments: false,
+        hasStripePayments,
+        summary: 'This flight log has not been synced to Xero.',
+        detail: 'It can be deleted from the CRM normally.',
+      };
+    }
+
+    const invoiceStatus = String(log.xero_invoice_status || '').toUpperCase() || null;
+    const shouldCredit = hasXeroPayments || invoiceStatus === 'PAID' || invoiceStatus === 'PARTPAID';
+
+    if (shouldCredit) {
+      return {
+        requiresXeroAction: true,
+        recommendedAction: 'credit-note',
+        invoiceId: log.xero_invoice_id || null,
+        invoiceNumber: log.xero_invoice_number || null,
+        invoiceStatus,
+        hasXeroPayments,
+        hasStripePayments,
+        summary: 'This flight log has already been invoiced and paid in Xero.',
+        detail: 'Deleting it should create a reversing credit note in Xero before the CRM record is removed.',
+      };
+    }
+
+    return {
+      requiresXeroAction: true,
+      recommendedAction: 'void-delete',
+      invoiceId: log.xero_invoice_id || null,
+      invoiceNumber: log.xero_invoice_number || null,
+      invoiceStatus,
+      hasXeroPayments,
+      hasStripePayments,
+      summary: 'This flight log has already been invoiced in Xero.',
+      detail: 'Deleting it should void or delete the Xero invoice first, then remove the CRM record.',
+    };
+  };
+
+  const removeLocalFlightLog = async (id: string) => {
+    const { data: existingLog, error: existingLogError } = await supabase
+      .from('flight_logs')
+      .select('booking_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (existingLogError) throw existingLogError;
+
+    const { error: detachTrainingRecordsError } = await supabase
+      .from('training_records')
+      .update({
+        flight_log_id: null,
+        ...(existingLog?.booking_id ? { booking_id: existingLog.booking_id } : {}),
+      })
+      .eq('flight_log_id', id);
+
+    if (detachTrainingRecordsError) throw detachTrainingRecordsError;
+
+    if (existingLog?.booking_id) {
+      const { error: bookingUpdateError } = await supabase
+        .from('bookings')
+        .update({ flight_logged: false })
+        .eq('id', existingLog.booking_id);
+
+      if (bookingUpdateError) {
+        console.error('Error marking booking unlogged:', bookingUpdateError);
+      }
+    }
+
+    const { data: chargeTransactions } = await supabase
+      .from('account_transactions')
+      .select('id, user_id, amount, type')
+      .eq('flight_log_id', id);
+
+    const prepaidCharges = (chargeTransactions || []).filter((tx: any) => tx.type === 'flight_charge');
+    if (prepaidCharges.length > 0) {
+      const { error: txDeleteError } = await supabase
+        .from('account_transactions')
+        .delete()
+        .in('id', prepaidCharges.map((tx: any) => tx.id));
+
+      if (txDeleteError) throw txDeleteError;
+    }
+
+    const { error: deleteError } = await supabase
+      .from('flight_logs')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) throw deleteError;
+  };
 
   const syncBookingTrainingRecordsToFlightLog = async (
     bookingId: string | undefined,
@@ -206,6 +382,8 @@ export function useFlightLogs(userId?: string) {
         dual_time: roundFlightDecimal(logData.dual_time),
         solo_time: roundFlightDecimal(logData.solo_time),
       };
+      const prepaidPaymentAcknowledged = Boolean(normalisedLogData.prepaid_payment_acknowledged);
+      delete (normalisedLogData as any).prepaid_payment_acknowledged;
       const requestedCostOverride = typeof normalisedLogData.calculated_cost === 'number' && Number.isFinite(normalisedLogData.calculated_cost)
         ? roundCurrency(normalisedLogData.calculated_cost)
         : undefined;
@@ -213,7 +391,7 @@ export function useFlightLogs(userId?: string) {
       const { data: rateData } = normalisedLogData.flight_type_id
         ? await supabase
           .from('aircraft_rates')
-          .select('*, payment_methods(id, name), flight_types(forced_payment_method_id)')
+          .select('*, payment_methods(id, name, system_key), flight_types(forced_payment_method_id)')
           .eq('aircraft_id', normalisedLogData.aircraft_id)
           .eq('flight_type_id', normalisedLogData.flight_type_id)
           .maybeSingle()
@@ -265,10 +443,37 @@ export function useFlightLogs(userId?: string) {
         paymentMethodId = paymentMethod?.id ?? null;
       }
       const voucherPayment = isVoucherPaymentMethod(normalisedLogData.payment_type);
-      const initialPaymentStatus: 'free' | 'pending' | 'paid' = noCharge || calculatedCost <= 0
-        ? 'free'
-        : voucherPayment || isPrepaidPaymentMethod(normalisedLogData.payment_type)
-          ? 'paid'
+      const prepaidPayment = isPrepaidPaymentMethod(normalisedLogData.payment_type);
+      const selectedPaymentMethodSystemKey = String(rateData?.payment_methods?.system_key || '').toLowerCase();
+      const selectedPaymentMethodName = String(rateData?.payment_methods?.name || normalisedLogData.payment_type || '').toLowerCase();
+      const shouldCreateStripePaymentLink = !voucherPayment
+        && !prepaidPayment
+        && calculatedCost > 0
+        && (
+          selectedPaymentMethodSystemKey === 'stripe_card'
+          || selectedPaymentMethodSystemKey === 'stripe'
+          || selectedPaymentMethodName.includes('stripe')
+        );
+      let prepaidBalanceAfter: number | null = null;
+      if (!voucherPayment && prepaidPayment && calculatedCost > 0 && normalisedLogData.student_id) {
+        const xeroBalance = await fetchUserXeroBalance(normalisedLogData.student_id);
+        if (!xeroBalance.connected) {
+          throw new Error('Prepaid payments require Xero to be connected for this club.');
+        }
+        const availableCredit = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
+        const minimumPrepaidPack = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+        if (availableCredit + 0.005 < minimumPrepaidPack && !prepaidPaymentAcknowledged) {
+          throw new Error(`Prepaid is locked until the member has at least $${minimumPrepaidPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+        }
+        if (availableCredit + 0.005 < calculatedCost && !prepaidPaymentAcknowledged) {
+          throw new Error(`This member only has $${availableCredit.toFixed(2)} available in Xero overpayments, so prepaid cannot cover this flight. Add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+        }
+        prepaidBalanceAfter = Math.round((availableCredit - calculatedCost + Number.EPSILON) * 100) / 100;
+      }
+      const initialPaymentStatus: 'free' | 'pending' | 'paid' = voucherPayment || prepaidPayment
+        ? 'paid'
+        : noCharge || calculatedCost <= 0
+          ? 'free'
           : 'pending';
 
       const { data, error: insertError } = await supabase
@@ -289,15 +494,6 @@ export function useFlightLogs(userId?: string) {
       if (insertError) throw insertError;
 
       if (!voucherPayment && initialPaymentStatus === 'paid' && calculatedCost > 0 && normalisedLogData.student_id) {
-        const { data: student } = await supabase
-          .from('students')
-          .select('prepaid_balance')
-          .eq('id', normalisedLogData.student_id)
-          .maybeSingle();
-
-        const currentBalance = parseFloat(student?.prepaid_balance ?? 0);
-        const newBalance = currentBalance - calculatedCost;
-
         const { error: txError } = await supabase
           .from('account_transactions')
           .insert({
@@ -307,18 +503,33 @@ export function useFlightLogs(userId?: string) {
             description: `Flight charge - ${new Date(normalisedLogData.start_time).toLocaleDateString('en-AU')}`,
             flight_log_id: data.id,
             payment_method_id: paymentMethodId,
-            balance_after: newBalance,
+            balance_after: prepaidBalanceAfter,
             verified_status: 'verified',
             created_by: user.id,
           });
 
         if (txError) {
           console.error('Error recording flight charge transaction:', txError);
-        } else {
-          const { error: balanceError } = await supabase
-            .from('students')
-            .upsert({ id: normalisedLogData.student_id, prepaid_balance: newBalance }, { onConflict: 'id' });
-          if (balanceError) console.error('Error updating prepaid balance:', balanceError);
+        }
+
+        if (!txError && prepaidPayment && prepaidBalanceAfter !== null && prepaidBalanceAfter < -0.005) {
+          const topUpAmount = 1000;
+          const { data: topUpData, error: topUpError } = await supabase.functions.invoke('create-member-topup-checkout', {
+            body: {
+              userId: normalisedLogData.student_id,
+              amount: topUpAmount,
+              sendEmail: true,
+              dedupeWindowMinutes: 60,
+              triggerReason: 'negative_prepaid_after_flight_log',
+              successUrl: `${window.location.origin}/billing?topup=success`,
+              cancelUrl: `${window.location.origin}/billing?topup=cancelled`,
+            },
+          });
+          if (topUpError) {
+            console.error('Error sending negative prepaid top-up link:', topUpError);
+          } else if ((topUpData as any)?.skipped) {
+            console.info('Skipped negative prepaid top-up link because one was sent recently:', topUpData);
+          }
         }
       }
 
@@ -354,8 +565,36 @@ export function useFlightLogs(userId?: string) {
         console.error('Error updating aircraft hours:', aircraftUpdateError);
       }
 
+      let paymentLink: FlightPaymentLinkResult | null = null;
+      if (shouldCreateStripePaymentLink) {
+        try {
+          const { data: paymentLinkData, error: paymentLinkError } = await supabase.functions.invoke('create-flight-payment-checkout', {
+            body: {
+              flightLogId: data.id,
+              sendEmail: true,
+              successUrl: `${window.location.origin}/billing?stripe_flight=success`,
+              cancelUrl: `${window.location.origin}/billing?stripe_flight=cancelled`,
+            },
+          });
+
+          if (paymentLinkError) {
+            console.error('Error preparing Stripe payment link after flight log:', paymentLinkError);
+          } else if (paymentLinkData?.checkoutUrl) {
+            paymentLink = {
+              checkoutUrl: paymentLinkData.checkoutUrl,
+              sessionId: paymentLinkData.sessionId,
+              emailSent: paymentLinkData.emailSent,
+              emailError: paymentLinkData.emailError ?? null,
+              emailTo: paymentLinkData.emailTo ?? null,
+            };
+          }
+        } catch (paymentLinkInvokeError) {
+          console.error('Error invoking Stripe payment link creation after flight log:', paymentLinkInvokeError);
+        }
+      }
+
       await fetchFlightLogs();
-      return { data, error: null };
+      return { data: { ...data, paymentLink }, error: null };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create flight log';
       console.error('Error creating flight log:', err);
@@ -414,79 +653,51 @@ export function useFlightLogs(userId?: string) {
     }
   };
 
-  const deleteFlightLog = async (id: string) => {
+  const deleteFlightLog = async (id: string, options: DeleteFlightLogOptions = {}) => {
     try {
-      const { data: existingLog, error: existingLogError } = await supabase
-        .from('flight_logs')
-        .select('booking_id')
-        .eq('id', id)
-        .maybeSingle();
+      const deleteImpact = await buildDeleteImpact(id);
 
-      if (existingLogError) throw existingLogError;
+      if (deleteImpact.requiresXeroAction) {
+        const isAdmin = currentUser?.role === 'admin' || currentUser?.roles?.includes('admin');
+        if (!isAdmin) {
+          return {
+            error: 'This flight log has already been synced to Xero and can only be removed by an admin using the Xero reversal flow.',
+            impact: deleteImpact,
+          };
+        }
 
-      const { error: detachTrainingRecordsError } = await supabase
-        .from('training_records')
-        .update({
-          flight_log_id: null,
-          ...(existingLog?.booking_id ? { booking_id: existingLog.booking_id } : {}),
-        })
-        .eq('flight_log_id', id);
+        const xeroMode = options.xeroMode === 'auto' || !options.xeroMode
+          ? deleteImpact.recommendedAction
+          : options.xeroMode;
 
-      if (detachTrainingRecordsError) throw detachTrainingRecordsError;
+        if (xeroMode === 'crm-only') {
+          return {
+            error: 'This flight log is linked to Xero and must be voided or reversed there before deletion.',
+            impact: deleteImpact,
+          };
+        }
 
-      if (existingLog?.booking_id) {
-        const { error: bookingUpdateError } = await supabase
-          .from('bookings')
-          .update({ flight_logged: false })
-          .eq('id', existingLog.booking_id);
+        const { data, error } = await supabase.functions.invoke('xero-sync', {
+          body: {
+            action: 'remove-flight-log',
+            flightLogId: id,
+            mode: xeroMode,
+          },
+        });
 
-        if (bookingUpdateError) {
-          console.error('Error marking booking unlogged:', bookingUpdateError);
+        if (error) {
+          throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to reverse this flight log in Xero'));
+        }
+
+        if (data?.ok === false) {
+          throw new Error(String(data?.error || 'Failed to reverse this flight log in Xero'));
         }
       }
 
-      const { data: chargeTransactions } = await supabase
-        .from('account_transactions')
-        .select('id, user_id, amount, type')
-        .eq('flight_log_id', id);
-
-      const prepaidCharges = (chargeTransactions || []).filter((tx: any) => tx.type === 'flight_charge');
-      if (prepaidCharges.length > 0) {
-        const refundByUser = prepaidCharges.reduce<Record<string, number>>((acc, tx: any) => {
-          acc[tx.user_id] = (acc[tx.user_id] || 0) + parseFloat(tx.amount || 0);
-          return acc;
-        }, {});
-
-        for (const [studentId, refundAmount] of Object.entries(refundByUser)) {
-          const { data: student } = await supabase
-            .from('students')
-            .select('prepaid_balance')
-            .eq('id', studentId)
-            .maybeSingle();
-          const newBalance = parseFloat(student?.prepaid_balance ?? 0) + refundAmount;
-          const { error: balanceError } = await supabase
-            .from('students')
-            .upsert({ id: studentId, prepaid_balance: newBalance }, { onConflict: 'id' });
-          if (balanceError) throw balanceError;
-        }
-
-        const { error: txDeleteError } = await supabase
-          .from('account_transactions')
-          .delete()
-          .in('id', prepaidCharges.map((tx: any) => tx.id));
-
-        if (txDeleteError) throw txDeleteError;
-      }
-
-      const { error: deleteError } = await supabase
-        .from('flight_logs')
-        .delete()
-        .eq('id', id);
-
-      if (deleteError) throw deleteError;
+      await removeLocalFlightLog(id);
 
       await fetchFlightLogs();
-      return { error: null };
+      return { error: null, impact: deleteImpact };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete flight log';
       console.error('Error deleting flight log:', err);
@@ -531,6 +742,7 @@ export function useFlightLogs(userId?: string) {
     createFlightLog,
     updateFlightLog,
     deleteFlightLog,
+    getFlightLogDeleteImpact: buildDeleteImpact,
     checkTachOverlap,
     refetch: fetchFlightLogs,
   };

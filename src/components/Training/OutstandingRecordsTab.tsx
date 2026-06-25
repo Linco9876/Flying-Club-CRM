@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Undo2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useOutstandingRecords, OutstandingFlightLog } from '../../hooks/useOutstandingRecords';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -20,7 +21,7 @@ import {
   normaliseSyllabusLessonKey,
   useSyllabusMatrix,
 } from '../../hooks/useSyllabusMatrix';
-import { getTwoOccasionReadiness } from '../../utils/trainingReadiness';
+import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 
@@ -170,6 +171,7 @@ function bestGrade(current: string | undefined, next: string | undefined, system
 }
 
 export const OutstandingRecordsTab: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { settings: trainingSettings } = useTrainingSettings();
   const isAdmin = user?.role === 'admin';
@@ -206,6 +208,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [proceedWithCarryForward, setProceedWithCarryForward] = useState(false);
   const [queueView, setQueueView] = useState<'mine' | 'others' | 'dismissed'>('mine');
   const [showDraftComposer, setShowDraftComposer] = useState(false);
+  const requestedDraftStudentId = searchParams.get('draftStudentId') || '';
 
   const activeStudentId = activeLog?.student_id;
   const isDraftSession = Boolean(draftSession && activeLog?.id === draftSession.id);
@@ -233,6 +236,21 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   // Criteria come from the course level, pass marks from the lesson
   const activeCriteria: LessonAssessmentCriterion[] = selectedCourse?.assessmentCriteria ?? [];
+
+  useEffect(() => {
+    if (!requestedDraftStudentId || users.length === 0) return;
+
+    const requestedStudent = users.find(member => member.id === requestedDraftStudentId);
+    if (!requestedStudent) return;
+
+    setDraftStudentId(requestedStudent.id);
+    setShowDraftComposer(true);
+    setQueueView('mine');
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('draftStudentId');
+    setSearchParams(nextParams, { replace: true });
+  }, [requestedDraftStudentId, searchParams, setSearchParams, users]);
 
   const lessonOrderByKey = useMemo(() => {
     const order = new Map<string, number>();
@@ -435,8 +453,23 @@ export const OutstandingRecordsTab: React.FC = () => {
     trainingRecords,
   ]);
 
+  const consecutivePassReadiness = useMemo(() => getConsecutivePassReadiness({
+    course: selectedCourse,
+    records: trainingRecords,
+    studentId: activeStudentId,
+    lesson: lessonWillProceed ? selectedLesson : null,
+    currentRecordGrades: effectiveCriteriaGrades,
+  }), [
+    activeStudentId,
+    effectiveCriteriaGrades,
+    lessonWillProceed,
+    selectedCourse,
+    selectedLesson,
+    trainingRecords,
+  ]);
+
   const nextLessonForRecord = lessonWillProceed
-    ? twoOccasionReadiness.blocked
+    ? consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
       ? (selectedLesson?.name || selectedLesson?.sequenceTitle || 'Repeat current lesson')
       : (nextLessonAfterSelected?.name || nextLessonAfterSelected?.sequenceTitle || 'Course complete')
     : selectedLesson
@@ -1966,7 +1999,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                   )}
 
                   <div className={`rounded-lg border px-4 py-3 text-sm ${
-                    twoOccasionReadiness.blocked
+                    consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
                       ? 'border-indigo-200 bg-indigo-50'
                       : lessonPassed
                       ? 'border-emerald-200 bg-emerald-50'
@@ -1975,7 +2008,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                         : 'border-amber-200 bg-amber-50'
                   }`}>
                     <p className={`font-semibold ${
-                      twoOccasionReadiness.blocked
+                      consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
                         ? 'text-indigo-800'
                         : lessonPassed
                         ? 'text-emerald-800'
@@ -1983,7 +2016,9 @@ export const OutstandingRecordsTab: React.FC = () => {
                           ? 'text-blue-800'
                           : 'text-amber-800'
                     }`}>
-                      {twoOccasionReadiness.blocked
+                      {consecutivePassReadiness.blocked
+                        ? 'Consecutive pass required before next lesson'
+                        : twoOccasionReadiness.blocked
                         ? `Two-occasion rule: not ready to recommend ${twoOccasionReadiness.targetLessonName}`
                         : lessonPassed
                           ? 'Lesson pass achieved'
@@ -1992,7 +2027,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                             : 'Lesson not passed yet'}
                     </p>
                     <p className={`mt-1 text-xs ${
-                      twoOccasionReadiness.blocked
+                      consecutivePassReadiness.blocked || twoOccasionReadiness.blocked
                         ? 'text-indigo-700'
                         : lessonPassed
                         ? 'text-emerald-700'
@@ -2002,6 +2037,12 @@ export const OutstandingRecordsTab: React.FC = () => {
                     }`}>
                       Next lesson on record: {nextLessonForRecord || 'Not set'}
                     </p>
+                    {consecutivePassReadiness.blocked && (
+                      <p className="mt-2 text-xs text-indigo-700">
+                        Needs 2 consecutive passes for: {consecutivePassReadiness.missing.slice(0, 4).map(item => item.name).join(', ')}
+                        {consecutivePassReadiness.missing.length > 4 ? ` and ${consecutivePassReadiness.missing.length - 4} more` : ''}.
+                      </p>
+                    )}
                     {twoOccasionReadiness.blocked && (
                       <p className="mt-2 text-xs text-indigo-700">
                         Needs two {twoOccasionReadiness.targetGrade} occasions before this gate. Still short: {twoOccasionReadiness.missing.slice(0, 4).map(item => `${item.name} (${item.count}/2)`).join(', ')}

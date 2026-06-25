@@ -45,7 +45,7 @@ export const StudentList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'instructor' | 'pilot' | 'student'>('all');
   const [statusFilter, setStatusFilter] = useState<'active' | 'archived' | 'all'>('active');
-  const [sortBy, setSortBy] = useState<'name' | 'role' | 'hours' | 'lastFlight' | 'balance'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'role' | 'hours' | 'lastFlight'>('name');
   const [viewMode, setViewMode] = useState<'detailed' | 'slim'>('detailed');
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
   const canManageMembers = user?.role === 'admin' || user?.roles?.includes('admin');
@@ -173,10 +173,6 @@ export const StudentList: React.FC = () => {
         return bTime - aTime || a.name.localeCompare(b.name);
       }
 
-      if (sortBy === 'balance') {
-        return b.prepaidBalance - a.prepaidBalance || a.name.localeCompare(b.name);
-      }
-
       return a.name.localeCompare(b.name);
     });
   }, [rawVisibleMembers, sortBy, statsByStudent]);
@@ -201,8 +197,7 @@ export const StudentList: React.FC = () => {
     { id: 'name', label: 'Name' },
     { id: 'role', label: 'Role' },
     { id: 'hours', label: 'Hours' },
-    { id: 'lastFlight', label: 'Last flight' },
-    { id: 'balance', label: 'Balance' }
+    { id: 'lastFlight', label: 'Last flight' }
   ];
 
   const roleBadgeClass = (role: UserRole) => {

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,6 +54,109 @@ const hasStaffRole = async (adminClient: any, userId: string) => {
   return (data || []).length > 0;
 };
 
+const sendEmail = async ({
+  to,
+  toName,
+  subject,
+  html,
+}: {
+  to: string;
+  toName?: string;
+  subject: string;
+  html: string;
+}) => {
+  const apiKey = Deno.env.get("BREVO_API_KEY");
+  if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
+
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
+  const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "api-key": apiKey,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email: to, name: toName || to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { sent: false, error: body || `Brevo email failed with ${response.status}` };
+  }
+
+  return { sent: true, error: null };
+};
+
+const escapeHtml = (value: unknown) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const buildFlightPaymentEmail = ({
+  memberName,
+  aircraftRegistration,
+  flightTypeName,
+  flightDate,
+  amount,
+  checkoutUrl,
+}: {
+  memberName: string;
+  aircraftRegistration: string;
+  flightTypeName: string;
+  flightDate: string;
+  amount: number;
+  checkoutUrl: string;
+}) => `<!doctype html>
+<html>
+  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4fb;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.16);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:32px 30px;color:#ffffff;">
+                <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
+                <h1 style="margin:0;font-size:28px;line-height:1.15;">Your flight payment link is ready</h1>
+                <p style="margin:14px 0 0;color:#dbeafe;font-size:15px;line-height:1.6;">Pay securely online using the Stripe link below.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 30px;">
+                <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:#0f172a;">Hi ${escapeHtml(memberName || "there")},</p>
+                <p style="margin:0 0 18px;line-height:1.65;color:#334155;">Your ${escapeHtml(flightTypeName)} on ${escapeHtml(flightDate)} in ${escapeHtml(aircraftRegistration)} has been logged and is ready for payment.</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
+                  <tr>
+                    <td style="padding:18px;">
+                      <p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#2563eb;font-weight:700;">Amount due</p>
+                      <p style="margin:0;font-size:28px;font-weight:800;color:#0f172a;">AUD $${escapeHtml(amount.toFixed(2))}</p>
+                      <p style="margin:8px 0 0;color:#475569;font-size:14px;">${escapeHtml(flightTypeName)} · ${escapeHtml(aircraftRegistration)}</p>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:26px 0;">
+                  <a href="${escapeHtml(checkoutUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;border-radius:14px;padding:14px 22px;">Pay securely with Stripe</a>
+                </p>
+                <p style="margin:0 0 10px;color:#64748b;font-size:13px;line-height:1.6;">If the button does not work, copy and paste this link into your browser:</p>
+                <p style="margin:0;color:#2563eb;font-size:13px;line-height:1.6;word-break:break-all;">${escapeHtml(checkoutUrl)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -98,6 +201,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const flightLogId = cleanText(body.flightLogId);
     const requestedAmountCents = dollarsToCents(body.amount);
+    const sendPaymentEmail = body.sendEmail === true;
     const successUrl = safeReturnUrl(body.successUrl, "/billing?stripe_flight=success");
     const cancelUrl = safeReturnUrl(body.cancelUrl, "/billing?stripe_flight=cancelled");
 
@@ -116,6 +220,12 @@ Deno.serve(async (req: Request) => {
         payment_status,
         payment_type,
         stripe_checkout_session_id,
+        booking:booking_id(
+          is_guest_booking,
+          guest_name,
+          guest_email,
+          guest_phone
+        ),
         aircraft!flight_logs_aircraft_id_fkey(registration),
         users!flight_logs_student_id_fkey(name, email),
         flight_types(name)
@@ -152,10 +262,16 @@ Deno.serve(async (req: Request) => {
     if (amountCents <= 0) return json({ error: "Enter an amount greater than $0." }, 400);
 
     const student = firstJoinRow(flightLog.users) as { name?: unknown; email?: unknown } | undefined;
+    const booking = firstJoinRow((flightLog as any).booking) as {
+      is_guest_booking?: unknown;
+      guest_name?: unknown;
+      guest_email?: unknown;
+    } | undefined;
     const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
     const flightType = firstJoinRow(flightLog.flight_types) as { name?: unknown } | undefined;
-    const studentName = cleanText(student?.name) || "Member";
-    const studentEmail = cleanText(student?.email);
+    const isGuestBooking = Boolean(booking?.is_guest_booking);
+    const studentName = cleanText(isGuestBooking ? booking?.guest_name : student?.name) || "Member";
+    const studentEmail = cleanText(isGuestBooking ? booking?.guest_email : student?.email);
     const aircraftRegistration = cleanText(aircraft?.registration) || "aircraft";
     const flightTypeName = cleanText(flightType?.name) || "Flight";
     const flightDate = flightLog.start_time ? new Date(flightLog.start_time).toLocaleDateString("en-AU") : "flight";
@@ -183,6 +299,13 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Idempotency-Key": stripeIdempotencyKey(
+          "flight-checkout",
+          flightLog.id,
+          flightLog.student_id,
+          amountCents,
+          remainingCents,
+        ),
       }),
       body: form,
     });
@@ -204,10 +327,35 @@ Deno.serve(async (req: Request) => {
       .eq("id", flightLog.id);
     if (updateError) throw updateError;
 
+    let emailSent = false;
+    let emailError: string | null = null;
+    if (sendPaymentEmail && studentEmail) {
+      const emailResult = await sendEmail({
+        to: studentEmail,
+        toName: studentName,
+        subject: `Flight payment link - ${flightTypeName} ${aircraftRegistration}`.trim(),
+        html: buildFlightPaymentEmail({
+          memberName: studentName,
+          aircraftRegistration,
+          flightTypeName,
+          flightDate,
+          amount: centsToDollars(amountCents),
+          checkoutUrl: session.url,
+        }),
+      });
+      emailSent = emailResult.sent;
+      emailError = emailResult.error;
+    } else if (sendPaymentEmail && !studentEmail) {
+      emailError = "No email address is stored for this booking.";
+    }
+
     return json({
       checkoutUrl: session.url,
       sessionId: session.id,
       flightLogId: flightLog.id,
+      emailSent,
+      emailError,
+      emailTo: studentEmail || null,
     });
   } catch (error) {
     console.error("create-flight-payment-checkout error:", error);

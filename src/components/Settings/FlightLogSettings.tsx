@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, Info, Loader2 } from 'lucide-react';
+import { ClipboardList, Info, Loader2, RotateCcw } from 'lucide-react';
 import { FlightLogFieldSetting, useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import toast from 'react-hot-toast';
+import { useAircraft } from '../../hooks/useAircraft';
 
 interface FlightLogSettingsProps {
   canEdit: boolean;
@@ -189,13 +190,17 @@ const defaults: Record<string, Pick<FlightLogFieldSetting, 'is_enabled' | 'is_ma
   maintenance_notes: { is_enabled: false, is_mandatory: false, display_order: 22 },
 };
 
-const makeDraft = (settings: FlightLogFieldSetting[]) => {
-  const byName = new Map(settings.map(setting => [setting.field_name, setting]));
+const makeDraft = (settings: FlightLogFieldSetting[], aircraftId: string | null) => {
+  const globalByName = new Map(settings.filter(setting => !setting.aircraft_id).map(setting => [setting.field_name, setting]));
+  const aircraftByName = new Map(settings.filter(setting => aircraftId && setting.aircraft_id === aircraftId).map(setting => [setting.field_name, setting]));
   return fieldMeta.map(meta => {
-    const existing = byName.get(meta.fieldName);
+    const global = globalByName.get(meta.fieldName);
+    const override = aircraftByName.get(meta.fieldName);
+    const existing = override || global;
     const fallback = defaults[meta.fieldName];
     return {
-      id: existing?.id || `flight-log-field-${meta.fieldName}`,
+      id: override?.id || (!aircraftId && global?.id) || `flight-log-field-${aircraftId || 'global'}-${meta.fieldName}`,
+      aircraft_id: aircraftId,
       field_name: meta.fieldName,
       is_enabled: meta.lockVisibility ? true : existing?.is_enabled ?? fallback.is_enabled,
       is_mandatory: meta.alwaysRequired ? true : existing?.is_mandatory ?? fallback.is_mandatory,
@@ -228,25 +233,31 @@ const Toggle = ({
 );
 
 const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings } = useFlightLogSettings();
+  const { settings, loading, updateSettings, deleteAircraftSettings } = useFlightLogSettings();
+  const { aircraft } = useAircraft();
+  const [selectedAircraftId, setSelectedAircraftId] = useState<string>('');
   const [draft, setDraft] = useState<FlightLogFieldSetting[]>([]);
+  const selectedAircraft = aircraft.find(item => item.id === selectedAircraftId) ?? null;
+  const hasAircraftOverride = selectedAircraftId
+    ? settings.some(setting => setting.aircraft_id === selectedAircraftId)
+    : false;
 
   useEffect(() => {
-    setDraft(makeDraft(settings));
-  }, [settings]);
+    setDraft(makeDraft(settings, selectedAircraftId || null));
+  }, [settings, selectedAircraftId]);
 
   useEffect(() => {
     (window as any).__flightlogSettingsSave = async () => {
       const { error } = await updateSettings(draft);
       if (error) toast.error(error);
-      else toast.success('Flight log form settings saved');
+      else toast.success(selectedAircraft ? `Flight log settings saved for ${selectedAircraft.registration}` : 'Global flight log form settings saved');
     };
-    (window as any).__flightlogSettingsCancel = () => setDraft(makeDraft(settings));
+    (window as any).__flightlogSettingsCancel = () => setDraft(makeDraft(settings, selectedAircraftId || null));
     return () => {
       delete (window as any).__flightlogSettingsSave;
       delete (window as any).__flightlogSettingsCancel;
     };
-  }, [draft, settings, updateSettings]);
+  }, [draft, selectedAircraft, selectedAircraftId, settings, updateSettings]);
 
   const settingsByName = useMemo(() => new Map(draft.map(setting => [setting.field_name, setting])), [draft]);
 
@@ -257,6 +268,17 @@ const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormCh
       if (!next.is_enabled) next.is_mandatory = false;
       return next;
     }));
+    onFormChange();
+  };
+
+  const handleResetAircraftOverride = async () => {
+    if (!selectedAircraftId) return;
+    const { error } = await deleteAircraftSettings(selectedAircraftId);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success('Aircraft override removed. This aircraft now uses the global defaults.');
     onFormChange();
   };
 
@@ -283,6 +305,48 @@ const FlightLogSettings: React.FC<FlightLogSettingsProps> = ({ canEdit, onFormCh
         </h2>
         <p className="text-gray-600">Choose which fields appear when staff log a flight and which fields must be completed before saving.</p>
       </div>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">Settings scope</span>
+            <select
+              value={selectedAircraftId}
+              onChange={event => {
+                setSelectedAircraftId(event.target.value);
+                onFormChange();
+              }}
+              disabled={!canEdit}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            >
+              <option value="">Global defaults - used by every aircraft unless overridden</option>
+              {aircraft.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.registration} - {item.make} {item.model}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedAircraftId && (
+            <button
+              type="button"
+              onClick={handleResetAircraftOverride}
+              disabled={!canEdit || !hasAircraftOverride}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Use Global Defaults
+            </button>
+          )}
+        </div>
+        <p className="mt-3 text-sm text-gray-600">
+          {selectedAircraft
+            ? hasAircraftOverride
+              ? `${selectedAircraft.registration} has its own form settings. Changes here affect only this aircraft.`
+              : `${selectedAircraft.registration} is currently previewing the global defaults. Saving will create an aircraft-specific override.`
+            : 'Edit the global defaults first, then select an aircraft only when it needs different fields.'}
+        </p>
+      </section>
 
       {Object.entries(grouped).map(([group, fields]) => (
         <section key={group} className="space-y-3">

@@ -2,7 +2,7 @@
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, Sparkles, RotateCcw } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, Sparkles, RotateCcw, RefreshCw, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -27,7 +27,7 @@ import { hasAnyRole } from '../../utils/rbac';
 import { exportCoursePdf } from '../../utils/coursePdfExport';
 import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
-import { getTwoOccasionReadiness } from '../../utils/trainingReadiness';
+import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 
 interface StudentInfoForm {
   name: string;
@@ -130,6 +130,118 @@ const CourseRichText: React.FC<{ value?: string; fallback?: string }> = ({ value
       className="mt-1 text-sm leading-6 text-gray-700 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5"
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  );
+};
+
+const XeroContactPanel: React.FC<{ student: Student; canManage: boolean; onChanged: () => void }> = ({ student, canManage, onChanged }) => {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [matches, setMatches] = useState<Array<{ contactId: string; name: string; email: string }>>([]);
+
+  const invoke = async (action: string, body: Record<string, unknown>) => {
+    setBusy(action);
+    try {
+      const { data, error } = await supabase.functions.invoke('xero-sync', {
+        body: { action, ...body },
+      });
+      if (error) throw error;
+      return data as any;
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const syncContact = async () => {
+    try {
+      await invoke('sync-member-contact', { userId: student.id });
+      toast.success('Xero contact synced');
+      onChanged();
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to sync Xero contact');
+    }
+  };
+
+  const searchContact = async () => {
+    try {
+      const data = await invoke('search-contacts', { email: student.email });
+      setMatches(Array.isArray(data?.contacts) ? data.contacts : []);
+      if (!data?.contacts?.length) toast('No exact Xero email match found');
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to search Xero contacts');
+    }
+  };
+
+  const linkContact = async (contactId: string) => {
+    try {
+      await invoke('link-contact', { userId: student.id, contactId });
+      toast.success('Xero contact linked');
+      setMatches([]);
+      onChanged();
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to link Xero contact');
+    }
+  };
+
+  if (!canManage) return null;
+
+  const status = student.xeroContactSyncStatus || (student.xeroContactId ? 'linked' : 'not_linked');
+
+  return (
+    <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-sky-950">Xero Contact</h2>
+          <p className="mt-1 text-xs text-sky-800">
+            {student.xeroContactId
+              ? `${student.xeroContactName || student.name} ${student.xeroContactEmail ? `(${student.xeroContactEmail})` : ''}`
+              : 'Not linked yet'}
+          </p>
+        </div>
+        <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-sky-800">
+          {status.replace(/_/g, ' ')}
+        </span>
+      </div>
+      {student.xeroContactSyncError && (
+        <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">{student.xeroContactSyncError}</p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={syncContact}
+          disabled={!!busy}
+          className="inline-flex items-center gap-1 rounded-md bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
+        >
+          {busy === 'sync-member-contact' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Sync/Create
+        </button>
+        <button
+          type="button"
+          onClick={searchContact}
+          disabled={!!busy}
+          className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+        >
+          {busy === 'search-contacts' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+          Find by email
+        </button>
+      </div>
+      {matches.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {matches.map(match => (
+            <div key={match.contactId} className="rounded-md border border-sky-200 bg-white p-2">
+              <p className="text-xs font-semibold text-gray-900">{match.name || 'Unnamed Xero contact'}</p>
+              <p className="text-xs text-gray-500">{match.email || 'No email'}</p>
+              <button
+                type="button"
+                onClick={() => linkContact(match.contactId)}
+                disabled={!!busy}
+                className="mt-2 rounded bg-gray-900 px-2 py-1 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
+              >
+                Link this contact
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -499,7 +611,7 @@ export const StudentProfilePage: React.FC = () => {
         pass_mark: selectedExam.passMark,
         result: score >= selectedExam.passMark ? 'pass' : 'fail',
         exam_date: examForm.examDate || new Date().toISOString().slice(0, 10),
-        notes: examForm.notes.trim(),
+        notes: '',
         instructor_id: user.id,
         file_name: examUploadFile?.name || null,
         file_type: examUploadFile?.type || null,
@@ -508,7 +620,7 @@ export const StudentProfilePage: React.FC = () => {
         answer_sheet_only: true,
         kdr_required: true,
         kdr_completed: examForm.kdrCompleted,
-        kdr_completion_method: examForm.kdrCompleted ? 'verbal' : 'verbal',
+        kdr_completion_method: 'verbal',
         kdr_notes: examForm.kdrNotes.trim(),
         kdr_signed_off_by: examForm.kdrCompleted ? user.id : null,
         kdr_signed_off_at: examForm.kdrCompleted ? new Date().toISOString() : null,
@@ -809,8 +921,9 @@ export const StudentProfilePage: React.FC = () => {
   const recordsLoading = trainingRecordsLoading;
 
   const handleAddTrainingRecord = () => {
-    toast('Training records are created from logged flights so they stay tied to the aircraft logbook.');
-    navigate('/training');
+    if (!student?.id) return;
+    toast('Opening a draft training record. You can attach it to a flight log later.');
+    navigate(`/training/outstanding-records?draftStudentId=${encodeURIComponent(student.id)}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -934,6 +1047,18 @@ export const StudentProfilePage: React.FC = () => {
     });
 
     if (passed) {
+      const consecutiveReadiness = getConsecutivePassReadiness({
+        course,
+        records: trainingRecords,
+        studentId: record.studentId,
+        lesson,
+        currentRecordGrades: criteriaGrades,
+        excludeRecordId: record.id,
+      });
+      if (consecutiveReadiness.blocked) {
+        return lesson.name || lesson.sequenceTitle || 'Repeat current lesson';
+      }
+
       const readiness = getTwoOccasionReadiness({
         course,
         records: trainingRecords,
@@ -1054,10 +1179,6 @@ export const StudentProfilePage: React.FC = () => {
 
   const handleAcknowledge = useCallback(async (recordId: string) => {
     if (!student) return;
-    const record = studentTrainingRecords.find(item => item.id === recordId);
-    const latestRevision = record?.auditLog
-      ?.filter(entry => entry.action === 'record_revised_after_student_acknowledgement')
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())[0];
     const acknowledgementTime = new Date();
     setAcknowledgingId(recordId);
     try {
@@ -1066,24 +1187,6 @@ export const StudentProfilePage: React.FC = () => {
         studentAckName: student.name,
         studentAckTimestamp: acknowledgementTime,
         status: trainingSettings.lockRecordAfterStudentAck ? 'locked' : 'submitted',
-        ...(record ? {
-          auditLog: [
-            ...(record.auditLog || []),
-            {
-              id: createId(),
-              timestamp: acknowledgementTime,
-              userId: student.id,
-              userName: student.name || student.email || 'Student',
-              action: latestRevision ? 'student_acknowledged_revised_record' : 'student_acknowledged_record',
-              changes: latestRevision ? {
-                revisedRecordAcknowledged: true,
-                revisionTimestamp: latestRevision.timestamp.toISOString(),
-              } : {
-                recordAcknowledged: true,
-              },
-            },
-          ],
-        } : {}),
       });
       toast.success('Record acknowledged');
     } catch {
@@ -1445,7 +1548,7 @@ export const StudentProfilePage: React.FC = () => {
   const currencyDecimals = portalSettings.currency_decimals ?? 2;
   const formatCurrency = (amount: number) => `$${amount.toFixed(currencyDecimals)}`;
   const billingAccount = billing.pilotAccounts.find(account => account.userId === student.id);
-  const accountBalance = billingAccount?.balance ?? student.prepaidBalance ?? 0;
+  const accountBalance = billingAccount?.balance ?? 0;
   const billingTransactions = billing.transactions
     .filter(transaction => transaction.userId === student.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -1895,8 +1998,8 @@ export const StudentProfilePage: React.FC = () => {
                 </div>
                 
                 <div className="bg-purple-50 p-3 rounded-lg">
-                  <p className="text-xs font-medium text-purple-900">Balance</p>
-                  <p className="text-lg font-bold text-purple-600">${student.prepaidBalance.toFixed(2)}</p>
+                  <p className="text-xs font-medium text-purple-900">Xero Credit</p>
+                  <p className="text-lg font-bold text-purple-600">{formatCurrency(accountBalance)}</p>
                 </div>
               </div>
               
@@ -2099,15 +2202,6 @@ export const StudentProfilePage: React.FC = () => {
                     />
                   </label>
                 </div>
-                <label className="block">
-                  <span className="block text-sm font-medium text-gray-700 mb-1">Notes</span>
-                  <textarea
-                    rows={3}
-                    value={examForm.notes}
-                    onChange={event => setExamForm(form => ({ ...form, notes: event.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </label>
                 <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                   <label className="flex items-start gap-3 text-sm text-indigo-950">
                     <input
@@ -2119,7 +2213,7 @@ export const StudentProfilePage: React.FC = () => {
                     <span>
                       <span className="block font-semibold">KDR verbally reviewed with student</span>
                       <span className="mt-1 block text-xs text-indigo-700">
-                        Keep this lightweight: upload the answer sheet only, then note any key knowledge-deficiency points discussed.
+                        Store only the marked answer sheet and a short KDR evidence note.
                       </span>
                     </span>
                   </label>
@@ -2286,11 +2380,11 @@ export const StudentProfilePage: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Account Balance</p>
-              <p className={`text-2xl font-bold mt-2 ${accountBalance < 0 ? 'text-red-600' : accountBalance < 100 ? 'text-amber-600' : 'text-gray-900'}`}>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Xero Credit</p>
+              <p className={`text-2xl font-bold mt-2 ${accountBalance < 0 ? 'text-red-600' : accountBalance < (billing.minimumPrepaidPack ?? 1000) ? 'text-amber-600' : 'text-gray-900'}`}>
                 {formatCurrency(accountBalance)}
               </p>
-              <p className="text-sm text-gray-500 mt-1">Pre-paid account balance</p>
+              <p className="text-sm text-gray-500 mt-1">Live member credit from Xero</p>
             </div>
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pending Top-ups</p>
@@ -4046,6 +4140,17 @@ export const StudentProfilePage: React.FC = () => {
                   </label>
                 </div>
               </section>
+
+              {hasAnyRole(user, ['admin']) && (
+                <section>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Xero Contact</h3>
+                  <XeroContactPanel
+                    student={student}
+                    canManage
+                    onChanged={refetchStudents}
+                  />
+                </section>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">

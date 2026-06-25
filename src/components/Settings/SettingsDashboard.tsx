@@ -158,7 +158,7 @@ export const SettingsDashboard: React.FC = () => {
       cancelFunction();
     }
     setHasUnsavedChanges(false);
-    toast.info('Changes discarded');
+    toast('Changes discarded');
   };
 
   const handleSectionChange = (sectionId: string) => {
@@ -180,6 +180,7 @@ export const SettingsDashboard: React.FC = () => {
 
   const canEdit = (sectionId: string) => {
     if (user?.role === 'admin') return true;
+    if ((user?.role === 'senior_instructor' || user?.role === 'instructor') && sectionId === 'roster') return true;
     if (
       (user?.role === 'senior_instructor' || user?.role === 'instructor' || user?.role === 'student' || user?.role === 'pilot') &&
       sectionId.startsWith('account-')

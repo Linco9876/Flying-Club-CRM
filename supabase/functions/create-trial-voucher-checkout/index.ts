@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
-import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,6 +75,9 @@ Deno.serve(async (req: Request) => {
     const recipientEmail = cleanEmail(body.recipientEmail);
     const sendToRecipient = Boolean(body.sendToRecipient);
     const recipientDeliveryAt = cleanText(body.recipientDeliveryAt);
+    const selectedAddonIds = Array.isArray(body.addonIds)
+      ? Array.from(new Set(body.addonIds.map((value: unknown) => cleanText(value)).filter(Boolean)))
+      : [];
     const successUrl = safeReturnUrl(body.successUrl, "/trial-flight-gift-vouchers?checkout=success");
     const cancelUrl = safeReturnUrl(body.cancelUrl, "/trial-flight-gift-vouchers?checkout=cancelled");
 
@@ -112,7 +115,7 @@ Deno.serve(async (req: Request) => {
     if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
     const { data: aircraftRows, error: aircraftError } = await adminClient
       .from("aircraft")
-      .select("id,registration,make,model,status,required_endorsement_type");
+      .select("id,registration,make,model,status,required_endorsement_type,is_archived");
 
     if (aircraftError) return json({ error: aircraftError.message }, 500);
     const instructorIds = product.instructor_ids || [];
@@ -138,6 +141,31 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Online checkout is not enabled until this voucher has a valid price." }, 409);
     }
 
+    let selectedAddons: any[] = [];
+    if (selectedAddonIds.length > 0) {
+      const { data: addonRows, error: addonError } = await adminClient
+        .from("trial_flight_voucher_product_addons")
+        .select("addon:trial_flight_voucher_addons(id,name,description,price,is_active)")
+        .eq("product_id", product.id)
+        .in("addon_id", selectedAddonIds);
+      if (addonError) return json({ error: addonError.message }, 500);
+      selectedAddons = (addonRows || [])
+        .map((row: any) => Array.isArray(row.addon) ? row.addon[0] : row.addon)
+        .filter((addon: any) => addon?.is_active !== false && selectedAddonIds.includes(addon.id))
+        .map((addon: any) => ({
+          id: addon.id,
+          name: addon.name,
+          description: addon.description || "",
+          price: Number(addon.price || 0),
+        }));
+
+      if (selectedAddons.length !== selectedAddonIds.length) {
+        return json({ error: "One or more selected add-ons are no longer available for this voucher." }, 409);
+      }
+    }
+
+    const totalAmount = Number(product.price || 0) + selectedAddons.reduce((total, addon) => total + Number(addon.price || 0), 0);
+
     let voucher: any = null;
     let voucherError: any = null;
 
@@ -156,8 +184,10 @@ Deno.serve(async (req: Request) => {
           recipient_delivery_at: recipientDeliveryAtIso,
           status: "draft",
           payment_status: "pending",
-          payment_amount: Number(product.price || 0),
+          payment_source: "stripe",
+          payment_amount: totalAmount,
           payment_currency: "AUD",
+          selected_addons: selectedAddons,
           notes: "Created from public Stripe checkout",
         })
         .select("id,code")
@@ -176,6 +206,14 @@ Deno.serve(async (req: Request) => {
     form.set("mode", "payment");
     form.set("line_items[0][price]", product.stripe_price_id);
     form.set("line_items[0][quantity]", "1");
+    selectedAddons.forEach((addon, index) => {
+      const lineIndex = index + 1;
+      form.set(`line_items[${lineIndex}][price_data][currency]`, "aud");
+      form.set(`line_items[${lineIndex}][price_data][product_data][name]`, addon.name);
+      if (addon.description) form.set(`line_items[${lineIndex}][price_data][product_data][description]`, addon.description);
+      form.set(`line_items[${lineIndex}][price_data][unit_amount]`, String(Math.round(Number(addon.price || 0) * 100)));
+      form.set(`line_items[${lineIndex}][quantity]`, "1");
+    });
     form.set("success_url", `${successUrl}${successUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`);
     form.set("cancel_url", cancelUrl);
     form.set("customer_email", purchaserEmail);
@@ -184,12 +222,14 @@ Deno.serve(async (req: Request) => {
     form.set("metadata[voucher_code]", voucher.code);
     form.set("metadata[product_id]", product.id);
     form.set("metadata[purchaser_email]", purchaserEmail);
+    if (selectedAddons.length > 0) form.set("metadata[addon_ids]", selectedAddons.map(addon => addon.id).join(","));
     if (recipientEmail) form.set("metadata[recipient_email]", recipientEmail);
 
     const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",
       headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
         "Content-Type": "application/x-www-form-urlencoded",
+        "Idempotency-Key": stripeIdempotencyKey("voucher-public-checkout", voucher.id, product.id, totalAmount),
       }),
       body: form,
     });

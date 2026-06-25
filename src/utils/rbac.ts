@@ -152,6 +152,17 @@ export const getPrimaryRole = (user: User | null): UserRole | null => {
   return 'student';
 };
 
+const getEffectiveVisibilityRoles = (user: User | null): UserRole[] => {
+  const primaryRole = getPrimaryRole(user);
+
+  if (!primaryRole) return [];
+  if (primaryRole === 'admin') return ['admin'];
+  if (primaryRole === 'senior_instructor') return ['senior_instructor', 'instructor'];
+  if (primaryRole === 'instructor') return ['instructor'];
+  if (primaryRole === 'pilot') return ['pilot'];
+  return ['student'];
+};
+
 export const can = (user: User | null, action: Action, resource: Resource = 'all'): boolean => {
   if (!user) return false;
 
@@ -201,6 +212,7 @@ export const getAuthorizedMenuItems = (user: User | null) => {
 
 export const getAuthorizedSafetyTabs = (user: User | null) => {
   if (!user) return [];
+  const primaryRole = getPrimaryRole(user);
 
   const allTabs = [
     { id: 'pilot-currency', label: 'Pilot Currency', action: 'view-pilot-currency' as Action },
@@ -209,14 +221,13 @@ export const getAuthorizedSafetyTabs = (user: User | null) => {
     { id: 'checklists-docs', label: 'Checklists / Docs', action: 'view-checklists-docs' as Action }
   ];
 
-  if (hasAnyRole(user, ['student', 'pilot'])) {
+  if (primaryRole === 'student' || primaryRole === 'pilot') {
     return allTabs.filter(tab =>
       ['pilot-currency', 'safety-reports', 'checklists-docs'].includes(tab.id)
     );
   }
 
-  const resource = hasAnyRole(user, ['student', 'pilot']) ? 'own' : 'all';
-  return allTabs.filter(tab => can(user, tab.action, resource));
+  return allTabs.filter(tab => can(user, tab.action, 'all'));
 };
 
 export const getAuthorizedSettingsSections = (user: User | null) => {
@@ -226,14 +237,14 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'organisation', label: 'Organisation', roles: ['admin'] as UserRole[] },
     { id: 'calendar', label: 'Calendar', roles: ['admin'] as UserRole[] },
     { id: 'booking-rules', label: 'Bookings & Rules', roles: ['admin'] as UserRole[] },
-    { id: 'roster', label: 'Roster & Availability', roles: ['admin'] as UserRole[] },
-    { id: 'training', label: 'Training / Syllabus', roles: ['admin'] as UserRole[] },
+    { id: 'roster', label: 'Roster & Availability', roles: ['admin', 'instructor'] as UserRole[] },
+    { id: 'training', label: 'Training / Syllabus', roles: ['admin', 'instructor'] as UserRole[] },
     { id: 'billing', label: 'Billing & Rates', roles: ['admin'] as UserRole[] },
     { id: 'flight-log', label: 'Flight Log Form', roles: ['admin'] as UserRole[] },
     { id: 'integrations', label: 'Integrations', roles: ['admin'] as UserRole[] },
     { id: 'notifications', label: 'Notifications', roles: ['admin'] as UserRole[] },
-    { id: 'safety', label: 'Safety & Compliance', roles: ['admin'] as UserRole[] },
-    { id: 'maintenance', label: 'Maintenance', roles: ['admin'] as UserRole[] },
+    { id: 'safety', label: 'Safety & Compliance', roles: ['admin', 'instructor'] as UserRole[] },
+    { id: 'maintenance', label: 'Maintenance', roles: ['admin', 'instructor'] as UserRole[] },
     { id: 'resources', label: 'Resources (Aircraft & Rooms)', roles: ['admin'] as UserRole[] },
     { id: 'portal', label: 'Portal & UX', roles: ['admin'] as UserRole[] },
     { id: 'roles', label: 'Roles & Permissions', roles: ['admin'] as UserRole[] },
@@ -246,7 +257,8 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'account-dashboard', label: 'Portal Dashboard', roles: ['pilot', 'student'] as UserRole[] }
   ];
 
+  const effectiveRoles = getEffectiveVisibilityRoles(user);
   return allSections.filter(section =>
-    hasAnyRole(user, section.roles)
+    section.roles.some(role => effectiveRoles.includes(role))
   );
 };

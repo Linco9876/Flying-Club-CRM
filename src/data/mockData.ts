@@ -59,7 +59,6 @@ export const mockStudents: Student[] = [
     medicalExpiry: new Date('2024-08-15'),
     licenceExpiry: new Date('2026-03-20'),
     dateOfBirth: new Date('1995-06-15'),
-    prepaidBalance: 1250.00,
     emergencyContact: {
       name: 'Jane Pilot',
       phone: '+61 400 987 654',
@@ -88,7 +87,6 @@ export const mockStudents: Student[] = [
     name: 'Chief Flying Instructor',
     role: 'instructor',
     phone: '+61 400 789 012',
-    prepaidBalance: 0,
     endorsements: []
   },
   {
@@ -102,7 +100,6 @@ export const mockStudents: Student[] = [
     medicalExpiry: new Date('2024-12-20'),
     licenceExpiry: new Date('2025-08-15'),
     dateOfBirth: new Date('1992-03-22'),
-    prepaidBalance: 850.00,
     endorsements: [
       {
         id: '3',

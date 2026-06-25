@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Pencil, Plane, Plus, Save, Search, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Maximize2, Minimize2, Pencil, Plane, Plus, Save, Search, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useStudents } from '../../hooks/useStudents';
 import { useTrialFlightVouchers } from '../../hooks/useTrialFlightVouchers';
 import { useUsers } from '../../hooks/useUsers';
-import { TrialFlightVoucher, TrialFlightVoucherAircraftMode, TrialFlightVoucherPaymentStatus, TrialFlightVoucherProduct } from '../../types';
+import { TrialFlightVoucher, TrialFlightVoucherAddon, TrialFlightVoucherAircraftMode, TrialFlightVoucherPaymentStatus, TrialFlightVoucherProduct } from '../../types';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 
@@ -19,6 +20,7 @@ const emptyProduct = (): Omit<TrialFlightVoucherProduct, 'id' | 'createdAt' | 'u
   instructorIds: [],
   durationMinutes: 60,
   price: 0,
+  addons: [],
   stripePriceId: '',
   emailSubject: 'Your Bendigo Flying Club trial flight voucher',
   emailBody: defaultEmailBody,
@@ -88,7 +90,9 @@ const emptyIssueForm = () => ({
   sendToRecipient: false,
   recipientDeliveryAt: '',
   expiresAt: defaultVoucherExpiryDate(),
-  paymentStatus: 'paid' as TrialFlightVoucherPaymentStatus,
+  paymentHandling: 'paid' as VoucherIssuePaymentHandling,
+  prepaidPayerUserId: '',
+  prepaidPayerSearch: '',
   notes: '',
 });
 
@@ -154,13 +158,22 @@ interface StripeConnectStatus {
 }
 
 type VoucherAdminTab = 'products' | 'issue' | 'recent';
+type VoucherIssuePaymentHandling = 'paid' | 'stripe_link' | 'prepaid' | 'waived';
 
 export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
+  const { students: members } = useStudents();
   const { users, getInstructors } = useUsers();
-  const { products, vouchers, loading, refetch, saveProduct, issueVoucher, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
+  const { products, addons, vouchers, loading, refetch, saveProduct, saveAddon, issueVoucher, sendVoucherPaymentLink, issueVoucherUsingPrepaid, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
+  const [addonForm, setAddonForm] = useState<Omit<TrialFlightVoucherAddon, 'id' | 'createdAt' | 'updatedAt'>>({
+    name: '',
+    description: '',
+    price: 0,
+    isActive: true,
+  });
+  const [editingAddonId, setEditingAddonId] = useState<string | undefined>();
   const [editingProductId, setEditingProductId] = useState<string | undefined>();
   const [showProductForm, setShowProductForm] = useState(false);
   const [instructorEndorsements, setInstructorEndorsements] = useState<InstructorEndorsementRow[]>([]);
@@ -171,6 +184,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const [stripeCreationLoading, setStripeCreationLoading] = useState(false);
   const [activeVoucherTab, setActiveVoucherTab] = useState<VoucherAdminTab>('products');
   const [voucherSearch, setVoucherSearch] = useState('');
+  const [expandedVoucherIds, setExpandedVoucherIds] = useState<Set<string>>(() => new Set());
 
   const instructors = getInstructors();
   const activeProducts = products.filter(product => product.isActive);
@@ -234,12 +248,43 @@ export const TrialFlightVouchersPage: React.FC = () => {
       .filter(Boolean)
       .some(value => String(value).toLowerCase().includes(query));
   });
+  const prepaidMemberOptions = members
+    .filter(member => member.isActive !== false)
+    .filter(member => {
+      const query = issueForm.prepaidPayerSearch.trim().toLowerCase();
+      if (!query) return true;
+      return [
+        member.name,
+        member.email,
+        member.phone,
+        member.mobilePhone,
+        member.raausId,
+        member.casaId,
+      ].filter(Boolean).some(value => String(value).toLowerCase().includes(query));
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, 30);
+  const selectedPrepaidMember = members.find(member => member.id === issueForm.prepaidPayerUserId);
+
+  const toggleVoucherExpanded = (voucherId: string) => {
+    setExpandedVoucherIds(current => {
+      const next = new Set(current);
+      if (next.has(voucherId)) {
+        next.delete(voucherId);
+      } else {
+        next.add(voucherId);
+      }
+      return next;
+    });
+  };
+
+  const bookableAircraft = useMemo(() => aircraft.filter(item => !item.isArchived), [aircraft]);
 
   const aircraftByMode = useMemo(() => {
-    const tecnams = aircraft.filter(isTecnamAircraft);
-    const archers = aircraft.filter(isArcherAircraft);
+    const tecnams = bookableAircraft.filter(isTecnamAircraft);
+    const archers = bookableAircraft.filter(isArcherAircraft);
     return { tecnams, archers };
-  }, [aircraft]);
+  }, [bookableAircraft]);
 
   const instructorIdsKey = useMemo(
     () => instructors.map(instructor => instructor.id).sort().join(','),
@@ -316,6 +361,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
       instructorIds: product.instructorIds,
       durationMinutes: product.durationMinutes,
       price: product.price,
+      addons: product.addons || [],
       stripePriceId: product.stripePriceId || '',
       emailSubject: product.emailSubject,
       emailBody: product.emailBody,
@@ -461,6 +507,44 @@ export const TrialFlightVouchersPage: React.FC = () => {
     }
   };
 
+  const toggleProductAddon = (addon: TrialFlightVoucherAddon, checked: boolean) => {
+    setProductForm(form => ({
+      ...form,
+      addons: checked
+        ? Array.from(new Map([...(form.addons || []), addon].map(item => [item.id, item])).values())
+        : (form.addons || []).filter(item => item.id !== addon.id),
+    }));
+  };
+
+  const startEditAddon = (addon: TrialFlightVoucherAddon) => {
+    setEditingAddonId(addon.id);
+    setAddonForm({
+      name: addon.name,
+      description: addon.description,
+      price: addon.price,
+      isActive: addon.isActive,
+    });
+  };
+
+  const handleSaveAddon = async () => {
+    if (!addonForm.name.trim()) {
+      toast.error('Add-on name is required');
+      return;
+    }
+    if (Number(addonForm.price || 0) < 0) {
+      toast.error('Add-on price cannot be negative');
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveAddon(addonForm, editingAddonId);
+      setAddonForm({ name: '', description: '', price: 0, isActive: true });
+      setEditingAddonId(undefined);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleCreateStripePrice = async () => {
     if (!stripeConnected) {
       toast.error('Connect this club Stripe account in Settings > Integrations first');
@@ -514,15 +598,14 @@ export const TrialFlightVouchersPage: React.FC = () => {
     }
   };
 
-  const resolveIssueButtonLabel = (status: TrialFlightVoucherPaymentStatus) => {
-    if (status === 'paid') return 'Mark paid & send voucher';
-    if (status === 'pending') return 'Save unpaid draft';
-    if (status === 'waived') return 'Send complimentary voucher';
-    return 'Send manual voucher';
+  const resolveIssueButtonLabel = (handling: VoucherIssuePaymentHandling) => {
+    if (handling === 'stripe_link') return 'Send payment link';
+    if (handling === 'prepaid') return 'Pay from prepaid & send';
+    if (handling === 'waived') return 'Send complimentary voucher';
+    return 'Mark paid & send voucher';
   };
 
-  const handleIssueVoucher = async (paymentStatusOverride?: TrialFlightVoucherPaymentStatus) => {
-    const effectivePaymentStatus = paymentStatusOverride || issueForm.paymentStatus;
+  const handleIssueVoucher = async () => {
     if (!issueForm.productId || !issueForm.purchaserName || !issueForm.purchaserEmail) {
       toast.error('Select a voucher and enter purchaser name/email');
       return;
@@ -560,10 +643,24 @@ export const TrialFlightVouchersPage: React.FC = () => {
         return;
       }
     }
+    if (issueForm.paymentHandling === 'stripe_link') {
+      if (!stripeConnected) {
+        toast.error('Connect Stripe before sending a payment link.');
+        return;
+      }
+      if (!selectedProduct?.stripePriceId) {
+        toast.error('Create the Stripe checkout price for this voucher product first.');
+        return;
+      }
+    }
+    if (issueForm.paymentHandling === 'prepaid' && !issueForm.prepaidPayerUserId) {
+      toast.error('Select the member prepaid account that will pay for this voucher.');
+      return;
+    }
 
     setSaving(true);
     try {
-      await issueVoucher({
+      const voucherPayload = {
         productId: issueForm.productId,
         purchaserName: issueForm.purchaserName,
         purchaserEmail: issueForm.purchaserEmail,
@@ -573,12 +670,27 @@ export const TrialFlightVouchersPage: React.FC = () => {
         sendToRecipient: issueForm.sendToRecipient,
         recipientDeliveryAt: dateTimeLocalToIso(issueForm.recipientDeliveryAt),
         expiresAt: issueForm.expiresAt ? new Date(`${issueForm.expiresAt}T23:59:59`).toISOString() : undefined,
-        paymentStatus: effectivePaymentStatus,
-        paymentAmount: selectedProduct?.price,
-        paymentCurrency: 'AUD',
         notes: issueForm.notes,
-        createdBy: user?.id,
-      });
+      };
+
+      if (issueForm.paymentHandling === 'stripe_link') {
+        await sendVoucherPaymentLink(voucherPayload);
+      } else if (issueForm.paymentHandling === 'prepaid') {
+        await issueVoucherUsingPrepaid({
+          ...voucherPayload,
+          paymentAmount: selectedProduct?.price,
+          paymentCurrency: 'AUD',
+          createdBy: user?.id,
+        }, issueForm.prepaidPayerUserId);
+      } else {
+        await issueVoucher({
+          ...voucherPayload,
+          paymentStatus: issueForm.paymentHandling === 'waived' ? 'waived' : 'paid',
+          paymentAmount: selectedProduct?.price,
+          paymentCurrency: 'AUD',
+          createdBy: user?.id,
+        });
+      }
       setIssueForm(emptyIssueForm());
     } finally {
       setSaving(false);
@@ -943,13 +1055,13 @@ export const TrialFlightVouchersPage: React.FC = () => {
       ? `Only the ${productForm.aircraftIds.length} selected aircraft will be offered for this voucher.`
       : 'Select the aircraft that can be used for this voucher.';
   const productFormAircraft = useMemo(() => {
-    const selectedAircraft = aircraft.filter(item => productForm.aircraftIds.includes(item.id));
+    const selectedAircraft = bookableAircraft.filter(item => productForm.aircraftIds.includes(item.id));
 
     return {
       selectedAircraft,
       serviceableAircraft: selectedAircraft.filter(item => item.status === 'serviceable'),
     };
-  }, [aircraft, productForm.aircraftIds]);
+  }, [bookableAircraft, productForm.aircraftIds]);
   const instructorVoucherReadiness = (instructorId: string) => {
     if (productFormAircraft.selectedAircraft.length === 0) {
       return {
@@ -1028,12 +1140,12 @@ export const TrialFlightVouchersPage: React.FC = () => {
   };
 
   const getProductAircraft = (product: TrialFlightVoucherProduct) => {
-    const selectedAircraft = aircraft.filter(item => product.aircraftIds.includes(item.id));
+    const selectedAircraft = bookableAircraft.filter(item => product.aircraftIds.includes(item.id));
     const serviceableAircraft = selectedAircraft.filter(item => item.status === 'serviceable');
     return {
       selectedAircraft,
       serviceableAircraft,
-      missingSelectedCount: product.aircraftIds.filter(id => !aircraft.some(item => item.id === id)).length,
+      missingSelectedCount: product.aircraftIds.filter(id => !bookableAircraft.some(item => item.id === id)).length,
     };
   };
 
@@ -2021,7 +2133,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
             <div className="rounded-xl border border-gray-200 p-3 dark:border-[#2c2f36]">
               <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100"><Plane className="h-4 w-4" /> Allowed aircraft</p>
               <div className="max-h-40 space-y-2 overflow-y-auto">
-                {aircraft.map(item => (
+                {bookableAircraft.map(item => (
                   <label key={item.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
                     <input type="checkbox" checked={productForm.aircraftIds.includes(item.id)} onChange={e => updateArraySelection('aircraftIds', item.id, e.target.checked)} />
                     {item.registration} {item.make} {item.model}
@@ -2085,6 +2197,115 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <p className="mt-3 text-xs leading-5 text-gray-500 dark:text-gray-400">
                 Voucher booking times only appear when at least one selected instructor can fly at least one serviceable eligible aircraft.
               </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+            <div className="rounded-xl border border-gray-200 p-3 dark:border-[#2c2f36]">
+              <p className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">Create add-on</p>
+              <div className="grid gap-2">
+                <input
+                  value={addonForm.name}
+                  onChange={event => setAddonForm(form => ({ ...form, name: event.target.value }))}
+                  placeholder="Photo package, extra passenger, merchandise..."
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={addonForm.price}
+                  onChange={event => setAddonForm(form => ({ ...form, price: Number(event.target.value) }))}
+                  placeholder="Price"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
+                />
+                <textarea
+                  rows={2}
+                  value={addonForm.description}
+                  onChange={event => setAddonForm(form => ({ ...form, description: event.target.value }))}
+                  placeholder="Short description shown to the purchaser"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
+                />
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={addonForm.isActive}
+                    onChange={event => setAddonForm(form => ({ ...form, isActive: event.target.checked }))}
+                  />
+                  Active
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveAddon}
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-blue-600 dark:hover:bg-blue-700"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    {editingAddonId ? 'Save add-on' : 'Add extra'}
+                  </button>
+                  {editingAddonId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingAddonId(undefined);
+                        setAddonForm({ name: '', description: '', price: 0, isActive: true });
+                      }}
+                      className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 p-3 dark:border-[#2c2f36]">
+              <p className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">Available add-ons for this voucher</p>
+              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                {addons.map(addon => {
+                  const checked = Boolean(productForm.addons?.some(item => item.id === addon.id));
+                  return (
+                    <label
+                      key={addon.id}
+                      className={`block rounded-lg border px-3 py-2 text-sm ${
+                        checked
+                          ? 'border-blue-200 bg-blue-50 dark:border-blue-400/30 dark:bg-blue-950/20'
+                          : 'border-gray-200 bg-white dark:border-[#2c2f36] dark:bg-[#111827]'
+                      }`}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="flex min-w-0 items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={event => toggleProductAddon(addon, event.target.checked)}
+                            className="mt-1"
+                          />
+                          <span>
+                            <span className="block font-semibold text-gray-900 dark:text-gray-100">{addon.name}</span>
+                            <span className="block text-xs leading-5 text-gray-500 dark:text-gray-400">{addon.description || 'No description yet'}</span>
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-sm font-bold text-gray-950 dark:text-gray-100">${Number(addon.price || 0).toFixed(2)}</span>
+                          <button
+                            type="button"
+                            onClick={() => startEditAddon(addon)}
+                            className="text-xs font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300"
+                          >
+                            Edit
+                          </button>
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+                {addons.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-sm text-gray-500 dark:border-[#363b45]">
+                    No add-ons yet. Create one on the left, then tick it for this voucher.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -2242,7 +2463,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         {activeVoucherTab === 'issue' && (
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
             <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Issue voucher</h2>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Create and email vouchers for cash sales, EFTs, or other external payments without using Stripe checkout.</p>
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">Issue paid vouchers, send Stripe payment links, or pay from a member prepaid account.</p>
             <div className="grid gap-3">
               <select value={issueForm.productId} onChange={e => setIssueForm(f => ({ ...f, productId: e.target.value }))} className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100">
                 <option value="">Select voucher product</option>
@@ -2285,32 +2506,63 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <label className="text-sm text-gray-600 dark:text-gray-300">
                 Payment handling
                 <select
-                  value={issueForm.paymentStatus}
-                  onChange={e => setIssueForm(f => ({ ...f, paymentStatus: e.target.value as TrialFlightVoucherPaymentStatus }))}
+                  value={issueForm.paymentHandling}
+                  onChange={e => setIssueForm(f => ({ ...f, paymentHandling: e.target.value as VoucherIssuePaymentHandling }))}
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
                 >
                   <option value="paid">Paid outside CRM (cash / EFT / other)</option>
-                  <option value="manual">Manual issue without marking paid</option>
-                  <option value="pending">Save as unpaid draft</option>
+                  <option value="stripe_link">Send payment link</option>
+                  <option value="prepaid">Pay using prepaid account</option>
                   <option value="waived">Complimentary / waived</option>
                 </select>
               </label>
-              {issueForm.paymentStatus === 'paid' && (
+              {issueForm.paymentHandling === 'paid' && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs leading-5 text-emerald-900 dark:border-emerald-400/30 dark:bg-emerald-950/30 dark:text-emerald-100">
                   This marks the voucher as paid now and sends the voucher email immediately, or schedules it if a future recipient send time is set.
                 </div>
               )}
-              {issueForm.paymentStatus === 'manual' && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-100">
-                  Use this when you need to send the voucher now but do not want to record it as paid inside the CRM.
+              {issueForm.paymentHandling === 'stripe_link' && (
+                <div className={`rounded-lg border px-3 py-2 text-xs leading-5 ${
+                  stripeConnected
+                    ? 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-400/30 dark:bg-blue-950/30 dark:text-blue-100'
+                    : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100'
+                }`}>
+                  {stripeConnected
+                    ? 'The purchaser receives a secure Stripe payment email. The voucher is only issued after Stripe confirms payment.'
+                    : 'Connect Stripe in Settings > Integrations before sending payment links.'}
                 </div>
               )}
-              {issueForm.paymentStatus === 'pending' && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100">
-                  Payment pending saves this voucher as a draft. It will not email or redeem until it is marked paid, manual, or waived.
+              {issueForm.paymentHandling === 'prepaid' && (
+                <div className="grid gap-3 rounded-xl border border-sky-100 bg-sky-50 p-3 dark:border-sky-400/20 dark:bg-sky-950/20">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-200">
+                    Prepaid account payer
+                  </p>
+                  <input
+                    value={issueForm.prepaidPayerSearch}
+                    onChange={e => setIssueForm(f => ({ ...f, prepaidPayerSearch: e.target.value }))}
+                    placeholder="Search member by name, email, phone, RAAus or CASA..."
+                    className="rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm dark:border-sky-400/30 dark:bg-[#111827] dark:text-gray-100"
+                  />
+                  <select
+                    value={issueForm.prepaidPayerUserId}
+                    onChange={e => setIssueForm(f => ({ ...f, prepaidPayerUserId: e.target.value }))}
+                    className="rounded-lg border border-sky-200 bg-white px-3 py-2 dark:border-sky-400/30 dark:bg-[#111827] dark:text-gray-100"
+                  >
+                    <option value="">Select member account</option>
+                    {prepaidMemberOptions.map(member => (
+                    <option key={member.id} value={member.id}>
+                        {member.name} - {member.email}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedPrepaidMember && selectedProduct && (
+                    <div className="rounded-lg bg-sky-100 px-3 py-2 text-xs leading-5 text-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
+                      Xero credit is checked when the voucher is issued. The member needs at least the voucher value available and at least $1000 approved prepaid credit to use the prepaid rate.
+                    </div>
+                  )}
                 </div>
               )}
-              {issueForm.paymentStatus === 'waived' && (
+              {issueForm.paymentHandling === 'waived' && (
                 <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs leading-5 text-violet-900 dark:border-violet-400/30 dark:bg-violet-950/30 dark:text-violet-100">
                   Complimentary vouchers are issued and emailed without recording a payment.
                 </div>
@@ -2347,19 +2599,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 <input type="date" value={issueForm.expiresAt} onChange={e => setIssueForm(f => ({ ...f, expiresAt: e.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
               </label>
               <textarea value={issueForm.notes} onChange={e => setIssueForm(f => ({ ...f, notes: e.target.value }))} rows={3} placeholder="Internal notes" className="rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button onClick={() => handleIssueVoucher(issueForm.paymentStatus)} disabled={saving || loading || (Boolean(selectedProduct) && !selectedProductIsIssueable)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+              <div>
+                <button onClick={handleIssueVoucher} disabled={saving || loading || (Boolean(selectedProduct) && !selectedProductIsIssueable)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
                   <Mail className="h-4 w-4" />
-                  {resolveIssueButtonLabel(issueForm.paymentStatus)}
-                </button>
-                <button
-                  onClick={() => handleIssueVoucher('paid')}
-                  disabled={saving || loading || !issueForm.productId || (Boolean(selectedProduct) && !selectedProductIsIssueable)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-400/30 dark:bg-emerald-950/30 dark:text-emerald-100 dark:hover:bg-emerald-950/50"
-                  type="button"
-                >
-                  <CheckCircle className="h-4 w-4" />
-                  Mark paid now
+                  {resolveIssueButtonLabel(issueForm.paymentHandling)}
                 </button>
               </div>
             </div>
@@ -2426,24 +2669,57 @@ export const TrialFlightVouchersPage: React.FC = () => {
                 const redeemUrl = getRedeemUrl(voucher.code);
                 const delivery = voucherDeliveryDetails(voucher);
                 const canCancelVoucher = voucher.status !== 'cancelled' && voucher.status !== 'booked' && !voucher.bookedBookingId;
+                const isExpanded = expandedVoucherIds.has(voucher.id);
                 return (
-                <div key={voucher.id} className={`rounded-xl border p-3 ${
+                <div key={voucher.id} className={`rounded-xl border p-2.5 transition ${
                   delivery.state === 'due'
                     ? 'border-amber-300 bg-amber-50/70 dark:border-amber-400/35 dark:bg-amber-950/20'
                     : 'border-gray-200 dark:border-[#2c2f36]'
                 }`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-gray-950 dark:text-gray-100">{voucher.productName || 'Voucher'}</p>
-                      <p className="text-sm text-gray-500">{voucher.purchaserName} - {voucher.purchaserEmail}</p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-gray-950 dark:text-gray-100">{voucher.productName || 'Voucher'}</p>
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-gray-700 dark:bg-[#111827] dark:text-gray-200">
+                          {voucher.code}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                        {voucher.purchaserName || 'Purchaser'} - {voucher.purchaserEmail || 'No email'}
+                      </p>
+                      <p className={`mt-1 truncate text-xs ${
+                        delivery.state === 'due'
+                          ? 'font-semibold text-amber-800 dark:text-amber-100'
+                          : 'text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {delivery.label}: {delivery.name || 'Recipient'} - {delivery.schedule}
+                      </p>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">{voucher.status}</span>
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${paymentPillClass(voucher.paymentStatus)}`}>
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold capitalize text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">{voucher.status}</span>
+                      <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${paymentPillClass(voucher.paymentStatus)}`}>
                         {paymentLabel(voucher.paymentStatus)}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(voucher.code, 'Voucher code')}
+                        className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-200 dark:hover:bg-[#20242b]"
+                      >
+                        <Copy className="h-3 w-3" />
+                        Code
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleVoucherExpanded(voucher.id)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-gray-800 dark:bg-blue-600 dark:hover:bg-blue-700"
+                      >
+                        {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+                        {isExpanded ? 'Less' : 'More'}
+                      </button>
                     </div>
                   </div>
+                  {isExpanded && (
+                    <>
                   <div className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${
                     delivery.state === 'due'
                       ? 'border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-100'
@@ -2644,6 +2920,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       </button>
                     )}
                   </div>
+                    </>
+                  )}
                 </div>
               );
               })}

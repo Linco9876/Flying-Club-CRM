@@ -22,7 +22,8 @@ interface StripeConnectStatus {
 
 export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ canEdit }) => {
   const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
-  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeLoading, setStripeLoading] = useState(true);
+  const [stripeLoaded, setStripeLoaded] = useState(false);
 
   const loadStripeStatus = useCallback(async () => {
     setStripeLoading(true);
@@ -37,6 +38,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       toast.error(error?.message || 'Failed to load Stripe connection');
     } finally {
       setStripeLoading(false);
+      setStripeLoaded(true);
     }
   }, []);
 
@@ -106,6 +108,20 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
     : configured
       ? 'Connect the club Stripe account to start taking online payments.'
       : 'The CRM owner needs to finish the platform Stripe setup before this club can connect.';
+
+  if (!stripeLoaded) {
+    return (
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center gap-3 p-5 text-gray-600">
+          <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Stripe payments</h3>
+            <p className="text-sm text-gray-500">Loading integration status...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">

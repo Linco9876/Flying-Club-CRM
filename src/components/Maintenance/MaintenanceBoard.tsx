@@ -839,7 +839,15 @@ export const MaintenanceBoard: React.FC = () => {
     });
   };
 
-  const uniqueMilestoneNames = templates.map(t => t.name).sort();
+  const uniqueMilestoneNames = Array.from(
+    new Set([
+      ...templates.map(t => t.name),
+      ...milestones
+        .filter(m => !m.isOneTime && m.status !== 'completed')
+        .map(m => m.title)
+        .filter(Boolean),
+    ])
+  ).sort((left, right) => left.localeCompare(right));
   const oneTimeMilestones = milestones.filter(m => m.isOneTime && m.status !== 'completed');
   const filteredMilestoneNames = selectedMilestoneFilters.length === 0
     ? uniqueMilestoneNames

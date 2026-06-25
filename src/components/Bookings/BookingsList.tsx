@@ -151,7 +151,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
       .filter(booking => {
         const startTime = new Date(booking.startTime);
         const aircraftInfo = getAircraftInfo(booking.aircraftId);
-        const pilotName = getPersonName(booking.studentId || booking.pilotId);
+        const pilotName = booking.guestName || booking.hirerName || getPersonName(booking.studentId || booking.pilotId);
         const instructorName = getPersonName(booking.instructorId);
         const aircraftLabel = [aircraftInfo?.registration, aircraftInfo?.make, aircraftInfo?.model]
           .filter(Boolean)
@@ -202,11 +202,6 @@ export const BookingsList: React.FC<BookingsListProps> = ({
       if (selectedBooking.status === 'pending_approval' && onApproveBooking) {
         await onApproveBooking(selectedBooking.id);
       }
-
-      const student = students.find(s => s.id === selectedBooking.studentId);
-      if (student) {
-        student.prepaidBalance -= flightLogData.totalCost;
-      }
       
       // Update booking with flight log
       onUpdateBooking(selectedBooking.id, {
@@ -226,10 +221,16 @@ export const BookingsList: React.FC<BookingsListProps> = ({
       onUpdateBooking(selectedBooking.id, {
         startTime: new Date(`${bookingData.date}T${bookingData.startTime}`),
         endTime: new Date(`${bookingData.endDate}T${bookingData.endTime}`),
+        studentId: bookingData.studentId,
         aircraftId: bookingData.aircraftId,
         instructorId: bookingData.instructorId || undefined,
         paymentType: bookingData.paymentType,
-        notes: bookingData.notes
+        notes: bookingData.notes,
+        flightTypeId: bookingData.flightTypeId || undefined,
+        isGuestBooking: bookingData.isGuestBooking || false,
+        guestName: bookingData.guestName || undefined,
+        guestEmail: bookingData.guestEmail || undefined,
+        guestPhone: bookingData.guestPhone || undefined,
       });
       toast.success('Booking updated successfully!');
     }

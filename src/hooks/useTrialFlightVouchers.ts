@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
+import { fetchUserXeroBalance } from '../lib/xeroMemberBalance';
 import {
   TrialFlightVoucher,
+  TrialFlightVoucherAddon,
   TrialFlightVoucherAircraftMode,
   TrialFlightVoucherPaymentStatus,
   TrialFlightVoucherProduct,
@@ -18,10 +20,21 @@ const mapProduct = (row: any): TrialFlightVoucherProduct => ({
   instructorIds: row.instructor_ids || [],
   durationMinutes: row.duration_minutes,
   price: Number(row.price || 0),
+  addons: [],
   stripePriceId: row.stripe_price_id || undefined,
   emailSubject: row.email_subject || '',
   emailBody: row.email_body || '',
   bookingInstructions: row.booking_instructions || '',
+  isActive: row.is_active ?? true,
+  createdAt: row.created_at ? new Date(row.created_at) : undefined,
+  updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
+});
+
+const mapAddon = (row: any): TrialFlightVoucherAddon => ({
+  id: row.id,
+  name: row.name || '',
+  description: row.description || '',
+  price: Number(row.price || 0),
   isActive: row.is_active ?? true,
   createdAt: row.created_at ? new Date(row.created_at) : undefined,
   updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
@@ -55,6 +68,7 @@ const mapVoucher = (
   paymentStatus: (row.payment_status || 'manual') as TrialFlightVoucherPaymentStatus,
   paymentAmount: row.payment_amount === null || row.payment_amount === undefined ? undefined : Number(row.payment_amount),
   paymentCurrency: row.payment_currency || 'AUD',
+  selectedAddons: Array.isArray(row.selected_addons) ? row.selected_addons : [],
   stripeCheckoutSessionId: row.stripe_checkout_session_id || undefined,
   stripePaymentIntentId: row.stripe_payment_intent_id || undefined,
   paidAt: row.paid_at ? new Date(row.paid_at) : undefined,
@@ -133,13 +147,14 @@ const extractFunctionErrorMessage = async (error: unknown, fallback: string) => 
 
 export const useTrialFlightVouchers = () => {
   const [products, setProducts] = useState<TrialFlightVoucherProduct[]>([]);
+  const [addons, setAddons] = useState<TrialFlightVoucherAddon[]>([]);
   const [vouchers, setVouchers] = useState<TrialFlightVoucher[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: productRows, error: productError }, { data: voucherRows, error: voucherError }] = await Promise.all([
+      const [{ data: productRows, error: productError }, { data: voucherRows, error: voucherError }, { data: addonRows, error: addonError }, { data: productAddonRows, error: productAddonError }] = await Promise.all([
         supabase
           .from('trial_flight_voucher_products')
           .select('*')
@@ -148,10 +163,19 @@ export const useTrialFlightVouchers = () => {
           .from('trial_flight_vouchers')
           .select('*, trial_flight_voucher_products(name)')
           .order('created_at', { ascending: false }),
+        supabase
+          .from('trial_flight_voucher_addons')
+          .select('*')
+          .order('name', { ascending: true }),
+        supabase
+          .from('trial_flight_voucher_product_addons')
+          .select('product_id,addon_id'),
       ]);
 
       if (productError) throw productError;
       if (voucherError) throw voucherError;
+      if (addonError && !isMissingColumnError(addonError)) throw addonError;
+      if (productAddonError && !isMissingColumnError(productAddonError)) throw productAddonError;
 
       const bookedBookingIds = Array.from(new Set(
         (voucherRows || []).map((row: any) => row.booked_booking_id).filter(Boolean)
@@ -190,7 +214,19 @@ export const useTrialFlightVouchers = () => {
       const aircraftMap = new Map((aircraftRows || []).map((row: any) => [row.id, row]));
       const userMap = new Map((userRows || []).map((row: any) => [row.id, row]));
 
-      setProducts((productRows || []).map(mapProduct));
+      const mappedAddons = (addonRows || []).map(mapAddon);
+      const addonById = new Map(mappedAddons.map(addon => [addon.id, addon]));
+      const productAddonMap = new Map<string, TrialFlightVoucherAddon[]>();
+      (productAddonRows || []).forEach((row: any) => {
+        const addon = addonById.get(row.addon_id);
+        if (!addon) return;
+        productAddonMap.set(row.product_id, [...(productAddonMap.get(row.product_id) || []), addon]);
+      });
+      setAddons(mappedAddons);
+      setProducts((productRows || []).map((row: any) => ({
+        ...mapProduct(row),
+        addons: productAddonMap.get(row.id) || [],
+      })));
       setVouchers((voucherRows || []).map((row: any) => mapVoucher(row, bookingMap, aircraftMap, userMap)));
     } catch (error) {
       console.error('Failed to load trial flight vouchers:', error);
@@ -230,18 +266,46 @@ export const useTrialFlightVouchers = () => {
     };
 
     const savePayload = async (nextPayload: Record<string, unknown>) => id
-      ? await supabase.from('trial_flight_voucher_products').update(nextPayload).eq('id', id)
-      : await supabase.from('trial_flight_voucher_products').insert(nextPayload);
+      ? await supabase.from('trial_flight_voucher_products').update(nextPayload).eq('id', id).select('id').single()
+      : await supabase.from('trial_flight_voucher_products').insert(nextPayload).select('id').single();
 
-    const { error } = await savePayload(payload);
+    let savedId = id || '';
+    const { data: savedProduct, error } = await savePayload(payload);
     if (error) {
       if (!isMissingColumnError(error)) throw error;
       const legacyPayload = { ...payload };
       delete legacyPayload.stripe_price_id;
-      const { error: legacyError } = await savePayload(legacyPayload);
+      const { data: legacyProduct, error: legacyError } = await savePayload(legacyPayload);
       if (legacyError) throw legacyError;
+      savedId = legacyProduct?.id || savedId;
+    } else {
+      savedId = savedProduct?.id || savedId;
+    }
+    if (savedId && product.addons !== undefined) {
+      await supabase.from('trial_flight_voucher_product_addons').delete().eq('product_id', savedId);
+      const activeLinks = product.addons.map(addon => ({ product_id: savedId, addon_id: addon.id }));
+      if (activeLinks.length > 0) {
+        const { error: linkError } = await supabase.from('trial_flight_voucher_product_addons').insert(activeLinks);
+        if (linkError && !isMissingColumnError(linkError)) throw linkError;
+      }
     }
     toast.success(id ? 'Voucher product updated' : 'Voucher product created');
+    await fetchAll();
+  };
+
+  const saveAddon = async (addon: Omit<TrialFlightVoucherAddon, 'id' | 'createdAt' | 'updatedAt'>, id?: string) => {
+    const payload = {
+      name: addon.name.trim(),
+      description: addon.description.trim(),
+      price: addon.price,
+      is_active: addon.isActive,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = id
+      ? await supabase.from('trial_flight_voucher_addons').update(payload).eq('id', id)
+      : await supabase.from('trial_flight_voucher_addons').insert(payload);
+    if (error) throw error;
+    toast.success(id ? 'Add-on updated' : 'Add-on created');
     await fetchAll();
   };
 
@@ -260,8 +324,12 @@ export const useTrialFlightVouchers = () => {
     paymentStatus?: TrialFlightVoucherPaymentStatus;
     paymentAmount?: number;
     paymentCurrency?: string;
+    paymentSource?: 'manual' | 'stripe' | 'prepaid' | 'waived' | 'unknown';
+    payerUserId?: string;
   }) => {
     const paymentStatus = voucher.paymentStatus || 'manual';
+    const paymentSource = voucher.paymentSource
+      || (paymentStatus === 'paid' ? 'manual' : paymentStatus === 'waived' ? 'waived' : 'unknown');
     const issueStatus =
       paymentStatus === 'pending'
         ? 'draft'
@@ -287,6 +355,8 @@ export const useTrialFlightVouchers = () => {
       notes: voucher.notes || null,
       created_by: voucher.createdBy || null,
       status: issueStatus,
+      payment_source: paymentSource,
+      payer_user_id: voucher.payerUserId || null,
     };
 
     let createdVoucher: { id: string; code: string } | null = null;
@@ -348,6 +418,117 @@ export const useTrialFlightVouchers = () => {
     await fetchAll();
   };
 
+  const sendVoucherPaymentLink = async (voucher: {
+    productId: string;
+    purchaserName: string;
+    purchaserEmail: string;
+    purchaserPhone?: string;
+    recipientName?: string;
+    recipientEmail?: string;
+    sendToRecipient: boolean;
+    recipientDeliveryAt?: string;
+    expiresAt?: string;
+    notes?: string;
+  }) => {
+    const returnUrl = `${window.location.origin}/gift-vouchers`;
+    const { data, error } = await supabase.functions.invoke('trial-voucher-admin', {
+      body: {
+        action: 'send-payment-link',
+        ...voucher,
+        successUrl: `${returnUrl}?stripe_voucher=success`,
+        cancelUrl: `${returnUrl}?stripe_voucher=cancelled`,
+      },
+    });
+
+    if (error) {
+      throw new Error(await extractFunctionErrorMessage(error, 'Failed to send voucher payment link'));
+    }
+    if (data?.error) throw new Error(data.error);
+
+    toast.success('Payment link sent to purchaser');
+    await fetchAll();
+    return data as { sent: boolean; checkoutUrl: string; sessionId: string; voucherId: string; to: string };
+  };
+
+  const getPilotAccountPaymentMethodId = async () => {
+    const { data, error } = await supabase
+      .from('payment_methods')
+      .select('id,name')
+      .eq('active', true);
+    if (error) throw error;
+
+    return (data || []).find((method: any) => {
+      const name = String(method.name || '').toLowerCase();
+      return name.includes('pilot account') || name.includes('pre-paid') || name.includes('prepaid');
+    })?.id ?? null;
+  };
+
+  const issueVoucherUsingPrepaid = async (
+    voucher: {
+      productId: string;
+      purchaserName: string;
+      purchaserEmail: string;
+      purchaserPhone?: string;
+      recipientName?: string;
+      recipientEmail?: string;
+      sendToRecipient: boolean;
+      recipientDeliveryAt?: string;
+      expiresAt?: string;
+      notes?: string;
+      createdBy?: string;
+      paymentAmount?: number;
+      paymentCurrency?: string;
+    },
+    payerUserId: string
+  ) => {
+    const amount = Math.round(((voucher.paymentAmount ?? 0) + Number.EPSILON) * 100) / 100;
+    if (!payerUserId) throw new Error('Select the member account that will pay for this voucher.');
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Voucher price must be greater than $0.');
+
+    const xeroBalance = await fetchUserXeroBalance(payerUserId);
+    if (!xeroBalance.connected) {
+      throw new Error('Prepaid voucher payments require Xero to be connected for this club.');
+    }
+    const currentBalance = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
+    const minimumPrepaidPack = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+    if (currentBalance + 0.005 < minimumPrepaidPack) {
+      throw new Error(`Prepaid is locked until the member has at least $${minimumPrepaidPack.toFixed(2)} sitting in Xero overpayments. If they do not have enough, add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+    }
+    if (amount > currentBalance + 0.005) {
+      throw new Error(`Selected prepaid account only has $${currentBalance.toFixed(2)} available in Xero overpayments, so it cannot cover this voucher. Add a $${minimumPrepaidPack.toFixed(2)} package first.`);
+    }
+
+    const paymentMethodId = await getPilotAccountPaymentMethodId();
+    const newBalance = Math.round((currentBalance - amount + Number.EPSILON) * 100) / 100;
+    const description = `Gift voucher prepaid payment - ${voucher.purchaserName}`;
+
+    const { error: txError } = await supabase
+      .from('account_transactions')
+      .insert({
+        user_id: payerUserId,
+        type: 'flight_charge',
+        amount,
+        description,
+        payment_method_id: paymentMethodId,
+        balance_after: newBalance,
+        verified_status: 'verified',
+      });
+    if (txError) throw txError;
+
+    await issueVoucher({
+      ...voucher,
+      paymentStatus: 'paid',
+      paymentAmount: amount,
+      paymentCurrency: voucher.paymentCurrency || 'AUD',
+      notes: [
+        voucher.notes,
+        `Paid from prepaid account ${payerUserId}.`,
+      ].filter(Boolean).join('\n'),
+      paymentSource: 'prepaid',
+      payerUserId,
+    });
+  };
+
   const sendVoucherEmail = async (voucherId: string, options?: { force?: boolean }) => {
     const { data, error } = await supabase.functions.invoke('send-trial-voucher-email', {
       body: {
@@ -371,11 +552,13 @@ export const useTrialFlightVouchers = () => {
     voucherId: string,
     paymentStatus: Extract<TrialFlightVoucherPaymentStatus, 'manual' | 'paid' | 'waived'> = 'paid'
   ) => {
+    const paymentSource = paymentStatus === 'paid' ? 'manual' : paymentStatus === 'waived' ? 'waived' : 'unknown';
     const { error } = await supabase
       .from('trial_flight_vouchers')
       .update({
         status: 'issued',
         payment_status: paymentStatus,
+        payment_source: paymentSource,
         paid_at: paymentStatus === 'paid' ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
@@ -454,12 +637,16 @@ export const useTrialFlightVouchers = () => {
 
   return {
     products,
+    addons,
     activeProducts,
     vouchers,
     loading,
     refetch: fetchAll,
     saveProduct,
+    saveAddon,
     issueVoucher,
+    sendVoucherPaymentLink,
+    issueVoucherUsingPrepaid,
     sendVoucherEmail,
     markVoucherReady,
     processDueVoucherEmails,

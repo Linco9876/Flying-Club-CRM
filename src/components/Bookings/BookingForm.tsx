@@ -12,6 +12,7 @@ import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings }
 import { Booking } from '../../types';
 import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
 import toast from 'react-hot-toast';
+import { supabase } from '../../lib/supabase';
 
 interface BookingFormProps {
   isOpen: boolean;
@@ -31,7 +32,25 @@ interface BookingFormProps {
     flightTypeId?: string;
     notes?: string;
     copiedFromBookingId?: string;
+    isGuestBooking?: boolean;
+    guestName?: string;
+    guestEmail?: string;
+    guestPhone?: string;
+    trialFlightVoucherId?: string;
   };
+}
+
+interface GuestVoucherOption {
+  id: string;
+  code: string;
+  status: string;
+  bookedBookingId?: string | null;
+  redeemedByUserId?: string | null;
+  displayName: string;
+  displayEmail: string;
+  displayPhone?: string;
+  productName: string;
+  eligibleAircraftIds: string[];
 }
 
 const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, prefilledData }) => {
@@ -42,7 +61,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { flightLogs } = useFlightLogs();
   const { settings: safetySettings } = useSafetySettings();
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
-  const { flightTypes } = useBillingSettings();
+  const { flightTypes, paymentMethods } = useBillingSettings();
   const { settings: portalSettings } = usePortalUxSettings();
   const { settings: bookingRules } = useBookingRulesSettings();
   const { settings: organisationSettings } = useOrganisationSettings();
@@ -62,12 +81,17 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         paymentType: booking.paymentType || '',
         flightTypeId: booking.flightTypeId || '',
         notes: booking.notes || '',
+        isGuestBooking: booking.isGuestBooking || false,
+        guestName: booking.guestName || '',
+        guestEmail: booking.guestEmail || '',
+        guestPhone: booking.guestPhone || '',
+        trialFlightVoucherId: booking.trialFlightVoucherId || '',
       };
     }
 
     return {
-        studentId: prefilledData?.studentId || user?.id || '',
-        date: prefilledData?.date || today,
+      studentId: prefilledData?.studentId || user?.id || '',
+      date: prefilledData?.date || today,
       endDate: prefilledData?.endDate || prefilledData?.date || today,
       startTime: normalizeToQuarterHour(prefilledData?.startTime) || '09:00',
       endTime: normalizeToQuarterHour(prefilledData?.endTime) || '11:00',
@@ -76,6 +100,11 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       paymentType: prefilledData?.paymentType || '',
       flightTypeId: prefilledData?.flightTypeId || '',
       notes: prefilledData?.notes || '',
+      isGuestBooking: prefilledData?.isGuestBooking || false,
+      guestName: prefilledData?.guestName || '',
+      guestEmail: prefilledData?.guestEmail || '',
+      guestPhone: prefilledData?.guestPhone || '',
+      trialFlightVoucherId: prefilledData?.trialFlightVoucherId || '',
     };
   }, [
     booking?.id,
@@ -85,6 +114,11 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     booking?.paymentType,
     booking?.flightTypeId,
     booking?.notes,
+    booking?.isGuestBooking,
+    booking?.guestName,
+    booking?.guestEmail,
+    booking?.guestPhone,
+    booking?.trialFlightVoucherId,
     booking?.startTime,
     booking?.endTime,
     prefilledData?.date,
@@ -97,10 +131,20 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     prefilledData?.paymentType,
     prefilledData?.flightTypeId,
     prefilledData?.notes,
+    prefilledData?.isGuestBooking,
+    prefilledData?.guestName,
+    prefilledData?.guestEmail,
+    prefilledData?.guestPhone,
+    prefilledData?.trialFlightVoucherId,
     user?.id,
   ]);
 
   const [formData, setFormData] = useState(buildInitialFormData);
+  const [guestVoucherOptions, setGuestVoucherOptions] = useState<GuestVoucherOption[]>([]);
+  const [guestVoucherSearch, setGuestVoucherSearch] = useState('');
+  const [pilotSearch, setPilotSearch] = useState('');
+  const [showPilotDropdown, setShowPilotDropdown] = useState(false);
+  const [loadingGuestVouchers, setLoadingGuestVouchers] = useState(false);
   const [recurrence, setRecurrence] = useState({
     enabled: false,
     frequency: 'weekly' as 'daily' | 'weekly' | 'monthly',
@@ -120,24 +164,226 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     endorsementType: string;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const instructors = getInstructors();
+  const userRole = user?.role || 'student';
+  const isAdminUser = Boolean(user?.role === 'admin' || user?.roles?.includes('admin'));
+  const canCreateGuestBooking = isAdminUser;
+  const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
+  const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
+  const isLoading = aircraftLoading || usersLoading;
+  const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
+  const selectedPilot = users.find(item => item.id === formData.studentId);
+  const getPilotSearchLabel = (member: { name?: string; email?: string; id: string }) =>
+    `${member.name || 'Unnamed member'}${member.email ? ` - ${member.email}` : ''}`;
+  const guestEligibleAircraftIds = selectedGuestVoucher?.eligibleAircraftIds ?? [];
+  const isPrepaidLikeFlightType = (name?: string | null) => {
+    const normalised = (name || '').toLowerCase().replace(/[-_]/g, ' ');
+    return normalised.includes('pilot account') || normalised.includes('prepaid') || normalised.includes('pre paid');
+  };
+  const getPilotAccountPaymentType = React.useCallback(() => {
+    const method = paymentMethods.find((paymentMethod) => {
+      if (!paymentMethod.active) return false;
+      return isPrepaidLikeFlightType(paymentMethod.name);
+    });
+    return method?.name || 'Pilot Account';
+  }, [paymentMethods]);
+  const derivePaymentTypeForFlightType = React.useCallback((flightTypeId?: string) => {
+    if (!flightTypeId) return '';
+    const selectedFlightType = flightTypes.find(ft => ft.id === flightTypeId);
+    if (!selectedFlightType) return '';
+    return isPrepaidLikeFlightType(selectedFlightType.name)
+      ? getPilotAccountPaymentType()
+      : selectedFlightType.name;
+  }, [flightTypes, getPilotAccountPaymentType]);
+  const availableAircraft = aircraft.filter((item) => {
+    if (item.status !== 'serviceable' || item.isArchived) return false;
+    if (!formData.isGuestBooking || guestEligibleAircraftIds.length === 0) return true;
+    return guestEligibleAircraftIds.includes(item.id);
+  });
+  const availableFlightTypes = flightTypes.filter((flightType) =>
+    flightType.active && (!formData.isGuestBooking || !isPrepaidLikeFlightType(flightType.name))
+  );
+  const filteredGuestVoucherOptions = guestVoucherOptions.filter((option) => {
+    const query = guestVoucherSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      option.code,
+      option.displayName,
+      option.displayEmail,
+      option.productName,
+    ].some(value => value.toLowerCase().includes(query));
+  }).slice(0, 8);
+  const filteredPilotOptions = users.filter((member) => {
+    const query = pilotSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      member.name || '',
+      member.email || '',
+      member.phone || '',
+      member.mobilePhone || '',
+      member.homePhone || '',
+      member.workPhone || '',
+    ].some(value => String(value).toLowerCase().startsWith(query));
+  }).slice(0, 10);
 
   // Rebuild the whole form every time it opens so stale values cannot leak between bookings.
   React.useEffect(() => {
     if (!isOpen) return;
-    setFormData(buildInitialFormData());
+    const initialData = buildInitialFormData();
+    const initialPilot = users.find(item => item.id === initialData.studentId);
+    setFormData(initialData);
     setPendingSafetySubmit(null);
     setSafetyWarningState(null);
     setPendingEndorsementSubmit(null);
     setEndorsementWarningState(null);
+    setGuestVoucherSearch('');
+    setPilotSearch(initialData.isGuestBooking || !initialPilot ? '' : getPilotSearchLabel(initialPilot));
+    setShowPilotDropdown(false);
     setRecurrence({ enabled: false, frequency: 'weekly', count: 2 });
     setIsSubmitting(false);
-  }, [buildInitialFormData, isOpen]);
+  }, [buildInitialFormData, isOpen, users]);
+
+  React.useEffect(() => {
+    if (!isOpen || !canCreateGuestBooking || !formData.isGuestBooking) {
+      setGuestVoucherOptions([]);
+      setLoadingGuestVouchers(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadGuestVouchers = async () => {
+      setLoadingGuestVouchers(true);
+      const { data, error } = await supabase
+        .from('trial_flight_vouchers')
+        .select(`
+          id,
+          code,
+          status,
+          recipient_name,
+          recipient_email,
+          purchaser_name,
+          purchaser_email,
+          purchaser_phone,
+          redeemed_by_user_id,
+          booked_booking_id,
+          trial_flight_voucher_products(name, aircraft_ids)
+        `)
+        .in('status', ['issued', 'redeemed', 'booked'])
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (cancelled) return;
+      if (error) {
+        console.error('Failed to load guest voucher options:', error);
+        setGuestVoucherOptions([]);
+        setLoadingGuestVouchers(false);
+        return;
+      }
+
+      const options = (data || [])
+        .filter((voucher: any) => {
+          if (voucher.booked_booking_id === booking?.id) return true;
+          if (voucher.booked_booking_id) return false;
+          return voucher.status === 'issued' || voucher.status === 'redeemed';
+        })
+        .map((voucher: any) => ({
+          id: voucher.id,
+          code: voucher.code || '',
+          status: voucher.status || '',
+          bookedBookingId: voucher.booked_booking_id || null,
+          redeemedByUserId: voucher.redeemed_by_user_id || null,
+          displayName: voucher.recipient_name || voucher.purchaser_name || 'Voucher holder',
+          displayEmail: voucher.recipient_email || voucher.purchaser_email || '',
+          displayPhone: voucher.purchaser_phone || '',
+          productName: voucher.trial_flight_voucher_products?.name || 'Trial flight voucher',
+          eligibleAircraftIds: voucher.trial_flight_voucher_products?.aircraft_ids || [],
+        }));
+
+      setGuestVoucherOptions(options);
+      setLoadingGuestVouchers(false);
+    };
+
+    void loadGuestVouchers();
+    return () => {
+      cancelled = true;
+    };
+  }, [booking?.id, canCreateGuestBooking, formData.isGuestBooking, isOpen]);
+
+  React.useEffect(() => {
+    if (!formData.isGuestBooking || guestEligibleAircraftIds.length === 0 || !formData.aircraftId) return;
+    if (!guestEligibleAircraftIds.includes(formData.aircraftId)) {
+      setFormData(prev => ({ ...prev, aircraftId: '' }));
+    }
+  }, [formData.aircraftId, formData.isGuestBooking, guestEligibleAircraftIds]);
+
+  React.useEffect(() => {
+    if (!formData.isGuestBooking) return;
+    if (recurrence.enabled) {
+      setRecurrence(prev => ({ ...prev, enabled: false }));
+    }
+
+    const selectedFlightType = flightTypes.find(ft => ft.id === formData.flightTypeId);
+    if (isPrepaidLikeFlightType(formData.paymentType) || isPrepaidLikeFlightType(selectedFlightType?.name)) {
+      setFormData(prev => ({
+        ...prev,
+        paymentType: '',
+        flightTypeId: '',
+      }));
+    }
+  }, [flightTypes, formData.flightTypeId, formData.isGuestBooking, formData.paymentType, recurrence.enabled]);
+
+  React.useEffect(() => {
+    if (!formData.flightTypeId || formData.trialFlightVoucherId) return;
+    const selectedFlightType = flightTypes.find(ft => ft.id === formData.flightTypeId);
+    if (!isPrepaidLikeFlightType(selectedFlightType?.name)) return;
+
+    const forcedPaymentType = getPilotAccountPaymentType();
+    if (formData.paymentType === forcedPaymentType) return;
+    setFormData(prev => ({ ...prev, paymentType: forcedPaymentType }));
+  }, [flightTypes, formData.flightTypeId, formData.paymentType, formData.trialFlightVoucherId, getPilotAccountPaymentType]);
+
   const validateFormData = () => {
     const userRole = user?.role || 'student';
 
-    if (isFieldRequired('pilot', userRole) && !formData.studentId) {
+    if (formData.isGuestBooking) {
+      if (!canCreateGuestBooking) {
+        toast.error('Only admins can create guest or casual bookings');
+        return;
+      }
+      if (!formData.guestName.trim()) {
+        toast.error('Guest name is required');
+        return;
+      }
+      if (!formData.guestEmail.trim()) {
+        toast.error('Guest email is required');
+        return;
+      }
+      if (!formData.trialFlightVoucherId && !formData.guestPhone.trim()) {
+        toast.error('Guest phone number is required');
+        return;
+      }
+    } else if (isFieldRequired('pilot', userRole) && !formData.studentId) {
       toast.error('Pilot is required');
       return;
+    }
+    if (formData.isGuestBooking && formData.trialFlightVoucherId) {
+      const selectedVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
+      if (!selectedVoucher) {
+        toast.error('Select a valid unused voucher');
+        return;
+      }
+      if (selectedVoucher.eligibleAircraftIds.length === 0) {
+        toast.error('This voucher product needs aircraft configured before it can be linked');
+        return;
+      }
+      if (selectedVoucher.eligibleAircraftIds.length > 0 && !selectedVoucher.eligibleAircraftIds.includes(formData.aircraftId)) {
+        toast.error('This voucher is only valid for its configured aircraft type');
+        return;
+      }
+      if (!formData.instructorId) {
+        toast.error('Voucher flights need an instructor assigned');
+        return;
+      }
     }
     if (isFieldRequired('aircraft', userRole) && !formData.aircraftId) {
       toast.error('Aircraft is required');
@@ -159,7 +405,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       toast.error('End time is required');
       return;
     }
-    if (isFieldRequired('paymentType', userRole) && !formData.paymentType) {
+    if (isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.paymentType) {
       toast.error('Payment type is required');
       return;
     }
@@ -171,6 +417,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
 
     const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
+    if (selectedAircraft?.isArchived) {
+      toast.error('This aircraft is archived and cannot be booked');
+      return;
+    }
     if (selectedAircraft && selectedAircraft.status !== 'serviceable') {
       toast.error('Selected aircraft is not serviceable');
       return;
@@ -206,9 +456,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (isSubmitting || isLoading) return;
     setIsSubmitting(true);
     try {
+      const normalisedBookingData = data.trialFlightVoucherId
+        ? { ...data, flightTypeId: '', paymentType: 'Gift Voucher' }
+        : {
+            ...data,
+            paymentType: derivePaymentTypeForFlightType(data.flightTypeId) || data.paymentType,
+          };
       await onSubmit({
-        ...data,
-        recurrence: !isEdit && recurrence.enabled ? recurrence : undefined,
+        ...normalisedBookingData,
+        recurrence: !isEdit && !normalisedBookingData.isGuestBooking && recurrence.enabled ? recurrence : undefined,
       });
       onClose();
     } catch (error) {
@@ -221,13 +477,22 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (data.instructorId) return null;
 
     const selectedAircraft = aircraft.find(a => a.id === data.aircraftId);
-    const requiredEndorsement = selectedAircraft?.requiredEndorsementType?.trim();
-    if (!selectedAircraft || !requiredEndorsement) return null;
+    const requiredEndorsements = (selectedAircraft?.requiredEndorsementTypes?.length
+      ? selectedAircraft.requiredEndorsementTypes
+      : selectedAircraft?.requiredEndorsementType
+        ? [selectedAircraft.requiredEndorsementType]
+        : []
+    )
+      .map(type => type.trim())
+      .filter(Boolean);
+    if (!selectedAircraft || requiredEndorsements.length === 0) return null;
+
+    if (data.isGuestBooking) return null;
 
     const selectedPerson = students.find((student) => student.id === data.studentId);
     const now = new Date();
     const hasRequiredEndorsement = selectedPerson?.endorsements?.some((endorsement) => {
-      if (!endorsement.isActive || endorsement.type !== requiredEndorsement) return false;
+      if (!endorsement.isActive || !requiredEndorsements.includes(endorsement.type)) return false;
       return !endorsement.expiryDate || new Date(endorsement.expiryDate) >= now;
     });
 
@@ -236,7 +501,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     return {
       aircraftName: `${selectedAircraft.registration} ${selectedAircraft.make} ${selectedAircraft.model}`.trim(),
       pilotName: selectedPerson?.name || users.find(u => u.id === data.studentId)?.name || 'This pilot',
-      endorsementType: requiredEndorsement,
+      endorsementType: requiredEndorsements.join(' or '),
     };
   };
 
@@ -278,12 +543,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     runSafetyCheckOrSubmit(formData);
   };
 
-  const availableAircraft = aircraft.filter(a => a.status === 'serviceable');
-  const instructors = getInstructors();
-  const userRole = user?.role || 'student';
-  const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
-  const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
-  const isLoading = aircraftLoading || usersLoading;
   const parseHour = (time: string | undefined, fallback: number, roundUp = false) => {
     if (!time) return fallback;
     const [hour, minute] = time.split(':').map(Number);
@@ -348,25 +607,202 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </div>
           )}
 
-          {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor') && (
+          {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor') && (
             <div>
+              {canCreateGuestBooking && (
+                <div className="mb-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({
+                      ...prev,
+                      isGuestBooking: false,
+                      guestName: '',
+                      guestEmail: '',
+                      guestPhone: '',
+                      trialFlightVoucherId: '',
+                      paymentType: '',
+                      flightTypeId: '',
+                    }))}
+                    className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      !formData.isGuestBooking
+                        ? 'border-blue-600 bg-blue-50 text-blue-700'
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Member booking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({
+                      ...prev,
+                      isGuestBooking: true,
+                      studentId: '',
+                      paymentType: '',
+                      flightTypeId: '',
+                    }))}
+                    className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      formData.isGuestBooking
+                        ? 'border-blue-600 bg-blue-50 text-blue-700'
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Guest / casual
+                  </button>
+                </div>
+              )}
+
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 <User className="h-3.5 w-3.5 inline mr-1" />
-                Pilot {isFieldRequired('pilot', userRole) && <span className="text-red-500">*</span>}
+                {formData.isGuestBooking ? 'Guest booking contact' : 'Pilot'} {isFieldRequired('pilot', userRole) && !formData.isGuestBooking && <span className="text-red-500">*</span>}
               </label>
-              <select
-                value={formData.studentId}
-                onChange={(e) => setFormData(prev => ({ ...prev, studentId: e.target.value }))}
-                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('pilot', userRole)}
-              >
-                <option value="">Select a pilot</option>
-                {users.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+              {formData.isGuestBooking ? (
+                <div className="space-y-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      Link unused gift voucher <span className="text-gray-400">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestVoucherSearch}
+                      onChange={(event) => {
+                        setGuestVoucherSearch(event.target.value);
+                        setFormData(prev => ({
+                          ...prev,
+                          trialFlightVoucherId: '',
+                          paymentType: '',
+                          flightTypeId: '',
+                        }));
+                      }}
+                      className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={loadingGuestVouchers}
+                      placeholder={loadingGuestVouchers ? 'Loading unused vouchers...' : 'Search voucher code, name or email'}
+                    />
+                    {formData.trialFlightVoucherId && selectedGuestVoucher && (
+                      <div className="mt-1 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-xs text-blue-700">
+                        {selectedGuestVoucher.code} - {selectedGuestVoucher.displayName} - {selectedGuestVoucher.productName}
+                      </div>
+                    )}
+                    {!formData.trialFlightVoucherId && guestVoucherSearch.trim() && (
+                      <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm">
+                        {filteredGuestVoucherOptions.length > 0 ? (
+                          filteredGuestVoucherOptions.map(option => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onClick={() => {
+                                setGuestVoucherSearch(`${option.code} - ${option.displayName}`);
+                                setFormData(prev => ({
+                                  ...prev,
+                                  trialFlightVoucherId: option.id,
+                                  guestName: option.displayName || prev.guestName,
+                                  guestEmail: option.displayEmail || prev.guestEmail,
+                                  guestPhone: prev.guestPhone || option.displayPhone || '',
+                                  paymentType: 'Gift Voucher',
+                                  flightTypeId: '',
+                                  aircraftId: option.eligibleAircraftIds.length === 1 ? option.eligibleAircraftIds[0] : prev.aircraftId,
+                                }));
+                              }}
+                              className="block w-full px-2.5 py-2 text-left text-xs hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                            >
+                              <span className="block font-semibold text-gray-900">{option.code} - {option.displayName}</span>
+                              <span className="block truncate text-gray-500">{option.productName}{option.displayEmail ? ` - ${option.displayEmail}` : ''}</span>
+                            </button>
+                          ))
+                        ) : (
+                          <p className="px-2.5 py-2 text-xs text-gray-500">No unused vouchers found.</p>
+                        )}
+                      </div>
+                    )}
+                    {formData.trialFlightVoucherId && (
+                      <p className="mt-1 text-xs text-blue-600">
+                        Aircraft choices are limited to the voucher setup.
+                      </p>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={formData.guestName}
+                    onChange={(e) => setFormData(prev => ({ ...prev, guestName: e.target.value }))}
+                    className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Guest name"
+                  />
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <input
+                      type="email"
+                      value={formData.guestEmail}
+                      onChange={(e) => setFormData(prev => ({ ...prev, guestEmail: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Guest email"
+                    />
+                    <input
+                      type="tel"
+                      value={formData.guestPhone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, guestPhone: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Guest phone"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    This guest stays attached to this booking only. They do not get a normal portal account unless you convert them later.
+                  </p>
+                </div>
+              ) : (
+                <div className="relative space-y-1">
+                  <input
+                    type="text"
+                    value={pilotSearch}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setPilotSearch(nextValue);
+                      setShowPilotDropdown(true);
+                      setFormData(prev => ({ ...prev, studentId: '' }));
+                    }}
+                    onFocus={() => {
+                      setShowPilotDropdown(true);
+                    }}
+                    onBlur={() => {
+                      window.setTimeout(() => {
+                        setShowPilotDropdown(false);
+                        if (formData.studentId && selectedPilot) {
+                          setPilotSearch(getPilotSearchLabel(selectedPilot));
+                        }
+                      }, 120);
+                    }}
+                    className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required={isFieldRequired('pilot', userRole)}
+                    placeholder="Type a name, email or phone"
+                  />
+                  {showPilotDropdown && (
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-44 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                      {filteredPilotOptions.length > 0 ? (
+                        filteredPilotOptions.map(member => (
+                          <button
+                            key={member.id}
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setPilotSearch(getPilotSearchLabel(member));
+                              setShowPilotDropdown(false);
+                              setFormData(prev => ({ ...prev, studentId: member.id }));
+                            }}
+                            className="block w-full px-2.5 py-2 text-left text-xs hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                          >
+                            <span className="block font-semibold text-gray-900">{member.name || 'Unnamed member'}</span>
+                            <span className="block truncate text-gray-500">{member.email || member.phone || member.mobilePhone || 'No contact saved'}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-2.5 py-2 text-xs text-gray-500">No matching members.</p>
+                      )}
+                    </div>
+                  )}
+                  {pilotSearch && !formData.studentId && (
+                    <p className="text-xs text-amber-700">
+                      Select a member from the suggestions so the booking links to their profile.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -464,15 +900,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             {isFieldVisible('instructor', userRole) && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
-                Instructor {(isFieldRequired('instructor', userRole) || isStudentOnlyUser) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
+                Instructor {(isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
               </label>
               <select
                 value={formData.instructorId}
                 onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('instructor', userRole) || isStudentOnlyUser}
+                required={isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)}
               >
-                <option value="">{isStudentOnlyUser ? 'Select instructor' : 'Solo flight'}</option>
+                <option value="">{(isStudentOnlyUser || formData.trialFlightVoucherId) ? 'Select instructor' : 'Solo flight'}</option>
                 {instructors.map(instructor => (
                   <option key={instructor.id} value={instructor.id}>
                     {instructor.name}
@@ -484,7 +920,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
-          {!isLoading && isFieldVisible('paymentType', userRole) && (
+          {!isLoading && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               <CreditCard className="h-3.5 w-3.5 inline mr-1" />
@@ -493,18 +929,18 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             <select
               value={formData.flightTypeId}
               onChange={(e) => {
-                const selected = flightTypes.find(ft => ft.id === e.target.value);
+                const selectedFlightTypeId = e.target.value;
                 setFormData(prev => ({
                   ...prev,
-                  flightTypeId: e.target.value,
-                  paymentType: selected?.name as any || '',
+                  flightTypeId: selectedFlightTypeId,
+                  paymentType: derivePaymentTypeForFlightType(selectedFlightTypeId),
                 }));
               }}
               className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required={isFieldRequired('paymentType', userRole)}
             >
               <option value="">Select flight type</option>
-              {flightTypes.filter(ft => ft.active).map(ft => (
+              {availableFlightTypes.map(ft => (
                 <option key={ft.id} value={ft.id}>{ft.name}</option>
               ))}
             </select>
@@ -531,7 +967,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
-          {!isLoading && !isEdit && (
+          {!isLoading && !isEdit && !formData.isGuestBooking && (
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
               <label className="flex items-start gap-2 text-sm font-semibold text-gray-800">
                 <input

@@ -23,6 +23,10 @@ interface StripeConnectStatus {
   accountId: string | null;
 }
 
+interface XeroConnectStatus {
+  connected: boolean;
+}
+
 export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
   const { flightTypes, paymentMethods, loading, saveBillingSettings } = useBillingSettings();
   const { aircraft } = useAircraft();
@@ -30,6 +34,8 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
   const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
   const [stripeLoading, setStripeLoading] = useState(false);
+  const [xeroStatus, setXeroStatus] = useState<XeroConnectStatus | null>(null);
+  const [xeroLoading, setXeroLoading] = useState(false);
 
   const loadStripeStatus = useCallback(async () => {
     setStripeLoading(true);
@@ -47,6 +53,22 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     }
   }, []);
 
+  const loadXeroStatus = useCallback(async () => {
+    setXeroLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<XeroConnectStatus>('xero-connect', {
+        body: { action: 'status' },
+      });
+      if (error) throw error;
+      setXeroStatus(data ?? null);
+    } catch (error) {
+      console.warn('Failed to load Xero billing status:', error);
+      setXeroStatus(null);
+    } finally {
+      setXeroLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setDraftFlightTypes(flightTypes);
   }, [flightTypes]);
@@ -58,6 +80,10 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   useEffect(() => {
     void loadStripeStatus();
   }, [loadStripeStatus]);
+
+  useEffect(() => {
+    void loadXeroStatus();
+  }, [loadXeroStatus]);
 
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
@@ -150,11 +176,16 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
-  const visiblePaymentMethods = draftPaymentMethods.filter(method => method.active || method.isSystem);
+  const visiblePaymentMethods = draftPaymentMethods.filter(method => {
+    if (method.systemKey === 'pilot_account') return method.active;
+    return method.active || method.isSystem;
+  });
   const activePaymentMethods = draftPaymentMethods.filter(method => method.active);
   const activeFlightTypes = draftFlightTypes.filter(type => type.active);
   const stripeMethod = draftPaymentMethods.find(method => method.systemKey === 'stripe_card');
+  const pilotAccountMethod = draftPaymentMethods.find(method => method.systemKey === 'pilot_account');
   const stripeConnected = Boolean(stripeStatus?.connected);
+  const xeroConnected = Boolean(xeroStatus?.connected);
 
   const rateSummary = useMemo(() => {
     return aircraft.flatMap(item => (item.rates || []).map(rate => ({
@@ -205,6 +236,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         <div className="space-y-3">
           {visiblePaymentMethods.map(method => {
             const isStripeMethod = method.systemKey === 'stripe_card';
+            const isPilotAccountMethod = method.systemKey === 'pilot_account';
             const methodCanEdit = canEdit && !method.isSystem;
             return (
             <div key={method.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -227,7 +259,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                 <input
                   value={method.description}
                   onChange={event => updatePaymentMethod(method.id, { description: event.target.value })}
-                  disabled={!canEdit}
+                  disabled={!canEdit || isPilotAccountMethod}
                   className={inputClass}
                   placeholder="Description shown to staff"
                 />
@@ -267,16 +299,18 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     Allow Stripe for flight charges
                   </label>
                 )}
-                <label className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={method.allowAccountTopup !== false}
-                    disabled={!canEdit || (isStripeMethod && !stripeConnected)}
-                    onChange={event => updatePaymentMethod(method.id, { allowAccountTopup: event.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  Allow for pilot account top-ups
-                </label>
+                {!isPilotAccountMethod && (
+                  <label className="flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={method.allowAccountTopup !== false}
+                      disabled={!canEdit || (isStripeMethod && !stripeConnected)}
+                      onChange={event => updatePaymentMethod(method.id, { allowAccountTopup: event.target.checked })}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Allow for pilot account top-ups
+                  </label>
+                )}
                 {isStripeMethod && (
                   <span className={`rounded-md px-3 py-2 text-xs font-medium ${
                     stripeLoading
@@ -292,6 +326,21 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                         : 'Connect Stripe in Integrations first'}
                   </span>
                 )}
+                {isPilotAccountMethod && (
+                  <span className={`rounded-md px-3 py-2 text-xs font-medium ${
+                    xeroLoading
+                      ? 'bg-blue-50 text-blue-700'
+                      : xeroConnected
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-amber-50 text-amber-800'
+                  }`}>
+                    {xeroLoading
+                      ? 'Checking Xero connection...'
+                      : xeroConnected
+                        ? 'Available because Xero is connected'
+                        : 'Hidden until Xero is connected'}
+                  </span>
+                )}
               </div>
             </div>
           );
@@ -299,6 +348,11 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
           {!stripeMethod && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
               Stripe payment method has not been added to this database yet. Run the latest migration, then refresh this page.
+            </div>
+          )}
+          {!pilotAccountMethod && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              Pilot Account will appear automatically once the latest migration is applied and Xero is connected.
             </div>
           )}
         </div>

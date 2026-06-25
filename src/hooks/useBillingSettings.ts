@@ -262,7 +262,11 @@ export const useBillingSettings = () => {
 
       for (const [index, method] of validPaymentMethods.entries()) {
         const dbMethod = {
-          name: method.systemKey === 'stripe_card' ? 'Stripe Card Payment' : method.name.trim(),
+          name: method.systemKey === 'stripe_card'
+            ? 'Stripe Card Payment'
+            : method.systemKey === 'pilot_account'
+              ? 'Pilot Account'
+              : method.name.trim(),
           description: method.description?.trim() || null,
           active: method.active,
           allow_account_topup: method.allowAccountTopup !== false,

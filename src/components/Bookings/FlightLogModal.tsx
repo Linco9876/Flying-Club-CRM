@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Lock } from 'lucide-react';
-import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { X, Lock, Copy, ExternalLink, Mail, QrCode } from 'lucide-react';
+import QRCode from 'qrcode';
+import { FlightPaymentLinkResult, useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -9,8 +10,10 @@ import { useAircraftRates } from '../../hooks/useAircraftRates';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
-import { calculateFlightCost, isVoucherPaymentMethod } from '../../utils/billing';
+import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../../utils/billing';
 import { TachOverlapWarningModal } from './TachOverlapWarningModal';
+import { fetchUserXeroBalance } from '../../lib/xeroMemberBalance';
+import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 
 interface Booking {
   id: string;
@@ -24,6 +27,11 @@ interface Booking {
   paymentType?: string;
   trialFlightVoucherId?: string;
   status?: string;
+  isGuestBooking?: boolean;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  hirerName?: string;
 }
 
 interface FlightLogModalProps {
@@ -60,7 +68,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 }) => {
   const { createFlightLog, updateFlightLog, checkTachOverlap } = useFlightLogs();
   const { user: currentUser } = useAuth();
-  const { settings } = useFlightLogSettings();
+  const { effectiveSettings: settings } = useFlightLogSettings(booking.aircraftId);
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
   const { flightTypes, paymentMethods } = useBillingSettings();
@@ -72,14 +80,15 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const startTime = booking.startTime instanceof Date ? booking.startTime : new Date(booking.startTime);
   const endTime = booking.endTime instanceof Date ? booking.endTime : new Date(booking.endTime);
   const isDualFlight = !!booking.instructorId;
+  const voucherPaymentType = 'Gift Voucher';
   const isVoucherBooking = !!booking.trialFlightVoucherId || isVoucherPaymentMethod(booking.paymentType);
-  const voucherFlightType = flightTypes.find((type) => isVoucherPaymentMethod(type.name));
-  const defaultFlightTypeId = booking.flightTypeId || (isVoucherBooking ? voucherFlightType?.id || '' : '');
+  const defaultFlightTypeId = isVoucherBooking ? '' : (booking.flightTypeId || '');
   const fieldClass = 'w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500';
   const labelClass = 'block text-xs font-medium text-gray-700 mb-1';
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [tachAutoFilled, setTachAutoFilled] = useState(false);
+  const [hobbsAutoFilled, setHobbsAutoFilled] = useState(false);
   const [loadedFlightLogId, setLoadedFlightLogId] = useState<string>(flightLogId || '');
   const [showOverlapWarning, setShowOverlapWarning] = useState(false);
   const [adminChargeOverride, setAdminChargeOverride] = useState<number | ''>('');
@@ -92,14 +101,29 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     end_time: string;
   }>>([]);
   const [pendingLogData, setPendingLogData] = useState<any>(null);
+  const [paymentLinkResult, setPaymentLinkResult] = useState<FlightPaymentLinkResult | null>(null);
+  const [paymentQrDataUrl, setPaymentQrDataUrl] = useState('');
+  const [topUpLinkResult, setTopUpLinkResult] = useState<(FlightPaymentLinkResult & { amount?: number }) | null>(null);
+  const [topUpQrDataUrl, setTopUpQrDataUrl] = useState('');
+  const [topUpLoading, setTopUpLoading] = useState(false);
+  const [pendingPrepaidLogData, setPendingPrepaidLogData] = useState<any>(null);
   const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
+  const isPrepaidFlightType = (name?: string | null) => {
+    const value = (name || '').toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+    return value === 'pre paid' || value === 'prepaid' || value.includes('pre paid');
+  };
+  const findPilotAccountPaymentMethod = () =>
+    paymentMethods.find(method => isPrepaidPaymentMethod(method.name));
 
   // Derive payment type from the pre-filled flight type (respects forced payment and free types)
   const derivePaymentType = (flightTypeId: string) => {
-    if (isVoucherBooking) return booking.paymentType || 'Gift Voucher';
+    if (isVoucherBooking) return voucherPaymentType;
     if (!flightTypeId) return '';
     const ft = flightTypes.find(f => f.id === flightTypeId);
     if (!ft) return '';
+    if (isPrepaidFlightType(ft.name)) {
+      return findPilotAccountPaymentMethod()?.name || 'Pilot Account';
+    }
     const rate = aircraftRates.find(r => r.flightTypeId === flightTypeId);
     const free = rate?.chargeType === 'free' || rate?.chargeType === 'not_used';
     if (free) return '';
@@ -147,7 +171,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const selectedFlightType = flightTypes.find(ft => ft.id === formData.flight_type_id) ?? null;
   const selectedRate = aircraftRates.find(r => r.flightTypeId === formData.flight_type_id) ?? null;
   const isFree = selectedRate?.chargeType === 'free' || selectedRate?.chargeType === 'not_used';
-  const isPaymentForced = isVoucherBooking || (!isFree && !!selectedFlightType?.forcedPaymentMethodId);
+  const isPrepaidSelectedFlightType = isPrepaidFlightType(selectedFlightType?.name);
+  const isPaymentForced = isVoucherBooking || isPrepaidSelectedFlightType || (!isFree && !!selectedFlightType?.forcedPaymentMethodId);
   const isAdmin = currentUser?.role === 'admin' || currentUser?.roles?.includes('admin');
   const estimatedCost = calculateFlightCost({
     rate: selectedRate,
@@ -164,32 +189,111 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   useEffect(() => {
     setIsSubmitting(false);
     setTachAutoFilled(false);
+    setHobbsAutoFilled(false);
     setLoadedFlightLogId(flightLogId || '');
     setShowOverlapWarning(false);
     setAdminChargeOverride('');
     setAdminChargeTouched(false);
     setOverlappingLogs([]);
     setPendingLogData(null);
+    setPaymentLinkResult(null);
+    setPaymentQrDataUrl('');
+    setTopUpLinkResult(null);
+    setTopUpQrDataUrl('');
+    setTopUpLoading(false);
+    setPendingPrepaidLogData(null);
     setFormData(buildDefaultFormData());
   }, [booking.id, flightLogId, mode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const buildQrCode = async () => {
+      if (!paymentLinkResult?.checkoutUrl) {
+        setPaymentQrDataUrl('');
+        return;
+      }
+
+      try {
+        const dataUrl = await QRCode.toDataURL(paymentLinkResult.checkoutUrl, {
+          margin: 1,
+          width: 256,
+          color: {
+            dark: '#0f172a',
+            light: '#ffffff',
+          },
+        });
+
+        if (!cancelled) {
+          setPaymentQrDataUrl(dataUrl);
+        }
+      } catch (error) {
+        console.error('Failed to generate QR code:', error);
+        if (!cancelled) {
+          setPaymentQrDataUrl('');
+        }
+      }
+    };
+
+    void buildQrCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentLinkResult]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const buildQrCode = async () => {
+      if (!topUpLinkResult?.checkoutUrl) {
+        setTopUpQrDataUrl('');
+        return;
+      }
+
+      try {
+        const dataUrl = await QRCode.toDataURL(topUpLinkResult.checkoutUrl, {
+          margin: 1,
+          width: 256,
+          color: {
+            dark: '#0f172a',
+            light: '#ffffff',
+          },
+        });
+
+        if (!cancelled) {
+          setTopUpQrDataUrl(dataUrl);
+        }
+      } catch (error) {
+        console.error('Failed to generate top-up QR code:', error);
+        if (!cancelled) {
+          setTopUpQrDataUrl('');
+        }
+      }
+    };
+
+    void buildQrCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [topUpLinkResult]);
 
   // Re-derive payment type when billing data loads (paymentMethods/flightTypes async) or flight type changes
   useEffect(() => {
     if (!flightTypes.length) return;
 
-    if (isVoucherBooking && !formData.flight_type_id && voucherFlightType?.id) {
-      setFormData(prev => ({
-        ...prev,
-        flight_type_id: voucherFlightType.id,
-        payment_type: derivePaymentType(voucherFlightType.id),
-      }));
+    if (isVoucherBooking) {
+      setFormData(prev => (
+        prev.flight_type_id === '' && prev.payment_type === voucherPaymentType
+          ? prev
+          : { ...prev, flight_type_id: '', payment_type: voucherPaymentType }
+      ));
       return;
     }
 
     if (!formData.flight_type_id) return;
     const derived = derivePaymentType(formData.flight_type_id);
     setFormData(prev => ({ ...prev, payment_type: derived }));
-  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking, booking.paymentType, voucherFlightType?.id]);
+  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking]);
 
   useEffect(() => {
     if (!showAdminChargeOverride || adminChargeTouched) return;
@@ -256,13 +360,18 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   }, [booking.id, flightLogId, mode]);
 
   useEffect(() => {
-    const calculateStartTach = async () => {
+    const calculateAutoFilledMeterStarts = async () => {
       if (mode === 'edit') return;
       if (!booking.aircraftId) return;
+
+      const hobbsEnabled = settings.some(setting => setting.field_name === 'hobbs_start' && setting.is_enabled);
+      const tachEnabled = settings.some(setting => setting.field_name === 'start_tach' && setting.is_enabled);
+      if (!hobbsEnabled && !tachEnabled) return;
+
       try {
         const { data: logs, error } = await supabase
           .from('flight_logs')
-          .select('start_time, end_time, start_tach, end_tach')
+          .select('start_time, end_time, start_tach, end_tach, hobbs_start, hobbs_end')
           .eq('aircraft_id', booking.aircraftId)
           .order('end_time', { ascending: false });
 
@@ -271,18 +380,36 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         const previousLog = logs.find(log => log.end_time && new Date(log.end_time) <= startTime);
         if (!previousLog) return;
 
-        const startTach = parseFloat(previousLog.end_tach);
-        setFormData(prev => ({
-          ...prev,
-          start_tach: startTach,
-        }));
-        setTachAutoFilled(true);
+        const nextState: Partial<typeof formData> = {};
+
+        if (tachEnabled && previousLog.end_tach != null && previousLog.end_tach !== '') {
+          const startTach = parseFloat(previousLog.end_tach);
+          if (Number.isFinite(startTach)) {
+            nextState.start_tach = startTach;
+            setTachAutoFilled(true);
+          }
+        }
+
+        if (hobbsEnabled && previousLog.hobbs_end != null && previousLog.hobbs_end !== '') {
+          const startHobbs = parseFloat(previousLog.hobbs_end);
+          if (Number.isFinite(startHobbs)) {
+            nextState.hobbs_start = startHobbs;
+            setHobbsAutoFilled(true);
+          }
+        }
+
+        if (Object.keys(nextState).length > 0) {
+          setFormData(prev => ({
+            ...prev,
+            ...nextState,
+          }));
+        }
       } catch (err) {
-        console.error('Error calculating start tach:', err);
+        console.error('Error calculating log meter start values:', err);
       }
     };
-    calculateStartTach();
-  }, [booking.aircraftId]);
+    calculateAutoFilledMeterStarts();
+  }, [booking.aircraftId, mode, startTime, settings]);
 
   const handleTachChange = (field: 'start_tach' | 'end_tach', value: string) => {
     const numValue = value === '' ? '' : parseFloat(value);
@@ -365,7 +492,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (formData.flight_duration === '') return 'Please enter flight duration';
     if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
-    if (!formData.flight_type_id) return 'Please select a flight type';
+    if (!isVoucherBooking && !formData.flight_type_id) return 'Please select a flight type';
     if (showAdminChargeOverride && adminChargeOverride !== '' && (!Number.isFinite(adminChargeOverride) || adminChargeOverride < 0)) return 'Flight charge cannot be negative';
     if (!isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a payment type';
     if (isTakeoffsLandingsMandatory && (formData.takeoffs === undefined || formData.landings === undefined)) return 'Please enter takeoffs and landings';
@@ -401,15 +528,142 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     const result = mode === 'edit'
       ? await updateFlightLog(targetFlightLogId, logData)
       : await createFlightLog(logData);
-    const { error } = result;
+    const { error, data } = result;
     if (error) {
       toast.error(error);
+      return;
+    }
+
+    const paymentLink = (data as any)?.paymentLink as FlightPaymentLinkResult | null | undefined;
+    if (mode === 'create' && paymentLink?.checkoutUrl) {
+      toast.success('Flight logged successfully');
+      setPaymentLinkResult(paymentLink);
+      if (paymentLink.emailSent) {
+        toast.success(`Payment link emailed${paymentLink.emailTo ? ` to ${paymentLink.emailTo}` : ''}`);
+      } else if (paymentLink.emailError) {
+        toast(`Payment link ready${paymentLink.emailTo ? ` for ${paymentLink.emailTo}` : ''}. Email was not sent automatically.`, {
+          icon: '!',
+        });
+      }
       return;
     }
 
     toast.success(mode === 'edit' ? 'Flight log updated successfully' : 'Flight logged successfully');
     onSuccess();
     onClose();
+  };
+
+  const ensurePrepaidCanCoverFlight = async (logData: any) => {
+    if (isVoucherBooking) return true;
+    const selectedType = flightTypes.find(type => type.id === logData.flight_type_id);
+    const usesPrepaid = isPrepaidFlightType(selectedType?.name) || isPrepaidPaymentMethod(logData.payment_type);
+    if (!usesPrepaid || !logData.student_id) return true;
+
+    const balance = await fetchUserXeroBalance(logData.student_id);
+    if (!balance.connected) {
+      toast.error('Prepaid requires Xero to be connected for this club.');
+      return false;
+    }
+
+    const availableCredit = Number(balance.overpaymentCredit ?? balance.availableCredit ?? 0);
+    const minimumPrepaidPack = Number(balance.minimumPrepaidPack ?? 1000);
+    const requiredAmount = Math.max(minimumPrepaidPack, Number(finalCharge || estimatedCost || 0));
+
+    if (availableCredit + 0.005 >= requiredAmount) return true;
+
+    setTopUpLinkResult({
+      checkoutUrl: '',
+      sessionId: '',
+      emailSent: false,
+      emailError: null,
+      emailTo: users.find(item => item.id === logData.student_id)?.email || null,
+      amount: minimumPrepaidPack,
+    });
+    setPendingPrepaidLogData(logData);
+    return false;
+  };
+
+  const createTopUpPaymentLink = async () => {
+    if (!booking.studentId || topUpLoading) return;
+    setTopUpLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-member-topup-checkout', {
+        body: {
+          userId: booking.studentId,
+          amount: topUpLinkResult?.amount || 1000,
+          sendEmail: true,
+          successUrl: `${window.location.origin}/billing?topup=success`,
+          cancelUrl: `${window.location.origin}/billing?topup=cancelled`,
+        },
+      });
+
+      if (error) {
+        throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create top-up payment link'));
+      }
+      if (!data?.checkoutUrl) throw new Error('Stripe did not return a top-up payment link');
+
+      setTopUpLinkResult({
+        checkoutUrl: data.checkoutUrl,
+        sessionId: data.sessionId,
+        emailSent: data.emailSent,
+        emailError: data.emailError,
+        emailTo: data.emailTo,
+        amount: Number(data.amount || topUpLinkResult?.amount || 1000),
+      });
+      if (data.emailSent) {
+        toast.success(`Top-up link emailed${data.emailTo ? ` to ${data.emailTo}` : ''}`);
+      } else {
+        toast('Top-up payment link ready. Use the QR code or copy the link.', { icon: '$' });
+      }
+    } catch (error) {
+      console.error('Failed to create member top-up checkout:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create top-up payment link');
+    } finally {
+      setTopUpLoading(false);
+    }
+  };
+
+  const continueWithTachCheckAndSave = async (logData: any) => {
+    const { overlaps, error: overlapError } = await checkTachOverlap(
+      booking.aircraftId,
+      Number(logData.start_tach),
+      Number(logData.end_tach),
+      mode === 'edit' ? (loadedFlightLogId || flightLogId) : undefined
+    );
+
+    if (overlapError) {
+      toast.error(overlapError);
+      return;
+    }
+
+    if (overlaps.length > 0) {
+      setOverlappingLogs(overlaps);
+      setPendingLogData(logData);
+      setShowOverlapWarning(true);
+      return;
+    }
+
+    await saveFlightLog(logData);
+  };
+
+  const handlePrepaidPaymentMade = async () => {
+    if (!pendingPrepaidLogData || isSubmitting) return;
+    try {
+      setIsSubmitting(true);
+      setTopUpLinkResult(null);
+      setTopUpQrDataUrl('');
+      const logData = {
+        ...pendingPrepaidLogData,
+        prepaid_payment_acknowledged: true,
+      };
+      setPendingPrepaidLogData(null);
+      await continueWithTachCheckAndSave(logData);
+    } catch (error) {
+      console.error('Failed to proceed with acknowledged prepaid payment:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to log flight');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -436,8 +690,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         solo_time: roundFlightDecimal(formData.solo_time),
         takeoffs: isTakeoffsLandingsEnabled ? formData.takeoffs : undefined,
         comments: isFieldEnabled('comments') ? formData.comments || undefined : undefined,
-        flight_type_id: formData.flight_type_id || undefined,
-        payment_type: formData.payment_type || undefined,
+        flight_type_id: isVoucherBooking ? undefined : formData.flight_type_id || undefined,
+        payment_type: isVoucherBooking ? voucherPaymentType : formData.payment_type || undefined,
         ...(showAdminChargeOverride && { calculated_cost: Number(finalCharge.toFixed(2)) }),
         ...(isTakeoffsLandingsEnabled && { landings: formData.landings }),
         ...(isFieldEnabled('observations') && { observations: formData.observations }),
@@ -455,26 +709,13 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         ...(isFieldEnabled('passengers') && { passengers: formData.passengers }),
       };
 
-      const { overlaps, error: overlapError } = await checkTachOverlap(
-        booking.aircraftId,
-        Number(logData.start_tach),
-        Number(logData.end_tach),
-        mode === 'edit' ? (loadedFlightLogId || flightLogId) : undefined
-      );
-
-      if (overlapError) {
-        toast.error(overlapError);
+      const prepaidReady = await ensurePrepaidCanCoverFlight(logData);
+      if (!prepaidReady) {
+        setIsSubmitting(false);
         return;
       }
 
-      if (overlaps.length > 0) {
-        setOverlappingLogs(overlaps);
-        setPendingLogData(logData);
-        setShowOverlapWarning(true);
-        return;
-      }
-
-      await saveFlightLog(logData);
+      await continueWithTachCheckAndSave(logData);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to log flight');
     } finally {
@@ -505,8 +746,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   const student = users.find((u) => u.id === booking.studentId);
   const instructor = booking.instructorId ? users.find((u) => u.id === booking.instructorId) : null;
-  const pilotInCommand = instructor ? instructor.name : (student?.name || 'Unknown');
-  const otherPilot = instructor ? student?.name || 'Unknown' : (isDualFlight ? student?.name || 'Unknown' : 'Self');
+  const guestLabel = booking.guestName || booking.hirerName || 'Guest';
+  const studentLabel = booking.isGuestBooking ? guestLabel : (student?.name || 'Unknown');
+  const pilotInCommand = instructor ? instructor.name : studentLabel;
+  const otherPilot = instructor ? studentLabel : (isDualFlight ? studentLabel : 'Self');
+  const availablePaymentMethods = paymentMethods.filter((pm) => {
+    if (!pm.active) return false;
+    if (!booking.isGuestBooking) return true;
+    const name = String(pm.name || '').toLowerCase();
+    return !name.includes('pilot account') && !name.includes('prepaid') && !name.includes('pre-paid');
+  });
 
   return (
     <>
@@ -630,8 +879,17 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             )}
           </div>
 
+          {isVoucherBooking && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="font-semibold">Covered by linked gift voucher</p>
+              <p className="mt-1 text-xs text-amber-800">
+                Flight type and payment selection are not required because this booking is already voucher-paid.
+              </p>
+            </div>
+          )}
+
           {/* Flight Type + Payment Type */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className={`${isVoucherBooking ? 'hidden' : 'grid'} grid-cols-1 md:grid-cols-2 gap-3`}>
             <div>
               <label className={labelClass}>
                 Flight Type <span className="text-red-500">*</span>
@@ -639,7 +897,14 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               <select
                 value={formData.flight_type_id}
                 onChange={(e) => {
-                  if (!isVoucherBooking) setFormData(prev => ({ ...prev, flight_type_id: e.target.value }));
+                  if (!isVoucherBooking) {
+                    const nextFlightTypeId = e.target.value;
+                    setFormData(prev => ({
+                      ...prev,
+                      flight_type_id: nextFlightTypeId,
+                      payment_type: derivePaymentType(nextFlightTypeId),
+                    }));
+                  }
                 }}
                 className={`${fieldClass} ${
                   isVoucherBooking
@@ -664,15 +929,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             {!isFree && isPaymentSelectorEnabled && (
               <div>
                 <label className={labelClass}>
-                  <span className="flex items-center gap-1.5">
-                    Payment Type {isFieldMandatory('payment_type') && <span className="text-red-500">*</span>}
-                    {isPaymentForced && (
-                      <span className="inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                        <Lock className="h-3 w-3" />
-                        {isVoucherBooking ? 'Covered by voucher' : 'Required by flight type'}
-                      </span>
-                    )}
-                  </span>
+                  Payment Type {isFieldMandatory('payment_type') && <span className="text-red-500">*</span>}
                 </label>
                 <select
                   value={formData.payment_type}
@@ -693,15 +950,21 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                       {formData.payment_type || 'Gift Voucher'}
                     </option>
                   )}
-                  {paymentMethods.filter(pm => pm.active).map(pm => (
+                  {availablePaymentMethods.map(pm => (
                     <option key={pm.id} value={pm.name}>{pm.name}</option>
                   ))}
                 </select>
+                {isPaymentForced && (
+                  <p className="mt-1 inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
+                    <Lock className="h-3 w-3" />
+                    {isVoucherBooking ? 'Covered by voucher' : isPrepaidSelectedFlightType ? 'Pilot Account required' : 'Required by flight type'}
+                  </p>
+                )}
               </div>
             )}
           </div>
 
-          {formData.flight_type_id && formData.flight_duration !== '' && (
+          {!isVoucherBooking && formData.flight_type_id && formData.flight_duration !== '' && (
             <div className="rounded-lg border border-gray-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -790,6 +1053,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   className={fieldClass}
                   required={isFieldMandatory('hobbs_start')}
                 />
+                {hobbsAutoFilled && <p className="text-xs text-green-600 mt-1">Auto-filled from previous log</p>}
               </div>
             )}
             {isFieldEnabled('hobbs_end') && (
@@ -1005,6 +1269,206 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         </form>
       </div>
     </div>
+    {paymentLinkResult && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4">
+        <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">Payment link ready</h3>
+              <p className="text-xs text-gray-500">The flight has been logged and is ready for payment.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPaymentLinkResult(null);
+                setPaymentQrDataUrl('');
+                onSuccess();
+                onClose();
+              }}
+              className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="space-y-4 px-4 py-4">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+              <div className="flex items-start gap-2">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    {paymentLinkResult.emailSent
+                      ? `Email sent${paymentLinkResult.emailTo ? ` to ${paymentLinkResult.emailTo}` : ''}`
+                      : 'Use the QR code or copy the link below'}
+                  </p>
+                  {paymentLinkResult.emailError && (
+                    <p className="mt-1 text-xs text-blue-800">{paymentLinkResult.emailError}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center rounded-2xl border border-gray-200 bg-gray-50 p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+                <QrCode className="h-4 w-4" />
+                <span>Scan to pay</span>
+              </div>
+              {paymentQrDataUrl ? (
+                <img src={paymentQrDataUrl} alt="Stripe payment QR code" className="h-40 w-40 rounded-xl bg-white p-2 shadow-sm" />
+              ) : (
+                <div className="flex h-40 w-40 items-center justify-center rounded-xl bg-white text-sm text-gray-500 shadow-sm">
+                  Preparing QR code...
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(paymentLinkResult.checkoutUrl);
+                    toast.success('Payment link copied');
+                  } catch (error) {
+                    console.error('Failed to copy payment link:', error);
+                    toast.error('Could not copy the payment link');
+                  }
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <Copy className="h-4 w-4" />
+                <span>Copy payment link</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.open(paymentLinkResult.checkoutUrl, '_blank', 'noopener,noreferrer')}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span>Open payment page</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    {topUpLinkResult && (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+        <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+          <div className="flex items-start justify-between border-b border-amber-200 bg-amber-50 px-4 py-3">
+            <div>
+              <h3 className="text-base font-semibold text-amber-950">Not enough prepaid funds</h3>
+              <p className="mt-0.5 text-xs text-amber-800">
+                This Pre-paid flight needs Pilot Account funds available in Xero before it can be logged.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setTopUpLinkResult(null);
+                setTopUpQrDataUrl('');
+              }}
+              className="rounded-md p-1.5 text-amber-700 hover:bg-amber-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="space-y-4 px-4 py-4">
+            <div className="rounded-xl border border-amber-200 bg-white px-3 py-3 text-sm text-gray-800">
+              <p>
+                The member needs to add at least{' '}
+                <span className="font-semibold">${Number(topUpLinkResult.amount || 1000).toFixed(2)}</span>{' '}
+                to their account first.
+              </p>
+              {topUpLinkResult.checkoutUrl ? (
+                <div className="mt-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-green-900">
+                  <p className="font-medium">
+                    {topUpLinkResult.emailSent
+                      ? `Top-up link emailed${topUpLinkResult.emailTo ? ` to ${topUpLinkResult.emailTo}` : ''}`
+                      : 'Top-up link ready'}
+                  </p>
+                  {topUpLinkResult.emailError && (
+                    <p className="mt-1 text-xs text-green-800">{topUpLinkResult.emailError}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">
+                  Send them a secure Stripe link by email, or show the QR code after the link is created.
+                </p>
+              )}
+            </div>
+
+            {topUpLinkResult.checkoutUrl && (
+              <div className="flex flex-col items-center rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <QrCode className="h-4 w-4" />
+                  <span>Scan to add funds</span>
+                </div>
+                {topUpQrDataUrl ? (
+                  <img src={topUpQrDataUrl} alt="Pilot account top-up QR code" className="h-40 w-40 rounded-xl bg-white p-2 shadow-sm" />
+                ) : (
+                  <div className="flex h-40 w-40 items-center justify-center rounded-xl bg-white text-sm text-gray-500 shadow-sm">
+                    Preparing QR code...
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {topUpLinkResult.checkoutUrl ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(topUpLinkResult.checkoutUrl);
+                        toast.success('Top-up link copied');
+                      } catch (error) {
+                        console.error('Failed to copy top-up link:', error);
+                        toast.error('Could not copy the top-up link');
+                      }
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    <Copy className="h-4 w-4" />
+                    <span>Copy link</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open(topUpLinkResult.checkoutUrl, '_blank', 'noopener,noreferrer')}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    <span>Open payment page</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePrepaidPaymentMade}
+                    disabled={isSubmitting}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span>{isSubmitting ? 'Logging flight...' : 'I have made a payment'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createTopUpPaymentLink}
+                    disabled={topUpLoading}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Mail className="h-4 w-4" />
+                    <span>{topUpLoading ? 'Creating link...' : `Email $${Number(topUpLinkResult.amount || 1000).toFixed(0)} top-up link`}</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     <TachOverlapWarningModal
       isOpen={showOverlapWarning}
       onClose={handleCancelOverlap}

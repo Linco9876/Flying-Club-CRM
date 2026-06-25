@@ -17,6 +17,15 @@ export const ResetPasswordPage: React.FC = () => {
   const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null);
   const [postResetReturnTo, setPostResetReturnTo] = useState<string | null>(null);
 
+  const syncVerifiedEmailToProfile = async () => {
+    const { data, error } = await supabase.functions.invoke('change-user-email', {
+      body: { action: 'sync_verified_email' },
+    });
+
+    if (error) throw error;
+    return data;
+  };
+
   useEffect(() => {
     let cancelled = false;
     let recoveryConfirmed = false;
@@ -79,6 +88,9 @@ export const ResetPasswordPage: React.FC = () => {
       }
 
       if (!cancelled) {
+        if (linkType?.startsWith('email_change')) {
+          await syncVerifiedEmailToProfile();
+        }
         if (timeoutId) clearTimeout(timeoutId);
         recoveryConfirmed = true;
         toast.success(linkType?.startsWith('email_change') ? 'Email address verified.' : 'Account verified.');
@@ -137,10 +149,19 @@ export const ResetPasswordPage: React.FC = () => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (isNonPasswordVerification && event === 'SIGNED_IN' && session) {
-        if (timeoutId) clearTimeout(timeoutId);
-        recoveryConfirmed = true;
-        toast.success(linkType?.startsWith('email_change') ? 'Email address verified.' : 'Account verified.');
-        navigate('/', { replace: true });
+        (async () => {
+          if (linkType?.startsWith('email_change')) {
+            try {
+              await syncVerifiedEmailToProfile();
+            } catch (error) {
+              console.error('Failed to sync verified email to CRM profile:', error);
+            }
+          }
+          if (timeoutId) clearTimeout(timeoutId);
+          recoveryConfirmed = true;
+          toast.success(linkType?.startsWith('email_change') ? 'Email address verified.' : 'Account verified.');
+          navigate('/', { replace: true });
+        })();
         return;
       }
 

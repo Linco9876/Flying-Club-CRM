@@ -165,7 +165,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
           <p className="text-2xl font-bold text-gray-900 mt-1">{pilotAccounts.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Funds Held</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Xero Credit Held</p>
           <p className={`text-2xl font-bold mt-1 ${totalBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
             ${totalBalance.toFixed(2)}
           </p>
@@ -203,7 +203,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                   className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                   onClick={() => handleSort('balance')}
                 >
-                  <span className="flex items-center">Balance <SortIcon field="balance" /></span>
+                  <span className="flex items-center">Xero Credit <SortIcon field="balance" /></span>
                 </th>
                 <th
                   className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
@@ -235,7 +235,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                     <td className="px-5 py-3.5 whitespace-nowrap">
                       <span className={`text-sm font-semibold ${
                         account.balance < 0 ? 'text-red-600' :
-                        account.balance < 100 ? 'text-amber-600' :
+                        account.balance < billing.minimumPrepaidPack ? 'text-amber-600' :
                         'text-green-600'
                       }`}>
                         ${account.balance.toFixed(2)}
@@ -245,8 +245,8 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                           <AlertCircle className="h-3 w-3" /> Overdrawn
                         </span>
                       )}
-                      {account.balance >= 0 && account.balance < 100 && (
-                        <span className="ml-2 text-xs text-amber-500">Low</span>
+                      {account.balance >= 0 && account.balance < billing.minimumPrepaidPack && (
+                        <span className="ml-2 text-xs text-amber-500">Needs $1000 overpayment pack</span>
                       )}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">

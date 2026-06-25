@@ -243,7 +243,7 @@ export const ProfileDashboard: React.FC = () => {
                   <p className="truncate text-base font-bold tabular-nums sm:text-lg">{stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)}</p>
                 </div>
                 <div className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white">
-                  <p className="text-xs text-white/70">Balance</p>
+                  <p className="text-xs text-white/70">Xero Credit</p>
                   <p className="truncate text-base font-bold tabular-nums sm:text-lg">{formatCurrency(stats.myPrepaidBalance, portalSettings.currency_decimals)}</p>
                 </div>
               </div>

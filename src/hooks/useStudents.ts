@@ -101,7 +101,9 @@ export const useStudents = () => {
         endorsementsMap.set(e.student_id, studentEndorsements);
       });
 
-      const combinedStudents: Student[] = (usersData || []).map(user => {
+      const combinedStudents: Student[] = (usersData || [])
+        .filter((user: any) => (user.portal_access_scope || 'full') !== 'guest_placeholder')
+        .map(user => {
         const studentData = studentsMap.get(user.id);
         const userRoles = rolesMap.get(user.id) || [user.role || 'student'];
         const primaryRole = userRoles.includes('admin') ? 'admin'
@@ -141,9 +143,15 @@ export const useStudents = () => {
           } : undefined,
           dateOfBirth: studentData?.date_of_birth ? new Date(studentData.date_of_birth) : user.date_of_birth ? new Date(user.date_of_birth) : undefined,
           preferredAircraftId: user.preferred_aircraft_id,
+          isSeniorInstructor: user.is_senior_instructor || userRoles.includes('senior_instructor'),
           isActive: user.is_active ?? true,
           portalAccessScope: user.portal_access_scope || 'full',
-          prepaidBalance: studentData?.prepaid_balance ? parseFloat(studentData.prepaid_balance) : 0,
+          xeroContactId: user.xero_contact_id || undefined,
+          xeroContactName: user.xero_contact_name || undefined,
+          xeroContactEmail: user.xero_contact_email || undefined,
+          xeroContactSyncStatus: user.xero_contact_sync_status || 'not_linked',
+          xeroContactSyncError: user.xero_contact_sync_error || null,
+          xeroContactLastSyncedAt: user.xero_contact_last_synced_at || null,
           endorsements: endorsementsMap.get(user.id) || []
         };
       });
@@ -237,7 +245,6 @@ export const useStudents = () => {
         occupation: studentData.occupation,
         alternate_phone: studentData.alternatePhone,
         date_of_birth: studentData.dateOfBirth,
-        prepaid_balance: studentData.prepaidBalance,
         emergency_contact_name: studentData.emergencyContact?.name,
         emergency_contact_phone: studentData.emergencyContact?.phone,
         emergency_contact_relationship: studentData.emergencyContact?.relationship

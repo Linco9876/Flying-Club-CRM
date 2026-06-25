@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2 } from 'lucide-react';
+import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2, FileText, BadgeDollarSign } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
@@ -232,8 +232,8 @@ const SplitPaymentModal: React.FC<{
           <section className="rounded-xl border border-gray-200 p-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h4 className="text-sm font-semibold text-gray-900">Pilot account</h4>
-                <p className="text-xs text-gray-500">Available balance: ${pilotBalance.toFixed(2)}</p>
+                <h4 className="text-sm font-semibold text-gray-900">Prepaid credit</h4>
+                <p className="text-xs text-gray-500">Available Xero credit: ${pilotBalance.toFixed(2)}</p>
               </div>
               <button
                 type="button"
@@ -394,7 +394,7 @@ const RejectModal: React.FC<{
 };
 
 export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { transactions, unpaidFlights, pilotAccounts, loading, markFlightPaid, createFlightPaymentCheckout, chargeFlightSavedCard, applyPilotAccountPayment, verifyTransaction, rejectTransaction } = billing;
+  const { transactions, unpaidFlights, pilotAccounts, loading, markFlightPaid, createFlightPaymentCheckout, chargeFlightSavedCard, syncFlightInvoiceToXero, applyXeroPaymentsForFlight, applyPilotAccountPayment, verifyTransaction, rejectTransaction } = billing;
   const { paymentMethods } = useBillingSettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
@@ -406,6 +406,8 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [creatingStripeCheckoutId, setCreatingStripeCheckoutId] = useState<string | null>(null);
   const [chargingSavedCardId, setChargingSavedCardId] = useState<string | null>(null);
+  const [syncingXeroInvoiceId, setSyncingXeroInvoiceId] = useState<string | null>(null);
+  const [syncingXeroPaymentId, setSyncingXeroPaymentId] = useState<string | null>(null);
   const [splitPayment, setSplitPayment] = useState<{
     flightId: string;
     userId: string;
@@ -437,6 +439,11 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
       isTopup: boolean;
       verifiedStatus: 'pending' | 'verified' | 'rejected' | null;
       rejectionNotes: string | null;
+      xeroSyncStatus: string | null;
+      xeroSyncError: string | null;
+      xeroInvoiceId: string | null;
+      xeroInvoiceNumber: string | null;
+      xeroPaymentId: string | null;
     }> = [
       ...transactions.map(t => ({
         id: t.id,
@@ -457,6 +464,11 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         isTopup: t.type === 'topup',
         verifiedStatus: t.verifiedStatus,
         rejectionNotes: t.rejectionNotes,
+        xeroSyncStatus: null,
+        xeroSyncError: null,
+        xeroInvoiceId: null,
+        xeroInvoiceNumber: null,
+        xeroPaymentId: null,
       })),
       ...unpaidFlights.map(f => ({
         id: `unpaid-${f.id}`,
@@ -477,6 +489,11 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         isTopup: false,
         verifiedStatus: null,
         rejectionNotes: null,
+        xeroSyncStatus: f.xeroSyncStatus,
+        xeroSyncError: f.xeroSyncError,
+        xeroInvoiceId: f.xeroInvoiceId,
+        xeroInvoiceNumber: f.xeroInvoiceNumber,
+        xeroPaymentId: f.xeroPaymentId,
       })),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -608,6 +625,24 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     }
   };
 
+  const handleSyncXeroInvoice = async (flightLogId: string) => {
+    setSyncingXeroInvoiceId(flightLogId);
+    try {
+      await syncFlightInvoiceToXero(flightLogId);
+    } finally {
+      setSyncingXeroInvoiceId(null);
+    }
+  };
+
+  const handleApplyXeroPayments = async (flightLogId: string) => {
+    setSyncingXeroPaymentId(flightLogId);
+    try {
+      await applyXeroPaymentsForFlight(flightLogId);
+    } finally {
+      setSyncingXeroPaymentId(null);
+    }
+  };
+
   const rejectingRow = rejectingId ? allRows.find(r => r.id === rejectingId) : null;
 
   const statusBadge = (row: typeof allRows[0]) => {
@@ -654,7 +689,30 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const rowActions = (row: typeof allRows[0], compact = false) => (
     <>
       {row.rowType === 'unpaid' && row.flightLogId && (
-        <div className={`flex items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
+        <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
+          <button
+            onClick={() => handleSyncXeroInvoice(row.flightLogId!)}
+            disabled={syncingXeroInvoiceId === row.flightLogId}
+            className={`flex items-center justify-center gap-1 text-xs font-medium bg-sky-700 text-white rounded-lg hover:bg-sky-800 disabled:opacity-60 transition-colors ${
+              compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+            }`}
+            title={row.xeroInvoiceNumber ? `Xero invoice ${row.xeroInvoiceNumber}` : 'Create/update Xero invoice'}
+          >
+            {syncingXeroInvoiceId === row.flightLogId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            {row.xeroInvoiceId ? 'Sync Xero' : 'Xero Invoice'}
+          </button>
+          {row.xeroInvoiceId && (
+            <button
+              onClick={() => handleApplyXeroPayments(row.flightLogId!)}
+              disabled={syncingXeroPaymentId === row.flightLogId}
+              className={`flex items-center justify-center gap-1 text-xs font-medium bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-60 transition-colors ${
+                compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+              }`}
+            >
+              {syncingXeroPaymentId === row.flightLogId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BadgeDollarSign className="h-3.5 w-3.5" />}
+              Xero Payment
+            </button>
+          )}
           {row.paymentType?.toLowerCase().includes('stripe') && (
             <>
               <button
@@ -904,6 +962,16 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {statusBadge(row)}
+                  {row.xeroInvoiceId && (
+                    <span className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+                      Xero {row.xeroInvoiceNumber || 'synced'}
+                    </span>
+                  )}
+                  {row.xeroSyncStatus === 'failed' && (
+                    <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      Xero failed
+                    </span>
+                  )}
                   {row.paymentMethod && (
                     <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                       {row.paymentMethod}
@@ -964,7 +1032,15 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
                     <td className="px-5 py-3.5 text-sm text-gray-700 max-w-xs">
                       <div className="flex items-start gap-1.5">
                         {row.rowType === 'unpaid' && <AlertCircle className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />}
-                        {row.description}
+                        <div>
+                          <p>{row.description}</p>
+                          {row.xeroInvoiceId && (
+                            <p className="mt-1 text-xs text-sky-700">Xero invoice {row.xeroInvoiceNumber || row.xeroInvoiceId}</p>
+                          )}
+                          {row.xeroSyncStatus === 'failed' && row.xeroSyncError && (
+                            <p className="mt-1 text-xs text-red-600">{row.xeroSyncError}</p>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-sm font-semibold">

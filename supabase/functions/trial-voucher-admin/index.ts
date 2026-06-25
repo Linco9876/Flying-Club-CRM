@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
 
 type SupabaseAdminClient = any;
 
@@ -18,6 +19,133 @@ const json = (body: Record<string, unknown>, status = 200) =>
 
 const isStaffRole = (role: string) => ["admin", "senior_instructor", "instructor"].includes(role);
 const cleanText = (value: unknown) => String(value || "").trim();
+const cleanEmail = (value: unknown) => String(value || "").trim().toLowerCase();
+const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const isUniqueViolation = (error: any) => error?.code === "23505";
+
+const escapeHtml = (value: unknown) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const generateVoucherCode = () => {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const randomPart = () =>
+    Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+  return `BFC-${randomPart()}-${randomPart()}-${randomPart()}`;
+};
+
+const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
+const isDevelopmentOrigin = (origin: string) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
+  /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?$/i.test(origin);
+const isAllowedReturnOrigin = (origin: string) => origin === siteOrigin() || isDevelopmentOrigin(origin);
+const safeReturnUrl = (value: unknown, fallbackPath: string) => {
+  const fallback = `${siteOrigin()}${fallbackPath}`;
+  const raw = cleanText(value);
+  if (!raw) return fallback;
+
+  try {
+    const url = new URL(raw, siteOrigin());
+    if (!isAllowedReturnOrigin(url.origin)) return fallback;
+    return url.toString();
+  } catch {
+    return fallback;
+  }
+};
+
+const sendBrevoEmail = async ({
+  to,
+  toName,
+  subject,
+  html,
+}: {
+  to: string;
+  toName?: string;
+  subject: string;
+  html: string;
+}) => {
+  const apiKey = Deno.env.get("BREVO_API_KEY");
+  if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
+
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
+  const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email: to, name: toName || to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { sent: false, error: body || `Brevo email failed with ${response.status}` };
+  }
+
+  return { sent: true, error: null };
+};
+
+const buildPaymentLinkEmail = ({
+  purchaserName,
+  product,
+  checkoutUrl,
+  amount,
+}: {
+  purchaserName: string;
+  product: any;
+  checkoutUrl: string;
+  amount: number;
+}) => `<!doctype html>
+<html>
+  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4fb;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.16);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:32px 30px;color:#ffffff;">
+                <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
+                <h1 style="margin:0;font-size:28px;line-height:1.15;">Complete your trial flight voucher payment</h1>
+                <p style="margin:14px 0 0;color:#dbeafe;font-size:15px;line-height:1.6;">Your voucher will be emailed after Stripe confirms payment.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 30px;">
+                <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:#0f172a;">Hi ${escapeHtml(purchaserName || "there")},</p>
+                <p style="margin:0 0 18px;line-height:1.65;color:#334155;">Bendigo Flying Club has prepared a ${escapeHtml(product.name || "trial flight voucher")} for you. Use the secure Stripe button below to complete payment.</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0;border:1px solid #dbeafe;border-radius:18px;background:#f8fbff;">
+                  <tr>
+                    <td style="padding:18px;">
+                      <p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#2563eb;font-weight:700;">Amount due</p>
+                      <p style="margin:0;font-size:28px;font-weight:800;color:#0f172a;">AUD $${escapeHtml(amount.toFixed(2))}</p>
+                      <p style="margin:8px 0 0;color:#475569;font-size:14px;">${escapeHtml(product.name || "Trial flight voucher")}</p>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:26px 0;">
+                  <a href="${escapeHtml(checkoutUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;border-radius:14px;padding:14px 22px;">Pay securely with Stripe</a>
+                </p>
+                <p style="margin:0 0 10px;color:#64748b;font-size:13px;line-height:1.6;">If the button does not work, copy and paste this link into your browser:</p>
+                <p style="margin:0;color:#2563eb;font-size:13px;line-height:1.6;word-break:break-all;">${escapeHtml(checkoutUrl)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 
 type StaffAuthResult =
   | { ok: true; userId: string }
@@ -74,6 +202,206 @@ Deno.serve(async (req: Request) => {
 
     const staffAuth = await authenticateStaff({ req, supabaseUrl, anonKey, adminClient });
     if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
+
+    if (action === "send-payment-link") {
+      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+      if (!stripeSecretKey) {
+        return json({ error: "Stripe secret key is not configured in Supabase Edge Function secrets." }, 503);
+      }
+
+      const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+      if (!connectedAccountId) {
+        return json({ error: "Connect this club's Stripe account in Settings > Integrations before sending payment links." }, 409);
+      }
+
+      const productId = cleanText(body.productId);
+      const purchaserName = cleanText(body.purchaserName);
+      const purchaserEmail = cleanEmail(body.purchaserEmail);
+      const purchaserPhone = cleanText(body.purchaserPhone);
+      const recipientName = cleanText(body.recipientName);
+      const recipientEmail = cleanEmail(body.recipientEmail);
+      const sendToRecipient = Boolean(body.sendToRecipient);
+      const recipientDeliveryAt = cleanText(body.recipientDeliveryAt);
+      const expiresAt = cleanText(body.expiresAt);
+      const notes = cleanText(body.notes);
+      const successUrl = safeReturnUrl(body.successUrl, "/gift-vouchers?stripe_voucher=success");
+      const cancelUrl = safeReturnUrl(body.cancelUrl, "/gift-vouchers?stripe_voucher=cancelled");
+
+      if (!productId || !purchaserName || !purchaserEmail) {
+        return json({ error: "Voucher, purchaser name and purchaser email are required." }, 400);
+      }
+      if (!isValidEmail(purchaserEmail)) return json({ error: "Enter a valid purchaser email address." }, 400);
+      if (sendToRecipient && !recipientEmail) {
+        return json({ error: "Recipient email is required when sending direct to recipient." }, 400);
+      }
+      if (sendToRecipient && recipientEmail && !isValidEmail(recipientEmail)) {
+        return json({ error: "Enter a valid recipient email address." }, 400);
+      }
+
+      let recipientDeliveryAtIso: string | null = null;
+      if (sendToRecipient && recipientDeliveryAt) {
+        const deliveryAt = new Date(recipientDeliveryAt);
+        if (!Number.isFinite(deliveryAt.getTime())) return json({ error: "Choose a valid recipient send date/time." }, 400);
+        if (deliveryAt.getTime() < Date.now()) return json({ error: "Recipient send date/time must be in the future." }, 400);
+        recipientDeliveryAtIso = deliveryAt.toISOString();
+      }
+
+      let expiresAtIso: string | null = null;
+      if (expiresAt) {
+        const expiry = new Date(expiresAt);
+        if (!Number.isFinite(expiry.getTime())) return json({ error: "Choose a valid expiry date." }, 400);
+        expiresAtIso = expiry.toISOString();
+      }
+
+      const { data: product, error: productError } = await adminClient
+        .from("trial_flight_voucher_products")
+        .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,is_active")
+        .eq("id", productId)
+        .maybeSingle();
+
+      if (productError) return json({ error: productError.message }, 500);
+      if (!product?.is_active) return json({ error: "This voucher product is not active." }, 410);
+      if (!product.stripe_price_id) return json({ error: "Create the Stripe checkout price for this voucher product first." }, 409);
+
+      const price = Number(product.price || 0);
+      if (!Number.isFinite(price) || price <= 0) return json({ error: "This voucher product needs a valid sale price." }, 409);
+
+      const { data: aircraftRows, error: aircraftError } = await adminClient
+        .from("aircraft")
+        .select("id,registration,make,model,status,required_endorsement_type,is_archived");
+      if (aircraftError) return json({ error: aircraftError.message }, 500);
+
+      const instructorIds = product.instructor_ids || [];
+      const { data: endorsementRows, error: endorsementError } = instructorIds.length > 0
+        ? await adminClient
+          .from("endorsements")
+          .select("student_id,type,expiry_date,is_active")
+          .in("student_id", instructorIds)
+        : { data: [], error: null };
+
+      if (endorsementError) return json({ error: endorsementError.message }, 500);
+
+      const setup = trialVoucherProductBookingSetup(product, aircraftRows || [], endorsementRows || []);
+      if (!setup.bookingAvailable) {
+        return json({
+          error: `This voucher is not bookable yet: ${setup.issue || "configure eligible aircraft and instructors first"}.`,
+        }, 409);
+      }
+
+      let voucher: any = null;
+      let voucherError: any = null;
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const result = await adminClient
+          .from("trial_flight_vouchers")
+          .insert({
+            product_id: product.id,
+            code: generateVoucherCode(),
+            purchaser_name: purchaserName,
+            purchaser_email: purchaserEmail,
+            purchaser_phone: purchaserPhone || null,
+            recipient_name: recipientName || null,
+            recipient_email: recipientEmail || null,
+            send_to_recipient: sendToRecipient,
+            recipient_delivery_at: recipientDeliveryAtIso,
+            expires_at: expiresAtIso,
+            status: "draft",
+            payment_status: "pending",
+            payment_source: "stripe",
+            payment_amount: price,
+            payment_currency: "AUD",
+            notes: notes ? `${notes}\nPayment link sent by staff ${staffAuth.userId}.` : `Payment link sent by staff ${staffAuth.userId}.`,
+            created_by: staffAuth.userId,
+          })
+          .select("id,code")
+          .single();
+
+        voucher = result.data;
+        voucherError = result.error;
+        if (!voucherError || !isUniqueViolation(voucherError)) break;
+      }
+
+      if (voucherError || !voucher) {
+        return json({ error: voucherError?.message || "Could not create voucher payment link record." }, 500);
+      }
+
+      const form = new URLSearchParams();
+      form.set("mode", "payment");
+      form.set("line_items[0][price]", product.stripe_price_id);
+      form.set("line_items[0][quantity]", "1");
+      form.set("success_url", `${successUrl}${successUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`);
+      form.set("cancel_url", cancelUrl);
+      form.set("customer_email", purchaserEmail);
+      form.set("client_reference_id", voucher.id);
+      form.set("metadata[voucher_id]", voucher.id);
+      form.set("metadata[voucher_code]", voucher.code);
+      form.set("metadata[product_id]", product.id);
+      form.set("metadata[purchaser_email]", purchaserEmail);
+      form.set("metadata[created_by_staff]", staffAuth.userId);
+      if (recipientEmail) form.set("metadata[recipient_email]", recipientEmail);
+
+      const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+        method: "POST",
+        headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": stripeIdempotencyKey("voucher-admin-payment-link", voucher.id, product.id, purchaserEmail),
+        }),
+        body: form,
+      });
+
+      const session = await stripeResponse.json();
+      if (!stripeResponse.ok) {
+        await adminClient
+          .from("trial_flight_vouchers")
+          .update({
+            payment_status: "failed",
+            notes: `${notes ? `${notes}\n` : ""}Stripe payment link failed: ${session?.error?.message || stripeResponse.status}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", voucher.id);
+        return json({ error: session?.error?.message || "Stripe checkout could not be created." }, 502);
+      }
+
+      const { error: updateError } = await adminClient
+        .from("trial_flight_vouchers")
+        .update({
+          stripe_checkout_session_id: session.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", voucher.id);
+
+      if (updateError) return json({ error: updateError.message }, 500);
+
+      const emailHtml = buildPaymentLinkEmail({
+        purchaserName,
+        product,
+        checkoutUrl: session.url,
+        amount: price,
+      });
+      const emailResult = await sendBrevoEmail({
+        to: purchaserEmail,
+        toName: purchaserName,
+        subject: `Payment link for your ${product.name || "Bendigo Flying Club voucher"}`,
+        html: emailHtml,
+      });
+
+      if (!emailResult.sent) {
+        return json({
+          error: emailResult.error || "Payment link was created, but the email could not be sent.",
+          checkoutUrl: session.url,
+          sessionId: session.id,
+          voucherId: voucher.id,
+        }, 502);
+      }
+
+      return json({
+        sent: true,
+        checkoutUrl: session.url,
+        sessionId: session.id,
+        voucherId: voucher.id,
+        to: purchaserEmail,
+      });
+    }
 
     if (action === "validate-stripe-price") {
       const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
@@ -202,6 +530,7 @@ Deno.serve(async (req: Request) => {
         method: "POST",
         headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": stripeIdempotencyKey("voucher-product", product.id, product.name, amountCents),
         }),
         body: productForm,
       });
@@ -224,6 +553,7 @@ Deno.serve(async (req: Request) => {
         method: "POST",
         headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": stripeIdempotencyKey("voucher-price", product.id, stripeProduct.id, amountCents),
         }),
         body: priceForm,
       });

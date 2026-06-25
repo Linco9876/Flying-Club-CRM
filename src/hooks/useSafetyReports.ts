@@ -65,11 +65,17 @@ export const useSafetyReports = () => {
   const fetchReports = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('safety_reports')
         .select('*, reporter:users!safety_reports_reporter_id_fkey(name), category:safety_report_categories(name), aircraft:aircraft(registration)')
         .order('occurrence_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
+
+      if ((user?.role === 'student' || user?.role === 'pilot') && user.id) {
+        query = query.or(`reporter_id.eq.${user.id},involved_user_ids.cs.{${user.id}}`);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       const mappedReports = (data || []).map((report: any) => ({
@@ -101,13 +107,7 @@ export const useSafetyReports = () => {
         updatedAt: new Date(report.updated_at)
       }));
 
-      const visibleReports = user?.role === 'student' || user?.role === 'pilot'
-        ? mappedReports.filter((report: SafetyReport) =>
-            report.reporterId === user.id || report.involvedUserIds.includes(user.id)
-          )
-        : mappedReports;
-
-      setReports(visibleReports);
+      setReports(mappedReports);
     } catch (error) {
       console.error('Error fetching safety reports:', error);
       toast.error('Failed to load safety reports');
@@ -118,7 +118,7 @@ export const useSafetyReports = () => {
 
   useEffect(() => {
     fetchReports();
-  }, []);
+  }, [user?.id, user?.role]);
 
   const createReport = async (report: CreateSafetyReportData) => {
     if (!user) throw new Error('You must be signed in to submit a report');
