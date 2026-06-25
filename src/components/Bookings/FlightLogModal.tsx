@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Lock, Copy, ExternalLink, Mail, QrCode } from 'lucide-react';
+import { X, Lock, Copy, ExternalLink, Mail, QrCode, Loader2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { FlightPaymentLinkResult, useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
@@ -107,6 +107,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const [topUpQrDataUrl, setTopUpQrDataUrl] = useState('');
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [pendingPrepaidLogData, setPendingPrepaidLogData] = useState<any>(null);
+  const [submissionMessage, setSubmissionMessage] = useState('');
   const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
   const isPrepaidFlightType = (name?: string | null) => {
     const value = (name || '').toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -202,6 +203,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     setTopUpQrDataUrl('');
     setTopUpLoading(false);
     setPendingPrepaidLogData(null);
+    setSubmissionMessage('');
     setFormData(buildDefaultFormData());
   }, [booking.id, flightLogId, mode]);
 
@@ -515,6 +517,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   };
 
   const saveFlightLog = async (logData: any) => {
+    setSubmissionMessage(mode === 'edit'
+      ? 'Saving the flight log and updating linked billing records...'
+      : 'Logging the flight and syncing billing, Xero and payment records...');
+
     if (booking.status === 'pending_approval' && onApproveBooking) {
       await onApproveBooking(booking.id);
     }
@@ -559,6 +565,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     const usesPrepaid = isPrepaidFlightType(selectedType?.name) || isPrepaidPaymentMethod(logData.payment_type);
     if (!usesPrepaid || !logData.student_id) return true;
 
+    setSubmissionMessage('Checking the member Xero credit before prepaid is used...');
     const balance = await fetchUserXeroBalance(logData.student_id);
     if (!balance.connected) {
       toast.error('Prepaid requires Xero to be connected for this club.');
@@ -625,6 +632,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   };
 
   const continueWithTachCheckAndSave = async (logData: any) => {
+    setSubmissionMessage('Checking tach history before saving...');
     const { overlaps, error: overlapError } = await checkTachOverlap(
       booking.aircraftId,
       Number(logData.start_tach),
@@ -664,6 +672,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       toast.error(error instanceof Error ? error.message : 'Failed to log flight');
     } finally {
       setIsSubmitting(false);
+      setSubmissionMessage('');
     }
   };
 
@@ -676,6 +685,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         return;
       }
       setIsSubmitting(true);
+      setSubmissionMessage('Preparing the flight log...');
 
       const logData = {
         booking_id: booking.id,
@@ -721,6 +731,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       toast.error(err instanceof Error ? err.message : 'Failed to log flight');
     } finally {
       setIsSubmitting(false);
+      setSubmissionMessage('');
     }
   };
 
@@ -728,6 +739,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (!pendingLogData) return;
     try {
       setIsSubmitting(true);
+      setSubmissionMessage('Saving the flight log after tach warning confirmation...');
       await saveFlightLog(pendingLogData);
       setShowOverlapWarning(false);
       setPendingLogData(null);
@@ -736,6 +748,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       toast.error(err instanceof Error ? err.message : 'Failed to log flight');
     } finally {
       setIsSubmitting(false);
+      setSubmissionMessage('');
     }
   };
 
@@ -764,7 +777,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[94vh] overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 sticky top-0 bg-white z-10">
           <h2 className="text-lg font-semibold text-gray-900">{mode === 'edit' ? 'Edit Flight Log' : 'Log Flight'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="text-gray-400 hover:text-gray-600 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -1262,14 +1279,56 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {isSubmitting ? (mode === 'edit' ? 'Saving...' : 'Logging...') : (mode === 'edit' ? 'Save Flight Log' : 'Log Flight')}
             </button>
           </div>
         </form>
       </div>
     </div>
+    {isSubmitting && (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+        <div className="w-full max-w-md overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-2xl">
+          <div className="bg-gradient-to-r from-blue-700 to-slate-900 px-5 py-4 text-white">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold">
+                  {mode === 'edit' ? 'Updating flight log' : 'Logging flight'}
+                </h3>
+                <p className="text-sm text-blue-100">Please keep this window open.</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4 px-5 py-5">
+            <p className="text-sm font-medium text-gray-900">
+              {submissionMessage || 'Finishing the flight workflow...'}
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs text-gray-600">
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-2 py-2">
+                <p className="font-semibold text-blue-900">Flight log</p>
+                <p>Saving</p>
+              </div>
+              <div className="rounded-xl border border-amber-100 bg-amber-50 px-2 py-2">
+                <p className="font-semibold text-amber-900">Billing</p>
+                <p>Checking</p>
+              </div>
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-2 py-2">
+                <p className="font-semibold text-emerald-900">Xero</p>
+                <p>Syncing</p>
+              </div>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     {paymentLinkResult && (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4">
         <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
