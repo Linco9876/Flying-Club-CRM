@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Booking, FlightLog } from '../types';
+import { Booking, FlightLog, GroundSessionLog } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useBookingRulesSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
@@ -32,9 +32,11 @@ export const useBookings = (enabled = true) => {
         'payment_type',
         'notes',
         'status',
+        'booking_kind',
         'has_conflict',
         'deleted_at',
         'flight_logged',
+        'ground_session_logged',
         'flight_type_id',
         'trial_flight_voucher_id',
         'is_guest_booking',
@@ -58,21 +60,24 @@ export const useBookings = (enabled = true) => {
     'end_tach',
     'calculated_cost',
   ].join(',');
-  const mapBookingRow = (row: any, flightLog?: FlightLog): Booking => ({
+  const mapBookingRow = (row: any, flightLog?: FlightLog, groundSessionLog?: GroundSessionLog): Booking => ({
     id: row.id,
     studentId: row.student_id,
     pilotId: row.student_id,
     instructorId: row.instructor_id,
-    aircraftId: row.aircraft_id,
+    aircraftId: row.aircraft_id || undefined,
     startTime: new Date(row.start_time),
     endTime: new Date(row.end_time),
     paymentType: row.payment_type || '',
     notes: row.notes || undefined,
     status: row.deleted_at ? 'cancelled' : row.status,
+    bookingKind: row.booking_kind || 'flight',
     hasConflict: row.has_conflict || false,
     deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
     flightLog,
     flight_logged: row.flight_logged || false,
+    groundSessionLog,
+    ground_session_logged: row.ground_session_logged || false,
     flightTypeId: row.flight_type_id || undefined,
     trialFlightVoucherId: row.trial_flight_voucher_id || undefined,
     hirerName: row.guest_name || row.hirer_name || undefined,
@@ -437,6 +442,8 @@ export const useBookings = (enabled = true) => {
 
       let flightLogsData: any[] = [];
       let flightLogsError: any = null;
+      let groundSessionLogsData: any[] = [];
+      let groundSessionLogsError: any = null;
       if (bookingIds.length > 0) {
         const chunkSize = 150;
         for (let index = 0; index < bookingIds.length; index += chunkSize) {
@@ -449,11 +456,24 @@ export const useBookings = (enabled = true) => {
             break;
           }
           flightLogsData = [...flightLogsData, ...(response.data || [])];
+
+          const groundResponse = await supabase
+            .from('ground_session_logs')
+            .select('id, booking_id, student_id, instructor_id, start_time, end_time, duration_hours, flight_type_id, payment_type, description_option_id, description_text, notes, calculated_cost, payment_status, xero_invoice_id, xero_invoice_number, xero_invoice_status, xero_sync_status, xero_sync_error')
+            .in('booking_id', bookingIds.slice(index, index + chunkSize));
+          if (groundResponse.error) {
+            groundSessionLogsError = groundResponse.error;
+            break;
+          }
+          groundSessionLogsData = [...groundSessionLogsData, ...(groundResponse.data || [])];
         }
       }
 
       if (flightLogsError) {
         console.error('Flight logs error:', flightLogsError);
+      }
+      if (groundSessionLogsError) {
+        console.error('Ground session logs error:', groundSessionLogsError);
       }
 
       const flightLogsMap = new Map(flightLogsData?.map(fl => [fl.booking_id, {
@@ -469,8 +489,30 @@ export const useBookings = (enabled = true) => {
         notes: fl.notes
       } as FlightLog]) || []);
 
+      const groundSessionLogsMap = new Map(groundSessionLogsData?.map(log => [log.booking_id, {
+        id: log.id,
+        bookingId: log.booking_id,
+        studentId: log.student_id,
+        instructorId: log.instructor_id,
+        startTime: log.start_time,
+        endTime: log.end_time,
+        durationHours: Number(log.duration_hours || 0),
+        flightTypeId: log.flight_type_id || undefined,
+        paymentType: log.payment_type || '',
+        descriptionOptionId: log.description_option_id || undefined,
+        descriptionText: log.description_text || undefined,
+        notes: log.notes || undefined,
+        calculatedCost: Number(log.calculated_cost || 0),
+        paymentStatus: log.payment_status || 'pending',
+        xeroInvoiceId: log.xero_invoice_id || null,
+        xeroInvoiceNumber: log.xero_invoice_number || null,
+        xeroInvoiceStatus: log.xero_invoice_status || null,
+        xeroSyncStatus: log.xero_sync_status || null,
+        xeroSyncError: log.xero_sync_error || null,
+      } as GroundSessionLog]) || []);
+
       const combinedBookings: Booking[] = (bookingsData || []).map(b =>
-        mapBookingRow(b, flightLogsMap.get(b.id))
+        mapBookingRow(b, flightLogsMap.get(b.id), groundSessionLogsMap.get(b.id))
       );
 
       setBookings(combinedBookings);
@@ -680,8 +722,11 @@ export const useBookings = (enabled = true) => {
       if (!resolvedStudentId || resolvedStudentId.trim() === '') {
         throw new Error('Student is required');
       }
-      if (!bookingData.aircraftId || bookingData.aircraftId.trim() === '') {
+      if (bookingData.bookingKind !== 'ground' && (!bookingData.aircraftId || bookingData.aircraftId.trim() === '')) {
         throw new Error('Aircraft is required');
+      }
+      if (bookingData.bookingKind === 'ground' && (!bookingData.instructorId || bookingData.instructorId.trim() === '')) {
+        throw new Error('Instructor is required for ground sessions');
       }
       if (bookingData.isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
@@ -711,12 +756,13 @@ export const useBookings = (enabled = true) => {
       const insertData = {
         student_id: resolvedStudentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
-        aircraft_id: bookingData.aircraftId,
+        aircraft_id: bookingData.bookingKind === 'ground' ? null : bookingData.aircraftId,
         start_time: bookingData.startTime.toISOString(),
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
         notes: bookingData.notes || null,
         status: bookingStatus,
+        booking_kind: bookingData.bookingKind || 'flight',
         has_conflict: isWaitlisted,
         flight_type_id: bookingData.flightTypeId || null,
         trial_flight_voucher_id: bookingData.trialFlightVoucherId || null,
@@ -752,7 +798,7 @@ export const useBookings = (enabled = true) => {
       const createdBooking = data?.[0];
       if (createdBooking?.id) {
         localCreatedBookingIdsRef.current.add(createdBooking.id);
-        setBookings(prev => [mapBookingRow(createdBooking), ...prev]);
+        setBookings(prev => [mapBookingRow(createdBooking, undefined, undefined), ...prev]);
       }
 
       // Send approval notifications if needed
@@ -798,6 +844,7 @@ export const useBookings = (enabled = true) => {
   const updateBooking = async (id: string, bookingData: Partial<Omit<Booking, 'id' | 'flightLog'>>, silent = false) => {
     try {
       const updateData: any = {};
+      const currentBooking = bookings.find(b => b.id === id);
       let resolvedStudentId = bookingData.studentId;
       let resolvedGuestName = bookingData.guestName?.trim();
       let resolvedGuestEmail = bookingData.guestEmail?.trim();
@@ -825,17 +872,20 @@ export const useBookings = (enabled = true) => {
       if (bookingData.instructorId !== undefined) {
         updateData.instructor_id = bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null;
       }
+      const effectiveKind = bookingData.bookingKind || currentBooking?.bookingKind || 'flight';
+
       if (bookingData.aircraftId !== undefined) {
-        if (!bookingData.aircraftId || bookingData.aircraftId.trim() === '') {
+        if (effectiveKind !== 'ground' && (!bookingData.aircraftId || bookingData.aircraftId.trim() === '')) {
           throw new Error('Aircraft is required');
         }
-        updateData.aircraft_id = bookingData.aircraftId;
+        updateData.aircraft_id = bookingData.aircraftId || null;
       }
       if (bookingData.startTime !== undefined) updateData.start_time = bookingData.startTime.toISOString();
       if (bookingData.endTime !== undefined) updateData.end_time = bookingData.endTime.toISOString();
       if (bookingData.paymentType !== undefined) updateData.payment_type = bookingData.paymentType;
       if (bookingData.notes !== undefined) updateData.notes = bookingData.notes || null;
       if (bookingData.status !== undefined) updateData.status = bookingData.status;
+      if (bookingData.bookingKind !== undefined) updateData.booking_kind = bookingData.bookingKind;
       if (bookingData.flightTypeId !== undefined) updateData.flight_type_id = bookingData.flightTypeId || null;
       if (bookingData.trialFlightVoucherId !== undefined) updateData.trial_flight_voucher_id = bookingData.trialFlightVoucherId || null;
       if (bookingData.isGuestBooking !== undefined) updateData.is_guest_booking = bookingData.isGuestBooking;
@@ -843,13 +893,19 @@ export const useBookings = (enabled = true) => {
       if (bookingData.guestEmail !== undefined || bookingData.trialFlightVoucherId) updateData.guest_email = resolvedGuestEmail || null;
       if (bookingData.guestPhone !== undefined || bookingData.trialFlightVoucherId) updateData.guest_phone = resolvedGuestPhone || null;
 
+      if (effectiveKind === 'ground') {
+        updateData.aircraft_id = null;
+        if (!(bookingData.instructorId || currentBooking?.instructorId)) {
+          throw new Error('Instructor is required for ground sessions');
+        }
+      }
+
       if (bookingData.isGuestBooking) {
         if (!resolvedGuestName) throw new Error('Guest name is required');
         if (!resolvedGuestEmail) throw new Error('Guest email is required');
         if (!bookingData.trialFlightVoucherId && !resolvedGuestPhone) throw new Error('Guest phone number is required');
       }
 
-      const currentBooking = bookings.find(b => b.id === id);
       const candidateBooking = currentBooking
         ? { ...currentBooking, ...bookingData, ...(resolvedStudentId !== undefined ? { studentId: resolvedStudentId } : {}) }
         : null;
@@ -1255,3 +1311,10 @@ export const useBookings = (enabled = true) => {
     refetch: fetchBookings
   };
 };
+      const effectiveKind = bookingData.bookingKind || currentBooking?.bookingKind || 'flight';
+      if (effectiveKind === 'ground') {
+        updateData.aircraft_id = null;
+        if (!(bookingData.instructorId || currentBooking?.instructorId)) {
+          throw new Error('Instructor is required for ground sessions');
+        }
+      }

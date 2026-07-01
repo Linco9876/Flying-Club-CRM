@@ -23,6 +23,8 @@ export interface SafetyComplianceSummary {
   picHours: number;
 }
 
+type SafetyMessagePerspective = 'named' | 'firstPerson';
+
 type MinimalFlightLog = Pick<FlightLog, 'student_id' | 'instructor_id' | 'start_time' | 'solo_time' | 'flight_duration'>;
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -39,6 +41,22 @@ const daysUntil = (date?: Date | null) => {
 };
 
 const formatDate = (date?: Date | null) => date ? date.toLocaleDateString() : 'Not recorded';
+
+const subjectFor = (person: Pick<Student, 'name'>, perspective: SafetyMessagePerspective) =>
+  perspective === 'firstPerson' ? 'Your' : `${person.name}'s`;
+
+const noRecentFlightMessageFor = (person: Pick<Student, 'name'>, perspective: SafetyMessagePerspective) =>
+  perspective === 'firstPerson'
+    ? 'No recent logged flight was found for you.'
+    : `No recent logged flight was found for ${person.name}.`;
+
+const lastFlightMessageFor = (
+  person: Pick<Student, 'name'>,
+  perspective: SafetyMessagePerspective,
+  daysSinceLastFlight: number
+) => perspective === 'firstPerson'
+  ? `Your last logged flight was ${daysSinceLastFlight} days ago.`
+  : `${person.name}'s last logged flight was ${daysSinceLastFlight} days ago.`;
 
 export const getPilotInCommandHours = (personId: string, flightLogs: MinimalFlightLog[]) =>
   flightLogs
@@ -78,8 +96,9 @@ export const buildSafetyComplianceSummary = (
   person: Student,
   settings: SafetyComplianceSettings,
   flightLogs: MinimalFlightLog[],
-  options: { hasInstructor?: boolean } = {}
+  options: { hasInstructor?: boolean; perspective?: SafetyMessagePerspective } = {}
 ): SafetyComplianceSummary => {
+  const perspective = options.perspective ?? 'named';
   const studentOnly = isStudentOnly(person);
   const lastFlightDate = getLastCurrencyFlightDate(person.id, flightLogs);
   const daysSinceLastFlight = lastFlightDate
@@ -95,8 +114,8 @@ export const buildSafetyComplianceSummary = (
       label: 'Pilot recency',
       days: daysSinceLastFlight ?? undefined,
       message: daysSinceLastFlight === null
-        ? `No recent logged flight was found for ${person.name}.`
-        : `${person.name}'s last logged flight was ${daysSinceLastFlight} days ago.`
+        ? noRecentFlightMessageFor(person, perspective)
+        : lastFlightMessageFor(person, perspective, daysSinceLastFlight)
     });
   }
 
@@ -107,7 +126,7 @@ export const buildSafetyComplianceSummary = (
       severity: 'lapsed',
       label: 'Medical expired',
       days: medicalDays,
-      message: `${person.name}'s medical expired on ${formatDate(person.medicalExpiry)}.`
+      message: `${subjectFor(person, perspective)} medical expired on ${formatDate(person.medicalExpiry)}.`
     });
   } else if (medicalDays !== null && medicalDays <= settings.medicalWarningDays) {
     concerns.push({
@@ -115,7 +134,7 @@ export const buildSafetyComplianceSummary = (
       severity: 'warning',
       label: 'Medical approaching expiry',
       days: medicalDays,
-      message: `${person.name}'s medical expires on ${formatDate(person.medicalExpiry)}.`
+      message: `${subjectFor(person, perspective)} medical expires on ${formatDate(person.medicalExpiry)}.`
     });
   }
 
@@ -126,7 +145,7 @@ export const buildSafetyComplianceSummary = (
       severity: 'lapsed',
       label: 'Membership expired',
       days: licenceDays,
-      message: `${person.name}'s membership expired on ${formatDate(person.licenceExpiry)}.`
+      message: `${subjectFor(person, perspective)} membership expired on ${formatDate(person.licenceExpiry)}.`
     });
   } else if (licenceDays !== null && licenceDays <= settings.licenceWarningDays) {
     concerns.push({
@@ -134,7 +153,7 @@ export const buildSafetyComplianceSummary = (
       severity: 'warning',
       label: 'Membership approaching expiry',
       days: licenceDays,
-      message: `${person.name}'s membership expires on ${formatDate(person.licenceExpiry)}.`
+      message: `${subjectFor(person, perspective)} membership expires on ${formatDate(person.licenceExpiry)}.`
     });
   }
 
@@ -146,7 +165,7 @@ export const buildSafetyComplianceSummary = (
       severity: options.hasInstructor ? 'lapsed' : 'blocked',
       label: 'BFR lapsed',
       days: bfrDays,
-      message: `${person.name}'s BFR was due on ${formatDate(bfrDue)}. Aircraft bookings without an instructor are not permitted.`
+      message: `${subjectFor(person, perspective)} BFR was due on ${formatDate(bfrDue)}. Aircraft bookings without an instructor are not permitted.`
     });
   } else if (!studentOnly && bfrDays !== null && bfrDays <= settings.bfrWarningDays) {
     concerns.push({
@@ -154,7 +173,7 @@ export const buildSafetyComplianceSummary = (
       severity: 'warning',
       label: 'BFR approaching due',
       days: bfrDays,
-      message: `${person.name}'s BFR is due on ${formatDate(bfrDue)}.`
+      message: `${subjectFor(person, perspective)} BFR is due on ${formatDate(bfrDue)}.`
     });
   }
 

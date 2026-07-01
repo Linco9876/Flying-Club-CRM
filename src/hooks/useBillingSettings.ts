@@ -11,6 +11,8 @@ export interface FlightType {
   allowedRoles: UserRole[];
   displayOrder: number;
   forcedPaymentMethodId: string | null;
+  groundSessionHourlyRate: number;
+  xeroItemCode?: string | null;
 }
 
 export interface PaymentMethod {
@@ -63,7 +65,9 @@ export const useBillingSettings = () => {
           active: ft.active !== false,
           allowedRoles: ft.allowed_roles || [],
           displayOrder: ft.display_order,
-          forcedPaymentMethodId: ft.forced_payment_method_id ?? null
+          forcedPaymentMethodId: ft.forced_payment_method_id ?? null,
+          groundSessionHourlyRate: Number(ft.ground_session_hourly_rate ?? 0),
+          xeroItemCode: ft.xero_item_code ?? null,
         })));
       }
     } catch (error) {
@@ -121,7 +125,9 @@ export const useBillingSettings = () => {
           active: data.active !== false,
           allowedRoles: data.allowed_roles || [],
           displayOrder: data.display_order,
-          forcedPaymentMethodId: data.forced_payment_method_id ?? null
+          forcedPaymentMethodId: data.forced_payment_method_id ?? null,
+          groundSessionHourlyRate: Number(data.ground_session_hourly_rate ?? 0),
+          xeroItemCode: data.xero_item_code ?? null,
         }]);
         toast.success('Flight type added');
       }
@@ -140,6 +146,8 @@ export const useBillingSettings = () => {
       if (updates.allowedRoles !== undefined) dbUpdates.allowed_roles = updates.allowedRoles;
       if (updates.displayOrder !== undefined) dbUpdates.display_order = updates.displayOrder;
       if ('forcedPaymentMethodId' in updates) dbUpdates.forced_payment_method_id = updates.forcedPaymentMethodId ?? null;
+      if ('groundSessionHourlyRate' in updates) dbUpdates.ground_session_hourly_rate = Number(updates.groundSessionHourlyRate ?? 0);
+      if ('xeroItemCode' in updates) dbUpdates.xero_item_code = updates.xeroItemCode?.trim() || null;
 
       const { error } = await supabase
         .from('flight_types')
@@ -305,6 +313,8 @@ export const useBillingSettings = () => {
           allowed_roles: type.allowedRoles,
           display_order: index + 1,
           forced_payment_method_id: forcedPaymentMethodId,
+          ground_session_hourly_rate: Number(type.groundSessionHourlyRate ?? 0),
+          xero_item_code: type.xeroItemCode?.trim() || null,
           updated_at: new Date().toISOString(),
         };
         const { error } = originalFlightTypeIds.has(type.id)

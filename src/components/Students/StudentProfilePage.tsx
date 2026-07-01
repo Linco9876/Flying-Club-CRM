@@ -1,8 +1,8 @@
 ﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, Sparkles, RotateCcw, RefreshCw, Search } from 'lucide-react';
+import { LessonStudyAsset, Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -75,6 +75,7 @@ interface ExamEditFormState {
 }
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
+const LESSON_STUDY_BUCKET = 'training-lesson-assets';
 
 const toDateInputValue = (date?: Date) => date ? date.toISOString().slice(0, 10) : '';
 
@@ -131,6 +132,32 @@ const CourseRichText: React.FC<{ value?: string; fallback?: string }> = ({ value
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
+};
+
+const formatFileSize = (bytes?: number) => {
+  if (!bytes) return '';
+  return bytes < 1024 * 1024
+    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const hasMeaningfulCourseContent = (value?: string) => String(value || '').replace(/<[^>]+>/g, '').trim().length > 0;
+
+const matchLessonIndexByLabel = (lessons: TrainingModule['lessons'], label?: string) => {
+  const target = (label || '').trim().toLowerCase();
+  if (!target) return -1;
+  return lessons.findIndex((lesson) => {
+    const candidates = [
+      lesson.id,
+      lesson.name,
+      lesson.sequenceTitle,
+      lesson.sequenceCode,
+      lesson.sequenceId,
+    ]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+    return candidates.includes(target);
+  });
 };
 
 const XeroContactPanel: React.FC<{ student: Student; canManage: boolean; onChanged: () => void }> = ({ student, canManage, onChanged }) => {
@@ -877,7 +904,8 @@ export const StudentProfilePage: React.FC = () => {
         amount,
         topUpDescription.trim() || 'Account top-up',
         topUpPaymentMethodId || undefined,
-        topUpDate
+        topUpDate,
+        { autoVerify: true }
       );
       setTopUpAmount('');
       setTopUpDescription('Account top-up');
@@ -2459,7 +2487,7 @@ export const StudentProfilePage: React.FC = () => {
                 </button>
               </div>
               <p className="mt-2 text-xs text-gray-500">Top-ups are recorded as pending until verified by an admin.</p>
-              <p className="mt-1 text-xs text-gray-500">Prepaid clients need a positive Xero credit balance. Top-ups can only be recorded in {formatCurrency(billing.minimumPrepaidPack ?? 1000)} increments.</p>
+              <p className="mt-1 text-xs text-gray-500">Prepaid clients need a positive verified prepaid balance. Top-ups can only be recorded in {formatCurrency(billing.minimumPrepaidPack ?? 1000)} increments.</p>
             </form>
           )}
 
@@ -4216,23 +4244,22 @@ function calculateCourseProgress(
     if (lessons.length === 0) return null;
 
     const lessonsById = new Map(lessons.map(lesson => [lesson.id, lesson]));
-    const lessonsByCode = new Map(
-      lessons
-        .filter(lesson => lesson.sequenceCode)
-        .map(lesson => [lesson.sequenceCode, lesson])
-    );
+    const resolveLessonForRecord = (record: TrainingRecord) => {
+      if (record.lessonId && lessonsById.has(record.lessonId)) {
+        return lessonsById.get(record.lessonId);
+      }
+
+      const matchedIndex = (record.lessonCodes || [])
+        .map((code) => matchLessonIndexByLabel(lessons, code))
+        .find((index) => index >= 0);
+
+      return matchedIndex === undefined || matchedIndex < 0 ? undefined : lessons[matchedIndex];
+    };
 
     const touchedLessons = new Set<string>();
     for (const record of courseRecords) {
-      if (record.lessonId && lessonsById.has(record.lessonId)) {
-        touchedLessons.add(record.lessonId);
-        continue;
-      }
-
-      const fallbackLesson = record.lessonCodes
-        .map(code => lessonsByCode.get(code))
-        .find(Boolean);
-      if (fallbackLesson) touchedLessons.add(fallbackLesson.id);
+      const resolvedLesson = resolveLessonForRecord(record);
+      if (resolvedLesson) touchedLessons.add(resolvedLesson.id);
     }
 
     const criteriaProgress = criteria.map((criterion) => {
@@ -4244,7 +4271,7 @@ function calculateCourseProgress(
         const grade = record.criteriaGrades?.[criterion.id];
         if (!grade || grade === '-') continue;
 
-        const lesson = record.lessonId ? lessonsById.get(record.lessonId) : undefined;
+        const lesson = resolveLessonForRecord(record);
         const passMarkForLesson = lesson?.passMarks?.[criterion.id] ?? criterion.passingGrade;
         const system = criterion.gradingSystem;
 
@@ -4401,6 +4428,293 @@ const MatrixProgressSummaryCard: React.FC<{ course: TrainingModule; studentId: s
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+const StudentCourseLessonLibrary: React.FC<{
+  course: TrainingModule;
+  records: TrainingRecord[];
+}> = ({ course, records }) => {
+  const sortedRecords = useMemo(
+    () => [...records].sort((a, b) => {
+      const aTime = a.bookingStartTime?.getTime() ?? a.date.getTime();
+      const bTime = b.bookingStartTime?.getTime() ?? b.date.getTime();
+      return bTime - aTime;
+    }),
+    [records]
+  );
+
+  const attemptedIndexes = useMemo(
+    () => sortedRecords
+      .map((record) => {
+        const byId = record.lessonId ? course.lessons.findIndex((lesson) => lesson.id === record.lessonId) : -1;
+        if (byId >= 0) return byId;
+        const byCode = (record.lessonCodes || [])
+          .map((code) => matchLessonIndexByLabel(course.lessons, code))
+          .find((index) => index >= 0);
+        return byCode ?? -1;
+      })
+      .filter((index) => index >= 0),
+    [course.lessons, sortedRecords]
+  );
+
+  const attemptedLessonIds = useMemo(
+    () => new Set(attemptedIndexes.map((index) => course.lessons[index]?.id).filter(Boolean)),
+    [attemptedIndexes, course.lessons]
+  );
+
+  const latestAttemptedIndex = attemptedIndexes.length > 0 ? Math.max(...attemptedIndexes) : -1;
+  const recommendedIndex = useMemo(() => {
+    const latestRecord = sortedRecords[0];
+    const fromRecord = matchLessonIndexByLabel(course.lessons, latestRecord?.nextLesson);
+    if (fromRecord >= 0) return fromRecord;
+    const firstUnattempted = course.lessons.findIndex((lesson) => !attemptedLessonIds.has(lesson.id));
+    if (firstUnattempted >= 0) return firstUnattempted;
+    return latestAttemptedIndex >= 0 ? latestAttemptedIndex : 0;
+  }, [attemptedLessonIds, course.lessons, latestAttemptedIndex, sortedRecords]);
+
+  const accessibleLessonLimit = Math.max(0, Math.min(course.lessons.length - 1, recommendedIndex));
+  const [selectedLessonId, setSelectedLessonId] = useState<string>(course.lessons[accessibleLessonLimit]?.id || course.lessons[0]?.id || '');
+
+  useEffect(() => {
+    const selectedLesson = course.lessons.find((lesson) => lesson.id === selectedLessonId);
+    const selectedIndex = selectedLesson ? course.lessons.findIndex((lesson) => lesson.id === selectedLesson.id) : -1;
+    if (!selectedLesson || selectedIndex > accessibleLessonLimit) {
+      setSelectedLessonId(course.lessons[accessibleLessonLimit]?.id || course.lessons[0]?.id || '');
+    }
+  }, [accessibleLessonLimit, course.lessons, selectedLessonId]);
+
+  const selectedLesson = course.lessons.find((lesson) => lesson.id === selectedLessonId) || course.lessons[accessibleLessonLimit] || course.lessons[0];
+  const selectedIndex = selectedLesson ? course.lessons.findIndex((lesson) => lesson.id === selectedLesson.id) : -1;
+  const previousLesson = selectedIndex > 0 ? course.lessons[selectedIndex - 1] : null;
+  const upcomingLesson = selectedIndex >= 0 && selectedIndex < accessibleLessonLimit ? course.lessons[selectedIndex + 1] : null;
+  const selectedStudyGuide = hasMeaningfulCourseContent(selectedLesson?.studyGuide) ? selectedLesson.studyGuide : '';
+  const selectedPrep = hasMeaningfulCourseContent(selectedLesson?.studentPreparation) ? selectedLesson.studentPreparation : '';
+  const selectedTheory = hasMeaningfulCourseContent(selectedLesson?.theory) ? selectedLesson.theory : '';
+  const selectedExercises = hasMeaningfulCourseContent(selectedLesson?.flightExercises)
+    ? selectedLesson.flightExercises
+    : selectedLesson?.keyExercises.length
+      ? selectedLesson.keyExercises.map((item) => `- ${item}`).join('\n')
+      : '';
+
+  const handleOpenStudyAsset = useCallback(async (asset: LessonStudyAsset) => {
+    const { data, error } = await supabase.storage.from(LESSON_STUDY_BUCKET).createSignedUrl(asset.storagePath, 60);
+    if (error) {
+      toast.error('Failed to open lesson file');
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  if (!selectedLesson) {
+    return null;
+  }
+
+  return (
+    <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Lesson study area</p>
+          <p className="mt-1 text-sm text-slate-600">Previous lessons stay available for revision, and the next recommended lesson is unlocked for study.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 ring-1 ring-emerald-200">
+            {attemptedLessonIds.size} {attemptedLessonIds.size === 1 ? 'lesson' : 'lessons'} unlocked by training so far
+          </span>
+          <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700 ring-1 ring-blue-200">
+            Next: {course.lessons[recommendedIndex]?.name || course.lessons[recommendedIndex]?.sequenceTitle || 'Course complete'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Course map</p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">Open any previous lesson for revision, or the next recommended lesson to prepare ahead.</p>
+          </div>
+          <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
+            {course.lessons.map((lesson, index) => {
+              const isAccessible = index <= accessibleLessonLimit;
+              const isCompleted = attemptedLessonIds.has(lesson.id);
+              const isRecommended = index === recommendedIndex;
+              const isSelected = selectedLessonId === lesson.id;
+
+              return (
+                <button
+                  key={lesson.id}
+                  type="button"
+                  disabled={!isAccessible}
+                  onClick={() => setSelectedLessonId(lesson.id)}
+                  className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                    isSelected
+                      ? 'border-blue-300 bg-blue-50 shadow-sm'
+                      : isAccessible
+                        ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                        : 'border-slate-200 bg-slate-50 opacity-65'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        {lesson.sequenceCode || `Lesson ${index + 1}`}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {lesson.name || lesson.sequenceTitle || `Lesson ${index + 1}`}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">{lesson.stage} - {lesson.durationMinutes || 0} min</p>
+                      {(lesson.studyAssets?.length || 0) > 0 && (
+                        <p className="mt-2 text-[11px] font-medium text-emerald-700">
+                          {lesson.studyAssets?.length} study {lesson.studyAssets?.length === 1 ? 'file' : 'files'}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {isCompleted ? (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">Previous</span>
+                      ) : isRecommended ? (
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 ring-1 ring-blue-200">Next</span>
+                      ) : !isAccessible ? (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200">Later</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {selectedLesson.sequenceCode || `Lesson ${selectedIndex + 1}`}
+              </p>
+              <h4 className="mt-1 text-xl font-semibold text-slate-950">{selectedLesson.name || selectedLesson.sequenceTitle}</h4>
+              <p className="mt-2 text-sm text-slate-500">{selectedLesson.stage} - {selectedLesson.durationMinutes || 0} min</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold">
+              {selectedIndex > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLessonId(course.lessons[selectedIndex - 1].id)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 hover:bg-slate-50"
+                >
+                  Previous lesson
+                </button>
+              )}
+              {selectedIndex < accessibleLessonLimit && course.lessons[selectedIndex + 1] && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLessonId(course.lessons[selectedIndex + 1].id)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-blue-700 hover:bg-blue-100"
+                >
+                  Next lesson
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Objective</p>
+              <CourseRichText value={selectedLesson.objective} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Theory focus</p>
+              <CourseRichText value={selectedTheory} fallback="No theory focus has been added yet." />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Flight exercises</p>
+              <CourseRichText value={selectedExercises} fallback="No flight exercises have been added yet." />
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-white p-2 text-emerald-700 shadow-sm ring-1 ring-emerald-100">
+                <BookOpen className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-emerald-950">Between-lesson study pack</p>
+                <p className="mt-1 text-sm text-emerald-900">Use this section to prepare for the next flight or revise anything already covered.</p>
+                {selectedPrep && (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white/90 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">Before next lesson</p>
+                    <CourseRichText value={selectedPrep} />
+                  </div>
+                )}
+                <div className="mt-3 rounded-xl border border-emerald-100 bg-white p-4">
+                  <CourseRichText value={selectedStudyGuide} fallback="No full study guide has been added yet." />
+                </div>
+              </div>
+            </div>
+
+            {selectedLesson.studyAssets && selectedLesson.studyAssets.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Study files</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {selectedLesson.studyAssets.map((asset) => (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      onClick={() => void handleOpenStudyAsset(asset)}
+                      className="rounded-xl border border-emerald-200 bg-white p-4 text-left transition hover:bg-emerald-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                            {asset.type === 'image' ? <Image className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                          </span>
+                          <p className="mt-3 text-sm font-semibold text-slate-900">{asset.title}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {asset.fileName}
+                            {asset.sizeBytes ? ` - ${formatFileSize(asset.sizeBytes)}` : ''}
+                          </p>
+                          {asset.notes && <p className="mt-2 text-sm text-slate-600">{asset.notes}</p>}
+                        </div>
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                          Open
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {(previousLesson || upcomingLesson) && (
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {previousLesson && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLessonId(previousLesson.id)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-slate-100"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Previous lesson</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{previousLesson.name || previousLesson.sequenceTitle}</p>
+                  <p className="mt-1 text-xs text-slate-500">{previousLesson.sequenceCode || `Lesson ${selectedIndex}`}</p>
+                </button>
+              )}
+              {upcomingLesson && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLessonId(upcomingLesson.id)}
+                  className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-left transition hover:bg-blue-100"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Coming up next</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{upcomingLesson.name || upcomingLesson.sequenceTitle}</p>
+                  <p className="mt-1 text-xs text-slate-500">{upcomingLesson.sequenceCode || `Lesson ${selectedIndex + 2}`}</p>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -4704,6 +5018,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
       {enrolledCourses.map(({ course, percentage, isComplete, completedLessons, totalLessons, criteriaProgress, hasCriteria }) => {
         const enrolment = enrolments.find(item => item.courseId === course.id && item.status === 'active');
+        const courseRecords = trainingRecords.filter((record) => record.courseId === course.id && record.status !== 'draft');
         const declarationRequired = Boolean(course.requiresFlyingDeclaration);
         const declarationSigned = Boolean(
           enrolment?.declarationSignedAt &&
@@ -4870,43 +5185,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
             {student && <MatrixProgressSummaryCard course={course} studentId={student.id} />}
 
-            <div className="mt-5 border-t border-gray-100 pt-4">
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Lessons</p>
-                <span className="text-xs text-gray-500">{course.lessons.length} lessons</span>
-              </div>
-              <div className="space-y-3">
-                {course.lessons.map((lesson, index) => (
-                  <details key={lesson.id} className="group rounded-lg border border-gray-200 bg-gray-50">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {lesson.sequenceCode ? `${lesson.sequenceCode} - ` : `Lesson ${index + 1}: `}
-                          {lesson.name || lesson.sequenceTitle}
-                        </p>
-                        <p className="text-xs text-gray-500">{lesson.stage} &middot; {lesson.durationMinutes || 0} min</p>
-                      </div>
-                      <span className="text-xs font-semibold text-blue-600 group-open:hidden">View</span>
-                      <span className="hidden text-xs font-semibold text-gray-500 group-open:inline">Hide</span>
-                    </summary>
-                    <div className="grid gap-3 border-t border-gray-200 bg-white px-4 py-4 md:grid-cols-3">
-                      <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Objective</p>
-                        <CourseRichText value={lesson.objective} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Theory focus</p>
-                        <CourseRichText value={lesson.theory || lesson.studentPreparation} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Flight exercises</p>
-                        <CourseRichText value={lesson.flightExercises || (lesson.keyExercises.length > 0 ? lesson.keyExercises.map(item => `- ${item}`).join('\n') : '')} />
-                      </div>
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </div>
+            <StudentCourseLessonLibrary course={course} records={courseRecords} />
           </div>
         </div>
         );

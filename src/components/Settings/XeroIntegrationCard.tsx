@@ -114,6 +114,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
   const [xeroStatus, setXeroStatus] = useState<XeroStatus | null>(null);
   const [xeroLoading, setXeroLoading] = useState(true);
   const [xeroLoaded, setXeroLoaded] = useState(false);
+  const [statusLoadError, setStatusLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [accounts, setAccounts] = useState<XeroAccountOption[]>([]);
@@ -130,6 +131,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
   const loadXeroStatus = useCallback(async () => {
     setXeroLoading(true);
+    setStatusLoadError(null);
     try {
       const { data, error } = await supabase.functions.invoke<XeroStatus>('xero-connect', {
         body: { action: 'status' },
@@ -139,7 +141,8 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       setForm(fromStatus(data ?? null));
     } catch (error: any) {
       console.error('Error loading Xero connection:', error);
-      toast.error(error?.message || 'Failed to load Xero connection');
+      setStatusLoadError(error?.message || 'Failed to load Xero connection');
+      setXeroStatus(null);
     } finally {
       setXeroLoading(false);
       setXeroLoaded(true);
@@ -444,12 +447,20 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
     () => [...accounts].sort((left, right) => left.name.localeCompare(right.name)),
     [accounts],
   );
-  const statusLabel = connected ? 'Xero is connected' : configured ? 'Ready to connect' : 'Setup needed';
+  const statusLabel = connected
+    ? 'Xero is connected'
+    : statusLoadError
+      ? 'Could not confirm'
+      : configured
+        ? 'Ready to connect'
+        : 'Setup needed';
   const statusDetail = connected
     ? `Linked to ${xeroStatus?.tenantName || 'a Xero organisation'}. Billing sync can be configured here before invoice posting is enabled.`
-    : configured
-      ? 'Connect the club Xero organisation to prepare contact and invoice syncing.'
-      : 'Add the Xero app client ID and secret to Supabase Edge Function secrets before connecting.';
+    : statusLoadError
+      ? `The CRM could not confirm the live Xero status right now. ${statusLoadError}`
+      : configured
+        ? 'Connect the club Xero organisation to prepare contact and invoice syncing.'
+        : 'Add the Xero app client ID and secret to Supabase Edge Function secrets before connecting.';
 
   const syncModeLabel = useMemo(() => {
     if (form.defaultSyncMode === 'auto-approved') return 'Create approved invoices';
@@ -482,7 +493,15 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-semibold text-gray-900">Xero accounting</h3>
-                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${connected ? 'bg-green-100 text-green-800' : configured ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  connected
+                    ? 'bg-green-100 text-green-800'
+                    : statusLoadError
+                      ? 'bg-rose-100 text-rose-800'
+                      : configured
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-amber-100 text-amber-800'
+                }`}>
                   {statusLabel}
                 </span>
               </div>
@@ -514,7 +533,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 <button
                   type="button"
                   onClick={connectXero}
-                  disabled={xeroLoading || !configured}
+                  disabled={xeroLoading || Boolean(xeroStatus) && !configured}
                   className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {xeroLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
@@ -549,11 +568,19 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
           </div>
         </div>
 
-        {xeroStatus && !configured && (
+        {xeroStatus && !statusLoadError && !configured && (
           <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-semibold">Xero is not ready yet.</p>
             <p className="mt-1">Create a Xero app, add this callback URL, then add XERO_CLIENT_ID and XERO_CLIENT_SECRET to Supabase Edge Function secrets.</p>
             <p className="mt-2 rounded bg-white/70 px-2 py-1 font-mono text-xs text-amber-950">{xeroStatus.callbackUrl}</p>
+          </div>
+        )}
+
+        {statusLoadError && (
+          <div className="mt-5 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
+            <p className="font-semibold">Xero status could not be confirmed.</p>
+            <p className="mt-1">{statusLoadError}</p>
+            <p className="mt-2 text-xs text-rose-700">This does not automatically mean the Xero app is missing. It usually means the live status check failed and should be retried.</p>
           </div>
         )}
 

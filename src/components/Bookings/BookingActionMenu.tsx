@@ -51,6 +51,10 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
 }) => {
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
+  const isGroundSession = booking.bookingKind === 'ground';
+  const logLabel = isGroundSession ? 'Log Ground Session' : 'Log Flight';
+  const editLogLabel = isGroundSession ? 'Edit Ground Session Log' : 'Edit Flight Log';
+  const deleteLogLabel = isGroundSession ? 'Delete Ground Session Log' : 'Delete Flight Log';
   const canCurrentUserDelete = canDelete && (
     user?.role !== 'student' && user?.role !== 'pilot'
       ? true
@@ -167,7 +171,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
             >
               <FileText className="h-4 w-4" />
-              <span>Edit Flight Log</span>
+              <span>{editLogLabel}</span>
             </button>
           )}
           {onDeleteFlightLog && (
@@ -176,7 +180,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
               className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2 transition-colors"
             >
               <Trash2 className="h-4 w-4" />
-              <span>Delete Flight Log</span>
+              <span>{deleteLogLabel}</span>
             </button>
           )}
         </>
@@ -186,7 +190,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
           className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
         >
           <FileText className="h-4 w-4" />
-          <span>Log Flight</span>
+          <span>{logLabel}</span>
         </button>
       ) : null}
 

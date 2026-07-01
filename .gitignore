@@ -34,3 +34,9 @@ scripts/backup-crm.env
 # Local Codex attachments and Supabase CLI cache
 .codex-remote-attachments
 supabase/.temp
+
+# Local generated artifacts and scratch work
+output/
+tmp/
+tmp-study-upload.txt
+supabase/migrations_legacy_unapplied_20260625/

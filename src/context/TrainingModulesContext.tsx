@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
-import { TrainingExam, TrainingLesson, TrainingModule, TrainingResource } from '../types';
+import { LessonStudyAsset, TrainingExam, TrainingLesson, TrainingModule, TrainingResource } from '../types';
 import { useAuth } from './AuthContext';
 
 type TrainingModulesContextValue = {
@@ -72,6 +72,7 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
 }
 
 function dbLessonToLesson(row: Record<string, unknown>): TrainingLesson {
+  const rawStudyAssets = Array.isArray(row.study_assets) ? row.study_assets : [];
   return {
     id: row.id as string,
     sequenceId: (row.sequence_id as string) ?? '',
@@ -87,6 +88,21 @@ function dbLessonToLesson(row: Record<string, unknown>): TrainingLesson {
     objective: (row.objective as string) ?? '',
     flightExercises: (row.flight_exercises as string) ?? '',
     theory: (row.theory as string) ?? '',
+    studyGuide: (row.study_guide as string) ?? '',
+    studyAssets: rawStudyAssets
+      .map((asset: any) => ({
+        id: String(asset.id ?? `study-asset-${Date.now()}`),
+        type: asset.type === 'image' ? 'image' : 'document',
+        title: String(asset.title ?? ''),
+        storagePath: String(asset.storagePath ?? asset.storage_path ?? ''),
+        fileName: String(asset.fileName ?? asset.file_name ?? ''),
+        mimeType: asset.mimeType ? String(asset.mimeType) : asset.mime_type ? String(asset.mime_type) : null,
+        sizeBytes: asset.sizeBytes === undefined || asset.sizeBytes === null
+          ? undefined
+          : Number(asset.sizeBytes),
+        notes: asset.notes ? String(asset.notes) : undefined,
+      }))
+      .filter((asset: LessonStudyAsset) => asset.title.trim() && asset.storagePath.trim()),
     assessmentCriteria: (row.assessment_criteria as TrainingLesson['assessmentCriteria']) ?? [],
     passMarks: (row.pass_marks as Record<string, string>) ?? {},
     passMarkRepeatRequirements: (row.pass_mark_repeat_requirements as Record<string, boolean>) ?? {},
@@ -135,6 +151,8 @@ function lessonToDbRow(lesson: TrainingLesson, courseId: string, sortOrder: numb
     objective: lesson.objective,
     flight_exercises: lesson.flightExercises,
     theory: lesson.theory,
+    study_guide: lesson.studyGuide ?? '',
+    study_assets: lesson.studyAssets ?? [],
     sequence_id: lesson.sequenceId,
     sequence_code: lesson.sequenceCode,
     sequence_title: lesson.sequenceTitle,

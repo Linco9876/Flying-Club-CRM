@@ -30,6 +30,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
+import { useGroundSessionLogs } from '../../hooks/useGroundSessionLogs';
 import { useGuestBookingConversion } from '../../hooks/useGuestBookingConversion';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings, useOrganisationSettings, useUserPreferences } from '../../hooks/useSettings';
@@ -43,6 +44,7 @@ import { MonthView } from './MonthView';
 import { isPastBooking } from '../../utils/timeUtils';
 import { BookingActionMenu } from '../Bookings/BookingActionMenu';
 import { FlightLogModal } from '../Bookings/FlightLogModal';
+import { GroundSessionLogModal } from '../Bookings/GroundSessionLogModal';
 import toast from 'react-hot-toast';
 
 interface CalendarProps {
@@ -146,6 +148,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { aircraft, loading: aircraftLoading } = useAircraft();
   const { users, loading: usersLoading } = useUsers();
   const { deleteFlightLog, getFlightLogDeleteImpact } = useFlightLogs();
+  const { deleteGroundSessionLog } = useGroundSessionLogs();
   const { convertGuestBookingToMember } = useGuestBookingConversion();
   const instructors = useMemo(
     () => users.filter(u => u.roles?.includes('instructor') || u.roles?.includes('senior_instructor')),
@@ -308,6 +311,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [bookingMenuLoading, setBookingMenuLoading] = useState<{ bookingId: string; x: number; y: number } | null>(null);
   const bookingMenuOpenTokenRef = useRef(0);
   const [showFlightLogModal, setShowFlightLogModal] = useState(false);
+  const [showGroundSessionLogModal, setShowGroundSessionLogModal] = useState(false);
   const [flightLogBooking, setFlightLogBooking] = useState<Booking | null>(null);
   const [flightLogMode, setFlightLogMode] = useState<'create' | 'edit'>('create');
   const [highlightUnlogged, setHighlightUnlogged] = useState(false);
@@ -666,12 +670,14 @@ export const Calendar: React.FC<CalendarProps> = ({
   };
 
   const getAircraftName = (booking: Booking) => {
+    if (booking.bookingKind === 'ground') return 'Ground session';
     const bookedAircraft = aircraftForLookup.find((a) => a.id === booking.aircraftId);
     if (!bookedAircraft) return 'Unknown Aircraft';
     return `${bookedAircraft.registration} ${bookedAircraft.make || ''} ${bookedAircraft.model || ''}`.trim();
   };
 
-  const isBookingFlightLogged = (booking: Booking) => Boolean(booking.flight_logged || booking.flightLog);
+  const isBookingFlightLogged = (booking: Booking) =>
+    Boolean(booking.flight_logged || booking.flightLog || booking.ground_session_logged || booking.groundSessionLog);
   const canDragOrResizeBooking = (booking: Booking) => !isBookingFlightLogged(booking);
 
   const isCancelledBooking = (booking: Booking) =>
@@ -728,6 +734,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   }, []);
 
   const getBookingFlightLogId = (booking: Booking) => booking.flightLog?.id || '';
+  const getBookingGroundSessionLogId = (booking: Booking) => booking.groundSessionLog?.id || '';
 
   const handleDeleteBookingFlightLog = async (booking: Booking) => {
     const flightLogId = getBookingFlightLogId(booking);
@@ -758,6 +765,27 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
 
     toast.success(impact.requiresXeroAction ? 'Flight log reversed in Xero and removed from the CRM' : 'Flight log deleted');
+  };
+
+  const handleDeleteBookingGroundSessionLog = async (booking: Booking) => {
+    const groundSessionLogId = getBookingGroundSessionLogId(booking);
+    if (!groundSessionLogId) {
+      toast.error('Ground session log could not be found');
+      return;
+    }
+
+    if (!window.confirm('Delete this ground session log? The booking will be marked as unlogged.')) {
+      return;
+    }
+
+    const { error } = await deleteGroundSessionLog(groundSessionLogId);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    toast.success('Ground session log deleted');
+    refreshCalendarData();
   };
 
   const truncateNotes = (notes?: string, maxLength = 84) => {
@@ -907,7 +935,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const instructorName = getInstructorName(booking);
     const aircraftName = getAircraftName(booking);
     const notes = canSeePrivateBookingDetails(booking) ? truncateNotes(booking.notes, 110) : '';
-    const isLogged = booking.flight_logged || Boolean(booking.flightLog);
+    const isLogged = isBookingFlightLogged(booking);
     const statusLabel = booking.hasConflict
       ? 'Waitlist'
       : isLogged
@@ -948,6 +976,11 @@ export const Calendar: React.FC<CalendarProps> = ({
           {booking.aircraftId && (
             <span className="rounded-full bg-white/55 px-2 py-1">
               {aircraftName}
+            </span>
+          )}
+          {booking.bookingKind === 'ground' && (
+            <span className="rounded-full bg-white/55 px-2 py-1">
+              Ground session
             </span>
           )}
           {instructorName && (
@@ -4221,16 +4254,30 @@ export const Calendar: React.FC<CalendarProps> = ({
             }
           } : undefined}
           onLogFlight={() => {
+            if (actionMenuBooking.bookingKind === 'ground') {
+              setFlightLogBooking(actionMenuBooking);
+              setShowGroundSessionLogModal(true);
+              return;
+            }
             setFlightLogBooking(actionMenuBooking);
             setFlightLogMode('create');
             setShowFlightLogModal(true);
           }}
           onEditFlightLog={() => {
+            if (actionMenuBooking.bookingKind === 'ground') {
+              setFlightLogBooking(actionMenuBooking);
+              setShowGroundSessionLogModal(true);
+              return;
+            }
             setFlightLogBooking(actionMenuBooking);
             setFlightLogMode('edit');
             setShowFlightLogModal(true);
           }}
           onDeleteFlightLog={() => {
+            if (actionMenuBooking.bookingKind === 'ground') {
+              void handleDeleteBookingGroundSessionLog(actionMenuBooking);
+              return;
+            }
             void handleDeleteBookingFlightLog(actionMenuBooking);
           }}
           onDelete={() => {
@@ -4293,6 +4340,23 @@ export const Calendar: React.FC<CalendarProps> = ({
             setShowFlightLogModal(false);
             setFlightLogBooking(null);
             setFlightLogMode('create');
+          }}
+        />
+      )}
+
+      {showGroundSessionLogModal && flightLogBooking && (
+        <GroundSessionLogModal
+          booking={flightLogBooking}
+          mode={flightLogBooking.groundSessionLog ? 'edit' : 'create'}
+          groundSessionLogId={getBookingGroundSessionLogId(flightLogBooking)}
+          onClose={() => {
+            setShowGroundSessionLogModal(false);
+            setFlightLogBooking(null);
+          }}
+          onSuccess={() => {
+            setShowGroundSessionLogModal(false);
+            setFlightLogBooking(null);
+            void Promise.resolve(onRefresh?.());
           }}
         />
       )}

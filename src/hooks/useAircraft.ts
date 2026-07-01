@@ -54,8 +54,13 @@ const getSignedDefectAttachmentUrls = async (photos?: string[] | null) => {
   );
 };
 
-export const useAircraft = () => {
+interface UseAircraftOptions {
+  participateInPageLoad?: boolean;
+}
+
+export const useAircraft = (options?: UseAircraftOptions) => {
   const { user } = useAuth();
+  const participateInPageLoad = options?.participateInPageLoad ?? true;
   const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
   const canSeePrivateAircraftData = roles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
   const activeAircraftCache = canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache;
@@ -63,7 +68,7 @@ export const useAircraft = () => {
   const [loading, setLoading] = useState(() => !activeAircraftCache);
   const [error, setError] = useState<string | null>(null);
   usePageLoadState(
-    loading,
+    participateInPageLoad && loading,
     'Loading aircraft',
     'Preparing aircraft, defects, documents and maintenance status...'
   );

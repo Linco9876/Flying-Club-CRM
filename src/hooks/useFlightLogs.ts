@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../utils/billing';
-import { fetchUserXeroBalance } from '../lib/xeroMemberBalance';
+import { fetchUserPrepaidLedgerBalance } from '../lib/prepaidLedger';
 import { useAuth } from '../context/AuthContext';
 import { usePageLoadState } from '../context/PageLoadContext';
 
@@ -153,12 +153,17 @@ const getSupabaseFunctionErrorMessage = async (error: unknown, fallback: string)
   return fallback;
 };
 
-export function useFlightLogs(userId?: string) {
+interface UseFlightLogsOptions {
+  participateInPageLoad?: boolean;
+}
+
+export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
   const { user: currentUser } = useAuth();
+  const participateInPageLoad = options?.participateInPageLoad ?? true;
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
   usePageLoadState(
-    loading,
+    participateInPageLoad && loading,
     'Loading flight logs',
     'Preparing flight history, billing status and aircraft log entries...'
   );
@@ -466,18 +471,15 @@ export function useFlightLogs(userId?: string) {
         );
       let prepaidBalanceAfter: number | null = null;
       if (!voucherPayment && prepaidPayment && calculatedCost > 0 && normalisedLogData.student_id) {
-        const xeroBalance = await fetchUserXeroBalance(normalisedLogData.student_id);
-        if (!xeroBalance.connected) {
-          throw new Error('Prepaid payments require Xero to be connected for this club.');
-        }
-        const availableCredit = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
-        const topUpIncrement = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+        const ledger = await fetchUserPrepaidLedgerBalance(normalisedLogData.student_id);
+        const availableCredit = Number(ledger.verifiedBalance ?? 0);
+        const topUpIncrement = 1000;
         if (availableCredit <= 0.005 && !prepaidPaymentAcknowledged) {
-          throw new Error(`Prepaid is locked until the member has a positive Xero credit balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+          throw new Error(`Prepaid is locked until the member has a positive verified prepaid balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
         if (availableCredit + 0.005 < calculatedCost && !prepaidPaymentAcknowledged) {
           const requiredTopUp = Math.max(topUpIncrement, Math.ceil((calculatedCost - availableCredit) / topUpIncrement) * topUpIncrement);
-          throw new Error(`This member only has $${availableCredit.toFixed(2)} available in Xero credit, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+          throw new Error(`This member only has $${availableCredit.toFixed(2)} of verified prepaid funds available, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
         prepaidBalanceAfter = Math.round((availableCredit - calculatedCost + Number.EPSILON) * 100) / 100;
       }

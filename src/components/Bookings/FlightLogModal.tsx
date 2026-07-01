@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../../utils/billing';
 import { TachOverlapWarningModal } from './TachOverlapWarningModal';
-import { fetchUserXeroBalance } from '../../lib/xeroMemberBalance';
+import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 
 interface Booking {
@@ -564,15 +564,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     const usesPrepaid = isPrepaidFlightType(selectedType?.name) || isPrepaidPaymentMethod(logData.payment_type);
     if (!usesPrepaid || !logData.student_id) return true;
 
-    setSubmissionMessage('Checking the member Xero credit before prepaid is used...');
-    const balance = await fetchUserXeroBalance(logData.student_id);
-    if (!balance.connected) {
-      toast.error('Prepaid requires Xero to be connected for this club.');
-      return false;
-    }
-
-    const availableCredit = Number(balance.overpaymentCredit ?? balance.availableCredit ?? 0);
-    const topUpIncrement = Number(balance.minimumPrepaidPack ?? 1000);
+    setSubmissionMessage('Checking the verified prepaid balance before prepaid is used...');
+    const balance = await fetchUserPrepaidLedgerBalance(logData.student_id);
+    const availableCredit = Number(balance.verifiedBalance ?? 0);
+    const topUpIncrement = 1000;
     const chargeAmount = Number(finalCharge || estimatedCost || 0);
     const requiredTopUp = Math.max(topUpIncrement, Math.ceil(Math.max(0, chargeAmount - availableCredit) / topUpIncrement) * topUpIncrement);
 
@@ -1418,7 +1413,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <div>
               <h3 className="text-base font-semibold text-amber-950">Not enough prepaid funds</h3>
               <p className="mt-0.5 text-xs text-amber-800">
-                Prepaid clients need a positive Xero credit balance and enough credit to cover the flight.
+                Prepaid clients need a positive verified prepaid balance and enough funds to cover the flight.
               </p>
             </div>
             <button

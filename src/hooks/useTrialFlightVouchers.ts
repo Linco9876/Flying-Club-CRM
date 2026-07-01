@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
-import { fetchUserXeroBalance } from '../lib/xeroMemberBalance';
+import { fetchUserPrepaidLedgerBalance } from '../lib/prepaidLedger';
 import { usePageLoadState } from '../context/PageLoadContext';
 import {
   TrialFlightVoucher,
@@ -491,18 +491,15 @@ export const useTrialFlightVouchers = () => {
     if (!payerUserId) throw new Error('Select the member account that will pay for this voucher.');
     if (!Number.isFinite(amount) || amount <= 0) throw new Error('Voucher price must be greater than $0.');
 
-    const xeroBalance = await fetchUserXeroBalance(payerUserId);
-    if (!xeroBalance.connected) {
-      throw new Error('Prepaid voucher payments require Xero to be connected for this club.');
-    }
-    const currentBalance = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
-    const topUpIncrement = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+    const ledger = await fetchUserPrepaidLedgerBalance(payerUserId);
+    const currentBalance = Number(ledger.verifiedBalance ?? 0);
+    const topUpIncrement = 1000;
     if (currentBalance <= 0.005) {
-      throw new Error(`Prepaid is locked until the member has a positive Xero credit balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+      throw new Error(`Prepaid is locked until the member has a positive verified prepaid balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
     }
     if (amount > currentBalance + 0.005) {
       const requiredTopUp = Math.max(topUpIncrement, Math.ceil((amount - currentBalance) / topUpIncrement) * topUpIncrement);
-      throw new Error(`Selected prepaid account only has $${currentBalance.toFixed(2)} available in Xero credit, so it cannot cover this voucher. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+      throw new Error(`Selected prepaid account only has $${currentBalance.toFixed(2)} of verified prepaid funds available, so it cannot cover this voucher. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
     }
 
     const paymentMethodId = await getPilotAccountPaymentMethodId();

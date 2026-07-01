@@ -12,6 +12,8 @@ import {
   ClipboardList,
   Clock3,
   FilePlus,
+  FileText,
+  Image,
   Italic,
   Link,
   List,
@@ -25,11 +27,13 @@ import {
   Settings2,
   Tag,
   Trash2,
+  Upload,
   Underline,
   X
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
+  LessonStudyAsset,
   LessonAssessmentCriterion,
   LessonGradingSystem,
   SyllabusMatrixRequirement,
@@ -73,12 +77,14 @@ interface NewCourseState {
 type CourseBuildMode = 'simple' | 'advanced';
 type CourseBuilderStep = 'details' | 'rules' | 'assessment' | 'resources';
 type LessonBuilderStep = 'details' | 'content' | 'assessment';
+type LessonStudyAssetKind = LessonStudyAsset['type'];
 
 interface NewLessonState {
   name: string;
   objective: string;
   flightExercises: string;
   theory: string;
+  studyGuide: string;
   sequenceId: string;
   sequenceCode: string;
   sequenceTitle: string;
@@ -102,6 +108,12 @@ type EditableCriterion = {
 
 type EditableExam = TrainingExam;
 type EditableResource = TrainingResource;
+type EditableLessonStudyAsset = LessonStudyAsset & {
+  file?: File | null;
+  isPendingUpload?: boolean;
+};
+
+const LESSON_STUDY_BUCKET = 'training-lesson-assets';
 
 const escapeHtml = (value: string) =>
   value
@@ -648,11 +660,44 @@ const createEmptyResource = (): EditableResource => ({
   notes: ''
 });
 
+const createUploadId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const safeFilename = (filename: string) => filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+const inferLessonStudyAssetType = (file: File): LessonStudyAssetKind =>
+  file.type.startsWith('image/') ? 'image' : 'document';
+
+const createStudyAssetFromFile = (file: File): EditableLessonStudyAsset => ({
+  id: `study-asset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  type: inferLessonStudyAssetType(file),
+  title: file.name.replace(/\.[^.]+$/, ''),
+  storagePath: '',
+  fileName: file.name,
+  mimeType: file.type || null,
+  sizeBytes: file.size,
+  notes: '',
+  file,
+  isPendingUpload: true,
+});
+
+const slugifyTrainingKey = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'lesson-study';
+
 const pilotCertificateFlightTestTemplate: NewLessonState = {
   name: 'Pilot Certificate Flight Test',
   objective: 'Complete the RAAus Pilot Certificate Flight Test and record the result against the student file as the certificate flight review / test outcome.',
   flightExercises: '<ul><li>Pre-flight planning, aircraft documents and operational decision making.</li><li>Normal and abnormal handling across the RPC flight test profile.</li><li>Circuit, forced landing, training area, emergency and undesired-state management.</li><li>Post-flight debrief, result, limitations and next actions.</li></ul>',
   theory: '<p>Confirm Presolo, Radio, BAK and Pre Certificate Airlaw exam results are recorded before the certificate test result is finalised.</p>',
+  studyGuide: '<p>Review the full RPC test profile, recency requirements, aircraft limitations, emergency actions and any exam prerequisites before the check flight.</p>',
   sequenceId: 'rpc-flight-test',
   sequenceCode: 'RPC-FLT-TEST',
   sequenceTitle: 'Pilot Certificate Flight Test',
@@ -705,6 +750,7 @@ const emptyLessonForm = (): NewLessonState => ({
   objective: '',
   flightExercises: '',
   theory: '',
+  studyGuide: '',
   sequenceId: '',
   sequenceCode: '',
   sequenceTitle: '',
@@ -1443,6 +1489,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   // Per-lesson pass marks: criterionId → passingGrade
   const [lessonPassMarks, setLessonPassMarks] = useState<Record<string, string>>({});
   const [lessonRepeatPassRequirements, setLessonRepeatPassRequirements] = useState<Record<string, boolean>>({});
+  const [lessonStudyAssets, setLessonStudyAssets] = useState<EditableLessonStudyAsset[]>([]);
   const [expandedLessons, setExpandedLessons] = useState<Record<string, boolean>>({});
   const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
 
@@ -1453,6 +1500,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setNewLesson(emptyLessonForm());
       setLessonPassMarks({});
       setLessonRepeatPassRequirements({});
+      setLessonStudyAssets([]);
       return;
     }
 
@@ -1462,6 +1510,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       setNewLesson(emptyLessonForm());
       setLessonPassMarks({});
       setLessonRepeatPassRequirements({});
+      setLessonStudyAssets([]);
     }
   }, [modules, selectedModuleId]);
 
@@ -1566,6 +1615,91 @@ export const TrainingCourseCatalog: React.FC = () => {
       return acc;
     }, {});
 
+  const removeStudyAssetsFromStorage = useCallback(async (assets: Array<{ storagePath?: string }>) => {
+    const paths = assets
+      .map((asset) => asset.storagePath?.trim())
+      .filter((path): path is string => Boolean(path));
+    if (paths.length === 0) return;
+    const { error } = await supabase.storage.from(LESSON_STUDY_BUCKET).remove(paths);
+    if (error) {
+      console.warn('Failed to remove lesson study assets:', error);
+    }
+  }, []);
+
+  const persistLessonStudyAssets = useCallback(async (
+    courseId: string,
+    lessonStorageKey: string,
+    assets: EditableLessonStudyAsset[],
+  ): Promise<{ assets: LessonStudyAsset[]; uploadedPaths: string[] }> => {
+    const uploadedPaths: string[] = [];
+    try {
+      const savedAssets: LessonStudyAsset[] = [];
+      for (const asset of assets) {
+        const title = asset.title.trim() || asset.fileName || 'Study file';
+        const notes = asset.notes?.trim() || undefined;
+
+        if (asset.isPendingUpload && asset.file) {
+          const storagePath = `${courseId}/${lessonStorageKey}/${createUploadId()}-${safeFilename(asset.file.name)}`;
+          const { error } = await supabase.storage
+            .from(LESSON_STUDY_BUCKET)
+            .upload(storagePath, asset.file, { contentType: asset.file.type || undefined });
+          if (error) throw error;
+
+          uploadedPaths.push(storagePath);
+          savedAssets.push({
+            id: asset.id,
+            type: asset.type,
+            title,
+            storagePath,
+            fileName: asset.file.name,
+            mimeType: asset.file.type || null,
+            sizeBytes: asset.file.size,
+            notes,
+          });
+          continue;
+        }
+
+        if (!asset.storagePath.trim()) continue;
+        savedAssets.push({
+          id: asset.id,
+          type: asset.type,
+          title,
+          storagePath: asset.storagePath,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType || null,
+          sizeBytes: asset.sizeBytes,
+          notes,
+        });
+      }
+
+      return { assets: savedAssets, uploadedPaths };
+    } catch (error) {
+      if (uploadedPaths.length > 0) {
+        await removeStudyAssetsFromStorage(uploadedPaths.map((storagePath) => ({ storagePath })));
+      }
+      throw error;
+    }
+  }, [removeStudyAssetsFromStorage]);
+
+  const handleAddLessonStudyFiles = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const nextAssets = Array.from(files).map(createStudyAssetFromFile);
+    setLessonStudyAssets((current) => [...current, ...nextAssets]);
+  }, []);
+
+  const handleOpenLessonStudyAsset = useCallback(async (asset: EditableLessonStudyAsset) => {
+    if (asset.isPendingUpload || !asset.storagePath) {
+      toast('Save the lesson before opening this file.');
+      return;
+    }
+    const { data, error } = await supabase.storage.from(LESSON_STUDY_BUCKET).createSignedUrl(asset.storagePath, 60);
+    if (error) {
+      toast.error('Failed to open lesson file');
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  }, []);
+
   const queueFormScroll = (target: 'edit-course' | 'lesson') => {
     pendingScrollTargetRef.current = target;
   };
@@ -1627,6 +1761,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     setNewLesson(emptyLessonForm());
     setLessonPassMarks({});
     setLessonRepeatPassRequirements({});
+    setLessonStudyAssets([]);
     setEditingLessonId(null);
     setLessonBuilderStep('details');
   };
@@ -1809,6 +1944,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       objective: lesson.objective,
       flightExercises: lesson.flightExercises,
       theory: lesson.theory,
+      studyGuide: lesson.studyGuide || '',
       sequenceId: lesson.sequenceId || '',
       sequenceCode: lesson.sequenceCode || '',
       sequenceTitle: lesson.sequenceTitle || lesson.name,
@@ -1820,6 +1956,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       instructorNotes: lesson.instructorNotes || '',
       isFlightTest: lesson.isFlightTest ?? false,
     });
+    setLessonStudyAssets((lesson.studyAssets || []).map((asset) => ({ ...asset })));
     // Populate pass marks from existing lesson data
     setLessonPassMarks(lesson.passMarks ?? {});
     setLessonRepeatPassRequirements(lesson.passMarkRepeatRequirements ?? {});
@@ -1831,12 +1968,16 @@ export const TrainingCourseCatalog: React.FC = () => {
 
   const handleDeleteLesson = async (lessonId: string) => {
     if (!selectedModule) return;
+    const lessonToDelete = selectedModule.lessons.find((lesson) => lesson.id === lessonId);
     try {
       await updateModule(selectedModule.id, (current) => ({
         ...current,
         lessons: current.lessons.filter((l) => l.id !== lessonId),
         lastUpdated: new Date(),
       }));
+      if (lessonToDelete?.studyAssets?.length) {
+        await removeStudyAssetsFromStorage(lessonToDelete.studyAssets);
+      }
       setDeletingLessonId(null);
       toast.success('Lesson removed from course');
     } catch {
@@ -2095,6 +2236,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
 
     setNewLesson(pilotCertificateFlightTestTemplate);
+    setLessonStudyAssets([]);
     queueFormScroll('lesson');
     setLessonPassMarks(
       Object.fromEntries(
@@ -2126,8 +2268,10 @@ export const TrainingCourseCatalog: React.FC = () => {
     const objective = newLesson.objective.trim();
     const flightExercisesHtml = sanitizeRichText(newLesson.flightExercises);
     const theoryHtml = sanitizeRichText(newLesson.theory);
+    const studyGuideHtml = sanitizeRichText(newLesson.studyGuide);
     const flightExercisesPlain = richTextToPlainText(flightExercisesHtml);
     const theoryPlain = richTextToPlainText(theoryHtml);
+    const studyGuidePlain = richTextToPlainText(studyGuideHtml);
     const durationMinutes = Number(newLesson.durationMinutes);
     const sequenceId = newLesson.sequenceId.trim();
     const sequenceCode = newLesson.sequenceCode.trim();
@@ -2140,6 +2284,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     if (!objective) { toast.error('Please provide a lesson objective'); return; }
     if (!flightExercisesPlain) { toast.error('Please outline the flight exercises for this lesson'); return; }
     if (!theoryPlain) { toast.error('Please describe the supporting theory content'); return; }
+    if (!studyGuidePlain) { toast.error('Please add study content for the student between lessons'); return; }
     if (Number.isNaN(durationMinutes) || durationMinutes < 1) {
       toast.error('Lesson duration must be at least 1 minute');
       return;
@@ -2173,6 +2318,7 @@ export const TrainingCourseCatalog: React.FC = () => {
       objective,
       flightExercises: flightExercisesHtml,
       theory: theoryHtml,
+      studyGuide: studyGuideHtml,
       sequenceId,
       sequenceCode,
       sequenceTitle,
@@ -2188,21 +2334,43 @@ export const TrainingCourseCatalog: React.FC = () => {
       isFlightTest: newLesson.isFlightTest,
     };
 
+    const lessonStorageKey = slugifyTrainingKey(`${sequenceCode || sequenceTitle || name}-${sequenceId || 'study'}`);
+
     if (editingLessonId) {
       const existing = selectedModule.lessons.find((l) => l.id === editingLessonId);
       if (!existing) return;
-      const updatedLesson: TrainingLesson = { ...existing, ...lessonBase };
+      let uploadedPaths: string[] = [];
       try {
+        const persisted = await persistLessonStudyAssets(
+          selectedModule.id,
+          lessonStorageKey,
+          lessonStudyAssets
+        );
+        const savedStudyAssets = persisted.assets;
+        uploadedPaths = persisted.uploadedPaths;
+        const removedAssets = (existing.studyAssets || []).filter((asset) =>
+          !savedStudyAssets.some((savedAsset) => savedAsset.id === asset.id)
+        );
+        const updatedLesson: TrainingLesson = { ...existing, ...lessonBase, studyAssets: savedStudyAssets };
         await updateModule(selectedModule.id, (current) => ({
           ...current,
           lessons: current.lessons.map((l) => l.id === editingLessonId ? updatedLesson : l),
           lastUpdated: new Date(),
         }));
+        if (removedAssets.length > 0) {
+          await removeStudyAssetsFromStorage(removedAssets);
+        }
         toast.success('Lesson updated');
         setShowLessonForm(false);
         resetLessonForm();
         setExpandedLessons((prev) => ({ ...prev, [editingLessonId]: true }));
-      } catch { /* handled in context */ }
+      } catch (error) {
+        if (uploadedPaths.length > 0) {
+          await removeStudyAssetsFromStorage(uploadedPaths.map((storagePath) => ({ storagePath })));
+        }
+        console.error('Failed to update lesson study content:', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to update the lesson study content');
+      }
       return;
     }
 
@@ -2218,17 +2386,31 @@ export const TrainingCourseCatalog: React.FC = () => {
       ...lessonBase,
     };
 
+    let uploadedPaths: string[] = [];
     try {
+      const persisted = await persistLessonStudyAssets(
+        selectedModule.id,
+        lessonStorageKey,
+        lessonStudyAssets
+      );
+      const savedStudyAssets = persisted.assets;
+      uploadedPaths = persisted.uploadedPaths;
       await updateModule(selectedModule.id, (current) => ({
         ...current,
-        lessons: [...current.lessons, lesson],
+        lessons: [...current.lessons, { ...lesson, studyAssets: savedStudyAssets }],
         lastUpdated: new Date()
       }));
       toast.success('Lesson added to course');
       setShowLessonForm(false);
       resetLessonForm();
       setExpandedLessons((prev) => ({ ...prev, [lesson.id]: true }));
-    } catch { /* handled in context */ }
+    } catch (error) {
+      if (uploadedPaths.length > 0) {
+        await removeStudyAssetsFromStorage(uploadedPaths.map((storagePath) => ({ storagePath })));
+      }
+      console.error('Failed to create lesson study content:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to save the lesson');
+    }
   };
 
   const handlePublishCourse = async () => {
@@ -3832,12 +4014,12 @@ export const TrainingCourseCatalog: React.FC = () => {
                           />
                         </label>
                         <label className="flex flex-col text-xs font-medium text-blue-900">
-                          Student preparation
+                          Quick prep checklist (optional)
                           <textarea
                             rows={4}
                             value={newLesson.studentPreparation}
                             onChange={(event) => setNewLesson((prev) => ({ ...prev, studentPreparation: event.target.value }))}
-                            placeholder="Reading, planning or briefing to complete first"
+                            placeholder="Optional short checklist the student should complete before the next lesson"
                             className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-400 focus:outline-none"
                           />
                         </label>
@@ -3865,6 +4047,101 @@ export const TrainingCourseCatalog: React.FC = () => {
                         onChange={(value) => setNewLesson((prev) => ({ ...prev, theory: value }))}
                         placeholder="Summarise the key theory discussion points, references or briefing sequence."
                       />
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                      <div className="mb-4 flex items-start gap-3">
+                        <div className="rounded-lg bg-white p-2 text-emerald-700 shadow-sm ring-1 ring-emerald-100">
+                          <BookOpenCheck className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-emerald-950">Between-lesson study pack</h4>
+                          <p className="mt-1 text-xs leading-5 text-emerald-800">
+                            This is the student-facing study content they can review between lessons. Add a written study guide, then attach any handouts, worksheets, briefing notes or images they should open before the next flight.
+                          </p>
+                        </div>
+                      </div>
+                      <RichTextEditor
+                        label="Study guide"
+                        value={newLesson.studyGuide}
+                        onChange={(value) => setNewLesson((prev) => ({ ...prev, studyGuide: value }))}
+                        placeholder="Explain what the student should revise before the next lesson, what to watch for, and what success looks like."
+                      />
+                      <div className="mt-4 rounded-lg border border-emerald-200 bg-white p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">Study files</p>
+                            <p className="text-xs text-gray-500">Attach documents or images the student should work through between lessons.</p>
+                          </div>
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
+                            <Upload className="h-3.5 w-3.5" />
+                            Add documents or images
+                            <input
+                              type="file"
+                              multiple
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.gif,.webp"
+                              className="hidden"
+                              onChange={(event) => {
+                                handleAddLessonStudyFiles(event.target.files);
+                                event.currentTarget.value = '';
+                              }}
+                            />
+                          </label>
+                        </div>
+                        {lessonStudyAssets.length === 0 ? (
+                          <div className="mt-4 rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 px-4 py-5 text-sm text-emerald-900">
+                            No lesson study files yet. Students will still see the study guide text above.
+                          </div>
+                        ) : (
+                          <div className="mt-4 space-y-3">
+                            {lessonStudyAssets.map((asset) => (
+                              <div key={asset.id} className="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)_auto]">
+                                <div className="min-w-0">
+                                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Title</label>
+                                  <input
+                                    type="text"
+                                    value={asset.title}
+                                    onChange={(event) => setLessonStudyAssets((current) => current.map((item) => item.id === asset.id ? { ...item, title: event.target.value } : item))}
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none"
+                                  />
+                                  <p className="mt-2 text-xs text-gray-500">
+                                    {asset.type === 'image' ? 'Image' : 'Document'} - {asset.fileName || 'Uploaded file'}
+                                    {asset.isPendingUpload ? ' - will upload when the lesson is saved' : ''}
+                                  </p>
+                                </div>
+                                <div className="min-w-0">
+                                  <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Student note</label>
+                                  <textarea
+                                    rows={3}
+                                    value={asset.notes || ''}
+                                    onChange={(event) => setLessonStudyAssets((current) => current.map((item) => item.id === asset.id ? { ...item, notes: event.target.value } : item))}
+                                    placeholder="Optional note about what the student should look for in this file"
+                                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none"
+                                  />
+                                </div>
+                                <div className="flex items-start justify-end gap-2 lg:flex-col">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenLessonStudyAsset(asset)}
+                                    disabled={asset.isPendingUpload}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {asset.type === 'image' ? <Image className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                                    Open
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLessonStudyAssets((current) => current.filter((item) => item.id !== asset.id))}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                   )}
@@ -4104,6 +4381,8 @@ export const TrainingCourseCatalog: React.FC = () => {
                       const isExpanded = expandedLessons[lesson.id] ?? false;
                       const flightExercisesContent = formatRichTextContent(lesson.flightExercises);
                       const theoryContent = formatRichTextContent(lesson.theory);
+                      const prepContent = formatRichTextContent(lesson.studentPreparation);
+                      const studyGuideContent = formatRichTextContent(lesson.studyGuide);
                       const isFirstLesson = lessonIndex === 0;
                       const isLastLesson = lessonIndex === selectedModule.lessons.length - 1;
 
@@ -4216,7 +4495,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                           </div>
                           {isExpanded && (
                             <>
-                              <div className="grid gap-4 border-t border-slate-100 p-4 lg:grid-cols-2">
+                              <div className="grid gap-4 border-t border-slate-100 p-4 xl:grid-cols-3">
                                 <div>
                                   <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     Flight exercises
@@ -4244,6 +4523,53 @@ export const TrainingCourseCatalog: React.FC = () => {
                                       />
                                     ) : (
                                       <p className="text-sm text-slate-500">Outline the theory elements that support this lesson.</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div>
+                                  <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Student study pack
+                                  </h5>
+                                  <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
+                                    {prepContent && (
+                                      <div className="mb-4 rounded-xl border border-emerald-200 bg-white/90 p-3">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+                                          Before next lesson
+                                        </p>
+                                        <div
+                                          className="mt-2 text-sm leading-6 text-slate-700 [&_li]:mb-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5"
+                                          dangerouslySetInnerHTML={{ __html: prepContent }}
+                                        />
+                                      </div>
+                                    )}
+                                    {studyGuideContent ? (
+                                      <div
+                                        className="text-sm leading-6 text-slate-700 [&_li]:mb-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5"
+                                        dangerouslySetInnerHTML={{ __html: studyGuideContent }}
+                                      />
+                                    ) : (
+                                      <p className="text-sm text-slate-500">No full study guide has been added yet.</p>
+                                    )}
+                                    {lesson.studyAssets && lesson.studyAssets.length > 0 && (
+                                      <div className="mt-4 space-y-2">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+                                          Attached files
+                                        </p>
+                                        {lesson.studyAssets.map((asset) => (
+                                          <button
+                                            key={asset.id}
+                                            type="button"
+                                            onClick={() => void handleOpenLessonStudyAsset(asset)}
+                                            className="flex w-full items-center justify-between rounded-lg border border-emerald-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-emerald-50"
+                                          >
+                                            <span className="inline-flex min-w-0 items-center gap-2">
+                                              {asset.type === 'image' ? <Image className="h-4 w-4 shrink-0 text-emerald-700" /> : <FileText className="h-4 w-4 shrink-0 text-emerald-700" />}
+                                              <span className="truncate">{asset.title}</span>
+                                            </span>
+                                            <span className="shrink-0 text-xs font-semibold text-emerald-700">Open</span>
+                                          </button>
+                                        ))}
+                                      </div>
                                     )}
                                   </div>
                                 </div>

@@ -6,7 +6,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import toast from 'react-hot-toast';
 import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../../utils/billing';
-import { fetchUserXeroBalance } from '../../lib/xeroMemberBalance';
+import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
 
 interface FlightLog {
   id: string;
@@ -287,22 +287,17 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
         return;
       }
 
-      const xeroBalance = await fetchUserXeroBalance(chargeUserId);
-      if (!xeroBalance.connected) {
-        toast.error('Prepaid payments require Xero to be connected for this club.');
-        return;
-      }
-
-      const availableCredit = Number(xeroBalance.overpaymentCredit ?? xeroBalance.availableCredit ?? 0);
-      const topUpIncrement = Number(xeroBalance.minimumPrepaidPack ?? 1000);
+      const ledger = await fetchUserPrepaidLedgerBalance(chargeUserId);
+      const availableCredit = Number(ledger.verifiedBalance ?? 0);
+      const topUpIncrement = 1000;
       if (availableCredit <= 0.005) {
-        toast.error(`Prepaid is locked until the member has a positive Xero credit balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+        toast.error(`Prepaid is locked until the member has a positive verified prepaid balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         return;
       }
 
       if (availableCredit + 0.005 < recalculatedCost) {
         const requiredTopUp = Math.max(topUpIncrement, Math.ceil((recalculatedCost - availableCredit) / topUpIncrement) * topUpIncrement);
-        toast.error(`This member only has $${availableCredit.toFixed(2)} available in Xero credit, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+        toast.error(`This member only has $${availableCredit.toFixed(2)} of verified prepaid funds available, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         return;
       }
 

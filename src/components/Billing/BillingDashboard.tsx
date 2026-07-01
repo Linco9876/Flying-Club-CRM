@@ -277,46 +277,6 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     };
 
     const xeroConnectedForOwnBilling = ownXeroConnected ?? billing.xeroConnected;
-    if (!xeroConnectedForOwnBilling) {
-      return (
-        <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Billing</h1>
-            <p className="text-gray-600 dark:text-gray-400">Live billing information is provided by Xero.</p>
-          </div>
-
-          <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-                  <Wallet className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="font-semibold text-amber-950 dark:text-amber-100">Billing is not connected to Xero</h2>
-                  <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-                    The CRM could not confirm an active Xero connection, so it is hiding balances and invoices rather than showing stale or fake amounts.
-                  </p>
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                    An admin can reconnect Xero from Settings &gt; Integrations. If Xero was just connected, refresh this page.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setXeroInvoicesChecked(false);
-                  void Promise.all([billing.refetch(), loadXeroInvoices()]);
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </button>
-            </div>
-          </section>
-        </div>
-      );
-    }
 
     const handlePayXeroInvoice = async (invoice: XeroPortalInvoice) => {
       if (invoice.amountDue <= 0.005) return;
@@ -407,12 +367,44 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Billing</h1>
-          <p className="text-gray-600 dark:text-gray-400">Review your live Xero credit, pending top-ups, and billing history.</p>
+          <p className="text-gray-600 dark:text-gray-400">Review your verified prepaid balance, pending top-ups, and billing history.</p>
         </div>
+
+        {!xeroConnectedForOwnBilling && (
+          <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                  <Wallet className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-amber-950 dark:text-amber-100">Xero is not connected right now</h2>
+                  <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+                    Your verified CRM prepaid balance still works here. Xero invoices and automatic reconciliation stay hidden until the club reconnects Xero.
+                  </p>
+                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                    An admin can reconnect Xero from Settings &gt; Integrations. If Xero was just connected, refresh this page.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setXeroInvoicesChecked(false);
+                  void Promise.all([billing.refetch(), loadXeroInvoices()]);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+            </div>
+          </section>
+        )}
 
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Live Xero credit</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Verified prepaid balance</p>
             <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{currencyFormatter(approvedBalance)}</p>
           </div>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
@@ -423,11 +415,12 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <p className="text-sm text-blue-700 dark:text-blue-300">Prepaid rate access</p>
             <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">{prepaidEligible ? 'Unlocked' : 'Locked'}</p>
             <p className="mt-1 text-xs text-blue-800 dark:text-blue-200">
-              Requires a positive Xero credit balance. Top-ups are made in {currencyFormatter(billing.minimumPrepaidPack)} increments.
+              Requires a positive verified prepaid balance. Top-ups are made in {currencyFormatter(billing.minimumPrepaidPack)} increments.
             </p>
           </div>
         </div>
 
+        {xeroConnectedForOwnBilling && (
         <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36] sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
@@ -524,6 +517,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             </div>
           )}
         </section>
+        )}
 
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

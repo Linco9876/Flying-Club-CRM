@@ -1200,10 +1200,6 @@ html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'],
 .kiosk-app-surface[data-kiosk-theme='dark'] main,
 html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] main {
   color-scheme: dark;
-  --calendar-slot-base: rgb(11 22 40);
-  --calendar-slot-alt: rgb(16 32 56);
-  --calendar-slot-hover: rgb(26 45 74);
-  --calendar-slot-selected: rgb(30 64 175 / 0.36);
   background: rgb(7 15 29) !important;
   color: rgb(248 250 252) !important;
 }
@@ -1228,27 +1224,27 @@ html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] [clas
 
 .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid,
 html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid {
-  background-color: rgb(10 18 34) !important;
+  background-color: rgb(255 255 255) !important;
 }
 
 .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-base,
 html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-base {
-  background-color: var(--calendar-slot-base) !important;
+  background-color: rgb(255 255 255) !important;
 }
 
 .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-alt,
 html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-alt {
-  background-color: var(--calendar-slot-alt) !important;
+  background-color: rgb(239 246 255) !important;
 }
 
 .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-cell:hover,
 html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-cell:hover {
-  background-color: var(--calendar-slot-hover) !important;
+  background-color: rgb(219 234 254) !important;
 }
 
 .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-selected,
 html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-selected {
-  background-color: var(--calendar-slot-selected) !important;
+  background-color: rgb(219 234 254) !important;
 }
 
 .kiosk-app-surface[data-kiosk-theme='dark'] .border-gray-100,

@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useStudents } from '../../hooks/useStudents';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
@@ -8,14 +9,18 @@ import { buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
 
 export const SafetyLoginWarningModal: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { students } = useStudents();
   const { flightLogs } = useFlightLogs(user?.id);
   const { settings } = useSafetySettings();
   const [dismissed, setDismissed] = React.useState(false);
 
   const student = user ? students.find((candidate) => candidate.id === user.id) : null;
-  const summary = student ? buildSafetyComplianceSummary(student, settings, flightLogs) : null;
+  const summary = student
+    ? buildSafetyComplianceSummary(student, settings, flightLogs, { perspective: 'firstPerson' })
+    : null;
   const concerns = summary?.concerns ?? [];
+  const hasRenewalRelatedConcern = concerns.some((concern) => ['medical', 'licence', 'bfr'].includes(concern.type));
   const storageKey = user ? `safety-login-warning-dismissed:${user.id}` : '';
 
   React.useEffect(() => {
@@ -26,6 +31,11 @@ export const SafetyLoginWarningModal: React.FC = () => {
   const handleDismiss = () => {
     if (storageKey) sessionStorage.setItem(storageKey, 'true');
     setDismissed(true);
+  };
+
+  const handleUpdateInfo = () => {
+    handleDismiss();
+    navigate('/settings?section=account-info');
   };
 
   if (!user || !student || dismissed || concerns.length === 0) return null;
@@ -63,7 +73,16 @@ export const SafetyLoginWarningModal: React.FC = () => {
             </div>
           )}
         </div>
-        <div className="flex justify-end border-t border-gray-200 px-5 py-4">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-4">
+          {hasRenewalRelatedConcern && (
+            <button
+              type="button"
+              onClick={handleUpdateInfo}
+              className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              Update my info
+            </button>
+          )}
           <button
             type="button"
             onClick={handleDismiss}
@@ -76,4 +95,3 @@ export const SafetyLoginWarningModal: React.FC = () => {
     </div>
   );
 };
-

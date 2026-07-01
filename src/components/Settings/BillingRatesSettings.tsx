@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CreditCard, DollarSign, GripVertical, Loader2, Lock, Plus, Trash2, Users } from 'lucide-react';
+import { CheckCircle2, CreditCard, DollarSign, GripVertical, Link2, Loader2, Lock, Plus, Trash2, Users } from 'lucide-react';
 import { useBillingSettings, FlightType, PaymentMethod } from '../../hooks/useBillingSettings';
+import { useGroundSessionDescriptions } from '../../hooks/useGroundSessionDescriptions';
 import { useAircraft } from '../../hooks/useAircraft';
 import { UserRole } from '../../types';
 import { supabase } from '../../lib/supabase';
@@ -25,10 +26,15 @@ interface StripeConnectStatus {
 
 interface XeroConnectStatus {
   connected: boolean;
+  configured?: boolean;
 }
 
 export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
   const { flightTypes, paymentMethods, loading, saveBillingSettings } = useBillingSettings();
+  const {
+    options: groundSessionDescriptionOptions,
+    saveOptions: saveGroundSessionDescriptionOptions,
+  } = useGroundSessionDescriptions();
   const { aircraft } = useAircraft();
   const [draftFlightTypes, setDraftFlightTypes] = useState<FlightType[]>([]);
   const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -36,6 +42,8 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   const [stripeLoading, setStripeLoading] = useState(false);
   const [xeroStatus, setXeroStatus] = useState<XeroConnectStatus | null>(null);
   const [xeroLoading, setXeroLoading] = useState(false);
+  const [xeroItemSyncingId, setXeroItemSyncingId] = useState<string | null>(null);
+  const [draftGroundSessionDescriptions, setDraftGroundSessionDescriptions] = useState<string[]>([]);
 
   const loadStripeStatus = useCallback(async () => {
     setStripeLoading(true);
@@ -78,6 +86,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   }, [paymentMethods]);
 
   useEffect(() => {
+    setDraftGroundSessionDescriptions(
+      groundSessionDescriptionOptions
+        .filter(option => option.active)
+        .map(option => option.name)
+    );
+  }, [groundSessionDescriptionOptions]);
+
+  useEffect(() => {
     void loadStripeStatus();
   }, [loadStripeStatus]);
 
@@ -88,16 +104,22 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
       await saveBillingSettings(draftFlightTypes, draftPaymentMethods);
+      await saveGroundSessionDescriptionOptions(draftGroundSessionDescriptions);
     };
     (window as any).__billingSettingsCancel = () => {
       setDraftFlightTypes(flightTypes);
       setDraftPaymentMethods(paymentMethods);
+      setDraftGroundSessionDescriptions(
+        groundSessionDescriptionOptions
+          .filter(option => option.active)
+          .map(option => option.name)
+      );
     };
     return () => {
       delete (window as any).__billingSettingsSave;
       delete (window as any).__billingSettingsCancel;
     };
-  }, [draftFlightTypes, draftPaymentMethods, flightTypes, paymentMethods, saveBillingSettings]);
+  }, [draftFlightTypes, draftPaymentMethods, draftGroundSessionDescriptions, flightTypes, paymentMethods, groundSessionDescriptionOptions, saveBillingSettings, saveGroundSessionDescriptionOptions]);
 
   const updateFlightType = (id: string, updates: Partial<FlightType>) => {
     setDraftFlightTypes(current => current.map(type => type.id === id ? { ...type, ...updates } : type));
@@ -141,8 +163,24 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         allowedRoles: ['student', 'pilot', 'instructor', 'admin'],
         displayOrder: current.length + 1,
         forcedPaymentMethodId: null,
+        groundSessionHourlyRate: 0,
       },
     ]);
+    onFormChange();
+  };
+
+  const updateGroundSessionDescription = (index: number, value: string) => {
+    setDraftGroundSessionDescriptions(current => current.map((item, itemIndex) => itemIndex === index ? value : item));
+    onFormChange();
+  };
+
+  const addGroundSessionDescription = () => {
+    setDraftGroundSessionDescriptions(current => [...current, 'New description']);
+    onFormChange();
+  };
+
+  const removeGroundSessionDescription = (index: number) => {
+    setDraftGroundSessionDescriptions(current => current.filter((_, itemIndex) => itemIndex !== index));
     onFormChange();
   };
 
@@ -186,6 +224,37 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   const pilotAccountMethod = draftPaymentMethods.find(method => method.systemKey === 'pilot_account');
   const stripeConnected = Boolean(stripeStatus?.connected);
   const xeroConnected = Boolean(xeroStatus?.connected);
+
+  const ensureFlightTypeXeroItem = async (type: FlightType) => {
+    if (!canEdit || !xeroConnected) return;
+
+    const code = (type.xeroItemCode || '').trim().toUpperCase();
+    if (!code) {
+      toast.error('Enter an Accounting Item code first.');
+      return;
+    }
+
+    setXeroItemSyncingId(type.id);
+    try {
+      const { data, error } = await supabase.functions.invoke<{ created?: boolean; item?: { code?: string | null } }>('xero-sync', {
+        body: {
+          action: 'ensure-flight-type-item',
+          flightTypeId: type.id,
+          code,
+          name: type.name,
+          description: type.description || '',
+        },
+      });
+      if (error) throw error;
+      updateFlightType(type.id, { xeroItemCode: data?.item?.code || code });
+      toast.success(data?.created ? 'Created the Xero sales item for this flight type' : 'Linked this flight type to the existing Xero sales item');
+    } catch (error: any) {
+      console.error('Failed to link flight type item in Xero:', error);
+      toast.error(error?.message || 'Failed to create or link the Xero sales item');
+    } finally {
+      setXeroItemSyncingId(null);
+    }
+  };
 
   const rateSummary = useMemo(() => {
     return aircraft.flatMap(item => (item.rates || []).map(rate => ({
@@ -378,7 +447,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         <div className="space-y-3">
           {activeFlightTypes.map((type, index) => (
             <div key={type.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
-              <div className="grid grid-cols-1 xl:grid-cols-[auto_1fr_1.3fr_1fr_auto] gap-3 items-start">
+              <div className="grid grid-cols-1 xl:grid-cols-[auto_1fr_1.2fr_1fr_auto] gap-3 items-start">
                 <div className="flex items-center gap-1 pt-2 text-gray-400">
                   <GripVertical className="h-4 w-4" />
                   <div className="flex flex-col">
@@ -422,6 +491,58 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                 )}
               </div>
 
+              <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_auto_auto] gap-3 items-start">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Accounting Item code
+                  </label>
+                  <input
+                    value={type.xeroItemCode ?? ''}
+                    onChange={event => updateFlightType(type.id, { xeroItemCode: event.target.value.toUpperCase() })}
+                    disabled={!canEdit}
+                    className={inputClass}
+                    placeholder={xeroConnected ? 'Example: DUAL_FLIGHT' : 'Connect Xero to use item codes'}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    If set, Xero invoices for this flight type will use this sales item code.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void ensureFlightTypeXeroItem(type)}
+                  disabled={!canEdit || !xeroConnected || xeroItemSyncingId === type.id || !(type.xeroItemCode || '').trim()}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {xeroItemSyncingId === type.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                  Create / link in Xero
+                </button>
+                <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600">
+                  {(type.xeroItemCode || '').trim() ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Lock className="h-4 w-4 text-gray-400" />}
+                  {(type.xeroItemCode || '').trim() ? 'Invoice item ready' : 'No item code set'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-3 items-start">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Ground session hourly rate
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={type.groundSessionHourlyRate ?? 0}
+                    onChange={event => updateFlightType(type.id, { groundSessionHourlyRate: Number(event.target.value || 0) })}
+                    disabled={!canEdit}
+                    className={inputClass}
+                    placeholder="0.00"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Used when an instructor-only ground session is logged against this booking type.
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Allowed roles</p>
                 <div className="flex flex-wrap gap-2">
@@ -446,6 +567,50 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900">Ground Session Descriptions</h3>
+            <p className="text-sm text-gray-500 mt-1">These appear in the ground-session logging dropdown for instructors and admins.</p>
+          </div>
+          {canEdit && (
+            <button onClick={addGroundSessionDescription} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+              <Plus className="h-4 w-4" />
+              Add Description
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          {draftGroundSessionDescriptions.map((description, index) => (
+            <div key={`ground-description-${index}`} className="rounded-lg border border-gray-200 bg-gray-50 p-4 flex items-center gap-3">
+              <input
+                value={description}
+                onChange={event => updateGroundSessionDescription(index, event.target.value)}
+                disabled={!canEdit}
+                className={inputClass}
+                placeholder="Description"
+              />
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => removeGroundSessionDescription(index)}
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-md"
+                  title="Remove description"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
+          {draftGroundSessionDescriptions.length === 0 && (
+            <div className="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-500">
+              No ground-session descriptions yet.
+            </div>
+          )}
         </div>
       </section>
 

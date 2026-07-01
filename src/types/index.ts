@@ -110,16 +110,19 @@ export interface Booking {
   pilotId: string;
   studentId?: string;
   instructorId?: string;
-  aircraftId: string;
+  aircraftId?: string;
   startTime: Date;
   endTime: Date;
   paymentType: string;
   notes?: string;
   status: 'confirmed' | 'cancelled' | 'completed' | 'no-show' | 'pending_approval';
+  bookingKind?: 'flight' | 'ground';
   hasConflict?: boolean;
   deletedAt?: Date;
   flightLog?: FlightLog;
   flight_logged?: boolean;
+  groundSessionLog?: GroundSessionLog;
+  ground_session_logged?: boolean;
   flightTypeId?: string;
   trialFlightVoucherId?: string;
   hirerName?: string;
@@ -334,6 +337,49 @@ export interface LessonAssessmentCriterion {
   passingGrade: string;
 }
 
+export type LessonStudyAssetType = 'document' | 'image';
+
+export interface LessonStudyAsset {
+  id: string;
+  type: LessonStudyAssetType;
+  title: string;
+  storagePath: string;
+  fileName: string;
+  mimeType?: string | null;
+  sizeBytes?: number;
+  notes?: string;
+}
+
+export interface GroundSessionDescriptionOption {
+  id: string;
+  name: string;
+  description?: string;
+  active: boolean;
+  displayOrder: number;
+}
+
+export interface GroundSessionLog {
+  id: string;
+  bookingId?: string;
+  studentId: string;
+  instructorId: string;
+  startTime: string;
+  endTime: string;
+  durationHours: number;
+  flightTypeId?: string;
+  paymentType: string;
+  descriptionOptionId?: string;
+  descriptionText?: string;
+  notes?: string;
+  calculatedCost: number;
+  paymentStatus: 'free' | 'pending' | 'paid';
+  xeroInvoiceId?: string | null;
+  xeroInvoiceNumber?: string | null;
+  xeroInvoiceStatus?: string | null;
+  xeroSyncStatus?: string | null;
+  xeroSyncError?: string | null;
+}
+
 export interface TrainingLesson {
   id: string;
   sequenceId: string;
@@ -349,6 +395,8 @@ export interface TrainingLesson {
   objective: string;
   flightExercises: string;
   theory: string;
+  studyGuide?: string;
+  studyAssets?: LessonStudyAsset[];
   /** Legacy per-lesson criteria — kept for backwards compat, prefer course.assessmentCriteria */
   assessmentCriteria: LessonAssessmentCriterion[];
   /** Map of course criterion id → passing grade for this specific lesson */

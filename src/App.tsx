@@ -48,6 +48,7 @@ const TrialVoucherSalesPage = lazy(() => import('./components/Vouchers/TrialVouc
 const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
 
 const buildCopiedBookingFormData = (booking: Booking) => ({
+  bookingKind: booking.bookingKind || 'flight',
   date: format(new Date(booking.startTime), 'yyyy-MM-dd'),
   endDate: format(new Date(booking.endTime), 'yyyy-MM-dd'),
   startTime: format(new Date(booking.startTime), 'HH:mm'),
@@ -451,12 +452,13 @@ const KioskAuthenticatedRoute: React.FC<{
         await updateBooking(editingBooking.id, {
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
-          aircraftId: bookingData.aircraftId,
+          aircraftId: bookingData.bookingKind === 'ground' ? undefined : bookingData.aircraftId,
           startTime,
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
           status: editingBooking.status,
+          bookingKind: bookingData.bookingKind || 'flight',
           flightTypeId: bookingData.flightTypeId || undefined,
           isGuestBooking: bookingData.isGuestBooking || false,
           guestName: bookingData.guestName || undefined,
@@ -475,12 +477,13 @@ const KioskAuthenticatedRoute: React.FC<{
           await addBooking({
             studentId: bookingData.studentId,
             instructorId: bookingData.instructorId || undefined,
-            aircraftId: bookingData.aircraftId,
+            aircraftId: bookingData.bookingKind === 'ground' ? undefined : bookingData.aircraftId,
             startTime: occurrenceStart,
             endTime: occurrenceEnd,
             paymentType: bookingData.paymentType,
             notes: bookingData.notes,
             status: bookingData.status || 'confirmed' as const,
+            bookingKind: bookingData.bookingKind || 'flight',
             flightTypeId: bookingData.flightTypeId || undefined,
             isGuestBooking: bookingData.isGuestBooking || false,
             guestName: bookingData.guestName || undefined,

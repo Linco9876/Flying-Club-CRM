@@ -19,12 +19,17 @@ const isSchemaCacheError = (error: unknown) => {
   return message.includes('schema cache') || message.includes('could not find');
 };
 
-export const useStudents = () => {
+interface UseStudentsOptions {
+  participateInPageLoad?: boolean;
+}
+
+export const useStudents = (options?: UseStudentsOptions) => {
+  const participateInPageLoad = options?.participateInPageLoad ?? true;
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   usePageLoadState(
-    loading,
+    participateInPageLoad && loading,
     'Loading members',
     'Preparing member profiles, roles, endorsements and contact details...'
   );

@@ -7,6 +7,16 @@ import toast from 'react-hot-toast';
 
 type BillingHook = ReturnType<typeof useBillingAccounts>;
 
+interface XeroMatchCandidate {
+  id: string;
+  kind: 'overpayment' | 'prepayment';
+  amount: number;
+  status: string;
+  date: string | null;
+  reference: string | null;
+  exactAmount: boolean;
+}
+
 const XERO_SALES_INVOICE_HEADERS = [
   '*ContactName',
   'EmailAddress',
@@ -168,7 +178,7 @@ const SplitPaymentModal: React.FC<{
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h4 className="text-sm font-semibold text-gray-900">Prepaid credit</h4>
-                <p className="text-xs text-gray-500">Available Xero credit: ${pilotBalance.toFixed(2)}</p>
+                <p className="text-xs text-gray-500">Available verified prepaid balance: ${pilotBalance.toFixed(2)}</p>
               </div>
               <button
                 type="button"
@@ -403,8 +413,107 @@ const RejectModal: React.FC<{
   );
 };
 
+const XeroMatchModal: React.FC<{
+  row: {
+    id: string;
+    userName: string;
+    amount: number | null;
+    description: string;
+  };
+  loading: boolean;
+  candidates: XeroMatchCandidate[];
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+  onMatch: (candidate: XeroMatchCandidate) => Promise<void>;
+}> = ({ row, loading, candidates, onClose, onRefresh, onMatch }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+        <div className="border-b border-gray-100 p-5">
+          <h3 className="text-base font-semibold text-gray-900">Match top-up to Xero credit</h3>
+          <p className="mt-1 text-sm text-gray-500">{row.userName}</p>
+          <p className="mt-2 text-sm text-gray-600">{row.description}</p>
+          <p className="mt-1 text-sm font-semibold text-emerald-700">Amount ${Math.abs(row.amount ?? 0).toFixed(2)}</p>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto p-5">
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Refresh matches
+            </button>
+          </div>
+          {loading ? (
+            <div className="flex items-center justify-center py-10 text-sm text-gray-500">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Looking for matching Xero credits...
+            </div>
+          ) : candidates.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500">
+              No matching Xero overpayments or prepayments were found yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {candidates.map(candidate => (
+                <div key={`${candidate.kind}-${candidate.id}`} className="rounded-lg border border-gray-200 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                          {candidate.kind === 'overpayment' ? 'Overpayment' : 'Prepayment'}
+                        </span>
+                        {candidate.exactAmount && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            Exact amount
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-2 text-sm font-semibold text-gray-900">${candidate.amount.toFixed(2)}</p>
+                      <p className="text-xs text-gray-500">
+                        {[candidate.date ? format(parseISO(candidate.date), 'dd MMM yyyy') : null, candidate.reference].filter(Boolean).join(' • ') || candidate.id}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onMatch(candidate)}
+                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    >
+                      Link this credit
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end border-t border-gray-100 p-5">
+          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { transactions, unpaidFlights, pilotAccounts, loading, createFlightPaymentCheckout, chargeFlightSavedCard, applyPilotAccountPayment, verifyTransaction, rejectTransaction } = billing;
+  const {
+    transactions,
+    unpaidFlights,
+    pilotAccounts,
+    loading,
+    createFlightPaymentCheckout,
+    chargeFlightSavedCard,
+    applyPilotAccountPayment,
+    verifyTransaction,
+    rejectTransaction,
+    retryTransactionXeroSync,
+    listTransactionXeroMatches,
+    matchTransactionToXeroCredit,
+    unlinkTransactionXeroCredit,
+  } = billing;
   const [searchTerm, setSearchTerm] = useState('');
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
@@ -414,6 +523,9 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [creatingStripeCheckoutId, setCreatingStripeCheckoutId] = useState<string | null>(null);
   const [chargingSavedCardId, setChargingSavedCardId] = useState<string | null>(null);
+  const [xeroMatchRowId, setXeroMatchRowId] = useState<string | null>(null);
+  const [xeroMatchLoading, setXeroMatchLoading] = useState(false);
+  const [xeroMatchCandidates, setXeroMatchCandidates] = useState<XeroMatchCandidate[]>([]);
   const [paymentChoice, setPaymentChoice] = useState<{
     flightLogId: string | null;
     userId: string;
@@ -480,10 +592,10 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         isTopup: t.type === 'topup',
         verifiedStatus: t.verifiedStatus,
         rejectionNotes: t.rejectionNotes,
-        xeroSyncStatus: null,
-        xeroSyncError: null,
+        xeroSyncStatus: t.xeroSyncStatus,
+        xeroSyncError: t.xeroSyncError,
         xeroInvoiceId: null,
-        xeroInvoiceNumber: null,
+        xeroInvoiceNumber: t.xeroBankTransactionId,
         xeroPaymentId: null,
       })),
       ...unpaidFlights.map(f => ({
@@ -601,6 +713,21 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     }
   };
 
+  const loadXeroMatches = async (rowId: string) => {
+    setXeroMatchLoading(true);
+    try {
+      const result = await listTransactionXeroMatches(rowId);
+      setXeroMatchCandidates(result.candidates || []);
+    } finally {
+      setXeroMatchLoading(false);
+    }
+  };
+
+  const handleOpenXeroMatch = async (rowId: string) => {
+    setXeroMatchRowId(rowId);
+    await loadXeroMatches(rowId);
+  };
+
   const handleCreateStripeCheckout = async (flightLogId: string) => {
     const checkoutWindow = window.open('about:blank', '_blank');
     if (checkoutWindow) {
@@ -642,6 +769,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   };
 
   const rejectingRow = rejectingId ? allRows.find(r => r.id === rejectingId) : null;
+  const xeroMatchRow = xeroMatchRowId ? allRows.find(r => r.id === xeroMatchRowId) : null;
 
   const statusBadge = (row: typeof allRows[0]) => {
     if (row.rowType === 'unpaid') {
@@ -653,6 +781,30 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     }
     if (row.isTopup) {
       if (row.verifiedStatus === 'verified') {
+        if (row.xeroSyncStatus === 'matched' || row.xeroSyncStatus === 'synced') {
+          return (
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                <ShieldCheck className="h-3 w-3" /> Verified
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+                Xero linked
+              </span>
+            </div>
+          );
+        }
+        if (row.xeroSyncStatus === 'awaiting_match' || row.xeroSyncStatus === 'needs_review' || row.xeroSyncStatus === 'queued') {
+          return (
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                <ShieldCheck className="h-3 w-3" /> Verified
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                Xero pending
+              </span>
+            </div>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
             <ShieldCheck className="h-3 w-3" /> Verified
@@ -743,6 +895,41 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
             <XCircle className="h-3.5 w-3.5" />
             Reject
           </button>
+        </div>
+      )}
+      {row.isTopup && row.verifiedStatus === 'verified' && (
+        <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
+          {(row.xeroSyncStatus === 'awaiting_match' || row.xeroSyncStatus === 'needs_review' || row.xeroSyncStatus === 'queued' || !row.xeroSyncStatus) && (
+            <>
+              <button
+                onClick={() => handleOpenXeroMatch(row.id)}
+                className={`flex items-center justify-center gap-1 rounded-lg bg-sky-700 text-xs font-medium text-white hover:bg-sky-800 transition-colors ${
+                  compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Match Xero
+              </button>
+              <button
+                onClick={() => retryTransactionXeroSync(row.id)}
+                className={`flex items-center justify-center gap-1 rounded-lg bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors ${
+                  compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+                }`}
+              >
+                Retry
+              </button>
+            </>
+          )}
+          {(row.xeroSyncStatus === 'matched' || row.xeroSyncStatus === 'synced') && (
+            <button
+              onClick={() => unlinkTransactionXeroCredit(row.id)}
+              className={`flex items-center justify-center gap-1 rounded-lg bg-gray-100 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors ${
+                compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
+              }`}
+            >
+              Unlink Xero
+            </button>
+          )}
         </div>
       )}
     </>
@@ -928,7 +1115,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
                   )}
                 </div>
 
-                {(row.rowType === 'unpaid' || (row.isTopup && row.verifiedStatus === 'pending')) && (
+                {(row.rowType === 'unpaid' || row.isTopup) && (
                   <div className="mt-3">
                     {rowActions(row, true)}
                   </div>
@@ -1099,6 +1286,24 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           onPilotAccountPayment={applyPilotAccountPayment}
           onStripeCheckout={handleCreateSplitStripeCheckout}
           onSavedCardPayment={chargeFlightSavedCard}
+        />
+      )}
+
+      {xeroMatchRow && (
+        <XeroMatchModal
+          row={xeroMatchRow}
+          loading={xeroMatchLoading}
+          candidates={xeroMatchCandidates}
+          onClose={() => {
+            setXeroMatchRowId(null);
+            setXeroMatchCandidates([]);
+          }}
+          onRefresh={() => loadXeroMatches(xeroMatchRow.id)}
+          onMatch={async candidate => {
+            await matchTransactionToXeroCredit(xeroMatchRow.id, candidate.id, candidate.kind);
+            setXeroMatchRowId(null);
+            setXeroMatchCandidates([]);
+          }}
         />
       )}
 

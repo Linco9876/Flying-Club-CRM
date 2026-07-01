@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { AlertTriangle, X, Clock, Plane, User, CreditCard } from 'lucide-react';
+import { format } from 'date-fns';
+import { AlertTriangle, Loader2, X, Clock, Plane, User, CreditCard } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -21,6 +22,7 @@ interface BookingFormProps {
   booking?: Booking | null;
   isEdit?: boolean;
   prefilledData?: {
+    bookingKind?: 'flight' | 'ground';
     date?: string;
     startTime?: string;
     endTime?: string;
@@ -55,10 +57,10 @@ interface GuestVoucherOption {
 
 const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, prefilledData }) => {
   const { user } = useAuth();
-  const { aircraft, loading: aircraftLoading } = useAircraft();
+  const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
   const { users, getInstructors, loading: usersLoading } = useUsers();
-  const { students } = useStudents();
-  const { flightLogs } = useFlightLogs();
+  const { students, loading: studentsLoading } = useStudents({ participateInPageLoad: false });
+  const { flightLogs, loading: flightLogsLoading } = useFlightLogs(undefined, { participateInPageLoad: false });
   const { settings: safetySettings } = useSafetySettings();
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes, paymentMethods } = useBillingSettings();
@@ -71,6 +73,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
     if (booking) {
       return {
+        bookingKind: booking.bookingKind || 'flight',
         studentId: booking.studentId || '',
         date: format(new Date(booking.startTime), 'yyyy-MM-dd'),
         endDate: format(new Date(booking.endTime), 'yyyy-MM-dd'),
@@ -90,6 +93,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
 
     return {
+      bookingKind: prefilledData?.bookingKind || 'flight',
       studentId: prefilledData?.studentId || user?.id || '',
       date: prefilledData?.date || today,
       endDate: prefilledData?.endDate || prefilledData?.date || today,
@@ -168,9 +172,12 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const userRole = user?.role || 'student';
   const isAdminUser = Boolean(user?.role === 'admin' || user?.roles?.includes('admin'));
   const canCreateGuestBooking = isAdminUser;
+  const canChooseBookingKind = ['admin', 'instructor', 'senior_instructor'].includes(userRole) || Boolean(user?.roles?.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role)));
+  const isGroundSessionBooking = formData.bookingKind === 'ground';
   const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
   const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
-  const isLoading = aircraftLoading || usersLoading;
+  const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading;
+  const showModalLoader = isLoading || isSubmitting;
   const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
   const selectedPilot = users.find(item => item.id === formData.studentId);
   const getPilotSearchLabel = (member: { name?: string; email?: string; id: string }) =>
@@ -333,6 +340,23 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   }, [flightTypes, formData.flightTypeId, formData.isGuestBooking, formData.paymentType, recurrence.enabled]);
 
   React.useEffect(() => {
+    if (!isGroundSessionBooking) return;
+    if (!formData.isGuestBooking && !formData.trialFlightVoucherId && !formData.aircraftId) return;
+
+    setFormData(prev => ({
+      ...prev,
+      isGuestBooking: false,
+      guestName: '',
+      guestEmail: '',
+      guestPhone: '',
+      trialFlightVoucherId: '',
+      aircraftId: '',
+      paymentType: '',
+      flightTypeId: '',
+    }));
+  }, [formData.aircraftId, formData.isGuestBooking, formData.trialFlightVoucherId, isGroundSessionBooking]);
+
+  React.useEffect(() => {
     if (!formData.flightTypeId || formData.trialFlightVoucherId) return;
     const selectedFlightType = flightTypes.find(ft => ft.id === formData.flightTypeId);
     if (!isPrepaidLikeFlightType(selectedFlightType?.name)) return;
@@ -346,6 +370,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     const userRole = user?.role || 'student';
 
     if (formData.isGuestBooking) {
+      if (isGroundSessionBooking) {
+        toast.error('Ground sessions are for members only');
+        return;
+      }
       if (!canCreateGuestBooking) {
         toast.error('Only admins can create guest or casual bookings');
         return;
@@ -385,7 +413,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         return;
       }
     }
-    if (isFieldRequired('aircraft', userRole) && !formData.aircraftId) {
+    if (!isGroundSessionBooking && isFieldRequired('aircraft', userRole) && !formData.aircraftId) {
       toast.error('Aircraft is required');
       return;
     }
@@ -405,25 +433,27 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       toast.error('End time is required');
       return;
     }
-    if (isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.paymentType) {
+    if (!isGroundSessionBooking && isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.paymentType) {
       toast.error('Payment type is required');
       return;
     }
     const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
     const isStudentOnlyUser = userRoles.includes('student') && !userRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
-    if (isStudentOnlyUser && !formData.instructorId) {
+    if ((isStudentOnlyUser || isGroundSessionBooking) && !formData.instructorId) {
       toast.error('Students need an instructor assigned. Pilots can book aircraft solo.');
       return;
     }
 
     const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
-    if (selectedAircraft?.isArchived) {
-      toast.error('This aircraft is archived and cannot be booked');
-      return;
-    }
-    if (selectedAircraft && selectedAircraft.status !== 'serviceable') {
-      toast.error('Selected aircraft is not serviceable');
-      return;
+    if (!isGroundSessionBooking) {
+      if (selectedAircraft?.isArchived) {
+        toast.error('This aircraft is archived and cannot be booked');
+        return;
+      }
+      if (selectedAircraft && selectedAircraft.status !== 'serviceable') {
+        toast.error('Selected aircraft is not serviceable');
+        return;
+      }
     }
 
     const startDateTime = new Date(`${formData.date}T${formData.startTime}`);
@@ -456,7 +486,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (isSubmitting || isLoading) return;
     setIsSubmitting(true);
     try {
-      const normalisedBookingData = data.trialFlightVoucherId
+      const normalisedBookingData = data.bookingKind === 'ground'
+        ? {
+            ...data,
+            aircraftId: '',
+            paymentType: '',
+            flightTypeId: '',
+            trialFlightVoucherId: '',
+          }
+        : data.trialFlightVoucherId
         ? { ...data, flightTypeId: '', paymentType: 'Gift Voucher' }
         : {
             ...data,
@@ -474,7 +512,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   };
 
   const getEndorsementWarning = (data: typeof formData) => {
-    if (data.instructorId) return null;
+    if (data.instructorId || data.bookingKind === 'ground') return null;
 
     const selectedAircraft = aircraft.find(a => a.id === data.aircraftId);
     const requiredEndorsements = (selectedAircraft?.requiredEndorsementTypes?.length
@@ -586,7 +624,24 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   return (
     <>
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-xs w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="relative bg-white rounded-xl shadow-2xl max-w-xs w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {showModalLoader && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/88 backdrop-blur-[1px]">
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-blue-100 bg-white px-5 py-4 text-center shadow-lg">
+              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  {isSubmitting ? (isEdit ? 'Updating booking...' : 'Creating booking...') : 'Loading booking details...'}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {isSubmitting
+                    ? 'Please wait while we save the booking.'
+                    : 'Preparing members, aircraft and safety checks for this booking.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="flex justify-between items-center px-4 py-3 border-b border-gray-200 bg-gray-50">
           <h2 className="text-base font-semibold text-gray-900">
             {isEdit ? 'Edit Booking' : isCopiedBooking ? 'Copy Booking' : 'New Booking'}
@@ -601,15 +656,43 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1">
           <div className="p-4 space-y-3">
-          {isLoading && (
-            <div className="flex items-center justify-center py-3">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-            </div>
-          )}
-
           {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor') && (
             <div>
-              {canCreateGuestBooking && (
+              {(canChooseBookingKind || canCreateGuestBooking) && (
+                <>
+                {canChooseBookingKind && (
+                <div className="mb-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({
+                      ...prev,
+                      bookingKind: 'flight',
+                    }))}
+                    className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      !isGroundSessionBooking
+                        ? 'border-slate-700 bg-slate-50 text-slate-900'
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Flight booking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({
+                      ...prev,
+                      bookingKind: 'ground',
+                    }))}
+                    className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      isGroundSessionBooking
+                        ? 'border-slate-700 bg-slate-50 text-slate-900'
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Ground session
+                  </button>
+                </div>
+                )}
+                {canCreateGuestBooking && (
                 <div className="mb-2 grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -628,6 +711,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
                         : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
                     }`}
+                    disabled={isGroundSessionBooking}
                   >
                     Member booking
                   </button>
@@ -645,10 +729,13 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                         ? 'border-blue-600 bg-blue-50 text-blue-700'
                         : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
                     }`}
+                    disabled={isGroundSessionBooking}
                   >
                     Guest / casual
                   </button>
                 </div>
+                )}
+                </>
               )}
 
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -875,7 +962,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
-          {!isLoading && isFieldVisible('aircraft', userRole) && (
+          {!isLoading && isFieldVisible('aircraft', userRole) && !isGroundSessionBooking && (
           <div className="flex flex-col gap-2">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -920,7 +1007,31 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
-          {!isLoading && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && (
+          {!isLoading && isGroundSessionBooking && isFieldVisible('instructor', userRole) && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Instructor <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={formData.instructorId}
+                onChange={(e) => setFormData(prev => ({ ...prev, instructorId: e.target.value }))}
+                className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              >
+                <option value="">Select instructor</option>
+                {instructors.map(instructor => (
+                  <option key={instructor.id} value={instructor.id}>
+                    {instructor.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                Ground sessions are scheduled against the instructor only. Booking type, payment method and description are chosen when the session is logged.
+              </p>
+            </div>
+          )}
+
+          {!isLoading && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && !isGroundSessionBooking && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               <CreditCard className="h-3.5 w-3.5 inline mr-1" />
@@ -979,7 +1090,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 <span>
                   Recurring booking
                   <span className="block text-xs font-normal text-gray-500">
-                    Create repeats using the same pilot, aircraft, instructor, flight type and notes.
+                    Create repeats using the same pilot, {isGroundSessionBooking ? 'instructor' : 'aircraft, instructor, flight type'} and notes.
                   </span>
                 </span>
               </label>
