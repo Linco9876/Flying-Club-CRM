@@ -1311,10 +1311,3 @@ export const useBookings = (enabled = true) => {
     refetch: fetchBookings
   };
 };
-      const effectiveKind = bookingData.bookingKind || currentBooking?.bookingKind || 'flight';
-      if (effectiveKind === 'ground') {
-        updateData.aircraft_id = null;
-        if (!(bookingData.instructorId || currentBooking?.instructorId)) {
-          throw new Error('Instructor is required for ground sessions');
-        }
-      }
