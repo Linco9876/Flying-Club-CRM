@@ -200,6 +200,46 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
     }
   };
 
+  const syncXeroInvoiceIfAvailable = async (flightLogId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke('xero-sync', {
+        body: {
+          action: 'sync-flight-invoice',
+          flightLogId,
+        },
+      });
+
+      if (error) {
+        const message = await getSupabaseFunctionErrorMessage(error, 'Flight was logged but Xero invoice sync failed');
+        console.error('Flight Xero sync failed:', message);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Flight Xero sync invoke failed:', error);
+      return false;
+    }
+  };
+
+  const applyFlightPaymentsIfNeeded = async (flightLogId: string) => {
+    try {
+      const { error } = await supabase.functions.invoke('xero-sync', {
+        body: {
+          action: 'apply-flight-payments',
+          flightLogId,
+        },
+      });
+
+      if (error) {
+        const message = await getSupabaseFunctionErrorMessage(error, 'Flight payment sync failed');
+        console.error('Flight payment sync failed:', message);
+      }
+    } catch (error) {
+      console.error('Flight payment sync invoke failed:', error);
+    }
+  };
+
   useEffect(() => {
     fetchFlightLogs();
   }, [userId]);
@@ -606,6 +646,13 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         }
       }
 
+      if (!voucherPayment && calculatedCost > 0) {
+        const synced = await syncXeroInvoiceIfAvailable(data.id);
+        if (synced && prepaidPayment) {
+          await applyFlightPaymentsIfNeeded(data.id);
+        }
+      }
+
       await fetchFlightLogs();
       return { data: { ...data, paymentLink }, error: null };
     } catch (err) {
@@ -654,6 +701,24 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
             dual_time: Number(updatedLog.dual_time ?? 0),
             solo_time: Number(updatedLog.solo_time ?? 0),
           });
+        }
+      }
+
+      const { data: xeroCheckLog, error: xeroCheckError } = await supabase
+        .from('flight_logs')
+        .select('id, calculated_cost, total_cost, payment_type')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (xeroCheckError) throw xeroCheckError;
+
+      const xeroBillableAmount = Number(xeroCheckLog?.calculated_cost ?? xeroCheckLog?.total_cost ?? 0);
+      const xeroPaymentType = String(xeroCheckLog?.payment_type || '');
+
+      if (!isVoucherPaymentMethod(xeroPaymentType) && xeroBillableAmount > 0) {
+        const synced = await syncXeroInvoiceIfAvailable(id);
+        if (synced && isPrepaidPaymentMethod(xeroPaymentType)) {
+          await applyFlightPaymentsIfNeeded(id);
         }
       }
 

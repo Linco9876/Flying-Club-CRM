@@ -54,20 +54,37 @@ const syncPilotAccountPaymentMethod = async ({
   adminClient: SupabaseAdminClient;
   active: boolean;
 }) => {
-  const { error } = await adminClient
-    .from("payment_methods")
-    .upsert({
-      name: "Pilot Account",
-      description: "Uses the member's Xero overpayment balance when prepaid flying is allowed for that member.",
-      active,
-      allow_account_topup: false,
-      display_order: 80,
-      is_system: true,
-      system_key: "pilot_account",
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "system_key" });
+  const payload = {
+    name: "Pilot Account",
+    description: "Uses the member's Xero overpayment balance when prepaid flying is allowed for that member.",
+    active,
+    allow_account_topup: false,
+    display_order: 80,
+    is_system: true,
+    system_key: "pilot_account",
+    updated_at: new Date().toISOString(),
+  };
 
-  if (error) throw error;
+  const { data: existingRows, error: selectError } = await adminClient
+    .from("payment_methods")
+    .select("id")
+    .eq("system_key", "pilot_account");
+
+  if (selectError) throw selectError;
+
+  if ((existingRows || []).length > 0) {
+    const { error: updateError } = await adminClient
+      .from("payment_methods")
+      .update(payload)
+      .eq("system_key", "pilot_account");
+    if (updateError) throw updateError;
+    return;
+  }
+
+  const { error: insertError } = await adminClient
+    .from("payment_methods")
+    .insert(payload);
+  if (insertError) throw insertError;
 };
 
 const randomState = () => {
