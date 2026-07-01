@@ -68,7 +68,7 @@ export const PageLoadGate: React.FC<{
           {children}
         </div>
         {isLoading && (
-          <div className="absolute inset-0 z-30 bg-gray-50/95 dark:bg-[#0f1117]/95">
+          <div className="fixed inset-0 z-[120] bg-gray-50/95 dark:bg-[#0f1117]/95">
             <PortalSectionLoader
               message={primaryEntry?.message || 'Loading this page'}
               detail={primaryEntry?.detail || 'Preparing the latest club information before opening the page...'}
