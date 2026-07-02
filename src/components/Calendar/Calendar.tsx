@@ -38,6 +38,7 @@ import { useInstructorAvailability } from '../../hooks/useInstructorAvailability
 import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
+import { supabase } from '../../lib/supabase';
 import { Booking } from '../../types';
 import { CurrentTimeIndicator } from './CurrentTimeIndicator';
 import { MonthView } from './MonthView';
@@ -147,13 +148,42 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [searchParams, setSearchParams] = useSearchParams();
   const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
   const { users, loading: usersLoading } = useUsers();
+  const [publicInstructorDirectory, setPublicInstructorDirectory] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const { deleteFlightLog, getFlightLogDeleteImpact } = useFlightLogs(undefined, { participateInPageLoad: false });
   const { deleteGroundSessionLog } = useGroundSessionLogs();
   const { convertGuestBookingToMember } = useGuestBookingConversion();
-  const instructors = useMemo(
-    () => users.filter(u => u.roles?.includes('instructor') || u.roles?.includes('senior_instructor')),
-    [users]
-  );
+  const bookingInstructorDirectory = useMemo(() => {
+    const merged = new Map<string, { id: string; name: string; email: string }>();
+    bookings.forEach((booking) => {
+      if (!booking.instructorId || !booking.instructorName) return;
+      if (!merged.has(booking.instructorId)) {
+        merged.set(booking.instructorId, {
+          id: booking.instructorId,
+          name: booking.instructorName,
+          email: '',
+        });
+      }
+    });
+    return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [bookings]);
+  const instructors = useMemo(() => {
+    const fromUsers = users
+      .filter(u => u.roles?.includes('instructor') || u.roles?.includes('senior_instructor'))
+      .map((u) => ({ id: u.id, name: u.name, email: u.email, roles: u.roles }));
+    const merged = new Map<string, { id: string; name: string; email: string; roles?: string[] }>();
+    fromUsers.forEach((instructor) => merged.set(instructor.id, instructor));
+    publicInstructorDirectory.forEach((instructor) => {
+      if (!merged.has(instructor.id)) {
+        merged.set(instructor.id, { ...instructor, roles: ['instructor'] });
+      }
+    });
+    bookingInstructorDirectory.forEach((instructor) => {
+      if (!merged.has(instructor.id)) {
+        merged.set(instructor.id, { ...instructor, roles: ['instructor'] });
+      }
+    });
+    return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [bookingInstructorDirectory, publicInstructorDirectory, users]);
   const lastKnownAircraftRef = useRef<typeof aircraft>([]);
   const lastKnownUsersRef = useRef<typeof users>([]);
   const lastKnownInstructorsRef = useRef<typeof instructors>([]);
@@ -172,6 +202,42 @@ export const Calendar: React.FC<CalendarProps> = ({
   const isStaffCalendarUser = userRoles.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role));
   const isStudentOrPilotCalendarUser = userRoles.some(role => role === 'student' || role === 'pilot');
   const isLimitedCalendarUser = isStudentOrPilotCalendarUser && !isStaffCalendarUser;
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchPublicInstructorDirectory = async () => {
+      if (!isLimitedCalendarUser) {
+        setPublicInstructorDirectory([]);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.rpc('list_calendar_instructors');
+        if (error) throw error;
+        if (!cancelled) {
+          setPublicInstructorDirectory(
+            Array.isArray(data)
+              ? data.map((row: any) => ({
+                  id: row.id,
+                  name: row.name || row.email || 'Instructor',
+                  email: row.email || '',
+                }))
+              : []
+          );
+        }
+      } catch (error) {
+        console.error('Failed to load public instructor directory:', error);
+        if (!cancelled) {
+          setPublicInstructorDirectory([]);
+        }
+      }
+    };
+
+    void fetchPublicInstructorDirectory();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLimitedCalendarUser]);
   const { settings: calendarSettings, loading: calendarSettingsLoading } = useCalendarSettings();
   const { preferences: userPreferences, loading: userPreferencesLoading, updatePreferencesSilent } = useUserPreferences(user?.id || '');
   const { settings: organisationSettings, loading: organisationSettingsLoading } = useOrganisationSettings();

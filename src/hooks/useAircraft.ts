@@ -97,11 +97,9 @@ export const useAircraft = (options?: UseAircraftOptions) => {
 
       if (defectsError) throw defectsError;
 
-      const { data: ratesData, error: ratesError } = canSeePrivateAircraftData
-        ? await supabase
-            .from('aircraft_rates')
-            .select('*, flight_types(name), payment_methods(name)')
-        : { data: [], error: null };
+      const { data: ratesData, error: ratesError } = await supabase
+        .from('aircraft_rates')
+        .select('*, flight_types(name), payment_methods(name)');
 
       if (ratesError) throw ratesError;
 

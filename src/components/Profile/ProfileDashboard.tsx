@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Calendar,
@@ -15,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useDashboardStats } from '../../hooks/useDashboardStats';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
+import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { supabase } from '../../lib/supabase';
@@ -45,63 +47,106 @@ const formatHoursFromMinutes = (minutes: number) => (minutes / 60).toFixed(1);
 
 export const ProfileDashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { stats, loading } = useDashboardStats(user?.id, user?.role, 'user');
   const { settings: portalSettings } = usePortalUxSettings();
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords(user?.id);
   const { modules: trainingCourses, loading: trainingCoursesLoading } = useTrainingModules();
+  const { enrolments: courseEnrolments, loading: courseEnrolmentsLoading } = useStudentCourseEnrolments(user?.id);
   const [studentDetails, setStudentDetails] = useState<ProfileStudentDetails | null>(null);
   const [studentDetailsLoading, setStudentDetailsLoading] = useState(true);
+  const [profilePromptDismissed, setProfilePromptDismissed] = useState(false);
   const timePattern = portalSettings.time_format === '12h' ? 'h:mm a' : 'HH:mm';
   const datePattern = portalSettings.date_format || 'dd/MM/yyyy';
   const studentTrainingRecords = useMemo(
     () => trainingRecords.filter(record => record.studentId === user?.id),
     [trainingRecords, user?.id]
   );
-  const latestTrainingRecord = useMemo(() => {
-    return [...studentTrainingRecords].sort((a, b) => {
-      const aTime = (a.bookingStartTime || a.date).getTime();
-      const bTime = (b.bookingStartTime || b.date).getTime();
-      return bTime - aTime;
-    })[0];
-  }, [studentTrainingRecords]);
-  const currentCourse = useMemo(() => {
-    if (latestTrainingRecord?.courseId) {
-      const matchedCourse = trainingCourses.find(course => course.id === latestTrainingRecord.courseId);
-      if (matchedCourse) return matchedCourse;
-    }
-    const courseIdWithRecords = studentTrainingRecords.find(record => record.courseId)?.courseId;
-    return trainingCourses.find(course => course.id === courseIdWithRecords) || trainingCourses[0] || null;
-  }, [latestTrainingRecord, studentTrainingRecords, trainingCourses]);
+  const activeCourseEnrolments = useMemo(
+    () => courseEnrolments.filter((enrolment) => enrolment.status === 'active'),
+    [courseEnrolments]
+  );
+  const courseProgressSummaries = useMemo(() => {
+    return activeCourseEnrolments
+      .map((enrolment) => {
+        const course = trainingCourses.find((item) => item.id === enrolment.courseId);
+        if (!course) return null;
+
+        const courseRecords = studentTrainingRecords.filter((record) => record.courseId === course.id);
+        const completedLessonIds = new Set(courseRecords.map((record) => record.lessonId).filter(Boolean));
+        const totalLessons = course.lessons.length;
+        const percent = totalLessons > 0 ? Math.min(100, Math.round((completedLessonIds.size / totalLessons) * 100)) : 0;
+        const competentSequences = courseRecords.reduce(
+          (sum, record) => sum + (record.sequences || []).filter((sequence) => sequence.competence === 'C').length,
+          0
+        );
+        const recentRecords = [...courseRecords].sort((a, b) => {
+          const aTime = (a.bookingStartTime || a.date).getTime();
+          const bTime = (b.bookingStartTime || b.date).getTime();
+          return bTime - aTime;
+        }).slice(0, 3);
+        const latestRecord = [...courseRecords].sort((a, b) => {
+          const aTime = (a.bookingStartTime || a.date).getTime();
+          const bTime = (b.bookingStartTime || b.date).getTime();
+          return bTime - aTime;
+        })[0];
+
+        return {
+          enrolment,
+          course,
+          completedLessons: completedLessonIds.size,
+          totalLessons,
+          percent,
+          competentSequences,
+          recentRecords,
+          latestRecord,
+          isComplete: totalLessons > 0 && completedLessonIds.size >= totalLessons,
+        };
+      })
+      .filter((summary): summary is NonNullable<typeof summary> => Boolean(summary))
+      .filter((summary) => !summary.isComplete);
+  }, [activeCourseEnrolments, studentTrainingRecords, trainingCourses]);
+  const currentCourseSummary = useMemo(() => {
+    return [...courseProgressSummaries].sort((a, b) =>
+      b.percent - a.percent ||
+      b.completedLessons - a.completedLessons ||
+      a.course.title.localeCompare(b.course.title)
+    )[0] ?? null;
+  }, [courseProgressSummaries]);
+  const currentCourse = currentCourseSummary?.course ?? null;
   const nextLessonLabel = useMemo(() => {
-    if (latestTrainingRecord?.nextLesson?.trim()) return latestTrainingRecord.nextLesson.trim();
-    if (!currentCourse) return 'Not set';
-    if (!latestTrainingRecord?.lessonId) return currentCourse.lessons[0]?.name || currentCourse.lessons[0]?.sequenceTitle || 'First lesson';
-    const currentIndex = currentCourse.lessons.findIndex(lesson => lesson.id === latestTrainingRecord.lessonId);
-    const nextLesson = currentIndex >= 0 ? currentCourse.lessons[currentIndex + 1] : undefined;
-    return nextLesson?.name || nextLesson?.sequenceTitle || 'Course review / next instructor assignment';
-  }, [currentCourse, latestTrainingRecord]);
-  const trainingOverview = useMemo(() => {
-    const courseRecords = currentCourse
-      ? studentTrainingRecords.filter(record => record.courseId === currentCourse.id)
-      : studentTrainingRecords;
-    const completedLessonIds = new Set(courseRecords.map(record => record.lessonId).filter(Boolean));
-    const totalLessons = currentCourse?.lessons.length || 0;
-    const percent = totalLessons > 0 ? Math.min(100, Math.round((completedLessonIds.size / totalLessons) * 100)) : 0;
-    const competentSequences = courseRecords.reduce(
-      (sum, record) => sum + (record.sequences || []).filter(sequence => sequence.competence === 'C').length,
-      0
-    );
-    const recentRecords = [...courseRecords].sort((a, b) => {
-      const aTime = (a.bookingStartTime || a.date).getTime();
-      const bTime = (b.bookingStartTime || b.date).getTime();
-      return bTime - aTime;
-    }).slice(0, 3);
-    return { completedLessons: completedLessonIds.size, totalLessons, percent, competentSequences, recentRecords };
-  }, [currentCourse, studentTrainingRecords]);
+    if (!currentCourseSummary) return null;
+    if (currentCourseSummary.latestRecord?.nextLesson?.trim()) return currentCourseSummary.latestRecord.nextLesson.trim();
+    if (!currentCourseSummary.latestRecord?.lessonId) {
+      return currentCourseSummary.course.lessons[0]?.name || currentCourseSummary.course.lessons[0]?.sequenceTitle || null;
+    }
+    const currentIndex = currentCourseSummary.course.lessons.findIndex((lesson) => lesson.id === currentCourseSummary.latestRecord?.lessonId);
+    const nextLesson = currentIndex >= 0 ? currentCourseSummary.course.lessons[currentIndex + 1] : undefined;
+    return nextLesson?.name || nextLesson?.sequenceTitle || null;
+  }, [currentCourseSummary]);
+  const trainingOverview = currentCourseSummary
+    ? {
+        completedLessons: currentCourseSummary.completedLessons,
+        totalLessons: currentCourseSummary.totalLessons,
+        percent: currentCourseSummary.percent,
+        competentSequences: currentCourseSummary.competentSequences,
+        recentRecords: currentCourseSummary.recentRecords,
+      }
+    : null;
   const totalDualMinutes = studentTrainingRecords.reduce((sum, record) => sum + Number(record.dualTimeMin || 0), 0);
   const totalSoloMinutes = studentTrainingRecords.reduce((sum, record) => sum + Number(record.soloTimeMin || 0), 0);
   const totalFlightMinutes = totalDualMinutes + totalSoloMinutes;
   const isStudentUser = user?.role === 'student';
+  const missingProfileFields = useMemo(() => {
+    if (!user) return [];
+    const missing: string[] = [];
+    if (!(user.mobilePhone || user.phone || user.homePhone)) missing.push('phone');
+    if (!user.dateOfBirth) missing.push('date of birth');
+    if (!user.address?.trim()) missing.push('address');
+    if (!studentDetails?.emergencyContact?.name?.trim()) missing.push('emergency contact');
+    return missing;
+  }, [studentDetails?.emergencyContact?.name, user]);
+  const shouldShowProfilePrompt = Boolean(user && !profilePromptDismissed && missingProfileFields.length > 0);
 
   useEffect(() => {
     let mounted = true;
@@ -153,7 +198,7 @@ export const ProfileDashboard: React.FC = () => {
   }, [user?.id]);
 
   usePageLoadState(
-    loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading,
+    loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading || courseEnrolmentsLoading,
     'Loading your profile',
     'Preparing your schedule, training progress, compliance details and reminders...'
   );
@@ -212,7 +257,7 @@ export const ProfileDashboard: React.FC = () => {
     ];
   }, [datePattern, isStudentUser, studentDetails]);
 
-  if (loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading) {
+  if (loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading || courseEnrolmentsLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -223,6 +268,34 @@ export const ProfileDashboard: React.FC = () => {
   return (
     <div className="min-h-full bg-transparent p-3 sm:p-6">
       <div className="mx-auto max-w-6xl space-y-4">
+        {shouldShowProfilePrompt && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-md shadow-blue-100/70 dark:border-blue-500/20 dark:bg-blue-500/10 dark:shadow-none">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-blue-950 dark:text-blue-100">Complete your profile</h2>
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  Fill in your contact and emergency details so your account is ready to use properly.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setProfilePromptDismissed(true)}
+                  className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-800 hover:bg-blue-100 dark:border-blue-400/30 dark:bg-transparent dark:text-blue-100 dark:hover:bg-blue-500/10"
+                >
+                  Later
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/settings?tab=account-info')}
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Update My Info
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <section className="relative h-[24rem] overflow-hidden rounded-2xl border border-gray-200 bg-[#dce8f6] shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#262b33] sm:h-[26rem] lg:h-[28rem]">
           <div className="absolute inset-0">
             {user?.coverPhoto && (
@@ -275,14 +348,18 @@ export const ProfileDashboard: React.FC = () => {
               {stats.recentBookingsToday.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-[#363b45] dark:text-gray-400">
                   <p className="text-center">No bookings scheduled for today.</p>
-                  <p className="mt-3 text-center text-xs font-semibold text-blue-700 dark:text-blue-200">Next lesson: {nextLessonLabel}</p>
+                  {nextLessonLabel && (
+                    <p className="mt-3 text-center text-xs font-semibold text-blue-700 dark:text-blue-200">Next lesson: {nextLessonLabel}</p>
+                  )}
                   {stats.nextBooking && (
                     <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 dark:border-[#2c2f36] dark:bg-[#11141a]">
                       <p className="text-sm font-semibold text-gray-950 dark:text-gray-100">
                         Next booking: {format(stats.nextBooking.startTime, datePattern)} at {format(stats.nextBooking.startTime, timePattern)}
                       </p>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{stats.nextBooking.aircraftRegistration}</p>
-                      <p className="mt-1 text-xs font-semibold text-blue-700 dark:text-blue-200">Next lesson: {nextLessonLabel}</p>
+                      {nextLessonLabel && (
+                        <p className="mt-1 text-xs font-semibold text-blue-700 dark:text-blue-200">Next lesson: {nextLessonLabel}</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -298,9 +375,11 @@ export const ProfileDashboard: React.FC = () => {
                           {booking.studentName} - {booking.aircraftRegistration}
                           {booking.instructorName ? ` - ${booking.instructorName}` : ''}
                         </p>
-                        <p className="mt-1 text-xs font-semibold text-blue-700 dark:text-blue-200">
-                          Next lesson: {nextLessonLabel}
-                        </p>
+                        {nextLessonLabel && (
+                          <p className="mt-1 text-xs font-semibold text-blue-700 dark:text-blue-200">
+                            Next lesson: {nextLessonLabel}
+                          </p>
+                        )}
                       </div>
                       <Plane className="h-4 w-4 flex-shrink-0 text-gray-400" />
                     </div>
@@ -309,12 +388,12 @@ export const ProfileDashboard: React.FC = () => {
               )}
             </section>
 
-            {isStudentUser && (
+            {isStudentUser && currentCourse && trainingOverview && (
               <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
                 <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Training Progress Overview</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{currentCourse?.title || 'No course selected'}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{currentCourse.title}</p>
                   </div>
                   <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
                     {trainingOverview.percent}%

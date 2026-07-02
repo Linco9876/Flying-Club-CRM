@@ -63,13 +63,14 @@ export const AircraftProfilePage: React.FC = () => {
 
   const selectedAircraft = aircraft.find(item => item.id === aircraftId);
   const isAdmin = hasAnyRole(user, ['admin']);
+  const isStudentOrPilot = hasAnyRole(user, ['student', 'pilot']) && !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canManageAircraft = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
 
   useEffect(() => {
-    if (!isAdmin && (activeTab === 'documents' || activeTab === 'pricing')) {
-      setActiveTab('flight-log');
+    if (isStudentOrPilot && (activeTab === 'flight-log' || activeTab === 'milestones')) {
+      setActiveTab('documents');
     }
-  }, [activeTab, isAdmin]);
+  }, [activeTab, isStudentOrPilot]);
 
   const fetchDocuments = async () => {
     if (!aircraftId) return;
@@ -254,13 +255,16 @@ export const AircraftProfilePage: React.FC = () => {
     return <div className="p-3 text-sm text-gray-500 sm:p-6">Aircraft not found.</div>;
   }
 
-  const tabs: Array<{ id: AircraftProfileTab; label: string; icon: React.ReactNode; adminOnly?: boolean }> = [
-    { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" />, adminOnly: true },
+  const tabs: Array<{ id: AircraftProfileTab; label: string; icon: React.ReactNode; staffOnly?: boolean }> = [
+    { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" /> },
     { id: 'flight-log', label: 'Flight Log', icon: <Plane className="h-4 w-4" /> },
     { id: 'milestones', label: 'Milestones', icon: <Wrench className="h-4 w-4" /> },
     { id: 'bookings', label: 'Bookings', icon: <Calendar className="h-4 w-4" /> },
-    { id: 'pricing', label: 'Pricing', icon: <Settings className="h-4 w-4" />, adminOnly: true },
-  ].filter(tab => !tab.adminOnly || isAdmin);
+    { id: 'pricing', label: 'Pricing', icon: <Settings className="h-4 w-4" /> },
+  ].filter(tab => {
+    if (isStudentOrPilot) return ['documents', 'bookings', 'pricing'].includes(tab.id);
+    return !tab.staffOnly || canManageAircraft;
+  });
 
   return (
     <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
@@ -527,8 +531,8 @@ export const AircraftProfilePage: React.FC = () => {
                         <p className="mt-1 text-xs text-gray-500">to {booking.endTime.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}</p>
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">{student?.name || 'Unknown pilot/student'}</p>
-                        <p className="mt-1 text-xs text-gray-500">{instructor ? `Instructor: ${instructor.name}` : 'No instructor'} | {booking.notes || 'No notes'}</p>
+                        <p className="text-sm font-semibold text-gray-900">{booking.hirerName || student?.name || 'Unknown pilot/student'}</p>
+                        <p className="mt-1 text-xs text-gray-500">{booking.instructorName || instructor?.name ? `Instructor: ${booking.instructorName || instructor?.name}` : 'No instructor'} | {booking.notes || 'No notes'}</p>
                       </div>
                       <div className="text-right">
                         <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold capitalize text-gray-700">{booking.status.replace('_', ' ')}</span>
@@ -547,7 +551,9 @@ export const AircraftProfilePage: React.FC = () => {
         <div className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-white p-5">
             <h2 className="text-lg font-semibold text-gray-900">Aircraft Pricing</h2>
-            <p className="text-sm text-gray-500">Define the aircraft price per flight type. Admin only.</p>
+            <p className="text-sm text-gray-500">
+              {isAdmin ? 'Define the aircraft price per flight type.' : 'Current aircraft pricing by flight type.'}
+            </p>
           </div>
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
             {ratesLoading ? (
