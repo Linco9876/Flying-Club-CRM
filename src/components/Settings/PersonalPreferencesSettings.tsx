@@ -3,20 +3,27 @@ import {
   Bell,
   CalendarDays,
   Camera,
+  CheckCircle2,
   Eye,
+  FileUp,
   Globe,
   Loader2,
   Lock,
   Palette,
+  Plus,
   Phone,
   Shield,
   Trash2,
   User,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
+import { Endorsement } from '../../types';
+import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 
@@ -51,8 +58,20 @@ interface ProfileFormData {
   confirmPassword: string;
 }
 
+interface AccountEndorsement extends Pick<Endorsement, 'id' | 'type' | 'dateObtained' | 'expiryDate' | 'isActive'> {}
+
+interface PendingEndorsementDraft {
+  localId: string;
+  type: string;
+  dateObtained: string;
+  expiryDate: string;
+  isActive: boolean;
+  proofFile: File | null;
+}
+
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
 const AVATAR_BUCKET = 'user-avatars';
+const STUDENT_DOCUMENTS_BUCKET = 'student-documents';
 const MAX_SOURCE_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_UPLOAD_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -81,6 +100,24 @@ const blankProfile: ProfileFormData = {
   confirmPassword: '',
 };
 
+const createLocalId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const safeFilename = (filename: string) => filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+const createPendingEndorsement = (): PendingEndorsementDraft => ({
+  localId: createLocalId(),
+  type: '',
+  dateObtained: '',
+  expiryDate: '',
+  isActive: true,
+  proofFile: null,
+});
+
 export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsProps> = ({
   canEdit,
   onFormChange,
@@ -90,6 +127,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 }) => {
   const { user, refreshUser } = useAuth();
   const { aircraft } = useAircraft();
+  const { settings: trainingSettings } = useTrainingSettings();
   const { preferences, loading, error, updatePreferences } = useUserPreferences(user?.id || '');
   const [activeTab, setActiveTab] = useState<AccountTab>('info');
   const selectedTab = activeAccountTab || activeTab;
@@ -101,6 +139,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const [avatarPreview, setAvatarPreview] = useState('');
   const [coverPreview, setCoverPreview] = useState('');
   const [imageUploading, setImageUploading] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [existingEndorsements, setExistingEndorsements] = useState<AccountEndorsement[]>([]);
+  const [pendingEndorsements, setPendingEndorsements] = useState<PendingEndorsementDraft[]>([]);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const [preferenceForm, setPreferenceForm] = useState<PreferenceFormData>(() => {
@@ -138,13 +180,26 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
     try {
       setProfileLoading(true);
-      const [{ data: userData, error: userError }, { data: studentData, error: studentError }] = await Promise.all([
+      const [
+        { data: userData, error: userError },
+        { data: studentData, error: studentError },
+        { data: endorsementsData, error: endorsementsError },
+        { data: authData, error: authError },
+      ] = await Promise.all([
         supabase.from('users').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('students').select('*').eq('id', user.id).maybeSingle(),
+        supabase
+          .from('endorsements')
+          .select('id, type, date_obtained, expiry_date, is_active')
+          .eq('student_id', user.id)
+          .order('date_obtained', { ascending: false }),
+        supabase.auth.getUser(),
       ]);
 
       if (userError) throw userError;
       if (studentError) throw studentError;
+      if (endorsementsError) throw endorsementsError;
+      if (authError) throw authError;
 
       const nextProfile: ProfileFormData = {
         ...blankProfile,
@@ -167,6 +222,15 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setSavedProfile(nextProfile);
       setAvatarFile(null);
       setCoverFile(null);
+      setEmailVerified(Boolean(authData.user?.email_confirmed_at));
+      setExistingEndorsements((endorsementsData || []).map((endorsement: any) => ({
+        id: endorsement.id,
+        type: endorsement.type,
+        dateObtained: new Date(endorsement.date_obtained),
+        expiryDate: endorsement.expiry_date ? new Date(endorsement.expiry_date) : undefined,
+        isActive: Boolean(endorsement.is_active),
+      })));
+      setPendingEndorsements([]);
     } catch (err: any) {
       console.error('Failed to load account settings:', err);
       toast.error(err.message || 'Failed to load account settings');
@@ -229,7 +293,23 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       delete (window as any)[globalSaveKey];
       delete (window as any)[globalCancelKey];
     };
-  }, [profileForm, savedProfile, preferenceForm, preferences, updatePreferences, user?.id, saveKey, avatarFile, coverFile]);
+  }, [
+    profileForm,
+    savedProfile,
+    preferenceForm,
+    preferences,
+    updatePreferences,
+    user?.id,
+    user?.role,
+    user?.roles,
+    saveKey,
+    avatarFile,
+    coverFile,
+    emailVerified,
+    existingEndorsements,
+    pendingEndorsements,
+    trainingSettings.pilotStatusEndorsementTypes,
+  ]);
 
   const safeImageFilename = (filename: string) => filename
     .toLowerCase()
@@ -318,6 +398,90 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     }
   };
 
+  const uploadEndorsementProof = async (file: File, endorsementType: string) => {
+    if (!user?.id) throw new Error('User not available');
+
+    const storagePath = `${user.id}/${createLocalId()}-${safeFilename(file.name)}`;
+    const { error: uploadError } = await supabase.storage
+      .from(STUDENT_DOCUMENTS_BUCKET)
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        contentType: file.type || 'application/octet-stream',
+        upsert: false,
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { data: documentRow, error: documentError } = await supabase
+      .from('student_documents')
+      .insert({
+        student_id: user.id,
+        display_name: `Endorsement Proof - ${endorsementType.trim()}`,
+        original_filename: file.name,
+        storage_path: storagePath,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        uploaded_by: user.id,
+      })
+      .select('id')
+      .single();
+
+    if (documentError) {
+      await supabase.storage.from(STUDENT_DOCUMENTS_BUCKET).remove([storagePath]);
+      throw documentError;
+    }
+
+    return { storagePath, documentId: documentRow?.id as string | undefined };
+  };
+
+  const addPendingEndorsement = () => {
+    setPendingEndorsements(prev => [...prev, createPendingEndorsement()]);
+    onFormChange();
+  };
+
+  const updatePendingEndorsement = (
+    localId: string,
+    field: keyof PendingEndorsementDraft,
+    value: string | boolean | File | null
+  ) => {
+    setPendingEndorsements(prev => prev.map(endorsement => (
+      endorsement.localId === localId ? { ...endorsement, [field]: value } : endorsement
+    )));
+    onFormChange();
+  };
+
+  const removePendingEndorsement = (localId: string) => {
+    setPendingEndorsements(prev => prev.filter(endorsement => endorsement.localId !== localId));
+    onFormChange();
+  };
+
+  const sendVerificationEmail = async () => {
+    const nextEmail = profileForm.email.trim().toLowerCase() || user?.email || '';
+    if (!nextEmail) {
+      toast.error('Email is missing');
+      return;
+    }
+
+    try {
+      setSendingVerification(true);
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: nextEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+        },
+      });
+
+      if (resendError) throw resendError;
+      toast.success('Verification email sent');
+    } catch (err: any) {
+      console.error('Failed to resend verification email:', err);
+      toast.error(err?.message || 'Failed to resend verification email');
+    } finally {
+      setSendingVerification(false);
+    }
+  };
+
   const saveAccountSettings = async () => {
     if (!user?.id) return;
 
@@ -330,6 +494,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     }
 
     if (profileForm.newPassword || profileForm.confirmPassword || profileForm.currentPassword) {
+      if (!emailVerified) {
+        toast.error('Verify your email address before changing your password');
+        throw new Error('Email must be verified before password changes');
+      }
       if (!profileForm.currentPassword) {
         toast.error('Enter your current password before changing password');
         throw new Error('Current password required');
@@ -355,6 +523,21 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       const { error: passwordError } = await supabase.auth.updateUser({ password: profileForm.newPassword });
       if (passwordError) throw passwordError;
       toast.success('Password updated');
+    }
+
+    for (const endorsement of pendingEndorsements) {
+      if (!endorsement.type.trim()) {
+        toast.error('Choose an endorsement type before saving');
+        throw new Error('Endorsement type is required');
+      }
+      if (!endorsement.dateObtained) {
+        toast.error('Add the endorsement date before saving');
+        throw new Error('Endorsement date is required');
+      }
+      if (!endorsement.proofFile) {
+        toast.error(`Upload proof for ${endorsement.type.trim()} before saving`);
+        throw new Error('Endorsement proof is required');
+      }
     }
 
     if (trimmedEmail && trimmedEmail !== currentEmail) {
@@ -403,6 +586,46 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         }, { onConflict: 'id' });
 
       if (studentError) throw studentError;
+    }
+
+    if (pendingEndorsements.length > 0) {
+      for (const endorsement of pendingEndorsements) {
+        const { storagePath, documentId } = await uploadEndorsementProof(endorsement.proofFile!, endorsement.type);
+        const { error: endorsementError } = await supabase
+          .from('endorsements')
+          .insert({
+            student_id: user.id,
+            type: endorsement.type.trim(),
+            date_obtained: endorsement.dateObtained,
+            expiry_date: endorsement.expiryDate || null,
+            instructor_id: null,
+            is_active: endorsement.isActive,
+          });
+
+        if (endorsementError) {
+          if (documentId) {
+            await supabase.from('student_documents').delete().eq('id', documentId);
+          }
+          await supabase.storage.from(STUDENT_DOCUMENTS_BUCKET).remove([storagePath]);
+          throw endorsementError;
+        }
+      }
+
+      await reconcilePilotStatusForUser({
+        userId: user.id,
+        endorsements: [
+          ...existingEndorsements,
+          ...pendingEndorsements.map(endorsement => ({
+            type: endorsement.type.trim(),
+            dateObtained: endorsement.dateObtained ? new Date(endorsement.dateObtained) : new Date(),
+            expiryDate: endorsement.expiryDate ? new Date(endorsement.expiryDate) : undefined,
+            isActive: endorsement.isActive,
+          })),
+        ],
+        pilotStatusEndorsementTypes: trainingSettings.pilotStatusEndorsementTypes,
+        currentRole: user.role,
+        currentRoles: user.roles,
+      });
     }
 
     await updatePreferences({
@@ -601,7 +824,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
   const tabLabel = tabs.find(tab => tab.id === selectedTab)?.label || 'Account & Preferences';
   const introText = {
-    info: 'Update your personal details, contact numbers, emergency contact and preferred aircraft.',
+    info: 'Update your personal details, contact numbers, emergency contact, preferred aircraft and self-uploaded endorsements.',
     security: 'Manage your password and account sign-in security.',
     calendar: 'Choose your personal date, time and calendar defaults.',
     notifications: 'Tune notifications for your own account.',
@@ -705,12 +928,171 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
               <Field label="Relationship" field="emergencyRelationship" />
             </div>
           </section>
+
+          {isStudentOrPilot && (
+            <section className="space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Endorsements</h3>
+                  <p className="text-sm text-gray-500">Upload your endorsement proof here and it will also appear in your Documents tab.</p>
+                </div>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={addPendingEndorsement}
+                    className="inline-flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add endorsement
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-white p-4">
+                <h4 className="text-sm font-semibold text-gray-900">Current endorsements</h4>
+                {existingEndorsements.length === 0 ? (
+                  <p className="mt-2 text-sm text-gray-500">No endorsements are currently recorded on your profile.</p>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {existingEndorsements.map(endorsement => (
+                      <div key={endorsement.id} className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">{endorsement.type}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${endorsement.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'}`}>
+                            {endorsement.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Obtained {endorsement.dateObtained.toLocaleDateString()}
+                          {endorsement.expiryDate ? ` • Expires ${endorsement.expiryDate.toLocaleDateString()}` : ' • No expiry recorded'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {pendingEndorsements.length > 0 && (
+                <div className="space-y-4">
+                  {pendingEndorsements.map(endorsement => (
+                    <div key={endorsement.localId} className="rounded-lg border border-blue-200 bg-blue-50/40 p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-900">New endorsement</h4>
+                          <p className="text-xs text-gray-500">This will be saved when you save your account settings.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePendingEndorsement(endorsement.localId)}
+                          disabled={!canEdit}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-gray-700">Endorsement</label>
+                          <select
+                            value={endorsement.type}
+                            onChange={event => updatePendingEndorsement(endorsement.localId, 'type', event.target.value)}
+                            disabled={!canEdit}
+                            className={inputClass}
+                          >
+                            <option value="">Select endorsement</option>
+                            {trainingSettings.endorsementTypes.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-gray-700">Date obtained</label>
+                          <input
+                            type="date"
+                            value={endorsement.dateObtained}
+                            onChange={event => updatePendingEndorsement(endorsement.localId, 'dateObtained', event.target.value)}
+                            disabled={!canEdit}
+                            className={inputClass}
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-gray-700">Expiry date</label>
+                          <input
+                            type="date"
+                            value={endorsement.expiryDate}
+                            onChange={event => updatePendingEndorsement(endorsement.localId, 'expiryDate', event.target.value)}
+                            disabled={!canEdit}
+                            className={inputClass}
+                          />
+                        </div>
+                        <label className="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={endorsement.isActive}
+                            onChange={event => updatePendingEndorsement(endorsement.localId, 'isActive', event.target.checked)}
+                            disabled={!canEdit}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">Mark this endorsement active</span>
+                        </label>
+                      </div>
+
+                      <div className="mt-4 rounded-md border border-dashed border-gray-300 bg-white p-4">
+                        <label className="mb-2 block text-sm font-medium text-gray-700">Proof of endorsement</label>
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx"
+                          onChange={event => updatePendingEndorsement(endorsement.localId, 'proofFile', event.target.files?.[0] || null)}
+                          disabled={!canEdit}
+                          className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-700"
+                        />
+                        <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                          <FileUp className="h-3.5 w-3.5" />
+                          {endorsement.proofFile ? `${endorsement.proofFile.name} will be saved into Documents` : 'Upload the certificate, logbook extract or other proof document'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       )}
 
       {selectedTab === 'security' && (
         <section className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">Password</h3>
+          <div className={`rounded-lg border px-4 py-3 ${emailVerified ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 className={`mt-0.5 h-5 w-5 ${emailVerified ? 'text-green-600' : 'text-amber-600'}`} />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {emailVerified ? 'Your email is verified' : 'Verify your email before changing your password'}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {emailVerified
+                      ? 'Password changes can be made once your current password is confirmed.'
+                      : 'We require email verification first so password changes stay tied to a confirmed email address.'}
+                  </p>
+                </div>
+              </div>
+              {!emailVerified && (
+                <button
+                  type="button"
+                  onClick={sendVerificationEmail}
+                  disabled={sendingVerification}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {sendingVerification ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Resend verification email
+                </button>
+              )}
+            </div>
+          </div>
           <p className="text-sm text-gray-500">Password changes require your current password before a new password is saved.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Field label="Current Password" field="currentPassword" type="password" />
