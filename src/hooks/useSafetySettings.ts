@@ -19,6 +19,9 @@ export interface SafetyComplianceSettings {
   requireBfrForSolo: boolean;
   recencyWarningMessage: string;
   safetyLoginWarningMessage: string;
+  safetyLoginWarningTitle: string;
+  recencyNoFlightMessage: string;
+  recencyLastFlightMessage: string;
 }
 
 export interface SafetyReportCategory {
@@ -43,7 +46,10 @@ export const DEFAULT_SAFETY_SETTINGS: SafetyComplianceSettings = {
   autoBlockExpiredLicence: true,
   requireBfrForSolo: true,
   recencyWarningMessage: 'You may not be current for solo aircraft hire. If you have less than 50 pilot in command hours and are outside the recency period, book a check flight with an instructor. If you have more than 50 pilot in command hours, complete 3 take-offs and landings before carrying passengers. If you have flown elsewhere, acknowledge this warning and make sure your records are updated.',
-  safetyLoginWarningMessage: 'Your safety and compliance record needs attention. Please review any medical, membership, BFR or currency items before flying.'
+  safetyLoginWarningMessage: 'Your safety and compliance record needs attention. Please review any medical, membership, BFR or currency items before flying.',
+  safetyLoginWarningTitle: 'Safety items need attention',
+  recencyNoFlightMessage: 'No recent logged flight was found for {subject}.',
+  recencyLastFlightMessage: '{possessive} last logged flight was {days} days ago.'
 };
 
 const mapSettings = (data: any): SafetyComplianceSettings => ({
@@ -62,7 +68,10 @@ const mapSettings = (data: any): SafetyComplianceSettings => ({
   autoBlockExpiredLicence: data.auto_block_expired_licence ?? DEFAULT_SAFETY_SETTINGS.autoBlockExpiredLicence,
   requireBfrForSolo: data.require_bfr_for_solo ?? DEFAULT_SAFETY_SETTINGS.requireBfrForSolo,
   recencyWarningMessage: data.settings?.recency_warning_message ?? DEFAULT_SAFETY_SETTINGS.recencyWarningMessage,
-  safetyLoginWarningMessage: data.settings?.safety_login_warning_message ?? DEFAULT_SAFETY_SETTINGS.safetyLoginWarningMessage
+  safetyLoginWarningMessage: data.settings?.safety_login_warning_message ?? DEFAULT_SAFETY_SETTINGS.safetyLoginWarningMessage,
+  safetyLoginWarningTitle: data.settings?.safety_login_warning_title ?? DEFAULT_SAFETY_SETTINGS.safetyLoginWarningTitle,
+  recencyNoFlightMessage: data.settings?.recency_no_flight_message ?? DEFAULT_SAFETY_SETTINGS.recencyNoFlightMessage,
+  recencyLastFlightMessage: data.settings?.recency_last_flight_message ?? DEFAULT_SAFETY_SETTINGS.recencyLastFlightMessage
 });
 
 export const useSafetySettings = () => {
@@ -125,7 +134,10 @@ export const useSafetySettings = () => {
       settings: {
         ...(settings.settingsJson ?? {}),
         recency_warning_message: nextSettings.recencyWarningMessage,
-        safety_login_warning_message: nextSettings.safetyLoginWarningMessage
+        safety_login_warning_message: nextSettings.safetyLoginWarningMessage,
+        safety_login_warning_title: nextSettings.safetyLoginWarningTitle,
+        recency_no_flight_message: nextSettings.recencyNoFlightMessage,
+        recency_last_flight_message: nextSettings.recencyLastFlightMessage
       },
       updated_at: new Date().toISOString()
     };

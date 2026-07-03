@@ -49,7 +49,7 @@ export const SafetyLoginWarningModal: React.FC = () => {
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-gray-900">Safety items need attention</h3>
+              <h3 className="text-base font-semibold text-gray-900">{settings.safetyLoginWarningTitle}</h3>
               <p className="mt-1 text-sm text-gray-600">{settings.safetyLoginWarningMessage}</p>
             </div>
           </div>

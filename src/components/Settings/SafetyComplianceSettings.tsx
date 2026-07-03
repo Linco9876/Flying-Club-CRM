@@ -321,6 +321,18 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Login safety warning title</label>
+                <input
+                  type="text"
+                  value={formData.safetyLoginWarningTitle}
+                  onChange={(e) => handleInputChange('safetyLoginWarningTitle', e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Shown as the heading on the login safety popup.</p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Login safety warning wording</label>
                 <textarea
                   rows={3}
@@ -330,6 +342,30 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                 />
                 <p className="text-xs text-gray-500 mt-1">Shown on login when medical, membership, BFR or currency items need attention.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Recency warning when no logged flight is found</label>
+                <textarea
+                  rows={3}
+                  value={formData.recencyNoFlightMessage}
+                  onChange={(e) => handleInputChange('recencyNoFlightMessage', e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Use {'{subject}'} for “you” or the member name, and {'{possessive}'} if needed.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Recency warning when a last flight is found</label>
+                <textarea
+                  rows={3}
+                  value={formData.recencyLastFlightMessage}
+                  onChange={(e) => handleInputChange('recencyLastFlightMessage', e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="text-xs text-gray-500 mt-1">Use {'{possessive}'}, {'{subject}'}, {'{name}'} and {'{days}'} placeholders.</p>
               </div>
             </div>
           </div>

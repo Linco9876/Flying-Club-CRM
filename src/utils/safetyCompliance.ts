@@ -45,18 +45,52 @@ const formatDate = (date?: Date | null) => date ? date.toLocaleDateString() : 'N
 const subjectFor = (person: Pick<Student, 'name'>, perspective: SafetyMessagePerspective) =>
   perspective === 'firstPerson' ? 'Your' : `${person.name}'s`;
 
-const noRecentFlightMessageFor = (person: Pick<Student, 'name'>, perspective: SafetyMessagePerspective) =>
-  perspective === 'firstPerson'
-    ? 'No recent logged flight was found for you.'
-    : `No recent logged flight was found for ${person.name}.`;
+const replaceSafetyTokens = (
+  template: string,
+  tokens: Record<string, string | number>,
+  fallback: string
+) => {
+  const source = template.trim() || fallback;
+  return Object.entries(tokens).reduce(
+    (message, [key, value]) => message.replaceAll(`{${key}}`, String(value)),
+    source
+  );
+};
+
+const noRecentFlightMessageFor = (
+  person: Pick<Student, 'name'>,
+  perspective: SafetyMessagePerspective,
+  template: string
+) =>
+  replaceSafetyTokens(
+    template,
+    {
+      name: person.name,
+      subject: perspective === 'firstPerson' ? 'you' : person.name,
+      possessive: perspective === 'firstPerson' ? 'Your' : `${person.name}'s`
+    },
+    perspective === 'firstPerson'
+      ? 'No recent logged flight was found for you.'
+      : `No recent logged flight was found for ${person.name}.`
+  );
 
 const lastFlightMessageFor = (
   person: Pick<Student, 'name'>,
   perspective: SafetyMessagePerspective,
-  daysSinceLastFlight: number
-) => perspective === 'firstPerson'
-  ? `Your last logged flight was ${daysSinceLastFlight} days ago.`
-  : `${person.name}'s last logged flight was ${daysSinceLastFlight} days ago.`;
+  daysSinceLastFlight: number,
+  template: string
+) => replaceSafetyTokens(
+  template,
+  {
+    name: person.name,
+    subject: perspective === 'firstPerson' ? 'you' : person.name,
+    possessive: perspective === 'firstPerson' ? 'Your' : `${person.name}'s`,
+    days: daysSinceLastFlight
+  },
+  perspective === 'firstPerson'
+    ? `Your last logged flight was ${daysSinceLastFlight} days ago.`
+    : `${person.name}'s last logged flight was ${daysSinceLastFlight} days ago.`
+);
 
 export const getPilotInCommandHours = (personId: string, flightLogs: MinimalFlightLog[]) =>
   flightLogs
@@ -114,8 +148,8 @@ export const buildSafetyComplianceSummary = (
       label: 'Pilot recency',
       days: daysSinceLastFlight ?? undefined,
       message: daysSinceLastFlight === null
-        ? noRecentFlightMessageFor(person, perspective)
-        : lastFlightMessageFor(person, perspective, daysSinceLastFlight)
+        ? noRecentFlightMessageFor(person, perspective, settings.recencyNoFlightMessage)
+        : lastFlightMessageFor(person, perspective, daysSinceLastFlight, settings.recencyLastFlightMessage)
     });
   }
 
