@@ -45,6 +45,7 @@ import { BillingRatesSettings } from './BillingRatesSettings';
 import FlightLogSettings from './FlightLogSettings';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { TrainingSyllabusSettings } from './TrainingSyllabusSettings';
+import { AccountTimelineSettings } from './AccountTimelineSettings';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../../context/PageLoadContext';
 
@@ -101,7 +102,8 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'account-calendar', label: 'Calendar Preferences', category: 'Account & Preferences', keywords: ['date format', 'time format', 'calendar view', 'timezone'], icon: <SettingsIcon className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountCalendarSettings },
     { id: 'account-notifications', label: 'Notification Preferences', category: 'Account & Preferences', keywords: ['notifications', 'email', 'sms', 'alerts', 'reminders'], icon: <Bell className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountNotificationSettings },
     { id: 'account-appearance', label: 'Appearance', category: 'Account & Preferences', keywords: ['appearance', 'theme', 'compact', 'display'], icon: <Palette className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountAppearanceSettings },
-    { id: 'account-dashboard', label: 'Portal Dashboard', category: 'Account & Preferences', keywords: ['dashboard', 'student portal', 'progress', 'upcoming bookings'], icon: <Eye className="h-4 w-4" />, roles: ['pilot', 'student'], component: AccountDashboardSettings }
+    { id: 'account-dashboard', label: 'Portal Dashboard', category: 'Account & Preferences', keywords: ['dashboard', 'student portal', 'progress', 'upcoming bookings'], icon: <Eye className="h-4 w-4" />, roles: ['pilot', 'student'], component: AccountDashboardSettings },
+    { id: 'account-timeline', label: 'Timeline', category: 'Account & Preferences', keywords: ['timeline', 'history', 'training history', 'exam history', 'activity'], icon: <Clock className="h-4 w-4" />, roles: ['pilot', 'student'], component: AccountTimelineSettings }
   ];
 
   // Get authorized sections using RBAC

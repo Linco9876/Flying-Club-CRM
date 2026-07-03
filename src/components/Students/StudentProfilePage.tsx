@@ -41,6 +41,14 @@ interface StudentInfoForm {
   emergencyContactName: string;
   emergencyContactPhone: string;
   emergencyContactRelationship: string;
+  endorsements: Student['endorsements'];
+}
+
+interface StudentInfoEndorsementDraft {
+  type: string;
+  dateObtained: string;
+  expiryDate: string;
+  isActive: boolean;
 }
 
 interface TrainingRecordEditForm {
@@ -325,14 +333,29 @@ type CourseProgressSummary = {
   recordsCount: number;
 };
 
-export const StudentProfilePage: React.FC = () => {
+interface StudentProfilePageProps {
+  portalSection?: 'training' | 'documents';
+}
+
+export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSection }) => {
   const { studentId: routeStudentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const studentId = routeStudentId || user?.id;
-  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile'));
+  const [activeTab, setActiveTab] = useState(() => {
+    if (portalSection === 'documents') return 'documents';
+    if (portalSection === 'training') return 'training';
+    return searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile');
+  });
+  const [trainingSubtab, setTrainingSubtab] = useState<'training' | 'exams' | 'courses'>(() => {
+    const subtab = searchParams.get('subtab');
+    if (subtab === 'exams' || subtab === 'courses' || subtab === 'training') return subtab;
+    const legacyTab = searchParams.get('tab');
+    if (legacyTab === 'exams' || legacyTab === 'courses') return legacyTab;
+    return 'training';
+  });
   const [showMatrixView, setShowMatrixView] = useState(false);
   const [expandedRecordMatrixIds, setExpandedRecordMatrixIds] = useState<Set<string>>(new Set());
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
@@ -353,6 +376,13 @@ export const StudentProfilePage: React.FC = () => {
     emergencyContactName: '',
     emergencyContactPhone: '',
     emergencyContactRelationship: '',
+    endorsements: [],
+  });
+  const [infoEndorsementDraft, setInfoEndorsementDraft] = useState<StudentInfoEndorsementDraft>({
+    type: '',
+    dateObtained: '',
+    expiryDate: '',
+    isActive: true,
   });
   const [editingTrainingRecord, setEditingTrainingRecord] = useState<TrainingRecord | null>(null);
   const [trainingEditForm, setTrainingEditForm] = useState<TrainingRecordEditForm | null>(null);
@@ -430,8 +460,7 @@ export const StudentProfilePage: React.FC = () => {
         .map(enrolment => enrolment.courseId)
     );
     const relevantCourseIds = new Set([...courseIdsWithRecords, ...activeEnrolmentIds]);
-    const relevantCourses = trainingCourses.filter(course => relevantCourseIds.has(course.id));
-    return relevantCourses.length > 0 ? relevantCourses : trainingCourses;
+    return trainingCourses.filter(course => relevantCourseIds.has(course.id));
   }, [courseEnrolments, studentTrainingRecords, trainingCourses]);
   const selectedTrainingCourse = useMemo(
     () => trainingCourses.find(course => course.id === selectedTrainingCourseId) ?? null,
@@ -475,8 +504,30 @@ export const StudentProfilePage: React.FC = () => {
 
   useEffect(() => {
     const tab = searchParams.get('tab');
+    if (portalSection) return;
     if (tab) setActiveTab(tab);
-  }, [searchParams]);
+  }, [portalSection, searchParams]);
+
+  useEffect(() => {
+    if (portalSection === 'documents') {
+      setActiveTab('documents');
+      return;
+    }
+    if (portalSection === 'training') {
+      setActiveTab('training');
+      const subtab = searchParams.get('subtab');
+      if (subtab === 'training' || subtab === 'exams' || subtab === 'courses') {
+        setTrainingSubtab(subtab);
+      } else {
+        const legacyTab = searchParams.get('tab');
+        if (legacyTab === 'exams' || legacyTab === 'courses') {
+          setTrainingSubtab(legacyTab);
+        } else {
+          setTrainingSubtab('training');
+        }
+      }
+    }
+  }, [portalSection, searchParams]);
 
   useEffect(() => {
     if (!studentId || !['profile', 'training', 'courses'].includes(activeTab)) return;
@@ -484,6 +535,16 @@ export const StudentProfilePage: React.FC = () => {
   }, [activeTab, refetchTrainingRecords, studentId]);
 
   const handleTabChange = (tabId: string) => {
+    if (isOwnStudentPortal && portalSection === 'training' && (tabId === 'training' || tabId === 'exams' || tabId === 'courses')) {
+      setActiveTab('training');
+      setTrainingSubtab(tabId);
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('subtab', tabId);
+      nextParams.delete('tab');
+      setSearchParams(nextParams, { replace: true });
+      return;
+    }
+
     setActiveTab(tabId);
     const nextParams = new URLSearchParams(searchParams);
     if (tabId === 'profile') {
@@ -491,6 +552,7 @@ export const StudentProfilePage: React.FC = () => {
     } else {
       nextParams.set('tab', tabId);
     }
+    nextParams.delete('subtab');
     setSearchParams(nextParams, { replace: true });
   };
 
@@ -821,12 +883,72 @@ export const StudentProfilePage: React.FC = () => {
       emergencyContactName: student.emergencyContact?.name || '',
       emergencyContactPhone: student.emergencyContact?.phone || '',
       emergencyContactRelationship: student.emergencyContact?.relationship || '',
+      endorsements: student.endorsements || [],
+    });
+    setInfoEndorsementDraft({
+      type: '',
+      dateObtained: '',
+      expiryDate: '',
+      isActive: true,
     });
     setShowInfoEditor(true);
   };
 
   const updateInfoField = (field: keyof StudentInfoForm, value: string) => {
     setInfoForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const addInfoEndorsement = () => {
+    if (!infoEndorsementDraft.type.trim()) {
+      toast.error('Select or enter an endorsement type');
+      return;
+    }
+
+    if (!infoEndorsementDraft.dateObtained) {
+      toast.error('Select the endorsement obtained date');
+      return;
+    }
+
+    const nextType = infoEndorsementDraft.type.trim();
+    const duplicate = infoForm.endorsements.some((endorsement) =>
+      endorsement.type.trim().toLowerCase() === nextType.toLowerCase() &&
+      endorsement.isActive === infoEndorsementDraft.isActive
+    );
+
+    if (duplicate) {
+      toast.error('That endorsement is already on this member');
+      return;
+    }
+
+    setInfoForm((prev) => ({
+      ...prev,
+      endorsements: [
+        ...prev.endorsements,
+        {
+          id: `info-endorsement-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: nextType,
+          dateObtained: new Date(infoEndorsementDraft.dateObtained),
+          expiryDate: infoEndorsementDraft.expiryDate ? new Date(infoEndorsementDraft.expiryDate) : undefined,
+          isActive: infoEndorsementDraft.isActive,
+        },
+      ],
+    }));
+
+    setInfoEndorsementDraft({
+      type: '',
+      dateObtained: '',
+      expiryDate: '',
+      isActive: true,
+    });
+    toast.success('Endorsement added');
+  };
+
+  const removeInfoEndorsement = (endorsementId: string) => {
+    setInfoForm((prev) => ({
+      ...prev,
+      endorsements: prev.endorsements.filter((endorsement) => endorsement.id !== endorsementId),
+    }));
+    toast.success('Endorsement removed');
   };
 
   const saveStudentInfo = async () => {
@@ -875,6 +997,38 @@ export const StudentProfilePage: React.FC = () => {
 
         if (studentInsertError) throw studentInsertError;
       }
+
+      const { error: deleteEndorsementsError } = await supabase
+        .from('endorsements')
+        .delete()
+        .eq('student_id', student.id);
+
+      if (deleteEndorsementsError) throw deleteEndorsementsError;
+
+      if (infoForm.endorsements.length > 0) {
+        const endorsementsToInsert = infoForm.endorsements.map((endorsement) => ({
+          student_id: student.id,
+          type: endorsement.type,
+          date_obtained: toDateInputValue(endorsement.dateObtained) || null,
+          expiry_date: toDateInputValue(endorsement.expiryDate) || null,
+          instructor_id: endorsement.instructorId || user?.id || null,
+          is_active: endorsement.isActive,
+        }));
+
+        const { error: endorsementsError } = await supabase
+          .from('endorsements')
+          .insert(endorsementsToInsert);
+
+        if (endorsementsError) throw endorsementsError;
+      }
+
+      await reconcilePilotStatusForUser({
+        userId: student.id,
+        endorsements: infoForm.endorsements,
+        pilotStatusEndorsementTypes: trainingSettings.pilotStatusEndorsementTypes,
+        currentRole: student.role,
+        currentRoles: student.roles,
+      });
 
       await refetchStudents();
       setShowInfoEditor(false);
@@ -1499,11 +1653,18 @@ export const StudentProfilePage: React.FC = () => {
     return true;
   }), [isOwnStudentPortal, portalSettings.show_invoices_in_portal, portalSettings.show_progress_tracking]);
 
+  const trainingSubtabs = useMemo(() => [
+    { id: 'training', label: 'Training Records' },
+    { id: 'exams', label: 'Exams' },
+    { id: 'courses', label: 'Courses' },
+  ], []);
+
   useEffect(() => {
+    if (isOwnStudentPortal && portalSection) return;
     if (!tabs.some(tab => tab.id === activeTab)) {
       handleTabChange('profile');
     }
-  }, [activeTab, tabs]);
+  }, [activeTab, isOwnStudentPortal, portalSection, tabs]);
 
   if (loading) {
     return (
@@ -1854,25 +2015,45 @@ export const StudentProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="app-tab-scroller">
-        <nav className="app-tab-list">
-          {tabs.map(tab => (
+      {!isOwnStudentPortal || !portalSection ? (
+        <div className="app-tab-scroller">
+          <nav className="app-tab-list">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`app-tab-button ${
+                  activeTab === tab.id
+                    ? 'app-tab-button-active'
+                    : ''
+                }`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      ) : null}
+
+      {isOwnStudentPortal && portalSection === 'training' ? (
+        <div className="mb-5 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
+          {trainingSubtabs.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => handleTabChange(tab.id)}
-              className={`app-tab-button ${
-                activeTab === tab.id
-                  ? 'app-tab-button-active'
-                  : ''
+              className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                trainingSubtab === tab.id
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >
-              {tab.icon}
-              <span>{tab.label}</span>
+              {tab.label}
             </button>
           ))}
-        </nav>
-      </div>
+        </div>
+      ) : null}
 
       {/* Tab Content */}
       {activeTab === 'profile' && (
@@ -2172,7 +2353,7 @@ export const StudentProfilePage: React.FC = () => {
         />
       )}
 
-      {activeTab === 'exams' && (
+      {(activeTab === 'exams' || (activeTab === 'training' && trainingSubtab === 'exams')) && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
           {hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']) && (
             <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 sm:p-6">
@@ -2389,7 +2570,7 @@ export const StudentProfilePage: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'courses' && (
+      {(activeTab === 'courses' || (activeTab === 'training' && trainingSubtab === 'courses')) && (
         <CourseProgressTab
           studentId={studentId!}
           student={student}
@@ -2785,7 +2966,7 @@ export const StudentProfilePage: React.FC = () => {
         </div>
       )}
 
-      {activeTab === 'training' && (
+      {(activeTab === 'training' && trainingSubtab === 'training') && (
         <div className="space-y-6">
           {/* Pending sign-off banner — shown to the student whose profile this is */}
           {user?.id === studentId && (() => {
@@ -4168,6 +4349,97 @@ export const StudentProfilePage: React.FC = () => {
                     <span className="block text-sm font-medium text-gray-700 mb-1">Relationship</span>
                     <input value={infoForm.emergencyContactRelationship} onChange={event => updateInfoField('emergencyContactRelationship', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </label>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Endorsements</h3>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <p className="mb-4 text-sm text-gray-600">
+                    Add the endorsements this member currently holds. Any endorsement marked as granting Pilot status in Training / Syllabus Settings will automatically make them a pilot when active and current.
+                  </p>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <label className="block md:col-span-2">
+                      <span className="block text-sm font-medium text-gray-700 mb-1">Endorsement</span>
+                      <input
+                        list="student-profile-endorsement-types"
+                        value={infoEndorsementDraft.type}
+                        onChange={(event) => setInfoEndorsementDraft((prev) => ({ ...prev, type: event.target.value }))}
+                        placeholder="Select or enter endorsement"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <datalist id="student-profile-endorsement-types">
+                        {trainingSettings.endorsementTypes.map((type) => (
+                          <option key={type} value={type} />
+                        ))}
+                      </datalist>
+                    </label>
+                    <label className="block">
+                      <span className="block text-sm font-medium text-gray-700 mb-1">Obtained</span>
+                      <input
+                        type="date"
+                        value={infoEndorsementDraft.dateObtained}
+                        onChange={(event) => setInfoEndorsementDraft((prev) => ({ ...prev, dateObtained: event.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="block text-sm font-medium text-gray-700 mb-1">Expiry</span>
+                      <input
+                        type="date"
+                        value={infoEndorsementDraft.expiryDate}
+                        onChange={(event) => setInfoEndorsementDraft((prev) => ({ ...prev, expiryDate: event.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={infoEndorsementDraft.isActive}
+                        onChange={(event) => setInfoEndorsementDraft((prev) => ({ ...prev, isActive: event.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      Active endorsement
+                    </label>
+                    <button
+                      type="button"
+                      onClick={addInfoEndorsement}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add endorsement
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {infoForm.endorsements.length > 0 ? (
+                      infoForm.endorsements.map((endorsement) => (
+                        <div key={endorsement.id} className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{endorsement.type}</p>
+                            <p className="text-xs text-gray-500">
+                              Obtained {endorsement.dateObtained?.toLocaleDateString() || 'N/A'}
+                              {endorsement.expiryDate ? ` | Expires ${endorsement.expiryDate.toLocaleDateString()}` : ''}
+                              {endorsement.isActive ? ' | Active' : ' | Inactive'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeInfoEndorsement(endorsement.id)}
+                            className="text-sm font-medium text-red-600 hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-500">No endorsements recorded yet.</p>
+                    )}
+                  </div>
                 </div>
               </section>
 

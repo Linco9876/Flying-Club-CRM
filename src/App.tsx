@@ -809,9 +809,11 @@ const AuthenticatedApp: React.FC<{
         return <SafetyDashboard />;
       case 'training':
         if (user?.role === 'student' || user?.role === 'pilot') {
-          return <StudentProfilePage />;
+          return <StudentProfilePage portalSection="training" />;
         }
         return <TrainingCourseCatalog />;
+      case 'documents':
+        return <StudentProfilePage portalSection="documents" />;
       case 'outstanding-records':
         return <OutstandingRecordsTab />;
       case 'syllabus-management':
@@ -908,6 +910,7 @@ const viewPathMap: Record<string, string> = {
   aircraft: '/aircraft',
   maintenance: '/maintenance',
   training: '/training',
+  documents: '/documents',
   'outstanding-records': '/training/outstanding-records',
   'syllabus-management': '/training/syllabus',
   billing: '/billing',
@@ -935,6 +938,7 @@ const getViewForPath = (pathname: string) => {
   if (pathname.startsWith('/training/outstanding-records')) return 'outstanding-records';
   if (pathname.startsWith('/training/syllabus')) return 'syllabus-management';
   if (pathname.startsWith('/training')) return 'training';
+  if (pathname.startsWith('/documents')) return 'documents';
   if (pathname.startsWith('/gift-vouchers')) return 'gift-vouchers';
   return 'dashboard';
 };
@@ -950,6 +954,7 @@ const getRequiredActionForView = (view: string) => {
     'training': 'view-training',
     'outstanding-records': 'view-outstanding-records',
     'syllabus-management': 'edit-settings',
+    'documents': 'view-training',
     'billing': 'view-billing',
     'financial-dashboard': 'view-billing',
     'gift-vouchers': 'view-billing',
@@ -967,6 +972,7 @@ const getRequiredResourceForView = (view: string) => {
     'billing': 'own',
     'financial-dashboard': 'all',
     'profile': 'own',
+    'documents': 'own',
     'training': 'own',
     'mylogbook': 'own',
     'safety': 'own',

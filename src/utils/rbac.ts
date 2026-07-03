@@ -192,6 +192,7 @@ export const getAuthorizedMenuItems = (user: User | null) => {
     { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' },
     { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' },
     { id: 'training', label: 'Training Records', action: 'view-training', resource: hasAnyRole(user, ['student', 'pilot']) ? 'own' : 'all' },
+    { id: 'documents', label: 'Documents', action: 'view-training', resource: 'own', roles: ['pilot', 'student'] },
     { id: 'outstanding-records', label: 'Outstanding Records', action: 'view-outstanding-records' },
     { id: 'profile', label: 'My Profile', action: 'edit-personal-settings', resource: 'own', roles: ['student', 'pilot'] },
     { id: 'mylogbook', label: 'My Logbook', action: 'view-logbook', resource: 'own', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
@@ -254,7 +255,8 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'account-calendar', label: 'Calendar Preferences', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
     { id: 'account-notifications', label: 'Notification Preferences', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
     { id: 'account-appearance', label: 'Appearance', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] as UserRole[] },
-    { id: 'account-dashboard', label: 'Portal Dashboard', roles: ['pilot', 'student'] as UserRole[] }
+    { id: 'account-dashboard', label: 'Portal Dashboard', roles: ['pilot', 'student'] as UserRole[] },
+    { id: 'account-timeline', label: 'Timeline', roles: ['pilot', 'student'] as UserRole[] }
   ];
 
   const effectiveRoles = getEffectiveVisibilityRoles(user);
