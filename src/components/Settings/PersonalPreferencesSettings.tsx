@@ -23,7 +23,6 @@ import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { Endorsement } from '../../types';
-import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 
@@ -300,15 +299,12 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     preferences,
     updatePreferences,
     user?.id,
-    user?.role,
-    user?.roles,
     saveKey,
     avatarFile,
     coverFile,
     emailVerified,
     existingEndorsements,
     pendingEndorsements,
-    trainingSettings.pilotStatusEndorsementTypes,
   ]);
 
   const safeImageFilename = (filename: string) => filename
@@ -610,22 +606,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           throw endorsementError;
         }
       }
-
-      await reconcilePilotStatusForUser({
-        userId: user.id,
-        endorsements: [
-          ...existingEndorsements,
-          ...pendingEndorsements.map(endorsement => ({
-            type: endorsement.type.trim(),
-            dateObtained: endorsement.dateObtained ? new Date(endorsement.dateObtained) : new Date(),
-            expiryDate: endorsement.expiryDate ? new Date(endorsement.expiryDate) : undefined,
-            isActive: endorsement.isActive,
-          })),
-        ],
-        pilotStatusEndorsementTypes: trainingSettings.pilotStatusEndorsementTypes,
-        currentRole: user.role,
-        currentRoles: user.roles,
-      });
     }
 
     await updatePreferences({
