@@ -48,6 +48,15 @@ import { TrainingSyllabusSettings } from './TrainingSyllabusSettings';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../../context/PageLoadContext';
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+};
+
 interface SettingsSection {
   id: string;
   label: string;
@@ -147,7 +156,7 @@ export const SettingsDashboard: React.FC = () => {
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error saving settings:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to save settings');
+      toast.error(getErrorMessage(error, 'Failed to save settings'));
     } finally {
       setIsLoading(false);
     }
