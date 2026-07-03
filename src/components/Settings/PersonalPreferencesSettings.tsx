@@ -1043,7 +1043,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                         <label className="mb-2 block text-sm font-medium text-gray-700">Proof of endorsement</label>
                         <input
                           type="file"
-                          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx"
                           onChange={event => updatePendingEndorsement(endorsement.localId, 'proofFile', event.target.files?.[0] || null)}
                           disabled={!canEdit}
                           className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-700"
