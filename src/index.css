@@ -24,6 +24,10 @@
 }
 
 @layer components {
+  .input {
+    @apply w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 disabled:bg-gray-50 disabled:text-gray-500;
+  }
+
   .no-scrollbar {
     scrollbar-width: none;
   }
@@ -960,7 +964,8 @@ html[data-portal-theme='dark'] .resource-calendar-grid .calendar-slot-selected {
   background-color: var(--calendar-slot-selected) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card {
   color: rgb(248 250 252) !important;
   text-shadow: 0 1px 1px rgb(2 6 23 / 0.35);
   box-shadow:
@@ -969,61 +974,76 @@ html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card {
 }
 
 html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card .bg-white\/70,
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card .bg-white\/55 {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card .bg-white\/55,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card .bg-white\/70,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card .bg-white\/55 {
   background-color: rgb(255 255 255 / 0.18) !important;
   color: rgb(248 250 252) !important;
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-blue-100\/90 {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-blue-100\/90,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-blue-100\/90 {
   background-color: rgb(30 64 175 / 0.74) !important;
   border-color: rgb(147 197 253) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-blue-100\/90:hover {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-blue-100\/90:hover,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-blue-100\/90:hover {
   background-color: rgb(37 99 235 / 0.86) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-emerald-100\/90 {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-emerald-100\/90,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-emerald-100\/90 {
   background-color: rgb(6 95 70 / 0.76) !important;
   border-color: rgb(110 231 183) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-emerald-100\/90:hover {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-emerald-100\/90:hover,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-emerald-100\/90:hover {
   background-color: rgb(5 150 105 / 0.86) !important;
 }
 
 html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/90,
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/80 {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/80,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-red-100\/90,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-red-100\/80 {
   background-color: rgb(127 29 29 / 0.78) !important;
   border-color: rgb(248 113 113) !important;
 }
 
 html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/90:hover,
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/80:hover {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-red-100\/80:hover,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-red-100\/90:hover,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-red-100\/80:hover {
   background-color: rgb(185 28 28 / 0.88) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-amber-100\/90 {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-amber-100\/90,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-amber-100\/90 {
   background-color: rgb(146 64 14 / 0.8) !important;
   border-color: rgb(251 191 36) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-amber-100\/90:hover {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-amber-100\/90:hover,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-amber-100\/90:hover {
   background-color: rgb(180 83 9 / 0.9) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-gray-100\/90 {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-gray-100\/90,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-gray-100\/90 {
   background-color: rgb(51 65 85 / 0.82) !important;
   border-color: rgb(148 163 184) !important;
   color: rgb(226 232 240) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-gray-100\/90:hover {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.bg-gray-100\/90:hover,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.bg-gray-100\/90:hover {
   background-color: rgb(71 85 105 / 0.9) !important;
 }
 
-html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.ring-red-300 {
+html[data-portal-theme='dark'] .portal-app-shell .calendar-booking-card.ring-red-300,
+html[data-portal-theme='dark'] .kiosk-app-surface .calendar-booking-card.ring-red-300 {
   --tw-ring-color: rgb(248 113 113 / 0.76) !important;
   --tw-ring-offset-color: rgb(7 15 29) !important;
 }
@@ -1065,16 +1085,14 @@ html[data-portal-theme='dark'] *::-webkit-scrollbar-thumb:hover {
 }
 
 html[data-portal-theme='dark'] .auth-light-surface,
-html[data-portal-theme='dark'] .kiosk-login-surface,
-html[data-portal-theme='dark'] .kiosk-app-surface {
+html[data-portal-theme='dark'] .kiosk-login-surface {
   color-scheme: light;
   background-color: rgb(255 255 255) !important;
   color: rgb(17 24 39) !important;
 }
 
 html[data-portal-theme='dark'] .auth-light-surface .bg-white,
-html[data-portal-theme='dark'] .kiosk-login-surface .bg-white,
-html[data-portal-theme='dark'] .kiosk-app-surface .bg-white {
+html[data-portal-theme='dark'] .kiosk-login-surface .bg-white {
   background-color: rgb(255 255 255) !important;
 }
 
@@ -1083,13 +1101,7 @@ html[data-portal-theme='dark'] .auth-light-surface .bg-blue-50,
 html[data-portal-theme='dark'] .auth-light-surface .bg-indigo-50,
 html[data-portal-theme='dark'] .kiosk-login-surface .bg-slate-50,
 html[data-portal-theme='dark'] .kiosk-login-surface .bg-blue-50,
-html[data-portal-theme='dark'] .kiosk-login-surface .bg-indigo-50,
-html[data-portal-theme='dark'] .kiosk-app-surface .bg-slate-50,
-html[data-portal-theme='dark'] .kiosk-app-surface .bg-blue-50,
-html[data-portal-theme='dark'] .kiosk-app-surface .bg-indigo-50,
-html[data-portal-theme='dark'] .kiosk-app-surface.bg-gray-100,
-html[data-portal-theme='dark'] .kiosk-app-surface .bg-gray-100,
-html[data-portal-theme='dark'] .kiosk-app-surface .bg-gray-50 {
+html[data-portal-theme='dark'] .kiosk-login-surface .bg-indigo-50 {
   background-color: rgb(248 250 252) !important;
 }
 
@@ -1102,12 +1114,7 @@ html[data-portal-theme='dark'] .kiosk-login-surface .text-slate-950,
 html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-950,
 html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-900,
 html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-800,
-html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-700,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-slate-950,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-gray-950,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-gray-900,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-gray-800,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-gray-700 {
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-700 {
   color: rgb(15 23 42) !important;
 }
 
@@ -1116,10 +1123,7 @@ html[data-portal-theme='dark'] .auth-light-surface .text-gray-500,
 html[data-portal-theme='dark'] .auth-light-surface .text-gray-400,
 html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-600,
 html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-500,
-html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-400,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-gray-600,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-gray-500,
-html[data-portal-theme='dark'] .kiosk-app-surface .text-gray-400 {
+html[data-portal-theme='dark'] .kiosk-login-surface .text-gray-400 {
   color: rgb(75 85 99) !important;
 }
 
@@ -1133,10 +1137,7 @@ html[data-portal-theme='dark'] .kiosk-login-surface .hover\:text-blue-500:hover 
 html[data-portal-theme='dark'] .auth-light-surface .border-gray-200,
 html[data-portal-theme='dark'] .auth-light-surface .border-gray-300,
 html[data-portal-theme='dark'] .kiosk-login-surface .border-gray-200,
-html[data-portal-theme='dark'] .kiosk-login-surface .border-gray-300,
-html[data-portal-theme='dark'] .kiosk-app-surface .border-gray-100,
-html[data-portal-theme='dark'] .kiosk-app-surface .border-gray-200,
-html[data-portal-theme='dark'] .kiosk-app-surface .border-gray-300 {
+html[data-portal-theme='dark'] .kiosk-login-surface .border-gray-300 {
   border-color: rgb(209 213 219) !important;
 }
 
@@ -1156,174 +1157,4 @@ html[data-portal-theme='dark'] .auth-light-surface textarea::placeholder,
 html[data-portal-theme='dark'] .kiosk-login-surface input::placeholder,
 html[data-portal-theme='dark'] .kiosk-login-surface textarea::placeholder {
   color: rgb(156 163 175) !important;
-}
-
-html[data-portal-theme='dark'] .kiosk-app-surface,
-html[data-portal-theme='dark'] .kiosk-app-surface main,
-html[data-portal-theme='dark'] .kiosk-app-surface .resource-calendar-grid {
-  color-scheme: light;
-  background-color: rgb(248 250 252) !important;
-  color: rgb(15 23 42) !important;
-}
-
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-[#0f1117]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-[#11141a]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-[#111827]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-[#171a21]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-[#20242b]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-[#262b33]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-slate"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:bg-gray"] {
-  background-color: rgb(255 255 255) !important;
-}
-
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:border-[#2c2f36]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:border-[#363b45]"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:border-gray"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:border-slate"] {
-  border-color: rgb(209 213 219) !important;
-}
-
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:text-gray"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:text-slate"],
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:text-white"] {
-  color: rgb(15 23 42) !important;
-}
-
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:hover:bg-[#262b33]"]:hover,
-html[data-portal-theme='dark'] .kiosk-app-surface [class*="dark:hover:bg-gray"]:hover {
-  background-color: rgb(249 250 251) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'],
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'],
-.kiosk-app-surface[data-kiosk-theme='dark'] main,
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] main {
-  color-scheme: dark;
-  background: rgb(7 15 29) !important;
-  color: rgb(248 250 252) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .bg-white,
-.kiosk-app-surface[data-kiosk-theme='dark'] [class*="bg-white"],
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .bg-white,
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] [class*="bg-white"] {
-  background-color: rgb(15 23 42) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .bg-gray-50,
-.kiosk-app-surface[data-kiosk-theme='dark'] .bg-gray-100,
-.kiosk-app-surface[data-kiosk-theme='dark'] .bg-slate-50,
-.kiosk-app-surface[data-kiosk-theme='dark'] .bg-slate-100,
-.kiosk-app-surface[data-kiosk-theme='dark'] [class*="bg-gray-50"],
-.kiosk-app-surface[data-kiosk-theme='dark'] [class*="bg-gray-100"],
-.kiosk-app-surface[data-kiosk-theme='dark'] [class*="bg-slate-50"],
-.kiosk-app-surface[data-kiosk-theme='dark'] [class*="bg-slate-100"] {
-  background-color: rgb(10 18 34) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid,
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid {
-  background-color: rgb(255 255 255) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-base,
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-base {
-  background-color: rgb(255 255 255) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-alt,
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-alt {
-  background-color: rgb(239 246 255) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-cell:hover,
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-cell:hover {
-  background-color: rgb(219 234 254) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-selected,
-html[data-portal-theme='dark'] .kiosk-app-surface[data-kiosk-theme='dark'] .resource-calendar-grid .calendar-slot-selected {
-  background-color: rgb(219 234 254) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .border-gray-100,
-.kiosk-app-surface[data-kiosk-theme='dark'] .border-gray-200,
-.kiosk-app-surface[data-kiosk-theme='dark'] .border-gray-300,
-.kiosk-app-surface[data-kiosk-theme='dark'] .border-slate-100,
-.kiosk-app-surface[data-kiosk-theme='dark'] .border-slate-200,
-.kiosk-app-surface[data-kiosk-theme='dark'] .border-slate-300,
-.kiosk-app-surface[data-kiosk-theme='dark'] [class*="border-gray"],
-.kiosk-app-surface[data-kiosk-theme='dark'] [class*="border-slate"] {
-  border-color: rgb(51 65 85) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-gray-950,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-gray-900,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-gray-800,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-gray-700,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-slate-950,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-slate-900,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-slate-800,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-slate-700 {
-  color: rgb(248 250 252) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-gray-600,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-gray-500,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-gray-400,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-slate-600,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-slate-500,
-.kiosk-app-surface[data-kiosk-theme='dark'] .text-slate-400 {
-  color: rgb(203 213 225) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] input,
-.kiosk-app-surface[data-kiosk-theme='dark'] select,
-.kiosk-app-surface[data-kiosk-theme='dark'] textarea {
-  background-color: rgb(10 18 34) !important;
-  border-color: rgb(51 65 85) !important;
-  color: rgb(248 250 252) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card {
-  color: rgb(248 250 252) !important;
-  text-shadow: 0 1px 1px rgb(2 6 23 / 0.35);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.16),
-    0 8px 18px rgb(2 6 23 / 0.38);
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card .bg-white\/70,
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card .bg-white\/55 {
-  background-color: rgb(255 255 255 / 0.18) !important;
-  color: rgb(248 250 252) !important;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card.bg-blue-100\/90 {
-  background-color: rgb(30 64 175 / 0.74) !important;
-  border-color: rgb(147 197 253) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card.bg-emerald-100\/90 {
-  background-color: rgb(6 95 70 / 0.76) !important;
-  border-color: rgb(110 231 183) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card.bg-red-100\/90,
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card.bg-red-100\/80 {
-  background-color: rgb(127 29 29 / 0.78) !important;
-  border-color: rgb(248 113 113) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card.bg-amber-100\/90 {
-  background-color: rgb(146 64 14 / 0.8) !important;
-  border-color: rgb(251 191 36) !important;
-}
-
-.kiosk-app-surface[data-kiosk-theme='dark'] .calendar-booking-card.bg-gray-100\/90 {
-  background-color: rgb(51 65 85 / 0.82) !important;
-  border-color: rgb(148 163 184) !important;
-  color: rgb(226 232 240) !important;
 }

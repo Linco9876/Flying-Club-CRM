@@ -9,7 +9,12 @@ const mapRow = (row: any): GroundSessionDescriptionOption => ({
   description: row.description || '',
   active: row.active !== false,
   displayOrder: Number(row.display_order || 0),
+  pricingMode: row.pricing_mode === 'fixed' ? 'fixed' : 'flight_type_hourly',
+  fixedRate: Number(row.fixed_rate || 0),
+  flightTypeId: row.flight_type_id || null,
 });
+
+type GroundSessionDescriptionDraft = GroundSessionDescriptionOption | string | null | undefined;
 
 export const useGroundSessionDescriptions = () => {
   const [options, setOptions] = useState<GroundSessionDescriptionOption[]>([]);
@@ -36,15 +41,38 @@ export const useGroundSessionDescriptions = () => {
     void fetchOptions();
   }, []);
 
-  const saveOptions = async (nextOptions: GroundSessionDescriptionOption[]) => {
+  const saveOptions = async (nextOptions: GroundSessionDescriptionDraft[]) => {
     try {
+      const activeOptions = options.filter(option => option.active);
       const cleaned = nextOptions
-        .map((option, index) => ({
-          ...option,
-          name: option.name.trim(),
-          description: option.description?.trim() || '',
-          displayOrder: index + 1,
-        }))
+        .map((option, index) => {
+          const existing = activeOptions[index];
+          if (typeof option === 'string') {
+            return {
+              ...(existing || {}),
+              id: existing?.id || `new-ground-description-${index}`,
+              name: option.trim(),
+              description: existing?.description || '',
+              active: existing?.active ?? true,
+              displayOrder: index + 1,
+              pricingMode: existing?.pricingMode || 'flight_type_hourly',
+              fixedRate: existing?.fixedRate || 0,
+              flightTypeId: existing?.flightTypeId || null,
+            };
+          }
+
+          return {
+            ...(option || {}),
+            id: option?.id || existing?.id || `new-ground-description-${index}`,
+            name: String(option?.name || '').trim(),
+            description: String(option?.description || '').trim(),
+            active: option?.active ?? existing?.active ?? true,
+            displayOrder: index + 1,
+            pricingMode: option?.pricingMode === 'fixed' ? 'fixed' : 'flight_type_hourly',
+            fixedRate: Number(option?.fixedRate ?? existing?.fixedRate ?? 0),
+            flightTypeId: option?.flightTypeId || existing?.flightTypeId || null,
+          };
+        })
         .filter(option => option.name);
 
       const existingIds = new Set(options.map(option => option.id));
@@ -56,6 +84,9 @@ export const useGroundSessionDescriptions = () => {
           description: option.description || null,
           active: option.active,
           display_order: option.displayOrder,
+          pricing_mode: option.pricingMode,
+          fixed_rate: option.pricingMode === 'fixed' ? Number(option.fixedRate || 0) : 0,
+          flight_type_id: option.pricingMode === 'flight_type_hourly' ? option.flightTypeId || null : null,
           updated_at: new Date().toISOString(),
         };
 

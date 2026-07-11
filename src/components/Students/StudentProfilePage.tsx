@@ -405,7 +405,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const [topUpDescription, setTopUpDescription] = useState('Account top-up');
   const [topUpPaymentMethodId, setTopUpPaymentMethodId] = useState('');
   const [savingTopUp, setSavingTopUp] = useState(false);
-  const [markPaidMethodByFlight, setMarkPaidMethodByFlight] = useState<Record<string, string>>({});
   const [billingActionId, setBillingActionId] = useState<string | null>(null);
   const [examForm, setExamForm] = useState<ExamFormState>({
     courseId: '',
@@ -437,7 +436,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     enrolInCourse,
     sendDeclarationLinks,
   } = useStudentCourseEnrolments(studentId);
-  const isOwnStudentPortal = (user?.role === 'student' || user?.role === 'pilot') && studentId === user.id;
+  const isOwnStudentPortal = Boolean(user && studentId === user.id && (portalSection === 'training' || portalSection === 'documents' || user.role === 'student' || user.role === 'pilot'));
 
   const student = useMemo(() => {
     if (!studentId) {
@@ -1079,27 +1078,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     }
   };
 
-  const handleMarkFlightPaid = async (flightLogId: string) => {
-    const paymentMethodId = markPaidMethodByFlight[flightLogId] || paymentMethods.find(method => method.active)?.id;
-    const paymentMethod = paymentMethods.find(method => method.id === paymentMethodId);
-    if (!paymentMethod) {
-      toast.error('Select a payment method first');
-      return;
-    }
-
-    setBillingActionId(flightLogId);
-    try {
-      await billing.markFlightPaid(flightLogId, paymentMethod.name);
-      setMarkPaidMethodByFlight(prev => {
-        const next = { ...prev };
-        delete next[flightLogId];
-        return next;
-      });
-    } finally {
-      setBillingActionId(null);
-    }
-  };
-
   const loading = studentsLoading;
   const recordsLoading = trainingRecordsLoading;
 
@@ -1640,7 +1618,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     { id: 'profile', label: 'Overview', icon: <User className="h-4 w-4" /> },
     { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" /> },
     { id: 'logbook', label: 'Logbook', icon: <BookOpen className="h-4 w-4" /> },
-    { id: 'training', label: 'Training Records', icon: <FileText className="h-4 w-4" /> },
+    { id: 'training', label: 'Pilot File', icon: <FileText className="h-4 w-4" /> },
     { id: 'exams', label: 'Exams', icon: <Award className="h-4 w-4" /> },
     { id: 'courses', label: 'Courses', icon: <GraduationCap className="h-4 w-4" /> },
     { id: 'billing', label: 'Billing', icon: <Wallet className="h-4 w-4" /> },
@@ -1648,6 +1626,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     { id: 'timeline', label: 'Timeline', icon: <History className="h-4 w-4" /> },
   ].filter(tab => {
     if (!isOwnStudentPortal) return true;
+    if (tab.id === 'profile' || tab.id === 'timeline' || tab.id === 'exams' || tab.id === 'courses') return false;
     if (!portalSettings.show_progress_tracking && (tab.id === 'training' || tab.id === 'courses' || tab.id === 'exams')) return false;
     if (!portalSettings.show_invoices_in_portal && tab.id === 'billing') return false;
     return true;
@@ -1662,7 +1641,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   useEffect(() => {
     if (isOwnStudentPortal && portalSection) return;
     if (!tabs.some(tab => tab.id === activeTab)) {
-      handleTabChange('profile');
+      handleTabChange(tabs[0]?.id || 'training');
     }
   }, [activeTab, isOwnStudentPortal, portalSection, tabs]);
 
@@ -2208,7 +2187,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 </div>
                 
                 <div className="bg-purple-50 p-3 rounded-lg">
-                  <p className="text-xs font-medium text-purple-900">Xero Credit</p>
+                  <p className="text-xs font-medium text-purple-900">Credit</p>
                   <p className="text-lg font-bold text-purple-600">{formatCurrency(accountBalance)}</p>
                 </div>
               </div>
@@ -2590,7 +2569,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Xero Credit</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Credit</p>
               <p className={`text-2xl font-bold mt-2 ${accountBalance < 0 ? 'text-red-600' : accountBalance <= 0 ? 'text-amber-600' : 'text-gray-900'}`}>
                 {formatCurrency(accountBalance)}
               </p>
@@ -2762,26 +2741,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         <p className="text-sm font-semibold text-red-700">{formatCurrency(flight.calculatedCost || 0)}</p>
                       </div>
                       {canManageBilling && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <select
-                            value={markPaidMethodByFlight[flight.id] || ''}
-                            onChange={event => setMarkPaidMethodByFlight(prev => ({ ...prev, [flight.id]: event.target.value }))}
-                            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">Payment method</option>
-                            {paymentMethods.filter(method => method.active).map(method => (
-                              <option key={method.id} value={method.id}>{method.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => handleMarkFlightPaid(flight.id)}
-                            disabled={billingActionId === flight.id}
-                            className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            {billingActionId === flight.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                            Mark paid
-                          </button>
+                        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          Finalise payment from the Financial Dashboard so Stripe, prepaid, and Xero stay reconciled.
                         </div>
                       )}
                     </div>
@@ -3064,7 +3025,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 </div>
                 <div className="mt-3 hidden gap-2 overflow-x-auto pb-1 md:flex">
                   {trainingCourseOptions.length === 0 ? (
-                    <span className="rounded-lg border border-dashed border-blue-200 bg-white/70 px-3 py-2 text-sm font-medium text-blue-700">
+                    <span className="rounded-lg border border-dashed border-blue-200 bg-white/70 px-3 py-2 text-sm font-medium text-blue-700 dark:border-blue-500/30 dark:bg-[#11141a] dark:text-blue-200">
                       No courses available
                     </span>
                   ) : (
@@ -4356,7 +4317,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Endorsements</h3>
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                   <p className="mb-4 text-sm text-gray-600">
-                    Add the endorsements this member currently holds. Any endorsement marked as granting Pilot status in Training / Syllabus Settings will automatically make them a pilot when active and current.
+                    {isOwnStudentPortal
+                      ? 'Add any endorsements you currently hold. If an endorsement is set to grant Pilot status, you will automatically be treated as a pilot while that endorsement is active and current.'
+                      : 'Add the endorsements this member currently holds. Any endorsement marked as granting Pilot status in Training / Syllabus Settings will automatically make them a pilot when active and current.'}
                   </p>
 
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">

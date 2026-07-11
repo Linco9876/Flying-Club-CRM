@@ -57,14 +57,19 @@ export interface CreateSafetyReportData {
   involvedUserIds?: string[];
 }
 
-export const useSafetyReports = () => {
+interface UseSafetyReportsOptions {
+  participateInPageLoad?: boolean;
+}
+
+export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
   const { user } = useAuth();
   const { settings, categories } = useSafetySettings();
   const [reports, setReports] = useState<SafetyReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const participateInPageLoad = options?.participateInPageLoad ?? true;
 
   usePageLoadState(
-    loading,
+    participateInPageLoad && loading,
     'Loading safety',
     'Preparing safety reports, involved members and incident status...'
   );

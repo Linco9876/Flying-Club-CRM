@@ -14,6 +14,7 @@ import {
   DollarSign,
   Gift,
   FolderOpen,
+  GraduationCap,
   Menu,
   X,
   ChevronsLeft,
@@ -33,11 +34,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     return window.localStorage.getItem('crm-sidebar-collapsed') === 'true';
   });
 
+  const userRoles = user?.roles?.length ? user.roles : (user?.role ? [user.role] : []);
+  const isStaffUser = userRoles.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role));
+
   const allMenuItems = [
     { id: 'students', label: 'Members', icon: Users, roles: ['admin', 'instructor'] },
-    { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'student'] },
+    { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },
-    { id: 'training', label: 'Training Records', icon: BookOpen, roles: ['admin', 'instructor', 'pilot', 'student'] },
+    ...(isStaffUser ? [{ id: 'training', label: 'Training Courses', icon: BookOpen, roles: ['admin', 'senior_instructor', 'instructor'] }] : []),
+    { id: 'learning-centre', label: 'Learning Centre', icon: GraduationCap, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
+    { id: 'pilot-file', label: 'Pilot File', icon: FileText, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'documents', label: 'Documents', icon: FolderOpen, roles: ['pilot', 'student'] },
     { id: 'outstanding-records', label: 'Outstanding Records', icon: AlertCircle, roles: ['admin', 'instructor'] },
     { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },

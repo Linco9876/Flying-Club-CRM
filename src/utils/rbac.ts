@@ -9,6 +9,7 @@ export type Action =
   | 'view-aircraft'
   | 'view-maintenance'
   | 'view-training'
+  | 'view-learning-centre'
   | 'view-outstanding-records'
   | 'view-billing'
   | 'view-reports'
@@ -38,6 +39,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
     { action: 'view-training', resource: 'all' },
+    { action: 'view-learning-centre', resource: 'all' },
     { action: 'view-outstanding-records', resource: 'all' },
     { action: 'view-billing', resource: 'all' },
     { action: 'view-reports', resource: 'all' },
@@ -59,6 +61,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
     { action: 'view-training', resource: 'all' },
+    { action: 'view-learning-centre', resource: 'all' },
     { action: 'view-outstanding-records', resource: 'all' },
     { action: 'view-safety', resource: 'all' },
     { action: 'view-settings', resource: 'own' },
@@ -78,6 +81,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
     { action: 'view-training', resource: 'all' },
+    { action: 'view-learning-centre', resource: 'all' },
     { action: 'view-outstanding-records', resource: 'all' },
     { action: 'view-safety', resource: 'all' },
     { action: 'view-settings', resource: 'own' },
@@ -95,6 +99,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-billing', resource: 'own' },
     { action: 'view-training', resource: 'own' },
+    { action: 'view-learning-centre', resource: 'own' },
     { action: 'view-logbook', resource: 'own' },
     { action: 'view-safety', resource: 'own' },
     { action: 'view-settings', resource: 'own' },
@@ -110,6 +115,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-billing', resource: 'own' },
     { action: 'view-training', resource: 'own' },
+    { action: 'view-learning-centre', resource: 'own' },
     { action: 'view-logbook', resource: 'own' },
     { action: 'view-safety', resource: 'own' },
     { action: 'view-settings', resource: 'own' },
@@ -191,7 +197,9 @@ export const getAuthorizedMenuItems = (user: User | null) => {
     { id: 'students', label: 'Members', action: 'view-students' },
     { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' },
     { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' },
-    { id: 'training', label: 'Training Records', action: 'view-training', resource: hasAnyRole(user, ['student', 'pilot']) ? 'own' : 'all' },
+    { id: 'training', label: 'Training Courses', action: 'view-training', resource: 'all', roles: ['admin', 'senior_instructor', 'instructor'] },
+    { id: 'learning-centre', label: 'Learning Centre', action: 'view-learning-centre', resource: hasAnyRole(user, ['admin', 'senior_instructor', 'instructor']) ? 'all' : 'own' },
+    { id: 'pilot-file', label: 'Pilot File', action: 'view-training', resource: 'own', roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'documents', label: 'Documents', action: 'view-training', resource: 'own', roles: ['pilot', 'student'] },
     { id: 'outstanding-records', label: 'Outstanding Records', action: 'view-outstanding-records' },
     { id: 'profile', label: 'My Profile', action: 'edit-personal-settings', resource: 'own', roles: ['student', 'pilot'] },

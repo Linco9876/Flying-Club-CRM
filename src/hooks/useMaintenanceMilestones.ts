@@ -109,7 +109,7 @@ export const useMaintenanceMilestones = () => {
       if (notify) toast.success('Maintenance milestone created');
     } catch (error) {
       console.error('Error creating milestone:', error);
-      toast.error('Failed to create milestone');
+      if (notify) toast.error('Failed to create milestone');
       throw error;
     }
   };

@@ -62,6 +62,7 @@ interface CalendarProps {
   onCopyBooking?: (booking: Booking) => void;
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => void;
   onDeleteBooking?: (bookingId: string) => Promise<void> | void;
+  onRestoreBooking?: (bookingId: string) => Promise<void> | void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
   onRefresh?: () => Promise<void> | void;
   isKioskMode?: boolean;
@@ -94,7 +95,9 @@ const MIN_CALENDAR_SLOT_HEIGHT = 18;
 const MAX_CALENDAR_SLOT_HEIGHT = 48;
 const MIN_CALENDAR_VISIBLE_SLOTS = 12;
 const TOUCH_HOLD_TO_DRAG_MS = 260;
-const TOUCH_CANCEL_MOVE_THRESHOLD_PX = 10;
+const TOUCH_TAP_MAX_MS = 160;
+const TOUCH_TAP_MOVE_THRESHOLD_PX = 6;
+const TOUCH_CANCEL_MOVE_THRESHOLD_PX = 24;
 
 interface CalendarResourceLayoutPreference {
   hiddenIds?: string[];
@@ -110,6 +113,8 @@ interface TouchSlotSelectionState {
   dayIndex?: number;
   startX: number;
   startY: number;
+  startedAt: number;
+  moved: boolean;
   activated: boolean;
 }
 
@@ -139,6 +144,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   onCopyBooking,
   onUpdateBooking,
   onDeleteBooking,
+  onRestoreBooking,
   onApproveBooking,
   onRefresh,
   isKioskMode = false,
@@ -212,18 +218,34 @@ export const Calendar: React.FC<CalendarProps> = ({
       }
 
       try {
+        let directory: Array<{ id: string; name: string; email: string }> = [];
         const { data, error } = await supabase.rpc('list_calendar_instructors');
         if (error) throw error;
+        directory = Array.isArray(data)
+          ? data.map((row: any) => ({
+              id: row.id,
+              name: row.name || row.email || 'Instructor',
+              email: row.email || '',
+            }))
+          : [];
+
+        if (directory.length === 0) {
+          const [{ data: fallbackUsers }, { data: fallbackRoles }] = await Promise.all([
+            supabase.from('users').select('id, name, email'),
+            supabase.from('user_roles').select('user_id, role').in('role', ['instructor', 'senior_instructor']),
+          ]);
+          const instructorIds = new Set((fallbackRoles || []).map((row: any) => row.user_id));
+          directory = (fallbackUsers || [])
+            .filter((row: any) => instructorIds.has(row.id))
+            .map((row: any) => ({
+              id: row.id,
+              name: row.name || row.email || 'Instructor',
+              email: row.email || '',
+            }));
+        }
+
         if (!cancelled) {
-          setPublicInstructorDirectory(
-            Array.isArray(data)
-              ? data.map((row: any) => ({
-                  id: row.id,
-                  name: row.name || row.email || 'Instructor',
-                  email: row.email || '',
-                }))
-              : []
-          );
+          setPublicInstructorDirectory(directory);
         }
       } catch (error) {
         console.error('Failed to load public instructor directory:', error);
@@ -364,6 +386,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   } | null>(null);
   const touchSlotSelectionRef = useRef<TouchSlotSelectionState | null>(null);
   const touchSlotSelectionTimerRef = useRef<number | null>(null);
+  const suppressSlotClickUntilRef = useRef(0);
   const touchBookingInteractionRef = useRef<TouchBookingInteractionState | null>(null);
   const touchBookingInteractionTimerRef = useRef<number | null>(null);
 
@@ -544,19 +567,27 @@ export const Calendar: React.FC<CalendarProps> = ({
     const resourceLayout = personalLayout || localLayout;
     const layoutHiddenIds = (resourceLayout?.hiddenIds ?? []).filter(id => currentResourceIds.has(id));
     const layoutOrderedIds = (resourceLayout?.orderedIds ?? []).filter(id => currentResourceIds.has(id));
-    const hasPersonalLayout = layoutHiddenIds.length > 0 || layoutOrderedIds.length > 0;
+    const filteredLayoutHiddenIds = isLimitedCalendarUser
+      ? layoutHiddenIds.filter(id => !instructorIds.includes(id))
+      : layoutHiddenIds;
+    const hasPersonalLayout = filteredLayoutHiddenIds.length > 0 || layoutOrderedIds.length > 0;
 
     if (hasPersonalLayout) {
       const orderWithNewResources = [
         ...layoutOrderedIds,
         ...defaultOrder.filter(id => !layoutOrderedIds.includes(id)),
       ];
-      setHiddenIds(new Set(layoutHiddenIds));
+      setHiddenIds(new Set(filteredLayoutHiddenIds));
       setOrderedIds(orderWithNewResources);
       return;
     }
 
-    setHiddenIds(new Set((calendarSettings.hidden_resources ?? []).filter(id => currentResourceIds.has(id))));
+    const hiddenIdsFromSettings = (calendarSettings.hidden_resources ?? []).filter(id => currentResourceIds.has(id));
+    setHiddenIds(new Set(
+      isLimitedCalendarUser
+        ? hiddenIdsFromSettings.filter(id => !instructorIds.includes(id))
+        : hiddenIdsFromSettings
+    ));
     const savedOrder = (calendarSettings.resource_order ?? [])
       .map((r: { id: string }) => r.id)
       .filter(id => currentResourceIds.has(id));
@@ -1215,18 +1246,26 @@ export const Calendar: React.FC<CalendarProps> = ({
     return `${hour.toString().padStart(2, '0')}:00`;
   };
 
-  const canCreateInstructorDowntime =
+  const isCalendarAdmin =
     user?.role === 'admin' ||
-    user?.role === 'instructor' ||
-    user?.roles?.some(role => role === 'admin' || role === 'instructor');
+    user?.roles?.some(role => role === 'admin');
+  const canManageInstructorDowntime = (instructorId: string) =>
+    Boolean(
+      instructorId &&
+      user?.id &&
+      (
+        isCalendarAdmin ||
+        (
+          instructorId === user.id &&
+          (user.role === 'instructor' || user.role === 'senior_instructor' || user.roles?.some(role => role === 'instructor' || role === 'senior_instructor'))
+        )
+      )
+    );
   const canApproveCalendarBooking = (booking: Booking) => {
-    const isAdmin =
-      user?.role === 'admin' ||
-      user?.roles?.some(role => role === 'admin');
     const isAssignedInstructor =
       Boolean(user?.id && booking.instructorId && user.id === booking.instructorId);
 
-    return booking.status === 'pending_approval' && (isAdmin || isAssignedInstructor);
+    return booking.status === 'pending_approval' && (isCalendarAdmin || isAssignedInstructor);
   };
 
   const openBookingFormForSelection = (
@@ -1254,7 +1293,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     resourceType: 'aircraft' | 'instructor'
   ) => {
     try {
-      if (resourceType === 'instructor' && canCreateInstructorDowntime) {
+      if (resourceType === 'instructor' && canManageInstructorDowntime(resourceId)) {
         setDowntimeChoice({ date, startTime, endTime, instructorId: resourceId });
         setDowntimeReason('Temporary off period');
         return true;
@@ -1669,7 +1708,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const renderUnavailabilityLabel = (unavailability: UnavailabilityPeriod) => {
     const canRemoveDowntime =
-      canCreateInstructorDowntime &&
+      canManageInstructorDowntime(unavailability.resourceId) &&
       unavailability.source === 'absence' &&
       Boolean(unavailability.id);
 
@@ -2098,10 +2137,16 @@ export const Calendar: React.FC<CalendarProps> = ({
           event.clientX - pendingSelection.startX,
           event.clientY - pendingSelection.startY
         );
+        if (movedDistance >= TOUCH_TAP_MOVE_THRESHOLD_PX) {
+          pendingSelection.moved = true;
+        }
 
         if (!pendingSelection.activated) {
           if (movedDistance >= TOUCH_CANCEL_MOVE_THRESHOLD_PX) {
             clearTouchSlotSelectionIntent();
+            suppressSlotClickUntilRef.current = Date.now() + 500;
+          } else {
+            event.preventDefault();
           }
           return;
         }
@@ -2157,11 +2202,14 @@ export const Calendar: React.FC<CalendarProps> = ({
       if (pendingSelection && pendingSelection.pointerId === event.pointerId) {
         const activated = pendingSelection.activated;
         const originalSelection = { ...pendingSelection };
+        const elapsedMs = Date.now() - originalSelection.startedAt;
+        const isQuickStationaryTap = !originalSelection.moved && elapsedMs <= TOUCH_TAP_MAX_MS;
+        suppressSlotClickUntilRef.current = Date.now() + 500;
         clearTouchSlotSelectionIntent();
 
         if (activated) {
           handleMouseUp(originalSelection.date);
-        } else {
+        } else if (isQuickStationaryTap) {
           handleTimeSlotClick(
             originalSelection.slot,
             originalSelection.resourceId,
@@ -2289,6 +2337,8 @@ export const Calendar: React.FC<CalendarProps> = ({
     if (draggedBooking || resizingBooking) return;
     if (isResourceUnavailable(resourceId, resourceType, slot, date)) return;
 
+    suppressSlotClickUntilRef.current = Date.now() + 500;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     clearTouchSlotSelectionIntent();
     touchSlotSelectionRef.current = {
       pointerId: event.pointerId,
@@ -2299,6 +2349,8 @@ export const Calendar: React.FC<CalendarProps> = ({
       dayIndex,
       startX: event.clientX,
       startY: event.clientY,
+      startedAt: Date.now(),
+      moved: false,
       activated: false,
     };
 
@@ -2789,15 +2841,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                           touchAction: 'manipulation',
                           ...selectionPreviewStyle,
                         }}
-                        onClick={() =>
-                          !unavailability &&
-                          handleTimeSlotClick(
-                            slot,
-                            resource.id,
-                            resource.type,
-                            currentDate
-                          )
-                        }
+                        onClick={() => {
+                          if (Date.now() < suppressSlotClickUntilRef.current) return;
+                          if (!unavailability) {
+                            handleTimeSlotClick(
+                              slot,
+                              resource.id,
+                              resource.type,
+                              currentDate
+                            );
+                          }
+                        }}
                         onMouseDown={(e) =>
                           !unavailability && !draggedBooking &&
                           handleMouseDown(
@@ -3292,15 +3346,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                             touchAction: 'manipulation',
                             ...selectionPreviewStyle,
                           }}
-                          onClick={() =>
-                            !unavailability &&
-                            handleTimeSlotClick(
-                              slot,
-                              selectedAircraftId,
-                              'aircraft',
-                              day
-                            )
-                          }
+                          onClick={() => {
+                            if (Date.now() < suppressSlotClickUntilRef.current) return;
+                            if (!unavailability) {
+                              handleTimeSlotClick(
+                                slot,
+                                selectedAircraftId,
+                                'aircraft',
+                                day
+                              );
+                            }
+                          }}
                           onMouseDown={(e) =>
                             !unavailability && !draggedBooking &&
                             handleMouseDown(
@@ -3400,15 +3456,17 @@ export const Calendar: React.FC<CalendarProps> = ({
                             touchAction: 'manipulation',
                             ...selectionPreviewStyle,
                           }}
-                          onClick={() =>
-                            !unavailability &&
-                            handleTimeSlotClick(
-                              slot,
-                              selectedInstructorId,
-                              'instructor',
-                              day
-                            )
-                          }
+                          onClick={() => {
+                            if (Date.now() < suppressSlotClickUntilRef.current) return;
+                            if (!unavailability) {
+                              handleTimeSlotClick(
+                                slot,
+                                selectedInstructorId,
+                                'instructor',
+                                day
+                              );
+                            }
+                          }}
                           onMouseDown={(e) =>
                             !unavailability && !draggedBooking &&
                             handleMouseDown(
@@ -4234,12 +4292,12 @@ export const Calendar: React.FC<CalendarProps> = ({
   );
 
   return (
-    <div className={isKioskMode ? 'flex h-full min-h-0 select-none flex-col overflow-hidden bg-white dark:bg-[#0f1117]' : 'select-none overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]'}>
+    <div className={isKioskMode ? 'flex min-h-screen select-none flex-col overflow-visible bg-white dark:bg-[#0f1117]' : 'select-none overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]'}>
       <div className={isKioskMode ? 'shrink-0 border-b border-gray-200 bg-white p-4 dark:border-[#2c2f36] dark:bg-[#0f1117]' : 'border-b border-gray-200 bg-white p-3 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-4'}>
         {isKioskMode ? renderKioskControls() : renderStandardControls()}
       </div>
 
-      <div className={isKioskMode ? 'min-h-0 flex-1 overflow-hidden' : undefined}>
+      <div className={isKioskMode ? 'min-h-0 flex-1 overflow-auto' : undefined}>
         {viewMode === 'day' && renderDayView()}
         {viewMode === 'week' && renderWeekView()}
         {viewMode === 'list' && renderListView()}
@@ -4352,9 +4410,30 @@ export const Calendar: React.FC<CalendarProps> = ({
               return;
             }
             if (onDeleteBooking) {
-              void Promise.resolve(onDeleteBooking(actionMenuBooking.id));
+              const bookingToDelete = actionMenuBooking;
+              void Promise.resolve(onDeleteBooking(bookingToDelete.id))
+                .then(() => {
+                  setActionMenuBooking(null);
+                })
+                .catch((error) => {
+                  console.error('Error deleting booking from action menu:', error);
+                });
             }
           }}
+          onRestore={
+            onRestoreBooking && (actionMenuBooking.status === 'cancelled' || actionMenuBooking.deletedAt)
+              ? () => {
+                  const bookingToRestore = actionMenuBooking;
+                  void Promise.resolve(onRestoreBooking(bookingToRestore.id))
+                    .then(() => {
+                      setActionMenuBooking(null);
+                    })
+                    .catch((error) => {
+                      console.error('Error reinstating booking from action menu:', error);
+                    });
+                }
+              : undefined
+          }
           onViewHirerProfile={!isKioskMode && canUseBookingActions(actionMenuBooking) && !actionMenuBooking.isGuestBooking && (actionMenuBooking.studentId || actionMenuBooking.pilotId)
             ? () => {
                 const hirerId = actionMenuBooking.studentId || actionMenuBooking.pilotId;

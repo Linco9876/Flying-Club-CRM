@@ -18,7 +18,7 @@ export const PortalUxSettings: React.FC<PortalUxSettingsProps> = ({ canEdit, onF
   useEffect(() => {
     (window as any).__portalSettingsSave = async () => {
       await updateSettings({
-        theme: formData.theme,
+        kiosk_theme: formData.kiosk_theme,
         date_format: formData.date_format,
         time_format: formData.time_format,
         flight_time_decimals: formData.flight_time_decimals,
@@ -72,13 +72,16 @@ export const PortalUxSettings: React.FC<PortalUxSettingsProps> = ({ canEdit, onF
         </h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="text-sm font-medium text-gray-700">
-            Theme
-            <select value={formData.theme} onChange={e => handleInputChange('theme', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
+          Kiosk theme
+            <select value={formData.kiosk_theme} onChange={e => handleInputChange('kiosk_theme', e.target.value)} disabled={!canEdit} className={`mt-2 ${selectClass}`}>
               <option value="light">Light</option>
-              <option value="semi-dark">Semi-dark</option>
               <option value="dark">Dark</option>
+              <option value="day-night">Day/Night</option>
               <option value="auto">Auto (System)</option>
             </select>
+            <span className="mt-1 block text-xs font-normal text-gray-500">
+              Applies only to the kiosk calendar. Individual users choose their own portal theme in Appearance.
+            </span>
           </label>
           <label className="text-sm font-medium text-gray-700">
             Date Format

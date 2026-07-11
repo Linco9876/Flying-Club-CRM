@@ -1,5 +1,5 @@
 import React from 'react';
-import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy } from 'lucide-react';
+import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy, RotateCcw } from 'lucide-react';
 import { Booking } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
@@ -12,6 +12,7 @@ interface BookingActionMenuProps {
   onEditFlightLog?: () => void;
   onDeleteFlightLog?: () => void;
   onDelete: () => void;
+  onRestore?: () => void;
   onViewHirerProfile?: () => void;
   onConvertGuestToMember?: () => void;
   onViewTrainingRecord?: () => void;
@@ -35,6 +36,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   onEditFlightLog,
   onDeleteFlightLog,
   onDelete,
+  onRestore,
   onViewHirerProfile,
   onConvertGuestToMember,
   onViewTrainingRecord,
@@ -52,6 +54,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
   const isGroundSession = booking.bookingKind === 'ground';
+  const isCancelledBooking = booking.status === 'cancelled' || Boolean(booking.deletedAt);
   const logLabel = isGroundSession ? 'Log Ground Session' : 'Log Flight';
   const editLogLabel = isGroundSession ? 'Edit Ground Session Log' : 'Edit Flight Log';
   const deleteLogLabel = isGroundSession ? 'Delete Ground Session Log' : 'Delete Flight Log';
@@ -123,6 +126,22 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
 
   const menuContent = (
     <>
+      {isCancelledBooking ? (
+        onRestore ? (
+          <button
+            onClick={() => handleAction(onRestore)}
+            className="w-full px-4 py-2 text-left text-sm text-green-700 hover:bg-green-50 flex items-center space-x-2 transition-colors"
+          >
+            <RotateCcw className="h-4 w-4" />
+            <span>Reinstate Booking</span>
+          </button>
+        ) : (
+          <div className="px-4 py-2 text-sm text-gray-500">
+            This booking is cancelled.
+          </div>
+        )
+      ) : (
+        <>
       {onViewHirerProfile && (
         <button
           onClick={() => handleAction(onViewHirerProfile)}
@@ -238,6 +257,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
             <Trash2 className="h-4 w-4" />
             <span>Delete Booking</span>
           </button>
+        </>
+      )}
         </>
       )}
     </>

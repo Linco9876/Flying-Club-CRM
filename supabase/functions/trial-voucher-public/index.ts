@@ -6,6 +6,7 @@ import {
   trialVoucherProductBookingSetup,
 } from "../_shared/trialVoucherReadiness.ts";
 import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import { getActiveStripeMode, testModeSubject } from "../_shared/stripeMode.ts";
 
 type SupabaseAdminClient = any;
 
@@ -194,11 +195,13 @@ const sendVoucherAccountSetupEmail = async ({
   fullName,
   productName,
   setupLink,
+  isTestMode,
 }: {
   email: string;
   fullName: string;
   productName: string;
   setupLink: string;
+  isTestMode?: boolean;
 }) => {
   const apiKey = Deno.env.get("BREVO_API_KEY");
   if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
@@ -245,7 +248,7 @@ const sendVoucherAccountSetupEmail = async ({
     body: JSON.stringify({
       sender: { email: senderEmail, name: senderName },
       to: [{ email, name: fullName || email }],
-      subject: "Set up your Bendigo Flying Club trial flight booking account",
+      subject: testModeSubject(isTestMode ? "test" : "live", "Set up your Bendigo Flying Club trial flight booking account"),
       htmlContent: html,
     }),
   });
@@ -432,7 +435,7 @@ const sendTrialBookingConfirmationEmail = async ({
     body: JSON.stringify({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName }],
-      subject: "Your Bendigo Flying Club trial flight is booked",
+      subject: testModeSubject(voucher?.stripe_mode === "test" || voucher?.is_test_mode ? "test" : "live", "Your Bendigo Flying Club trial flight is booked"),
       htmlContent: html,
       textContent: plainText,
     }),
@@ -621,8 +624,8 @@ const sendVoucherEmailFromCheckoutStatus = async ({
 };
 
 const retrieveStripeCheckoutSession = async (adminClient: SupabaseAdminClient, sessionId: string) => {
-  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-  if (!stripeSecretKey) return null;
+  const stripeMode = await getActiveStripeMode(adminClient);
+  const stripeSecretKey = stripeMode.secretKey;
   const connectedAccountId = await getConnectedStripeAccountId(adminClient);
   if (!connectedAccountId) return null;
 
@@ -708,7 +711,9 @@ const reconcileCheckoutSession = async ({
   if (updateError) throw updateError;
 
   const internalSecret = Deno.env.get("TRIAL_VOUCHER_INTERNAL_SECRET");
-  const email = internalSecret
+  const email = voucher.checkout_intent === "book_now"
+    ? null
+    : internalSecret
     ? await sendVoucherEmailFromCheckoutStatus({ supabaseUrl, internalSecret, voucherId: voucher.id })
     : null;
 
@@ -808,6 +813,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
     { data: absences, error: absencesError },
     { data: users, error: usersError },
     { data: endorsements, error: endorsementsError },
+    { data: activeHolds, error: activeHoldsError },
   ] = await Promise.all([
     adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type,is_archived"),
     adminClient.from("bookings").select("id,aircraft_id,instructor_id,start_time,end_time,status,deleted_at,has_conflict"),
@@ -819,6 +825,12 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
       .from("endorsements")
       .select("student_id,type,expiry_date,is_active")
       .in("student_id", Array.from(allowedInstructorIds)),
+    adminClient
+      .from("trial_flight_vouchers")
+      .select("id,held_aircraft_id,held_instructor_id,held_start_time,held_end_time,hold_expires_at")
+      .eq("checkout_intent", "book_now")
+      .eq("payment_status", "pending")
+      .gt("hold_expires_at", new Date().toISOString()),
   ]);
 
   if (aircraftError) throw aircraftError;
@@ -828,6 +840,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
   if (absencesError) throw absencesError;
   if (usersError) throw usersError;
   if (endorsementsError) throw endorsementsError;
+  if (activeHoldsError) throw activeHoldsError;
 
   const eligibleAircraft = (aircraftRows || [])
     .filter((aircraft: any) => aircraft.status === "serviceable")
@@ -891,6 +904,10 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
               !activeBookings.some((booking: any) =>
                 overlaps(start, end, booking.start_time, booking.end_time) &&
                 (booking.aircraft_id === candidate.id || booking.instructor_id === instructorId)
+              ) &&
+              !(activeHolds || []).some((hold: any) =>
+                overlaps(start, end, hold.held_start_time, hold.held_end_time) &&
+                (hold.held_aircraft_id === candidate.id || hold.held_instructor_id === instructorId)
               )
             )
             .sort((a: any, b: any) => {
@@ -1014,6 +1031,33 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "book-now-availability") {
+      const productId = String(body.productId || "").trim();
+      if (!productId) return json({ error: "Voucher product is required" }, 400);
+
+      const { data: product, error: productError } = await adminClient
+        .from("trial_flight_voucher_products")
+        .select(`
+          id,
+          name,
+          description,
+          aircraft_mode,
+          aircraft_ids,
+          instructor_ids,
+          duration_minutes,
+          booking_instructions,
+          is_active
+        `)
+        .eq("id", productId)
+        .maybeSingle();
+
+      if (productError) return json({ error: productError.message }, 500);
+      if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
+
+      const slots = await buildAvailableSlots(adminClient, product);
+      return json({ slots });
+    }
+
     if (action === "checkout-status") {
       const sessionId = String(body.sessionId || "").trim();
       if (!sessionId) return json({ error: "Checkout session is required" }, 400);
@@ -1030,6 +1074,9 @@ Deno.serve(async (req: Request) => {
           send_to_recipient,
           recipient_delivery_at,
           delivered_at,
+          checkout_intent,
+          purchaser_confirmation_sent_at,
+          recipient_confirmation_sent_at,
           stripe_checkout_session_id,
           trial_flight_voucher_products(name)
         `)
@@ -1068,6 +1115,9 @@ Deno.serve(async (req: Request) => {
           send_to_recipient,
           recipient_delivery_at,
           delivered_at,
+          checkout_intent,
+          purchaser_confirmation_sent_at,
+          recipient_confirmation_sent_at,
           trial_flight_voucher_products(name)
         `)
         .eq("stripe_checkout_session_id", sessionId)
@@ -1076,7 +1126,7 @@ Deno.serve(async (req: Request) => {
       if (refreshedError) return json({ error: refreshedError.message }, 500);
       if (!voucher) return json({ error: "Checkout session was not found after reconciliation" }, 404);
 
-      if (!checkoutEmail && voucher.payment_status === "paid" && !voucher.delivered_at) {
+      if (!checkoutEmail && voucher.payment_status === "paid" && !voucher.delivered_at && voucher.checkout_intent !== "book_now") {
         const deliveryAt = voucher.recipient_delivery_at ? new Date(voucher.recipient_delivery_at) : null;
         const isFutureRecipientDelivery = Boolean(
           voucher.send_to_recipient &&
@@ -1103,7 +1153,9 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const emailTo = voucher.send_to_recipient
+      const emailTo = voucher.checkout_intent === "book_now"
+        ? voucher.purchaser_email
+        : voucher.send_to_recipient
         ? voucher.recipient_email
         : voucher.purchaser_email;
       const product = Array.isArray(voucher.trial_flight_voucher_products)
@@ -1120,6 +1172,9 @@ Deno.serve(async (req: Request) => {
           sendToRecipient: Boolean(voucher.send_to_recipient),
           recipientDeliveryAt: voucher.recipient_delivery_at,
           deliveredAt: voucher.delivered_at,
+          checkoutIntent: voucher.checkout_intent,
+          purchaserConfirmationSentAt: voucher.purchaser_confirmation_sent_at,
+          recipientConfirmationSentAt: voucher.recipient_confirmation_sent_at,
           email: checkoutEmail,
           warning: checkoutWarning || undefined,
         },
@@ -1279,6 +1334,7 @@ Deno.serve(async (req: Request) => {
             fullName: linkedUser.name || "there",
             productName: product.name,
             setupLink,
+            isTestMode: voucher?.stripe_mode === "test" || voucher?.is_test_mode === true,
           })
         : { sent: false, error: "No setup link was generated" };
 
@@ -1645,6 +1701,7 @@ Deno.serve(async (req: Request) => {
           fullName,
           productName: product.name,
           setupLink,
+          isTestMode: voucher?.stripe_mode === "test" || voucher?.is_test_mode === true,
         })
       : { sent: false, error: "No setup link was generated" };
 

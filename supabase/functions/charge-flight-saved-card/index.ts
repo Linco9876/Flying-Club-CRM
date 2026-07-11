@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns } from "../_shared/stripeMode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,12 +48,14 @@ const markFlightPaid = async ({
   paymentMethod,
   paymentIntent,
   amountDollars,
+  stripeMode,
 }: {
   adminClient: any;
   flightLog: any;
   paymentMethod: any;
   paymentIntent: any;
   amountDollars: number;
+  stripeMode: "test" | "live";
 }) => {
   const now = new Date().toISOString();
   const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
@@ -95,6 +98,7 @@ const markFlightPaid = async ({
       stripe_charge_attempted_at: now,
       stripe_payment_error: null,
       updated_at: now,
+      ...stripeModeColumns(stripeMode),
     })
     .eq("id", flightLog.id);
   if (updateError) throw updateError;
@@ -111,6 +115,7 @@ const markFlightPaid = async ({
         payment_method_id: paymentMethod?.id || null,
         balance_after: null,
         verified_status: "verified",
+        ...stripeModeColumns(stripeMode),
       });
     if (txError) throw txError;
   }
@@ -123,12 +128,12 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeSecretKey) return json({ error: "Stripe is not configured." }, 503);
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const activeStripeMode = await getActiveStripeMode(adminClient);
+    const stripeSecretKey = activeStripeMode.secretKey;
 
     const user = await getAuthUser(adminClient, req);
     if (!(await hasStaffRole(adminClient, user.id))) {
@@ -228,6 +233,7 @@ Deno.serve(async (req: Request) => {
     form.set("confirm", "true");
     form.set("description", `${flightTypeName} - ${aircraftRegistration} - ${studentName} - ${flightDate}`);
     form.set("metadata[crm_payment_type]", "flight_log_off_session");
+    addStripeModeMetadata(form, activeStripeMode.mode);
     form.set("metadata[flight_log_id]", flightLog.id);
     form.set("metadata[student_id]", flightLog.student_id || "");
     form.set("metadata[payment_method_id]", stripeMethod.id);
@@ -265,6 +271,7 @@ Deno.serve(async (req: Request) => {
           stripe_payment_error: errorMessage,
           stripe_charge_attempted_at: now,
           updated_at: now,
+          ...stripeModeColumns(activeStripeMode.mode),
         })
         .eq("id", flightLog.id);
       return json({ error: errorMessage, requiresAction: paymentIntent?.error?.code === "authentication_required" }, 402);
@@ -277,6 +284,7 @@ Deno.serve(async (req: Request) => {
         paymentMethod: stripeMethod,
         paymentIntent,
         amountDollars: amountCents / 100,
+        stripeMode: activeStripeMode.mode,
       });
       return json({ ok: true, status: paymentIntent.status, paymentIntentId: paymentIntent.id });
     }
@@ -293,6 +301,7 @@ Deno.serve(async (req: Request) => {
           : null,
         stripe_charge_attempted_at: now,
         updated_at: now,
+        ...stripeModeColumns(activeStripeMode.mode),
       })
       .eq("id", flightLog.id);
 

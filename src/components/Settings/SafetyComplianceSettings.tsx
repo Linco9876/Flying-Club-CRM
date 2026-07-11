@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Shield, Users, Plus, Trash2, Loader2 } from 'lucide-react';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 
 interface SafetyComplianceSettingsProps {
   canEdit: boolean;
@@ -17,11 +18,20 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
     updateCategory,
     deleteCategory
   } = useSafetySettings();
+  const { settings: trainingSettings } = useTrainingSettings();
   const [formData, setFormData] = useState(settings);
 
-  const handleInputChange = (field: string, value: string | number | boolean) => {
+  const handleInputChange = (field: string, value: string | number | boolean | string[]) => {
     setFormData(current => ({ ...current, [field]: value }));
     onFormChange();
+  };
+
+  const toggleFlightReviewEndorsement = (endorsementType: string, enabled: boolean) => {
+    const existing = formData.flightReviewEndorsementTypes || [];
+    const next = enabled
+      ? Array.from(new Set([...existing, endorsementType]))
+      : existing.filter(type => type !== endorsementType);
+    handleInputChange('flightReviewEndorsementTypes', next);
   };
 
   const handleCategoryChange = (id: string, field: string, value: string) => {
@@ -148,6 +158,39 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                 disabled={!canEdit}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
               />
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-blue-950">Endorsements that reset flight review</h4>
+                <p className="mt-1 text-sm leading-5 text-blue-900">
+                  When one of these active/current endorsements is added to a member, the endorsement date becomes their latest flight review date. Their next flight review will then be due two years after that date.
+                </p>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-blue-700">
+                {formData.flightReviewEndorsementTypes?.length || 0} selected
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {(trainingSettings.endorsementTypes || []).map(endorsementType => (
+                <label key={endorsementType} className="flex items-start gap-2 rounded-lg border border-blue-100 bg-white p-3 text-sm text-slate-800 shadow-sm">
+                  <input
+                    type="checkbox"
+                    checked={(formData.flightReviewEndorsementTypes || []).includes(endorsementType)}
+                    onChange={(event) => toggleFlightReviewEndorsement(endorsementType, event.target.checked)}
+                    disabled={!canEdit}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                  />
+                  <span className="font-medium">{endorsementType}</span>
+                </label>
+              ))}
+              {(trainingSettings.endorsementTypes || []).length === 0 && (
+                <p className="rounded-lg border border-blue-100 bg-white p-3 text-sm text-blue-900">
+                  Add endorsement types in Training / Syllabus Settings first.
+                </p>
+              )}
             </div>
           </div>
         </div>

@@ -19,6 +19,11 @@ export interface CreateGroundSessionLogData {
   notes?: string;
 }
 
+interface GroundSessionPricingResult {
+  calculatedCost: number;
+  effectiveFlightTypeId?: string;
+}
+
 const mapLog = (row: any): GroundSessionLog => ({
   id: row.id,
   bookingId: row.booking_id || undefined,
@@ -44,6 +49,11 @@ const mapLog = (row: any): GroundSessionLog => ({
 const isPrepaidLike = (value?: string | null) => {
   const normalised = String(value || '').toLowerCase().replace(/[-_]/g, ' ');
   return normalised.includes('pilot account') || normalised.includes('pre paid') || normalised.includes('prepaid');
+};
+
+const roundUpToQuarterHour = (hours: number) => {
+  if (!Number.isFinite(hours) || hours <= 0) return 0.25;
+  return Math.max(0.25, Math.ceil((hours - Number.EPSILON) * 4) / 4);
 };
 
 export const useGroundSessionLogs = (bookingId?: string) => {
@@ -76,17 +86,44 @@ export const useGroundSessionLogs = (bookingId?: string) => {
     void fetchLogs();
   }, [bookingId]);
 
-  const calculateCost = async (flightTypeId: string | undefined, durationHours: number) => {
-    if (!flightTypeId || durationHours <= 0) return 0;
+  const calculatePricing = async (
+    flightTypeId: string | undefined,
+    descriptionOptionId: string | undefined,
+    durationHours: number
+  ): Promise<GroundSessionPricingResult> => {
+    const billableHours = roundUpToQuarterHour(durationHours);
+    if (billableHours <= 0) return { calculatedCost: 0, effectiveFlightTypeId: flightTypeId };
+
+    const { data: description, error: descriptionError } = descriptionOptionId
+      ? await supabase
+        .from('ground_session_description_options')
+        .select('pricing_mode, fixed_rate, flight_type_id')
+        .eq('id', descriptionOptionId)
+        .maybeSingle()
+      : { data: null, error: null };
+
+    if (descriptionError) throw descriptionError;
+    if (description?.pricing_mode === 'fixed') {
+      return {
+        calculatedCost: Math.round((Number(description.fixed_rate || 0) + Number.EPSILON) * 100) / 100,
+        effectiveFlightTypeId: flightTypeId || description.flight_type_id || undefined,
+      };
+    }
+
+    const effectiveFlightTypeId = description?.flight_type_id || flightTypeId;
+    if (!effectiveFlightTypeId) return { calculatedCost: 0, effectiveFlightTypeId: undefined };
 
     const { data, error } = await supabase
       .from('flight_types')
       .select('ground_session_hourly_rate')
-      .eq('id', flightTypeId)
+      .eq('id', effectiveFlightTypeId)
       .maybeSingle();
 
     if (error) throw error;
-    return Math.round((Number(data?.ground_session_hourly_rate || 0) * durationHours + Number.EPSILON) * 100) / 100;
+    return {
+      calculatedCost: Math.round((Number(data?.ground_session_hourly_rate || 0) * billableHours + Number.EPSILON) * 100) / 100,
+      effectiveFlightTypeId,
+    };
   };
 
   const syncXeroInvoiceIfAvailable = async (groundSessionLogId: string) => {
@@ -136,8 +173,9 @@ export const useGroundSessionLogs = (bookingId?: string) => {
       const currentUser = authData.user;
       if (!currentUser) throw new Error('User not authenticated');
 
-      const durationHours = Math.max(0, Number(logData.duration_hours || 0));
-      const calculatedCost = await calculateCost(logData.flight_type_id, durationHours);
+      const durationHours = roundUpToQuarterHour(Number(logData.duration_hours || 0));
+      const pricing = await calculatePricing(logData.flight_type_id, logData.description_option_id, durationHours);
+      const calculatedCost = pricing.calculatedCost;
       const prepaidSelected = isPrepaidLike(logData.payment_type);
 
       let paymentMethodId: string | null = null;
@@ -173,6 +211,7 @@ export const useGroundSessionLogs = (bookingId?: string) => {
         .insert({
           ...logData,
           duration_hours: durationHours,
+          flight_type_id: pricing.effectiveFlightTypeId || null,
           calculated_cost: calculatedCost,
           payment_status: paymentStatus,
           created_by: currentUser.id,
@@ -237,14 +276,17 @@ export const useGroundSessionLogs = (bookingId?: string) => {
   const updateGroundSessionLog = async (id: string, updates: Partial<CreateGroundSessionLogData>) => {
     try {
       const current = logs.find(log => log.id === id);
-      const nextDuration = Math.max(0, Number(updates.duration_hours ?? current?.durationHours ?? 0));
+      const nextDuration = roundUpToQuarterHour(Number(updates.duration_hours ?? current?.durationHours ?? 0));
       const nextFlightTypeId = updates.flight_type_id ?? current?.flightTypeId;
-      const recalculatedCost = await calculateCost(nextFlightTypeId, nextDuration);
+      const nextDescriptionOptionId = updates.description_option_id ?? current?.descriptionOptionId;
+      const pricing = await calculatePricing(nextFlightTypeId, nextDescriptionOptionId, nextDuration);
+      const recalculatedCost = pricing.calculatedCost;
       const nextPaymentType = updates.payment_type ?? current?.paymentType ?? '';
 
       const payload: Record<string, unknown> = {
         ...updates,
         duration_hours: nextDuration,
+        flight_type_id: pricing.effectiveFlightTypeId || null,
         calculated_cost: recalculatedCost,
         payment_status: recalculatedCost <= 0 ? 'free' : isPrepaidLike(nextPaymentType) ? 'paid' : 'pending',
         updated_at: new Date().toISOString(),

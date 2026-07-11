@@ -4,7 +4,8 @@ import { useStudents } from '../../hooks/useStudents';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { buildSafetyComplianceSummary, getBfrDueDate, isStudentOnly } from '../../utils/safetyCompliance';
-import { Download, Search, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Download, Search, AlertTriangle, CheckCircle, Clock, CalendarDays, ShieldCheck } from 'lucide-react';
+import { hasAnyRole } from '../../utils/rbac';
 
 interface PilotCurrency {
   id: string;
@@ -30,6 +31,10 @@ export const PilotCurrencyTab: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [endorsementFilter, setEndorsementFilter] = useState('');
+  const isMemberSelfView = Boolean(
+    (user?.role === 'student' || user?.role === 'pilot' || user?.roles?.some(role => role === 'student' || role === 'pilot')) &&
+    !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])
+  );
 
   const calculatePilotCurrency = (): PilotCurrency[] => {
     let pilots = students.filter(s =>
@@ -183,6 +188,95 @@ export const PilotCurrencyTab: React.FC = () => {
     if (days === 0) return 'Due today';
     return `${days} days`;
   };
+
+  if (isMemberSelfView) {
+    const pilot = sortedPilots[0];
+
+    if (!pilot) {
+      return (
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm">
+          <ShieldCheck className="mx-auto h-10 w-10 text-gray-300" />
+          <h2 className="mt-3 text-lg font-semibold text-gray-900">No currency record found</h2>
+          <p className="mt-1 text-sm text-gray-500">Your profile has not loaded a safety and currency record yet.</p>
+        </div>
+      );
+    }
+
+    const statusText = pilot.urgencyLevel === 'current'
+      ? 'Current'
+      : pilot.urgencyLevel.charAt(0).toUpperCase() + pilot.urgencyLevel.slice(1);
+
+    const currencyCards = [
+      {
+        label: 'Last flying activity',
+        value: formatDate(pilot.lastFlightDate),
+        detail: pilot.daysSinceLastFlight === 999 ? 'No recent flight in this system' : `${pilot.daysSinceLastFlight} days ago`,
+        icon: <CalendarDays className="h-5 w-5" />
+      },
+      {
+        label: 'Medical',
+        value: formatDate(pilot.medicalExpiry),
+        detail: formatDaysUntil(pilot.daysUntilMedicalExpiry),
+        icon: <ShieldCheck className="h-5 w-5" />
+      },
+      {
+        label: 'Membership',
+        value: formatDate(pilot.licenceExpiry),
+        detail: formatDaysUntil(pilot.daysUntilLicenceExpiry),
+        icon: <CheckCircle className="h-5 w-5" />
+      },
+      {
+        label: 'Flight review',
+        value: pilot.isStudentOnly ? 'Not required for student solo hire' : formatDate(pilot.bfrDue),
+        detail: pilot.isStudentOnly ? 'Students fly with an instructor' : formatDaysUntil(pilot.daysUntilBfrDue),
+        icon: <Clock className="h-5 w-5" />
+      }
+    ];
+
+    return (
+      <div className="space-y-5">
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Currency status</p>
+              <h2 className="mt-1 text-2xl font-bold text-gray-950">{statusText}</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                {pilot.isStudentOnly
+                  ? 'Student accounts do not have solo recency requirements because bookings require instructor oversight.'
+                  : 'This is based on your logged flying, flight review, membership and medical information in this CRM.'}
+              </p>
+            </div>
+            <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold ${getUrgencyColor(pilot.urgencyLevel)}`}>
+              {getUrgencyIcon(pilot.urgencyLevel)}
+              {statusText}
+            </span>
+          </div>
+        </section>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {currencyCards.map(card => (
+            <article key={card.label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-blue-700">
+                {card.icon}
+                <p className="text-xs font-semibold uppercase tracking-wide">{card.label}</p>
+              </div>
+              <p className="mt-3 text-lg font-bold text-gray-950">{card.value}</p>
+              <p className="mt-1 text-sm text-gray-500">{card.detail}</p>
+            </article>
+          ))}
+        </div>
+
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Endorsements on file</h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {pilot.endorsements.length > 0 ? pilot.endorsements.map(endorsement => (
+              <span key={endorsement} className="rounded-full bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-800">{endorsement}</span>
+            )) : <span className="text-sm text-gray-500">No endorsements recorded yet.</span>}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

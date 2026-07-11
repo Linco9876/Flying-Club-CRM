@@ -3,8 +3,9 @@ import { CheckCircle2, CreditCard, DollarSign, GripVertical, Link2, Loader2, Loc
 import { useBillingSettings, FlightType, PaymentMethod } from '../../hooks/useBillingSettings';
 import { useGroundSessionDescriptions } from '../../hooks/useGroundSessionDescriptions';
 import { useAircraft } from '../../hooks/useAircraft';
-import { UserRole } from '../../types';
+import { GroundSessionDescriptionOption, UserRole } from '../../types';
 import { supabase } from '../../lib/supabase';
+import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import toast from 'react-hot-toast';
 
 interface BillingRatesSettingsProps {
@@ -43,7 +44,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   const [xeroStatus, setXeroStatus] = useState<XeroConnectStatus | null>(null);
   const [xeroLoading, setXeroLoading] = useState(false);
   const [xeroItemSyncingId, setXeroItemSyncingId] = useState<string | null>(null);
-  const [draftGroundSessionDescriptions, setDraftGroundSessionDescriptions] = useState<string[]>([]);
+  const [draftGroundSessionDescriptions, setDraftGroundSessionDescriptions] = useState<GroundSessionDescriptionOption[]>([]);
 
   const loadStripeStatus = useCallback(async () => {
     setStripeLoading(true);
@@ -89,7 +90,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     setDraftGroundSessionDescriptions(
       groundSessionDescriptionOptions
         .filter(option => option.active)
-        .map(option => option.name)
+        .map(option => ({ ...option }))
     );
   }, [groundSessionDescriptionOptions]);
 
@@ -112,7 +113,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       setDraftGroundSessionDescriptions(
         groundSessionDescriptionOptions
           .filter(option => option.active)
-          .map(option => option.name)
+          .map(option => ({ ...option }))
       );
     };
     return () => {
@@ -169,13 +170,25 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
-  const updateGroundSessionDescription = (index: number, value: string) => {
-    setDraftGroundSessionDescriptions(current => current.map((item, itemIndex) => itemIndex === index ? value : item));
+  const updateGroundSessionDescription = (index: number, updates: Partial<GroundSessionDescriptionOption>) => {
+    setDraftGroundSessionDescriptions(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...updates } : item));
     onFormChange();
   };
 
   const addGroundSessionDescription = () => {
-    setDraftGroundSessionDescriptions(current => [...current, 'New description']);
+    setDraftGroundSessionDescriptions(current => [
+      ...current,
+      {
+        id: newId('ground-description'),
+        name: 'New description',
+        description: '',
+        active: true,
+        displayOrder: current.length + 1,
+        pricingMode: 'flight_type_hourly',
+        fixedRate: 0,
+        flightTypeId: null,
+      },
+    ]);
     onFormChange();
   };
 
@@ -250,7 +263,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       toast.success(data?.created ? 'Created the Xero sales item for this flight type' : 'Linked this flight type to the existing Xero sales item');
     } catch (error: any) {
       console.error('Failed to link flight type item in Xero:', error);
-      toast.error(error?.message || 'Failed to create or link the Xero sales item');
+      toast.error(await getSupabaseFunctionErrorMessage(error, 'Failed to create or link the Xero sales item'));
     } finally {
       setXeroItemSyncingId(null);
     }
@@ -586,24 +599,85 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
         <div className="space-y-3">
           {draftGroundSessionDescriptions.map((description, index) => (
-            <div key={`ground-description-${index}`} className="rounded-lg border border-gray-200 bg-gray-50 p-4 flex items-center gap-3">
-              <input
-                value={description}
-                onChange={event => updateGroundSessionDescription(index, event.target.value)}
-                disabled={!canEdit}
-                className={inputClass}
-                placeholder="Description"
-              />
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => removeGroundSessionDescription(index)}
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-md"
-                  title="Remove description"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
+            <div key={description.id || `ground-description-${index}`} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(180px,1fr)_170px_180px_140px_auto] lg:items-end">
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</span>
+                  <input
+                    value={description.name}
+                    onChange={event => updateGroundSessionDescription(index, { name: event.target.value })}
+                    disabled={!canEdit}
+                    className={inputClass}
+                    placeholder="Description"
+                  />
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Charge method</span>
+                  <select
+                    value={description.pricingMode}
+                    onChange={event => updateGroundSessionDescription(index, {
+                      pricingMode: event.target.value === 'fixed' ? 'fixed' : 'flight_type_hourly',
+                    })}
+                    disabled={!canEdit}
+                    className={inputClass}
+                  >
+                    <option value="flight_type_hourly">Hourly rate</option>
+                    <option value="fixed">Fixed price</option>
+                  </select>
+                </label>
+
+                {description.pricingMode === 'fixed' ? (
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fixed price</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={description.fixedRate}
+                      onChange={event => updateGroundSessionDescription(index, { fixedRate: Number(event.target.value || 0) })}
+                      disabled={!canEdit}
+                      className={inputClass}
+                    />
+                  </label>
+                ) : (
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Hourly flight type</span>
+                    <select
+                      value={description.flightTypeId || ''}
+                      onChange={event => updateGroundSessionDescription(index, { flightTypeId: event.target.value || null })}
+                      disabled={!canEdit}
+                      className={inputClass}
+                    >
+                      <option value="">Use selected booking type</option>
+                      {draftFlightTypes.filter(type => type.active).map(type => (
+                        <option key={type.id} value={type.id}>
+                          {type.name} (${Number(type.groundSessionHourlyRate || 0).toFixed(2)}/hr)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+                  {description.pricingMode === 'fixed'
+                    ? `$${Number(description.fixedRate || 0).toFixed(2)} total`
+                    : description.flightTypeId
+                      ? 'Uses linked hourly rate'
+                      : 'Uses log booking type'}
+                </div>
+
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => removeGroundSessionDescription(index)}
+                    className="inline-flex h-10 items-center justify-center rounded-md p-2 text-red-600 hover:bg-red-50"
+                    title="Remove description"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
           {draftGroundSessionDescriptions.length === 0 && (

@@ -5,11 +5,11 @@ import { AircraftForm } from './AircraftForm';
 import { DefectReportForm } from '../Maintenance/DefectReportForm';
 import { Aircraft, Defect } from '../../types';
 import { Plane, Wrench, AlertTriangle, CheckCircle, Flag, Loader2, Eye, FileText, MoreVertical, Pencil, Copy, ShieldCheck, Archive, RotateCcw } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceMilestones } from '../../hooks/useMaintenanceMilestones';
 import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
+import { getAircraftIconSrc } from '../../utils/aircraftIcons';
 
 export const AircraftList: React.FC = () => {
   const navigate = useNavigate();
@@ -22,10 +22,8 @@ export const AircraftList: React.FC = () => {
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
   const [duplicatingAircraft, setDuplicatingAircraft] = useState<Aircraft | null>(null);
-  const [viewingAircraft, setViewingAircraft] = useState<Aircraft | null>(null);
   const [selectedAircraftForDefect, setSelectedAircraftForDefect] = useState<string>('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [archiveFilter, setArchiveFilter] = useState<'active' | 'archived' | 'all'>('active');
@@ -102,11 +100,6 @@ export const AircraftList: React.FC = () => {
   };
 
   const openViewModal = (aircraft: Aircraft) => {
-    if (!canManage) {
-      setViewingAircraft(aircraft);
-      setShowViewModal(true);
-      return;
-    }
     navigate(`/aircraft/${aircraft.id}`);
   };
 
@@ -254,8 +247,16 @@ export const AircraftList: React.FC = () => {
           }`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Plane className="h-6 w-6 text-blue-600" />
+                <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white/85 p-1 shadow-sm dark:border-slate-600 dark:bg-slate-800/90">
+                  {getAircraftIconSrc(aircraftItem.iconKey) ? (
+                    <img
+                      src={getAircraftIconSrc(aircraftItem.iconKey)!}
+                      alt=""
+                      className="h-full w-full scale-110 object-contain drop-shadow-sm"
+                    />
+                  ) : (
+                    <Plane className="h-6 w-6 text-blue-600" />
+                  )}
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">{aircraftItem.registration}</h3>
@@ -266,12 +267,6 @@ export const AircraftList: React.FC = () => {
             </div>
 
             <div className="space-y-3">
-              <div className={`px-3 py-2 rounded-lg border ${aircraftItem.isArchived ? 'border-gray-300 bg-gray-100 text-gray-700' : getStatusColor(aircraftItem.status)}`}>
-                <span className="text-xs font-medium uppercase tracking-wide">
-                  {aircraftItem.isArchived ? 'Archived' : aircraftItem.status}
-                </span>
-              </div>
-
               {aircraftItem.isArchived && (
                 <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
                   Removed from new bookings
@@ -281,23 +276,40 @@ export const AircraftList: React.FC = () => {
                 </div>
               )}
 
-              {(aircraftItem.requiredEndorsementTypes?.length || aircraftItem.requiredEndorsementType) ? (
+              {(aircraftItem.requiredEndorsementTypes?.length || aircraftItem.requiredEndorsementType || aircraftItem.requiredAllEndorsementTypes?.length) ? (
                 <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Solo hire endorsement</p>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {(aircraftItem.requiredEndorsementTypes?.length
-                        ? aircraftItem.requiredEndorsementTypes
-                        : aircraftItem.requiredEndorsementType
-                          ? [aircraftItem.requiredEndorsementType]
-                          : []
-                      ).map(type => (
-                        <span key={type} className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-emerald-950">
-                          {type}
-                        </span>
-                      ))}
-                    </div>
+                    {aircraftItem.requiredAllEndorsementTypes && aircraftItem.requiredAllEndorsementTypes.length > 0 && (
+                      <div className="mt-1">
+                        <p className="text-[11px] font-semibold text-emerald-800">Must hold all</p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {aircraftItem.requiredAllEndorsementTypes.map(type => (
+                            <span key={`all-${type}`} className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-emerald-950">
+                              {type}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {(aircraftItem.requiredEndorsementTypes?.length || aircraftItem.requiredEndorsementType) && (
+                      <div className="mt-1">
+                        <p className="text-[11px] font-semibold text-emerald-800">Must hold one of</p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {(aircraftItem.requiredEndorsementTypes?.length
+                            ? aircraftItem.requiredEndorsementTypes
+                            : aircraftItem.requiredEndorsementType
+                              ? [aircraftItem.requiredEndorsementType]
+                              : []
+                          ).map(type => (
+                            <span key={`any-${type}`} className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold text-emerald-950">
+                              {type}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -482,193 +494,6 @@ export const AircraftList: React.FC = () => {
         preSelectedAircraftId={selectedAircraftForDefect}
       />
 
-      {showViewModal && viewingAircraft && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900 flex items-center">
-                <Plane className="h-5 w-5 mr-2" />
-                Aircraft Details
-              </h2>
-              <button
-                onClick={() => setShowViewModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <span className="text-2xl">&times;</span>
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Registration</h3>
-                  <p className="text-lg font-semibold text-gray-900">{viewingAircraft.registration}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Status</h3>
-                  <span className={`inline-flex px-3 py-1 text-xs font-medium rounded-full border ${getStatusColor(viewingAircraft.status)}`}>
-                    {viewingAircraft.status.toUpperCase()}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Make</h3>
-                  <p className="text-gray-900">{viewingAircraft.make}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Model</h3>
-                  <p className="text-gray-900">{viewingAircraft.model}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Type</h3>
-                  <p className="text-gray-900 capitalize">{viewingAircraft.type.replace('-', ' ')}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Seat Capacity</h3>
-                  <p className="text-gray-900">{viewingAircraft.seatCapacity || 'N/A'}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Hourly Rate</h3>
-                  <p className="text-gray-900">${viewingAircraft.hourlyRate}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Total Hours</h3>
-                  <p className="text-gray-900">{viewingAircraft.totalHours}</p>
-                </div>
-              </div>
-
-              {(viewingAircraft.xeroTrackingCategoryName || viewingAircraft.xeroTrackingOptionName) && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500 mb-1">Xero Tracking Category</h3>
-                      <p className="text-gray-900">{viewingAircraft.xeroTrackingCategoryName || 'Not linked'}</p>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500 mb-1">Xero Aircraft Option</h3>
-                      <p className="text-gray-900">{viewingAircraft.xeroTrackingOptionName || 'Not linked'}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">Xero Link Status</h3>
-                    {viewingAircraft.xeroTrackingSyncError ? (
-                      <p className="text-amber-700">{viewingAircraft.xeroTrackingSyncError}</p>
-                    ) : viewingAircraft.xeroTrackingLastSyncedAt ? (
-                      <p className="text-emerald-700">
-                        Last linked on {viewingAircraft.xeroTrackingLastSyncedAt.toLocaleString()}
-                      </p>
-                    ) : (
-                      <p className="text-gray-900">Saved on this aircraft. Open Edit Aircraft and refresh Xero to verify it live.</p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(viewingAircraft.fuelCapacity || viewingAircraft.emptyWeight || viewingAircraft.maxWeight) && (
-                <div className="grid grid-cols-3 gap-6">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">Fuel Capacity</h3>
-                    <p className="text-gray-900">{viewingAircraft.fuelCapacity ? `${viewingAircraft.fuelCapacity} L` : 'N/A'}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">Empty Weight</h3>
-                    <p className="text-gray-900">{viewingAircraft.emptyWeight ? `${viewingAircraft.emptyWeight} kg` : 'N/A'}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">Max Weight</h3>
-                    <p className="text-gray-900">{viewingAircraft.maxWeight ? `${viewingAircraft.maxWeight} kg` : 'N/A'}</p>
-                  </div>
-                </div>
-              )}
-
-              {viewingAircraft.lastMaintenance && (
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">Last Maintenance</h3>
-                    <p className="text-gray-900">{viewingAircraft.lastMaintenance.toLocaleDateString()}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">Next Maintenance</h3>
-                    <p className="text-gray-900">{viewingAircraft.nextMaintenance?.toLocaleDateString() || 'Not scheduled'}</p>
-                  </div>
-                </div>
-              )}
-
-              {viewingAircraft.defects.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-3">Open Defects</h3>
-                  <div className="space-y-2">
-                    {viewingAircraft.defects.map((defect, index) => (
-                      <div key={index} className="bg-red-50 border border-red-200 p-3 rounded-lg">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-red-900">
-                              {defect.summary || defect.description}
-                            </p>
-                            <p className="text-xs text-red-800 mt-1 leading-snug">
-                              {defect.description}
-                            </p>
-                            <p className="text-xs text-red-700 mt-1">
-                              Reported: {defect.dateReported.toLocaleDateString('en-AU')}
-                              {canManage ? ` by ${defect.reportedBy}` : ''}
-                            </p>
-                            {defect.photos && defect.photos.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {defect.photos.map((photo, photoIndex) => (
-                                  <a
-                                    key={`${photo}-${photoIndex}`}
-                                    href={photo}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                                  >
-                                    Attachment {photoIndex + 1}
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(defect.status)}`}>
-                            {defect.status.toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-                <button
-                  onClick={() => setShowViewModal(false)}
-                  className="px-6 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-                {canManage && (
-                  <button
-                    onClick={() => {
-                      setShowViewModal(false);
-                      openEditForm(viewingAircraft);
-                    }}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Edit Aircraft
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

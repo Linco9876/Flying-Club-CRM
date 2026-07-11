@@ -24,7 +24,7 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
   const { user } = useAuth();
   const { trainingRecords, loading: recordsLoading } = useTrainingRecords(user?.id);
   const { modules } = useTrainingModules();
-  const { reports: safetyReports, loading: safetyLoading } = useSafetyReports();
+  const { reports: safetyReports, loading: safetyLoading } = useSafetyReports({ participateInPageLoad: false });
   const [examResults, setExamResults] = useState<StudentExamResult[]>([]);
   const [loadingExams, setLoadingExams] = useState(false);
 

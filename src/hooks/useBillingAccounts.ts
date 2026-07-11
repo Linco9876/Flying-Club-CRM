@@ -398,24 +398,6 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
       .eq('id', flightLogId);
   };
 
-  const markFlightPaid = async (flightLogId: string, paymentType: string) => {
-    try {
-      const { error } = await supabase
-        .from('flight_logs')
-        .update({ payment_status: 'paid', payment_type: paymentType })
-        .eq('id', flightLogId);
-
-      if (error) throw error;
-
-      toast.success('Flight marked as paid');
-      await fetchAll();
-    } catch (err) {
-      console.error('Error marking flight paid:', err);
-      toast.error('Failed to mark flight as paid');
-      throw err;
-    }
-  };
-
   const createFlightPaymentCheckout = async (flightLogId: string, amount?: number) => {
     try {
       const returnUrl = `${window.location.origin}/billing`;
@@ -762,7 +744,6 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
     xeroConnected,
     minimumPrepaidPack,
     addTopUp,
-    markFlightPaid,
     createFlightPaymentCheckout,
     chargeFlightSavedCard,
     syncFlightInvoiceToXero,

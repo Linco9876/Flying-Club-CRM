@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
+import { hasAnyRole } from '../utils/rbac';
 
 const AVAILABILITY_UPDATED_EVENT = 'instructor-availability-updated';
 
@@ -77,10 +79,38 @@ const mapScheduleChangeRow = (c: any): ScheduleChange => ({
 });
 
 export const useInstructorAvailability = (instructorId?: string) => {
+  const { user } = useAuth();
   const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>(() => weeklySchedulesCache || []);
   const [absences, setAbsences] = useState<Absence[]>(() => absencesCache || []);
   const [scheduleChanges, setScheduleChanges] = useState<ScheduleChange[]>(() => scheduleChangesCache || []);
   const [loading, setLoading] = useState(() => !weeklySchedulesCache || !absencesCache || !scheduleChangesCache);
+
+  const isAdmin = hasAnyRole(user, ['admin']);
+  const canManageAbsenceFor = (targetUserId?: string | null) =>
+    Boolean(targetUserId && user?.id && (isAdmin || targetUserId === user.id));
+
+  const requireAbsencePermission = (targetUserId?: string | null) => {
+    if (canManageAbsenceFor(targetUserId)) return;
+    const message = isAdmin
+      ? 'Select an instructor before saving the absence'
+      : 'Instructors can only manage temporary absences for themselves';
+    toast.error(message);
+    throw new Error(message);
+  };
+
+  const getAbsenceOwner = async (id: string) => {
+    const existing = absences.find(item => item.id === id);
+    if (existing) return existing.userId;
+
+    const { data, error } = await supabase
+      .from('instructor_absences')
+      .select('user_id, instructor_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data?.user_id || data?.instructor_id;
+  };
 
   const notifyAvailabilityUpdated = () => {
     window.dispatchEvent(new Event(AVAILABILITY_UPDATED_EVENT));
@@ -236,6 +266,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
   const addAbsence = async (absence: Omit<Absence, 'id'>) => {
     try {
+      requireAbsencePermission(absence.userId);
+
       const { error } = await supabase
         .from('instructor_absences')
         .insert({
@@ -262,6 +294,9 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
   const updateAbsence = async (id: string, absence: Partial<Omit<Absence, 'id' | 'userId'>>) => {
     try {
+      const ownerId = await getAbsenceOwner(id);
+      requireAbsencePermission(ownerId);
+
       const updateData: any = { updated_at: new Date().toISOString() };
 
       if (absence.startDate) updateData.start_date = absence.startDate;
@@ -289,6 +324,9 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
   const deleteAbsence = async (id: string) => {
     try {
+      const ownerId = await getAbsenceOwner(id);
+      requireAbsencePermission(ownerId);
+
       const { error } = await supabase
         .from('instructor_absences')
         .delete()

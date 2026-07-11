@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { TransactionsTab } from './TransactionsTab';
 import { PilotAccountsTab } from './PilotAccountsTab';
+import { StripeTestModeBanner } from './StripeTestModeBanner';
 import { XeroSyncQueueCard } from '../Settings/XeroSyncQueueCard';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { CreditCard, ExternalLink, FileText, GitBranch, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
@@ -365,6 +366,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
     return (
       <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
+        <StripeTestModeBanner />
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Billing</h1>
           <p className="text-gray-600 dark:text-gray-400">Review your verified prepaid balance, pending top-ups, and billing history.</p>
@@ -734,6 +736,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
   return (
       <div className="p-3 sm:p-6">
+      <div className="mb-4">
+        <StripeTestModeBanner />
+      </div>
       <div className="mb-4 sm:mb-6">
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Financial Dashboard</h1>
         <p className="text-gray-600">Manage organisation transactions and pilot accounts</p>

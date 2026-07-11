@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns } from "../_shared/stripeMode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,6 +28,9 @@ const isUniqueViolation = (error: any) => error?.code === "23505";
 const cleanEmail = (value: unknown) => String(value || "").trim().toLowerCase();
 const cleanText = (value: unknown) => String(value || "").trim();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const addMinutes = (date: Date, minutes: number) => new Date(date.getTime() + minutes * 60_000);
+const overlaps = (aStart: Date | string, aEnd: Date | string, bStart: Date | string, bEnd: Date | string) =>
+  new Date(aStart) < new Date(bEnd) && new Date(aEnd) > new Date(bStart);
 const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
 const isDevelopmentOrigin = (origin: string) =>
   /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin) ||
@@ -51,16 +55,13 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeSecretKey) {
-      return json({ error: "Online checkout is not configured yet. Please contact Bendigo Flying Club to purchase this voucher." }, 503);
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const stripeMode = await getActiveStripeMode(adminClient);
+    const stripeSecretKey = stripeMode.secretKey;
     const connectedAccountId = await getConnectedStripeAccountId(adminClient);
     if (!connectedAccountId) {
       return json({ error: "Online checkout is not connected yet. Please contact Bendigo Flying Club to purchase this voucher." }, 503);
@@ -75,6 +76,10 @@ Deno.serve(async (req: Request) => {
     const recipientEmail = cleanEmail(body.recipientEmail);
     const sendToRecipient = Boolean(body.sendToRecipient);
     const recipientDeliveryAt = cleanText(body.recipientDeliveryAt);
+    const checkoutIntent = cleanText(body.checkoutIntent) === "book_now" ? "book_now" : "gift_certificate";
+    const heldAircraftId = cleanText(body.slot?.aircraftId);
+    const heldInstructorId = cleanText(body.slot?.instructorId);
+    const heldStartTime = body.slot?.startTime ? new Date(String(body.slot.startTime)) : null;
     const selectedAddonIds = Array.isArray(body.addonIds)
       ? Array.from(new Set(body.addonIds.map((value: unknown) => cleanText(value)).filter(Boolean)))
       : [];
@@ -93,6 +98,14 @@ Deno.serve(async (req: Request) => {
     if (sendToRecipient && recipientEmail && !isValidEmail(recipientEmail)) {
       return json({ error: "Enter a valid recipient email address" }, 400);
     }
+    if (checkoutIntent === "book_now" && (
+      !heldAircraftId ||
+      !heldInstructorId ||
+      !heldStartTime ||
+      !Number.isFinite(heldStartTime.getTime())
+    )) {
+      return json({ error: "Choose an available trial flight time before checkout" }, 400);
+    }
     let recipientDeliveryAtIso: string | null = null;
     if (sendToRecipient && recipientDeliveryAt) {
       const deliveryAt = new Date(recipientDeliveryAt);
@@ -107,7 +120,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: product, error: productError } = await adminClient
       .from("trial_flight_voucher_products")
-      .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,price,stripe_price_id,is_active")
+      .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,is_active")
       .eq("id", productId)
       .maybeSingle();
 
@@ -139,6 +152,71 @@ Deno.serve(async (req: Request) => {
     }
     if (Number(product.price || 0) <= 0) {
       return json({ error: "Online checkout is not enabled until this voucher has a valid price." }, 409);
+    }
+
+    let holdFields: Record<string, unknown> = {};
+    if (checkoutIntent === "book_now") {
+      const heldEndTime = addMinutes(heldStartTime!, Number(product.duration_minutes || 0) + 30);
+      const holdExpiresAt = addMinutes(new Date(), 10);
+      const productAircraftIds = new Set<string>(product.aircraft_ids || []);
+      const productInstructorIds = new Set<string>(product.instructor_ids || []);
+      const aircraft = (aircraftRows || []).find((row: any) => row.id === heldAircraftId);
+
+      if (!aircraft || aircraft.status !== "serviceable" || aircraft.is_archived === true) {
+        return json({ error: "Selected aircraft is not available for this voucher" }, 409);
+      }
+      if (!productAircraftIds.has(heldAircraftId)) {
+        return json({ error: "Selected aircraft is not eligible for this voucher" }, 409);
+      }
+      if (!productInstructorIds.has(heldInstructorId)) {
+        return json({ error: "Selected instructor is not eligible for this voucher" }, 409);
+      }
+
+      const { data: instructorAvailable, error: instructorAvailabilityError } = await adminClient.rpc("trial_voucher_instructor_available_for_slot", {
+        p_instructor_id: heldInstructorId,
+        p_start_time: heldStartTime!.toISOString(),
+        p_end_time: heldEndTime.toISOString(),
+      });
+      if (instructorAvailabilityError) return json({ error: instructorAvailabilityError.message }, 500);
+      if (!instructorAvailable) {
+        return json({ error: "Selected instructor is no longer available for that time" }, 409);
+      }
+
+      const { data: conflictingBookings, error: bookingConflictError } = await adminClient
+        .from("bookings")
+        .select("id,start_time,end_time,aircraft_id,instructor_id")
+        .is("deleted_at", null)
+        .in("status", ["confirmed", "pending_approval"])
+        .or(`aircraft_id.eq.${heldAircraftId},instructor_id.eq.${heldInstructorId}`);
+      if (bookingConflictError) return json({ error: bookingConflictError.message }, 500);
+      if ((conflictingBookings || []).some((booking: any) =>
+        overlaps(heldStartTime!, heldEndTime, booking.start_time, booking.end_time)
+      )) {
+        return json({ error: "That time is no longer available. Please choose another time." }, 409);
+      }
+
+      const { data: activeHolds, error: holdsError } = await adminClient
+        .from("trial_flight_vouchers")
+        .select("id,held_start_time,held_end_time,held_aircraft_id,held_instructor_id")
+        .eq("checkout_intent", "book_now")
+        .eq("payment_status", "pending")
+        .gt("hold_expires_at", new Date().toISOString())
+        .or(`held_aircraft_id.eq.${heldAircraftId},held_instructor_id.eq.${heldInstructorId}`);
+      if (holdsError) return json({ error: holdsError.message }, 500);
+      if ((activeHolds || []).some((hold: any) =>
+        overlaps(heldStartTime!, heldEndTime, hold.held_start_time, hold.held_end_time)
+      )) {
+        return json({ error: "That time is being held for another checkout. Please choose another time." }, 409);
+      }
+
+      holdFields = {
+        checkout_intent: "book_now",
+        held_aircraft_id: heldAircraftId,
+        held_instructor_id: heldInstructorId,
+        held_start_time: heldStartTime!.toISOString(),
+        held_end_time: heldEndTime.toISOString(),
+        hold_expires_at: holdExpiresAt.toISOString(),
+      };
     }
 
     let selectedAddons: any[] = [];
@@ -188,7 +266,12 @@ Deno.serve(async (req: Request) => {
           payment_amount: totalAmount,
           payment_currency: "AUD",
           selected_addons: selectedAddons,
-          notes: "Created from public Stripe checkout",
+          notes: checkoutIntent === "book_now"
+            ? "Created from public Stripe checkout with a held booking time"
+            : "Created from public Stripe checkout",
+          checkout_intent: checkoutIntent,
+          ...stripeModeColumns(stripeMode.mode),
+          ...holdFields,
         })
         .select("id,code")
         .single();
@@ -218,10 +301,12 @@ Deno.serve(async (req: Request) => {
     form.set("cancel_url", cancelUrl);
     form.set("customer_email", purchaserEmail);
     form.set("client_reference_id", voucher.id);
+    addStripeModeMetadata(form, stripeMode.mode);
     form.set("metadata[voucher_id]", voucher.id);
     form.set("metadata[voucher_code]", voucher.code);
     form.set("metadata[product_id]", product.id);
     form.set("metadata[purchaser_email]", purchaserEmail);
+    form.set("metadata[checkout_intent]", checkoutIntent);
     if (selectedAddons.length > 0) form.set("metadata[addon_ids]", selectedAddons.map(addon => addon.id).join(","));
     if (recipientEmail) form.set("metadata[recipient_email]", recipientEmail);
 
@@ -247,7 +332,9 @@ Deno.serve(async (req: Request) => {
       .from("trial_flight_vouchers")
       .update({
         stripe_checkout_session_id: session.id,
+        stripe_checkout_url: session.url || null,
         updated_at: new Date().toISOString(),
+        ...stripeModeColumns(stripeMode.mode),
       })
       .eq("id", voucher.id);
 
@@ -255,6 +342,8 @@ Deno.serve(async (req: Request) => {
       checkoutUrl: session.url,
       sessionId: session.id,
       voucherId: voucher.id,
+      stripeMode: stripeMode.mode,
+      isTestMode: stripeMode.isTestMode,
     });
   } catch (error) {
     console.error("create-trial-voucher-checkout error:", error);

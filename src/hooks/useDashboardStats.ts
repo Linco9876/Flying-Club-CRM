@@ -35,6 +35,7 @@ export interface DashboardStats {
     instructorName?: string;
   };
   myPrepaidBalance: number;
+  myCreditVisible: boolean;
 }
 
 export function useDashboardStats(userId?: string, userRole?: string, scheduleScope: 'global' | 'user' = 'global') {
@@ -54,6 +55,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
     myBookingsToday: 0,
     myFlightHours: 0,
     myPrepaidBalance: 0,
+    myCreditVisible: false,
   });
   const [loading, setLoading] = useState(true);
 
@@ -183,6 +185,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
       let myFlightHours = 0;
       let nextBooking: DashboardStats['nextBooking'] = undefined;
       let myPrepaidBalance = 0;
+      let myCreditVisible = false;
 
       if (userRole === 'instructor' || userRole === 'senior_instructor') {
         const [myStudentsResult, myBookingsTodayResult, myHoursResult] = await Promise.all([
@@ -263,6 +266,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         ]);
 
         myFlightHours = (myHoursResult.data || []).reduce((sum, log) => sum + (log.flight_duration || 0), 0);
+        myCreditVisible = Boolean(xeroBalanceResult.connected && xeroBalanceResult.linked);
         myPrepaidBalance = xeroBalanceResult.connected && xeroBalanceResult.linked
           ? Number(xeroBalanceResult.availableCredit ?? 0)
           : 0;
@@ -296,6 +300,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         myFlightHours,
         nextBooking,
         myPrepaidBalance,
+        myCreditVisible,
       });
     } catch (err) {
       console.error('Error fetching dashboard stats:', err);

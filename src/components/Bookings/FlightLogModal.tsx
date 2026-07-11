@@ -13,6 +13,7 @@ import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } f
 import { TachOverlapWarningModal } from './TachOverlapWarningModal';
 import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
 
 interface Booking {
   id: string;
@@ -781,6 +782,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
+          <StripeTestModeBanner compact />
           {/* Flight Summary */}
           <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div>

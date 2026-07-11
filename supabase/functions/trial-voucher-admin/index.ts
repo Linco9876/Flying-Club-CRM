@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, testModeSubject } from "../_shared/stripeMode.ts";
 import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
 
 type SupabaseAdminClient = any;
@@ -204,10 +205,8 @@ Deno.serve(async (req: Request) => {
     if (!staffAuth.ok) return json({ error: staffAuth.error }, staffAuth.status);
 
     if (action === "send-payment-link") {
-      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-      if (!stripeSecretKey) {
-        return json({ error: "Stripe secret key is not configured in Supabase Edge Function secrets." }, 503);
-      }
+      const stripeMode = await getActiveStripeMode(adminClient);
+      const stripeSecretKey = stripeMode.secretKey;
 
       const connectedAccountId = await getConnectedStripeAccountId(adminClient);
       if (!connectedAccountId) {
@@ -312,6 +311,7 @@ Deno.serve(async (req: Request) => {
             payment_currency: "AUD",
             notes: notes ? `${notes}\nPayment link sent by staff ${staffAuth.userId}.` : `Payment link sent by staff ${staffAuth.userId}.`,
             created_by: staffAuth.userId,
+            ...stripeModeColumns(stripeMode.mode),
           })
           .select("id,code")
           .single();
@@ -333,6 +333,7 @@ Deno.serve(async (req: Request) => {
       form.set("cancel_url", cancelUrl);
       form.set("customer_email", purchaserEmail);
       form.set("client_reference_id", voucher.id);
+      addStripeModeMetadata(form, stripeMode.mode);
       form.set("metadata[voucher_id]", voucher.id);
       form.set("metadata[voucher_code]", voucher.code);
       form.set("metadata[product_id]", product.id);
@@ -367,6 +368,7 @@ Deno.serve(async (req: Request) => {
         .update({
           stripe_checkout_session_id: session.id,
           updated_at: new Date().toISOString(),
+          ...stripeModeColumns(stripeMode.mode),
         })
         .eq("id", voucher.id);
 
@@ -381,7 +383,7 @@ Deno.serve(async (req: Request) => {
       const emailResult = await sendBrevoEmail({
         to: purchaserEmail,
         toName: purchaserName,
-        subject: `Payment link for your ${product.name || "Bendigo Flying Club voucher"}`,
+        subject: testModeSubject(stripeMode.mode, `Payment link for your ${product.name || "Bendigo Flying Club voucher"}`),
         html: emailHtml,
       });
 
@@ -400,14 +402,18 @@ Deno.serve(async (req: Request) => {
         sessionId: session.id,
         voucherId: voucher.id,
         to: purchaserEmail,
+        stripeMode: stripeMode.mode,
+        isTestMode: stripeMode.isTestMode,
       });
     }
 
     if (action === "validate-stripe-price") {
-      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-      if (!stripeSecretKey) {
+      let stripeSecretKey = "";
+      try {
+        stripeSecretKey = (await getActiveStripeMode(adminClient)).secretKey;
+      } catch (error) {
         return json({
-          error: "Stripe secret key is not configured in Supabase Edge Function secrets.",
+          error: error instanceof Error ? error.message : "Stripe secret key is not configured in Supabase Edge Function secrets.",
           configured: false,
         }, 503);
       }
@@ -476,10 +482,14 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "create-stripe-price") {
-      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-      if (!stripeSecretKey) {
+      let stripeSecretKey = "";
+      let stripeMode = null as null | Awaited<ReturnType<typeof getActiveStripeMode>>;
+      try {
+        stripeMode = await getActiveStripeMode(adminClient);
+        stripeSecretKey = stripeMode.secretKey;
+      } catch (error) {
         return json({
-          error: "Stripe secret key is not configured in Supabase Edge Function secrets.",
+          error: error instanceof Error ? error.message : "Stripe secret key is not configured in Supabase Edge Function secrets.",
           configured: false,
         }, 503);
       }
@@ -523,6 +533,7 @@ Deno.serve(async (req: Request) => {
       productForm.set("name", product.name || "Trial instructional flight voucher");
       if (product.description) productForm.set("description", product.description);
       productForm.set("metadata[crm_product_id]", product.id);
+      addStripeModeMetadata(productForm, stripeMode.mode);
       productForm.set("metadata[voucher_type]", product.aircraft_mode || "trial_flight");
       productForm.set("metadata[duration_minutes]", String(product.duration_minutes || ""));
 
@@ -547,6 +558,7 @@ Deno.serve(async (req: Request) => {
       priceForm.set("unit_amount", String(amountCents));
       priceForm.set("product", stripeProduct.id);
       priceForm.set("metadata[crm_product_id]", product.id);
+      addStripeModeMetadata(priceForm, stripeMode.mode);
       priceForm.set("metadata[voucher_type]", product.aircraft_mode || "trial_flight");
 
       const stripePriceResponse = await fetch("https://api.stripe.com/v1/prices", {

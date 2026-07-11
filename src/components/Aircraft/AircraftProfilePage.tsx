@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Download, FileText, Loader2, Plane, Plus, Save, Settings, Trash2, Upload, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Calendar, Download, FileText, Loader2, Plane, Plus, Save, Settings, Trash2, Upload, Wrench } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AircraftFlightLogs } from './AircraftFlightLogs';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -12,8 +12,9 @@ import { useUsers } from '../../hooks/useUsers';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
+import { getAircraftIconSrc } from '../../utils/aircraftIcons';
 
-type AircraftProfileTab = 'documents' | 'flight-log' | 'milestones' | 'bookings' | 'pricing';
+type AircraftProfileTab = 'documents' | 'defects' | 'flight-log' | 'milestones' | 'bookings' | 'pricing';
 
 interface AircraftDocument {
   id: string;
@@ -62,6 +63,7 @@ export const AircraftProfilePage: React.FC = () => {
   const [savingRateId, setSavingRateId] = useState<string | null>(null);
 
   const selectedAircraft = aircraft.find(item => item.id === aircraftId);
+  const aircraftIconSrc = getAircraftIconSrc(selectedAircraft?.iconKey);
   const isAdmin = hasAnyRole(user, ['admin']);
   const isStudentOrPilot = hasAnyRole(user, ['student', 'pilot']) && !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canManageAircraft = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
@@ -257,12 +259,13 @@ export const AircraftProfilePage: React.FC = () => {
 
   const tabs: Array<{ id: AircraftProfileTab; label: string; icon: React.ReactNode; staffOnly?: boolean }> = [
     { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" /> },
+    { id: 'defects', label: 'Defects', icon: <AlertTriangle className="h-4 w-4" /> },
     { id: 'flight-log', label: 'Flight Log', icon: <Plane className="h-4 w-4" /> },
     { id: 'milestones', label: 'Milestones', icon: <Wrench className="h-4 w-4" /> },
     { id: 'bookings', label: 'Bookings', icon: <Calendar className="h-4 w-4" /> },
     { id: 'pricing', label: 'Pricing', icon: <Settings className="h-4 w-4" /> },
   ].filter(tab => {
-    if (isStudentOrPilot) return ['documents', 'bookings', 'pricing'].includes(tab.id);
+    if (isStudentOrPilot) return ['documents', 'defects', 'bookings', 'pricing'].includes(tab.id);
     return !tab.staffOnly || canManageAircraft;
   });
 
@@ -273,6 +276,13 @@ export const AircraftProfilePage: React.FC = () => {
           <button onClick={() => navigate('/aircraft')} className="mt-1 rounded-lg p-2 hover:bg-gray-100">
             <ArrowLeft className="h-5 w-5" />
           </button>
+          <div className="mt-1 flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white/85 p-1 shadow-sm dark:border-slate-600 dark:bg-slate-800/90">
+            {aircraftIconSrc ? (
+              <img src={aircraftIconSrc} alt="" className="h-full w-full scale-110 object-contain drop-shadow-sm" />
+            ) : (
+              <Plane className="h-5 w-5 text-blue-600" />
+            )}
+          </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">{selectedAircraft.registration}</h1>
@@ -294,7 +304,15 @@ export const AircraftProfilePage: React.FC = () => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <p className="text-xs font-semibold uppercase text-gray-500">Type</p>
+          <p className="mt-1 text-lg font-semibold text-gray-900 capitalize">{selectedAircraft.type.replace('-', ' ')}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <p className="text-xs font-semibold uppercase text-gray-500">Model</p>
+          <p className="mt-1 text-lg font-semibold text-gray-900">{selectedAircraft.make} {selectedAircraft.model}</p>
+        </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase text-gray-500">Seats</p>
           <p className="mt-1 text-lg font-semibold text-gray-900">{selectedAircraft.seatCapacity || '-'}</p>
@@ -410,6 +428,89 @@ export const AircraftProfilePage: React.FC = () => {
       )}
 
       {activeTab === 'flight-log' && <AircraftFlightLogs aircraftIdOverride={aircraftId} embedded />}
+
+      {activeTab === 'defects' && (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <h2 className="text-lg font-semibold text-gray-900">Aircraft Defects</h2>
+            <p className="text-sm text-gray-500">
+              Open defects reported for this aircraft. Reporter details and internal fix notes are only shown to staff.
+            </p>
+          </div>
+          {selectedAircraft.defects.length === 0 ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-6 text-sm text-emerald-900">
+              No open defects are currently recorded for this aircraft.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {selectedAircraft.defects.map(defect => (
+                <div key={defect.id} className="rounded-xl border border-red-200 bg-red-50 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-red-950">
+                        {defect.summary || defect.description}
+                      </p>
+                      {defect.summary && (
+                        <p className="mt-1 text-sm leading-6 text-red-900">{defect.description}</p>
+                      )}
+                    </div>
+                    <span className="w-fit rounded-full bg-white px-2.5 py-1 text-xs font-semibold capitalize text-red-700 ring-1 ring-red-200">
+                      {defect.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-red-800 sm:grid-cols-3">
+                    <div>
+                      <span className="font-semibold">Aircraft:</span> {selectedAircraft.registration}
+                    </div>
+                    <div>
+                      <span className="font-semibold">Date:</span> {defect.dateReported.toLocaleDateString('en-AU')}
+                    </div>
+                    <div>
+                      <span className="font-semibold">Severity:</span> {defect.severity || 'Not set'}
+                    </div>
+                    {defect.location && (
+                      <div>
+                        <span className="font-semibold">Location:</span> {defect.location}
+                      </div>
+                    )}
+                    {defect.tachHours != null && (
+                      <div>
+                        <span className="font-semibold">Tach:</span> {defect.tachHours.toFixed(1)}
+                      </div>
+                    )}
+                    {defect.hobbsHours != null && (
+                      <div>
+                        <span className="font-semibold">Hobbs:</span> {defect.hobbsHours.toFixed(1)}
+                      </div>
+                    )}
+                  </div>
+                  {canManageAircraft && (defect.melNotes || defect.fixNotes) && (
+                    <div className="mt-3 rounded-lg border border-red-200 bg-white/70 p-3 text-xs text-red-900">
+                      {defect.melNotes && <p><span className="font-semibold">MEL notes:</span> {defect.melNotes}</p>}
+                      {defect.fixNotes && <p className="mt-1"><span className="font-semibold">Fix notes:</span> {defect.fixNotes}</p>}
+                    </div>
+                  )}
+                  {defect.photos && defect.photos.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {defect.photos.map((photo, index) => (
+                        <a
+                          key={`${photo}-${index}`}
+                          href={photo}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                        >
+                          Attachment {index + 1}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {activeTab === 'milestones' && (
         <div className="space-y-4">
@@ -560,7 +661,7 @@ export const AircraftProfilePage: React.FC = () => {
               <div className="p-6 text-sm text-gray-500">Loading pricing...</div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {flightTypes.map(flightType => {
+                {flightTypes.filter(flightType => flightType.active).map(flightType => {
                   const rate = rates.find(item => item.flightTypeId === flightType.id);
                   return (
                     <RateRow

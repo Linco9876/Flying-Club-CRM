@@ -3,6 +3,7 @@ import { X, User, Phone, Save, Loader2, Shield, FileText } from 'lucide-react';
 import { Student, Endorsement } from '../../types';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
+import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 
 interface StudentFormProps {
   isOpen: boolean;
@@ -48,9 +49,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 }) => {
   const [formData, setFormData] = useState(buildFormData(student));
   const { aircraft } = useAircraft();
-  const [customEndorsements, setCustomEndorsements] = useState<string[]>([]);
-  const [isAddingNewType, setIsAddingNewType] = useState(false);
-  const [newTypeName, setNewTypeName] = useState('');
+  const { settings: trainingSettings } = useTrainingSettings();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -64,20 +63,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     isActive: true
   });
 
-  const defaultEndorsementTypes = [
-    'Pilot Certificate',
-    'Passenger Carrying',
-    'Cross Country',
-    'Radio Operator',
-    'Manual Pitch Propeller',
-    'Retractable Undercarriage',
-    'Navigation',
-    'Night Flying',
-    'Formation Flying',
-    'Aerobatics'
-  ];
-
-  const allEndorsementTypes = [...defaultEndorsementTypes, ...customEndorsements];
+  const allEndorsementTypes = trainingSettings.endorsementTypes;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -123,24 +109,6 @@ export const StudentForm: React.FC<StudentFormProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const addCustomType = () => {
-    if (!newTypeName.trim()) {
-      toast.error('Please enter an endorsement name');
-      return;
-    }
-
-    if (allEndorsementTypes.includes(newTypeName.trim())) {
-      toast.error('This endorsement type already exists');
-      return;
-    }
-
-    setCustomEndorsements(prev => [...prev, newTypeName.trim()]);
-    setNewEndorsement(prev => ({ ...prev, type: newTypeName.trim() }));
-    setNewTypeName('');
-    setIsAddingNewType(false);
-    toast.success('Endorsement type added');
   };
 
   const addEndorsement = () => {
@@ -193,7 +161,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
-            {isEdit ? 'Edit Student' : 'Add New Student'}
+            {isEdit ? 'Edit Student Information' : 'Add New Student'}
           </h2>
           <button
             onClick={onClose}
@@ -391,6 +359,24 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Medical Type
+                </label>
+                <select
+                  value={formData.medicalType}
+                  onChange={(e) => setFormData(prev => ({ ...prev, medicalType: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Not recorded</option>
+                  <option value="Driver Licence Medical">Driver Licence Medical</option>
+                  <option value="RAAus Medical Declaration">RAAus Medical Declaration</option>
+                  <option value="CASA Basic Class 2">CASA Basic Class 2</option>
+                  <option value="CASA Class 2">CASA Class 2</option>
+                  <option value="CASA Class 1">CASA Class 1</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -465,60 +451,25 @@ export const StudentForm: React.FC<StudentFormProps> = ({
             <div className="bg-gray-50 p-4 rounded-lg mb-4">
               <h4 className="text-sm font-medium text-gray-700 mb-3">Add Endorsement</h4>
 
-              {isAddingNewType ? (
-                <div className="flex gap-2 mb-3">
-                  <input
-                    type="text"
-                    value={newTypeName}
-                    onChange={(e) => setNewTypeName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addCustomType()}
-                    placeholder="Enter endorsement name"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={addCustomType}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddingNewType(false);
-                      setNewTypeName('');
-                    }}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
+              <p className="mb-3 text-sm text-gray-600">
+                Add the endorsements this member currently holds. This list is managed in Training / Syllabus Settings.
+              </p>
+              <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Type</label>
-                      <div className="flex gap-1">
-                        <select
-                          value={newEndorsement.type}
-                          onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value }))}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select type</option>
-                          {allEndorsementTypes.map(type => (
-                            <option key={type} value={type}>{type}</option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => setIsAddingNewType(true)}
-                          className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors flex-shrink-0"
-                          title="Add custom endorsement type"
-                        >
-                          +
-                        </button>
-                      </div>
+                      <input
+                        list="members-edit-endorsement-types"
+                        value={newEndorsement.type}
+                        onChange={(e) => setNewEndorsement(prev => ({ ...prev, type: e.target.value }))}
+                        placeholder="Select or enter endorsement"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <datalist id="members-edit-endorsement-types">
+                        {allEndorsementTypes.map(type => (
+                          <option key={type} value={type} />
+                        ))}
+                      </datalist>
                     </div>
                     <div>
                       <label className="block text-xs text-gray-600 mb-1">Obtained</label>
@@ -551,7 +502,6 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                     </div>
                   </div>
                 </div>
-              )}
             </div>
 
             {/* Current Endorsements */}
@@ -603,7 +553,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
               ) : (
                 <>
                   <Save className="h-4 w-4" />
-                  <span>{isEdit ? 'Update User' : 'Add User'}</span>
+                  <span>{isEdit ? 'Save Details' : 'Add User'}</span>
                 </>
               )}
             </button>

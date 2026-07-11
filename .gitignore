@@ -26,6 +26,7 @@ dist-ssr
 
 # Local backup config/secrets
 scripts/backup-crm.env
+stripe-secrets.env
 *.backup.local
 
 # Local Netlify folder

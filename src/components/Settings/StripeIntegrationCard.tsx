@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, CreditCard, ExternalLink, Loader2, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CreditCard, ExternalLink, Loader2, RefreshCw, ShieldCheck, TestTube2, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 
@@ -18,12 +18,20 @@ interface StripeConnectStatus {
   hasClientId: boolean;
   hasSecretKey: boolean;
   callbackUrl: string;
+  stripeMode?: 'test' | 'live';
+  allowTestModeXeroSync?: boolean;
+  testCredentialsConfigured?: boolean;
+  liveCredentialsConfigured?: boolean;
+  activeModeConfigured?: boolean;
+  activePublishableKeyConfigured?: boolean;
+  activeWebhookConfigured?: boolean;
 }
 
 export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ canEdit }) => {
   const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
   const [stripeLoading, setStripeLoading] = useState(true);
   const [stripeLoaded, setStripeLoaded] = useState(false);
+  const [savingMode, setSavingMode] = useState(false);
 
   const loadStripeStatus = useCallback(async () => {
     setStripeLoading(true);
@@ -100,8 +108,61 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
     }
   };
 
+  const updateStripeMode = async (mode: 'test' | 'live') => {
+    if (!canEdit || !stripeStatus || mode === stripeStatus.stripeMode) return;
+    const confirmLiveSwitch = mode !== 'live' || window.confirm(
+      'Switch Stripe back to Live mode? Real card payments can be created immediately after this change. Continue?'
+    );
+    if (!confirmLiveSwitch) return;
+
+    setSavingMode(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
+        body: {
+          action: 'set-mode',
+          mode,
+          confirmLiveSwitch,
+          allowTestModeXeroSync: stripeStatus.allowTestModeXeroSync === true,
+        },
+      });
+      if (error) throw error;
+      setStripeStatus(data ?? null);
+      toast.success(mode === 'test' ? 'Stripe Test Mode enabled' : 'Stripe Live Mode enabled');
+    } catch (error: any) {
+      console.error('Error updating Stripe mode:', error);
+      toast.error(error?.message || 'Failed to update Stripe mode');
+    } finally {
+      setSavingMode(false);
+    }
+  };
+
+  const updateTestXeroSync = async (allow: boolean) => {
+    if (!canEdit || !stripeStatus) return;
+    setSavingMode(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
+        body: {
+          action: 'set-mode',
+          mode: stripeStatus.stripeMode || 'live',
+          confirmLiveSwitch: true,
+          allowTestModeXeroSync: allow,
+        },
+      });
+      if (error) throw error;
+      setStripeStatus(data ?? null);
+      toast.success('Stripe/Xero test sync setting saved');
+    } catch (error: any) {
+      console.error('Error updating Stripe test Xero sync:', error);
+      toast.error(error?.message || 'Failed to update Stripe test sync setting');
+    } finally {
+      setSavingMode(false);
+    }
+  };
+
   const connected = Boolean(stripeStatus?.connected);
   const configured = Boolean(stripeStatus?.configured);
+  const stripeMode = stripeStatus?.stripeMode || 'live';
+  const activeModeMissing = Boolean(connected && !stripeStatus?.activeModeConfigured);
   const statusLabel = connected ? 'Stripe is connected' : configured ? 'Ready to connect' : 'Setup needed';
   const statusDetail = connected
     ? 'Online voucher payments, pilot top-ups and card payments can use this club Stripe account.'
@@ -199,6 +260,84 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
             </p>
             <p className="mt-1 text-xs text-gray-500">Stripe handles card details and verification.</p>
           </div>
+        </div>
+
+        <div className={`mt-5 rounded-xl border p-4 ${stripeMode === 'test' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <TestTube2 className={`h-4 w-4 ${stripeMode === 'test' ? 'text-amber-700' : 'text-gray-600'}`} />
+                Stripe mode
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                {stripeMode === 'test'
+                  ? 'Test Mode is active. Stripe actions use test credentials and no real card money moves.'
+                  : 'Live Mode is active. Stripe actions use live credentials and can create real payments.'}
+              </p>
+            </div>
+            {canEdit && (
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => updateStripeMode('test')}
+                  disabled={savingMode}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold ${stripeMode === 'test' ? 'bg-amber-100 text-amber-900' : 'text-gray-600 hover:bg-gray-50'} disabled:opacity-60`}
+                >
+                  Test mode
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateStripeMode('live')}
+                  disabled={savingMode}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold ${stripeMode === 'live' ? 'bg-blue-100 text-blue-900' : 'text-gray-600 hover:bg-gray-50'} disabled:opacity-60`}
+                >
+                  Live mode
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-white/70 bg-white/80 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Current mode</p>
+              <p className="mt-1 text-sm font-bold text-gray-900">{stripeMode === 'test' ? 'Test mode' : 'Live mode'}</p>
+            </div>
+            <div className="rounded-lg border border-white/70 bg-white/80 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Test credentials</p>
+              <p className={`mt-1 text-sm font-bold ${stripeStatus?.testCredentialsConfigured ? 'text-green-700' : 'text-amber-700'}`}>
+                {stripeStatus?.testCredentialsConfigured ? 'Configured' : 'Missing'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/70 bg-white/80 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Live credentials</p>
+              <p className={`mt-1 text-sm font-bold ${stripeStatus?.liveCredentialsConfigured ? 'text-green-700' : 'text-amber-700'}`}>
+                {stripeStatus?.liveCredentialsConfigured ? 'Configured' : 'Missing'}
+              </p>
+            </div>
+          </div>
+
+          {activeModeMissing && (
+            <div className="mt-4 flex gap-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+              <p>Stripe is connected, but the active mode is missing required server-side secrets. Payments in this mode will fail until the Supabase Edge Function secrets are added.</p>
+            </div>
+          )}
+
+          {stripeMode === 'test' && (
+            <label className="mt-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-white/80 p-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={stripeStatus?.allowTestModeXeroSync === true}
+                onChange={(event) => updateTestXeroSync(event.target.checked)}
+                disabled={!canEdit || savingMode}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600"
+              />
+              <span>
+                <span className="block font-semibold text-gray-900">Allow test payments to sync into Xero</span>
+                Off by default. Keep this disabled unless an admin deliberately wants test Stripe records to appear in the connected Xero organisation.
+              </span>
+            </label>
+          )}
         </div>
 
         {stripeStatus && !configured && (

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import { getStripeSecretKeyForMode, type StripeMode } from "../_shared/stripeMode.ts";
 
 type SupabaseAdminClient = any;
 
@@ -42,6 +43,15 @@ const humanDate = (value: unknown) => {
 const basicAuthHeader = (clientId: string, clientSecret: string) =>
   `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const parseRetryAfterMs = (value: string | null) => {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = Date.parse(value);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : 0;
+};
+
 const isAdminRole = (role: string) => role === "admin";
 
 const authenticateAdmin = async ({
@@ -49,14 +59,35 @@ const authenticateAdmin = async ({
   supabaseUrl,
   anonKey,
   adminClient,
+  serviceRoleKey,
 }: {
   req: Request;
   supabaseUrl: string;
   anonKey: string;
   adminClient: SupabaseAdminClient;
+  serviceRoleKey: string;
 }) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { ok: false, error: "No authorization header", status: 401 };
+  const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+  if (bearerToken && bearerToken === serviceRoleKey) {
+    const { data: roleRow } = await adminClient
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", "admin")
+      .limit(1)
+      .maybeSingle();
+    if (roleRow?.user_id) return { ok: true, userId: roleRow.user_id };
+
+    const { data: profileRow } = await adminClient
+      .from("users")
+      .select("id")
+      .eq("role", "admin")
+      .limit(1)
+      .maybeSingle();
+    return { ok: true, userId: profileRow?.id ?? null };
+  }
 
   const callerClient = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: authHeader } },
@@ -91,36 +122,58 @@ const xeroRequest = async ({
   accessToken: string;
   body?: Record<string, unknown>;
 }) => {
-  const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Xero-tenant-id": tenantId,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await response.text();
-  const payload = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    const validationMessages = Array.isArray(payload?.Elements)
-      ? payload.Elements
-          .flatMap((element: any) => Array.isArray(element?.ValidationErrors) ? element.ValidationErrors : [])
-          .map((item: any) => clean(item?.Message))
-          .filter(Boolean)
-      : [];
-    const message = validationMessages[0] ||
-      payload?.Message ||
-      payload?.Title ||
-      payload?.Detail ||
-      `Xero request failed with HTTP ${response.status}`;
-    const error = new Error(message) as Error & { status?: number; payload?: unknown };
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-tenant-id": tenantId,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+
+    if (response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+      if (attempt < maxAttempts && retryAfterMs > 0 && retryAfterMs <= 15_000) {
+        await sleep(retryAfterMs + 250);
+        continue;
+      }
+      const seconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : null;
+      const message = seconds
+        ? `Xero is rate limiting the CRM. Please wait about ${seconds} seconds and try again.`
+        : "Xero is rate limiting the CRM. Please wait a few minutes and try again.";
+      const error = new Error(message) as Error & { status?: number; payload?: unknown; retryAfterSeconds?: number | null };
+      error.status = response.status;
+      error.payload = payload;
+      error.retryAfterSeconds = seconds;
+      throw error;
+    }
+
+    if (!response.ok) {
+      const validationMessages = Array.isArray(payload?.Elements)
+        ? payload.Elements
+            .flatMap((element: any) => Array.isArray(element?.ValidationErrors) ? element.ValidationErrors : [])
+            .map((item: any) => clean(item?.Message))
+            .filter(Boolean)
+        : [];
+      const message = validationMessages[0] ||
+        payload?.Message ||
+        payload?.Title ||
+        payload?.Detail ||
+        `Xero request failed with HTTP ${response.status}`;
+      const error = new Error(message) as Error & { status?: number; payload?: unknown };
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
+    return payload;
   }
-  return payload;
+  throw new Error("Xero request failed after retrying.");
 };
 
 const makeXeroNeedsReviewError = (message: string) => {
@@ -273,7 +326,7 @@ const ensureFlightTypeSalesItem = async (
   }
 
   const existingItems = await listXeroItems(ctx);
-  const existing = existingItems.find((item) => item.code.toUpperCase() === itemCode);
+  const existing = existingItems.find((item: any) => item.code.toUpperCase() === itemCode);
 
   const payload = {
     Code: itemCode,
@@ -448,7 +501,7 @@ const ensureAircraftTrackingOption = async (
 
 const ensureStripeClearingAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
-  const existing = existingAccounts.find((account) =>
+  const existing = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
     (account.code.toUpperCase() === "STRIPECLR" || account.name.toLowerCase() === "stripe clearing")
   );
@@ -493,7 +546,7 @@ const ensureStripeClearingAccount = async (ctx: any) => {
 
 const ensurePrepaidClearingAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
-  const existing = existingAccounts.find((account) =>
+  const existing = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
     (
       account.code.toUpperCase() === "PREPAIDCLR" ||
@@ -542,7 +595,7 @@ const ensurePrepaidClearingAccount = async (ctx: any) => {
 
 const ensureTopupReceiptAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
-  const existing = existingAccounts.find((account) =>
+  const existing = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
     (
       account.code.toUpperCase() === "TOPUPRCPT" ||
@@ -592,7 +645,7 @@ const ensureTopupReceiptAccount = async (ctx: any) => {
 
 const ensureStripeFeeExpenseAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
-  const existing = existingAccounts.find((account) =>
+  const existing = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
     (
       account.code.toUpperCase() === "STRIPEFEE" ||
@@ -640,7 +693,7 @@ const ensureStripeFeeExpenseAccount = async (ctx: any) => {
 
 const ensureVoucherLiabilityAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
-  const existing = existingAccounts.find((account) =>
+  const existing = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
     (
       account.code.toUpperCase() === "GFTVOUCH" ||
@@ -688,7 +741,7 @@ const ensureVoucherLiabilityAccount = async (ctx: any) => {
 
 const ensurePrepaidLiabilityAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
-  const existing = existingAccounts.find((account) =>
+  const existing = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
     (
       account.code.toUpperCase() === "PREPAIDLI" ||
@@ -780,8 +833,13 @@ const createManualJournal = async ({
 };
 
 const fetchStripeFeeDetails = async (adminClient: SupabaseAdminClient, flightLogId: string, tx: any) => {
-  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-  if (!stripeSecretKey) return null;
+  const txMode = tx?.stripe_mode === "test" || tx?.is_test_mode === true ? "test" : "live";
+  let stripeSecretKey = "";
+  try {
+    stripeSecretKey = getStripeSecretKeyForMode(txMode as StripeMode);
+  } catch {
+    return null;
+  }
 
   const connectedAccountId = await getConnectedStripeAccountId(adminClient);
   if (!connectedAccountId) return null;
@@ -1446,10 +1504,11 @@ const getGroundSessionLog = async (adminClient: SupabaseAdminClient, groundSessi
     .from("ground_session_logs")
     .select(`
       id, booking_id, student_id, instructor_id, start_time, end_time, duration_hours,
-      calculated_cost, payment_status, payment_type, flight_type_id,
+      calculated_cost, payment_status, payment_type, flight_type_id, description_text,
       xero_invoice_id, xero_invoice_number, xero_invoice_status, xero_payment_id,
       student:student_id(id, name, email, xero_contact_id),
       instructor:instructor_id(name),
+      ground_session_description_options(name, pricing_mode),
       flight_types(name, xero_item_code)
     `)
     .eq("id", groundSessionLogId)
@@ -2045,13 +2104,17 @@ const createOrUpdateGroundSessionInvoice = async (
   if (!contactResult?.contactId) throw new Error("Could not link this member to a Xero contact.");
 
   const sessionType = Array.isArray(session.flight_types) ? session.flight_types[0] : session.flight_types;
+  const sessionDescription = Array.isArray(session.ground_session_description_options)
+    ? session.ground_session_description_options[0]
+    : session.ground_session_description_options;
   const instructor = Array.isArray(session.instructor) ? session.instructor[0] : session.instructor;
   const durationHours = quantityValue(session.duration_hours);
-  const invoiceQuantity = durationHours > 0 ? durationHours : 1;
-  const unitAmount = durationHours > 0 ? unitRateValue(cost / durationHours) : cost;
+  const fixedPrice = clean(sessionDescription?.pricing_mode) === "fixed";
+  const invoiceQuantity = fixedPrice ? 1 : durationHours > 0 ? durationHours : 1;
+  const unitAmount = fixedPrice ? cost : durationHours > 0 ? unitRateValue(cost / durationHours) : cost;
   const description = [
-    sessionType?.name || "Ground session",
-    durationHours > 0 ? `${Number(session.duration_hours).toFixed(1)} hr` : null,
+    clean(session.description_text) || sessionDescription?.name || sessionType?.name || "Ground session",
+    !fixedPrice && durationHours > 0 ? `${Number(session.duration_hours).toFixed(2)} hr` : null,
     instructor?.name ? `Instructor ${instructor.name}` : null,
   ].filter(Boolean).join(" - ");
 
@@ -2483,7 +2546,7 @@ const queueItem = async (
   entityType: string,
   entityId: string,
   action: string,
-  requestedBy: string,
+  requestedBy: string | null,
   payload: Record<string, unknown> = {},
 ) => {
   const { data, error } = await adminClient
@@ -2621,7 +2684,51 @@ const listQueue = async (adminClient: SupabaseAdminClient, statusFilter = "all",
   return { items, counts };
 };
 
-const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, item: any, processedBy: string) => {
+const getStripeTestSyncAllowed = async (adminClient: SupabaseAdminClient) => {
+  const { data, error } = await adminClient
+    .from("stripe_connect_settings")
+    .select("allow_test_mode_xero_sync")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.allow_test_mode_xero_sync);
+};
+
+const isTestModeQueueItem = async (adminClient: SupabaseAdminClient, item: any) => {
+  if (item.entity_type === "flight_invoice" || item.entity_type === "flight_payment") {
+    const { data, error } = await adminClient
+      .from("flight_logs")
+      .select("is_test_mode,stripe_mode")
+      .eq("id", item.entity_id)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.is_test_mode === true || data?.stripe_mode === "test";
+  }
+
+  if (item.entity_type === "voucher") {
+    const { data, error } = await adminClient
+      .from("trial_flight_vouchers")
+      .select("is_test_mode,stripe_mode")
+      .eq("id", item.entity_id)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.is_test_mode === true || data?.stripe_mode === "test";
+  }
+
+  if (item.entity_type === "account_transaction") {
+    const { data, error } = await adminClient
+      .from("account_transactions")
+      .select("is_test_mode,stripe_mode")
+      .eq("id", item.entity_id)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.is_test_mode === true || data?.stripe_mode === "test";
+  }
+
+  return false;
+};
+
+const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, item: any, processedBy: string | null) => {
   await adminClient.from("xero_sync_queue").update({
     status: "processing",
     attempts: Number(item.attempts || 0) + 1,
@@ -2630,6 +2737,16 @@ const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, it
   }).eq("id", item.id);
 
   try {
+    if (await isTestModeQueueItem(adminClient, item)) {
+      const allowTestSync = await getStripeTestSyncAllowed(adminClient);
+      if (!allowTestSync) {
+        throw Object.assign(
+          new Error("Skipped: this is a Stripe Test Mode record. Enable test-mode Xero sync in Settings > Integrations only if this should be sent to Xero."),
+          { queueStatus: "needs_review" },
+        );
+      }
+    }
+
     let result: Record<string, unknown>;
     if (item.action === "upsert_contact") {
       result = await syncMemberContact(adminClient, ctx, item.entity_id, item.id);
@@ -2692,7 +2809,7 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const auth = await authenticateAdmin({ req, supabaseUrl, anonKey, adminClient });
+    const auth = await authenticateAdmin({ req, supabaseUrl, anonKey, adminClient, serviceRoleKey });
     if (!auth.ok) return json({ error: auth.error }, auth.status);
 
     const body = await req.json().catch(() => ({}));

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, testModeSubject } from "../_shared/stripeMode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -151,9 +152,8 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
 
-    if (!supabaseUrl || !anonKey || !serviceRoleKey || !stripeSecretKey) {
+    if (!supabaseUrl || !anonKey || !serviceRoleKey) {
       return json({ error: "Top-up checkout is not fully configured." }, 503);
     }
 
@@ -165,6 +165,8 @@ Deno.serve(async (req) => {
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const stripeMode = await getActiveStripeMode(adminClient);
+    const stripeSecretKey = stripeMode.secretKey;
 
     const { data: authData, error: authError } = await userClient.auth.getUser();
     if (authError || !authData?.user?.id) return json({ error: "Invalid session." }, 401);
@@ -254,6 +256,7 @@ Deno.serve(async (req) => {
     form.set("cancel_url", cancelUrl);
     form.set("client_reference_id", requestedUserId);
     form.set("metadata[crm_payment_type]", "member_topup");
+    addStripeModeMetadata(form, stripeMode.mode);
     form.set("metadata[user_id]", requestedUserId);
     form.set("metadata[payment_method_id]", stripeMethod.id);
     form.set("metadata[topup_amount]", amount.toFixed(2));
@@ -280,7 +283,7 @@ Deno.serve(async (req) => {
       const emailResult = await sendEmail({
         to: memberEmail,
         toName: memberName,
-        subject: `Pilot account top-up link - $${amount.toFixed(2)}`,
+        subject: testModeSubject(stripeMode.mode, `Pilot account top-up link - $${amount.toFixed(2)}`),
         html: buildTopupEmail({
           memberName,
           amount,
@@ -302,6 +305,7 @@ Deno.serve(async (req) => {
         email_sent: emailSent,
         email_error: emailError,
         created_by: authData.user.id,
+        ...stripeModeColumns(stripeMode.mode),
       });
     if (notificationError) {
       console.error("Failed to record member top-up link notification:", notificationError);

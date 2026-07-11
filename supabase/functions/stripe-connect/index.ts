@@ -1,5 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  getActiveStripeMode,
+  getStripeModeSettings,
+  getStripeSecretKeyForMode,
+  getStripeSecretStatus,
+} from "../_shared/stripeMode.ts";
 
 type SupabaseAdminClient = any;
 
@@ -115,13 +121,15 @@ const createAccountLink = async (accountId: string, secretKey: string) => {
 const getStatus = async (adminClient: SupabaseAdminClient, supabaseUrl: string) => {
   const { data, error } = await adminClient
     .from("stripe_connect_settings")
-    .select("stripe_user_id,scope,livemode,connected_at,updated_at")
+    .select("stripe_user_id,scope,livemode,connected_at,updated_at,stripe_mode,allow_test_mode_xero_sync")
     .eq("id", true)
     .maybeSingle();
 
   if (error) throw error;
 
-  const secretKey = Deno.env.get("STRIPE_SECRET_KEY");
+  const modeSettings = await getStripeModeSettings(adminClient);
+  const secrets = getStripeSecretStatus();
+  const activeSecrets = secrets[modeSettings.mode];
   return {
     connected: Boolean(data?.stripe_user_id),
     accountId: data?.stripe_user_id || null,
@@ -129,9 +137,16 @@ const getStatus = async (adminClient: SupabaseAdminClient, supabaseUrl: string) 
     livemode: Boolean(data?.livemode),
     connectedAt: data?.connected_at || null,
     updatedAt: data?.updated_at || null,
-    configured: Boolean(secretKey),
+    stripeMode: modeSettings.mode,
+    allowTestModeXeroSync: modeSettings.allowTestModeXeroSync,
+    testCredentialsConfigured: secrets.test.configured,
+    liveCredentialsConfigured: secrets.live.configured,
+    activeModeConfigured: activeSecrets.secretKey,
+    activePublishableKeyConfigured: activeSecrets.publishableKey,
+    activeWebhookConfigured: activeSecrets.webhookSecret,
+    configured: activeSecrets.secretKey,
     hasClientId: Boolean(Deno.env.get("STRIPE_CONNECT_CLIENT_ID")),
-    hasSecretKey: Boolean(secretKey),
+    hasSecretKey: activeSecrets.secretKey,
     callbackUrl: callbackUrl(supabaseUrl),
   };
 };
@@ -181,11 +196,13 @@ Deno.serve(async (req: Request) => {
         }));
       }
 
-      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-      if (!stripeSecretKey) {
+      let stripeSecretKey = "";
+      try {
+        stripeSecretKey = (await getActiveStripeMode(adminClient)).secretKey;
+      } catch (error) {
         return redirect(settingsUrl({
           stripe_connect: "error",
-          stripe_error: "Stripe secret key is not configured.",
+          stripe_error: error instanceof Error ? error.message : "Stripe secret key is not configured.",
         }));
       }
 
@@ -207,6 +224,7 @@ Deno.serve(async (req: Request) => {
           stripe_publishable_key: cleanStripeId(token?.stripe_publishable_key) || null,
           scope: cleanStripeId(token?.scope) || null,
           livemode: Boolean(token?.livemode),
+          stripe_mode: Boolean(token?.livemode) ? "live" : "test",
           connected_by: oauthState.requested_by || null,
           connected_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -235,10 +253,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "start") {
-      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-      if (!stripeSecretKey) {
+      let stripeSecretKey = "";
+      try {
+        stripeSecretKey = (await getActiveStripeMode(adminClient)).secretKey;
+      } catch (error) {
         return json({
-          error: "Stripe Connect is not configured yet. Add STRIPE_SECRET_KEY to Supabase Edge Function secrets.",
+          error: error instanceof Error ? error.message : "Stripe Connect is not configured yet.",
           configured: false,
           callbackUrl: callbackUrl(supabaseUrl),
         }, 503);
@@ -267,6 +287,7 @@ Deno.serve(async (req: Request) => {
             stripe_publishable_key: null,
             scope: "account_link",
             livemode: Boolean(account?.livemode),
+            stripe_mode: Boolean(account?.livemode) ? "live" : "test",
             connected_by: auth.userId,
             connected_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -288,7 +309,13 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       const clientId = Deno.env.get("STRIPE_CONNECT_CLIENT_ID");
-      const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
+      const activeMode = await getStripeModeSettings(adminClient);
+      let stripeSecretKey = "";
+      try {
+        stripeSecretKey = getStripeSecretKeyForMode(activeMode.mode);
+      } catch {
+        stripeSecretKey = "";
+      }
       let deauthorized = false;
 
       if (existing?.stripe_user_id && clientId && stripeSecretKey) {
@@ -311,6 +338,7 @@ Deno.serve(async (req: Request) => {
           stripe_publishable_key: null,
           scope: null,
           livemode: false,
+          stripe_mode: "test",
           connected_by: null,
           connected_at: null,
           updated_at: new Date().toISOString(),
@@ -318,6 +346,30 @@ Deno.serve(async (req: Request) => {
       if (updateError) throw updateError;
 
       return json({ disconnected: true, deauthorized });
+    }
+
+    if (action === "set-mode") {
+      const requestedMode = body.mode === "test" ? "test" : body.mode === "live" ? "live" : null;
+      if (!requestedMode) return json({ error: "Stripe mode must be test or live." }, 400);
+
+      const currentMode = await getStripeModeSettings(adminClient);
+      if (currentMode.mode === "test" && requestedMode === "live" && body.confirmLiveSwitch !== true) {
+        return json({ error: "Admin confirmation is required before switching Stripe back to Live mode." }, 409);
+      }
+
+      const { error: upsertError } = await adminClient
+        .from("stripe_connect_settings")
+        .upsert({
+          id: true,
+          stripe_mode: requestedMode,
+          allow_test_mode_xero_sync: Boolean(body.allowTestModeXeroSync),
+          mode_updated_by: auth.userId,
+          mode_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "id" });
+      if (upsertError) throw upsertError;
+
+      return json(await getStatus(adminClient, supabaseUrl));
     }
 
     return json({ error: "Unknown action" }, 400);

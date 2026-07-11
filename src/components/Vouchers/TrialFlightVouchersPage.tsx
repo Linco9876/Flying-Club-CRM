@@ -8,6 +8,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { TrialFlightVoucher, TrialFlightVoucherAddon, TrialFlightVoucherAircraftMode, TrialFlightVoucherPaymentStatus, TrialFlightVoucherProduct } from '../../types';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
 
 const defaultEmailBody =
   'This voucher includes a pre-flight welcome, a trial instructional flight with a qualified instructor, and time to ask questions about learning to fly at Bendigo Flying Club.';
@@ -1348,6 +1349,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+      <div className="mb-6">
+        <StripeTestModeBanner />
       </div>
 
       <section className="mb-6 grid gap-3 md:grid-cols-3">

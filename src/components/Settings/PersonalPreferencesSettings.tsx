@@ -44,6 +44,11 @@ interface ProfileFormData {
   avatarUrl: string;
   coverUrl: string;
   birthdate: string;
+  raausId: string;
+  raausExpiry: string;
+  casaId: string;
+  medicalType: string;
+  medicalExpiry: string;
   mobile: string;
   homePhone: string;
   workPhone: string;
@@ -86,6 +91,11 @@ const blankProfile: ProfileFormData = {
   avatarUrl: '',
   coverUrl: '',
   birthdate: '',
+  raausId: '',
+  raausExpiry: '',
+  casaId: '',
+  medicalType: '',
+  medicalExpiry: '',
   mobile: '',
   homePhone: '',
   workPhone: '',
@@ -108,9 +118,9 @@ const createLocalId = () => {
 
 const safeFilename = (filename: string) => filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-const createPendingEndorsement = (): PendingEndorsementDraft => ({
+const createPendingEndorsement = (type = ''): PendingEndorsementDraft => ({
   localId: createLocalId(),
-  type: '',
+  type,
   dateObtained: '',
   expiryDate: '',
   isActive: true,
@@ -142,8 +152,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const [sendingVerification, setSendingVerification] = useState(false);
   const [existingEndorsements, setExistingEndorsements] = useState<AccountEndorsement[]>([]);
   const [pendingEndorsements, setPendingEndorsements] = useState<PendingEndorsementDraft[]>([]);
+  const [medicalProofFile, setMedicalProofFile] = useState<File | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const endorsementsSectionRef = useRef<HTMLElement | null>(null);
+  const hasHandledEndorsementDeepLinkRef = useRef(false);
   const [preferenceForm, setPreferenceForm] = useState<PreferenceFormData>(() => {
     const { user_id, preferences: _preferences, ...defaults } = defaultUserPreferences(user?.id || '');
     return defaults;
@@ -207,6 +220,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         avatarUrl: userData?.avatar_url || user.avatar || '',
         coverUrl: userData?.cover_url || user.coverPhoto || '',
         birthdate: userData?.date_of_birth || studentData?.date_of_birth || '',
+        raausId: studentData?.raaus_id || '',
+        raausExpiry: studentData?.licence_expiry || '',
+        casaId: studentData?.casa_id || '',
+        medicalType: studentData?.medical_type || '',
+        medicalExpiry: studentData?.medical_expiry || '',
         mobile: userData?.mobile_phone || userData?.phone || user.phone || '',
         homePhone: userData?.home_phone || '',
         workPhone: userData?.work_phone || '',
@@ -221,6 +239,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setSavedProfile(nextProfile);
       setAvatarFile(null);
       setCoverFile(null);
+      setMedicalProofFile(null);
       setEmailVerified(Boolean(authData.user?.email_confirmed_at));
       setExistingEndorsements((endorsementsData || []).map((endorsement: any) => ({
         id: endorsement.id,
@@ -281,6 +300,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setProfileForm(savedProfile);
       setAvatarFile(null);
       setCoverFile(null);
+      setMedicalProofFile(null);
       if (preferences) {
         const { id, user_id, preferences: _preferences, ...values } = preferences;
         setPreferenceForm(values);
@@ -430,10 +450,73 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     return { storagePath, documentId: documentRow?.id as string | undefined };
   };
 
+  const uploadMedicalProof = async (file: File) => {
+    if (!user?.id) throw new Error('User not available');
+
+    const medicalType = profileForm.medicalType.trim() || 'Medical certificate';
+    const expiryLabel = profileForm.medicalExpiry
+      ? ` - expires ${profileForm.medicalExpiry}`
+      : '';
+    const storagePath = `${user.id}/${createLocalId()}-medical-${safeFilename(file.name)}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STUDENT_DOCUMENTS_BUCKET)
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        contentType: file.type || 'application/octet-stream',
+        upsert: false,
+      });
+
+    if (uploadError) throw uploadError;
+
+    const { error: documentError } = await supabase
+      .from('student_documents')
+      .insert({
+        student_id: user.id,
+        display_name: `${medicalType}${expiryLabel}`,
+        original_filename: file.name,
+        storage_path: storagePath,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        uploaded_by: user.id,
+      });
+
+    if (documentError) {
+      await supabase.storage.from(STUDENT_DOCUMENTS_BUCKET).remove([storagePath]);
+      throw documentError;
+    }
+  };
+
   const addPendingEndorsement = () => {
     setPendingEndorsements(prev => [...prev, createPendingEndorsement()]);
     onFormChange();
   };
+
+  useEffect(() => {
+    if (hasHandledEndorsementDeepLinkRef.current || profileLoading || loading || selectedTab !== 'info') return;
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const focus = params.get('focus');
+    if (focus !== 'endorsements') return;
+
+    hasHandledEndorsementDeepLinkRef.current = true;
+    const requestedEndorsement = (params.get('endorsement') || '').trim();
+
+    if (canEdit && isStudentOrPilot) {
+      setPendingEndorsements(prev => {
+        if (requestedEndorsement && prev.some(item => item.type.trim().toLowerCase() === requestedEndorsement.toLowerCase())) {
+          return prev;
+        }
+        return [...prev, createPendingEndorsement(requestedEndorsement)];
+      });
+      onFormChange();
+    }
+
+    window.setTimeout(() => {
+      endorsementsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+  }, [canEdit, isStudentOrPilot, loading, onFormChange, profileLoading, selectedTab]);
 
   const updatePendingEndorsement = (
     localId: string,
@@ -574,6 +657,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         .from('students')
         .upsert({
           id: user.id,
+          raaus_id: profileForm.raausId.trim() || null,
+          licence_expiry: profileForm.raausExpiry || null,
+          casa_id: profileForm.casaId.trim() || null,
+          medical_type: profileForm.medicalType.trim() || null,
+          medical_expiry: profileForm.medicalExpiry || null,
           date_of_birth: profileForm.birthdate || null,
           emergency_contact_name: profileForm.emergencyName.trim() || null,
           emergency_contact_phone: profileForm.emergencyPhone.trim() || null,
@@ -606,6 +694,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           throw endorsementError;
         }
       }
+    }
+
+    if (medicalProofFile) {
+      await uploadMedicalProof(medicalProofFile);
+      setMedicalProofFile(null);
     }
 
     await updatePreferences({
@@ -697,7 +790,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     </div>
   );
 
-  const Field = ({
+  const renderProfileField = ({
     label,
     field,
     type = 'text',
@@ -854,9 +947,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           <section className="space-y-4">
             <h3 className="text-lg font-medium text-gray-900">Personal Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Name" field="name" />
-              <Field label="Email" field="email" type="email" />
-              <Field label="Birthdate" field="birthdate" type="date" />
+              {renderProfileField({ label: 'Name', field: 'name' })}
+              {renderProfileField({ label: 'Email', field: 'email', type: 'email' })}
+              {renderProfileField({ label: 'Birthdate', field: 'birthdate', type: 'date' })}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Aircraft</label>
                 <select
@@ -875,15 +968,71 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             <p className="text-xs text-gray-500">Email changes are sent through Supabase verification before the login email changes.</p>
           </section>
 
+          {isStudentOrPilot && (
+            <section ref={endorsementsSectionRef} id="account-endorsements" className="scroll-mt-24 space-y-4">
+              <h3 className="text-lg font-medium text-gray-900">Aviation Credentials</h3>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {renderProfileField({ label: 'RAAus Number', field: 'raausId' })}
+                {renderProfileField({ label: 'RAAus Expiry', field: 'raausExpiry', type: 'date' })}
+                {renderProfileField({ label: 'CASA ARN Number', field: 'casaId' })}
+                {renderProfileField({ label: 'Medical Expiry', field: 'medicalExpiry', type: 'date' })}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Medical Type</label>
+                  <input
+                    type="text"
+                    value={profileForm.medicalType}
+                    onChange={event => updateProfile('medicalType', event.target.value)}
+                    disabled={!canEdit}
+                    placeholder="Class 2, Driver licence, BasicMed..."
+                    className={inputClass}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Medical Document</label>
+                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-center text-sm text-gray-600 transition hover:border-blue-300 hover:bg-blue-50">
+                    <FileUp className="mb-2 h-5 w-5 text-blue-600" />
+                    <span className="font-medium text-gray-900">
+                      {medicalProofFile ? medicalProofFile.name : 'Upload medical certificate or declaration'}
+                    </span>
+                    <span className="mt-1 text-xs text-gray-500">
+                      Images, PDFs, Word documents and scanned files are accepted. The file will appear in your Documents tab.
+                    </span>
+                    <input
+                      type="file"
+                      disabled={!canEdit}
+                      className="sr-only"
+                      onChange={event => {
+                        setMedicalProofFile(event.target.files?.[0] || null);
+                        onFormChange();
+                      }}
+                    />
+                  </label>
+                  {medicalProofFile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMedicalProofFile(null);
+                        onFormChange();
+                      }}
+                      className="mt-2 text-xs font-medium text-red-600 hover:text-red-700"
+                    >
+                      Remove selected medical document
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
           <section className="space-y-4">
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
               <Phone className="h-5 w-5 mr-2 text-blue-600" />
               Contact Details
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Field label="Mobile" field="mobile" type="tel" />
-              <Field label="Home Number" field="homePhone" type="tel" />
-              <Field label="Work Number" field="workPhone" type="tel" />
+              {renderProfileField({ label: 'Mobile', field: 'mobile', type: 'tel' })}
+              {renderProfileField({ label: 'Home Number', field: 'homePhone', type: 'tel' })}
+              {renderProfileField({ label: 'Work Number', field: 'workPhone', type: 'tel' })}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
@@ -903,9 +1052,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
               Emergency Contact
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Field label="Contact Name" field="emergencyName" />
-              <Field label="Contact Phone" field="emergencyPhone" type="tel" />
-              <Field label="Relationship" field="emergencyRelationship" />
+              {renderProfileField({ label: 'Contact Name', field: 'emergencyName' })}
+              {renderProfileField({ label: 'Contact Phone', field: 'emergencyPhone', type: 'tel' })}
+              {renderProfileField({ label: 'Relationship', field: 'emergencyRelationship' })}
             </div>
           </section>
 
@@ -1074,9 +1223,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           </div>
           <p className="text-sm text-gray-500">Password changes require your current password before a new password is saved.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Field label="Current Password" field="currentPassword" type="password" />
-            <Field label="New Password" field="newPassword" type="password" />
-            <Field label="Confirm New Password" field="confirmPassword" type="password" />
+            {renderProfileField({ label: 'Current Password', field: 'currentPassword', type: 'password' })}
+            {renderProfileField({ label: 'New Password', field: 'newPassword', type: 'password' })}
+            {renderProfileField({ label: 'Confirm New Password', field: 'confirmPassword', type: 'password' })}
           </div>
         </section>
       )}
@@ -1126,9 +1275,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           <h3 className="text-lg font-medium text-gray-900">Appearance</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Select field="theme" label="Theme">
+              {preferenceForm.theme === 'semi-dark' && <option value="semi-dark" hidden>Dark</option>}
               <option value="light">Light</option>
-              <option value="semi-dark">Semi-dark</option>
               <option value="dark">Dark</option>
+              <option value="day-night">Day/Night</option>
               <option value="auto">Auto (System)</option>
             </Select>
             <div className="flex items-end">

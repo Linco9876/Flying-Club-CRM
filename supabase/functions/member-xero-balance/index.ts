@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns } from "../_shared/stripeMode.ts";
 
 type SupabaseAdminClient = any;
 
@@ -20,6 +21,14 @@ const clean = (value: unknown) => String(value || "").trim();
 const money = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const basicAuthHeader = (clientId: string, clientSecret: string) =>
   `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const parseRetryAfterMs = (value: string | null) => {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = Date.parse(value);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : 0;
+};
 const MINIMUM_PREPAID_PACK = 1000;
 const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
 const isDevelopmentOrigin = (origin: string) =>
@@ -59,23 +68,41 @@ const xeroRequest = async ({
   accessToken: string;
   body?: Record<string, unknown>;
 }) => {
-  const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Xero-tenant-id": tenantId,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await response.text();
-  const payload = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    const message = payload?.Message || payload?.Title || payload?.Detail || `Xero request failed with HTTP ${response.status}`;
-    throw new Error(message);
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-tenant-id": tenantId,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+    if (response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+      if (attempt < maxAttempts && retryAfterMs > 0 && retryAfterMs <= 15_000) {
+        await sleep(retryAfterMs + 250);
+        continue;
+      }
+      const seconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : null;
+      throw Object.assign(
+        new Error(seconds
+          ? `Xero is rate limiting the CRM. Please wait about ${seconds} seconds and try again.`
+          : "Xero is rate limiting the CRM. Please wait a few minutes and try again."),
+        { status: 429, retryAfterSeconds: seconds },
+      );
+    }
+    if (!response.ok) {
+      const message = payload?.Message || payload?.Title || payload?.Detail || `Xero request failed with HTTP ${response.status}`;
+      throw Object.assign(new Error(message), { status: response.status });
+    }
+    return payload;
   }
-  return payload;
+  throw new Error("Xero request failed after retrying.");
 };
 
 const refreshAccessToken = async (adminClient: SupabaseAdminClient, connection: any) => {
@@ -308,7 +335,7 @@ const mapInvoice = async (ctx: any, invoice: any) => {
     amountPaid: money(invoice?.AmountPaid),
     amountCredited: money(invoice?.AmountCredited),
     amountDue,
-    url: invoiceId ? await getInvoiceUrl(ctx, invoiceId) : "",
+    url: "",
   };
 };
 
@@ -400,8 +427,8 @@ const createInvoicePaymentCheckout = async ({
   successUrl: string;
   cancelUrl: string;
 }) => {
-  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-  if (!stripeSecretKey) throw new Error("Stripe is not configured.");
+  const stripeMode = await getActiveStripeMode(adminClient);
+  const stripeSecretKey = stripeMode.secretKey;
 
   const connectedAccountId = await getConnectedStripeAccountId(adminClient);
   if (!connectedAccountId) throw new Error("Stripe is not connected for this club.");
@@ -431,6 +458,7 @@ const createInvoicePaymentCheckout = async ({
       amount,
       currency: clean(invoice?.CurrencyCode) || "AUD",
       status: "pending",
+      ...stripeModeColumns(stripeMode.mode),
     })
     .select("id")
     .single();
@@ -448,6 +476,7 @@ const createInvoicePaymentCheckout = async ({
   form.set("client_reference_id", paymentRecord.id);
   if (clean(member.email)) form.set("customer_email", clean(member.email));
   form.set("metadata[crm_payment_type]", "xero_invoice_payment");
+  addStripeModeMetadata(form, stripeMode.mode);
   form.set("metadata[payment_record_id]", paymentRecord.id);
   form.set("metadata[user_id]", member.id);
   form.set("metadata[xero_contact_id]", clean(member.xero_contact_id));
@@ -477,6 +506,7 @@ const createInvoicePaymentCheckout = async ({
   await adminClient.from("xero_invoice_portal_payments").update({
     stripe_checkout_session_id: session.id,
     updated_at: new Date().toISOString(),
+    ...stripeModeColumns(stripeMode.mode),
   }).eq("id", paymentRecord.id);
 
   return {

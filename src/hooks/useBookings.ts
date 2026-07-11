@@ -5,6 +5,23 @@ import { useAuth } from '../context/AuthContext';
 import { useBookingRulesSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return '';
+};
+
+const getMissingSchemaColumn = (error: unknown) => {
+  const message = getErrorMessage(error);
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] || null;
+};
+
+const OPTIONAL_BOOKING_COLUMNS = new Set(['booking_kind', 'has_conflict', 'ground_session_logged']);
+
 export const useBookings = (enabled = true) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,13 +31,14 @@ export const useBookings = (enabled = true) => {
   const { settings: bookingRules } = useBookingRulesSettings();
   const localCreatedBookingIdsRef = useRef<Set<string>>(new Set());
   const localDeletedBookingIdsRef = useRef<Set<string>>(new Set());
+  const missingOptionalBookingColumnsRef = useRef<Set<string>>(new Set());
 
   const isStudentOrPilot = user?.role === 'student' || user?.role === 'pilot';
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
   const isStudentOnlyUser = userRoles.includes('student') && !userRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
   const isStaffUser = userRoles.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role));
   const shouldUsePublicCalendarView = isStudentOrPilot && !isStaffUser;
-  const bookingSelectFields = shouldUsePublicCalendarView
+  const getBookingSelectFields = () => shouldUsePublicCalendarView
     ? '*'
     : [
         'id',
@@ -43,7 +61,7 @@ export const useBookings = (enabled = true) => {
         'guest_name',
         'guest_email',
         'guest_phone',
-      ].join(',');
+      ].filter(field => !missingOptionalBookingColumnsRef.current.has(field)).join(',');
   const flightLogCalendarFields = [
     'id',
     'booking_id',
@@ -87,6 +105,51 @@ export const useBookings = (enabled = true) => {
     guestEmail: row.guest_email || undefined,
     guestPhone: row.guest_phone || undefined,
   });
+
+  const retryWithoutMissingOptionalColumn = async <T,>(
+    error: unknown,
+    operation: () => Promise<T>
+  ) => {
+    const missingColumn = getMissingSchemaColumn(error);
+    if (!missingColumn || !OPTIONAL_BOOKING_COLUMNS.has(missingColumn)) {
+      throw error;
+    }
+    missingOptionalBookingColumnsRef.current.add(missingColumn);
+    return operation();
+  };
+
+  const withoutKnownMissingOptionalColumns = <T extends Record<string, unknown>>(payload: T): T => {
+    const next = { ...payload };
+    missingOptionalBookingColumnsRef.current.forEach((column) => {
+      delete next[column];
+    });
+    return next;
+  };
+
+  const runBookingMutationWithOptionalColumnRetry = async <
+    TPayload extends Record<string, unknown>,
+    TResult extends { error: unknown }
+  >(
+    payload: TPayload,
+    operation: (payload: TPayload) => Promise<TResult>
+  ): Promise<TResult> => {
+    let currentPayload = withoutKnownMissingOptionalColumns(payload);
+
+    for (let attempt = 0; attempt <= OPTIONAL_BOOKING_COLUMNS.size; attempt += 1) {
+      const result = await operation(currentPayload);
+      if (!result.error) return result;
+
+      const missingColumn = getMissingSchemaColumn(result.error);
+      if (!missingColumn || !OPTIONAL_BOOKING_COLUMNS.has(missingColumn)) {
+        return result;
+      }
+
+      missingOptionalBookingColumnsRef.current.add(missingColumn);
+      currentPayload = withoutKnownMissingOptionalColumns(currentPayload);
+    }
+
+    return operation(currentPayload);
+  };
 
   const ensureGuestPlaceholderAccount = async () => {
     const { data, error } = await supabase.functions.invoke<{ userId?: string }>('ensure-guest-account', {
@@ -135,7 +198,7 @@ export const useBookings = (enabled = true) => {
   const validateTimingRules = (
     startTime: Date,
     endTime: Date,
-    options: { enforceMinNotice?: boolean } = { enforceMinNotice: true }
+    options: { enforceMinNotice?: boolean; requiresApproval?: boolean } = { enforceMinNotice: true }
   ) => {
     const now = Date.now();
     const durationHours = (endTime.getTime() - startTime.getTime()) / (60 * 60 * 1000);
@@ -152,6 +215,7 @@ export const useBookings = (enabled = true) => {
     if (
       !isPastBooking &&
       options.enforceMinNotice !== false &&
+      options.requiresApproval === true &&
       bookingRules?.enforce_min_notice &&
       startTime.getTime() < now + bookingRules.min_booking_notice_hours * 60 * 60 * 1000
     ) {
@@ -212,11 +276,16 @@ export const useBookings = (enabled = true) => {
     return latest;
   };
 
+  const formatLocalTime = (date: Date) =>
+    date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
   const getInstructorFatigueWarnings = (
     bookingData: Pick<Booking, 'instructorId' | 'startTime' | 'endTime'>,
     excludingBookingId?: string
   ) => {
-    if (!bookingRules?.fatigue_rules_enabled || !bookingData.instructorId) return [];
+    if (!bookingRules?.fatigue_rules_enabled || !bookingData.instructorId) {
+      return { blockingWarnings: [], advisoryWarnings: [] };
+    }
 
     const candidate = {
       id: '__candidate__',
@@ -244,7 +313,8 @@ export const useBookings = (enabled = true) => {
         hasConflict: existing.hasConflict,
       }));
     const consideredBookings = [...instructorBookings, candidate];
-    const warnings: string[] = [];
+    const blockingWarnings: string[] = [];
+    const advisoryWarnings: string[] = [];
     const lateTime = parseLocalTime(bookingRules.fatigue_late_finish_time, '22:00');
     const earlyTime = parseLocalTime(bookingRules.fatigue_early_start_time, '07:00');
     const lateFinishMinutes = lateTime.hour * 60 + lateTime.minute;
@@ -265,17 +335,18 @@ export const useBookings = (enabled = true) => {
       const casaFdpLimitHours = getCasaAppendix6FdpLimitHours(firstStart);
       const localDutyLimitHours = Math.max(0, Number(bookingRules.fatigue_max_duty_hours_per_day || casaFdpLimitHours));
       const effectiveDutyLimitHours = Math.min(localDutyLimitHours || casaFdpLimitHours, casaFdpLimitHours);
+      const latestAllowedFinish = new Date(firstStart.getTime() + effectiveDutyLimitHours * 60 * 60 * 1000);
 
       if (dutySpanHours > effectiveDutyLimitHours) {
-        warnings.push(`Instructor duty span would be ${dutySpanHours.toFixed(1)} hours. CASA Appendix 6 flight training limit for a duty starting at ${firstStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} is ${casaFdpLimitHours} hours, and the local cap is ${localDutyLimitHours || casaFdpLimitHours} hours.`);
+        blockingWarnings.push(`Instructor duty day would run ${formatLocalTime(firstStart)} - ${formatLocalTime(lastEnd)} (${dutySpanHours.toFixed(1)} hours). A duty starting at ${formatLocalTime(firstStart)} must finish by ${formatLocalTime(latestAllowedFinish)} under the active duty limit.`);
       }
       if (bookedHours > Number(bookingRules.fatigue_max_flight_hours_per_day || 0)) {
-        warnings.push(`Instructor booked flight/supervision time would be ${bookedHours.toFixed(1)} hours, above the ${bookingRules.fatigue_max_flight_hours_per_day} hour daily limit.`);
+        advisoryWarnings.push(`Instructor booked flight/supervision time would be ${bookedHours.toFixed(1)} hours, above the ${bookingRules.fatigue_max_flight_hours_per_day} hour daily review threshold.`);
       }
 
       const latestFinish = getLatestCasaAppendix6Finish(firstStart);
       if (lastEnd > latestFinish) {
-        warnings.push(`Instructor duty would finish after 01:00 local time following the duty start, outside the CASA Appendix 6 planning window.`);
+        blockingWarnings.push(`Instructor duty would finish after 01:00 local time following the duty start, outside the CASA Appendix 6 planning window.`);
       }
     }
 
@@ -287,11 +358,14 @@ export const useBookings = (enabled = true) => {
     ].filter(Boolean) as typeof sortedBookings;
 
     neighbours.forEach((neighbour) => {
+      if (sameLocalDay(neighbour.startTime, candidate.startTime) || sameLocalDay(neighbour.endTime, candidate.startTime)) {
+        return;
+      }
       const restMs = neighbour.startTime > candidate.endTime
         ? neighbour.startTime.getTime() - candidate.endTime.getTime()
         : candidate.startTime.getTime() - neighbour.endTime.getTime();
       if (restMs >= 0 && restMs < minRestMs) {
-        warnings.push(`Instructor would have only ${(restMs / (60 * 60 * 1000)).toFixed(1)} hours rest between duties; minimum is ${bookingRules.fatigue_min_rest_hours} hours.`);
+        blockingWarnings.push(`Instructor would have only ${(restMs / (60 * 60 * 1000)).toFixed(1)} hours rest between duties; minimum is ${bookingRules.fatigue_min_rest_hours} hours.`);
       }
     });
 
@@ -312,7 +386,7 @@ export const useBookings = (enabled = true) => {
       return candidateIsEarly && minutesSinceMidnight(existing.endTime) >= lateFinishMinutes;
     });
     if (hasEarlyNearLate || hasLateNearEarly) {
-      warnings.push(`Instructor has an early/late combination inside the fatigue window (${bookingRules.fatigue_early_start_time} early start / ${bookingRules.fatigue_late_finish_time} late finish).`);
+      blockingWarnings.push(`Instructor has an early/late combination inside the fatigue window (${bookingRules.fatigue_early_start_time} early start / ${bookingRules.fatigue_late_finish_time} late finish).`);
     }
 
     const windowStart = new Date(candidate.startTime);
@@ -326,7 +400,7 @@ export const useBookings = (enabled = true) => {
       minutesSinceMidnight(existing.endTime) >= lateFinishMinutes
     ).length;
     if (lateFinishes > Number(bookingRules.fatigue_max_late_finishes_7_days || 0)) {
-      warnings.push(`Instructor would have ${lateFinishes} late finishes in 7 days; limit is ${bookingRules.fatigue_max_late_finishes_7_days}.`);
+      advisoryWarnings.push(`Instructor would have ${lateFinishes} late finishes in 7 days; limit is ${bookingRules.fatigue_max_late_finishes_7_days}.`);
     }
 
     const rollingHours = (days: number) => {
@@ -342,22 +416,22 @@ export const useBookings = (enabled = true) => {
 
     const rolling7DutyHours = rollingHours(7);
     if (rolling7DutyHours > 60) {
-      warnings.push(`Instructor CRM-booked duty would be ${rolling7DutyHours.toFixed(1)} hours in 7 days; CASA Appendix 6 cumulative duty limit is 60 hours.`);
+      advisoryWarnings.push(`Instructor CRM-booked duty would be ${rolling7DutyHours.toFixed(1)} hours in 7 days; CASA Appendix 6 cumulative duty limit is 60 hours.`);
     }
 
     const rolling14DutyHours = rollingHours(14);
     if (rolling14DutyHours > 100) {
-      warnings.push(`Instructor CRM-booked duty would be ${rolling14DutyHours.toFixed(1)} hours in 14 days; CASA Appendix 6 cumulative duty limit is 100 hours.`);
+      advisoryWarnings.push(`Instructor CRM-booked duty would be ${rolling14DutyHours.toFixed(1)} hours in 14 days; CASA Appendix 6 cumulative duty limit is 100 hours.`);
     }
 
     const rolling28FlightHours = rollingHours(28);
     if (rolling28FlightHours > 100) {
-      warnings.push(`Instructor CRM-booked flight/supervision time would be ${rolling28FlightHours.toFixed(1)} hours in 28 days; CASA cumulative flight-time limit is 100 hours.`);
+      advisoryWarnings.push(`Instructor CRM-booked flight/supervision time would be ${rolling28FlightHours.toFixed(1)} hours in 28 days; CASA cumulative flight-time limit is 100 hours.`);
     }
 
     const rolling365FlightHours = rollingHours(365);
     if (rolling365FlightHours > 1000) {
-      warnings.push(`Instructor CRM-booked flight/supervision time would be ${rolling365FlightHours.toFixed(1)} hours in 365 days; CASA cumulative flight-time limit is 1000 hours.`);
+      advisoryWarnings.push(`Instructor CRM-booked flight/supervision time would be ${rolling365FlightHours.toFixed(1)} hours in 365 days; CASA cumulative flight-time limit is 1000 hours.`);
     }
 
     const sevenDayStart = addLocalDays(startOfLocalDay(candidate.startTime), -6);
@@ -373,7 +447,7 @@ export const useBookings = (enabled = true) => {
     }
     if (hoursBetween(previousEnd, sevenDayEnd) >= 36) has36HourGap = true;
     if (!has36HourGap) {
-      warnings.push('Instructor has no 36-hour off-duty gap in the rolling 7-day CRM roster window.');
+      advisoryWarnings.push('Instructor has no 36-hour off-duty gap in the rolling 7-day CRM roster window.');
     }
 
     const twentyEightDayStart = addLocalDays(startOfLocalDay(candidate.startTime), -27);
@@ -384,24 +458,27 @@ export const useBookings = (enabled = true) => {
       if (!hasDuty) offDutyDays += 1;
     }
     if (offDutyDays < 6) {
-      warnings.push(`Instructor has only ${offDutyDays} CRM-rostered off-duty days in the rolling 28-day window; CASA Appendix 6 requires at least 6.`);
+      advisoryWarnings.push(`Instructor has only ${offDutyDays} CRM-rostered off-duty days in the rolling 28-day window; CASA Appendix 6 requires at least 6.`);
     }
 
-    return Array.from(new Set(warnings));
+    return {
+      blockingWarnings: Array.from(new Set(blockingWarnings)),
+      advisoryWarnings: Array.from(new Set(advisoryWarnings)),
+    };
   };
 
   const assertFatigueRules = (
     bookingData: Pick<Booking, 'instructorId' | 'startTime' | 'endTime'>,
     excludingBookingId?: string
   ) => {
-    const warnings = getInstructorFatigueWarnings(bookingData, excludingBookingId);
+    const { blockingWarnings, advisoryWarnings } = getInstructorFatigueWarnings(bookingData, excludingBookingId);
+    const warnings = [...blockingWarnings, ...advisoryWarnings];
     if (warnings.length === 0) return;
 
-    const message = warnings.join(' ');
-    if (bookingRules?.fatigue_block_on_breach !== false) {
-      throw new Error(message);
+    if (bookingRules?.fatigue_block_on_breach !== false && blockingWarnings.length > 0) {
+      throw new Error(blockingWarnings.join(' '));
     }
-    toast(message);
+    toast(warnings.join(' '));
   };
 
   const fetchBookings = async () => {
@@ -419,15 +496,29 @@ export const useBookings = (enabled = true) => {
         setTimeout(() => reject(new Error('Request timeout')), 15000)
       );
 
-      const bookingsPromise = supabase
-        .from(shouldUsePublicCalendarView ? 'calendar_booking_public' : 'bookings')
-        .select(bookingSelectFields)
-        .order('start_time', { ascending: false });
+      const runBookingsQuery = async () => {
+        const bookingsPromise = supabase
+          .from(shouldUsePublicCalendarView ? 'calendar_booking_public' : 'bookings')
+          .select(getBookingSelectFields())
+          .order('start_time', { ascending: false });
 
-      const { data: bookingsData, error: bookingsError } = await Promise.race([
-        bookingsPromise,
-        timeoutPromise
-      ]) as any;
+        return Promise.race([
+          bookingsPromise,
+          timeoutPromise
+        ]) as Promise<{ data: any[] | null; error: any }>;
+      };
+
+      let { data: bookingsData, error: bookingsError } = await runBookingsQuery();
+      if (bookingsError) {
+        try {
+          ({ data: bookingsData, error: bookingsError } = await retryWithoutMissingOptionalColumn(
+            bookingsError,
+            runBookingsQuery
+          ));
+        } catch (retryError) {
+          bookingsError = retryError;
+        }
+      }
 
       if (bookingsError) {
         console.error('Bookings error:', bookingsError);
@@ -669,6 +760,9 @@ export const useBookings = (enabled = true) => {
     }
 
     if (promoteIds.length > 0) {
+      if (missingOptionalBookingColumnsRef.current.has('has_conflict')) {
+        return;
+      }
       const { error: promoteError } = await supabase
         .from('bookings')
         .update({ has_conflict: false })
@@ -713,7 +807,13 @@ export const useBookings = (enabled = true) => {
         throw new Error(`Bookings can only be made up to ${portalSettings.max_advance_booking_days} days in advance`);
       }
 
-      validateTimingRules(bookingData.startTime, bookingData.endTime);
+      // Student-only users need approval; pilots can hire without instructor approval unless the organisation rule says otherwise.
+      let needsApproval = isStudentOnlyUser ||
+        Boolean(bookingRules?.require_instructor_approval && !bookingData.instructorId);
+
+      validateTimingRules(bookingData.startTime, bookingData.endTime, {
+        requiresApproval: needsApproval,
+      });
       if (!options.silent && bookingData.startTime.getTime() < Date.now()) {
         toast('Warning: this booking is being created in the past.');
       }
@@ -722,10 +822,11 @@ export const useBookings = (enabled = true) => {
       if (!resolvedStudentId || resolvedStudentId.trim() === '') {
         throw new Error('Student is required');
       }
-      if (bookingData.bookingKind !== 'ground' && (!bookingData.aircraftId || bookingData.aircraftId.trim() === '')) {
+      const effectiveKind = bookingData.bookingKind === 'ground' || !bookingData.aircraftId ? 'ground' : 'flight';
+      if (effectiveKind !== 'ground' && (!bookingData.aircraftId || bookingData.aircraftId.trim() === '')) {
         throw new Error('Aircraft is required');
       }
-      if (bookingData.bookingKind === 'ground' && (!bookingData.instructorId || bookingData.instructorId.trim() === '')) {
+      if (effectiveKind === 'ground' && (!bookingData.instructorId || bookingData.instructorId.trim() === '')) {
         throw new Error('Instructor is required for ground sessions');
       }
       if (bookingData.isGuestBooking) {
@@ -741,10 +842,6 @@ export const useBookings = (enabled = true) => {
       await assertInstructorAvailable(bookingData);
       assertFatigueRules(bookingData);
 
-      // Student-only users need approval; pilots can hire without instructor approval.
-      let needsApproval = isStudentOnlyUser ||
-        Boolean(bookingRules?.require_instructor_approval && !bookingData.instructorId);
-
       const conflicts = findConfirmedConflicts(bookingData);
       const isWaitlisted = conflicts.length > 0;
       if (isWaitlisted && bookingRules?.allow_double_booking === false) {
@@ -756,13 +853,13 @@ export const useBookings = (enabled = true) => {
       const insertData = {
         student_id: resolvedStudentId,
         instructor_id: bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null,
-        aircraft_id: bookingData.bookingKind === 'ground' ? null : bookingData.aircraftId,
+        aircraft_id: effectiveKind === 'ground' ? null : bookingData.aircraftId,
         start_time: bookingData.startTime.toISOString(),
         end_time: bookingData.endTime.toISOString(),
         payment_type: bookingData.paymentType,
         notes: bookingData.notes || null,
         status: bookingStatus,
-        booking_kind: bookingData.bookingKind || 'flight',
+        booking_kind: effectiveKind,
         has_conflict: isWaitlisted,
         flight_type_id: bookingData.flightTypeId || null,
         trial_flight_voucher_id: bookingData.trialFlightVoucherId || null,
@@ -774,10 +871,12 @@ export const useBookings = (enabled = true) => {
 
       console.log('Insert data:', insertData);
 
-      const { data, error } = await supabase
+      const runInsert = async (payload: typeof insertData) => supabase
         .from('bookings')
-        .insert(insertData)
-        .select();
+        .insert(payload)
+        .select(getBookingSelectFields());
+
+      let { data, error } = await runBookingMutationWithOptionalColumnRetry(insertData, runInsert);
 
       if (error) {
         console.error('Supabase error details:', {
@@ -872,20 +971,24 @@ export const useBookings = (enabled = true) => {
       if (bookingData.instructorId !== undefined) {
         updateData.instructor_id = bookingData.instructorId && bookingData.instructorId.trim() !== '' ? bookingData.instructorId : null;
       }
-      const effectiveKind = bookingData.bookingKind || currentBooking?.bookingKind || 'flight';
+      const hasAircraftUpdate = bookingData.aircraftId !== undefined;
+      const blankAircraftUpdate = hasAircraftUpdate && (!bookingData.aircraftId || bookingData.aircraftId.trim() === '');
+      const effectiveKind = bookingData.bookingKind || (blankAircraftUpdate ? 'ground' : currentBooking?.bookingKind || 'flight');
 
       if (bookingData.aircraftId !== undefined) {
         if (effectiveKind !== 'ground' && (!bookingData.aircraftId || bookingData.aircraftId.trim() === '')) {
           throw new Error('Aircraft is required');
         }
-        updateData.aircraft_id = bookingData.aircraftId || null;
+        updateData.aircraft_id = effectiveKind === 'ground' ? null : bookingData.aircraftId || null;
       }
       if (bookingData.startTime !== undefined) updateData.start_time = bookingData.startTime.toISOString();
       if (bookingData.endTime !== undefined) updateData.end_time = bookingData.endTime.toISOString();
       if (bookingData.paymentType !== undefined) updateData.payment_type = bookingData.paymentType;
       if (bookingData.notes !== undefined) updateData.notes = bookingData.notes || null;
       if (bookingData.status !== undefined) updateData.status = bookingData.status;
-      if (bookingData.bookingKind !== undefined) updateData.booking_kind = bookingData.bookingKind;
+      if ((bookingData.bookingKind !== undefined || effectiveKind === 'ground') && !missingOptionalBookingColumnsRef.current.has('booking_kind')) {
+        updateData.booking_kind = effectiveKind;
+      }
       if (bookingData.flightTypeId !== undefined) updateData.flight_type_id = bookingData.flightTypeId || null;
       if (bookingData.trialFlightVoucherId !== undefined) updateData.trial_flight_voucher_id = bookingData.trialFlightVoucherId || null;
       if (bookingData.isGuestBooking !== undefined) updateData.is_guest_booking = bookingData.isGuestBooking;
@@ -937,7 +1040,9 @@ export const useBookings = (enabled = true) => {
         bookingData.startTime !== undefined ||
         bookingData.endTime !== undefined
       ) {
-        updateData.has_conflict = isWaitlisted;
+        if (!missingOptionalBookingColumnsRef.current.has('has_conflict')) {
+          updateData.has_conflict = isWaitlisted;
+        }
       }
 
       const previousBookings = bookings;
@@ -951,10 +1056,12 @@ export const useBookings = (enabled = true) => {
           : existing
       ));
 
-      const { error } = await supabase
+      const runUpdate = async (payload: any) => supabase
         .from('bookings')
-        .update(updateData)
+        .update(payload)
         .eq('id', id);
+
+      const { error } = await runBookingMutationWithOptionalColumnRetry(updateData, runUpdate);
 
       if (error) {
         setBookings(previousBookings);
@@ -981,6 +1088,9 @@ export const useBookings = (enabled = true) => {
   const deleteBooking = async (id: string) => {
     try {
       const booking = bookings.find(existing => existing.id === id);
+      if (booking && (booking.flight_logged || booking.flightLog || booking.ground_session_logged || booking.groundSessionLog)) {
+        throw new Error('Delete the linked flight or ground session log before deleting this booking.');
+      }
       if (
         isStudentOrPilot &&
         booking?.studentId === user.id &&
@@ -997,12 +1107,17 @@ export const useBookings = (enabled = true) => {
         throw new Error(`Bookings cannot be cancelled within ${bookingRules.cancellation_notice_hours} hours of departure`);
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('bookings')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', id);
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) {
+        throw new Error('Booking could not be deleted. It may already be cancelled or you may not have permission to change it.');
+      }
 
       void promoteAvailableWaitlistedBookings().catch((promoteError) => {
         console.error('Error promoting waitlisted bookings after booking deletion:', promoteError);
@@ -1016,7 +1131,62 @@ export const useBookings = (enabled = true) => {
       toast.success('Booking deleted successfully');
     } catch (err) {
       console.error('Error deleting booking:', err);
-      toast.error('Failed to delete booking');
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'Failed to delete booking';
+      toast.error(message);
+      throw err;
+    }
+  };
+
+  const restoreBooking = async (id: string) => {
+    try {
+      const booking = bookings.find(existing => existing.id === id);
+      if (!booking) {
+        throw new Error('Booking could not be found');
+      }
+
+      const candidateBooking = {
+        ...booking,
+        status: 'confirmed' as const,
+        deletedAt: undefined,
+      };
+
+      await assertInstructorAvailable(candidateBooking);
+      assertFatigueRules(candidateBooking, id);
+
+      const conflicts = findConfirmedConflicts(candidateBooking, id);
+      const isWaitlisted = conflicts.length > 0;
+      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
+        throw new Error('This booking overlaps an existing booking and waiting-list overlaps are disabled');
+      }
+
+      const restorePayload: Record<string, unknown> = {
+        deleted_at: null,
+        status: isWaitlisted ? 'confirmed' : (booking.status === 'cancelled' ? 'confirmed' : booking.status),
+      };
+      if (!missingOptionalBookingColumnsRef.current.has('has_conflict')) {
+        restorePayload.has_conflict = isWaitlisted;
+      }
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .update(restorePayload)
+        .eq('id', id)
+        .select(getBookingSelectFields())
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
+        throw new Error('Booking could not be reinstated. It may no longer exist or you may not have permission.');
+      }
+
+      const restored = mapBookingRow(data, undefined, undefined);
+      setBookings(prev => prev.map(existing => existing.id === id ? restored : existing));
+      toast.success(isWaitlisted ? 'Booking reinstated on the waiting list' : 'Booking reinstated');
+    } catch (err) {
+      console.error('Error reinstating booking:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to reinstate booking');
       throw err;
     }
   };
@@ -1113,14 +1283,18 @@ export const useBookings = (enabled = true) => {
         throw new Error('This booking overlaps an existing booking and waiting-list overlaps are disabled');
       }
 
+      const approvePayload: Record<string, unknown> = {
+        status: 'confirmed',
+        approved_by: userData.user.id,
+        approved_at: new Date().toISOString()
+      };
+      if (!missingOptionalBookingColumnsRef.current.has('has_conflict')) {
+        approvePayload.has_conflict = isWaitlisted;
+      }
+
       const { error } = await supabase
         .from('bookings')
-        .update({
-          status: 'confirmed',
-          has_conflict: isWaitlisted,
-          approved_by: userData.user.id,
-          approved_at: new Date().toISOString()
-        })
+        .update(approvePayload)
         .eq('id', bookingId);
 
       if (error) throw error;
@@ -1305,6 +1479,7 @@ export const useBookings = (enabled = true) => {
     addBooking,
     updateBooking,
     deleteBooking,
+    restoreBooking,
     addFlightLog,
     approveBooking,
     rejectBooking,

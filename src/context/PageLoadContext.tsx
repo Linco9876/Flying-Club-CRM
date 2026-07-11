@@ -33,6 +33,7 @@ export const PageLoadGate: React.FC<{
 }> = ({ children, routeKey }) => {
   const [entries, setEntries] = useState<Map<symbol, PageLoadEntry>>(() => new Map());
   const [initialising, setInitialising] = useState(true);
+  const [showOverlay, setShowOverlay] = useState(false);
 
   useEffect(() => {
     setInitialising(true);
@@ -61,13 +62,26 @@ export const PageLoadGate: React.FC<{
   const isLoading = initialising || loadingEntries.length > 0;
   const contextValue = useMemo(() => ({ setPageLoadEntry }), [setPageLoadEntry]);
 
+  useEffect(() => {
+    if (!isLoading) {
+      setShowOverlay(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowOverlay(true);
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [isLoading]);
+
   return (
     <PageLoadContext.Provider value={contextValue}>
       <div className="relative min-h-[22rem]">
-        <div className={isLoading ? 'pointer-events-none opacity-0' : 'opacity-100 transition-opacity duration-150'}>
+        <div className={showOverlay ? 'pointer-events-none opacity-0' : 'opacity-100 transition-opacity duration-150'}>
           {children}
         </div>
-        {isLoading && (
+        {showOverlay && (
           <div className="fixed inset-0 z-[120] bg-gray-50/95 dark:bg-[#0f1117]/95">
             <PortalSectionLoader
               message={primaryEntry?.message || 'Loading this page'}

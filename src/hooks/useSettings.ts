@@ -134,7 +134,7 @@ export const defaultUserPreferences = (userId: string): Omit<UserPreferences, 'i
 
 export interface PortalUxSettings {
   id: string;
-  theme: 'light' | 'semi-dark' | 'dark' | 'auto';
+  kiosk_theme: 'light' | 'dark' | 'day-night' | 'auto';
   date_format: string;
   time_format: '24h' | '12h';
   flight_time_decimals: number;
@@ -148,7 +148,7 @@ export interface PortalUxSettings {
 }
 
 export const defaultPortalUxSettings: Omit<PortalUxSettings, 'id'> = {
-  theme: 'auto',
+  kiosk_theme: 'day-night',
   date_format: 'dd/MM/yyyy',
   time_format: '24h',
   flight_time_decimals: 1,
@@ -166,7 +166,7 @@ export const usePortalUxSettings = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const resolvedSettings = useMemo(
-    () => settings ?? ({ id: '', ...defaultPortalUxSettings } as PortalUxSettings),
+    () => ({ id: '', ...defaultPortalUxSettings, ...(settings ?? {}) } as PortalUxSettings),
     [settings]
   );
 

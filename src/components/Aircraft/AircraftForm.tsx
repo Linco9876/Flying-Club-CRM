@@ -94,6 +94,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     totalHours: isEdit ? (aircraft?.totalHours || 0) : 0,
     requiredEndorsementType: aircraft?.requiredEndorsementType || '',
     requiredEndorsementTypes: aircraft?.requiredEndorsementTypes || (aircraft?.requiredEndorsementType ? [aircraft.requiredEndorsementType] : []),
+    requiredAllEndorsementTypes: aircraft?.requiredAllEndorsementTypes || [],
     iconKey: aircraft?.iconKey || 'tecnam',
     xeroTrackingCategoryId: aircraft?.xeroTrackingCategoryId || '',
     xeroTrackingCategoryName: aircraft?.xeroTrackingCategoryName || 'Aircraft',
@@ -403,6 +404,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         totalHours: isEdit ? (aircraft.totalHours || 0) : 0,
         requiredEndorsementType: aircraft.requiredEndorsementType || '',
         requiredEndorsementTypes: aircraft.requiredEndorsementTypes || (aircraft.requiredEndorsementType ? [aircraft.requiredEndorsementType] : []),
+        requiredAllEndorsementTypes: aircraft.requiredAllEndorsementTypes || [],
         iconKey: aircraft.iconKey || 'tecnam',
         xeroTrackingCategoryId: aircraft.xeroTrackingCategoryId || '',
         xeroTrackingCategoryName: aircraft.xeroTrackingCategoryName || 'Aircraft',
@@ -436,6 +438,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         totalHours: 0,
         requiredEndorsementType: '',
         requiredEndorsementTypes: [],
+        requiredAllEndorsementTypes: [],
         iconKey: 'tecnam',
         xeroTrackingCategoryId: '',
         xeroTrackingCategoryName: 'Aircraft',
@@ -538,6 +541,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       tachStart: formData.tachStart,
       requiredEndorsementType: formData.requiredEndorsementTypes[0] || formData.requiredEndorsementType || null,
       requiredEndorsementTypes: formData.requiredEndorsementTypes,
+      requiredAllEndorsementTypes: formData.requiredAllEndorsementTypes,
       iconKey: formData.iconKey || null,
       xeroTrackingCategoryId: xeroTrackingData.xeroTrackingCategoryId,
       xeroTrackingCategoryName: xeroTrackingData.xeroTrackingCategoryName,
@@ -815,7 +819,9 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                         : 'border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/50'
                     }`}
                   >
-                    <img src={option.src} alt="" className="mx-auto h-16 w-full object-contain" />
+                    <span className="mx-auto flex h-20 w-full items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white/85 p-1 shadow-sm dark:border-slate-600 dark:bg-slate-800/90">
+                      <img src={option.src} alt="" className="h-full w-full scale-110 object-contain drop-shadow-sm" />
+                    </span>
                     <span className="mt-2 block text-xs font-semibold text-gray-800">{option.label}</span>
                   </button>
                 ))}
@@ -832,65 +838,111 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
               Use this when an aircraft needs a specific endorsement before a pilot can hire it solo.
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.7fr)] gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Allowed solo-hire endorsements
-                </label>
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                  <label className="flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium text-gray-800">
-                    <input
-                      type="checkbox"
-                      checked={formData.requiredEndorsementTypes.length === 0}
-                      onChange={(e) => {
-                        if (!e.target.checked) return;
-                        setFormData(prev => ({
-                          ...prev,
-                          requiredEndorsementType: '',
-                          requiredEndorsementTypes: [],
-                        }));
-                      }}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    No endorsement required
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Must have every listed endorsement
                   </label>
-                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {trainingSettings.endorsementTypes.map(type => {
-                      const checked = formData.requiredEndorsementTypes.includes(type);
-                      return (
-                        <label
-                          key={type}
-                          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
-                            checked
-                              ? 'border-blue-300 bg-blue-50 text-blue-900'
-                              : 'border-gray-200 bg-white text-gray-700'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              setFormData(prev => {
-                                const nextTypes = e.target.checked
-                                  ? Array.from(new Set([...prev.requiredEndorsementTypes, type]))
-                                  : prev.requiredEndorsementTypes.filter(item => item !== type);
-                                return {
-                                  ...prev,
-                                  requiredEndorsementTypes: nextTypes,
-                                  requiredEndorsementType: nextTypes[0] || '',
-                                };
-                              });
-                            }}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="font-medium">{type}</span>
-                        </label>
-                      );
-                    })}
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {trainingSettings.endorsementTypes.map(type => {
+                        const checked = formData.requiredAllEndorsementTypes.includes(type);
+                        return (
+                          <label
+                            key={`all-${type}`}
+                            className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                              checked
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                                : 'border-gray-200 bg-white text-gray-700'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setFormData(prev => {
+                                  const nextTypes = e.target.checked
+                                    ? Array.from(new Set([...prev.requiredAllEndorsementTypes, type]))
+                                    : prev.requiredAllEndorsementTypes.filter(item => item !== type);
+                                  return {
+                                    ...prev,
+                                    requiredAllEndorsementTypes: nextTypes,
+                                  };
+                                });
+                              }}
+                              className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span className="font-medium">{type}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Use this for endorsements that all need to be held before the aircraft can be hired without an instructor.
+                  </p>
                 </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  A pilot can hire this aircraft solo if they hold any one of the selected endorsements. If none are held, the booking can still be requested but it will become pending approval.
-                </p>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Must have at least one of these endorsements
+                  </label>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <label className="flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium text-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={formData.requiredEndorsementTypes.length === 0}
+                        onChange={(e) => {
+                          if (!e.target.checked) return;
+                          setFormData(prev => ({
+                            ...prev,
+                            requiredEndorsementType: '',
+                            requiredEndorsementTypes: [],
+                          }));
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      No either/or endorsement required
+                    </label>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {trainingSettings.endorsementTypes.map(type => {
+                        const checked = formData.requiredEndorsementTypes.includes(type);
+                        return (
+                          <label
+                            key={`any-${type}`}
+                            className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                              checked
+                                ? 'border-blue-300 bg-blue-50 text-blue-900'
+                                : 'border-gray-200 bg-white text-gray-700'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setFormData(prev => {
+                                  const nextTypes = e.target.checked
+                                    ? Array.from(new Set([...prev.requiredEndorsementTypes, type]))
+                                    : prev.requiredEndorsementTypes.filter(item => item !== type);
+                                  return {
+                                    ...prev,
+                                    requiredEndorsementTypes: nextTypes,
+                                    requiredEndorsementType: nextTypes[0] || '',
+                                  };
+                                });
+                              }}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="font-medium">{type}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Use this for equivalent licences or endorsements where holding any one of them is enough for solo hire.
+                  </p>
+                </div>
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                 <p className="font-semibold">Instructor bookings are allowed.</p>

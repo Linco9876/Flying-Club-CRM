@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Plane, Eye, EyeOff } from 'lucide-react';
+import { Plane, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { DEFAULT_ENDORSEMENT_TYPES } from '../../utils/pilotStatus';
+import { fetchPilotStatusEndorsementTypes, reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 
 interface SignUpFormProps {
   onBackToLogin: () => void;
@@ -15,8 +17,64 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
     confirmPassword: '',
     phone: ''
   });
+  const [endorsements, setEndorsements] = useState<Array<{
+    id: string;
+    type: string;
+    dateObtained: string;
+    expiryDate: string;
+    isActive: boolean;
+  }>>([]);
+  const [endorsementDraft, setEndorsementDraft] = useState({
+    type: '',
+    dateObtained: '',
+    expiryDate: '',
+    isActive: true,
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const addEndorsement = () => {
+    if (!endorsementDraft.type.trim()) {
+      toast.error('Select or enter an endorsement');
+      return;
+    }
+    if (!endorsementDraft.dateObtained) {
+      toast.error('Select the endorsement obtained date');
+      return;
+    }
+
+    const nextType = endorsementDraft.type.trim();
+    const duplicate = endorsements.some((endorsement) =>
+      endorsement.type.trim().toLowerCase() === nextType.toLowerCase() &&
+      endorsement.dateObtained === endorsementDraft.dateObtained
+    );
+
+    if (duplicate) {
+      toast.error('That endorsement is already listed');
+      return;
+    }
+
+    setEndorsements((current) => [
+      ...current,
+      {
+        id: `signup-endorsement-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        type: nextType,
+        dateObtained: endorsementDraft.dateObtained,
+        expiryDate: endorsementDraft.expiryDate,
+        isActive: endorsementDraft.isActive,
+      },
+    ]);
+    setEndorsementDraft({
+      type: '',
+      dateObtained: '',
+      expiryDate: '',
+      isActive: true,
+    });
+  };
+
+  const removeEndorsement = (id: string) => {
+    setEndorsements((current) => current.filter((endorsement) => endorsement.id !== id));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +99,13 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
           data: {
             name: formData.name,
             phone: formData.phone || null,
-            role: 'student'
+            role: 'student',
+            endorsements: endorsements.map((endorsement) => ({
+              type: endorsement.type,
+              dateObtained: endorsement.dateObtained,
+              expiryDate: endorsement.expiryDate || null,
+              isActive: endorsement.isActive,
+            })),
           },
           emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`
         }
@@ -50,6 +114,52 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
       if (authError) throw authError;
 
       if (authData.user) {
+        if (authData.session && endorsements.length > 0) {
+          const { data: existingEndorsements } = await supabase
+            .from('endorsements')
+            .select('type, date_obtained')
+            .eq('student_id', authData.user.id);
+
+          const existingKeys = new Set(
+            (existingEndorsements || []).map((endorsement) =>
+              `${String(endorsement.type || '').trim().toLowerCase()}::${String(endorsement.date_obtained || '')}`
+            )
+          );
+
+          const endorsementsToInsert = endorsements
+            .filter((endorsement) => !existingKeys.has(`${endorsement.type.trim().toLowerCase()}::${endorsement.dateObtained}`))
+            .map((endorsement) => ({
+              student_id: authData.user!.id,
+              type: endorsement.type.trim(),
+              date_obtained: endorsement.dateObtained,
+              expiry_date: endorsement.expiryDate || null,
+              instructor_id: null,
+              is_active: endorsement.isActive,
+            }));
+
+          if (endorsementsToInsert.length > 0) {
+            const { error: endorsementsError } = await supabase
+              .from('endorsements')
+              .insert(endorsementsToInsert);
+
+            if (endorsementsError) throw endorsementsError;
+          }
+
+          const pilotStatusEndorsementTypes = await fetchPilotStatusEndorsementTypes();
+          await reconcilePilotStatusForUser({
+            userId: authData.user.id,
+            endorsements: endorsements.map((endorsement) => ({
+              type: endorsement.type,
+              dateObtained: new Date(endorsement.dateObtained),
+              expiryDate: endorsement.expiryDate ? new Date(endorsement.expiryDate) : undefined,
+              isActive: endorsement.isActive,
+            })),
+            pilotStatusEndorsementTypes,
+            currentRole: 'student',
+            currentRoles: ['student'],
+          });
+        }
+
         if (authData.session) {
           toast.success('Account created successfully! Redirecting...');
         } else {
@@ -149,6 +259,96 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                 className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="+61 400 000 000"
               />
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-slate-50 p-4">
+              <div className="mb-3">
+                <h3 className="text-sm font-semibold text-slate-900">Existing endorsements (optional)</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Add any endorsements you already hold. If one matches a Pilot-status endorsement configured by the club, your account will be created as a pilot automatically.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="block md:col-span-2">
+                  <span className="mb-1 block text-sm font-medium text-gray-700">Endorsement</span>
+                  <input
+                    list="signup-endorsement-types"
+                    value={endorsementDraft.type}
+                    onChange={(e) => setEndorsementDraft({ ...endorsementDraft, type: e.target.value })}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Select or enter endorsement"
+                  />
+                  <datalist id="signup-endorsement-types">
+                    {DEFAULT_ENDORSEMENT_TYPES.map((type) => (
+                      <option key={type} value={type} />
+                    ))}
+                  </datalist>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-gray-700">Obtained</span>
+                  <input
+                    type="date"
+                    value={endorsementDraft.dateObtained}
+                    onChange={(e) => setEndorsementDraft({ ...endorsementDraft, dateObtained: e.target.value })}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-gray-700">Expiry</span>
+                  <input
+                    type="date"
+                    value={endorsementDraft.expiryDate}
+                    onChange={(e) => setEndorsementDraft({ ...endorsementDraft, expiryDate: e.target.value })}
+                    className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={endorsementDraft.isActive}
+                    onChange={(e) => setEndorsementDraft({ ...endorsementDraft, isActive: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Endorsement is active
+                </label>
+                <button
+                  type="button"
+                  onClick={addEndorsement}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add endorsement
+                </button>
+              </div>
+
+              {endorsements.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {endorsements.map((endorsement) => (
+                    <div key={endorsement.id} className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{endorsement.type}</p>
+                        <p className="text-xs text-gray-500">
+                          Obtained {endorsement.dateObtained || 'N/A'}
+                          {endorsement.expiryDate ? ` | Expires ${endorsement.expiryDate}` : ''}
+                          {endorsement.isActive ? ' | Active' : ' | Inactive'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeEndorsement(endorsement.id)}
+                        className="inline-flex items-center gap-1 text-sm font-medium text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>

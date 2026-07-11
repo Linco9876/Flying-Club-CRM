@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { AlertTriangle, Loader2, X, Clock, Plane, User, CreditCard } from 'lucide-react';
+import { AlertTriangle, Loader2, X, Clock, Plane, User, CreditCard, Repeat2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -21,6 +21,7 @@ interface BookingFormProps {
   onSubmit: (bookingData: any) => void | Promise<void>;
   booking?: Booking | null;
   isEdit?: boolean;
+  isKioskMode?: boolean;
   prefilledData?: {
     bookingKind?: 'flight' | 'ground';
     date?: string;
@@ -55,13 +56,19 @@ interface GuestVoucherOption {
   eligibleAircraftIds: string[];
 }
 
-const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, prefilledData }) => {
+interface PublicInstructorOption {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, isKioskMode = false, prefilledData }) => {
   const { user } = useAuth();
   const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
   const { users, getInstructors, loading: usersLoading } = useUsers();
   const { students, loading: studentsLoading } = useStudents({ participateInPageLoad: false });
   const { flightLogs, loading: flightLogsLoading } = useFlightLogs(undefined, { participateInPageLoad: false });
-  const { settings: safetySettings } = useSafetySettings();
+  const { settings: safetySettings } = useSafetySettings({ participateInPageLoad: false });
   const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes, paymentMethods } = useBillingSettings();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -94,7 +101,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
     return {
       bookingKind: prefilledData?.bookingKind || 'flight',
-      studentId: prefilledData?.studentId || user?.id || '',
+      studentId: prefilledData?.studentId || (isKioskMode ? '' : user?.id) || '',
       date: prefilledData?.date || today,
       endDate: prefilledData?.endDate || prefilledData?.date || today,
       startTime: normalizeToQuarterHour(prefilledData?.startTime) || '09:00',
@@ -140,6 +147,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     prefilledData?.guestEmail,
     prefilledData?.guestPhone,
     prefilledData?.trialFlightVoucherId,
+    isKioskMode,
     user?.id,
   ]);
 
@@ -149,11 +157,36 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const [pilotSearch, setPilotSearch] = useState('');
   const [showPilotDropdown, setShowPilotDropdown] = useState(false);
   const [loadingGuestVouchers, setLoadingGuestVouchers] = useState(false);
-  const [recurrence, setRecurrence] = useState({
+  const [publicInstructors, setPublicInstructors] = useState<PublicInstructorOption[]>([]);
+  type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
+  type RecurrenceEndMode = 'never' | 'on' | 'after';
+  const buildDefaultRecurrence = (): {
+    enabled: boolean;
+    frequency: RecurrenceFrequency;
+    interval: number;
+    weekdays: number[];
+    endMode: RecurrenceEndMode;
+    untilDate: string;
+    count: number;
+  } => ({
     enabled: false,
-    frequency: 'weekly' as 'daily' | 'weekly' | 'monthly',
+    frequency: 'weekly',
+    interval: 1,
+    weekdays: [],
+    endMode: 'after',
+    untilDate: '',
     count: 2,
   });
+  const [recurrence, setRecurrence] = useState<{
+    enabled: boolean;
+    frequency: RecurrenceFrequency;
+    interval: number;
+    weekdays: number[];
+    endMode: RecurrenceEndMode;
+    untilDate: string;
+    count: number;
+  }>(buildDefaultRecurrence);
+  const [showRecurrenceModal, setShowRecurrenceModal] = useState(false);
   const [pendingSafetySubmit, setPendingSafetySubmit] = useState<typeof formData | null>(null);
   const [safetyWarningState, setSafetyWarningState] = useState<{
     concerns: SafetyConcern[];
@@ -161,21 +194,26 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     pilotName: string;
     picHours: number;
   } | null>(null);
-  const [pendingEndorsementSubmit, setPendingEndorsementSubmit] = useState<(typeof formData & { status?: Booking['status'] }) | null>(null);
+  const [pendingEndorsementSubmit, setPendingEndorsementSubmit] = useState<typeof formData | null>(null);
   const [endorsementWarningState, setEndorsementWarningState] = useState<{
     aircraftName: string;
     pilotName: string;
     endorsementType: string;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const instructors = getInstructors();
+  const roleBasedInstructors = getInstructors().map((instructor) => ({
+    id: instructor.id,
+    name: instructor.name,
+    email: instructor.email,
+  }));
   const userRole = user?.role || 'student';
   const isAdminUser = Boolean(user?.role === 'admin' || user?.roles?.includes('admin'));
   const canCreateGuestBooking = isAdminUser;
-  const canChooseBookingKind = ['admin', 'instructor', 'senior_instructor'].includes(userRole) || Boolean(user?.roles?.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role)));
   const isGroundSessionBooking = formData.bookingKind === 'ground';
   const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
   const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
+  const isLimitedCalendarUser = displayUserRoles.some(role => role === 'student' || role === 'pilot')
+    && !displayUserRoles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
   const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading;
   const showModalLoader = isLoading || isSubmitting;
   const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
@@ -202,6 +240,16 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       ? getPilotAccountPaymentType()
       : selectedFlightType.name;
   }, [flightTypes, getPilotAccountPaymentType]);
+  const shouldShowInstructorField = isFieldVisible('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId);
+  const instructors = useMemo(() => {
+    const merged = new Map<string, PublicInstructorOption>();
+    roleBasedInstructors.forEach((instructor) => merged.set(instructor.id, instructor));
+    publicInstructors.forEach((instructor) => {
+      if (!merged.has(instructor.id)) merged.set(instructor.id, instructor);
+    });
+    return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [publicInstructors, roleBasedInstructors]);
+
   const availableAircraft = aircraft.filter((item) => {
     if (item.status !== 'serviceable' || item.isArchived) return false;
     if (!formData.isGuestBooking || guestEligibleAircraftIds.length === 0) return true;
@@ -233,6 +281,58 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     ].some(value => String(value).toLowerCase().startsWith(query));
   }).slice(0, 10);
 
+  React.useEffect(() => {
+    if (!isOpen || !isLimitedCalendarUser) {
+      setPublicInstructors([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPublicInstructors = async () => {
+      try {
+        let directory: PublicInstructorOption[] = [];
+        const { data, error } = await supabase.rpc('list_calendar_instructors');
+        if (error) throw error;
+        directory = Array.isArray(data)
+          ? data.map((row: any) => ({
+              id: row.id,
+              name: row.name || row.email || 'Instructor',
+              email: row.email || '',
+            }))
+          : [];
+
+        if (directory.length === 0) {
+          const [{ data: fallbackUsers }, { data: fallbackRoles }] = await Promise.all([
+            supabase.from('users').select('id, name, email'),
+            supabase.from('user_roles').select('user_id, role').in('role', ['instructor', 'senior_instructor']),
+          ]);
+          const instructorIds = new Set((fallbackRoles || []).map((row: any) => row.user_id));
+          directory = (fallbackUsers || [])
+            .filter((row: any) => instructorIds.has(row.id))
+            .map((row: any) => ({
+              id: row.id,
+              name: row.name || row.email || 'Instructor',
+              email: row.email || '',
+            }));
+        }
+
+        if (cancelled) return;
+        setPublicInstructors(directory);
+      } catch (error) {
+        console.error('Failed to load public instructors for booking form:', error);
+        if (!cancelled) {
+          setPublicInstructors([]);
+        }
+      }
+    };
+
+    void loadPublicInstructors();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLimitedCalendarUser, isOpen]);
+
   // Rebuild the whole form every time it opens so stale values cannot leak between bookings.
   React.useEffect(() => {
     if (!isOpen) return;
@@ -246,7 +346,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setGuestVoucherSearch('');
     setPilotSearch(initialData.isGuestBooking || !initialPilot ? '' : getPilotSearchLabel(initialPilot));
     setShowPilotDropdown(false);
-    setRecurrence({ enabled: false, frequency: 'weekly', count: 2 });
+    setRecurrence(buildDefaultRecurrence());
     setIsSubmitting(false);
   }, [buildInitialFormData, isOpen, users]);
 
@@ -368,9 +468,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
 
   const validateFormData = () => {
     const userRole = user?.role || 'student';
+    const effectiveGroundSession = formData.bookingKind === 'ground' || (!formData.aircraftId && !formData.trialFlightVoucherId);
 
     if (formData.isGuestBooking) {
-      if (isGroundSessionBooking) {
+      if (effectiveGroundSession) {
         toast.error('Ground sessions are for members only');
         return;
       }
@@ -413,10 +514,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         return;
       }
     }
-    if (!isGroundSessionBooking && isFieldRequired('aircraft', userRole) && !formData.aircraftId) {
-      toast.error('Aircraft is required');
-      return;
-    }
+    // A blank aircraft is treated as an instructor-only ground session.
     if (isFieldRequired('startDate', userRole) && !formData.date) {
       toast.error('Start date is required');
       return;
@@ -433,19 +531,19 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       toast.error('End time is required');
       return;
     }
-    if (!isGroundSessionBooking && isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.paymentType) {
+    if (!effectiveGroundSession && isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.paymentType) {
       toast.error('Payment type is required');
       return;
     }
     const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
     const isStudentOnlyUser = userRoles.includes('student') && !userRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
-    if ((isStudentOnlyUser || isGroundSessionBooking) && !formData.instructorId) {
-      toast.error('Students need an instructor assigned. Pilots can book aircraft solo.');
+    if ((isStudentOnlyUser || effectiveGroundSession) && !formData.instructorId) {
+      toast.error(effectiveGroundSession ? 'Instructor is required for ground sessions.' : 'Students need an instructor assigned. Pilots can book aircraft solo.');
       return;
     }
 
     const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
-    if (!isGroundSessionBooking) {
+    if (!effectiveGroundSession) {
       if (selectedAircraft?.isArchived) {
         toast.error('This aircraft is archived and cannot be booked');
         return;
@@ -486,9 +584,11 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (isSubmitting || isLoading) return;
     setIsSubmitting(true);
     try {
-      const normalisedBookingData = data.bookingKind === 'ground'
+      const effectiveBookingKind = data.bookingKind === 'ground' || (!data.aircraftId && !data.trialFlightVoucherId) ? 'ground' : 'flight';
+      const normalisedBookingData = effectiveBookingKind === 'ground'
         ? {
             ...data,
+            bookingKind: 'ground' as const,
             aircraftId: '',
             paymentType: '',
             flightTypeId: '',
@@ -515,7 +615,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     if (data.instructorId || data.bookingKind === 'ground') return null;
 
     const selectedAircraft = aircraft.find(a => a.id === data.aircraftId);
-    const requiredEndorsements = (selectedAircraft?.requiredEndorsementTypes?.length
+    const requiredAnyEndorsements = (selectedAircraft?.requiredEndorsementTypes?.length
       ? selectedAircraft.requiredEndorsementTypes
       : selectedAircraft?.requiredEndorsementType
         ? [selectedAircraft.requiredEndorsementType]
@@ -523,25 +623,59 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     )
       .map(type => type.trim())
       .filter(Boolean);
-    if (!selectedAircraft || requiredEndorsements.length === 0) return null;
+    const requiredAllEndorsements = (selectedAircraft?.requiredAllEndorsementTypes || [])
+      .map(type => type.trim())
+      .filter(Boolean);
+    if (!selectedAircraft || (requiredAnyEndorsements.length === 0 && requiredAllEndorsements.length === 0)) return null;
 
     if (data.isGuestBooking) return null;
 
     const selectedPerson = students.find((student) => student.id === data.studentId);
     const now = new Date();
-    const hasRequiredEndorsement = selectedPerson?.endorsements?.some((endorsement) => {
-      if (!endorsement.isActive || !requiredEndorsements.includes(endorsement.type)) return false;
-      return !endorsement.expiryDate || new Date(endorsement.expiryDate) >= now;
-    });
+    const activeEndorsements = new Set(
+      (selectedPerson?.endorsements || [])
+        .filter((endorsement) => endorsement.isActive && (!endorsement.expiryDate || new Date(endorsement.expiryDate) >= now))
+        .map((endorsement) => endorsement.type.trim())
+    );
 
-    if (hasRequiredEndorsement) return null;
+    const meetsAllRequired = requiredAllEndorsements.every(type => activeEndorsements.has(type));
+    const meetsAnyRequired = requiredAnyEndorsements.length === 0 || requiredAnyEndorsements.some(type => activeEndorsements.has(type));
+
+    if (meetsAllRequired && meetsAnyRequired) return null;
+
+    const requirementParts = [
+      requiredAllEndorsements.length > 0 ? `all of: ${requiredAllEndorsements.join(', ')}` : null,
+      requiredAnyEndorsements.length > 0 ? `one of: ${requiredAnyEndorsements.join(', ')}` : null,
+    ].filter(Boolean);
 
     return {
       aircraftName: `${selectedAircraft.registration} ${selectedAircraft.make} ${selectedAircraft.model}`.trim(),
       pilotName: selectedPerson?.name || users.find(u => u.id === data.studentId)?.name || 'This pilot',
-      endorsementType: requiredEndorsements.join(' or '),
+      endorsementType: requirementParts.join(' and '),
     };
   };
+
+  const openRecurrenceModal = (event?: React.MouseEvent<HTMLButtonElement>) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const selectedDate = formData.date ? new Date(`${formData.date}T12:00:00`) : new Date();
+    const selectedWeekday = selectedDate.getDay();
+    setRecurrence(prev => ({
+      ...buildDefaultRecurrence(),
+      ...prev,
+      weekdays: Array.isArray(prev.weekdays) && prev.weekdays.length > 0 ? prev.weekdays : [selectedWeekday],
+      untilDate: prev.untilDate || formData.endDate || formData.date || format(selectedDate, 'yyyy-MM-dd'),
+    }));
+    setShowRecurrenceModal(true);
+  };
+
+  const recurrenceSummary = recurrence.enabled
+    ? recurrence.endMode === 'on'
+      ? `Repeats until ${recurrence.untilDate || 'selected date'}`
+      : recurrence.endMode === 'never'
+      ? 'Repeats, capped at 52 bookings'
+      : `Repeats ${recurrence.count} times`
+    : 'Make this a recurring booking';
 
   const runSafetyCheckOrSubmit = (data: typeof formData & { status?: Booking['status'] }) => {
     const selectedPerson = students.find((student) => student.id === data.studentId);
@@ -574,7 +708,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     const endorsementWarning = getEndorsementWarning(formData);
     if (endorsementWarning) {
       setEndorsementWarningState(endorsementWarning);
-      setPendingEndorsementSubmit({ ...formData, status: 'pending_approval' });
       return;
     }
 
@@ -606,17 +739,17 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setPendingSafetySubmit(null);
   };
 
-  const handleConfirmEndorsementWarning = () => {
-    if (!pendingEndorsementSubmit) return;
-    const data = pendingEndorsementSubmit;
+  const handleOpenEndorsementSettings = () => {
+    const endorsementQuery = endorsementWarningState?.endorsementType
+      ? `&endorsement=${encodeURIComponent(endorsementWarningState.endorsementType)}`
+      : '';
     setEndorsementWarningState(null);
-    setPendingEndorsementSubmit(null);
-    runSafetyCheckOrSubmit(data);
+    onClose();
+    window.location.assign(`/settings?tab=account-info&accountTab=info&focus=endorsements${endorsementQuery}`);
   };
 
   const handleCloseEndorsementWarning = () => {
     setEndorsementWarningState(null);
-    setPendingEndorsementSubmit(null);
   };
 
   if (!isOpen) return null;
@@ -658,41 +791,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           <div className="p-4 space-y-3">
           {!isLoading && isFieldVisible('pilot', userRole) && (user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor') && (
             <div>
-              {(canChooseBookingKind || canCreateGuestBooking) && (
+              {canCreateGuestBooking && (
                 <>
-                {canChooseBookingKind && (
-                <div className="mb-2 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({
-                      ...prev,
-                      bookingKind: 'flight',
-                    }))}
-                    className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                      !isGroundSessionBooking
-                        ? 'border-slate-700 bg-slate-50 text-slate-900'
-                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    Flight booking
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({
-                      ...prev,
-                      bookingKind: 'ground',
-                    }))}
-                    className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                      isGroundSessionBooking
-                        ? 'border-slate-700 bg-slate-50 text-slate-900'
-                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    Ground session
-                  </button>
-                </div>
-                )}
-                {canCreateGuestBooking && (
                 <div className="mb-2 grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -734,7 +834,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                     Guest / casual
                   </button>
                 </div>
-                )}
                 </>
               )}
 
@@ -967,15 +1066,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 <Plane className="h-3.5 w-3.5 inline mr-1" />
-                Aircraft {isFieldRequired('aircraft', userRole) && <span className="text-red-500">*</span>}
+                Aircraft <span className="text-gray-400">(optional for ground sessions)</span>
               </label>
               <select
                 value={formData.aircraftId}
                 onChange={(e) => setFormData(prev => ({ ...prev, aircraftId: e.target.value }))}
                 className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={isFieldRequired('aircraft', userRole)}
               >
-                <option value="">Select aircraft</option>
+                <option value="">No aircraft - ground session</option>
                 {availableAircraft.map(a => (
                   <option key={a.id} value={a.id}>
                     {a.registration} — {a.make} {a.model}
@@ -984,7 +1082,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               </select>
             </div>
 
-            {isFieldVisible('instructor', userRole) && (
+            {shouldShowInstructorField && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Instructor {(isFieldRequired('instructor', userRole) || isStudentOnlyUser || Boolean(formData.trialFlightVoucherId)) ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
@@ -1007,7 +1105,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
-          {!isLoading && isGroundSessionBooking && isFieldVisible('instructor', userRole) && (
+          {!isLoading && isGroundSessionBooking && shouldShowInstructorField && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Instructor <span className="text-red-500">*</span>
@@ -1078,58 +1176,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
-          {!isLoading && !isEdit && !formData.isGuestBooking && (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <label className="flex items-start gap-2 text-sm font-semibold text-gray-800">
-                <input
-                  type="checkbox"
-                  checked={recurrence.enabled}
-                  onChange={(event) => setRecurrence(prev => ({ ...prev, enabled: event.target.checked }))}
-                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>
-                  Recurring booking
-                  <span className="block text-xs font-normal text-gray-500">
-                    Create repeats using the same pilot, {isGroundSessionBooking ? 'instructor' : 'aircraft, instructor, flight type'} and notes.
-                  </span>
-                </span>
-              </label>
-
-              {recurrence.enabled && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Repeat</label>
-                    <select
-                      value={recurrence.frequency}
-                      onChange={(event) => setRecurrence(prev => ({ ...prev, frequency: event.target.value as typeof recurrence.frequency }))}
-                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-600">Total bookings</label>
-                    <input
-                      type="number"
-                      min={2}
-                      max={52}
-                      value={recurrence.count}
-                      onChange={(event) => setRecurrence(prev => ({
-                        ...prev,
-                        count: Math.max(2, Math.min(52, Number(event.target.value) || 2)),
-                      }))}
-                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <p className="col-span-2 text-xs text-gray-500">
-                    Includes the first booking shown above. Each repeat is checked against conflicts, approvals, instructor downtime and booking rules.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
           </div>
 
           <div className="flex justify-end space-x-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
@@ -1140,6 +1186,21 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             >
               Cancel
             </button>
+            {!isLoading && !isEdit && !formData.isGuestBooking && (
+              <button
+                type="button"
+                onClick={openRecurrenceModal}
+                title="Create repeated bookings using this booking as the template"
+                aria-label="Recurring booking options"
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm transition-colors ${
+                  recurrence.enabled
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <Repeat2 className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="submit"
               disabled={isSubmitting || isLoading}
@@ -1151,6 +1212,153 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </button>
           </div>
         </form>
+
+        {showRecurrenceModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4">
+            <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-950">Recurring booking</h3>
+                  <p className="text-xs text-gray-500">{recurrenceSummary}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRecurrenceModal(false)}
+                  className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-5 px-5 py-4">
+                <section>
+                  <h4 className="mb-2 text-sm font-bold text-gray-900">Repeats every</h4>
+                  <div className="grid grid-cols-[110px_1fr] gap-3">
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={recurrence.interval}
+                      onChange={(event) => setRecurrence(prev => ({
+                        ...prev,
+                        interval: Math.max(1, Math.min(12, Number(event.target.value) || 1)),
+                      }))}
+                      className="rounded-lg border border-gray-300 px-3 py-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <select
+                      value={recurrence.frequency}
+                      onChange={(event) => setRecurrence(prev => ({ ...prev, frequency: event.target.value as RecurrenceFrequency }))}
+                      className="rounded-lg border border-gray-300 px-3 py-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="daily">day</option>
+                      <option value="weekly">week</option>
+                      <option value="monthly">month</option>
+                    </select>
+                  </div>
+                </section>
+
+                {recurrence.frequency === 'weekly' && (
+                  <section>
+                    <h4 className="mb-2 text-sm font-bold text-gray-900">Repeats on</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, index) => {
+                        const selected = recurrence.weekdays.includes(index);
+                        return (
+                          <button
+                            key={`${label}-${index}`}
+                            type="button"
+                            onClick={() => setRecurrence(prev => {
+                              const next = selected
+                                ? prev.weekdays.filter(day => day !== index)
+                                : [...prev.weekdays, index].sort((a, b) => a - b);
+                              return { ...prev, weekdays: next.length > 0 ? next : [index] };
+                            })}
+                            className={`flex h-11 w-11 items-center justify-center rounded-full border text-sm font-bold ${
+                              selected
+                                ? 'border-blue-600 bg-blue-600 text-white'
+                                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
+                <section>
+                  <h4 className="mb-2 text-sm font-bold text-gray-900">Ends</h4>
+                  <div className="space-y-3">
+                    {[
+                      { value: 'never', label: 'Never' },
+                      { value: 'on', label: 'On' },
+                      { value: 'after', label: 'After' },
+                    ].map(option => (
+                      <label key={option.value} className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2">
+                        <input
+                          type="radio"
+                          name="recurrence-end-mode"
+                          checked={recurrence.endMode === option.value}
+                          onChange={() => setRecurrence(prev => ({ ...prev, endMode: option.value as RecurrenceEndMode }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="min-w-14 text-sm font-semibold text-gray-800">{option.label}</span>
+                        {option.value === 'on' && (
+                          <input
+                            type="date"
+                            value={recurrence.untilDate}
+                            onChange={(event) => setRecurrence(prev => ({ ...prev, untilDate: event.target.value }))}
+                            className="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        )}
+                        {option.value === 'after' && (
+                          <span className="flex flex-1 items-center gap-2">
+                            <input
+                              type="number"
+                              min={2}
+                              max={52}
+                              value={recurrence.count}
+                              onChange={(event) => setRecurrence(prev => ({
+                                ...prev,
+                                count: Math.max(2, Math.min(52, Number(event.target.value) || 2)),
+                              }))}
+                              className="w-20 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                            <span className="text-sm text-gray-600">occurrences</span>
+                          </span>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-gray-200 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecurrence(prev => ({ ...prev, enabled: false }));
+                    setShowRecurrenceModal(false);
+                  }}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  No repeat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecurrence(prev => ({ ...prev, enabled: true }));
+                    setShowRecurrenceModal(false);
+                  }}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
     {safetyWarningState && (
@@ -1222,7 +1430,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </div>
             <div>
               <h3 className="text-base font-semibold text-gray-900">
-                Endorsement approval required
+                Endorsement needed before solo hire
               </h3>
               <p className="mt-1 text-sm text-gray-600">
                 {endorsementWarningState.aircraftName} requires a current {endorsementWarningState.endorsementType} endorsement for solo hire.
@@ -1234,10 +1442,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               {endorsementWarningState.pilotName} does not appear to have that endorsement recorded in this CRM.
             </p>
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
-              Once acknowledged, the booking will be created as pending approval and shown in yellow until an instructor or admin approves it.
+              Go back and choose a different aircraft or add an instructor. If you already hold the endorsement, add it to your profile settings with supporting proof first.
             </div>
             <p className="text-xs text-gray-500">
-              Add an instructor to this booking if the aircraft hire will be supervised instead.
+              Endorsements can be added from Settings &gt; Update My Info.
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
@@ -1250,10 +1458,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </button>
             <button
               type="button"
-              onClick={handleConfirmEndorsementWarning}
+              onClick={handleOpenEndorsementSettings}
               className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
             >
-              Acknowledge and request approval
+              Add endorsement in settings
             </button>
           </div>
         </div>

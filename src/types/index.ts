@@ -79,6 +79,7 @@ export interface Aircraft {
   tachStart?: number;
   requiredEndorsementType?: string | null;
   requiredEndorsementTypes?: string[];
+  requiredAllEndorsementTypes?: string[];
   iconKey?: 'tecnam' | 'piper' | 'cessna' | 'sling' | 'twin' | string | null;
   xeroTrackingCategoryId?: string | null;
   xeroTrackingCategoryName?: string | null;
@@ -356,6 +357,9 @@ export interface GroundSessionDescriptionOption {
   description?: string;
   active: boolean;
   displayOrder: number;
+  pricingMode: 'fixed' | 'flight_type_hourly';
+  fixedRate: number;
+  flightTypeId?: string | null;
 }
 
 export interface GroundSessionLog {

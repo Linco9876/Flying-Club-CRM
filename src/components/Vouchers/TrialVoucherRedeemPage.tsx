@@ -54,7 +54,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [bookedSlot, setBookedSlot] = useState<VoucherSlot | null>(null);
   const [form, setForm] = useState({ fullName: '', email: '', phone: '' });
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false);
-  const [selectedSlotDate, setSelectedSlotDate] = useState('all');
+  const [selectedSlotDate, setSelectedSlotDate] = useState('');
   const [availabilityAutoLoadedForCode, setAvailabilityAutoLoadedForCode] = useState('');
   const [setupRedirectForCode, setSetupRedirectForCode] = useState('');
   const [availabilityHydrating, setAvailabilityHydrating] = useState(false);
@@ -221,7 +221,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setSlots(data.slots || []);
       if (data.booking) setBookedSlot(data.booking);
       if (mode === 'reschedule') {
-        setSelectedSlotDate('all');
+        setSelectedSlotDate('');
         setRescheduling(true);
       }
     } catch (error) {
@@ -282,7 +282,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const cancelReschedule = () => {
     setRescheduling(false);
     setSlots([]);
-    setSelectedSlotDate('all');
+    setSelectedSlotDate('');
   };
 
   const formatSlotDate = (slotOrValue: VoucherSlot | string) => {
@@ -413,16 +413,16 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selectedSlotDate === 'all') return;
+    if (!selectedSlotDate) return;
     if (!groupedSlots.some(group => group.dateKey === selectedSlotDate)) {
-      setSelectedSlotDate('all');
+      setSelectedSlotDate('');
     }
   }, [groupedSlots, selectedSlotDate]);
 
   const visibleSlotGroups = useMemo(
-    () => selectedSlotDate === 'all'
-      ? groupedSlots
-      : groupedSlots.filter(group => group.dateKey === selectedSlotDate),
+    () => selectedSlotDate
+      ? groupedSlots.filter(group => group.dateKey === selectedSlotDate)
+      : [],
     [groupedSlots, selectedSlotDate]
   );
 
@@ -611,7 +611,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                    {calendarMonth && groupedSlots.length > 1 && (
+                    {calendarMonth && groupedSlots.length > 0 && (
                       <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <button
@@ -670,25 +670,21 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                             );
                           })}
                         </div>
-                        <div className="mt-3 flex items-center justify-between gap-3">
+                        <div className="mt-3 rounded-xl bg-white px-3 py-2">
                           <p className="text-xs text-slate-500">
-                            Showing {selectedSlotDate === 'all' ? 'all available dates' : groupedSlotMap.get(selectedSlotDate)?.label || 'selected date'}.
+                            {selectedSlotDate
+                              ? `Showing times for ${groupedSlotMap.get(selectedSlotDate)?.label || 'the selected day'}.`
+                              : 'Select a day to show available times.'}
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSlotDate('all')}
-                            className={`rounded-xl px-3 py-2 text-xs font-bold transition ${
-                              selectedSlotDate === 'all'
-                                ? 'bg-slate-950 text-white'
-                                : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                            }`}
-                          >
-                            Show all
-                          </button>
                         </div>
                       </div>
                     )}
                     <div className="max-h-[30rem] space-y-4 overflow-y-auto pr-1">
+                      {slots.length > 0 && !selectedSlotDate && (
+                        <div className="rounded-xl bg-blue-50 p-4 text-sm font-medium text-blue-800">
+                          Choose a day on the calendar above to see the available times for that day.
+                        </div>
+                      )}
                       {visibleSlotGroups.map(group => (
                         <div key={group.dateKey} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                           <div className="mb-3 flex items-center justify-between gap-3">

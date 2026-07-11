@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Gift, Loader2, Mail, Plane, Ticket } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Gift, Loader2, Mail, Plane, Ticket } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { TrialFlightVoucherAircraftMode } from '../../types';
+import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
 import toast from 'react-hot-toast';
 
 interface PublicVoucherProduct {
@@ -47,8 +48,27 @@ interface CheckoutStatus {
   sendToRecipient?: boolean;
   recipientDeliveryAt?: string | null;
   deliveredAt?: string | null;
+  checkoutIntent?: 'gift_certificate' | 'book_now';
+  purchaserConfirmationSentAt?: string | null;
+  recipientConfirmationSentAt?: string | null;
   warning?: string;
 }
+
+interface BookNowSlot {
+  startTime: string;
+  endTime: string;
+  localDateKey?: string;
+  localDateLabel: string;
+  localDateShortLabel: string;
+  localTimeLabel: string;
+  aircraftId: string;
+  aircraftLabel: string;
+  instructorId: string;
+  instructorName: string;
+}
+
+const VOUCHER_TIME_ZONE = 'Australia/Sydney';
+const CALENDAR_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const formatPrice = (price: number) =>
   price > 0
@@ -88,6 +108,12 @@ export const TrialVoucherSalesPage: React.FC = () => {
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [showImmediateRecipientWarning, setShowImmediateRecipientWarning] = useState(false);
   const [purchaseMode, setPurchaseMode] = useState<'checkout' | 'manual' | 'book-now'>('checkout');
+  const [bookNowSlots, setBookNowSlots] = useState<BookNowSlot[]>([]);
+  const [bookNowSlotsLoading, setBookNowSlotsLoading] = useState(false);
+  const [bookNowSlotsError, setBookNowSlotsError] = useState('');
+  const [selectedBookNowSlot, setSelectedBookNowSlot] = useState<BookNowSlot | null>(null);
+  const [selectedBookNowSlotDate, setSelectedBookNowSlotDate] = useState('');
+  const [bookNowCalendarMonthKey, setBookNowCalendarMonthKey] = useState('');
   const [purchaseForm, setPurchaseForm] = useState({
     purchaserName: '',
     purchaserEmail: '',
@@ -263,6 +289,12 @@ export const TrialVoucherSalesPage: React.FC = () => {
     if (params.get('checkout') === 'success') {
       if (checkoutStatusLoading) return 'Checking your voucher email status...';
       if (checkoutStatus?.paymentStatus === 'paid') {
+        if (checkoutStatus.checkoutIntent === 'book_now') {
+          if (checkoutStatus.purchaserConfirmationSentAt) {
+            return `Payment received. Your trial flight booking is confirmed and the booking details have been emailed to ${checkoutStatus.emailTo || 'the purchaser'}.`;
+          }
+          return 'Payment received. Your booking confirmation is being finalised. If the email does not arrive shortly, contact Bendigo Flying Club.';
+        }
         if (checkoutStatus.deliveredAt) {
           return `Payment received. Your ${checkoutStatus.productName} email has been sent to ${checkoutStatus.emailTo || 'the nominated email address'}.`;
         }
@@ -360,6 +392,11 @@ export const TrialVoucherSalesPage: React.FC = () => {
     setSelectedAddonIds([]);
     setShowImmediateRecipientWarning(false);
     setPurchaseMode(mode);
+    setBookNowSlots([]);
+    setBookNowSlotsError('');
+    setSelectedBookNowSlot(null);
+    setSelectedBookNowSlotDate('');
+    setBookNowCalendarMonthKey('');
     setPurchaseForm({
       purchaserName: '',
       purchaserEmail: '',
@@ -370,6 +407,143 @@ export const TrialVoucherSalesPage: React.FC = () => {
       recipientDeliveryAt: '',
     });
   };
+
+  const loadBookNowSlots = async (productId: string) => {
+    setBookNowSlotsLoading(true);
+    setBookNowSlotsError('');
+    setSelectedBookNowSlot(null);
+    setSelectedBookNowSlotDate('');
+    try {
+      const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
+        body: { action: 'book-now-availability', productId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const slots = Array.isArray(data?.slots) ? data.slots : [];
+      setBookNowSlots(slots);
+      if (slots.length === 0) {
+        setBookNowSlotsError('No online trial flight times are available right now. Please contact the club and we can help arrange a time.');
+      }
+    } catch (error) {
+      console.error('Failed to load book-now trial flight slots:', error);
+      setBookNowSlots([]);
+      setBookNowSlotsError(error instanceof Error ? error.message : 'Could not load available trial flight times');
+    } finally {
+      setBookNowSlotsLoading(false);
+    }
+  };
+
+  const bookNowSlotDateKey = (slot: BookNowSlot) => {
+    if (slot.localDateKey) return slot.localDateKey;
+    const parts = new Intl.DateTimeFormat('en-AU', {
+      timeZone: VOUCHER_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(slot.startTime));
+    const value = (type: string) => parts.find(part => part.type === type)?.value || '';
+    return `${value('year')}-${value('month')}-${value('day')}`;
+  };
+
+  const formatBookNowDateHeading = (slotOrValue: BookNowSlot | string) => {
+    if (typeof slotOrValue !== 'string' && slotOrValue.localDateLabel) return slotOrValue.localDateLabel;
+    const value = typeof slotOrValue === 'string' ? slotOrValue : slotOrValue.startTime;
+    return new Intl.DateTimeFormat('en-AU', {
+      timeZone: VOUCHER_TIME_ZONE,
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(new Date(value));
+  };
+
+  const groupedBookNowSlots = useMemo(() => {
+    const groups = new Map<string, BookNowSlot[]>();
+    [...bookNowSlots]
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+      .forEach(slot => {
+        const key = bookNowSlotDateKey(slot);
+        groups.set(key, [...(groups.get(key) || []), slot]);
+      });
+
+    return Array.from(groups.entries()).map(([dateKey, items]) => ({
+      dateKey,
+      label: formatBookNowDateHeading(items[0]),
+      slots: items,
+    }));
+  }, [bookNowSlots]);
+
+  const groupedBookNowSlotMap = useMemo(
+    () => new Map(groupedBookNowSlots.map(group => [group.dateKey, group])),
+    [groupedBookNowSlots]
+  );
+
+  const bookNowAvailableMonthKeys = useMemo(
+    () => Array.from(new Set(groupedBookNowSlots.map(group => group.dateKey.slice(0, 7)))),
+    [groupedBookNowSlots]
+  );
+
+  useEffect(() => {
+    if (!groupedBookNowSlots.length) {
+      setBookNowCalendarMonthKey('');
+      return;
+    }
+    setBookNowCalendarMonthKey(current => {
+      if (current && bookNowAvailableMonthKeys.includes(current)) return current;
+      return groupedBookNowSlots[0].dateKey.slice(0, 7);
+    });
+  }, [bookNowAvailableMonthKeys, groupedBookNowSlots]);
+
+  const bookNowCalendarMonth = useMemo(() => {
+    if (!bookNowCalendarMonthKey) return null;
+    const [year, month] = bookNowCalendarMonthKey.split('-').map(Number);
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    const monthEnd = new Date(Date.UTC(year, month, 0));
+    const leadingDays = (monthStart.getUTCDay() + 6) % 7;
+    const totalCells = Math.ceil((leadingDays + monthEnd.getUTCDate()) / 7) * 7;
+    const monthLabel = new Intl.DateTimeFormat('en-AU', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(monthStart);
+    const days = Array.from({ length: totalCells }, (_, index) => {
+      const date = new Date(Date.UTC(year, month - 1, 1 - leadingDays + index));
+      const dateKey = date.toISOString().slice(0, 10);
+      const group = groupedBookNowSlotMap.get(dateKey);
+      return {
+        dateKey,
+        dayNumber: date.getUTCDate(),
+        isCurrentMonth: date.getUTCMonth() === month - 1,
+        slotsCount: group?.slots.length || 0,
+      };
+    });
+    return { label: monthLabel, days };
+  }, [bookNowCalendarMonthKey, groupedBookNowSlotMap]);
+
+  const bookNowCurrentMonthIndex = bookNowCalendarMonthKey ? bookNowAvailableMonthKeys.indexOf(bookNowCalendarMonthKey) : -1;
+
+  const showPreviousBookNowCalendarMonth = () => {
+    if (bookNowCurrentMonthIndex <= 0) return;
+    setBookNowCalendarMonthKey(bookNowAvailableMonthKeys[bookNowCurrentMonthIndex - 1]);
+  };
+
+  const showNextBookNowCalendarMonth = () => {
+    if (bookNowCurrentMonthIndex < 0 || bookNowCurrentMonthIndex >= bookNowAvailableMonthKeys.length - 1) return;
+    setBookNowCalendarMonthKey(bookNowAvailableMonthKeys[bookNowCurrentMonthIndex + 1]);
+  };
+
+  useEffect(() => {
+    if (!selectedBookNowSlotDate) return;
+    if (!groupedBookNowSlots.some(group => group.dateKey === selectedBookNowSlotDate)) {
+      setSelectedBookNowSlotDate('');
+    }
+  }, [groupedBookNowSlots, selectedBookNowSlotDate]);
+
+  const visibleBookNowSlots = useMemo(
+    () => selectedBookNowSlotDate
+      ? groupedBookNowSlots.find(group => group.dateKey === selectedBookNowSlotDate)?.slots || []
+      : [],
+    [groupedBookNowSlots, selectedBookNowSlotDate]
+  );
 
   const validatePurchaseForm = () => {
     if (!purchaseForm.purchaserName.trim() || !purchaseForm.purchaserEmail.trim()) {
@@ -426,7 +600,15 @@ export const TrialVoucherSalesPage: React.FC = () => {
           recipientDeliveryAt: purchaseForm.recipientDeliveryAt
             ? new Date(purchaseForm.recipientDeliveryAt).toISOString()
             : undefined,
-          successUrl: `${origin}/trial-flight-gift-vouchers?checkout=success${purchaseMode === 'book-now' ? '&intent=book' : ''}`,
+          checkoutIntent: purchaseMode === 'book-now' ? 'book_now' : 'gift_certificate',
+          slot: purchaseMode === 'book-now' && selectedBookNowSlot
+            ? {
+                aircraftId: selectedBookNowSlot.aircraftId,
+                instructorId: selectedBookNowSlot.instructorId,
+                startTime: selectedBookNowSlot.startTime,
+              }
+            : undefined,
+          successUrl: `${origin}/trial-flight-gift-vouchers?checkout=success${purchaseMode === 'book-now' ? '&intent=book-now' : ''}`,
           cancelUrl: `${origin}/trial-flight-gift-vouchers?checkout=cancelled`,
         },
       });
@@ -460,6 +642,21 @@ export const TrialVoucherSalesPage: React.FC = () => {
       return;
     }
 
+    if (purchaseMode === 'book-now') {
+      if (bookNowSlots.length === 0) {
+        await loadBookNowSlots(selectedProduct.id);
+        return;
+      }
+      if (!selectedBookNowSlotDate) {
+        toast.error('Choose a day before selecting a trial flight time');
+        return;
+      }
+      if (!selectedBookNowSlot) {
+        toast.error('Choose an available trial flight time before checkout');
+        return;
+      }
+    }
+
     await proceedToCheckout();
   };
 
@@ -484,6 +681,8 @@ export const TrialVoucherSalesPage: React.FC = () => {
             Redeem a voucher
           </a>
         </header>
+
+        <StripeTestModeBanner />
 
         <main className="grid flex-1 gap-6 lg:grid-cols-[0.85fr_1.15fr]">
           <section className="rounded-3xl bg-gradient-to-br from-blue-900 via-slate-900 to-slate-950 p-6 shadow-2xl ring-1 ring-white/10 sm:p-8">
@@ -574,7 +773,9 @@ export const TrialVoucherSalesPage: React.FC = () => {
                             : 'border-slate-200 bg-slate-50 hover:border-blue-200 hover:bg-blue-50/50'
                         }`}
                       >
-                        <img src={iconSrcFor(choice.iconKey)} alt="" className="mx-auto h-20 w-full object-contain" />
+                        <span className="mx-auto flex h-24 w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white/85 p-1 shadow-sm">
+                          <img src={iconSrcFor(choice.iconKey)} alt="" className="h-full w-full scale-110 object-contain drop-shadow-sm" />
+                        </span>
                         <p className="mt-2 text-sm font-black text-slate-900">{choice.label}</p>
                         {choice.model && <p className="text-xs font-semibold text-slate-500">{choice.model}</p>}
                       </button>
@@ -670,7 +871,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                 {purchaseMode === 'checkout'
                   ? 'By default the voucher email goes to the purchaser, so you can forward it or print it when you are ready. Tick direct recipient delivery if you want the voucher emailed to the recipient after payment, either immediately or at the date and time you choose.'
                   : purchaseMode === 'book-now'
-                    ? 'Choose any extras, complete payment, then use the voucher booking link to choose an available flight time.'
+                    ? 'Enter the participant details, choose an available trial flight time, then pay securely. The time is held while checkout is in progress and the booking is only confirmed after payment succeeds.'
                   : 'Online card payment is not enabled for this voucher yet. Enter the details below and we will open a prefilled email to the club so staff can take payment, issue the voucher, and schedule recipient delivery if needed.'}
               </div>
               {selectedProductAddons.length > 0 && (
@@ -720,15 +921,159 @@ export const TrialVoucherSalesPage: React.FC = () => {
                   <p className="text-xs leading-5 text-blue-800">Leave blank to send the recipient email after payment is confirmed.</p>
                 </div>
               )}
-              {purchaseMode === 'checkout' ? (
+              {purchaseMode === 'book-now' && (
+                <div className="rounded-2xl border border-blue-100 bg-slate-50 p-3">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">Choose your flight time</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        The selected time is held for 10 minutes once checkout opens. Your booking is created after payment succeeds.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => selectedProduct && void loadBookNowSlots(selectedProduct.id)}
+                      disabled={bookNowSlotsLoading}
+                      className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      {bookNowSlotsLoading ? 'Loading...' : bookNowSlots.length ? 'Refresh' : 'Show times'}
+                    </button>
+                  </div>
+                  {bookNowSlotsLoading ? (
+                    <div className="flex items-center justify-center rounded-xl bg-white px-4 py-6 text-sm font-semibold text-slate-600">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading available times...
+                    </div>
+                  ) : bookNowSlotsError ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+                      {bookNowSlotsError}
+                    </div>
+                  ) : bookNowSlots.length > 0 ? (
+                    <div className="space-y-3">
+                      {bookNowCalendarMonth && (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={showPreviousBookNowCalendarMonth}
+                              disabled={bookNowCurrentMonthIndex <= 0}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
+                              aria-label="Previous available month"
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                            </button>
+                            <div className="text-center">
+                              <p className="font-bold text-slate-950">{bookNowCalendarMonth.label}</p>
+                              <p className="text-xs text-slate-500">Choose a day first</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={showNextBookNowCalendarMonth}
+                              disabled={bookNowCurrentMonthIndex < 0 || bookNowCurrentMonthIndex >= bookNowAvailableMonthKeys.length - 1}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
+                              aria-label="Next available month"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                            {CALENDAR_WEEKDAYS.map(day => (
+                              <div key={day} className="py-1">{day}</div>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-7 gap-1">
+                            {bookNowCalendarMonth.days.map(day => {
+                              const isSelected = selectedBookNowSlotDate === day.dateKey;
+                              const hasSlots = day.slotsCount > 0;
+                              return (
+                                <button
+                                  key={day.dateKey}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!hasSlots) return;
+                                    setSelectedBookNowSlotDate(day.dateKey);
+                                    setSelectedBookNowSlot(null);
+                                  }}
+                                  disabled={!hasSlots}
+                                  className={`min-h-14 rounded-xl border p-1 text-center transition ${
+                                    isSelected
+                                      ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                                      : hasSlots
+                                        ? 'border-blue-100 bg-white text-slate-900 hover:border-blue-300 hover:bg-blue-50'
+                                        : 'border-transparent bg-transparent text-slate-300'
+                                  } ${!day.isCurrentMonth ? 'opacity-40' : ''}`}
+                                >
+                                  <span className="block text-sm font-black">{day.dayNumber}</span>
+                                  {hasSlots && (
+                                    <span className={`mt-0.5 block text-[10px] font-semibold ${isSelected ? 'text-blue-100' : 'text-blue-700'}`}>
+                                      {day.slotsCount} time{day.slotsCount === 1 ? '' : 's'}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                            {selectedBookNowSlotDate
+                              ? `Showing times for ${groupedBookNowSlotMap.get(selectedBookNowSlotDate)?.label || 'the selected day'}.`
+                              : 'Select a day to show available times.'}
+                          </p>
+                        </div>
+                      )}
+                      {!selectedBookNowSlotDate ? (
+                        <p className="rounded-xl bg-white px-4 py-4 text-sm leading-6 text-slate-600">
+                          Choose a day on the calendar above to see the available times for that day.
+                        </p>
+                      ) : visibleBookNowSlots.length > 0 ? (
+                        <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                          {visibleBookNowSlots.map(slot => {
+                            const active = selectedBookNowSlot?.startTime === slot.startTime &&
+                              selectedBookNowSlot?.aircraftId === slot.aircraftId &&
+                              selectedBookNowSlot?.instructorId === slot.instructorId;
+                            return (
+                              <button
+                                key={`${slot.startTime}-${slot.aircraftId}-${slot.instructorId}`}
+                                type="button"
+                                onClick={() => setSelectedBookNowSlot(slot)}
+                                className={`w-full rounded-xl border p-3 text-left transition ${
+                                  active
+                                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
+                                    : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50'
+                                }`}
+                              >
+                                <span className="block text-sm font-black text-slate-950">{slot.localDateLabel}</span>
+                                <span className="mt-1 block text-lg font-black text-blue-900">{slot.localTimeLabel}</span>
+                                <span className="mt-1 block text-xs font-semibold text-slate-500">Booking confirmed after successful checkout</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="rounded-xl bg-white px-4 py-4 text-sm leading-6 text-slate-600">
+                          No times are available on that day. Choose another day.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl bg-white px-4 py-4 text-sm leading-6 text-slate-600">
+                      Enter the details above, then show available times.
+                    </p>
+                  )}
+                </div>
+              )}
+              {purchaseMode === 'checkout' || purchaseMode === 'book-now' ? (
                 <button
                   type="button"
                   onClick={startCheckout}
-                  disabled={checkoutLoading}
+                  disabled={checkoutLoading || bookNowSlotsLoading}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
                 >
                   {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ticket className="h-4 w-4" />}
-                  Continue to card payment
+                  {purchaseMode === 'book-now' && bookNowSlots.length === 0
+                    ? 'Show available times'
+                    : purchaseMode === 'book-now'
+                      ? 'Continue to secure checkout'
+                      : 'Continue to card payment'}
                 </button>
               ) : (
                 <button

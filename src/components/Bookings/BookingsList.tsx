@@ -15,7 +15,7 @@ import { usePortalUxSettings } from '../../hooks/useSettings';
 interface BookingsListProps {
   bookings: Booking[];
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>) => void;
-  onDeleteBooking?: (bookingId: string) => void;
+  onDeleteBooking?: (bookingId: string) => Promise<void> | void;
   onOpenTrainingRecord?: (booking: Booking) => void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
   onRejectBooking?: (bookingId: string) => void;
@@ -238,10 +238,13 @@ export const BookingsList: React.FC<BookingsListProps> = ({
     setSelectedBooking(null);
   };
 
-  const handleDeleteBooking = (booking: Booking) => {
+  const handleDeleteBooking = async (booking: Booking) => {
     if (onDeleteBooking) {
-      onDeleteBooking(booking.id);
-      toast.success('Booking deleted successfully!');
+      try {
+        await Promise.resolve(onDeleteBooking(booking.id));
+      } catch (error) {
+        console.error('Error deleting booking from list:', error);
+      }
     }
   };
 

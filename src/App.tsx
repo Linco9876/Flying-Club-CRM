@@ -39,6 +39,7 @@ const TrainingRecordForm = lazy(() => import('./components/Training/TrainingReco
 const TrainingCourseCatalog = lazy(() => import('./components/Training/TrainingCourseCatalog').then(module => ({ default: module.TrainingCourseCatalog })));
 const TrainingModuleBuilder = lazy(() => import('./components/Training/TrainingModuleBuilder').then(module => ({ default: module.TrainingModuleBuilder })));
 const OutstandingRecordsTab = lazy(() => import('./components/Training/OutstandingRecordsTab').then(module => ({ default: module.OutstandingRecordsTab })));
+const LearningCentreDashboard = lazy(() => import('./components/LearningCentre/LearningCentreDashboard').then(module => ({ default: module.LearningCentreDashboard })));
 const StudentAcknowledgementModal = lazy(() => import('./components/Training/StudentAcknowledgementModal').then(module => ({ default: module.StudentAcknowledgementModal })));
 const DeclarationSigningPage = lazy(() => import('./components/Training/DeclarationSigningPage').then(module => ({ default: module.DeclarationSigningPage })));
 const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashboard').then(module => ({ default: module.SettingsDashboard })));
@@ -67,10 +68,56 @@ const buildCopiedBookingFormData = (booking: Booking) => ({
   copiedFromBookingId: booking.id,
 });
 
-const getRecurringDateOffset = (date: Date, frequency: string, index: number) => {
-  if (frequency === 'daily') return addDays(date, index);
-  if (frequency === 'monthly') return addMonths(date, index);
-  return addWeeks(date, index);
+const getRecurringDateOffset = (date: Date, frequency: string, index: number, interval = 1) => {
+  const step = Math.max(1, interval);
+  if (frequency === 'daily') return addDays(date, index * step);
+  if (frequency === 'monthly') return addMonths(date, index * step);
+  return addWeeks(date, index * step);
+};
+
+const buildRecurringStartTimes = (startTime: Date, recurrence: any) => {
+  if (!recurrence?.enabled) return [startTime];
+
+  const maxOccurrences = 52;
+  const requestedCount = recurrence.endMode === 'never'
+    ? maxOccurrences
+    : recurrence.endMode === 'on'
+    ? maxOccurrences
+    : Math.max(1, Math.min(Number(recurrence.count) || 1, maxOccurrences));
+  const untilDate = recurrence.endMode === 'on' && recurrence.untilDate
+    ? new Date(`${recurrence.untilDate}T23:59:59`)
+    : null;
+  const frequency = recurrence.frequency || 'weekly';
+  const interval = Math.max(1, Number(recurrence.interval) || 1);
+
+  if (frequency !== 'weekly') {
+    const dates: Date[] = [];
+    for (let index = 0; index < requestedCount; index += 1) {
+      const candidate = getRecurringDateOffset(startTime, frequency, index, interval);
+      if (untilDate && candidate > untilDate) break;
+      dates.push(candidate);
+    }
+    return dates.length > 0 ? dates : [startTime];
+  }
+
+  const selectedWeekdays = Array.isArray(recurrence.weekdays) && recurrence.weekdays.length > 0
+    ? [...recurrence.weekdays].map(Number).filter(day => day >= 0 && day <= 6)
+    : [startTime.getDay()];
+  const startWeekAnchor = addDays(startTime, -startTime.getDay());
+  const dates: Date[] = [];
+
+  for (let weekIndex = 0; dates.length < requestedCount && weekIndex < maxOccurrences * interval; weekIndex += interval) {
+    for (const weekday of selectedWeekdays) {
+      const candidate = addDays(startWeekAnchor, weekIndex * 7 + weekday);
+      candidate.setHours(startTime.getHours(), startTime.getMinutes(), startTime.getSeconds(), startTime.getMilliseconds());
+      if (candidate < startTime) continue;
+      if (untilDate && candidate > untilDate) return dates.length > 0 ? dates : [startTime];
+      dates.push(new Date(candidate));
+      if (dates.length >= requestedCount) break;
+    }
+  }
+
+  return dates.length > 0 ? dates : [startTime];
 };
 
 const PortalBootScreen = ({
@@ -331,20 +378,26 @@ const AppContent: React.FC = () => {
 
   if (isKioskRoute) {
     return (
-      <KioskRoute
-        user={user}
-        showBookingForm={showBookingForm}
-        setShowBookingForm={setShowBookingForm}
-        editingBooking={editingBooking}
-        setEditingBooking={setEditingBooking}
-        bookingFormData={bookingFormData}
-        setBookingFormData={setBookingFormData}
-      />
+      <AppErrorBoundary key="kiosk">
+        <KioskRoute
+          user={user}
+          showBookingForm={showBookingForm}
+          setShowBookingForm={setShowBookingForm}
+          editingBooking={editingBooking}
+          setEditingBooking={setEditingBooking}
+          bookingFormData={bookingFormData}
+          setBookingFormData={setBookingFormData}
+        />
+      </AppErrorBoundary>
     );
   }
 
   if (user && localStorage.getItem(KIOSK_SESSION_KEY) === 'true') {
-    return <Navigate to="/kiosk" replace />;
+    const userRoles = user.roles && user.roles.length > 0 ? user.roles : [user.role];
+    if (userRoles.includes('admin')) {
+      return <Navigate to="/kiosk" replace />;
+    }
+    localStorage.removeItem(KIOSK_SESSION_KEY);
   }
 
   if (!user) {
@@ -400,12 +453,23 @@ const KioskAuthenticatedRoute: React.FC<{
   setBookingFormData,
 }) => {
   const { logout } = useAuth();
-  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
+  const { bookings, addBooking, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(true);
   const { settings: portalSettings } = usePortalUxSettings();
+  const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [user?.role];
+  const isAdminUser = userRoles.includes('admin');
 
   React.useEffect(() => {
-    localStorage.setItem(KIOSK_SESSION_KEY, 'true');
-  }, []);
+    if (isAdminUser) {
+      localStorage.setItem(KIOSK_SESSION_KEY, 'true');
+      return;
+    }
+    localStorage.removeItem(KIOSK_SESSION_KEY);
+    toast.error('Kiosk mode is restricted to admin users.');
+  }, [isAdminUser]);
+
+  if (!isAdminUser) {
+    return <Navigate to="/" replace />;
+  }
 
   const handleNewBooking = () => {
     if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
@@ -447,18 +511,19 @@ const KioskAuthenticatedRoute: React.FC<{
   const handleBookingSubmit = async (bookingData: any) => {
     const startTime = new Date(`${bookingData.date}T${bookingData.startTime}:00`);
     const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
+    const bookingKind = bookingData.bookingKind === 'ground' || !bookingData.aircraftId ? 'ground' : 'flight';
 
     if (editingBooking) {
         await updateBooking(editingBooking.id, {
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
-          aircraftId: bookingData.bookingKind === 'ground' ? undefined : bookingData.aircraftId,
+          aircraftId: bookingKind === 'ground' ? undefined : bookingData.aircraftId,
           startTime,
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
           status: editingBooking.status,
-          bookingKind: bookingData.bookingKind || 'flight',
+          bookingKind,
           flightTypeId: bookingData.flightTypeId || undefined,
           isGuestBooking: bookingData.isGuestBooking || false,
           guestName: bookingData.guestName || undefined,
@@ -468,22 +533,22 @@ const KioskAuthenticatedRoute: React.FC<{
         });
     } else {
       const recurrence = bookingData.recurrence;
-      const occurrenceCount = recurrence?.enabled ? Math.max(1, Math.min(Number(recurrence.count) || 1, 52)) : 1;
+      const occurrenceStarts = buildRecurringStartTimes(startTime, recurrence);
+      const occurrenceCount = occurrenceStarts.length;
       const durationMs = endTime.getTime() - startTime.getTime();
 
-      for (let index = 0; index < occurrenceCount; index += 1) {
-        const occurrenceStart = getRecurringDateOffset(startTime, recurrence?.frequency, index);
+      for (const occurrenceStart of occurrenceStarts) {
         const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
           await addBooking({
             studentId: bookingData.studentId,
             instructorId: bookingData.instructorId || undefined,
-            aircraftId: bookingData.bookingKind === 'ground' ? undefined : bookingData.aircraftId,
+            aircraftId: bookingKind === 'ground' ? undefined : bookingData.aircraftId,
             startTime: occurrenceStart,
             endTime: occurrenceEnd,
             paymentType: bookingData.paymentType,
             notes: bookingData.notes,
             status: bookingData.status || 'confirmed' as const,
-            bookingKind: bookingData.bookingKind || 'flight',
+            bookingKind,
             flightTypeId: bookingData.flightTypeId || undefined,
             isGuestBooking: bookingData.isGuestBooking || false,
             guestName: bookingData.guestName || undefined,
@@ -505,7 +570,7 @@ const KioskAuthenticatedRoute: React.FC<{
   };
 
   return (
-    <KioskCalendarShell onExit={handleExit}>
+    <KioskCalendarShell onExit={handleExit} themePreference={portalSettings.kiosk_theme}>
       <PageLoadGate routeKey="kiosk-calendar">
         <Suspense fallback={<PageLoader />}>
           <Calendar
@@ -530,6 +595,14 @@ const KioskAuthenticatedRoute: React.FC<{
                 await deleteBooking(bookingId);
               } catch (error) {
                 console.error('Error deleting booking:', error);
+              }
+            }}
+            onRestoreBooking={async (bookingId) => {
+              try {
+                await restoreBooking(bookingId);
+              } catch (error) {
+                console.error('Error reinstating booking:', error);
+                throw error;
               }
             }}
             onApproveBooking={async (bookingId) => {
@@ -559,6 +632,7 @@ const KioskAuthenticatedRoute: React.FC<{
             onSubmit={handleBookingSubmit}
             booking={editingBooking}
             isEdit={!!editingBooking}
+            isKioskMode
           />
         </Suspense>
       )}
@@ -595,10 +669,10 @@ const AuthenticatedApp: React.FC<{
   const location = useLocation();
   const activeView = getViewForPath(location.pathname);
   const bookingsEnabled = activeView === 'calendar' || showBookingForm || showTrainingRecordForm || Boolean(editingBooking || selectedBookingForRecord);
-  const { bookings, addBooking, updateBooking, deleteBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
+  const { bookings, addBooking, updateBooking, deleteBooking, restoreBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
   const { settings: portalSettings, loading: portalSettingsLoading } = usePortalUxSettings();
   const { preferences: userPreferences, loading: userPreferencesLoading } = useUserPreferences(user?.id || '');
-  const effectiveTheme = userPreferences?.theme || getStoredPortalTheme(user?.id) || getStoredPortalTheme() || portalSettings.theme || 'auto';
+  const effectiveTheme = userPreferences?.theme || getStoredPortalTheme(user?.id) || 'auto';
   const backgroundColor = userPreferences?.background_color || '#f3f4f6';
 
   React.useEffect(() => {
@@ -609,7 +683,11 @@ const AuthenticatedApp: React.FC<{
     applyTheme();
     storePortalTheme(effectiveTheme, user?.id);
     media.addEventListener('change', applyTheme);
-    return () => media.removeEventListener('change', applyTheme);
+    const dayNightTimer = window.setInterval(applyTheme, 60_000);
+    return () => {
+      media.removeEventListener('change', applyTheme);
+      window.clearInterval(dayNightTimer);
+    };
   }, [effectiveTheme, user?.id]);
 
   const handleViewChange = (view: string) => {
@@ -655,17 +733,19 @@ const AuthenticatedApp: React.FC<{
       // Parse as local time by appending seconds — avoids UTC date-shift
       const startTime = new Date(`${bookingData.date}T${bookingData.startTime}:00`);
       const endTime = new Date(`${bookingData.endDate}T${bookingData.endTime}:00`);
+      const bookingKind = bookingData.bookingKind === 'ground' || !bookingData.aircraftId ? 'ground' : 'flight';
 
       if (editingBooking) {
         await updateBooking(editingBooking.id, {
           studentId: bookingData.studentId,
           instructorId: bookingData.instructorId || undefined,
-          aircraftId: bookingData.aircraftId,
+          aircraftId: bookingKind === 'ground' ? undefined : bookingData.aircraftId,
           startTime,
           endTime,
           paymentType: bookingData.paymentType,
           notes: bookingData.notes,
           status: editingBooking.status,
+          bookingKind,
           flightTypeId: bookingData.flightTypeId || undefined,
           isGuestBooking: bookingData.isGuestBooking || false,
           guestName: bookingData.guestName || undefined,
@@ -673,23 +753,24 @@ const AuthenticatedApp: React.FC<{
           guestPhone: bookingData.guestPhone || undefined,
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
         });
-      } else {
-        const recurrence = bookingData.recurrence;
-        const occurrenceCount = recurrence?.enabled ? Math.max(1, Math.min(Number(recurrence.count) || 1, 52)) : 1;
-        const durationMs = endTime.getTime() - startTime.getTime();
+    } else {
+      const recurrence = bookingData.recurrence;
+      const occurrenceStarts = buildRecurringStartTimes(startTime, recurrence);
+      const occurrenceCount = occurrenceStarts.length;
+      const durationMs = endTime.getTime() - startTime.getTime();
 
-        for (let index = 0; index < occurrenceCount; index += 1) {
-          const occurrenceStart = getRecurringDateOffset(startTime, recurrence?.frequency, index);
-          const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+      for (const occurrenceStart of occurrenceStarts) {
+        const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
           await addBooking({
             studentId: bookingData.studentId,
             instructorId: bookingData.instructorId || undefined,
-            aircraftId: bookingData.aircraftId,
+            aircraftId: bookingKind === 'ground' ? undefined : bookingData.aircraftId,
             startTime: occurrenceStart,
             endTime: occurrenceEnd,
             paymentType: bookingData.paymentType,
             notes: bookingData.notes,
             status: bookingData.status || 'confirmed' as const,
+            bookingKind,
             flightTypeId: bookingData.flightTypeId || undefined,
             isGuestBooking: bookingData.isGuestBooking || false,
             guestName: bookingData.guestName || undefined,
@@ -779,6 +860,14 @@ const AuthenticatedApp: React.FC<{
                   console.error('Error deleting booking:', error);
                 }
               }}
+              onRestoreBooking={async (bookingId) => {
+                try {
+                  await restoreBooking(bookingId);
+                } catch (error) {
+                  console.error('Error reinstating booking:', error);
+                  throw error;
+                }
+              }}
               onApproveBooking={async (bookingId) => {
                 try {
                   await approveBooking(bookingId);
@@ -812,6 +901,10 @@ const AuthenticatedApp: React.FC<{
           return <StudentProfilePage portalSection="training" />;
         }
         return <TrainingCourseCatalog />;
+      case 'learning-centre':
+        return <LearningCentreDashboard />;
+      case 'pilot-file':
+        return <StudentProfilePage portalSection="training" />;
       case 'documents':
         return <StudentProfilePage portalSection="documents" />;
       case 'outstanding-records':
@@ -845,6 +938,13 @@ const AuthenticatedApp: React.FC<{
         <RouteGuard requiredAction="view-maintenance">
           <AppShell activeSidebarView="aircraft" onViewChange={handleViewChange} backgroundColor={backgroundColor} mainClassName="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:ml-0 ml-0">
             <AircraftFlightLogs />
+          </AppShell>
+        </RouteGuard>
+      } />
+      <Route path="/aircraft/:aircraftId" element={
+        <RouteGuard requiredAction="view-aircraft">
+          <AppShell activeSidebarView="aircraft" onViewChange={handleViewChange} backgroundColor={backgroundColor}>
+            <AircraftProfilePage />
           </AppShell>
         </RouteGuard>
       } />
@@ -892,13 +992,6 @@ const AuthenticatedApp: React.FC<{
           </AppShell>
         </RouteGuard>
       } />
-      <Route path="/aircraft/:aircraftId" element={
-        <RouteGuard requiredAction="view-maintenance">
-          <AppShell activeSidebarView="aircraft" onViewChange={handleViewChange} backgroundColor={backgroundColor}>
-            <AircraftProfilePage />
-          </AppShell>
-        </RouteGuard>
-      } />
     </Routes>
   );
 };
@@ -910,6 +1003,8 @@ const viewPathMap: Record<string, string> = {
   aircraft: '/aircraft',
   maintenance: '/maintenance',
   training: '/training',
+  'learning-centre': '/learning-centre',
+  'pilot-file': '/pilot-file',
   documents: '/documents',
   'outstanding-records': '/training/outstanding-records',
   'syllabus-management': '/training/syllabus',
@@ -938,6 +1033,8 @@ const getViewForPath = (pathname: string) => {
   if (pathname.startsWith('/training/outstanding-records')) return 'outstanding-records';
   if (pathname.startsWith('/training/syllabus')) return 'syllabus-management';
   if (pathname.startsWith('/training')) return 'training';
+  if (pathname.startsWith('/learning-centre')) return 'learning-centre';
+  if (pathname.startsWith('/pilot-file')) return 'pilot-file';
   if (pathname.startsWith('/documents')) return 'documents';
   if (pathname.startsWith('/gift-vouchers')) return 'gift-vouchers';
   return 'dashboard';
@@ -952,6 +1049,8 @@ const getRequiredActionForView = (view: string) => {
     'aircraft': 'view-aircraft',
     'maintenance': 'view-maintenance',
     'training': 'view-training',
+    'learning-centre': 'view-learning-centre',
+    'pilot-file': 'view-training',
     'outstanding-records': 'view-outstanding-records',
     'syllabus-management': 'edit-settings',
     'documents': 'view-training',
@@ -972,7 +1071,9 @@ const getRequiredResourceForView = (view: string) => {
     'billing': 'own',
     'financial-dashboard': 'all',
     'profile': 'own',
+    'learning-centre': 'own',
     'documents': 'own',
+    'pilot-file': 'own',
     'training': 'own',
     'mylogbook': 'own',
     'safety': 'own',

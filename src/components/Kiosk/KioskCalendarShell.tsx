@@ -1,94 +1,31 @@
 import React from 'react';
+import { LogOut } from 'lucide-react';
+import { isDaylightThemeTime } from '../../utils/theme';
 
 interface KioskCalendarShellProps {
   onExit: () => void | Promise<void>;
   children: React.ReactNode;
+  themePreference?: 'light' | 'dark' | 'day-night' | 'auto';
 }
 
-const BENDIGO_LATITUDE = -36.757;
-const BENDIGO_LONGITUDE = 144.2794;
-const OFFICIAL_ZENITH = 90.833;
-
-const degreesToRadians = (degrees: number) => degrees * (Math.PI / 180);
-const radiansToDegrees = (radians: number) => radians * (180 / Math.PI);
-const normalizeDegrees = (degrees: number) => ((degrees % 360) + 360) % 360;
-const normalizeHours = (hours: number) => ((hours % 24) + 24) % 24;
-
-const getDayOfYear = (date: Date) => {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const difference = date.getTime() - start.getTime();
-  return Math.floor(difference / 86_400_000);
-};
-
-const getLocalDateKey = (date: Date) => (
-  (date.getFullYear() * 10_000) + ((date.getMonth() + 1) * 100) + date.getDate()
-);
-
-const calculateSunTime = (date: Date, isSunrise: boolean) => {
-  const dayOfYear = getDayOfYear(date);
-  const longitudeHour = BENDIGO_LONGITUDE / 15;
-  const approximateTime = dayOfYear + (((isSunrise ? 6 : 18) - longitudeHour) / 24);
-  const meanAnomaly = (0.9856 * approximateTime) - 3.289;
-  const trueLongitude = normalizeDegrees(
-    meanAnomaly
-      + (1.916 * Math.sin(degreesToRadians(meanAnomaly)))
-      + (0.020 * Math.sin(degreesToRadians(2 * meanAnomaly)))
-      + 282.634
-  );
-
-  let rightAscension = radiansToDegrees(Math.atan(0.91764 * Math.tan(degreesToRadians(trueLongitude))));
-  rightAscension = normalizeDegrees(rightAscension);
-  rightAscension += Math.floor(trueLongitude / 90) * 90 - Math.floor(rightAscension / 90) * 90;
-  rightAscension /= 15;
-
-  const sinDeclination = 0.39782 * Math.sin(degreesToRadians(trueLongitude));
-  const cosDeclination = Math.cos(Math.asin(sinDeclination));
-  const cosHourAngle = (
-    Math.cos(degreesToRadians(OFFICIAL_ZENITH))
-    - (sinDeclination * Math.sin(degreesToRadians(BENDIGO_LATITUDE)))
-  ) / (cosDeclination * Math.cos(degreesToRadians(BENDIGO_LATITUDE)));
-
-  if (cosHourAngle > 1 || cosHourAngle < -1) {
-    return null;
+const getKioskTheme = (themePreference: KioskCalendarShellProps['themePreference']) => {
+  if (themePreference === 'light' || themePreference === 'dark') {
+    return themePreference;
   }
 
-  const hourAngle = isSunrise
-    ? 360 - radiansToDegrees(Math.acos(cosHourAngle))
-    : radiansToDegrees(Math.acos(cosHourAngle));
-  const localMeanTime = (hourAngle / 15) + rightAscension - (0.06571 * approximateTime) - 6.622;
-  const universalTime = normalizeHours(localMeanTime - longitudeHour);
-
-  const localDateKey = getLocalDateKey(date);
-  let sunTime = new Date(Date.UTC(date.getFullYear(), 0, dayOfYear, 0, 0, 0, 0) + (universalTime * 3_600_000));
-
-  if (isSunrise && getLocalDateKey(sunTime) > localDateKey) {
-    sunTime = new Date(sunTime.getTime() - 86_400_000);
+  if (themePreference === 'auto') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
 
-  if (!isSunrise && getLocalDateKey(sunTime) < localDateKey) {
-    sunTime = new Date(sunTime.getTime() + 86_400_000);
-  }
-
-  return sunTime;
-};
-
-const getKioskDaylightTheme = () => {
-  const now = new Date();
-  const sunrise = calculateSunTime(now, true);
-  const sunset = calculateSunTime(now, false);
-
-  if (!sunrise || !sunset) {
-    return 'light';
-  }
-
-  return now >= sunrise && now < sunset ? 'light' : 'dark';
+  return isDaylightThemeTime() ? 'light' : 'dark';
 };
 
 export const KioskCalendarShell: React.FC<KioskCalendarShellProps> = ({
   onExit,
   children,
+  themePreference = 'day-night',
 }) => {
-  const [kioskTheme, setKioskTheme] = React.useState<'light' | 'dark'>(() => getKioskDaylightTheme());
+  const [kioskTheme, setKioskTheme] = React.useState<'light' | 'dark'>(() => getKioskTheme(themePreference));
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -102,18 +39,50 @@ export const KioskCalendarShell: React.FC<KioskCalendarShellProps> = ({
   }, [onExit]);
 
   React.useEffect(() => {
-    const refreshTheme = () => setKioskTheme(getKioskDaylightTheme());
+    const refreshTheme = () => setKioskTheme(getKioskTheme(themePreference));
     refreshTheme();
     const intervalId = window.setInterval(refreshTheme, 60_000);
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [themePreference]);
+
+  React.useEffect(() => {
+    const root = document.documentElement;
+    const previousTheme = root.getAttribute('data-portal-theme');
+    const previousVariant = root.getAttribute('data-portal-variant');
+
+    root.setAttribute('data-portal-theme', kioskTheme);
+    root.removeAttribute('data-portal-variant');
+
+    return () => {
+      if (previousTheme) {
+        root.setAttribute('data-portal-theme', previousTheme);
+      } else {
+        root.removeAttribute('data-portal-theme');
+      }
+
+      if (previousVariant) {
+        root.setAttribute('data-portal-variant', previousVariant);
+      } else {
+        root.removeAttribute('data-portal-variant');
+      }
+    };
+  }, [kioskTheme]);
 
   return (
     <div
-      className="kiosk-app-surface h-screen overflow-hidden bg-slate-100 text-gray-950"
+      className="kiosk-app-surface h-screen overflow-y-auto overflow-x-hidden bg-slate-100 text-gray-950"
       data-kiosk-theme={kioskTheme}
     >
-      <main className="h-full">
+      <button
+        type="button"
+        onClick={() => void onExit()}
+        className="fixed bottom-3 right-3 z-50 inline-flex items-center gap-1.5 rounded-full border border-gray-300 bg-white/90 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm backdrop-blur transition hover:bg-white"
+        title="Logout of kiosk mode"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+        Logout
+      </button>
+      <main className="min-h-full">
         {children}
       </main>
     </div>

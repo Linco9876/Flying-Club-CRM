@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns } from "../_shared/stripeMode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -101,10 +102,11 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const stripeMode = await getActiveStripeMode(adminClient);
+    const stripeSecretKey = stripeMode.secretKey;
 
     const user = await getAuthUser(adminClient, req);
     const body = await req.json();
@@ -115,6 +117,8 @@ Deno.serve(async (req: Request) => {
       const card = await getDefaultCard(adminClient, user.id);
       return json({
         configured: Boolean(stripeSecretKey),
+        stripeMode: stripeMode.mode,
+        isTestMode: stripeMode.isTestMode,
         connected: Boolean(connectedAccountId),
         consentText,
         card: card ? {
@@ -128,7 +132,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!stripeSecretKey) return json({ error: "Stripe is not configured." }, 503);
     const connectedAccountId = await getConnectedStripeAccountId(adminClient);
     if (!connectedAccountId) return json({ error: "Stripe is not connected for this club." }, 503);
 
@@ -204,6 +207,7 @@ Deno.serve(async (req: Request) => {
         consent_accepted_at: new Date().toISOString(),
         consent_ip: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || null,
         consent_user_agent: req.headers.get("user-agent") || null,
+        ...stripeModeColumns(stripeMode.mode),
       })
       .select("id")
       .single();
@@ -219,9 +223,12 @@ Deno.serve(async (req: Request) => {
     form.set("cancel_url", cancelUrl);
     form.set("client_reference_id", user.id);
     form.set("metadata[crm_payment_type]", "member_card_setup");
+    addStripeModeMetadata(form, stripeMode.mode);
     form.set("metadata[user_id]", user.id);
     form.set("metadata[setup_session_id]", setupRecord.id);
     form.set("setup_intent_data[metadata][crm_payment_type]", "member_card_setup");
+    form.set("setup_intent_data[metadata][stripe_mode]", stripeMode.mode);
+    form.set("setup_intent_data[metadata][test_mode]", stripeMode.isTestMode ? "true" : "false");
     form.set("setup_intent_data[metadata][user_id]", user.id);
     form.set("setup_intent_data[metadata][setup_session_id]", setupRecord.id);
 

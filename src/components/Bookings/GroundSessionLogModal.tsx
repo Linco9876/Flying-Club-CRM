@@ -15,6 +15,17 @@ interface GroundSessionLogModalProps {
   groundSessionLogId?: string;
 }
 
+const roundUpToQuarterHour = (hours: number) => {
+  if (!Number.isFinite(hours) || hours <= 0) return 0.25;
+  return Math.max(0.25, Math.ceil((hours - Number.EPSILON) * 4) / 4);
+};
+
+const hoursBetween = (start: string | Date, end: string | Date) => {
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(end).getTime();
+  return Math.max(0, (endMs - startMs) / (1000 * 60 * 60));
+};
+
 export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
   booking,
   onClose,
@@ -30,10 +41,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
   const [formData, setFormData] = useState({
     start_time: new Date(booking.startTime).toISOString(),
     end_time: new Date(booking.endTime).toISOString(),
-    duration_hours: Math.max(
-      0.25,
-      Math.round((((new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / (1000 * 60 * 60)) + Number.EPSILON) * 10) / 10
-    ),
+    duration_hours: roundUpToQuarterHour(hoursBetween(booking.startTime, booking.endTime)),
     flight_type_id: booking.flightTypeId || '',
     payment_type: booking.paymentType || '',
     description_option_id: '',
@@ -46,12 +54,16 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
   const activePaymentMethods = paymentMethods.filter(method => method.active);
   const selectedFlightType = activeFlightTypes.find(type => type.id === formData.flight_type_id);
   const selectedDescription = activeDescriptions.find(option => option.id === formData.description_option_id);
+  const pricingFlightType = activeFlightTypes.find(type => type.id === (selectedDescription?.flightTypeId || formData.flight_type_id));
   const memberName = users.find(user => user.id === booking.studentId)?.name || booking.hirerName || 'Member';
   const instructorName = users.find(user => user.id === booking.instructorId)?.name || booking.instructorName || 'Instructor';
   const estimatedCost = useMemo(() => {
-    const hourlyRate = Number(selectedFlightType?.groundSessionHourlyRate ?? 0);
+    if (selectedDescription?.pricingMode === 'fixed') {
+      return Math.round((Number(selectedDescription.fixedRate || 0) + Number.EPSILON) * 100) / 100;
+    }
+    const hourlyRate = Number(pricingFlightType?.groundSessionHourlyRate ?? 0);
     return Math.round((hourlyRate * Number(formData.duration_hours || 0) + Number.EPSILON) * 100) / 100;
-  }, [formData.duration_hours, selectedFlightType?.groundSessionHourlyRate]);
+  }, [formData.duration_hours, pricingFlightType?.groundSessionHourlyRate, selectedDescription?.fixedRate, selectedDescription?.pricingMode]);
 
   useEffect(() => {
     if (mode !== 'edit' || !groundSessionLogId || logsLoading) return;
@@ -60,7 +72,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
     setFormData({
       start_time: existing.startTime,
       end_time: existing.endTime,
-      duration_hours: existing.durationHours,
+      duration_hours: roundUpToQuarterHour(existing.durationHours),
       flight_type_id: existing.flightTypeId || '',
       payment_type: existing.paymentType || '',
       description_option_id: existing.descriptionOptionId || '',
@@ -91,16 +103,16 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
       toast.error('Ground session bookings need an instructor assigned');
       return;
     }
-    if (!formData.flight_type_id) {
-      toast.error('Booking type is required');
-      return;
-    }
     if (!formData.payment_type) {
       toast.error('Payment method is required');
       return;
     }
     if (!formData.description_option_id) {
       toast.error('Description is required');
+      return;
+    }
+    if (selectedDescription?.pricingMode !== 'fixed' && !selectedDescription?.flightTypeId && !formData.flight_type_id) {
+      toast.error('Booking type is required for hourly ground-session charges');
       return;
     }
     if (Number(formData.duration_hours || 0) <= 0) {
@@ -115,7 +127,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
       instructor_id: booking.instructorId,
       start_time: formData.start_time,
       end_time: formData.end_time,
-      duration_hours: Number(formData.duration_hours || 0),
+      duration_hours: roundUpToQuarterHour(Number(formData.duration_hours || 0)),
       flight_type_id: formData.flight_type_id,
       payment_type: formData.payment_type,
       description_option_id: formData.description_option_id,
@@ -190,14 +202,14 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
               </label>
 
               <label className="space-y-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Duration (hours)</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Duration (15 min blocks)</span>
                 <input
                   type="number"
-                  min="0.1"
-                  step="0.1"
+                  min="0.25"
+                  step="0.25"
                   value={formData.duration_hours}
                   onChange={(event) => {
-                    const duration = Number(event.target.value || 0);
+                    const duration = roundUpToQuarterHour(Number(event.target.value || 0));
                     const start = new Date(formData.start_time);
                     const end = new Date(start.getTime() + duration * 60 * 60 * 1000);
                     setFormData(current => ({
@@ -250,7 +262,14 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                 <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</span>
                 <select
                   value={formData.description_option_id}
-                  onChange={(event) => setFormData(current => ({ ...current, description_option_id: event.target.value }))}
+                  onChange={(event) => {
+                    const option = activeDescriptions.find(item => item.id === event.target.value);
+                    setFormData(current => ({
+                      ...current,
+                      description_option_id: event.target.value,
+                      flight_type_id: option?.flightTypeId || current.flight_type_id,
+                    }));
+                  }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">Select description</option>
@@ -266,9 +285,11 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Estimated Charge</p>
                 <p className="mt-1 text-2xl font-bold text-blue-950">${estimatedCost.toFixed(2)}</p>
                 <p className="mt-1 text-xs text-blue-700">
-                  {selectedFlightType
-                    ? `${selectedFlightType.name} at $${Number(selectedFlightType.groundSessionHourlyRate || 0).toFixed(2)} per hour`
-                    : 'Select a booking type to calculate the charge'}
+                  {selectedDescription?.pricingMode === 'fixed'
+                    ? `${selectedDescription.name} fixed price`
+                    : pricingFlightType
+                      ? `${pricingFlightType.name} at $${Number(pricingFlightType.groundSessionHourlyRate || 0).toFixed(2)} per hour`
+                      : 'Select a booking type to calculate the hourly charge'}
                 </p>
               </div>
             </div>

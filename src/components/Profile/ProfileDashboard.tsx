@@ -10,6 +10,7 @@ import {
   Plane,
   Phone,
   ShieldCheck,
+  X,
   User as UserIcon
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -56,6 +57,7 @@ export const ProfileDashboard: React.FC = () => {
   const [studentDetails, setStudentDetails] = useState<ProfileStudentDetails | null>(null);
   const [studentDetailsLoading, setStudentDetailsLoading] = useState(true);
   const [profilePromptDismissed, setProfilePromptDismissed] = useState(false);
+  const [showFlightStatsModal, setShowFlightStatsModal] = useState(false);
   const timePattern = portalSettings.time_format === '12h' ? 'h:mm a' : 'HH:mm';
   const datePattern = portalSettings.date_format || 'dd/MM/yyyy';
   const studentTrainingRecords = useMemo(
@@ -136,6 +138,12 @@ export const ProfileDashboard: React.FC = () => {
   const totalDualMinutes = studentTrainingRecords.reduce((sum, record) => sum + Number(record.dualTimeMin || 0), 0);
   const totalSoloMinutes = studentTrainingRecords.reduce((sum, record) => sum + Number(record.soloTimeMin || 0), 0);
   const totalFlightMinutes = totalDualMinutes + totalSoloMinutes;
+  const lastFlightDate = useMemo(() => {
+    return [...studentTrainingRecords]
+      .map(record => record.bookingStartTime || record.date)
+      .filter((date): date is Date => date instanceof Date && !Number.isNaN(date.getTime()))
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+  }, [studentTrainingRecords]);
   const isStudentUser = user?.role === 'student';
   const missingProfileFields = useMemo(() => {
     if (!user) return [];
@@ -202,39 +210,6 @@ export const ProfileDashboard: React.FC = () => {
     'Loading your profile',
     'Preparing your schedule, training progress, compliance details and reminders...'
   );
-
-  const renewalItems = useMemo(() => {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const daysUntil = (date?: Date) => date ? Math.ceil((date.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24)) : null;
-    const buildItem = (label: string, date?: Date) => {
-      const days = daysUntil(date);
-      if (!date) {
-        return { label, value: 'Not recorded', tone: 'text-gray-500', urgent: true };
-      }
-      if (days !== null && days < 0) {
-        return { label, value: `Expired ${format(date, datePattern)}`, tone: 'text-red-700 dark:text-red-300', urgent: true };
-      }
-      if (days !== null && days <= 60) {
-        return { label, value: `Due ${format(date, datePattern)}`, tone: 'text-amber-700 dark:text-amber-300', urgent: true };
-      }
-      return { label, value: format(date, datePattern), tone: 'text-gray-600 dark:text-gray-300', urgent: false };
-    };
-
-    const bfrDue = studentDetails?.lastFlightReview
-      ? new Date(studentDetails.lastFlightReview.getFullYear() + 2, studentDetails.lastFlightReview.getMonth(), studentDetails.lastFlightReview.getDate())
-      : undefined;
-    const items = [
-      buildItem('RAAus membership', studentDetails?.licenceExpiry),
-      buildItem('Medical', studentDetails?.medicalExpiry)
-    ];
-
-    if (user?.role !== 'student') {
-      items.push(buildItem('Flight review', bfrDue));
-    }
-
-    return items;
-  }, [datePattern, studentDetails, user?.role]);
 
   const complianceItems = useMemo(() => {
     const statusForDate = (date?: Date) => {
@@ -324,15 +299,25 @@ export const ProfileDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid w-full min-w-0 grid-cols-2 gap-2 rounded-xl border border-white/20 bg-black/35 p-2 shadow-lg backdrop-blur-sm sm:w-[21rem]">
-                <div className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white">
+              <div className={`grid w-full min-w-0 gap-2 rounded-xl border border-white/20 bg-black/35 p-2 shadow-lg backdrop-blur-sm sm:w-[21rem] ${stats.myCreditVisible ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <button
+                  type="button"
+                  onClick={() => setShowFlightStatsModal(true)}
+                  className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
+                >
                   <p className="text-xs text-white/70">Hours</p>
                   <p className="truncate text-base font-bold tabular-nums sm:text-lg">{stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)}</p>
-                </div>
-                <div className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white">
-                  <p className="text-xs text-white/70">Xero Credit</p>
+                </button>
+                {stats.myCreditVisible && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/billing')}
+                  className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
+                >
+                  <p className="text-xs text-white/70">Credit</p>
                   <p className="truncate text-base font-bold tabular-nums sm:text-lg">{formatCurrency(stats.myPrepaidBalance, portalSettings.currency_decimals)}</p>
-                </div>
+                </button>
+                )}
               </div>
             </div>
           </div>
@@ -506,31 +491,6 @@ export const ProfileDashboard: React.FC = () => {
 
             <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
               <div className="mb-3 flex items-center gap-2">
-                <Plane className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Flight Stats</h2>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
-                  <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalFlightMinutes)}</p>
-                </div>
-                <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Dual</p>
-                  <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalDualMinutes)}</p>
-                </div>
-                <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Solo</p>
-                  <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalSoloMinutes)}</p>
-                </div>
-                <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Records</p>
-                  <p className="font-bold text-gray-900 dark:text-gray-100">{studentTrainingRecords.length}</p>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-300" />
                 <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Compliance Snapshot</h2>
               </div>
@@ -545,25 +505,53 @@ export const ProfileDashboard: React.FC = () => {
                 ))}
               </div>
             </section>
-
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-300" />
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Upcoming Renewals</h2>
-              </div>
-              <div className="space-y-2">
-                {renewalItems.map(item => (
-                  <div key={item.label} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a]">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{item.label}</p>
-                    <p className={`mt-0.5 text-sm font-semibold ${item.tone}`}>{item.value}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-
           </aside>
         </div>
       </div>
+
+      {showFlightStatsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+          <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#2c2f36] dark:bg-[#171a21]">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36]">
+              <div>
+                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Flight Stats</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Your logged time and recent activity summary.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFlightStatsModal(false)}
+                className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[#11141a] dark:hover:text-gray-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 p-5 text-sm">
+              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
+                <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalFlightMinutes)}</p>
+              </div>
+              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Dual</p>
+                <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalDualMinutes)}</p>
+              </div>
+              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Solo</p>
+                <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalSoloMinutes)}</p>
+              </div>
+              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Records</p>
+                <p className="font-bold text-gray-900 dark:text-gray-100">{studentTrainingRecords.length}</p>
+              </div>
+              {lastFlightDate && (
+                <div className="col-span-2 rounded-xl bg-blue-50 p-3 dark:bg-blue-500/10">
+                  <p className="text-xs text-blue-700 dark:text-blue-200">Last flight</p>
+                  <p className="font-bold text-blue-900 dark:text-blue-100">{format(lastFlightDate, datePattern)}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

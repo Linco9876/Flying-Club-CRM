@@ -54,6 +54,9 @@ const getTodayDate = () => {
 export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProps> = ({ canEdit }) => {
   const { user } = useAuth();
   const { getInstructors } = useUsers();
+  const userRoles = user?.roles && user.roles.length > 0 ? user.roles : user?.role ? [user.role] : [];
+  const isAdmin = userRoles.includes('admin');
+  const isInstructorUser = userRoles.includes('instructor') || userRoles.includes('senior_instructor');
   const [selectedInstructorId, setSelectedInstructorId] = useState<string>('');
   const [showAbsenceForm, setShowAbsenceForm] = useState(false);
   const [absenceDraft, setAbsenceDraft] = useState<AbsenceDraft>(EMPTY_ABSENCE_DRAFT);
@@ -80,12 +83,12 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   const instructors = getInstructors();
 
   useEffect(() => {
-    if (user?.role === 'instructor' && !user.roles?.includes('admin')) {
+    if (isInstructorUser && !isAdmin && user?.id) {
       setSelectedInstructorId(user.id);
     } else if (instructors.length > 0 && !selectedInstructorId) {
       setSelectedInstructorId(instructors[0].id);
     }
-  }, [user, instructors, selectedInstructorId]);
+  }, [isAdmin, isInstructorUser, user?.id, instructors, selectedInstructorId]);
 
   // Reset drafts when the loaded schedules change (e.g. instructor switch or after save)
   useEffect(() => {
@@ -120,7 +123,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   };
 
   const handleDraftChange = (dayOfWeek: number, field: string, value: any) => {
-    if (!canEdit || !selectedInstructorId) return;
+    if (!canManageSelectedInstructor || !selectedInstructorId) return;
     const current = getDraftForDay(dayOfWeek);
     setDrafts(prev => ({
       ...prev,
@@ -129,7 +132,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   };
 
   const handleSaveDay = async (dayOfWeek: number) => {
-    if (!canEdit || !selectedInstructorId) return;
+    if (!canManageSelectedInstructor || !selectedInstructorId) return;
     const draft = getDraftForDay(dayOfWeek);
     setSavingDay(dayOfWeek);
     try {
@@ -147,7 +150,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
 
   const handleAddAbsence = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!canEdit || !selectedInstructorId) return;
+    if (!canManageSelectedInstructor || !selectedInstructorId) return;
 
     if (absenceDraft.startDate > absenceDraft.endDate) {
       toast.error('End date must be on or after the start date');
@@ -206,7 +209,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   };
 
   const handleSaveNewSchedule = async () => {
-    if (!canEdit || !selectedInstructorId || !newScheduleEffectiveDate) {
+    if (!canManageSelectedInstructor || !selectedInstructorId || !newScheduleEffectiveDate) {
       toast.error('Please select an effective date');
       return;
     }
@@ -242,7 +245,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     );
   }
 
-  const isAdmin = user?.roles?.includes('admin');
+  const canManageSelectedInstructor = canEdit && (isAdmin || (isInstructorUser && selectedInstructorId === user?.id));
   const futureAbsences = absences.filter(absence => absence.endDate >= getTodayDate());
 
   return (
@@ -304,7 +307,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                             type="checkbox"
                             checked={draft.isAvailable}
                             onChange={(e) => handleDraftChange(day.value, 'isAvailable', e.target.checked)}
-                            disabled={!canEdit}
+                            disabled={!canManageSelectedInstructor}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
                           />
                           <label className="text-sm text-gray-700">Available</label>
@@ -318,13 +321,13 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                               <TimeSelect
                                 value={draft.startTime}
                                 onChange={(value) => handleDraftChange(day.value, 'startTime', value)}
-                                disabled={!canEdit}
+                                disabled={!canManageSelectedInstructor}
                               />
                               <span className="text-gray-500">to</span>
                               <TimeSelect
                                 value={draft.endTime}
                                 onChange={(value) => handleDraftChange(day.value, 'endTime', value)}
-                                disabled={!canEdit}
+                                disabled={!canManageSelectedInstructor}
                               />
                             </div>
                             <div className="flex items-center space-x-2">
@@ -333,14 +336,14 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                               <TimeSelect
                                 value={draft.afternoonStartTime || ''}
                                 onChange={(value) => handleDraftChange(day.value, 'afternoonStartTime', value)}
-                                disabled={!canEdit}
+                                disabled={!canManageSelectedInstructor}
                                 placeholder="Optional"
                               />
                               <span className="text-gray-500">to</span>
                               <TimeSelect
                                 value={draft.afternoonEndTime || ''}
                                 onChange={(value) => handleDraftChange(day.value, 'afternoonEndTime', value)}
-                                disabled={!canEdit}
+                                disabled={!canManageSelectedInstructor}
                                 placeholder="Optional"
                               />
                             </div>
@@ -348,7 +351,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                         )}
                       </div>
 
-                      {canEdit && dirty && (
+                      {canManageSelectedInstructor && dirty && (
                         <button
                           onClick={() => handleSaveDay(day.value)}
                           disabled={saving}
@@ -369,7 +372,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">Temporary Absences</h3>
-              {canEdit && (
+              {canManageSelectedInstructor && (
                 <button
                   onClick={() => {
                     setShowAbsenceForm(!showAbsenceForm);
@@ -495,7 +498,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                         <div className="text-xs text-gray-500 mt-1">Full day absence</div>
                       )}
                     </div>
-                    {canEdit && (
+                    {canManageSelectedInstructor && (
                       <button
                         onClick={() => deleteAbsence(absence.id)}
                         title="Delete absence"
@@ -518,7 +521,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                 <h3 className="text-lg font-medium text-gray-900">Future Schedule Changes</h3>
                 <p className="text-sm text-gray-600">Set a complete new weekly schedule starting from a specific date</p>
               </div>
-              {canEdit && !showScheduleChangeForm && (
+              {canManageSelectedInstructor && !showScheduleChangeForm && (
                 <button
                   onClick={handleStartNewSchedule}
                   className="flex items-center space-x-2 px-3 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700"
@@ -654,7 +657,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                         </h4>
                         <p className="text-xs text-gray-600">Weekly schedule effective from this date</p>
                       </div>
-                      {canEdit && (
+                      {canManageSelectedInstructor && (
                         <button
                           onClick={async () => {
                             for (const change of changes) {

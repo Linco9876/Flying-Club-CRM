@@ -22,6 +22,7 @@ export interface SafetyComplianceSettings {
   safetyLoginWarningTitle: string;
   recencyNoFlightMessage: string;
   recencyLastFlightMessage: string;
+  flightReviewEndorsementTypes: string[];
 }
 
 export interface SafetyReportCategory {
@@ -49,7 +50,8 @@ export const DEFAULT_SAFETY_SETTINGS: SafetyComplianceSettings = {
   safetyLoginWarningMessage: 'Your safety and compliance record needs attention. Please review any medical, membership, BFR or currency items before flying.',
   safetyLoginWarningTitle: 'Safety items need attention',
   recencyNoFlightMessage: 'No recent logged flight was found for {subject}.',
-  recencyLastFlightMessage: '{possessive} last logged flight was {days} days ago.'
+  recencyLastFlightMessage: '{possessive} last logged flight was {days} days ago.',
+  flightReviewEndorsementTypes: []
 };
 
 const mapSettings = (data: any): SafetyComplianceSettings => ({
@@ -71,15 +73,23 @@ const mapSettings = (data: any): SafetyComplianceSettings => ({
   safetyLoginWarningMessage: data.settings?.safety_login_warning_message ?? DEFAULT_SAFETY_SETTINGS.safetyLoginWarningMessage,
   safetyLoginWarningTitle: data.settings?.safety_login_warning_title ?? DEFAULT_SAFETY_SETTINGS.safetyLoginWarningTitle,
   recencyNoFlightMessage: data.settings?.recency_no_flight_message ?? DEFAULT_SAFETY_SETTINGS.recencyNoFlightMessage,
-  recencyLastFlightMessage: data.settings?.recency_last_flight_message ?? DEFAULT_SAFETY_SETTINGS.recencyLastFlightMessage
+  recencyLastFlightMessage: data.settings?.recency_last_flight_message ?? DEFAULT_SAFETY_SETTINGS.recencyLastFlightMessage,
+  flightReviewEndorsementTypes: Array.isArray(data.settings?.flight_review_endorsement_types)
+    ? data.settings.flight_review_endorsement_types.filter((value: unknown): value is string => typeof value === 'string' && value.trim() !== '')
+    : DEFAULT_SAFETY_SETTINGS.flightReviewEndorsementTypes
 });
 
-export const useSafetySettings = () => {
+interface UseSafetySettingsOptions {
+  participateInPageLoad?: boolean;
+}
+
+export const useSafetySettings = (options: UseSafetySettingsOptions = {}) => {
+  const participateInPageLoad = options.participateInPageLoad ?? true;
   const [settings, setSettings] = useState<SafetyComplianceSettings>(DEFAULT_SAFETY_SETTINGS);
   const [categories, setCategories] = useState<SafetyReportCategory[]>([]);
   const [loading, setLoading] = useState(true);
   usePageLoadState(
-    loading,
+    participateInPageLoad && loading,
     'Loading safety',
     'Preparing safety rules, report categories and compliance settings...'
   );
@@ -137,7 +147,8 @@ export const useSafetySettings = () => {
         safety_login_warning_message: nextSettings.safetyLoginWarningMessage,
         safety_login_warning_title: nextSettings.safetyLoginWarningTitle,
         recency_no_flight_message: nextSettings.recencyNoFlightMessage,
-        recency_last_flight_message: nextSettings.recencyLastFlightMessage
+        recency_last_flight_message: nextSettings.recencyLastFlightMessage,
+        flight_review_endorsement_types: nextSettings.flightReviewEndorsementTypes
       },
       updated_at: new Date().toISOString()
     };
@@ -148,6 +159,13 @@ export const useSafetySettings = () => {
         : await supabase.from('safety_compliance_settings').insert(payload);
 
       if (result.error) throw result.error;
+      if (updates.flightReviewEndorsementTypes !== undefined) {
+        const reconcileResult = await supabase.rpc('reconcile_flight_review_endorsements');
+        if (reconcileResult.error) {
+          console.warn('Flight review endorsement reconciliation failed:', reconcileResult.error);
+          toast.error('Saved safety settings, but existing endorsement records could not be reconciled');
+        }
+      }
       await fetchData();
       window.dispatchEvent(new Event(SAFETY_SETTINGS_UPDATED_EVENT));
       toast.success('Safety settings updated');

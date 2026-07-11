@@ -1,6 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
+import {
+  getStripeSecretKeyForMode,
+  getStripeWebhookSecretForMode,
+  stripeModeColumns,
+  testModeSubject,
+  type StripeMode,
+} from "../_shared/stripeMode.ts";
 
 type SupabaseAdminClient = any;
 
@@ -9,6 +16,8 @@ const json = (body: Record<string, unknown>, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+
+const stripeModeFromEvent = (event: any): StripeMode => event?.livemode === true ? "live" : "test";
 
 const getSignatureParts = (header: string) => {
   const parts = new Map<string, string[]>();
@@ -73,6 +82,37 @@ const verifyStripeSignature = async ({
   }
 };
 
+const parseAndVerifyStripeEvent = async ({
+  rawBody,
+  signatureHeader,
+}: {
+  rawBody: string;
+  signatureHeader: string | null;
+}) => {
+  const secrets: Array<{ mode: StripeMode; secret: string | null }> = [
+    { mode: "test", secret: getStripeWebhookSecretForMode("test") },
+    { mode: "live", secret: getStripeWebhookSecretForMode("live") },
+  ];
+  let lastError: unknown = null;
+
+  for (const candidate of secrets) {
+    if (!candidate.secret) continue;
+    try {
+      await verifyStripeSignature({ rawBody, signatureHeader, secret: candidate.secret });
+      const event = JSON.parse(rawBody);
+      const eventMode = stripeModeFromEvent(event);
+      if (eventMode !== candidate.mode) {
+        throw new Error(`Stripe webhook mode mismatch. Event is ${eventMode}, but ${candidate.mode} secret verified it.`);
+      }
+      return { event, mode: eventMode };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Stripe webhook signature verification failed");
+};
+
 const asString = (value: unknown) => {
   if (typeof value === "string") return value;
   if (value == null) return "";
@@ -93,6 +133,14 @@ const clean = asString;
 const money = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const basicAuthHeader = (clientId: string, clientSecret: string) =>
   `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const parseRetryAfterMs = (value: string | null) => {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = Date.parse(value);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : 0;
+};
 
 const firstJoinRow = (value: unknown) => Array.isArray(value) ? value[0] : value;
 
@@ -137,23 +185,41 @@ const xeroRequest = async ({
   accessToken: string;
   body?: Record<string, unknown>;
 }) => {
-  const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Xero-tenant-id": tenantId,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await response.text();
-  const payload = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    const message = payload?.Message || payload?.Title || payload?.Detail || `Xero request failed with HTTP ${response.status}`;
-    throw new Error(message);
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-tenant-id": tenantId,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+    if (response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+      if (attempt < maxAttempts && retryAfterMs > 0 && retryAfterMs <= 15_000) {
+        await sleep(retryAfterMs + 250);
+        continue;
+      }
+      const seconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : null;
+      throw Object.assign(
+        new Error(seconds
+          ? `Xero is rate limiting the CRM. Please wait about ${seconds} seconds and try again.`
+          : "Xero is rate limiting the CRM. Please wait a few minutes and try again."),
+        { status: 429, retryAfterSeconds: seconds },
+      );
+    }
+    if (!response.ok) {
+      const message = payload?.Message || payload?.Title || payload?.Detail || `Xero request failed with HTTP ${response.status}`;
+      throw Object.assign(new Error(message), { status: response.status });
+    }
+    return payload;
   }
-  return payload;
+  throw new Error("Xero request failed after retrying.");
 };
 
 const refreshXeroAccessToken = async (adminClient: SupabaseAdminClient, connection: any) => {
@@ -270,7 +336,16 @@ const getVoucherForSession = async (adminClient: SupabaseAdminClient, session: a
   if (metadataVoucherId) {
     const { data, error } = await adminClient
       .from("trial_flight_vouchers")
-      .select("id,status,payment_status,delivered_at,send_to_recipient,recipient_delivery_at,stripe_checkout_session_id")
+      .select(`
+        *,
+        trial_flight_voucher_products(
+          id,
+          name,
+          description,
+          duration_minutes,
+          booking_instructions
+        )
+      `)
       .eq("id", metadataVoucherId)
       .maybeSingle();
     if (error) throw error;
@@ -282,7 +357,16 @@ const getVoucherForSession = async (adminClient: SupabaseAdminClient, session: a
 
   const { data, error } = await adminClient
     .from("trial_flight_vouchers")
-    .select("id,status,payment_status,delivered_at,send_to_recipient,recipient_delivery_at,stripe_checkout_session_id")
+    .select(`
+      *,
+      trial_flight_voucher_products(
+        id,
+        name,
+        description,
+        duration_minutes,
+        booking_instructions
+      )
+    `)
     .eq("stripe_checkout_session_id", sessionId)
     .maybeSingle();
   if (error) throw error;
@@ -308,6 +392,7 @@ const recordStripeEvent = async ({
       voucher_id: voucherId || null,
       stripe_checkout_session_id: sessionId || null,
       payload: event,
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     });
 
   if (!insertError) return { duplicate: false, processed: false };
@@ -357,6 +442,7 @@ const recordFlightStripeEvent = async ({
       flight_log_id: flightLogId || null,
       stripe_checkout_session_id: sessionId || null,
       payload: event,
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     });
 
   if (!insertError) return { duplicate: false, processed: false };
@@ -504,6 +590,7 @@ const handleMemberTopupStripeEvent = async ({
       balance_after: null,
       verified_status: "verified",
       stripe_checkout_session_id: sessionId,
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     });
   if (insertError) throw insertError;
 
@@ -543,6 +630,7 @@ const handleXeroInvoicePaymentStripeEvent = async ({
       stripe_payment_intent_id: asString(session.payment_intent) || null,
       error: event.type,
       updated_at: new Date().toISOString(),
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     }).eq("id", record.id).neq("status", "paid");
     return json({ received: true, paymentRecordId, status: "failed" });
   }
@@ -553,6 +641,7 @@ const handleXeroInvoicePaymentStripeEvent = async ({
       stripe_checkout_session_id: sessionId || record.stripe_checkout_session_id,
       stripe_payment_intent_id: asString(session.payment_intent) || null,
       updated_at: new Date().toISOString(),
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     }).eq("id", record.id);
     return json({ received: true, paymentRecordId, status: "pending" });
   }
@@ -705,6 +794,7 @@ const handleMemberCardSetupEvent = async ({
       consent_user_agent: setupRecord.consent_user_agent,
       removed_at: null,
       updated_at: new Date().toISOString(),
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     }, { onConflict: "stripe_payment_method_id" });
   if (upsertError) throw upsertError;
 
@@ -714,6 +804,7 @@ const handleMemberCardSetupEvent = async ({
       stripe_checkout_session_id: sessionId || null,
       status: "completed",
       updated_at: new Date().toISOString(),
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     })
     .eq("id", setupRecordId);
 
@@ -777,6 +868,7 @@ const handleFlightLogPaymentIntentEvent = async ({
         stripe_paid_at: isFullyPaid ? now : null,
         stripe_payment_error: null,
         updated_at: now,
+        ...stripeModeColumns(stripeModeFromEvent(event)),
       })
       .eq("id", flightLog.id);
     if (updateError) throw updateError;
@@ -793,6 +885,7 @@ const handleFlightLogPaymentIntentEvent = async ({
           payment_method_id: paymentMethod?.id || null,
           balance_after: null,
           verified_status: "verified",
+          ...stripeModeColumns(stripeModeFromEvent(event)),
         });
       if (txError) throw txError;
     }
@@ -811,6 +904,7 @@ const handleFlightLogPaymentIntentEvent = async ({
         stripe_payment_status: paymentIntent.status || "failed",
         stripe_payment_error: lastError,
         updated_at: now,
+        ...stripeModeColumns(stripeModeFromEvent(event)),
       })
       .eq("id", flightLog.id)
       .neq("payment_status", "paid");
@@ -851,6 +945,7 @@ const handleFlightLogStripeEvent = async ({
       stripe_payment_intent_id: stripePaymentIntentId,
       stripe_payment_status: asString(session.payment_status || event.type),
       updated_at: new Date().toISOString(),
+      ...stripeModeColumns(stripeModeFromEvent(event)),
     };
 
     if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
@@ -975,37 +1070,361 @@ const sendVoucherEmail = async ({
   return body;
 };
 
+const escapeHtml = (value: unknown) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const siteOrigin = () => (Deno.env.get("PUBLIC_SITE_URL") || "https://portal.bendigoflyingclub.com.au").replace(/\/$/, "");
+
+const sendBookNowConfirmationEmail = async ({
+  to,
+  toName,
+  voucher,
+  product,
+  booking,
+  audience,
+}: {
+  to: string;
+  toName: string;
+  voucher: any;
+  product: any;
+  booking: any;
+  audience: "purchaser" | "recipient";
+}) => {
+  const apiKey = Deno.env.get("BREVO_API_KEY");
+  if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
+  if (!to) return { sent: false, error: "No recipient email address" };
+
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
+  const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
+  const timeZone = "Australia/Sydney";
+  const start = new Date(booking.startTime || voucher.held_start_time);
+  const end = new Date(booking.endTime || voucher.held_end_time);
+  const dateLabel = new Intl.DateTimeFormat("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone,
+  }).format(start);
+  const timeFormatter = new Intl.DateTimeFormat("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
+  const bookingUrl = `${siteOrigin()}/trial-flight-voucher?voucherCode=${encodeURIComponent(voucher.code)}`;
+  const subject = audience === "recipient"
+    ? "Your Bendigo Flying Club trial flight is booked"
+    : "Your Bendigo Flying Club trial flight booking is confirmed";
+  const intro = audience === "recipient"
+    ? "A trial flight has been booked for you."
+    : "Your trial flight purchase and booking are confirmed.";
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4fb;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:660px;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.14);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:30px;color:#ffffff;">
+                <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
+                <h1 style="margin:0;font-size:30px;line-height:1.18;color:#ffffff;">Trial flight booked</h1>
+                <p style="margin:12px 0 0;color:#dbeafe;font-size:15px;line-height:1.6;">${escapeHtml(intro)}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.65;">Hi ${escapeHtml(toName || "there")},</p>
+                <p style="margin:0 0 22px;color:#334155;font-size:16px;line-height:1.65;">${escapeHtml(product?.name || "Trial instructional flight")}</p>
+                <div style="border:1px solid #dbeafe;background:#f8fbff;border-radius:18px;padding:18px;margin-bottom:18px;">
+                  <p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:800;">Booking date</p>
+                  <p style="margin:0;font-size:20px;line-height:1.35;color:#0f172a;font-weight:800;">${escapeHtml(dateLabel)}</p>
+                </div>
+                <div style="border:1px solid #dbeafe;background:#f8fbff;border-radius:18px;padding:18px;margin-bottom:22px;">
+                  <p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;font-weight:800;">Time</p>
+                  <p style="margin:0;font-size:20px;line-height:1.35;color:#0f172a;font-weight:800;">${escapeHtml(timeFormatter.format(start))} - ${escapeHtml(timeFormatter.format(end))}</p>
+                  <p style="margin:8px 0 0;color:#64748b;font-size:13px;line-height:1.5;">Please allow time for a short briefing before and after the flight.</p>
+                </div>
+                <p style="margin:0 0 22px;color:#475569;font-size:14px;line-height:1.7;">Wear comfortable clothing and enclosed shoes. You can use the button below to view or reschedule online up to 3 days before the booking.</p>
+                <p style="margin:0 0 22px;">
+                  <a href="${escapeHtml(bookingUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 22px;">View or reschedule booking</a>
+                </p>
+                <p style="margin:0;color:#64748b;font-size:13px;line-height:1.65;">Voucher code: <strong style="color:#0f172a;">${escapeHtml(voucher.code)}</strong></p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email: to, name: toName || to }],
+      subject,
+      htmlContent: html,
+      textContent: [
+        `Hi ${toName || "there"},`,
+        "",
+        intro,
+        `${product?.name || "Trial instructional flight"}`,
+        `Date: ${dateLabel}`,
+        `Time: ${timeFormatter.format(start)} - ${timeFormatter.format(end)}`,
+        `View or reschedule: ${bookingUrl}`,
+        `Voucher code: ${voucher.code}`,
+      ].join("\n"),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { sent: false, error: body || `Brevo email failed with ${response.status}` };
+  }
+
+  return { sent: true, error: null };
+};
+
+const sendBookNowAbandonedEmail = async ({ voucher }: { voucher: any }) => {
+  const apiKey = Deno.env.get("BREVO_API_KEY");
+  if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
+  const to = clean(voucher.purchaser_email).trim().toLowerCase();
+  if (!to) return { sent: false, error: "No purchaser email address" };
+  if (voucher.checkout_abandoned_email_sent_at) return { sent: false, skipped: true, error: null };
+
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
+  const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
+  const chooseNewTimeUrl = `${siteOrigin()}/trial-flight-gift-vouchers?checkout=cancelled`;
+  const checkoutUrl = clean(voucher.stripe_checkout_url) || chooseNewTimeUrl;
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;background:#eef4fb;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4fb;padding:28px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:22px;overflow:hidden;box-shadow:0 16px 40px rgba(15,23,42,.12);">
+            <tr>
+              <td style="background:linear-gradient(135deg,#06152f,#0d3b78);padding:26px;color:#ffffff;">
+                <p style="margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
+                <h1 style="margin:0;font-size:26px;line-height:1.2;">Finish your trial flight booking</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:26px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">Hi ${escapeHtml(voucher.purchaser_name || "there")},</p>
+                <p style="margin:0 0 18px;color:#334155;line-height:1.65;">It looks like checkout was not completed for your Bendigo Flying Club trial flight. Your selected time was only held temporarily.</p>
+                <p style="margin:0 0 22px;color:#334155;line-height:1.65;">You can try the payment link below if it is still active, or return to the booking page and choose another available time.</p>
+                <p style="margin:0 0 14px;">
+                  <a href="${escapeHtml(checkoutUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:800;border-radius:14px;padding:14px 22px;">Continue checkout</a>
+                </p>
+                <p style="margin:0;">
+                  <a href="${escapeHtml(chooseNewTimeUrl)}" style="color:#2563eb;font-weight:700;">Choose a different time</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email: to, name: clean(voucher.purchaser_name) || to }],
+      subject: testModeSubject(voucher?.stripe_mode === "test" || voucher?.is_test_mode === true ? "test" : "live", "Complete your Bendigo Flying Club trial flight booking"),
+      htmlContent: html,
+      textContent: [
+        `Hi ${voucher.purchaser_name || "there"},`,
+        "",
+        "It looks like checkout was not completed for your Bendigo Flying Club trial flight. Your selected time was only held temporarily.",
+        `Continue checkout: ${checkoutUrl}`,
+        `Choose a different time: ${chooseNewTimeUrl}`,
+      ].join("\n"),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { sent: false, error: body || `Brevo email failed with ${response.status}` };
+  }
+  return { sent: true, error: null };
+};
+
+const ensureBookNowVoucherAccount = async (adminClient: SupabaseAdminClient, voucher: any) => {
+  const fullName = clean(voucher.send_to_recipient ? voucher.recipient_name : voucher.purchaser_name) || clean(voucher.purchaser_name) || "Trial flight guest";
+  const email = clean(voucher.send_to_recipient ? voucher.recipient_email : voucher.purchaser_email).trim().toLowerCase() || clean(voucher.purchaser_email).trim().toLowerCase();
+  const phone = clean(voucher.purchaser_phone);
+  if (!email) throw new Error("Book-now voucher has no booking account email");
+
+  const { data: existingProfile, error: existingError } = await adminClient
+    .from("users")
+    .select("id,email,portal_access_scope")
+    .eq("email", email)
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  let userId = existingProfile?.id;
+  if (existingProfile && existingProfile.portal_access_scope !== "trial_voucher") {
+    throw new Error("The booking email already belongs to a full CRM account. Staff need to link this voucher manually.");
+  }
+
+  if (!userId) {
+    const tempPassword = crypto.randomUUID() + "A1!";
+    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: { name: fullName, phone },
+    });
+    if (authError || !authData.user) throw new Error(authError?.message || "Failed to create voucher booking account");
+    userId = authData.user.id;
+  }
+
+  const { error: userError } = await adminClient.from("users").upsert({
+    id: userId,
+    email,
+    name: fullName,
+    phone: phone || null,
+    role: "student",
+    portal_access_scope: "trial_voucher",
+  }, { onConflict: "id" });
+  if (userError) throw userError;
+
+  await adminClient.from("user_roles").upsert({ user_id: userId, role: "student" }, { onConflict: "user_id,role" });
+  await adminClient.from("students").upsert({ id: userId }, { onConflict: "id" });
+  return userId;
+};
+
+const handleBookNowPaidVoucher = async (adminClient: SupabaseAdminClient, voucher: any) => {
+  if (voucher.status === "booked" && voucher.booked_booking_id) {
+    return { alreadyBooked: true, bookingId: voucher.booked_booking_id };
+  }
+
+  const product = firstJoinRow(voucher.trial_flight_voucher_products) || {};
+  if (!voucher.held_aircraft_id || !voucher.held_instructor_id || !voucher.held_start_time || !voucher.held_end_time) {
+    throw new Error("Book-now checkout is missing held booking details");
+  }
+
+  const studentId = await ensureBookNowVoucherAccount(adminClient, voucher);
+  const nowIso = new Date().toISOString();
+  const { error: redeemError } = await adminClient
+    .from("trial_flight_vouchers")
+    .update({
+      status: "redeemed",
+      redeemed_at: voucher.redeemed_at || nowIso,
+      redeemed_by_user_id: studentId,
+      updated_at: nowIso,
+    })
+    .eq("id", voucher.id)
+    .neq("status", "booked");
+  if (redeemError) throw redeemError;
+
+  const { data: bookingId, error: bookingError } = await adminClient.rpc("book_trial_flight_voucher_slot", {
+    p_voucher_id: voucher.id,
+    p_student_id: studentId,
+    p_aircraft_id: voucher.held_aircraft_id,
+    p_instructor_id: voucher.held_instructor_id,
+    p_start_time: voucher.held_start_time,
+    p_end_time: voucher.held_end_time,
+    p_notes: `Trial flight voucher ${voucher.code} - ${product.name || "Trial flight"}`,
+  });
+
+  if (bookingError || !bookingId) throw new Error(bookingError?.message || "Could not create the paid trial flight booking");
+
+  const booking = {
+    bookingId,
+    startTime: voucher.held_start_time,
+    endTime: voucher.held_end_time,
+  };
+  const purchaserEmail = clean(voucher.purchaser_email).trim().toLowerCase();
+  const recipientEmail = clean(voucher.recipient_email).trim().toLowerCase();
+  const purchaserResult = purchaserEmail
+    ? await sendBookNowConfirmationEmail({
+      to: purchaserEmail,
+      toName: clean(voucher.purchaser_name) || purchaserEmail,
+      voucher,
+      product,
+      booking,
+      audience: "purchaser",
+    })
+    : { sent: false, error: "No purchaser email" };
+
+  const shouldEmailRecipient = Boolean(voucher.send_to_recipient && recipientEmail && recipientEmail !== purchaserEmail);
+  const recipientResult = shouldEmailRecipient
+    ? await sendBookNowConfirmationEmail({
+      to: recipientEmail,
+      toName: clean(voucher.recipient_name) || recipientEmail,
+      voucher,
+      product,
+      booking,
+      audience: "recipient",
+    })
+    : { sent: false, error: null };
+
+  await adminClient
+    .from("trial_flight_vouchers")
+    .update({
+      purchaser_confirmation_sent_at: purchaserResult.sent ? new Date().toISOString() : null,
+      purchaser_confirmation_error: purchaserResult.error || null,
+      recipient_confirmation_sent_at: recipientResult.sent ? new Date().toISOString() : null,
+      recipient_confirmation_error: recipientResult.error || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", voucher.id);
+
+  return { bookingId, purchaserEmail: purchaserResult, recipientEmail: recipientResult };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-  const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
   const internalSecret = Deno.env.get("TRIAL_VOUCHER_INTERNAL_SECRET");
 
-  if (!supabaseUrl || !serviceRoleKey || !webhookSecret || !internalSecret || !stripeSecretKey) {
+  if (!supabaseUrl || !serviceRoleKey || !internalSecret) {
     return json({ error: "Stripe voucher webhook is not fully configured" }, 503);
   }
 
   const rawBody = await req.text();
 
+  let event: any;
+  let webhookMode: StripeMode;
   try {
-    await verifyStripeSignature({
+    const verified = await parseAndVerifyStripeEvent({
       rawBody,
       signatureHeader: req.headers.get("stripe-signature"),
-      secret: webhookSecret,
     });
+    event = verified.event;
+    webhookMode = verified.mode;
   } catch (error) {
     console.warn("Stripe signature verification failed:", error);
     return json({ error: "Invalid Stripe signature" }, 400);
   }
 
-  let event: any;
+  let stripeSecretKey = "";
   try {
-    event = JSON.parse(rawBody);
-  } catch {
-    return json({ error: "Invalid JSON payload" }, 400);
+    stripeSecretKey = getStripeSecretKeyForMode(webhookMode);
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Stripe API key is not configured for this webhook mode." }, 503);
   }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -1064,6 +1483,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (event.type === "checkout.session.expired") {
+      const abandonedEmail = voucher.checkout_intent === "book_now"
+        ? await sendBookNowAbandonedEmail({ voucher })
+        : { sent: false, error: null };
       await adminClient
         .from("trial_flight_vouchers")
         .update({
@@ -1071,7 +1493,10 @@ Deno.serve(async (req: Request) => {
           payment_source: "stripe",
           stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
           stripe_payment_intent_id: asString(session.payment_intent) || null,
+          checkout_abandoned_email_sent_at: abandonedEmail.sent ? new Date().toISOString() : voucher.checkout_abandoned_email_sent_at || null,
+          checkout_abandoned_email_error: abandonedEmail.error || null,
           updated_at: new Date().toISOString(),
+          ...stripeModeColumns(stripeModeFromEvent(event)),
         })
         .eq("id", voucher.id)
         .neq("payment_status", "paid");
@@ -1081,6 +1506,9 @@ Deno.serve(async (req: Request) => {
     }
 
     if (event.type === "checkout.session.async_payment_failed") {
+      const abandonedEmail = voucher.checkout_intent === "book_now"
+        ? await sendBookNowAbandonedEmail({ voucher })
+        : { sent: false, error: null };
       await adminClient
         .from("trial_flight_vouchers")
         .update({
@@ -1089,7 +1517,10 @@ Deno.serve(async (req: Request) => {
           stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
           stripe_payment_intent_id: asString(session.payment_intent) || null,
           ...stripePaymentFields(session),
+          checkout_abandoned_email_sent_at: abandonedEmail.sent ? new Date().toISOString() : voucher.checkout_abandoned_email_sent_at || null,
+          checkout_abandoned_email_error: abandonedEmail.error || null,
           updated_at: new Date().toISOString(),
+          ...stripeModeColumns(stripeModeFromEvent(event)),
         })
         .eq("id", voucher.id)
         .neq("payment_status", "paid");
@@ -1108,6 +1539,7 @@ Deno.serve(async (req: Request) => {
           stripe_payment_intent_id: asString(session.payment_intent) || null,
           ...stripePaymentFields(session),
           updated_at: new Date().toISOString(),
+          ...stripeModeColumns(stripeModeFromEvent(event)),
         })
         .eq("id", voucher.id);
 
@@ -1126,14 +1558,22 @@ Deno.serve(async (req: Request) => {
         ...stripePaymentFields(session),
         paid_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        ...stripeModeColumns(stripeModeFromEvent(event)),
       })
       .eq("id", voucher.id);
 
     if (updateError) throw updateError;
 
-    const emailResult = voucher.delivered_at
-      ? { sent: false, alreadyDelivered: true }
-      : await sendVoucherEmail({ supabaseUrl, internalSecret, voucherId: voucher.id });
+    const emailResult = voucher.checkout_intent === "book_now"
+      ? await handleBookNowPaidVoucher(adminClient, {
+        ...voucher,
+        payment_status: "paid",
+        stripe_checkout_session_id: sessionId || voucher.stripe_checkout_session_id,
+        stripe_payment_intent_id: asString(session.payment_intent) || null,
+      })
+      : voucher.delivered_at
+        ? { sent: false, alreadyDelivered: true }
+        : await sendVoucherEmail({ supabaseUrl, internalSecret, voucherId: voucher.id });
 
     await markEventProcessed(adminClient, event.id);
 

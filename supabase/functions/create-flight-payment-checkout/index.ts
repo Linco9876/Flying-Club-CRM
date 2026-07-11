@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, testModeSubject } from "../_shared/stripeMode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -162,16 +163,13 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
-    const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeSecretKey) {
-      return json({ error: "Stripe is not configured in Supabase Edge Function secrets." }, 503);
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const stripeMode = await getActiveStripeMode(adminClient);
+    const stripeSecretKey = stripeMode.secretKey;
 
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
@@ -287,6 +285,7 @@ Deno.serve(async (req: Request) => {
     form.set("cancel_url", cancelUrl);
     form.set("client_reference_id", flightLog.id);
     form.set("metadata[crm_payment_type]", "flight_log");
+    addStripeModeMetadata(form, stripeMode.mode);
     form.set("metadata[flight_log_id]", flightLog.id);
     form.set("metadata[student_id]", flightLog.student_id || "");
     form.set("metadata[booking_id]", flightLog.booking_id || "");
@@ -323,6 +322,7 @@ Deno.serve(async (req: Request) => {
         stripe_checkout_session_id: session.id,
         stripe_payment_status: session.payment_status || "unpaid",
         stripe_checkout_created_at: new Date().toISOString(),
+        ...stripeModeColumns(stripeMode.mode),
       })
       .eq("id", flightLog.id);
     if (updateError) throw updateError;
@@ -333,7 +333,7 @@ Deno.serve(async (req: Request) => {
       const emailResult = await sendEmail({
         to: studentEmail,
         toName: studentName,
-        subject: `Flight payment link - ${flightTypeName} ${aircraftRegistration}`.trim(),
+        subject: testModeSubject(stripeMode.mode, `Flight payment link - ${flightTypeName} ${aircraftRegistration}`.trim()),
         html: buildFlightPaymentEmail({
           memberName: studentName,
           aircraftRegistration,

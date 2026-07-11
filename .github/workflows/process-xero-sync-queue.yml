@@ -1,0 +1,67 @@
+name: Process Xero sync queue
+
+on:
+  schedule:
+    # Keep Xero work moving without relying on an admin opening the CRM.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: process-xero-sync-queue
+  cancel-in-progress: false
+
+jobs:
+  process:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_XERO_SYNC_WORKER == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process pending Xero sync items
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "::error::Missing SUPABASE_URL GitHub secret."
+            exit 1
+          fi
+
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::Missing SUPABASE_SERVICE_ROLE_KEY GitHub secret."
+            exit 1
+          fi
+
+          for run in 1 2 3 4 5; do
+            response_file="$(mktemp)"
+            http_code="$(
+              curl --silent --show-error \
+                --request POST \
+                --header "Content-Type: application/json" \
+                --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+                --data '{"action":"process-next"}' \
+                --output "$response_file" \
+                --write-out "%{http_code}" \
+                "${SUPABASE_URL%/}/functions/v1/xero-sync"
+            )"
+
+            echo "Xero sync processor run ${run}: HTTP ${http_code}"
+            cat "$response_file"
+            echo
+
+            if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+              exit 1
+            fi
+
+            if python - "$response_file" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+sys.exit(0 if payload.get("processed") is False else 1)
+PY
+            then
+              echo "No pending Xero sync work remains."
+              break
+            fi
+
+            sleep 2
+          done
