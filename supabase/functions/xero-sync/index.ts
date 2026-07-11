@@ -122,7 +122,7 @@ const xeroRequest = async ({
   accessToken: string;
   body?: Record<string, unknown>;
 }) => {
-  const maxAttempts = 3;
+  const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
       method,
@@ -139,8 +139,10 @@ const xeroRequest = async ({
 
     if (response.status === 429) {
       const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
-      if (attempt < maxAttempts && retryAfterMs > 0 && retryAfterMs <= 15_000) {
-        await sleep(retryAfterMs + 250);
+      const fallbackDelayMs = Math.min(30_000, Math.round((1_500 * (2 ** (attempt - 1))) + Math.random() * 750));
+      const waitMs = retryAfterMs > 0 ? retryAfterMs : fallbackDelayMs;
+      if (attempt < maxAttempts && waitMs <= 30_000) {
+        await sleep(waitMs + 250);
         continue;
       }
       const seconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : null;
@@ -170,6 +172,10 @@ const xeroRequest = async ({
       error.status = response.status;
       error.payload = payload;
       throw error;
+    }
+    const remainingMinuteCalls = Number(response.headers.get("X-MinLimit-Remaining"));
+    if (Number.isFinite(remainingMinuteCalls) && remainingMinuteCalls <= 3) {
+      await sleep(2_500);
     }
     return payload;
   }
@@ -2777,14 +2783,23 @@ const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, it
     }
 
     if (isRetriableXeroError(error) && attempt < 5) {
+      const retryAfterSeconds = Number((error as any)?.retryAfterSeconds || 0);
+      const retryDelayMs = retryAfterSeconds > 0
+        ? Math.max(getRetryDelayMs(attempt), retryAfterSeconds * 1000)
+        : getRetryDelayMs(attempt);
+      const nextAttemptAt = new Date(Date.now() + retryDelayMs).toISOString();
       await adminClient.from("xero_sync_queue").update({
         status: "pending",
         last_error: message,
         processed_by: processedBy,
-        next_attempt_at: new Date(Date.now() + getRetryDelayMs(attempt)).toISOString(),
+        next_attempt_at: nextAttemptAt,
         updated_at: new Date().toISOString(),
       }).eq("id", item.id);
-      throw error;
+      return {
+        deferred: true,
+        message,
+        nextAttemptAt,
+      };
     }
 
     await adminClient.from("xero_sync_queue").update({

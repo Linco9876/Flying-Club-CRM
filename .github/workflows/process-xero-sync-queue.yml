@@ -32,7 +32,7 @@ jobs:
             exit 1
           fi
 
-          for run in 1 2 3 4 5; do
+          for run in 1; do
             response_file="$(mktemp)"
             http_code="$(
               curl --silent --show-error \
@@ -63,5 +63,5 @@ PY
               break
             fi
 
-            sleep 2
+            sleep 15
           done
