@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { TransactionsTab } from './TransactionsTab';
 import { PilotAccountsTab } from './PilotAccountsTab';
 import { StripeTestModeBanner } from './StripeTestModeBanner';
@@ -70,6 +70,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [xeroInvoicesLinked, setXeroInvoicesLinked] = useState(true);
   const [invoicePaymentLoadingId, setInvoicePaymentLoadingId] = useState<string | null>(null);
   const [invoiceViewingId, setInvoiceViewingId] = useState<string | null>(null);
+  const invoiceViewRequestsRef = useRef<Set<string>>(new Set());
   const billing = useBillingAccounts();
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -338,6 +339,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     };
 
     const handleViewXeroInvoice = async (invoice: XeroPortalInvoice) => {
+      if (invoiceViewRequestsRef.current.has(invoice.invoiceId)) return;
+      invoiceViewRequestsRef.current.add(invoice.invoiceId);
       setInvoiceViewingId(invoice.invoiceId);
       try {
         await openOwnXeroInvoicePdf(invoice.invoiceId);
@@ -345,6 +348,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         console.error('Failed to open Xero invoice PDF:', error);
         toast.error(error?.message || 'Failed to open invoice');
       } finally {
+        invoiceViewRequestsRef.current.delete(invoice.invoiceId);
         setInvoiceViewingId(null);
       }
     };
