@@ -115,6 +115,53 @@ export const payOwnXeroInvoice = async ({
   return data ?? {};
 };
 
+export const openOwnXeroInvoicePdf = async (invoiceId: string) => {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    throw new Error('You need to be logged in to view this invoice');
+  }
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const response = await fetch(`${supabaseUrl}/functions/v1/member-xero-balance`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'invoice-pdf',
+      invoiceId,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let message = 'Failed to load invoice';
+    try {
+      const payload = JSON.parse(text);
+      message = payload?.error || message;
+    } catch {
+      if (text) message = text;
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
 export const fetchAllMemberXeroBalances = async () => {
   const { data, error } = await supabase.functions.invoke<XeroMemberBalanceListResponse>('member-xero-balance', {
     body: { action: 'all' },

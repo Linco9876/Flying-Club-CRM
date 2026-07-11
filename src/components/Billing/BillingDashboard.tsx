@@ -12,7 +12,7 @@ import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
-import { fetchOwnXeroInvoices, payOwnXeroInvoice, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
+import { fetchOwnXeroInvoices, openOwnXeroInvoicePdf, payOwnXeroInvoice, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import toast from 'react-hot-toast';
 
@@ -69,6 +69,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [ownXeroConnected, setOwnXeroConnected] = useState<boolean | null>(null);
   const [xeroInvoicesLinked, setXeroInvoicesLinked] = useState(true);
   const [invoicePaymentLoadingId, setInvoicePaymentLoadingId] = useState<string | null>(null);
+  const [invoiceViewingId, setInvoiceViewingId] = useState<string | null>(null);
   const billing = useBillingAccounts();
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -336,6 +337,18 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       }
     };
 
+    const handleViewXeroInvoice = async (invoice: XeroPortalInvoice) => {
+      setInvoiceViewingId(invoice.invoiceId);
+      try {
+        await openOwnXeroInvoicePdf(invoice.invoiceId);
+      } catch (error: any) {
+        console.error('Failed to open Xero invoice PDF:', error);
+        toast.error(error?.message || 'Failed to open invoice');
+      } finally {
+        setInvoiceViewingId(null);
+      }
+    };
+
     const handleTopUpSubmit = async (event: React.FormEvent) => {
       event.preventDefault();
       if (!user?.id) return;
@@ -462,7 +475,6 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <div className="divide-y divide-gray-100 dark:divide-[#2c2f36]">
               {xeroInvoices.map(invoice => {
                 const amountDue = Number(invoice.amountDue || 0);
-                const invoiceUrl = invoice.url || `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoice.invoiceId)}`;
                 return (
                   <div key={invoice.invoiceId} className="grid gap-3 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1fr)_7.5rem_7.5rem_12rem] lg:items-center">
                     <div className="min-w-0">
@@ -492,15 +504,15 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                       </p>
                     </div>
                     <div className="flex min-w-0 flex-wrap gap-2 lg:justify-end">
-                      <a
-                        href={invoiceUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handleViewXeroInvoice(invoice)}
+                        disabled={invoiceViewingId === invoice.invoiceId}
                         className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242c]"
                       >
-                        <ExternalLink className="h-4 w-4" />
+                        {invoiceViewingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                         Invoice
-                      </a>
+                      </button>
                       {amountDue > 0.005 && (
                         <button
                           type="button"

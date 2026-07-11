@@ -105,6 +105,58 @@ const xeroRequest = async ({
   throw new Error("Xero request failed after retrying.");
 };
 
+const xeroPdfRequest = async ({
+  path,
+  tenantId,
+  accessToken,
+}: {
+  path: string;
+  tenantId: string;
+  accessToken: string;
+}) => {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Xero-tenant-id": tenantId,
+        Accept: "application/pdf",
+      },
+    });
+
+    if (response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+      if (attempt < maxAttempts && retryAfterMs > 0 && retryAfterMs <= 15_000) {
+        await sleep(retryAfterMs + 250);
+        continue;
+      }
+      const seconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : null;
+      throw Object.assign(
+        new Error(seconds
+          ? `Xero is rate limiting the CRM. Please wait about ${seconds} seconds and try again.`
+          : "Xero is rate limiting the CRM. Please wait a few minutes and try again."),
+        { status: 429, retryAfterSeconds: seconds },
+      );
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      let payload: any = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        payload = {};
+      }
+      const message = payload?.Message || payload?.Title || payload?.Detail || `Xero PDF request failed with HTTP ${response.status}`;
+      throw Object.assign(new Error(message), { status: response.status });
+    }
+
+    return await response.arrayBuffer();
+  }
+  throw new Error("Xero PDF request failed after retrying.");
+};
+
 const refreshAccessToken = async (adminClient: SupabaseAdminClient, connection: any) => {
   const clientId = Deno.env.get("XERO_CLIENT_ID");
   const clientSecret = Deno.env.get("XERO_CLIENT_SECRET");
@@ -667,6 +719,30 @@ Deno.serve(async (req: Request) => {
         allocations: creditResult.allocations,
         amountToPay: amountDue,
         ...checkout,
+      });
+    }
+
+    if (action === "invoice-pdf") {
+      if (!contactId) return json({ error: "This member is not linked to a Xero contact." }, 409);
+      const invoiceId = clean(body.invoiceId);
+      if (!invoiceId) return json({ error: "Missing invoiceId" }, 400);
+
+      const invoice = await getContactInvoice(ctx, invoiceId, contactId);
+      const invoiceNumber = clean(invoice?.InvoiceNumber) || "invoice";
+      const pdf = await xeroPdfRequest({
+        path: `Invoices/${encodeURIComponent(invoiceId)}`,
+        tenantId: ctx.connection.tenant_id,
+        accessToken: ctx.connection.access_token,
+      });
+
+      return new Response(pdf, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${invoiceNumber.replace(/[^A-Za-z0-9._-]/g, "-")}.pdf"`,
+          "Cache-Control": "private, max-age=60",
+        },
       });
     }
 
