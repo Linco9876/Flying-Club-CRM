@@ -12,15 +12,20 @@ concurrency:
 
 jobs:
   process:
-    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_XERO_SYNC_WORKER == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Process pending Xero sync items
         env:
+          ENABLE_XERO_SYNC_WORKER: ${{ vars.ENABLE_XERO_SYNC_WORKER }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] && [ "${ENABLE_XERO_SYNC_WORKER:-false}" != "true" ]; then
+            echo "Xero sync worker is disabled. Set repository variable ENABLE_XERO_SYNC_WORKER=true to enable scheduled processing."
+            exit 0
+          fi
 
           if [ -z "${SUPABASE_URL:-}" ]; then
             echo "::error::Missing SUPABASE_URL GitHub secret."
