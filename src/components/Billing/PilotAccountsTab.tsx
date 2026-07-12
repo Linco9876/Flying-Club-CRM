@@ -113,7 +113,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
 };
 
 export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { pilotAccounts, loading, addTopUp } = billing;
+  const { pilotAccounts, loading, addTopUp, xeroConnected } = billing;
   const { paymentMethods } = useBillingSettings();
   const [sortField, setSortField] = useState<'name' | 'balance' | 'unpaidFlightCount'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -166,7 +166,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
           <p className="text-2xl font-bold text-gray-900 mt-1">{pilotAccounts.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Verified Prepaid Held</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{xeroConnected ? 'Xero Credit Held' : 'Verified Prepaid Held'}</p>
           <p className={`text-2xl font-bold mt-1 ${totalBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
             ${totalBalance.toFixed(2)}
           </p>
@@ -204,7 +204,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                   className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
                   onClick={() => handleSort('balance')}
                 >
-                  <span className="flex items-center">Prepaid Balance <SortIcon field="balance" /></span>
+                  <span className="flex items-center">{xeroConnected ? 'Xero Credit' : 'Prepaid Balance'} <SortIcon field="balance" /></span>
                 </th>
                 <th
                   className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700"
@@ -247,7 +247,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                         </span>
                       )}
                       {account.balance <= 0 && (
-                        <span className="ml-2 text-xs text-amber-500">Needs positive prepaid balance</span>
+                        <span className="ml-2 text-xs text-amber-500">{xeroConnected ? 'Needs positive Xero credit' : 'Needs positive prepaid balance'}</span>
                       )}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">

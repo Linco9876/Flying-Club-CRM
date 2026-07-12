@@ -42,8 +42,11 @@ export interface XeroPortalInvoicesResponse extends XeroMemberBalance {
 
 export interface XeroInvoicePaymentResponse {
   paidWithCredit?: boolean;
+  paidWithSavedCard?: boolean;
   creditApplied?: number;
   amountToPay?: number;
+  stripePaymentIntentId?: string;
+  xeroPaymentId?: string;
   allocations?: Array<Record<string, unknown>>;
   checkoutUrl?: string;
   sessionId?: string;
@@ -90,11 +93,13 @@ export const fetchOwnXeroInvoices = async () => {
 export const payOwnXeroInvoice = async ({
   invoiceId,
   useCredit = true,
+  paymentMode = 'checkout',
   successUrl,
   cancelUrl,
 }: {
   invoiceId: string;
   useCredit?: boolean;
+  paymentMode?: 'checkout' | 'saved_card';
   successUrl?: string;
   cancelUrl?: string;
 }) => {
@@ -103,6 +108,7 @@ export const payOwnXeroInvoice = async ({
       action: 'pay-invoice',
       invoiceId,
       useCredit,
+      paymentMode,
       successUrl,
       cancelUrl,
     },

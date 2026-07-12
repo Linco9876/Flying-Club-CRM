@@ -273,17 +273,26 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
       if (usersError) throw usersError;
 
       const ledgerByUser = await fetchAllPrepaidLedgerBalances();
+      let xeroBalanceByUser: Record<string, number> = {};
+      let useXeroBalances = false;
 
       try {
         const xeroData = await fetchAllMemberXeroBalances();
-        setXeroConnected(Boolean(xeroData.connected));
+        useXeroBalances = Boolean(xeroData.connected);
+        setXeroConnected(useXeroBalances);
         setMinimumPrepaidPack(Number(xeroData.minimumPrepaidPack ?? 1000));
+        xeroBalanceByUser = (xeroData.balances || []).reduce((map: Record<string, number>, balance: any) => {
+          if (balance.userId) map[balance.userId] = Number(balance.availableCredit ?? 0);
+          return map;
+        }, {});
       } catch (error) {
         const message = error instanceof Error ? error.message : '';
         if (/not authorised|only staff/i.test(message)) {
           const self = await fetchUserXeroBalance((await supabase.auth.getUser()).data.user?.id || '');
-          setXeroConnected(Boolean(self.connected));
+          useXeroBalances = Boolean(self.connected);
+          setXeroConnected(useXeroBalances);
           setMinimumPrepaidPack(Number(self.minimumPrepaidPack ?? 1000));
+          if (self.userId) xeroBalanceByUser[self.userId] = Number(self.availableCredit ?? 0);
         } else {
           console.warn('Unable to confirm Xero connection while loading pilot accounts:', error);
           setXeroConnected(false);
@@ -308,7 +317,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
           userId: u.id,
           name: u.name,
           email: u.email,
-          balance: ledgerByUser[u.id]?.verifiedBalance ?? 0,
+          balance: useXeroBalances ? (xeroBalanceByUser[u.id] ?? 0) : (ledgerByUser[u.id]?.verifiedBalance ?? 0),
           lastTransactionDate: ledgerByUser[u.id]?.lastTransactionDate ?? null,
           totalTransactions: ledgerByUser[u.id]?.totalTransactions ?? 0,
           unpaidFlightCount: unpaidByUser[u.id] ?? 0,

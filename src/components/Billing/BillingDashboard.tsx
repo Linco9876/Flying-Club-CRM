@@ -64,6 +64,12 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [stripeCardLoading, setStripeCardLoading] = useState(true);
   const [stripeConsentAccepted, setStripeConsentAccepted] = useState(false);
   const [xeroInvoices, setXeroInvoices] = useState<XeroPortalInvoice[]>([]);
+  const [xeroCredit, setXeroCredit] = useState({
+    availableCredit: 0,
+    overpaymentCredit: 0,
+    prepaymentCredit: 0,
+    eligibleForPrepaid: false,
+  });
   const [xeroInvoicesLoading, setXeroInvoicesLoading] = useState(true);
   const [xeroInvoicesChecked, setXeroInvoicesChecked] = useState(false);
   const [ownXeroConnected, setOwnXeroConnected] = useState<boolean | null>(null);
@@ -121,11 +127,23 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       setOwnXeroConnected(Boolean(data.connected));
       setXeroInvoices(data.invoices || []);
       setXeroInvoicesLinked(data.linked !== false);
+      setXeroCredit({
+        availableCredit: Number(data.availableCredit || 0),
+        overpaymentCredit: Number(data.overpaymentCredit || 0),
+        prepaymentCredit: Number(data.prepaymentCredit || 0),
+        eligibleForPrepaid: Boolean(data.eligibleForPrepaid),
+      });
     } catch (error: any) {
       console.warn('Failed to load Xero invoices:', error);
       toast.error(error?.message || 'Failed to load Xero invoices');
       setOwnXeroConnected(false);
       setXeroInvoices([]);
+      setXeroCredit({
+        availableCredit: 0,
+        overpaymentCredit: 0,
+        prepaymentCredit: 0,
+        eligibleForPrepaid: false,
+      });
     } finally {
       setXeroInvoicesChecked(true);
       setXeroInvoicesLoading(false);
@@ -265,7 +283,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const currencyFormatter = (amount: number) =>
       `$${amount.toFixed(portalSettings.currency_decimals)}`;
     const dateLocale = portalSettings.date_format === 'MM/dd/yyyy' ? 'en-US' : 'en-AU';
-    const prepaidEligible = approvedBalance > 0.005;
+    const xeroConnectedForOwnBilling = ownXeroConnected ?? billing.xeroConnected;
+    const displayedCredit = xeroConnectedForOwnBilling ? xeroCredit.availableCredit : approvedBalance;
+    const prepaidEligible = xeroConnectedForOwnBilling ? xeroCredit.eligibleForPrepaid : approvedBalance > 0.005;
     const outstandingInvoiceTotal = xeroInvoices.reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0);
     const formatInvoiceDate = (value: string) => {
       if (!value) return '-';
@@ -278,12 +298,13 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       if (normalised === 'AUTHORISED' || normalised === 'SUBMITTED') return 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200';
       return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200';
     };
-
-    const xeroConnectedForOwnBilling = ownXeroConnected ?? billing.xeroConnected;
-
-    const handlePayXeroInvoice = async (invoice: XeroPortalInvoice) => {
+    const handlePayXeroInvoice = async (invoice: XeroPortalInvoice, paymentMode: 'checkout' | 'saved_card') => {
       if (invoice.amountDue <= 0.005) return;
-      const checkoutWindow = window.open('about:blank', '_blank');
+      if (paymentMode === 'saved_card' && !stripeCardStatus?.card) {
+        toast.error('Save a card before using saved-card invoice payments');
+        return;
+      }
+      const checkoutWindow = paymentMode === 'checkout' ? window.open('about:blank', '_blank') : null;
       if (checkoutWindow) {
         checkoutWindow.opener = null;
         writeStripeLoadingPage(checkoutWindow, {
@@ -298,15 +319,22 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         const result = await payOwnXeroInvoice({
           invoiceId: invoice.invoiceId,
           useCredit: true,
+          paymentMode,
           successUrl: `${returnUrl}?xero_invoice=success`,
           cancelUrl: `${returnUrl}?xero_invoice=cancelled`,
         });
 
-        if (result.paidWithCredit || result.invoice) {
+        if (result.paidWithCredit || result.paidWithSavedCard || result.invoice) {
           checkoutWindow?.close();
-          toast.success(result.creditApplied && result.creditApplied > 0
-            ? `Applied ${currencyFormatter(result.creditApplied)} Xero credit`
-            : 'Invoice is already settled');
+          if (result.paidWithSavedCard) {
+            toast.success(result.creditApplied && result.creditApplied > 0
+              ? `Applied ${currencyFormatter(result.creditApplied)} Xero credit and charged saved card for the rest`
+              : 'Saved card charged and Xero invoice updated');
+          } else {
+            toast.success(result.creditApplied && result.creditApplied > 0
+              ? `Applied ${currencyFormatter(result.creditApplied)} Xero credit`
+              : 'Invoice is already settled');
+          }
           await loadXeroInvoices();
           return;
         }
@@ -386,7 +414,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         <StripeTestModeBanner />
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Billing</h1>
-          <p className="text-gray-600 dark:text-gray-400">Review your verified prepaid balance, pending top-ups, and billing history.</p>
+          <p className="text-gray-600 dark:text-gray-400">
+            {xeroConnectedForOwnBilling
+              ? 'Review your Xero credit, invoices owing, saved card and billing history.'
+              : 'Review your verified prepaid balance, pending top-ups, and billing history.'}
+          </p>
         </div>
 
         {!xeroConnectedForOwnBilling && (
@@ -423,18 +455,36 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Verified prepaid balance</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{currencyFormatter(approvedBalance)}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {xeroConnectedForOwnBilling ? 'Xero credit available' : 'Verified prepaid balance'}
+            </p>
+            <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{currencyFormatter(displayedCredit)}</p>
+            {xeroConnectedForOwnBilling && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Overpayments {currencyFormatter(xeroCredit.overpaymentCredit)} / Prepayments {currencyFormatter(xeroCredit.prepaymentCredit)}
+              </p>
+            )}
           </div>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
-            <p className="text-sm text-amber-700 dark:text-amber-300">Pending approval</p>
-            <p className="mt-1 text-2xl font-bold text-amber-900 dark:text-amber-100">{currencyFormatter(pendingTopUpAmount)}</p>
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              {xeroConnectedForOwnBilling ? 'Invoices owing in Xero' : 'Pending approval'}
+            </p>
+            <p className="mt-1 text-2xl font-bold text-amber-900 dark:text-amber-100">
+              {currencyFormatter(xeroConnectedForOwnBilling ? outstandingInvoiceTotal : pendingTopUpAmount)}
+            </p>
+            {xeroConnectedForOwnBilling && pendingTopUpAmount > 0.005 && (
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                {currencyFormatter(pendingTopUpAmount)} submitted in CRM, awaiting admin verification.
+              </p>
+            )}
           </div>
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-5 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
             <p className="text-sm text-blue-700 dark:text-blue-300">Prepaid rate access</p>
             <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">{prepaidEligible ? 'Unlocked' : 'Locked'}</p>
             <p className="mt-1 text-xs text-blue-800 dark:text-blue-200">
-              Requires a positive verified prepaid balance. Top-ups are made in {currencyFormatter(billing.minimumPrepaidPack)} increments.
+              {xeroConnectedForOwnBilling
+                ? `Requires positive Xero credit. Top-ups are made in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`
+                : `Requires a positive verified prepaid balance. Top-ups are made in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`}
             </p>
           </div>
         </div>
@@ -451,6 +501,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   All invoices linked to your Xero contact, including invoices created outside the CRM.
                 </p>
+                {xeroCredit.availableCredit > 0.005 && (
+                  <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                    Available Xero credit is applied first. If it does not cover the invoice, you can pay the difference by saved card or checkout.
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -520,12 +575,23 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                       {amountDue > 0.005 && (
                         <button
                           type="button"
-                          onClick={() => handlePayXeroInvoice(invoice)}
+                          onClick={() => handlePayXeroInvoice(invoice, 'checkout')}
                           disabled={invoicePaymentLoadingId === invoice.invoiceId}
                           className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
                         >
                           {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                          Pay
+                          Pay checkout
+                        </button>
+                      )}
+                      {amountDue > 0.005 && stripeCardStatus?.card && (
+                        <button
+                          type="button"
+                          onClick={() => handlePayXeroInvoice(invoice, 'saved_card')}
+                          disabled={invoicePaymentLoadingId === invoice.invoiceId}
+                          className="inline-flex items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-950/50"
+                        >
+                          {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                          Saved card
                         </button>
                       )}
                     </div>
@@ -638,7 +704,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-300" />
             <div>
               <h2 className="font-semibold text-gray-900 dark:text-gray-100">Add funds</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Submitted funds appear as pending until an admin approves the payment. Top-ups must be in {currencyFormatter(billing.minimumPrepaidPack)} increments.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {xeroConnectedForOwnBilling
+                  ? `Submitted funds appear as pending until an admin verifies them. They are not counted as Xero credit until reconciled in Xero. Top-ups must be in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`
+                  : `Submitted funds appear as pending until an admin approves the payment. Top-ups must be in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`}
+              </p>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1.4fr)_auto] md:items-end">
