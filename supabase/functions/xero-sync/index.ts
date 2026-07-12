@@ -133,11 +133,17 @@ const authenticateAdmin = async ({
     return { ok: true, userId: profileRow?.id ?? null };
   }
 
-  const callerClient = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
+  const requestApiKey = clean(req.headers.get("apikey") || req.headers.get("Apikey"));
+  const authApiKey = requestApiKey || anonKey;
+  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      apikey: authApiKey,
+      Authorization: `Bearer ${bearerToken}`,
+    },
   });
-  const { data: { user }, error } = await callerClient.auth.getUser();
-  if (error || !user) return { ok: false, error: "Unauthorized", status: 401 };
+  if (!userResponse.ok) return { ok: false, error: `Unauthorized: auth user lookup failed (${userResponse.status})`, status: 401 };
+  const user = await userResponse.json().catch(() => null);
+  if (!user?.id) return { ok: false, error: "Unauthorized: auth user missing", status: 401 };
 
   const [{ data: roles, error: rolesError }, { data: profile, error: profileError }] = await Promise.all([
     adminClient.from("user_roles").select("role").eq("user_id", user.id),
@@ -276,7 +282,11 @@ const refreshAccessToken = async (adminClient: SupabaseAdminClient, connection: 
   });
   const token = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(token?.error_description || token?.error || `Xero token refresh failed with HTTP ${response.status}`);
+    const tokenError = clean(token?.error_description || token?.error);
+    if (response.status === 401 || response.status === 403 || tokenError.toLowerCase().includes("unauthorized") || tokenError.toLowerCase().includes("invalid_grant")) {
+      throw makeXeroNeedsReviewError("Xero is no longer authorised. Reconnect Xero in Settings > Integrations, then retry this sync item.");
+    }
+    throw new Error(tokenError || `Xero token refresh failed with HTTP ${response.status}`);
   }
 
   const expiresInSeconds = Number(token?.expires_in || 0);
@@ -1209,6 +1219,7 @@ const getAccountTransaction = async (adminClient: SupabaseAdminClient, transacti
       payment_method_id,
       created_at,
       verified_status,
+      stripe_checkout_session_id,
       xero_bank_transaction_id,
       xero_sync_status,
       xero_sync_error,
@@ -1277,13 +1288,6 @@ const syncTopupTransaction = async (
     };
   }
 
-  const member = await getMember(adminClient, tx.user_id);
-  const contactResult = await syncMemberContact(adminClient, ctx, tx.user_id, queueId);
-  const contactId = clean(contactResult?.contactId || member.xero_contact_id);
-  if (!contactId) {
-    throw makeXeroNeedsReviewError("This member is not linked to a Xero contact yet.");
-  }
-
   const paymentSystemKey = clean(tx.payment_method?.system_key).toLowerCase();
   const paymentMethodName = clean(tx.payment_method?.name).toLowerCase();
   const isStripeTopup =
@@ -1291,6 +1295,22 @@ const syncTopupTransaction = async (
     paymentSystemKey === "stripe_card_payment" ||
     paymentSystemKey === "stripe" ||
     paymentMethodName.includes("stripe");
+
+  if (isStripeTopup && !clean(tx.stripe_checkout_session_id)) {
+    const message = "This Stripe top-up has no Stripe checkout confirmation. Re-run it through Stripe checkout or manually confirm the Stripe payment before syncing to Xero.";
+    await adminClient.from("account_transactions").update({
+      xero_sync_status: "needs_review",
+      xero_sync_error: message,
+    }).eq("id", tx.id);
+    throw makeXeroNeedsReviewError(message);
+  }
+
+  const member = await getMember(adminClient, tx.user_id);
+  const contactResult = await syncMemberContact(adminClient, ctx, tx.user_id, queueId);
+  const contactId = clean(contactResult?.contactId || member.xero_contact_id);
+  if (!contactId) {
+    throw makeXeroNeedsReviewError("This member is not linked to a Xero contact yet.");
+  }
 
   if (!isStripeTopup) {
     const { candidates } = await getTopupCreditCandidates(ctx, { ...member, xero_contact_id: contactId }, tx);

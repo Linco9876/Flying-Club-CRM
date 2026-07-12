@@ -393,7 +393,50 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
       setSubmittingTopUp(true);
       try {
-        const methodName = accountTopUpPaymentMethods.find(method => method.id === topUpPaymentMethodId)?.name;
+        const selectedMethod = accountTopUpPaymentMethods.find(method => method.id === topUpPaymentMethodId);
+        const methodName = selectedMethod?.name;
+        const isStripeTopUpMethod =
+          selectedMethod?.systemKey === 'stripe_card' ||
+          selectedMethod?.name.toLowerCase().includes('stripe');
+
+        if (isStripeTopUpMethod) {
+          const checkoutWindow = window.open('', '_blank', 'noopener,noreferrer');
+          if (checkoutWindow) {
+            writeStripeLoadingPage(checkoutWindow, {
+              title: 'Opening secure Stripe top-up...',
+              message: 'Once Stripe confirms payment, your CRM top-up will be verified automatically and synced to Xero as account credit.',
+            });
+          }
+
+          const returnUrl = `${window.location.origin}/billing`;
+          const { data, error } = await supabase.functions.invoke('create-member-topup-checkout', {
+            body: {
+              userId: user.id,
+              amount,
+              sendEmail: false,
+              triggerReason: 'member_balance_tab',
+              successUrl: `${returnUrl}?topup=success`,
+              cancelUrl: `${returnUrl}?topup=cancelled`,
+            },
+          });
+
+          if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create Stripe top-up checkout'));
+          if (!data?.checkoutUrl) throw new Error('Stripe checkout did not return a payment link');
+
+          if (checkoutWindow) {
+            checkoutWindow.location.href = data.checkoutUrl;
+          } else {
+            window.location.href = data.checkoutUrl;
+          }
+
+          toast.success('Stripe checkout opened. Your credit will update after payment is confirmed.');
+          setTopUpAmount('');
+          setTopUpPaymentMethodId('');
+          setTopUpReference('');
+          setTopUpDate(new Date().toISOString().slice(0, 10));
+          return;
+        }
+
         const description = topUpReference.trim()
           ? `Funds added by member: ${topUpReference.trim()}`
           : methodName

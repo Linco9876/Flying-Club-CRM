@@ -256,7 +256,11 @@ const refreshAccessToken = async (adminClient: SupabaseAdminClient, connection: 
   });
   const token = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(token?.error_description || token?.error || `Xero token refresh failed with HTTP ${response.status}`);
+    const tokenError = clean(token?.error_description || token?.error);
+    if (response.status === 401 || response.status === 403 || tokenError.toLowerCase().includes("unauthorized") || tokenError.toLowerCase().includes("invalid_grant")) {
+      throw new Error("Xero is no longer authorised. Reconnect Xero in Settings > Integrations, then refresh this page.");
+    }
+    throw new Error(tokenError || `Xero token refresh failed with HTTP ${response.status}`);
   }
 
   const expiresInSeconds = Number(token?.expires_in || 0);
