@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CreditCard, ExternalLink, Loader2, RefreshCw, ShieldCheck, TestTube2, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 
 interface StripeIntegrationCardProps {
   canEdit: boolean;
@@ -39,7 +40,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
         body: { action: 'status' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Stripe connection'));
       setStripeStatus(data ?? null);
     } catch (error: any) {
       console.error('Error loading Stripe connection:', error);
@@ -79,7 +80,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       const { data, error } = await supabase.functions.invoke<{ url?: string; error?: string; callbackUrl?: string }>('stripe-connect', {
         body: { action: 'start' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to start Stripe connection'));
       if (!data?.url) throw new Error(data?.error || 'Stripe did not return a link URL');
       window.location.href = data.url;
     } catch (error: any) {
@@ -97,7 +98,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       const { error } = await supabase.functions.invoke('stripe-connect', {
         body: { action: 'disconnect' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to disconnect Stripe'));
       toast.success('Stripe disconnected');
       await loadStripeStatus();
     } catch (error: any) {
@@ -125,7 +126,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
           allowTestModeXeroSync: stripeStatus.allowTestModeXeroSync === true,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to update Stripe mode'));
       setStripeStatus(data ?? null);
       toast.success(mode === 'test' ? 'Stripe Test Mode enabled' : 'Stripe Live Mode enabled');
     } catch (error: any) {
@@ -148,7 +149,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
           allowTestModeXeroSync: allow,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to update Stripe test sync setting'));
       setStripeStatus(data ?? null);
       toast.success('Stripe/Xero test sync setting saved');
     } catch (error: any) {

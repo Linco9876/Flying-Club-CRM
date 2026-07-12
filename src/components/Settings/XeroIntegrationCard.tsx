@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ExternalLink, FileText, Loader2, RefreshCw, Settings2, Sparkles, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 
 interface XeroIntegrationCardProps {
   canEdit: boolean;
@@ -152,7 +153,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<XeroStatus>('xero-connect', {
         body: { action: 'status' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero connection'));
       setXeroStatus(data ?? null);
       setForm(fromStatus(data ?? null));
     } catch (error: any) {
@@ -199,7 +200,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ accounts?: XeroAccountOption[] }>('xero-sync', {
         body: { action: 'list-accounts' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero accounts'));
       setAccounts((data?.accounts || []).filter(account => account.status === 'ACTIVE' && account.code));
     } catch (error: any) {
       console.error('Error loading Xero accounts:', error);
@@ -224,7 +225,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ created?: boolean; account?: XeroAccountOption }>('xero-sync', {
         body: { action: 'ensure-stripe-clearing-account' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create Stripe clearing account'));
 
       const account = data?.account;
       if (account?.code) {
@@ -251,7 +252,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ created?: boolean; account?: XeroAccountOption }>('xero-sync', {
         body: { action: 'ensure-prepaid-clearing-account' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create prepaid clearing account'));
 
       const account = data?.account;
       if (account?.code) {
@@ -278,7 +279,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ created?: boolean; account?: XeroAccountOption }>('xero-sync', {
         body: { action: 'ensure-topup-receipt-account' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create member top-up receipt account'));
 
       const account = data?.account;
       if (account?.code) {
@@ -305,7 +306,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ created?: boolean; account?: XeroAccountOption }>('xero-sync', {
         body: { action: 'ensure-voucher-liability-account' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create gift voucher liability account'));
 
       const account = data?.account;
       if (account?.code) {
@@ -332,7 +333,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ created?: boolean; account?: XeroAccountOption }>('xero-sync', {
         body: { action: 'ensure-prepaid-liability-account' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create member prepaid liability account'));
 
       const account = data?.account;
       if (account?.code) {
@@ -359,7 +360,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ created?: boolean; account?: XeroAccountOption }>('xero-sync', {
         body: { action: 'ensure-stripe-fee-expense-account' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create Stripe fees expense account'));
 
       const account = data?.account;
       if (account?.code) {
@@ -386,7 +387,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<{ url?: string; error?: string; callbackUrl?: string }>('xero-connect', {
         body: { action: 'start' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to start Xero connection'));
       if (!data?.url) throw new Error(data?.error || 'Xero did not return a link URL');
       window.location.href = data.url;
     } catch (error: any) {
@@ -404,7 +405,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { error } = await supabase.functions.invoke('xero-connect', {
         body: { action: 'disconnect' },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to disconnect Xero'));
       toast.success('Xero disconnected');
       await loadXeroStatus();
     } catch (error: any) {
@@ -422,7 +423,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       const { data, error } = await supabase.functions.invoke<XeroStatus>('xero-connect', {
         body: { action: 'save-settings', settings: form },
       });
-      if (error) throw error;
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to save Xero settings'));
       setXeroStatus(data ?? null);
       setForm(fromStatus(data ?? null));
       toast.success('Xero sync settings saved');

@@ -374,7 +374,11 @@ Deno.serve(async (req: Request) => {
 
     if (action === "status") {
       const status = await getStatus(adminClient, supabaseUrl);
-      await syncPilotAccountPaymentMethod({ adminClient, active: Boolean(status.connected) });
+      try {
+        await syncPilotAccountPaymentMethod({ adminClient, active: Boolean(status.connected) });
+      } catch (error) {
+        console.warn("Unable to sync Pilot Account payment method during Xero status check:", error);
+      }
       return json(status);
     }
 
