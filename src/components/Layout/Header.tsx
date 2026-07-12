@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Calendar, CreditCard, Plane, User, LogOut } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
-import { fetchOwnXeroBalance } from '../../lib/xeroMemberBalance';
+import { fetchOwnXeroInvoices } from '../../lib/xeroMemberBalance';
 
 const formatCurrency = (amount: number, decimals: number) =>
   new Intl.NumberFormat('en-AU', {
@@ -39,11 +39,13 @@ export const Header: React.FC = () => {
       }
 
       try {
-        const data = await fetchOwnXeroBalance();
+        const data = await fetchOwnXeroInvoices();
         if (!mounted) return;
         const showLinkedBalance = Boolean(data.connected && data.linked);
         setShowBalanceTab(showLinkedBalance);
-        setBalance(showLinkedBalance ? Number(data.availableCredit ?? 0) : null);
+        const outstanding = (data.invoices || []).reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0);
+        const netBalance = Number(data.availableCredit ?? 0) - outstanding;
+        setBalance(showLinkedBalance ? netBalance : null);
       } catch (error) {
         if (!mounted) return;
         console.error('Failed to load header balance:', error);
