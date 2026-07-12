@@ -97,6 +97,42 @@ const getReusableCustomerId = async (adminClient: any, userId: string, stripeMod
   return data?.stripe_customer_id || null;
 };
 
+const stripeCustomerExistsInActiveMode = async ({
+  stripeSecretKey,
+  connectedAccountId,
+  customerId,
+}: {
+  stripeSecretKey: string;
+  connectedAccountId: string;
+  customerId: string;
+}) => {
+  const id = cleanText(customerId);
+  if (!id) return false;
+
+  const response = await fetchStripe(
+    `https://api.stripe.com/v1/customers/${encodeURIComponent(id)}`,
+    {
+      method: "GET",
+      headers: stripeHeaders(stripeSecretKey, connectedAccountId),
+    },
+    "Stripe customer mode check",
+  );
+
+  if (response.ok) {
+    const customer = await response.json().catch(() => ({}));
+    return Boolean(customer?.id && !customer?.deleted);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const message = cleanText(payload?.error?.message);
+  if (response.status === 404 || /similar object exists in (live|test) mode/i.test(message)) {
+    console.warn("Ignoring stored Stripe customer from a different mode:", { customerId: id, message });
+    return false;
+  }
+
+  throw Object.assign(new Error(message || "Stripe customer could not be checked."), { status: 502 });
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -181,17 +217,28 @@ Deno.serve(async (req: Request) => {
     if (profileError) throw profileError;
 
     let stripeCustomerId = await getReusableCustomerId(adminClient, user.id, stripeMode.mode);
+    if (stripeCustomerId) {
+      const reusableCustomerIsValid = await stripeCustomerExistsInActiveMode({
+        stripeSecretKey,
+        connectedAccountId,
+        customerId: stripeCustomerId,
+      });
+      if (!reusableCustomerIsValid) {
+        stripeCustomerId = null;
+      }
+    }
     if (!stripeCustomerId) {
       const customerForm = new URLSearchParams();
       if (profile?.email || user.email) customerForm.set("email", profile?.email || user.email || "");
       if (profile?.name) customerForm.set("name", profile.name);
       customerForm.set("metadata[crm_user_id]", user.id);
+      addStripeModeMetadata(customerForm, stripeMode.mode);
 
       const customerResponse = await fetchStripe("https://api.stripe.com/v1/customers", {
         method: "POST",
         headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
           "Content-Type": "application/x-www-form-urlencoded",
-          "Idempotency-Key": stripeIdempotencyKey("member-card-customer", user.id),
+          "Idempotency-Key": stripeIdempotencyKey("member-card-customer", stripeMode.mode, user.id),
         }),
         body: customerForm,
       }, "Stripe customer setup");
