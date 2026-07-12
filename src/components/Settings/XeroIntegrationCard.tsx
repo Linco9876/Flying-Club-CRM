@@ -110,6 +110,20 @@ const fromStatus = (status?: XeroStatus | null): XeroSettingsForm => ({
   autoApplyVerifiedPayments: status?.syncSettings?.auto_apply_verified_payments ?? false,
 });
 
+const requiredXeroScopes = [
+  'accounting.contacts',
+  'accounting.invoices',
+  'accounting.payments',
+  'accounting.settings',
+  'accounting.transactions',
+  'offline_access',
+];
+
+const missingRequiredScopes = (scope?: string | null) => {
+  const granted = new Set(String(scope || '').split(/\s+/).filter(Boolean));
+  return requiredXeroScopes.filter(required => !granted.has(required));
+};
+
 export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdit, onFormChange }) => {
   const [xeroStatus, setXeroStatus] = useState<XeroStatus | null>(null);
   const [xeroLoading, setXeroLoading] = useState(true);
@@ -128,6 +142,8 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
   const [form, setForm] = useState<XeroSettingsForm>(defaultForm);
   const connected = Boolean(xeroStatus?.connected);
   const configured = Boolean(xeroStatus?.configured);
+  const missingScopes = useMemo(() => connected ? missingRequiredScopes(xeroStatus?.scope) : [], [connected, xeroStatus?.scope]);
+  const reconnectRequired = connected && missingScopes.length > 0;
 
   const loadXeroStatus = useCallback(async () => {
     setXeroLoading(true);
@@ -447,14 +463,18 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
     () => [...accounts].sort((left, right) => left.name.localeCompare(right.name)),
     [accounts],
   );
-  const statusLabel = connected
+  const statusLabel = reconnectRequired
+    ? 'Reconnect required'
+    : connected
     ? 'Xero is connected'
     : statusLoadError
       ? 'Could not confirm'
       : configured
         ? 'Ready to connect'
         : 'Setup needed';
-  const statusDetail = connected
+  const statusDetail = reconnectRequired
+    ? `Xero is connected, but the CRM is missing permission for ${missingScopes.join(', ')}. Reconnect Xero to allow prepaid credits and accounting transactions to sync.`
+    : connected
     ? `Linked to ${xeroStatus?.tenantName || 'a Xero organisation'}. Billing sync can be configured here before invoice posting is enabled.`
     : statusLoadError
       ? `The CRM could not confirm the live Xero status right now. ${statusLoadError}`
@@ -487,14 +507,16 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       <div className="p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4">
-            <div className={`flex h-12 w-12 flex-none items-center justify-center rounded-xl ${connected ? 'bg-green-100 text-green-700' : 'bg-sky-100 text-sky-700'}`}>
+            <div className={`flex h-12 w-12 flex-none items-center justify-center rounded-xl ${reconnectRequired ? 'bg-amber-100 text-amber-700' : connected ? 'bg-green-100 text-green-700' : 'bg-sky-100 text-sky-700'}`}>
               <FileText className="h-6 w-6" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-semibold text-gray-900">Xero accounting</h3>
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  connected
+                  reconnectRequired
+                    ? 'bg-amber-100 text-amber-800'
+                    : connected
                     ? 'bg-green-100 text-green-800'
                     : statusLoadError
                       ? 'bg-rose-100 text-rose-800'
@@ -517,7 +539,17 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
           <div className="flex flex-wrap gap-2">
             {connected ? (
-              canEdit && (
+              canEdit && reconnectRequired ? (
+                <button
+                  type="button"
+                  onClick={connectXero}
+                  disabled={xeroLoading || Boolean(xeroStatus) && !configured}
+                  className="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {xeroLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+                  Reconnect Xero
+                </button>
+              ) : canEdit && (
                 <button
                   type="button"
                   onClick={disconnectXero}
@@ -581,6 +613,17 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
             <p className="font-semibold">Xero status could not be confirmed.</p>
             <p className="mt-1">{statusLoadError}</p>
             <p className="mt-2 text-xs text-rose-700">This does not automatically mean the Xero app is missing. It usually means the live status check failed and should be retried.</p>
+          </div>
+        )}
+
+        {reconnectRequired && (
+          <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-semibold">Xero needs to be re-authorised.</p>
+            <p className="mt-1">
+              Xero still reports the app as connected, but the existing token was granted before the CRM started using prepaid credit/overpayment sync.
+              Click <span className="font-semibold">Reconnect Xero</span>, approve the permissions, then retry any failed Xero sync item.
+            </p>
+            <p className="mt-2 text-xs text-amber-800">Missing scope: {missingScopes.join(', ')}</p>
           </div>
         )}
 
