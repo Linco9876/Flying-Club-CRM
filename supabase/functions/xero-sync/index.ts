@@ -222,6 +222,9 @@ const xeroRequest = async ({
         payload?.Title ||
         payload?.Detail ||
         `Xero request failed with HTTP ${response.status}`;
+      if (response.status === 401 && path.startsWith("BankTransactions")) {
+        throw makeXeroNeedsReviewError("Xero refused the prepaid credit sync. Reconnect Xero in Settings > Integrations so the CRM has permission to create accounting transactions, then retry this sync item.");
+      }
       const error = new Error(message) as Error & { status?: number; payload?: unknown };
       error.status = response.status;
       error.payload = payload;

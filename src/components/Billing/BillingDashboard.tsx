@@ -284,6 +284,13 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const pendingTopUpAmount = transactions
       .filter(transaction => transaction.type === 'topup' && transaction.verifiedStatus === 'pending')
       .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
+    const awaitingXeroTopUpAmount = transactions
+      .filter(transaction =>
+        transaction.type === 'topup' &&
+        transaction.verifiedStatus === 'verified' &&
+        !['synced', 'matched'].includes(transaction.xeroSyncStatus || '')
+      )
+      .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
     const currencyFormatter = (amount: number) =>
       `$${amount.toFixed(portalSettings.currency_decimals)}`;
     const dateLocale = portalSettings.date_format === 'MM/dd/yyyy' ? 'en-US' : 'en-AU';
@@ -518,6 +525,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             {xeroConnectedForOwnBilling && pendingTopUpAmount > 0.005 && (
               <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
                 {currencyFormatter(pendingTopUpAmount)} submitted in CRM, awaiting admin verification.
+              </p>
+            )}
+            {xeroConnectedForOwnBilling && awaitingXeroTopUpAmount > 0.005 && (
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                {currencyFormatter(awaitingXeroTopUpAmount)} verified in CRM, awaiting Xero credit sync.
               </p>
             )}
           </div>
