@@ -67,27 +67,29 @@ const getAuthUser = async (adminClient: any, req: Request) => {
   return data.user;
 };
 
-const getDefaultCard = async (adminClient: any, userId: string) => {
+const getDefaultCard = async (adminClient: any, userId: string, stripeMode: string) => {
   const { data, error } = await adminClient
     .from("member_stripe_payment_methods")
-    .select("id,user_id,stripe_customer_id,stripe_payment_method_id,card_brand,card_last4,card_exp_month,card_exp_year,active,is_default,consent_accepted_at")
+    .select("id,user_id,stripe_customer_id,stripe_payment_method_id,card_brand,card_last4,card_exp_month,card_exp_year,active,is_default,consent_accepted_at,stripe_mode")
     .eq("user_id", userId)
     .eq("active", true)
     .eq("is_default", true)
+    .eq("stripe_mode", stripeMode)
     .order("created_at", { ascending: false })
     .maybeSingle();
   if (error) throw error;
   return data;
 };
 
-const getReusableCustomerId = async (adminClient: any, userId: string) => {
-  const card = await getDefaultCard(adminClient, userId);
+const getReusableCustomerId = async (adminClient: any, userId: string, stripeMode: string) => {
+  const card = await getDefaultCard(adminClient, userId, stripeMode);
   if (card?.stripe_customer_id) return card.stripe_customer_id;
 
   const { data, error } = await adminClient
     .from("member_stripe_card_setup_sessions")
     .select("stripe_customer_id")
     .eq("user_id", userId)
+    .eq("stripe_mode", stripeMode)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -114,7 +116,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === "status") {
       const connectedAccountId = await getConnectedStripeAccountId(adminClient);
-      const card = await getDefaultCard(adminClient, user.id);
+      const card = await getDefaultCard(adminClient, user.id, stripeMode.mode);
       return json({
         configured: Boolean(stripeSecretKey),
         stripeMode: stripeMode.mode,
@@ -136,7 +138,7 @@ Deno.serve(async (req: Request) => {
     if (!connectedAccountId) return json({ error: "Stripe is not connected for this club." }, 503);
 
     if (action === "remove") {
-      const card = await getDefaultCard(adminClient, user.id);
+      const card = await getDefaultCard(adminClient, user.id, stripeMode.mode);
       if (!card) return json({ ok: true, removed: false });
 
       const detachResponse = await fetchStripe(`https://api.stripe.com/v1/payment_methods/${encodeURIComponent(card.stripe_payment_method_id)}/detach`, {
@@ -178,7 +180,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     if (profileError) throw profileError;
 
-    let stripeCustomerId = await getReusableCustomerId(adminClient, user.id);
+    let stripeCustomerId = await getReusableCustomerId(adminClient, user.id, stripeMode.mode);
     if (!stripeCustomerId) {
       const customerForm = new URLSearchParams();
       if (profile?.email || user.email) customerForm.set("email", profile?.email || user.email || "");

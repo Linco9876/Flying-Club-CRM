@@ -11,6 +11,8 @@ export interface XeroMemberBalance {
   availableCredit?: number;
   overpaymentCredit?: number;
   prepaymentCredit?: number;
+  outstandingInvoiceTotal?: number;
+  netBalance?: number;
   minimumPrepaidPack?: number;
   eligibleForPrepaid?: boolean;
 }

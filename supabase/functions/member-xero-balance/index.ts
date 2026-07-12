@@ -411,6 +411,9 @@ const listContactInvoices = async (ctx: any, contactId: string) => {
   return Promise.all(invoices.map((invoice: any) => mapInvoice(ctx, invoice)));
 };
 
+const getOutstandingInvoiceTotal = (invoices: Array<{ amountDue?: number }>) =>
+  money((invoices || []).reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0));
+
 const getContactInvoice = async (ctx: any, invoiceId: string, contactId: string) => {
   const result = await xeroRequest({
     path: `Invoices/${encodeURIComponent(invoiceId)}`,
@@ -643,10 +646,11 @@ const createInvoiceSavedCardPayment = async ({
 
   const { data: savedCard, error: cardError } = await adminClient
     .from("member_stripe_payment_methods")
-    .select("id,stripe_customer_id,stripe_payment_method_id,card_brand,card_last4,active,is_default,consent_accepted_at")
+    .select("id,stripe_customer_id,stripe_payment_method_id,card_brand,card_last4,active,is_default,consent_accepted_at,stripe_mode")
     .eq("user_id", member.id)
     .eq("active", true)
     .eq("is_default", true)
+    .eq("stripe_mode", stripeMode.mode)
     .maybeSingle();
   if (cardError) throw cardError;
   if (!savedCard) throw new Error("You do not have a saved card for invoice payments.");
@@ -864,6 +868,9 @@ Deno.serve(async (req: Request) => {
         });
       }
 
+      const invoices = await listContactInvoices(ctx, contactId);
+      const outstandingInvoiceTotal = getOutstandingInvoiceTotal(invoices);
+
       return json({
         connected: true,
         userId: member.id,
@@ -873,7 +880,9 @@ Deno.serve(async (req: Request) => {
         linked: true,
         minimumPrepaidPack: MINIMUM_PREPAID_PACK,
         ...credit,
-        invoices: await listContactInvoices(ctx, contactId),
+        outstandingInvoiceTotal,
+        netBalance: money(Number(credit.availableCredit || 0) - outstandingInvoiceTotal),
+        invoices,
       });
     }
 
@@ -968,6 +977,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const invoices = contactId ? await listContactInvoices(ctx, contactId) : [];
+    const outstandingInvoiceTotal = getOutstandingInvoiceTotal(invoices);
+
     return json({
       connected: true,
       userId: member.id,
@@ -976,6 +988,8 @@ Deno.serve(async (req: Request) => {
       xeroContactId: contactId || null,
       linked: Boolean(contactId),
       minimumPrepaidPack: MINIMUM_PREPAID_PACK,
+      outstandingInvoiceTotal,
+      netBalance: money(Number(credit.availableCredit || 0) - outstandingInvoiceTotal),
       ...credit,
     });
   } catch (error) {

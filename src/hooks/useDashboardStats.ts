@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { fetchOwnXeroInvoices } from '../lib/xeroMemberBalance';
+import { fetchOwnXeroBalance } from '../lib/xeroMemberBalance';
 
 export interface DashboardStats {
   totalStudents: number;
@@ -255,7 +255,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
             .order('start_time', { ascending: true })
             .limit(1)
             .maybeSingle(),
-          fetchOwnXeroInvoices(),
+          fetchOwnXeroBalance(),
           supabase
             .from('bookings')
             .select('id', { count: 'exact' })
@@ -267,10 +267,8 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
 
         myFlightHours = (myHoursResult.data || []).reduce((sum, log) => sum + (log.flight_duration || 0), 0);
         myCreditVisible = Boolean(xeroBalanceResult.connected && xeroBalanceResult.linked);
-        const outstandingInvoices = (xeroBalanceResult.invoices || [])
-          .reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0);
         myPrepaidBalance = xeroBalanceResult.connected && xeroBalanceResult.linked
-          ? Number(xeroBalanceResult.availableCredit ?? 0) - outstandingInvoices
+          ? Number(xeroBalanceResult.netBalance ?? (Number(xeroBalanceResult.availableCredit ?? 0) - Number(xeroBalanceResult.outstandingInvoiceTotal ?? 0)))
           : 0;
 
         if (myNextBookingResult.data) {
