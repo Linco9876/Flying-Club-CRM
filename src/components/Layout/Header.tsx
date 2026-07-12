@@ -19,12 +19,11 @@ export const Header: React.FC = () => {
   const { settings } = useOrganisationSettings();
   const { settings: portalSettings } = usePortalUxSettings();
   const [balance, setBalance] = React.useState<number | null>(null);
-  const [showBalanceTab, setShowBalanceTab] = React.useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const businessName = settings?.club_name?.trim() || 'Bendigo Flying Club';
   const avatarUrl = user?.avatar?.trim();
-  const balanceLabel = balance == null ? '-' : formatCurrency(balance, portalSettings.currency_decimals);
+  const balanceLabel = balance == null ? undefined : formatCurrency(balance, portalSettings.currency_decimals);
 
   React.useEffect(() => {
     let mounted = true;
@@ -33,7 +32,6 @@ export const Header: React.FC = () => {
       if (!user?.id) {
         if (mounted) {
           setBalance(null);
-          setShowBalanceTab(false);
         }
         return;
       }
@@ -42,14 +40,12 @@ export const Header: React.FC = () => {
         const data = await fetchOwnXeroBalance();
         if (!mounted) return;
         const showLinkedBalance = Boolean(data.connected && data.linked);
-        setShowBalanceTab(showLinkedBalance);
         const netBalance = Number(data.netBalance ?? (Number(data.availableCredit ?? 0) - Number(data.outstandingInvoiceTotal ?? 0)));
         setBalance(showLinkedBalance ? netBalance : null);
       } catch (error) {
         if (!mounted) return;
         console.error('Failed to load header balance:', error);
         setBalance(null);
-        setShowBalanceTab(false);
       }
     };
 
@@ -62,7 +58,7 @@ export const Header: React.FC = () => {
   const topNavItems = [
     { label: 'Profile', path: '/', icon: User, active: location.pathname === '/' || location.pathname === '/profile' },
     { label: 'Calendar', path: '/calendar', icon: Calendar, active: location.pathname.startsWith('/calendar') },
-    ...(showBalanceTab ? [{ label: 'Balance', value: balanceLabel, path: '/billing', icon: CreditCard, active: location.pathname.startsWith('/billing') }] : [])
+    { label: 'Balance', value: balanceLabel, path: '/billing', icon: CreditCard, active: location.pathname.startsWith('/billing') },
   ];
 
   return (
@@ -105,7 +101,7 @@ export const Header: React.FC = () => {
                 >
                   <Icon className="h-4 w-4 flex-shrink-0" />
                   <span className="hidden truncate min-[420px]:inline">{item.label}</span>
-                  {'value' in item && (
+                  {item.value && (
                     <span className="hidden max-w-24 truncate rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-900 dark:bg-[#11141a] dark:text-gray-100 sm:inline">
                       {item.value}
                     </span>
