@@ -276,6 +276,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const account = billing.pilotAccounts.find(item => item.userId === user?.id);
     const transactions = billing.transactions.filter(item => item.userId === user?.id);
     const accountTopUpPaymentMethods = paymentMethods.filter(method => method.active && method.allowAccountTopup !== false);
+    const selectedTopUpMethod = accountTopUpPaymentMethods.find(method => method.id === topUpPaymentMethodId);
+    const isStripeTopUpSelected =
+      selectedTopUpMethod?.systemKey === 'stripe_card' ||
+      selectedTopUpMethod?.name.toLowerCase().includes('stripe');
     const approvedBalance = account?.balance ?? 0;
     const pendingTopUpAmount = transactions
       .filter(transaction => transaction.type === 'topup' && transaction.verifiedStatus === 'pending')
@@ -393,13 +397,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
       setSubmittingTopUp(true);
       try {
-        const selectedMethod = accountTopUpPaymentMethods.find(method => method.id === topUpPaymentMethodId);
-        const methodName = selectedMethod?.name;
-        const isStripeTopUpMethod =
-          selectedMethod?.systemKey === 'stripe_card' ||
-          selectedMethod?.name.toLowerCase().includes('stripe');
+        const methodName = selectedTopUpMethod?.name;
 
-        if (isStripeTopUpMethod) {
+        if (isStripeTopUpSelected) {
           const checkoutWindow = window.open('', '_blank', 'noopener,noreferrer');
           if (checkoutWindow) {
             writeStripeLoadingPage(checkoutWindow, {
@@ -748,13 +748,15 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <div>
               <h2 className="font-semibold text-gray-900 dark:text-gray-100">Add funds</h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {xeroConnectedForOwnBilling
+                {isStripeTopUpSelected
+                  ? 'Stripe will confirm the payment date and reference automatically after checkout. No admin approval is needed once Stripe confirms payment.'
+                  : xeroConnectedForOwnBilling
                   ? `Submitted funds appear as pending until an admin verifies them. They are not counted as Xero credit until reconciled in Xero. Top-ups must be in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`
                   : `Submitted funds appear as pending until an admin approves the payment. Top-ups must be in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`}
               </p>
             </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1.4fr)_auto] md:items-end">
+          <div className={`grid gap-3 md:items-end ${isStripeTopUpSelected ? 'md:grid-cols-[minmax(9rem,0.7fr)_minmax(12rem,1fr)_auto]' : 'md:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1.4fr)_auto]'}`}>
             <label className="block">
               <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Amount</span>
               <input
@@ -781,33 +783,37 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Payment date</span>
-              <input
-                type="date"
-                value={topUpDate}
-                onChange={event => setTopUpDate(event.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
-                required
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Reference or note</span>
-              <input
-                type="text"
-                value={topUpReference}
-                onChange={event => setTopUpReference(event.target.value)}
-                placeholder="Receipt number, bank reference..."
-                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
-              />
-            </label>
+            {!isStripeTopUpSelected && (
+              <>
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Payment date</span>
+                  <input
+                    type="date"
+                    value={topUpDate}
+                    onChange={event => setTopUpDate(event.target.value)}
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
+                    required
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Reference or note</span>
+                  <input
+                    type="text"
+                    value={topUpReference}
+                    onChange={event => setTopUpReference(event.target.value)}
+                    placeholder="Receipt number, bank reference..."
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
+                  />
+                </label>
+              </>
+            )}
             <button
               type="submit"
               disabled={submittingTopUp || !Number(topUpAmount) || Number(topUpAmount) < billing.minimumPrepaidPack || Number(topUpAmount) % billing.minimumPrepaidPack !== 0}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-[#363b45]"
             >
               <Plus className="h-4 w-4" />
-              Add funds
+              {isStripeTopUpSelected ? 'Continue to Stripe' : 'Add funds'}
             </button>
           </div>
         </form>
