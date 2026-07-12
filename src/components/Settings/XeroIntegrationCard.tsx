@@ -115,7 +115,7 @@ const requiredXeroScopes = [
   'accounting.invoices',
   'accounting.payments',
   'accounting.settings',
-  'accounting.transactions',
+  'accounting.banktransactions',
   'offline_access',
 ];
 
