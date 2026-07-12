@@ -1,6 +1,9 @@
 name: Process Xero sync queue
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     # Keep Xero work moving without relying on an admin opening the CRM.
     - cron: "*/10 * * * *"
