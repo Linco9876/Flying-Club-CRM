@@ -1,4 +1,4 @@
-name: Process Xero sync queue
+name: Xero Sync Queue Worker
 
 on:
   push:
@@ -10,11 +10,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: process-xero-sync-queue
+  group: xero-sync-queue-worker
   cancel-in-progress: false
 
 jobs:
   process:
+    name: Process Xero sync queue
     runs-on: ubuntu-latest
     steps:
       - name: Process pending Xero sync items
@@ -40,36 +41,22 @@ jobs:
             exit 1
           fi
 
-          for run in 1; do
-            response_file="$(mktemp)"
-            http_code="$(
-              curl --silent --show-error \
-                --request POST \
-                --header "Content-Type: application/json" \
-                --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-                --data '{"action":"process-next"}' \
-                --output "$response_file" \
-                --write-out "%{http_code}" \
-                "${SUPABASE_URL%/}/functions/v1/xero-sync"
-            )"
+          response_file="$(mktemp)"
+          http_code="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --data '{"action":"process-next"}' \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              "${SUPABASE_URL%/}/functions/v1/xero-sync"
+          )"
 
-            echo "Xero sync processor run ${run}: HTTP ${http_code}"
-            cat "$response_file"
-            echo
+          echo "Xero sync processor: HTTP ${http_code}"
+          cat "$response_file"
+          echo
 
-            if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-              exit 1
-            fi
-
-            if python - "$response_file" <<'PY'
-import json, sys
-payload = json.load(open(sys.argv[1], encoding="utf-8"))
-sys.exit(0 if payload.get("processed") is False else 1)
-PY
-            then
-              echo "No pending Xero sync work remains."
-              break
-            fi
-
-            sleep 15
-          done
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            exit 1
+          fi
