@@ -570,7 +570,13 @@ const ensureStripeClearingAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
   const existing = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
-    (account.code.toUpperCase() === "STRIPECLR" || account.name.toLowerCase() === "stripe clearing")
+    account.type === "BANK" &&
+    (
+      account.code.toUpperCase() === "STRIPEBNK" ||
+      account.code.toUpperCase() === "STRIPECLR" ||
+      account.name.toLowerCase() === "stripe clearing bank" ||
+      account.name.toLowerCase() === "stripe clearing"
+    )
   );
 
   if (existing) {
@@ -584,11 +590,11 @@ const ensureStripeClearingAccount = async (ctx: any) => {
     accessToken: ctx.connection.access_token,
     body: {
       Accounts: [{
-        Code: "STRIPECLR",
-        Name: "Stripe Clearing",
-        Type: "CURRENT",
-        Description: "Stripe clearing account for CRM card payments.",
-        EnablePaymentsToAccount: true,
+        Code: "STRIPEBNK",
+        Name: "Stripe Clearing Bank",
+        Type: "BANK",
+        BankAccountNumber: "STRIPE-CLEARING",
+        Description: "Stripe clearing bank account for CRM card payments and member top-ups.",
       }],
     },
   });
@@ -1255,6 +1261,64 @@ const getTopupFundingAccountCode = (ctx: any, paymentMethod: any) => {
   return clean(ctx.settings?.topup_receipt_account_code);
 };
 
+const getXeroBankAccountCode = async (ctx: any, preferredCode: string, fallbackCode: string, fallbackName: string) => {
+  const existingAccounts = await listXeroAccounts(ctx);
+  const preferred = existingAccounts.find((account: any) =>
+    account.status === "ACTIVE" &&
+    account.type === "BANK" &&
+    account.code.toUpperCase() === clean(preferredCode).toUpperCase()
+  );
+  if (preferred?.code) return preferred.code;
+
+  const fallback = existingAccounts.find((account: any) =>
+    account.status === "ACTIVE" &&
+    account.type === "BANK" &&
+    (
+      account.code.toUpperCase() === fallbackCode.toUpperCase() ||
+      account.name.toLowerCase() === fallbackName.toLowerCase()
+    )
+  );
+  if (fallback?.code) return fallback.code;
+
+  const result = await xeroRequest({
+    method: "PUT",
+    path: "Accounts",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    body: {
+      Accounts: [{
+        Code: fallbackCode,
+        Name: fallbackName,
+        Type: "BANK",
+        BankAccountNumber: fallbackCode,
+        Description: `${fallbackName} account created by the CRM for Xero bank transactions.`,
+      }],
+    },
+  });
+  const createdAccount = result?.Accounts?.[0];
+  return clean(createdAccount?.Code);
+};
+
+const getXeroReceivablesAccountCode = async (ctx: any) => {
+  const result = await xeroRequest({
+    path: "Accounts",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+  });
+  const accounts = Array.isArray(result?.Accounts) ? result.Accounts : [];
+  const receivablesAccount = accounts.find((account: any) =>
+    clean(account?.Status) === "ACTIVE" &&
+    clean(account?.SystemAccount).toUpperCase() === "DEBTORS" &&
+    clean(account?.Code)
+  ) || accounts.find((account: any) =>
+    clean(account?.Status) === "ACTIVE" &&
+    clean(account?.Name).toLowerCase().includes("accounts receivable") &&
+    clean(account?.Code)
+  );
+
+  return clean(receivablesAccount?.Code);
+};
+
 const syncTopupTransaction = async (
   adminClient: SupabaseAdminClient,
   ctx: any,
@@ -1363,14 +1427,24 @@ const syncTopupTransaction = async (
     );
   }
 
-  const liabilityAccountCode = clean(ctx.settings?.topup_account_code);
-  if (!liabilityAccountCode) {
-    throw makeXeroNeedsReviewError("Set the Member prepaid liability account before syncing Stripe top-ups.");
+  const receivablesAccountCode = await getXeroReceivablesAccountCode(ctx);
+  if (!receivablesAccountCode) {
+    throw makeXeroNeedsReviewError("Xero did not return an active Accounts Receivable account for the prepaid overpayment.");
   }
 
-  const fundingAccountCode = getTopupFundingAccountCode(ctx, tx.payment_method);
-  if (!fundingAccountCode) {
+  const configuredFundingAccountCode = getTopupFundingAccountCode(ctx, tx.payment_method);
+  if (!configuredFundingAccountCode) {
     throw makeXeroNeedsReviewError("Set the member top-up receipt account in Xero settings before syncing Stripe top-ups.");
+  }
+  const fundingAccountCode = await getXeroBankAccountCode(ctx, configuredFundingAccountCode, "STRIPEBNK", "Stripe Clearing Bank");
+  if (!fundingAccountCode) {
+    throw makeXeroNeedsReviewError("Xero did not return a valid bank account for Stripe top-up receipts.");
+  }
+  if (fundingAccountCode !== configuredFundingAccountCode) {
+    await adminClient.from("xero_sync_settings").update({
+      stripe_payment_account_code: fundingAccountCode,
+      updated_at: new Date().toISOString(),
+    }).eq("id", true);
   }
 
   const reference = truncateText(
@@ -1398,7 +1472,7 @@ const syncTopupTransaction = async (
           Description: description,
           Quantity: 1,
           UnitAmount: amount,
-          AccountCode: liabilityAccountCode,
+          AccountCode: receivablesAccountCode,
         }],
       }],
     },
@@ -1430,6 +1504,7 @@ const syncTopupTransaction = async (
       bankTransactionId,
       contactId,
       amount,
+      receivablesAccountCode,
     },
   });
 
@@ -1438,6 +1513,7 @@ const syncTopupTransaction = async (
     bankTransactionId,
     contactId,
     amount,
+    receivablesAccountCode,
   };
 };
 
