@@ -494,6 +494,74 @@ const getStripePaymentMethod = async (adminClient: SupabaseAdminClient, session:
   return data || { id: null, name: "Stripe Card Payment" };
 };
 
+const queueMemberTopupXeroSync = async (
+  adminClient: SupabaseAdminClient,
+  transactionId: string,
+  reason = "stripe_topup_paid",
+) => {
+  const { data, error } = await adminClient
+    .from("xero_sync_queue")
+    .upsert({
+      entity_type: "account_transaction",
+      entity_id: transactionId,
+      action: "sync_transaction",
+      status: "pending",
+      priority: 75,
+      payload: { reason },
+      next_attempt_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "entity_type,entity_id,action,status" })
+    .select("id,status")
+    .single();
+  if (error) throw error;
+  const { error: txUpdateError } = await adminClient
+    .from("account_transactions")
+    .update({
+      xero_sync_status: "queued",
+      xero_sync_error: null,
+    })
+    .eq("id", transactionId)
+    .is("xero_bank_transaction_id", null);
+  if (txUpdateError) throw txUpdateError;
+  return data;
+};
+
+const processMemberTopupXeroSync = async ({
+  supabaseUrl,
+  serviceRoleKey,
+  transactionId,
+}: {
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  transactionId: string;
+}) => {
+  const response = await fetch(`${supabaseUrl}/functions/v1/xero-sync`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${serviceRoleKey}`,
+    },
+    body: JSON.stringify({
+      action: "sync-transaction",
+      transactionId,
+    }),
+  });
+
+  const text = await response.text();
+  let body: any = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch (_) {
+    body = text;
+  }
+
+  if (!response.ok) {
+    throw new Error(typeof body?.error === "string" ? body.error : `Xero top-up sync failed with HTTP ${response.status}`);
+  }
+
+  return body;
+};
+
 const getVerifiedFlightPaymentTotal = async (adminClient: SupabaseAdminClient, flightLogId: string) => {
   const { data, error } = await adminClient
     .from("account_transactions")
@@ -550,11 +618,15 @@ const handleMemberTopupStripeEvent = async ({
   event,
   session,
   sessionId,
+  supabaseUrl,
+  serviceRoleKey,
 }: {
   adminClient: SupabaseAdminClient;
   event: any;
   session: any;
   sessionId: string;
+  supabaseUrl: string;
+  serviceRoleKey: string;
 }) => {
   const userId = asString(session.metadata?.user_id || session.client_reference_id);
   if (!userId) throw new Error("Member top-up checkout is missing the user id.");
@@ -573,13 +645,34 @@ const handleMemberTopupStripeEvent = async ({
 
   const { data: existing, error: existingError } = await adminClient
     .from("account_transactions")
-    .select("id")
+    .select("id,xero_bank_transaction_id,xero_sync_status")
     .eq("stripe_checkout_session_id", sessionId)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (existing) return json({ received: true, userId, duplicate: true, topupTransactionId: existing.id });
+  if (existing) {
+    let syncResult: Record<string, unknown> | null = null;
+    let syncError: string | null = null;
+    if (!asString(existing.xero_bank_transaction_id)) {
+      await queueMemberTopupXeroSync(adminClient, existing.id, "stripe_topup_paid_duplicate_event");
+      try {
+        syncResult = await processMemberTopupXeroSync({ supabaseUrl, serviceRoleKey, transactionId: existing.id });
+      } catch (error) {
+        syncError = error instanceof Error ? error.message : "Xero top-up sync failed";
+        console.warn("Member top-up Xero sync deferred:", syncError);
+      }
+    }
 
-  const { error: insertError } = await adminClient
+    return json({
+      received: true,
+      userId,
+      duplicate: true,
+      topupTransactionId: existing.id,
+      xeroSync: syncResult,
+      xeroSyncError: syncError,
+    });
+  }
+
+  const { data: inserted, error: insertError } = await adminClient
     .from("account_transactions")
     .insert({
       user_id: userId,
@@ -591,10 +684,29 @@ const handleMemberTopupStripeEvent = async ({
       verified_status: "verified",
       stripe_checkout_session_id: sessionId,
       ...stripeModeColumns(stripeModeFromEvent(event)),
-    });
+    })
+    .select("id")
+    .single();
   if (insertError) throw insertError;
 
-  return json({ received: true, userId, topupStatus: "verified" });
+  await queueMemberTopupXeroSync(adminClient, inserted.id);
+  let syncResult: Record<string, unknown> | null = null;
+  let syncError: string | null = null;
+  try {
+    syncResult = await processMemberTopupXeroSync({ supabaseUrl, serviceRoleKey, transactionId: inserted.id });
+  } catch (error) {
+    syncError = error instanceof Error ? error.message : "Xero top-up sync failed";
+    console.warn("Member top-up Xero sync deferred:", syncError);
+  }
+
+  return json({
+    received: true,
+    userId,
+    topupStatus: "verified",
+    topupTransactionId: inserted.id,
+    xeroSync: syncResult,
+    xeroSyncError: syncError,
+  });
 };
 
 const handleXeroInvoicePaymentStripeEvent = async ({
@@ -1459,7 +1571,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (asString(session.metadata?.crm_payment_type) === "member_topup") {
-      return await handleMemberTopupStripeEvent({ adminClient, event, session, sessionId });
+      return await handleMemberTopupStripeEvent({ adminClient, event, session, sessionId, supabaseUrl, serviceRoleKey });
     }
 
     if (asString(session.metadata?.crm_payment_type) === "xero_invoice_payment") {
