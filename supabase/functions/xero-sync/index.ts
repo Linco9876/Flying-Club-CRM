@@ -21,6 +21,22 @@ const clean = (value: unknown) => String(value || "").trim();
 const money = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const quantityValue = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 1000) / 1000;
 const unitRateValue = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000;
+const getErrorMessage = (error: unknown, fallback = "Xero sync failed") => {
+  if (error instanceof Error) return error.message || fallback;
+  if (typeof error === "string") return error || fallback;
+  if (error && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    const direct = clean(value.message) || clean(value.error) || clean(value.details) || clean(value.hint);
+    if (direct) return direct;
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+      // Some thrown values are not safely serializable.
+    }
+  }
+  return fallback;
+};
 const truncateText = (value: string, maxLength = 255) => {
   const text = clean(value);
   return text.length <= maxLength ? text : text.slice(0, maxLength - 1).trimEnd() + "…";
@@ -1155,7 +1171,7 @@ const linkTopupTransactionToCredit = async ({
     xero_bank_transaction_id: creditId,
     xero_contact_id: contactId,
     xero_synced_at: now,
-    xero_sync_status: "matched",
+    xero_sync_status: "synced",
     xero_sync_error: null,
   }).eq("id", transactionId);
   if (error) throw error;
@@ -3175,7 +3191,7 @@ Deno.serve(async (req: Request) => {
       const { error } = await adminClient.from("account_transactions").update({
         xero_bank_transaction_id: null,
         xero_synced_at: null,
-        xero_sync_status: "awaiting_match",
+        xero_sync_status: "needs_review",
         xero_sync_error: "Xero link was removed manually. Choose the correct credit to match again.",
       }).eq("id", transactionId);
       if (error) throw error;
@@ -3249,6 +3265,6 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Unknown action" }, 400);
   } catch (error) {
     console.error("xero-sync error:", error);
-    return json({ error: error instanceof Error ? error.message : "Xero sync failed" }, 500);
+    return json({ error: getErrorMessage(error) }, 500);
   }
 });
