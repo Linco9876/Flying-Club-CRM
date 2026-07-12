@@ -52,6 +52,50 @@ const parseRetryAfterMs = (value: string | null) => {
   return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : 0;
 };
 
+let xeroRateLimitAdminClient: SupabaseAdminClient | null = null;
+const xeroMaxCallsPerMinute = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_MINUTE") || 40));
+const xeroMaxCallsPerDay = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_DAY") || 4500));
+const xeroSpacingMs = Math.max(0, Number(Deno.env.get("XERO_RATE_LIMIT_SPACING_MS") || 1300));
+const xeroMaxWaitMs = Math.max(1000, Number(Deno.env.get("XERO_RATE_LIMIT_MAX_WAIT_MS") || 30_000));
+
+const waitForXeroApiSlot = async () => {
+  if (!xeroRateLimitAdminClient) return;
+
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    const { data, error } = await xeroRateLimitAdminClient.rpc("claim_xero_api_slot", {
+      max_calls_per_minute: xeroMaxCallsPerMinute,
+      max_calls_per_day: xeroMaxCallsPerDay,
+      spacing_ms: xeroSpacingMs,
+    });
+
+    if (error) {
+      console.warn("Xero rate-limit guard unavailable:", error.message);
+      return;
+    }
+
+    if (data?.granted) return;
+
+    const waitMs = Math.max(250, Number(data?.waitMs || xeroSpacingMs || 1000));
+    if (waitMs > xeroMaxWaitMs) {
+      const retryAfterSeconds = Math.ceil(waitMs / 1000);
+      throw Object.assign(
+        new Error(`Xero sync is paused to stay under rate limits. It will retry in about ${retryAfterSeconds} seconds.`),
+        { status: 429, retryAfterSeconds },
+      );
+    }
+
+    await sleep(waitMs);
+  }
+};
+
+const noteXeroRateLimit = async (retryAfterSeconds: number | null) => {
+  if (!xeroRateLimitAdminClient) return;
+  const { error } = await xeroRateLimitAdminClient.rpc("note_xero_rate_limit", {
+    retry_after_seconds: retryAfterSeconds,
+  });
+  if (error) console.warn("Failed to record Xero rate-limit pause:", error.message);
+};
+
 const isAdminRole = (role: string) => role === "admin";
 
 const authenticateAdmin = async ({
@@ -124,6 +168,8 @@ const xeroRequest = async ({
 }) => {
   const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await waitForXeroApiSlot();
+
     const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
       method,
       headers: {
@@ -142,6 +188,7 @@ const xeroRequest = async ({
       const fallbackDelayMs = Math.min(30_000, Math.round((1_500 * (2 ** (attempt - 1))) + Math.random() * 750));
       const waitMs = retryAfterMs > 0 ? retryAfterMs : fallbackDelayMs;
       if (attempt < maxAttempts && waitMs <= 30_000) {
+        await noteXeroRateLimit(Math.ceil(waitMs / 1000));
         await sleep(waitMs + 250);
         continue;
       }
@@ -153,6 +200,7 @@ const xeroRequest = async ({
       error.status = response.status;
       error.payload = payload;
       error.retryAfterSeconds = seconds;
+      await noteXeroRateLimit(seconds);
       throw error;
     }
 
@@ -2823,6 +2871,7 @@ Deno.serve(async (req: Request) => {
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    xeroRateLimitAdminClient = adminClient;
 
     const auth = await authenticateAdmin({ req, supabaseUrl, anonKey, adminClient, serviceRoleKey });
     if (!auth.ok) return json({ error: auth.error }, auth.status);

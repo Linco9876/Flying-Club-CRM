@@ -77,6 +77,50 @@ const clearContactReadCache = (contactId: string) => {
   }
 };
 
+let xeroRateLimitAdminClient: SupabaseAdminClient | null = null;
+const xeroMaxCallsPerMinute = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_MINUTE") || 40));
+const xeroMaxCallsPerDay = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_DAY") || 4500));
+const xeroSpacingMs = Math.max(0, Number(Deno.env.get("XERO_RATE_LIMIT_SPACING_MS") || 1300));
+const xeroMaxWaitMs = Math.max(1000, Number(Deno.env.get("XERO_RATE_LIMIT_MAX_WAIT_MS") || 30_000));
+
+const waitForXeroApiSlot = async () => {
+  if (!xeroRateLimitAdminClient) return;
+
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    const { data, error } = await xeroRateLimitAdminClient.rpc("claim_xero_api_slot", {
+      max_calls_per_minute: xeroMaxCallsPerMinute,
+      max_calls_per_day: xeroMaxCallsPerDay,
+      spacing_ms: xeroSpacingMs,
+    });
+
+    if (error) {
+      console.warn("Xero rate-limit guard unavailable:", error.message);
+      return;
+    }
+
+    if (data?.granted) return;
+
+    const waitMs = Math.max(250, Number(data?.waitMs || xeroSpacingMs || 1000));
+    if (waitMs > xeroMaxWaitMs) {
+      const retryAfterSeconds = Math.ceil(waitMs / 1000);
+      throw Object.assign(
+        new Error(`Xero is busy. The CRM is pausing Xero calls and will retry in about ${retryAfterSeconds} seconds.`),
+        { status: 429, retryAfterSeconds },
+      );
+    }
+
+    await sleep(waitMs);
+  }
+};
+
+const noteXeroRateLimit = async (retryAfterSeconds: number | null) => {
+  if (!xeroRateLimitAdminClient) return;
+  const { error } = await xeroRateLimitAdminClient.rpc("note_xero_rate_limit", {
+    retry_after_seconds: retryAfterSeconds,
+  });
+  if (error) console.warn("Failed to record Xero rate-limit pause:", error.message);
+};
+
 const xeroRequest = async ({
   method = "GET",
   path,
@@ -92,6 +136,8 @@ const xeroRequest = async ({
 }) => {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await waitForXeroApiSlot();
+
     const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
       method,
       headers: {
@@ -107,10 +153,12 @@ const xeroRequest = async ({
     if (response.status === 429) {
       const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
       if (attempt < maxAttempts && retryAfterMs > 0 && retryAfterMs <= 15_000) {
+        await noteXeroRateLimit(Math.ceil(retryAfterMs / 1000));
         await sleep(retryAfterMs + 250);
         continue;
       }
       const seconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : null;
+      await noteXeroRateLimit(seconds);
       throw Object.assign(
         new Error(seconds
           ? `Xero is rate limiting the CRM. Please wait about ${seconds} seconds and try again.`
@@ -138,6 +186,8 @@ const xeroPdfRequest = async ({
 }) => {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await waitForXeroApiSlot();
+
     const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
       method: "GET",
       headers: {
@@ -150,10 +200,12 @@ const xeroPdfRequest = async ({
     if (response.status === 429) {
       const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
       if (attempt < maxAttempts && retryAfterMs > 0 && retryAfterMs <= 15_000) {
+        await noteXeroRateLimit(Math.ceil(retryAfterMs / 1000));
         await sleep(retryAfterMs + 250);
         continue;
       }
       const seconds = retryAfterMs > 0 ? Math.ceil(retryAfterMs / 1000) : null;
+      await noteXeroRateLimit(seconds);
       throw Object.assign(
         new Error(seconds
           ? `Xero is rate limiting the CRM. Please wait about ${seconds} seconds and try again.`
@@ -820,6 +872,7 @@ Deno.serve(async (req: Request) => {
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    xeroRateLimitAdminClient = adminClient;
 
     const caller = await getCaller({ req, supabaseUrl, anonKey, adminClient });
     if (!caller.ok) return json({ error: caller.error }, caller.status);
