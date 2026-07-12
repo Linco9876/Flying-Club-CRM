@@ -1001,7 +1001,8 @@ Deno.serve(async (req: Request) => {
           ? await getContactInvoice(ctx, invoiceId, contactId)
           : null;
       if (!invoice) return json({ error: "This member is not linked to a Xero contact." }, 409);
-      const invoiceNumber = clean(invoice?.InvoiceNumber) || "invoice";
+      const invoiceNumber = clean(invoice?.InvoiceNumber) || clean(invoiceId) || "invoice";
+      const filename = `BFC-Invoice-${invoiceNumber}`.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
       const pdf = await xeroPdfRequest({
         path: `Invoices/${encodeURIComponent(invoiceId)}`,
         tenantId: ctx.connection.tenant_id,
@@ -1013,7 +1014,7 @@ Deno.serve(async (req: Request) => {
         headers: {
           ...corsHeaders,
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${invoiceNumber.replace(/[^A-Za-z0-9._-]/g, "-")}.pdf"`,
+          "Content-Disposition": `inline; filename="${filename || "BFC-Invoice"}.pdf"`,
           "Cache-Control": "private, max-age=60",
         },
       });

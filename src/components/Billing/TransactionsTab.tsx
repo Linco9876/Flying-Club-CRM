@@ -835,11 +835,11 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     );
   };
 
-  const handleViewInvoice = async (invoiceId: string) => {
+  const handleViewInvoice = async (invoiceId: string, invoiceNumber?: string | null) => {
     if (viewingInvoiceId === invoiceId) return;
     setViewingInvoiceId(invoiceId);
     try {
-      await openOwnXeroInvoicePdf(invoiceId);
+      await openOwnXeroInvoicePdf(invoiceId, invoiceNumber);
     } catch (error: any) {
       console.error('Failed to open Xero invoice PDF:', error);
       toast.error(error?.message || 'Failed to open invoice');
@@ -855,7 +855,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           {row.xeroInvoiceId && (
             <button
               type="button"
-              onClick={() => handleViewInvoice(row.xeroInvoiceId!)}
+              onClick={() => handleViewInvoice(row.xeroInvoiceId!, row.xeroInvoiceNumber)}
               disabled={viewingInvoiceId === row.xeroInvoiceId}
               className={`flex items-center justify-center gap-1 text-xs font-medium bg-sky-700 text-white rounded-lg hover:bg-sky-800 transition-colors ${
                 compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'

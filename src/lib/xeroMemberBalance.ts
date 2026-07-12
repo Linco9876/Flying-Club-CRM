@@ -160,7 +160,12 @@ export const payOwnXeroInvoice = async ({
   return data ?? {};
 };
 
-export const openOwnXeroInvoicePdf = async (invoiceId: string) => {
+const safePdfFilename = (value: string) => {
+  const clean = value.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return `${clean || 'BFC-Invoice'}.pdf`;
+};
+
+export const openOwnXeroInvoicePdf = async (invoiceId: string, invoiceNumber?: string | null) => {
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
   if (!accessToken) {
@@ -200,6 +205,7 @@ export const openOwnXeroInvoicePdf = async (invoiceId: string) => {
   anchor.href = url;
   anchor.target = '_blank';
   anchor.rel = 'noopener noreferrer';
+  anchor.download = safePdfFilename(invoiceNumber ? `BFC-Invoice-${invoiceNumber}` : `BFC-Invoice-${invoiceId}`);
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

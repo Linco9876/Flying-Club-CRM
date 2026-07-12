@@ -371,7 +371,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       invoiceViewRequestsRef.current.add(invoice.invoiceId);
       setInvoiceViewingId(invoice.invoiceId);
       try {
-        await openOwnXeroInvoicePdf(invoice.invoiceId);
+        await openOwnXeroInvoicePdf(invoice.invoiceId, invoice.invoiceNumber);
       } catch (error: any) {
         console.error('Failed to open Xero invoice PDF:', error);
         toast.error(error?.message || 'Failed to open invoice');
