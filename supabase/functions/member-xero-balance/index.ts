@@ -429,6 +429,17 @@ const getContactInvoice = async (ctx: any, invoiceId: string, contactId: string)
   return invoice;
 };
 
+const getInvoiceById = async (ctx: any, invoiceId: string) => {
+  const result = await xeroRequest({
+    path: `Invoices/${encodeURIComponent(invoiceId)}`,
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+  });
+  const invoice = Array.isArray(result?.Invoices) ? result.Invoices[0] : null;
+  if (!invoice) throw new Error("Xero invoice not found.");
+  return invoice;
+};
+
 const allocateCreditToInvoice = async (ctx: any, invoiceId: string, credit: any, amount: number) => {
   const path = credit.kind === "overpayment"
     ? `Overpayments/${encodeURIComponent(credit.id)}/Allocations`
@@ -954,11 +965,15 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "invoice-pdf") {
-      if (!contactId) return json({ error: "This member is not linked to a Xero contact." }, 409);
       const invoiceId = clean(body.invoiceId);
       if (!invoiceId) return json({ error: "Missing invoiceId" }, 400);
 
-      const invoice = await getContactInvoice(ctx, invoiceId, contactId);
+      const invoice = caller.isStaff
+        ? await getInvoiceById(ctx, invoiceId)
+        : contactId
+          ? await getContactInvoice(ctx, invoiceId, contactId)
+          : null;
+      if (!invoice) return json({ error: "This member is not linked to a Xero contact." }, 409);
       const invoiceNumber = clean(invoice?.InvoiceNumber) || "invoice";
       const pdf = await xeroPdfRequest({
         path: `Invoices/${encodeURIComponent(invoiceId)}`,

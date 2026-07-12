@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Download, Search, AlertCircle, TrendingUp, TrendingDown, Clock, XCircle, ShieldCheck, ShieldAlert, ShieldX, CreditCard, Loader2, FileText, ExternalLink } from 'lucide-react';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
+import { openOwnXeroInvoicePdf } from '../../lib/xeroMemberBalance';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 
@@ -56,9 +57,6 @@ const makeInvoiceNumber = (rowId: string, index: number) => {
   const cleanId = rowId.replace(/^unpaid-/, '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
   return `BFC-${format(new Date(), 'yyyyMMdd')}-${String(index + 1).padStart(3, '0')}${cleanId ? `-${cleanId}` : ''}`;
 };
-
-const getXeroInvoiceUrl = (invoiceId: string) =>
-  `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoiceId)}`;
 
 const SplitPaymentModal: React.FC<{
   flightId: string;
@@ -523,6 +521,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [creatingStripeCheckoutId, setCreatingStripeCheckoutId] = useState<string | null>(null);
   const [chargingSavedCardId, setChargingSavedCardId] = useState<string | null>(null);
+  const [viewingInvoiceId, setViewingInvoiceId] = useState<string | null>(null);
   const [xeroMatchRowId, setXeroMatchRowId] = useState<string | null>(null);
   const [xeroMatchLoading, setXeroMatchLoading] = useState(false);
   const [xeroMatchCandidates, setXeroMatchCandidates] = useState<XeroMatchCandidate[]>([]);
@@ -836,23 +835,36 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     );
   };
 
+  const handleViewInvoice = async (invoiceId: string) => {
+    if (viewingInvoiceId === invoiceId) return;
+    setViewingInvoiceId(invoiceId);
+    try {
+      await openOwnXeroInvoicePdf(invoiceId);
+    } catch (error: any) {
+      console.error('Failed to open Xero invoice PDF:', error);
+      toast.error(error?.message || 'Failed to open invoice');
+    } finally {
+      setViewingInvoiceId(null);
+    }
+  };
+
   const rowActions = (row: typeof allRows[0], compact = false) => (
     <>
       {row.rowType === 'unpaid' && row.flightLogId && (
         <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
           {row.xeroInvoiceId && (
-            <a
-              href={getXeroInvoiceUrl(row.xeroInvoiceId)}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => handleViewInvoice(row.xeroInvoiceId!)}
+              disabled={viewingInvoiceId === row.xeroInvoiceId}
               className={`flex items-center justify-center gap-1 text-xs font-medium bg-sky-700 text-white rounded-lg hover:bg-sky-800 transition-colors ${
                 compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
-              }`}
+              } disabled:opacity-60`}
               title={row.xeroInvoiceNumber ? `Open Xero invoice ${row.xeroInvoiceNumber}` : 'Open Xero invoice'}
             >
-              <FileText className="h-3.5 w-3.5" />
+              {viewingInvoiceId === row.xeroInvoiceId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
               View Invoice
-            </a>
+            </button>
           )}
           {row.paymentType?.toLowerCase().includes('stripe') && (
             <button

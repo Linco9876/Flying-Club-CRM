@@ -159,15 +159,14 @@ export const openOwnXeroInvoicePdf = async (invoiceId: string) => {
 
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
-  const opened = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!opened) {
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.target = '_blank';
-    anchor.rel = 'noopener noreferrer';
-    anchor.click();
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 300_000);
 };
 
 export const fetchAllMemberXeroBalances = async () => {
