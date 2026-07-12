@@ -412,8 +412,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         const methodName = selectedTopUpMethod?.name;
 
         if (isStripeTopUpSelected) {
-          const checkoutWindow = window.open('', '_blank', 'noopener,noreferrer');
+          const checkoutWindow = window.open('about:blank', '_blank');
           if (checkoutWindow) {
+            checkoutWindow.opener = null;
             writeStripeLoadingPage(checkoutWindow, {
               title: 'Opening secure Stripe top-up...',
               message: 'Once Stripe confirms payment, your CRM top-up will be verified automatically and synced to Xero as account credit.',
