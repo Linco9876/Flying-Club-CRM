@@ -56,16 +56,49 @@ export interface XeroInvoicePaymentResponse {
   invoice?: XeroPortalInvoice;
 }
 
-export const fetchOwnXeroBalance = async () => {
-  const { data, error } = await supabase.functions.invoke<XeroMemberBalance>('member-xero-balance', {
-    body: { action: 'self' },
-  });
+type CachedValue<T> = {
+  expiresAt: number;
+  promise: Promise<T>;
+};
 
-  if (error) {
-    throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero balance'));
+const CLIENT_XERO_READ_CACHE_MS = 60_000;
+const xeroReadCache = new Map<string, CachedValue<any>>();
+
+const clearOwnXeroReadCache = () => {
+  xeroReadCache.delete('self');
+  xeroReadCache.delete('invoices');
+};
+
+const cachedXeroRead = async <T>(key: string, loader: () => Promise<T>, forceRefresh = false) => {
+  const now = Date.now();
+  const cached = xeroReadCache.get(key);
+  if (!forceRefresh && cached && cached.expiresAt > now) {
+    return cached.promise;
   }
 
-  return data ?? { connected: false };
+  const promise = loader().catch((error) => {
+    xeroReadCache.delete(key);
+    throw error;
+  });
+  xeroReadCache.set(key, {
+    expiresAt: now + CLIENT_XERO_READ_CACHE_MS,
+    promise,
+  });
+  return promise;
+};
+
+export const fetchOwnXeroBalance = async () => {
+  return cachedXeroRead<XeroMemberBalance>('self', async () => {
+    const { data, error } = await supabase.functions.invoke<XeroMemberBalance>('member-xero-balance', {
+      body: { action: 'self' },
+    });
+
+    if (error) {
+      throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero balance'));
+    }
+
+    return data ?? { connected: false };
+  });
 };
 
 export const fetchUserXeroBalance = async (userId: string) => {
@@ -80,16 +113,18 @@ export const fetchUserXeroBalance = async (userId: string) => {
   return data ?? { connected: false };
 };
 
-export const fetchOwnXeroInvoices = async () => {
-  const { data, error } = await supabase.functions.invoke<XeroPortalInvoicesResponse>('member-xero-balance', {
-    body: { action: 'invoices' },
-  });
+export const fetchOwnXeroInvoices = async (options: { forceRefresh?: boolean } = {}) => {
+  return cachedXeroRead<XeroPortalInvoicesResponse>('invoices', async () => {
+    const { data, error } = await supabase.functions.invoke<XeroPortalInvoicesResponse>('member-xero-balance', {
+      body: { action: 'invoices' },
+    });
 
-  if (error) {
-    throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero invoices'));
-  }
+    if (error) {
+      throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero invoices'));
+    }
 
-  return data ?? { connected: false, invoices: [] };
+    return data ?? { connected: false, invoices: [] };
+  }, options.forceRefresh === true);
 };
 
 export const payOwnXeroInvoice = async ({
@@ -105,6 +140,7 @@ export const payOwnXeroInvoice = async ({
   successUrl?: string;
   cancelUrl?: string;
 }) => {
+  clearOwnXeroReadCache();
   const { data, error } = await supabase.functions.invoke<XeroInvoicePaymentResponse>('member-xero-balance', {
     body: {
       action: 'pay-invoice',
@@ -120,6 +156,7 @@ export const payOwnXeroInvoice = async ({
     throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to prepare invoice payment'));
   }
 
+  clearOwnXeroReadCache();
   return data ?? {};
 };
 

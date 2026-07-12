@@ -54,6 +54,28 @@ const dollarsToCents = (value: unknown) => {
 };
 
 const isStaffRole = (role: string) => ["admin", "senior_instructor", "instructor"].includes(role);
+const XERO_READ_CACHE_MS = 90_000;
+const xeroReadCache = new Map<string, { expiresAt: number; promise: Promise<any> }>();
+
+const cachedXeroRead = async <T>(key: string, loader: () => Promise<T>, ttlMs = XERO_READ_CACHE_MS) => {
+  const now = Date.now();
+  const cached = xeroReadCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
+
+  const promise = loader().catch((error) => {
+    xeroReadCache.delete(key);
+    throw error;
+  });
+  xeroReadCache.set(key, { expiresAt: now + ttlMs, promise });
+  return promise;
+};
+
+const clearContactReadCache = (contactId: string) => {
+  const marker = `:${contactId}:`;
+  for (const key of Array.from(xeroReadCache.keys())) {
+    if (key.includes(marker)) xeroReadCache.delete(key);
+  }
+};
 
 const xeroRequest = async ({
   method = "GET",
@@ -339,18 +361,20 @@ const fetchContactCredit = async (ctx: any, contactId: string) => {
     };
   }
 
-  const [overpaymentResult, prepaymentResult] = await Promise.all([
-    xeroRequest({
-      path: "Overpayments",
-      tenantId: ctx.connection.tenant_id,
-      accessToken: ctx.connection.access_token,
-    }),
-    xeroRequest({
-      path: "Prepayments",
-      tenantId: ctx.connection.tenant_id,
-      accessToken: ctx.connection.access_token,
-    }),
-  ]);
+  const cacheKey = `credit:${contactId}:${ctx.connection.tenant_id}`;
+  const [overpaymentResult, prepaymentResult] = await cachedXeroRead(cacheKey, () => Promise.all([
+      xeroRequest({
+        path: "Overpayments",
+        tenantId: ctx.connection.tenant_id,
+        accessToken: ctx.connection.access_token,
+      }),
+      xeroRequest({
+        path: "Prepayments",
+        tenantId: ctx.connection.tenant_id,
+        accessToken: ctx.connection.access_token,
+      }),
+    ]),
+  );
 
   const overpaymentCredit = money(normaliseCredits(overpaymentResult?.Overpayments || [], contactId));
   const prepaymentCredit = money(normaliseCredits(prepaymentResult?.Prepayments || [], contactId));
@@ -402,11 +426,13 @@ const mapInvoice = async (ctx: any, invoice: any) => {
 
 const listContactInvoices = async (ctx: any, contactId: string) => {
   const where = encodeURIComponent(`Type=="ACCREC"&&Contact.ContactID==Guid("${xeroStringLiteral(contactId)}")`);
-  const result = await xeroRequest({
-    path: `Invoices?where=${where}&order=Date%20DESC`,
-    tenantId: ctx.connection.tenant_id,
-    accessToken: ctx.connection.access_token,
-  });
+  const cacheKey = `invoices:${contactId}:${ctx.connection.tenant_id}`;
+  const result = await cachedXeroRead(cacheKey, () => xeroRequest({
+      path: `Invoices?where=${where}&order=Date%20DESC`,
+      tenantId: ctx.connection.tenant_id,
+      accessToken: ctx.connection.access_token,
+    }),
+  );
   const invoices = Array.isArray(result?.Invoices) ? result.Invoices : [];
   return Promise.all(invoices.map((invoice: any) => mapInvoice(ctx, invoice)));
 };
@@ -899,6 +925,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === "pay-invoice") {
       if (!contactId) return json({ error: "This member is not linked to a Xero contact." }, 409);
+      clearContactReadCache(contactId);
       const invoiceId = clean(body.invoiceId);
       if (!invoiceId) return json({ error: "Missing invoiceId" }, 400);
       const paymentMode = clean(body.paymentMode).toLowerCase() === "saved_card" ? "saved_card" : "checkout";

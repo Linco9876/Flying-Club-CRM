@@ -115,7 +115,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     void loadStripeCardStatus();
   }, [loadStripeCardStatus, showOwnBillingOnly]);
 
-  const loadXeroInvoices = useCallback(async () => {
+  const loadXeroInvoices = useCallback(async (options: { forceRefresh?: boolean } = {}) => {
     if (!showOwnBillingOnly || !user?.id) {
       setXeroInvoicesLoading(false);
       setXeroInvoicesChecked(true);
@@ -123,7 +123,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     }
     setXeroInvoicesLoading(true);
     try {
-      const data = await fetchOwnXeroInvoices();
+      const data = await fetchOwnXeroInvoices(options);
       setOwnXeroConnected(Boolean(data.connected));
       setXeroInvoices(data.invoices || []);
       setXeroInvoicesLinked(data.linked !== false);
@@ -442,7 +442,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 type="button"
                 onClick={() => {
                   setXeroInvoicesChecked(false);
-                  void Promise.all([billing.refetch(), loadXeroInvoices()]);
+                  void Promise.all([billing.refetch(), loadXeroInvoices({ forceRefresh: true })]);
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
@@ -514,7 +514,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
               </span>
               <button
                 type="button"
-                onClick={loadXeroInvoices}
+                onClick={() => loadXeroInvoices({ forceRefresh: true })}
                 disabled={xeroInvoicesLoading}
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242c]"
               >
