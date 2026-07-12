@@ -74,7 +74,8 @@ const xeroMaxCallsPerDay = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_
 const xeroSpacingMs = Math.max(0, Number(Deno.env.get("XERO_RATE_LIMIT_SPACING_MS") || 1300));
 const xeroMaxWaitMs = Math.max(1000, Number(Deno.env.get("XERO_RATE_LIMIT_MAX_WAIT_MS") || 30_000));
 
-const waitForXeroApiSlot = async () => {
+const waitForXeroApiSlot = async (options: { bypassLocalPause?: boolean } = {}) => {
+  if (options.bypassLocalPause) return;
   if (!xeroRateLimitAdminClient) return;
 
   for (let attempt = 1; attempt <= 8; attempt += 1) {
@@ -181,16 +182,18 @@ const xeroRequest = async ({
   tenantId,
   accessToken,
   body,
+  bypassLocalPause = false,
 }: {
   method?: string;
   path: string;
   tenantId: string;
   accessToken: string;
   body?: Record<string, unknown>;
+  bypassLocalPause?: boolean;
 }) => {
   const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    await waitForXeroApiSlot();
+    await waitForXeroApiSlot({ bypassLocalPause });
 
     const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
       method,
@@ -347,6 +350,7 @@ const searchXeroContactsByEmail = async (ctx: any, email: string) => {
     path: `Contacts?where=${where}`,
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    bypassLocalPause: Boolean(ctx.priorityTopupSync),
   });
   return Array.isArray(result?.Contacts) ? result.Contacts : [];
 };
@@ -356,6 +360,7 @@ const listXeroAccounts = async (ctx: any) => {
     path: "Accounts",
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    bypassLocalPause: Boolean(ctx.priorityTopupSync),
   });
   const accounts = Array.isArray(result?.Accounts) ? result.Accounts : [];
   return accounts.map((account: any) => ({
@@ -1017,6 +1022,7 @@ const syncStripeFeeExpense = async ({
     path: "BankTransactions",
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    bypassLocalPause: Boolean(ctx.priorityTopupSync),
     body: {
       BankTransactions: [{
         Type: "SPEND",
@@ -1105,11 +1111,13 @@ const fetchContactCreditItems = async (ctx: any, contactId: string) => {
       path: "Overpayments",
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
+      bypassLocalPause: Boolean(ctx.priorityTopupSync),
     }),
     xeroRequest({
       path: "Prepayments",
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
+      bypassLocalPause: Boolean(ctx.priorityTopupSync),
     }),
   ]);
 
@@ -1217,6 +1225,7 @@ const syncGuestContact = async (ctx: any, flight: any) => {
     path: "Contacts",
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    bypassLocalPause: Boolean(ctx.priorityTopupSync),
     body: { Contacts: [payloadContact] },
   });
 
@@ -1301,6 +1310,7 @@ const getXeroBankAccountCode = async (ctx: any, preferredCode: string, fallbackC
     path: "Accounts",
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    bypassLocalPause: Boolean(ctx.priorityTopupSync),
     body: {
       Accounts: [{
         Code: fallbackCode,
@@ -1320,6 +1330,7 @@ const getXeroReceivablesAccountCode = async (ctx: any) => {
     path: "Accounts",
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    bypassLocalPause: Boolean(ctx.priorityTopupSync),
   });
   const accounts = Array.isArray(result?.Accounts) ? result.Accounts : [];
   const receivablesAccount = accounts.find((account: any) =>
@@ -1586,6 +1597,7 @@ const syncMemberContact = async (adminClient: SupabaseAdminClient, ctx: any, use
     path: "Contacts",
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    bypassLocalPause: Boolean(ctx.priorityTopupSync),
     body: { Contacts: [payloadContact] },
   });
   contact = result?.Contacts?.[0] || contact;
@@ -2994,6 +3006,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "");
     const ctx = await getConnectionAndSettings(adminClient);
+    ctx.priorityTopupSync = action === "sync-transaction" && body.priorityTopupSync === true;
 
     if (action === "queue-member-contact") {
       const userId = clean(body.userId);

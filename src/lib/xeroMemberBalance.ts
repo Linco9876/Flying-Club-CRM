@@ -113,10 +113,14 @@ export const fetchUserXeroBalance = async (userId: string) => {
   return data ?? { connected: false };
 };
 
-export const fetchOwnXeroInvoices = async (options: { forceRefresh?: boolean } = {}) => {
+export const fetchOwnXeroInvoices = async (options: { forceRefresh?: boolean; priorityRefresh?: boolean } = {}) => {
   return cachedXeroRead<XeroPortalInvoicesResponse>('invoices', async () => {
     const { data, error } = await supabase.functions.invoke<XeroPortalInvoicesResponse>('member-xero-balance', {
-      body: { action: 'invoices' },
+      body: {
+        action: 'invoices',
+        forceRefresh: options.forceRefresh === true,
+        priorityRefresh: options.priorityRefresh === true,
+      },
     });
 
     if (error) {

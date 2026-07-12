@@ -57,10 +57,10 @@ const isStaffRole = (role: string) => ["admin", "senior_instructor", "instructor
 const XERO_READ_CACHE_MS = 90_000;
 const xeroReadCache = new Map<string, { expiresAt: number; promise: Promise<any> }>();
 
-const cachedXeroRead = async <T>(key: string, loader: () => Promise<T>, ttlMs = XERO_READ_CACHE_MS) => {
+const cachedXeroRead = async <T>(key: string, loader: () => Promise<T>, ttlMs = XERO_READ_CACHE_MS, forceRefresh = false) => {
   const now = Date.now();
   const cached = xeroReadCache.get(key);
-  if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
+  if (!forceRefresh && cached && cached.expiresAt > now) return cached.promise as Promise<T>;
 
   const promise = loader().catch((error) => {
     xeroReadCache.delete(key);
@@ -83,7 +83,8 @@ const xeroMaxCallsPerDay = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_
 const xeroSpacingMs = Math.max(0, Number(Deno.env.get("XERO_RATE_LIMIT_SPACING_MS") || 1300));
 const xeroMaxWaitMs = Math.max(1000, Number(Deno.env.get("XERO_RATE_LIMIT_MAX_WAIT_MS") || 30_000));
 
-const waitForXeroApiSlot = async () => {
+const waitForXeroApiSlot = async (options: { bypassLocalPause?: boolean } = {}) => {
+  if (options.bypassLocalPause) return;
   if (!xeroRateLimitAdminClient) return;
 
   for (let attempt = 1; attempt <= 8; attempt += 1) {
@@ -127,16 +128,18 @@ const xeroRequest = async ({
   tenantId,
   accessToken,
   body,
+  bypassLocalPause = false,
 }: {
   method?: string;
   path: string;
   tenantId: string;
   accessToken: string;
   body?: Record<string, unknown>;
+  bypassLocalPause?: boolean;
 }) => {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    await waitForXeroApiSlot();
+    await waitForXeroApiSlot({ bypassLocalPause });
 
     const response = await fetch(`https://api.xero.com/api.xro/2.0/${path}`, {
       method,
@@ -393,11 +396,13 @@ const fetchContactCreditItems = async (ctx: any, contactId: string) => {
       path: "Overpayments",
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
+      bypassLocalPause: Boolean(ctx.priorityRefresh),
     }),
     xeroRequest({
       path: "Prepayments",
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
+      bypassLocalPause: Boolean(ctx.priorityRefresh),
     }),
   ]);
 
@@ -423,13 +428,17 @@ const fetchContactCredit = async (ctx: any, contactId: string) => {
         path: "Overpayments",
         tenantId: ctx.connection.tenant_id,
         accessToken: ctx.connection.access_token,
+        bypassLocalPause: Boolean(ctx.priorityRefresh),
       }),
       xeroRequest({
         path: "Prepayments",
         tenantId: ctx.connection.tenant_id,
         accessToken: ctx.connection.access_token,
+        bypassLocalPause: Boolean(ctx.priorityRefresh),
       }),
     ]),
+    XERO_READ_CACHE_MS,
+    Boolean(ctx.priorityRefresh),
   );
 
   const overpaymentCredit = money(normaliseCredits(overpaymentResult?.Overpayments || [], contactId));
@@ -487,7 +496,10 @@ const listContactInvoices = async (ctx: any, contactId: string) => {
       path: `Invoices?where=${where}&order=Date%20DESC`,
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
+      bypassLocalPause: Boolean(ctx.priorityRefresh),
     }),
+    XERO_READ_CACHE_MS,
+    Boolean(ctx.priorityRefresh),
   );
   const invoices = Array.isArray(result?.Invoices) ? result.Invoices : [];
   return Promise.all(invoices.map((invoice: any) => mapInvoice(ctx, invoice)));
@@ -884,6 +896,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const action = clean(body.action || "self").toLowerCase();
     const ctx = await getXeroContext(adminClient);
+    ctx.priorityRefresh = body.priorityRefresh === true;
 
     if (!ctx.connected) {
       return json({

@@ -164,7 +164,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const params = new URLSearchParams(window.location.search);
     const result = params.get('card_setup');
     const invoicePaymentResult = params.get('xero_invoice');
-    if (!result && !invoicePaymentResult) return;
+    const topUpResult = params.get('topup');
+    if (!result && !invoicePaymentResult && !topUpResult) return;
 
     if (result === 'success') {
       toast.success('Card saved for future flight payments');
@@ -180,12 +181,24 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       toast('Invoice payment cancelled');
     }
 
+    if (topUpResult === 'success') {
+      toast.success('Top-up payment received. Refreshing Xero credit now...');
+      setXeroInvoicesChecked(false);
+      void Promise.all([
+        billing.refetch(),
+        loadXeroInvoices({ forceRefresh: true, priorityRefresh: true }),
+      ]);
+    } else if (topUpResult === 'cancelled') {
+      toast('Top-up payment cancelled');
+    }
+
     params.delete('card_setup');
     params.delete('xero_invoice');
+    params.delete('topup');
     params.delete('session_id');
     const cleanQuery = params.toString();
     window.history.replaceState({}, '', `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ''}`);
-  }, [loadStripeCardStatus, loadXeroInvoices, showOwnBillingOnly]);
+  }, [billing, loadStripeCardStatus, loadXeroInvoices, showOwnBillingOnly]);
 
   const handleSaveStripeCard = async () => {
     if (!stripeConsentAccepted) {

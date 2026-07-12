@@ -592,6 +592,7 @@ const processMemberTopupXeroSync = async ({
     body: JSON.stringify({
       action: "sync-transaction",
       transactionId,
+      priorityTopupSync: true,
     }),
   });
 
