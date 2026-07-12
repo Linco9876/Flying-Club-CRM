@@ -1,8 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { TransactionsTab } from './TransactionsTab';
-import { PilotAccountsTab } from './PilotAccountsTab';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { StripeTestModeBanner } from './StripeTestModeBanner';
-import { XeroSyncQueueCard } from '../Settings/XeroSyncQueueCard';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { CreditCard, ExternalLink, FileText, GitBranch, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -15,6 +12,10 @@ import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionError
 import { fetchOwnXeroInvoices, openOwnXeroInvoicePdf, payOwnXeroInvoice, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import toast from 'react-hot-toast';
+
+const TransactionsTab = lazy(() => import('./TransactionsTab').then(module => ({ default: module.TransactionsTab })));
+const PilotAccountsTab = lazy(() => import('./PilotAccountsTab').then(module => ({ default: module.PilotAccountsTab })));
+const XeroSyncQueueCard = lazy(() => import('../Settings/XeroSyncQueueCard').then(module => ({ default: module.XeroSyncQueueCard })));
 
 const creditTypes = new Set(['topup', 'refund']);
 
@@ -77,15 +78,19 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [invoicePaymentLoadingId, setInvoicePaymentLoadingId] = useState<string | null>(null);
   const [invoiceViewingId, setInvoiceViewingId] = useState<string | null>(null);
   const invoiceViewRequestsRef = useRef<Set<string>>(new Set());
-  const billing = useBillingAccounts();
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
-  const { paymentMethods, loading: paymentMethodsLoading } = useBillingSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
   const isAdminBilling = userRoles.includes('admin');
   const isStudentOrPilotOnly = userRoles.some(role => ['student', 'pilot'].includes(role)) &&
     !userRoles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
   const showOwnBillingOnly = mode === 'own' || (mode === 'auto' && !isAdminBilling);
+  const { paymentMethods, loading: paymentMethodsLoading } = useBillingSettings({ paymentMethodsOnly: showOwnBillingOnly });
+  const billing = useBillingAccounts({
+    scope: showOwnBillingOnly ? 'member' : 'admin',
+    userId: showOwnBillingOnly ? user?.id : null,
+    enabled: !showOwnBillingOnly || Boolean(user?.id),
+  });
 
   const loadStripeCardStatus = useCallback(async () => {
     if (!user?.id) {
@@ -913,9 +918,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
       {/* Tab Content */}
       <div>
-        {activeTab === 'transactions' && <TransactionsTab billing={billing} />}
-        {activeTab === 'accounts' && <PilotAccountsTab billing={billing} />}
-        {activeTab === 'xero-sync' && isAdminBilling && !showOwnBillingOnly && <XeroSyncQueueCard />}
+        <Suspense fallback={<PortalSectionLoader message="Loading financial section" detail="Preparing this billing view..." />}>
+          {activeTab === 'transactions' && <TransactionsTab billing={billing} />}
+          {activeTab === 'accounts' && <PilotAccountsTab billing={billing} />}
+          {activeTab === 'xero-sync' && isAdminBilling && !showOwnBillingOnly && <XeroSyncQueueCard />}
+        </Suspense>
       </div>
     </div>
   );

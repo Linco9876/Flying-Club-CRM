@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getAuthorizedSafetyTabs } from '../../utils/rbac';
-import { PilotCurrencyTab } from './PilotCurrencyTab';
-import { InstructorApprovalsTab } from './InstructorApprovalsTab';
-import { SafetyReportsTab } from './SafetyReportsTab';
-import { ChecklistsDocsTab } from './ChecklistsDocsTab';
 import { Users, UserCheck, AlertTriangle, FileText, ShieldCheck, ClipboardCheck } from 'lucide-react';
 import { hasAnyRole } from '../../utils/rbac';
+import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
+
+const PilotCurrencyTab = lazy(() => import('./PilotCurrencyTab').then(module => ({ default: module.PilotCurrencyTab })));
+const InstructorApprovalsTab = lazy(() => import('./InstructorApprovalsTab').then(module => ({ default: module.InstructorApprovalsTab })));
+const SafetyReportsTab = lazy(() => import('./SafetyReportsTab').then(module => ({ default: module.SafetyReportsTab })));
+const ChecklistsDocsTab = lazy(() => import('./ChecklistsDocsTab').then(module => ({ default: module.ChecklistsDocsTab })));
 
 export const SafetyDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -114,9 +116,11 @@ export const SafetyDashboard: React.FC = () => {
         </div>
 
         <div>
-          {activeTab === 'pilot-currency' && <PilotCurrencyTab />}
-          {activeTab === 'safety-reports' && <SafetyReportsTab />}
-          {activeTab === 'checklists-docs' && <ChecklistsDocsTab />}
+          <Suspense fallback={<PortalSectionLoader message="Loading safety section" detail="Preparing this safety view..." />}>
+            {activeTab === 'pilot-currency' && <PilotCurrencyTab />}
+            {activeTab === 'safety-reports' && <SafetyReportsTab />}
+            {activeTab === 'checklists-docs' && <ChecklistsDocsTab />}
+          </Suspense>
         </div>
       </div>
     );
@@ -151,10 +155,12 @@ export const SafetyDashboard: React.FC = () => {
 
       {/* Tab Content */}
       <div>
-        {activeTab === 'pilot-currency' && <PilotCurrencyTab />}
-        {activeTab === 'instructor-approvals' && <InstructorApprovalsTab />}
-        {activeTab === 'safety-reports' && <SafetyReportsTab />}
-        {activeTab === 'checklists-docs' && <ChecklistsDocsTab />}
+        <Suspense fallback={<PortalSectionLoader message="Loading safety section" detail="Preparing this safety view..." />}>
+          {activeTab === 'pilot-currency' && <PilotCurrencyTab />}
+          {activeTab === 'instructor-approvals' && <InstructorApprovalsTab />}
+          {activeTab === 'safety-reports' && <SafetyReportsTab />}
+          {activeTab === 'checklists-docs' && <ChecklistsDocsTab />}
+        </Suspense>
       </div>
     </div>
   );

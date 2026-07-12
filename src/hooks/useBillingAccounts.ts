@@ -56,7 +56,16 @@ export interface PilotAccount {
   unpaidFlightCount: number;
 }
 
-export const useBillingAccounts = () => {
+interface UseBillingAccountsOptions {
+  enabled?: boolean;
+  scope?: 'admin' | 'member';
+  userId?: string | null;
+}
+
+export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
+  const enabled = options.enabled !== false;
+  const scope = options.scope ?? 'admin';
+  const scopedUserId = options.userId ?? null;
   const [transactions, setTransactions] = useState<AccountTransaction[]>([]);
   const [unpaidFlights, setUnpaidFlights] = useState<UnpaidFlight[]>([]);
   const [pilotAccounts, setPilotAccounts] = useState<PilotAccount[]>([]);
@@ -65,8 +74,12 @@ export const useBillingAccounts = () => {
   const [minimumPrepaidPack, setMinimumPrepaidPack] = useState(1000);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     fetchAll();
-  }, []);
+  }, [enabled, scope, scopedUserId]);
 
   const createAdminAuditEntry = async ({
     action,
@@ -103,14 +116,23 @@ export const useBillingAccounts = () => {
   };
 
   const fetchAll = async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    await Promise.all([fetchTransactions(), fetchUnpaidFlights(), fetchPilotAccounts()]);
+    const memberId = scope === 'member' ? scopedUserId : null;
+    await Promise.all([
+      fetchTransactions(memberId),
+      fetchUnpaidFlights(false, memberId),
+      fetchPilotAccounts(memberId),
+    ]);
     setLoading(false);
   };
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (memberUserId?: string | null) => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('account_transactions')
         .select(`
           id,
@@ -132,6 +154,8 @@ export const useBillingAccounts = () => {
         `)
         .order('created_at', { ascending: false });
 
+      if (memberUserId) query = query.eq('user_id', memberUserId);
+      const { data, error } = await query;
       if (error) throw error;
 
       setTransactions(
@@ -160,9 +184,9 @@ export const useBillingAccounts = () => {
     }
   };
 
-const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
+const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string | null) => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('flight_logs')
         .select(`
           id,
@@ -190,6 +214,8 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
         .or('payment_status.is.null,payment_status.eq.unpaid,payment_status.eq.pending')
         .order('start_time', { ascending: false });
 
+      if (memberUserId) query = query.eq('student_id', memberUserId);
+      const { data, error } = await query;
       if (error) throw error;
 
       const flightIds = (data || []).map((row: any) => row.id);
@@ -249,8 +275,8 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
           });
           if (refreshError) throw refreshError;
           if ((refreshData as any)?.paidCount > 0) {
-            await fetchUnpaidFlights(true);
-            await fetchTransactions();
+            await fetchUnpaidFlights(true, memberUserId);
+            await fetchTransactions(memberUserId);
           }
         } catch (refreshErr) {
           console.warn('Unable to refresh Xero invoice payment statuses:', refreshErr);
@@ -261,8 +287,53 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false) => {
     }
   };
 
-  const fetchPilotAccounts = async () => {
+  const fetchPilotAccounts = async (memberUserId?: string | null) => {
     try {
+      if (memberUserId) {
+        const { data: userRow, error: userError } = await supabase
+          .from('users')
+          .select('id, name, email')
+          .eq('id', memberUserId)
+          .maybeSingle();
+        if (userError) throw userError;
+        if (!userRow) {
+          setPilotAccounts([]);
+          return;
+        }
+
+        const ledger = await fetchUserPrepaidLedgerBalance(memberUserId);
+        let useXeroBalances = false;
+        let xeroBalance = 0;
+        try {
+          const xeroData = await fetchUserXeroBalance(memberUserId);
+          useXeroBalances = Boolean(xeroData.connected);
+          setXeroConnected(useXeroBalances);
+          setMinimumPrepaidPack(Number(xeroData.minimumPrepaidPack ?? 1000));
+          xeroBalance = Number(xeroData.availableCredit ?? 0);
+        } catch (error) {
+          console.warn('Unable to confirm member Xero balance:', error);
+          setXeroConnected(false);
+        }
+
+        const { data: unpaid, error: unpaidError } = await supabase
+          .from('flight_logs')
+          .select('id')
+          .eq('student_id', memberUserId)
+          .or('payment_status.is.null,payment_status.eq.unpaid,payment_status.eq.pending');
+        if (unpaidError) throw unpaidError;
+
+        setPilotAccounts([{
+          userId: userRow.id,
+          name: userRow.name,
+          email: userRow.email,
+          balance: useXeroBalances ? xeroBalance : ledger.verifiedBalance,
+          lastTransactionDate: ledger.lastTransactionDate,
+          totalTransactions: ledger.totalTransactions,
+          unpaidFlightCount: (unpaid || []).length,
+        }]);
+        return;
+      }
+
       // Get all users
       const { data: users, error: usersError } = await supabase
         .from('users')

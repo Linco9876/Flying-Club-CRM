@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { PilotStatisticsTab } from './PilotStatisticsTab';
-import { InstructorStatisticsTab } from './InstructorStatisticsTab';
-import { AircraftStatisticsTab } from './AircraftStatisticsTab';
-import { ReportsOverviewTab } from './ReportsOverviewTab';
-import { FatigueManagementExportTab } from './FatigueManagementExportTab';
+import React, { Suspense, lazy, useState } from 'react';
 import { BarChart3, Users, User, Plane, Download, Filter, Activity, ShieldCheck } from 'lucide-react';
+import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
+
+const ReportsOverviewTab = lazy(() => import('./ReportsOverviewTab').then(module => ({ default: module.ReportsOverviewTab })));
+const PilotStatisticsTab = lazy(() => import('./PilotStatisticsTab').then(module => ({ default: module.PilotStatisticsTab })));
+const InstructorStatisticsTab = lazy(() => import('./InstructorStatisticsTab').then(module => ({ default: module.InstructorStatisticsTab })));
+const AircraftStatisticsTab = lazy(() => import('./AircraftStatisticsTab').then(module => ({ default: module.AircraftStatisticsTab })));
+const FatigueManagementExportTab = lazy(() => import('./FatigueManagementExportTab').then(module => ({ default: module.FatigueManagementExportTab })));
 
 export const ReportsDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -72,11 +74,13 @@ export const ReportsDashboard: React.FC = () => {
 
       {/* Tab Content */}
       <div>
+        <Suspense fallback={<PortalSectionLoader message="Loading report" detail="Preparing this report view..." />}>
         {activeTab === 'overview' && <ReportsOverviewTab />}
         {activeTab === 'pilot' && <PilotStatisticsTab />}
         {activeTab === 'instructor' && <InstructorStatisticsTab />}
         {activeTab === 'aircraft' && <AircraftStatisticsTab />}
         {activeTab === 'fatigue' && <FatigueManagementExportTab />}
+        </Suspense>
       </div>
     </div>
   );

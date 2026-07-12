@@ -39,14 +39,25 @@ export interface AircraftRate {
   includedTaxes: number;
 }
 
-export const useBillingSettings = () => {
+interface UseBillingSettingsOptions {
+  enabled?: boolean;
+  paymentMethodsOnly?: boolean;
+}
+
+export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
+  const enabled = options.enabled !== false;
+  const paymentMethodsOnly = options.paymentMethodsOnly === true;
   const [flightTypes, setFlightTypes] = useState<FlightType[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     refetch();
-  }, []);
+  }, [enabled, paymentMethodsOnly]);
 
   const fetchFlightTypes = async () => {
     try {
@@ -343,8 +354,16 @@ export const useBillingSettings = () => {
   };
 
   const refetch = async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    await Promise.all([fetchFlightTypes(), fetchPaymentMethods()]);
+    if (paymentMethodsOnly) {
+      await fetchPaymentMethods();
+    } else {
+      await Promise.all([fetchFlightTypes(), fetchPaymentMethods()]);
+    }
     setLoading(false);
   };
 

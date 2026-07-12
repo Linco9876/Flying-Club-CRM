@@ -24,7 +24,6 @@ import {
 } from '../../hooks/useSyllabusMatrix';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
-import { exportCoursePdf } from '../../utils/coursePdfExport';
 import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
@@ -428,8 +427,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const { settings: portalSettings } = usePortalUxSettings();
   const { reports: safetyReports } = useSafetyReports();
   const { settings: trainingSettings } = useTrainingSettings();
-  const billing = useBillingAccounts();
-  const { paymentMethods } = useBillingSettings();
+  const billing = useBillingAccounts({
+    enabled: activeTab === 'billing',
+    scope: 'member',
+    userId: studentId,
+  });
+  const { paymentMethods } = useBillingSettings({ enabled: activeTab === 'billing', paymentMethodsOnly: true });
   const {
     enrolments: courseEnrolments,
     loading: courseEnrolmentsLoading,
@@ -5085,6 +5088,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
     setExportingCourseId(course.id);
     try {
+      const { exportCoursePdf } = await import('../../utils/coursePdfExport');
       await exportCoursePdf({
         student,
         course,

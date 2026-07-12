@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getAuthorizedSettingsSections } from '../../utils/rbac';
 import { 
@@ -22,32 +22,32 @@ import {
   Palette,
   Eye
 } from 'lucide-react';
-import { OrganisationSettings } from './OrganisationSettings';
-import { CalendarSettings } from './CalendarSettings';
-import { BookingRulesSettings } from './BookingRulesSettings';
-import { NotificationsSettings } from './NotificationsSettings';
-import { SafetyComplianceSettings } from './SafetyComplianceSettings';
-import { MaintenanceSettings } from './MaintenanceSettings';
-import { ResourcesSettings } from './ResourcesSettings';
-import { PortalUxSettings } from './PortalUxSettings';
-import { RolesPermissionsSettings } from './RolesPermissionsSettings';
-import { AuditDataSettings } from './AuditDataSettings';
-import {
-  UpdateMyInfoSettings,
-  AccountSecuritySettings,
-  AccountCalendarSettings,
-  AccountNotificationSettings,
-  AccountAppearanceSettings,
-  AccountDashboardSettings,
-} from './PersonalPreferencesSettings';
-import { RosterAvailabilitySettings } from './RosterAvailabilitySettings';
-import { BillingRatesSettings } from './BillingRatesSettings';
-import FlightLogSettings from './FlightLogSettings';
-import { IntegrationsSettings } from './IntegrationsSettings';
-import { TrainingSyllabusSettings } from './TrainingSyllabusSettings';
-import { AccountTimelineSettings } from './AccountTimelineSettings';
+import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../../context/PageLoadContext';
+
+const OrganisationSettings = lazy(() => import('./OrganisationSettings').then(module => ({ default: module.OrganisationSettings })));
+const CalendarSettings = lazy(() => import('./CalendarSettings').then(module => ({ default: module.CalendarSettings })));
+const BookingRulesSettings = lazy(() => import('./BookingRulesSettings').then(module => ({ default: module.BookingRulesSettings })));
+const NotificationsSettings = lazy(() => import('./NotificationsSettings').then(module => ({ default: module.NotificationsSettings })));
+const SafetyComplianceSettings = lazy(() => import('./SafetyComplianceSettings').then(module => ({ default: module.SafetyComplianceSettings })));
+const MaintenanceSettings = lazy(() => import('./MaintenanceSettings').then(module => ({ default: module.MaintenanceSettings })));
+const ResourcesSettings = lazy(() => import('./ResourcesSettings').then(module => ({ default: module.ResourcesSettings })));
+const PortalUxSettings = lazy(() => import('./PortalUxSettings').then(module => ({ default: module.PortalUxSettings })));
+const RolesPermissionsSettings = lazy(() => import('./RolesPermissionsSettings').then(module => ({ default: module.RolesPermissionsSettings })));
+const AuditDataSettings = lazy(() => import('./AuditDataSettings').then(module => ({ default: module.AuditDataSettings })));
+const RosterAvailabilitySettings = lazy(() => import('./RosterAvailabilitySettings').then(module => ({ default: module.RosterAvailabilitySettings })));
+const BillingRatesSettings = lazy(() => import('./BillingRatesSettings').then(module => ({ default: module.BillingRatesSettings })));
+const FlightLogSettings = lazy(() => import('./FlightLogSettings'));
+const IntegrationsSettings = lazy(() => import('./IntegrationsSettings').then(module => ({ default: module.IntegrationsSettings })));
+const TrainingSyllabusSettings = lazy(() => import('./TrainingSyllabusSettings').then(module => ({ default: module.TrainingSyllabusSettings })));
+const AccountTimelineSettings = lazy(() => import('./AccountTimelineSettings').then(module => ({ default: module.AccountTimelineSettings })));
+const UpdateMyInfoSettings = lazy(() => import('./PersonalPreferencesSettings').then(module => ({ default: module.UpdateMyInfoSettings })));
+const AccountSecuritySettings = lazy(() => import('./PersonalPreferencesSettings').then(module => ({ default: module.AccountSecuritySettings })));
+const AccountCalendarSettings = lazy(() => import('./PersonalPreferencesSettings').then(module => ({ default: module.AccountCalendarSettings })));
+const AccountNotificationSettings = lazy(() => import('./PersonalPreferencesSettings').then(module => ({ default: module.AccountNotificationSettings })));
+const AccountAppearanceSettings = lazy(() => import('./PersonalPreferencesSettings').then(module => ({ default: module.AccountAppearanceSettings })));
+const AccountDashboardSettings = lazy(() => import('./PersonalPreferencesSettings').then(module => ({ default: module.AccountDashboardSettings })));
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -65,7 +65,7 @@ interface SettingsSection {
   keywords: string[];
   icon: React.ReactNode;
   roles: string[];
-  component: React.ComponentType;
+  component: React.ElementType;
 }
 
 export const SettingsDashboard: React.FC = () => {
@@ -271,10 +271,12 @@ export const SettingsDashboard: React.FC = () => {
         {/* Right Content Pane */}
         <div className="flex min-h-[60vh] min-w-0 flex-1 flex-col rounded-lg border border-gray-200 bg-white shadow-md">
           <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <ActiveComponent 
-              canEdit={canEdit(activeSection)}
-              onFormChange={() => setHasUnsavedChanges(true)}
-            />
+            <Suspense fallback={<PortalSectionLoader message="Loading settings section" detail="Preparing this settings panel..." />}>
+              <ActiveComponent
+                canEdit={canEdit(activeSection)}
+                onFormChange={() => setHasUnsavedChanges(true)}
+              />
+            </Suspense>
           </div>
 
           {/* Sticky Save/Cancel Bar */}
