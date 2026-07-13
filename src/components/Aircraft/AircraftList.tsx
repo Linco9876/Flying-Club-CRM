@@ -14,10 +14,12 @@ import { getAircraftIconSrc } from '../../utils/aircraftIcons';
 export const AircraftList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canManage = user?.role === 'admin' || user?.role === 'instructor' || user?.role === 'senior_instructor'
-    || user?.roles?.some(role => role === 'admin' || role === 'instructor' || role === 'senior_instructor');
   const isAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
-  const canSeeMaintenancePlanning = canManage;
+  const isStaff = isAdmin
+    || user?.role === 'instructor'
+    || user?.role === 'senior_instructor'
+    || user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor');
+  const canSeeMaintenancePlanning = isStaff;
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft();
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
@@ -204,7 +206,7 @@ export const AircraftList: React.FC = () => {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Aircraft Fleet</h1>
-        {canManage && (
+        {isAdmin && (
           <button
             onClick={() => { setEditingAircraft(null); setDuplicatingAircraft(null); setShowAircraftForm(true); }}
             className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -358,12 +360,12 @@ export const AircraftList: React.FC = () => {
                   <p className="text-xs text-red-700 mt-1">
                     {aircraftItem.defects[0].summary || aircraftItem.defects[0].description}
                   </p>
-                  {!canManage && (
+                  {!isStaff && (
                     <p className="mt-1 text-[11px] text-red-600">
                       Reported {aircraftItem.defects[0].dateReported.toLocaleDateString('en-AU')}
                     </p>
                   )}
-                  {!canManage && aircraftItem.defects[0].photos && aircraftItem.defects[0].photos.length > 0 && (
+                  {!isStaff && aircraftItem.defects[0].photos && aircraftItem.defects[0].photos.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {aircraftItem.defects[0].photos.slice(0, 3).map((photo, index) => (
                         <a
@@ -399,7 +401,7 @@ export const AircraftList: React.FC = () => {
                         <Eye className="h-4 w-4 mr-2 text-gray-400" />
                         View Details
                       </button>
-                      {canManage && (
+                      {isStaff && (
                         <button
                           onClick={() => { navigate(`/aircraft/${aircraftItem.id}/logs`); setOpenMenuId(null); }}
                           className="flex items-center w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -408,7 +410,7 @@ export const AircraftList: React.FC = () => {
                           Flight Logs
                         </button>
                       )}
-                      {canManage && (
+                      {isAdmin && (
                         <>
                           <button
                             onClick={() => { openEditForm(aircraftItem); setOpenMenuId(null); }}
@@ -424,18 +426,6 @@ export const AircraftList: React.FC = () => {
                             <Copy className="h-4 w-4 mr-2 text-gray-400" />
                             Duplicate
                           </button>
-                          {!aircraftItem.isArchived && (
-                            <>
-                              <div className="border-t border-gray-100 my-1" />
-                              <button
-                                onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
-                                className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                              >
-                                <Flag className="h-4 w-4 mr-2" />
-                                Report Defect
-                              </button>
-                            </>
-                          )}
                           {isAdmin && (
                             <>
                               <div className="border-t border-gray-100 my-1" />
@@ -460,6 +450,18 @@ export const AircraftList: React.FC = () => {
                           )}
                         </>
                       )}
+                      {isStaff && !aircraftItem.isArchived && (
+                        <>
+                          <div className="border-t border-gray-100 my-1" />
+                          <button
+                            onClick={() => { handleReportDefect(aircraftItem.id); setOpenMenuId(null); }}
+                            className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            <Flag className="h-4 w-4 mr-2" />
+                            Report Defect
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -475,24 +477,28 @@ export const AircraftList: React.FC = () => {
         </div>
       )}
 
-      <AircraftForm
-        isOpen={showAircraftForm}
-        onClose={closeAircraftForm}
-        onSubmit={editingAircraft ? handleEditAircraft : handleAddAircraft}
-        aircraft={editingAircraft || duplicatingAircraft || undefined}
-        isEdit={!!editingAircraft}
-        isDuplicate={!!duplicatingAircraft}
-      />
+      {showAircraftForm && isAdmin && (
+        <AircraftForm
+          isOpen
+          onClose={closeAircraftForm}
+          onSubmit={editingAircraft ? handleEditAircraft : handleAddAircraft}
+          aircraft={editingAircraft || duplicatingAircraft || undefined}
+          isEdit={!!editingAircraft}
+          isDuplicate={!!duplicatingAircraft}
+        />
+      )}
 
-      <DefectReportForm
-        isOpen={showDefectForm}
-        onClose={() => {
-          setShowDefectForm(false);
-          setSelectedAircraftForDefect('');
-        }}
-        onSubmit={handleDefectSubmit}
-        preSelectedAircraftId={selectedAircraftForDefect}
-      />
+      {showDefectForm && isStaff && (
+        <DefectReportForm
+          isOpen
+          onClose={() => {
+            setShowDefectForm(false);
+            setSelectedAircraftForDefect('');
+          }}
+          onSubmit={handleDefectSubmit}
+          preSelectedAircraftId={selectedAircraftForDefect}
+        />
+      )}
 
     </div>
   );

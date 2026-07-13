@@ -177,7 +177,7 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
   };
 
   const handleDelete = async (document: StudentDocument) => {
-    if (!window.confirm(`Delete "${document.displayName}" from this student file?`)) return;
+    if (!window.confirm(`Delete "${document.displayName}" from this member file?`)) return;
 
     try {
       const { error } = await supabase
@@ -209,7 +209,7 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
               <FileText className="h-5 w-5 mr-2" />
               Documents & Credentials
             </h2>
-            <p className="text-sm text-gray-500 mt-1">Upload licence, medical, membership, ID, consent and club paperwork for this student file.</p>
+            <p className="text-sm text-gray-500 mt-1">Upload licence, medical, membership, ID, consent and club paperwork for this member file.</p>
           </div>
           {canManage && (
             <button

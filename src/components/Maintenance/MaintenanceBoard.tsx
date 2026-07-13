@@ -1318,11 +1318,13 @@ export const MaintenanceBoard: React.FC = () => {
         </div>
       )}
 
-      <DefectReportForm
-        isOpen={showDefectForm}
-        onClose={() => setShowDefectForm(false)}
-        onSubmit={handleDefectSubmit}
-      />
+      {showDefectForm && (
+        <DefectReportForm
+          isOpen
+          onClose={() => setShowDefectForm(false)}
+          onSubmit={handleDefectSubmit}
+        />
+      )}
 
       {showOneTimeMilestoneForm && canManageMaintenanceMilestones && (
         <OneTimeMilestoneModal
@@ -1384,13 +1386,15 @@ export const MaintenanceBoard: React.FC = () => {
         />
       )}
 
-      <DefectEditForm
-        isOpen={!!editingDefect}
-        onClose={() => setEditingDefect(null)}
-        onSubmit={handleDefectUpdate}
-        defect={editingDefect}
-        aircraftRegistration={editingDefect ? aircraft.find(a => a.id === editingDefect.aircraftId)?.registration : undefined}
-      />
+      {editingDefect && (
+        <DefectEditForm
+          isOpen
+          onClose={() => setEditingDefect(null)}
+          onSubmit={handleDefectUpdate}
+          defect={editingDefect}
+          aircraftRegistration={aircraft.find(a => a.id === editingDefect.aircraftId)?.registration}
+        />
+      )}
 
       {showHistoryModal && selectedDefect && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

@@ -832,20 +832,24 @@ export const StudentList: React.FC = () => {
 
       </div>
 
-      <StudentForm
-        isOpen={showStudentForm}
-        onClose={closeStudentForm}
-        onSubmit={editingStudent ? handleEditStudent : handleAddStudent}
-        student={editingStudent || undefined}
-        isEdit={!!editingStudent}
-        canEditEmail={!editingStudent || canManageMembers}
-      />
+      {showStudentForm && (
+        <StudentForm
+          isOpen
+          onClose={closeStudentForm}
+          onSubmit={editingStudent ? handleEditStudent : handleAddStudent}
+          student={editingStudent || undefined}
+          isEdit={!!editingStudent}
+          canEditEmail={!editingStudent || canManageMembers}
+        />
+      )}
 
-      <InviteUserModal
-        isOpen={showInviteModal}
-        onClose={() => setShowInviteModal(false)}
-        onInvite={handleInviteUser}
-      />
+      {showInviteModal && (
+        <InviteUserModal
+          isOpen
+          onClose={() => setShowInviteModal(false)}
+          onInvite={handleInviteUser}
+        />
+      )}
     </div>
   );
 };

@@ -37,15 +37,14 @@ export const PilotCurrencyTab: React.FC = () => {
   );
 
   const calculatePilotCurrency = (): PilotCurrency[] => {
-    let pilots = students.filter(s =>
-      isStudentOnly(s) ||
-      s.roles?.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role)) ||
-      ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(s.role)
-    );
-
-    if (user?.role === 'student' || user?.role === 'pilot') {
-      pilots = pilots.filter(p => p.id === user.id);
-    }
+    const pilots = isMemberSelfView
+      ? students.filter(candidate => candidate.id === user?.id)
+      : students.filter(candidate =>
+          !isStudentOnly(candidate) && (
+            candidate.roles?.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role)) ||
+            ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(candidate.role)
+          )
+        );
 
     const today = new Date();
 

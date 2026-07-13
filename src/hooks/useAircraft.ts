@@ -79,27 +79,22 @@ export const useAircraft = (options?: UseAircraftOptions) => {
       if (!cachedAircraft) {
         setLoading(true);
       }
-      const { data: aircraftData, error: aircraftError } = await supabase
-        .from('aircraft')
-        .select('*')
-        .order('registration');
-
-      if (aircraftError) throw aircraftError;
-
       const defectColumns = canSeePrivateAircraftData
         ? '*'
         : 'id, aircraft_id, date_reported, description, status, photos, severity, location, tach_hours, hobbs_hours';
 
-      const { data: defectsData, error: defectsError } = await supabase
-        .from('defects')
-        .select(defectColumns)
-        .eq('status', 'open');
+      const [aircraftResult, defectsResult, ratesResult] = await Promise.all([
+        supabase.from('aircraft').select('*').order('registration'),
+        supabase.from('defects').select(defectColumns).eq('status', 'open'),
+        supabase.from('aircraft_rates').select('*, flight_types(name), payment_methods(name)')
+      ]);
 
+      const { data: aircraftData, error: aircraftError } = aircraftResult;
+      const { data: defectsData, error: defectsError } = defectsResult;
+      const { data: ratesData, error: ratesError } = ratesResult;
+
+      if (aircraftError) throw aircraftError;
       if (defectsError) throw defectsError;
-
-      const { data: ratesData, error: ratesError } = await supabase
-        .from('aircraft_rates')
-        .select('*, flight_types(name), payment_methods(name)');
 
       if (ratesError) throw ratesError;
 
