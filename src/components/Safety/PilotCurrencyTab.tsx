@@ -4,7 +4,7 @@ import { useStudents } from '../../hooks/useStudents';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { buildSafetyComplianceSummary, getBfrDueDate, isStudentOnly } from '../../utils/safetyCompliance';
-import { Download, Search, AlertTriangle, CheckCircle, Clock, CalendarDays, ShieldCheck } from 'lucide-react';
+import { Download, Search, AlertTriangle, CheckCircle, Clock, CalendarDays, ShieldCheck, Loader2 } from 'lucide-react';
 import { hasAnyRole } from '../../utils/rbac';
 
 interface PilotCurrency {
@@ -25,8 +25,8 @@ interface PilotCurrency {
 
 export const PilotCurrencyTab: React.FC = () => {
   const { user } = useAuth();
-  const { students } = useStudents();
-  const { flightLogs } = useFlightLogs();
+  const { students, loading: studentsLoading } = useStudents();
+  const { flightLogs, loading: flightLogsLoading } = useFlightLogs();
   const { settings } = useSafetySettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -187,6 +187,18 @@ export const PilotCurrencyTab: React.FC = () => {
     if (days === 0) return 'Due today';
     return `${days} days`;
   };
+
+  if (studentsLoading || flightLogsLoading) {
+    return (
+      <div className="flex min-h-[18rem] items-center justify-center rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-600" />
+          <p className="mt-3 text-sm font-medium text-gray-700">Loading pilot currency</p>
+          <p className="mt-1 text-xs text-gray-500">Checking flight activity, medicals, memberships and flight reviews...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isMemberSelfView) {
     const pilot = sortedPilots[0];

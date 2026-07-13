@@ -23,10 +23,12 @@ interface UseStudentsOptions {
   participateInPageLoad?: boolean;
 }
 
+let studentsCache: Student[] | null = null;
+
 export const useStudents = (options?: UseStudentsOptions) => {
   const participateInPageLoad = options?.participateInPageLoad ?? true;
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState<Student[]>(() => studentsCache || []);
+  const [loading, setLoading] = useState(() => !studentsCache);
   const [error, setError] = useState<string | null>(null);
   usePageLoadState(
     participateInPageLoad && loading,
@@ -67,28 +69,28 @@ export const useStudents = (options?: UseStudentsOptions) => {
 
   const fetchStudents = async () => {
     try {
-      setLoading(true);
-      const { data: usersData, error: usersError } = await supabase
-        .from('users')
-        .select('*');
+      if (!studentsCache) {
+        setLoading(true);
+      }
+
+      const [usersResult, studentsResult, endorsementsResult, rolesResult] = await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('students').select('*'),
+        supabase.from('endorsements').select('*'),
+        supabase.from('user_roles').select('user_id, role')
+      ]);
+
+      const { data: usersData, error: usersError } = usersResult;
+      const { data: studentsData, error: studentsError } = studentsResult;
+      const { data: endorsementsData, error: endorsementsError } = endorsementsResult;
+      const { data: rolesData, error: rolesError } = rolesResult;
 
       if (usersError) throw usersError;
-
-      const { data: studentsData, error: studentsError } = await supabase
-        .from('students')
-        .select('*');
-
       if (studentsError) throw studentsError;
-
-      const { data: endorsementsData, error: endorsementsError } = await supabase
-        .from('endorsements')
-        .select('*');
-
       if (endorsementsError) throw endorsementsError;
-
-      const { data: rolesData } = await supabase
-        .from('user_roles')
-        .select('user_id, role');
+      if (rolesError) {
+        console.warn('Could not load member role assignments; falling back to primary roles.', rolesError);
+      }
 
       const rolesMap = new Map<string, string[]>();
       (rolesData || []).forEach((r: any) => {
@@ -167,6 +169,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
         };
       });
 
+      studentsCache = combinedStudents;
       setStudents(combinedStudents);
       setError(null);
     } catch (err) {
