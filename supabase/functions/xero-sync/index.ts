@@ -1127,6 +1127,55 @@ const fetchContactCreditItems = async (ctx: any, contactId: string) => {
   ];
 };
 
+const allocateCreditToInvoice = async (ctx: any, invoiceId: string, credit: any, amount: number) => {
+  const path = credit.kind === "overpayment"
+    ? `Overpayments/${encodeURIComponent(credit.id)}/Allocations`
+    : `Prepayments/${encodeURIComponent(credit.id)}/Allocations`;
+
+  const result = await xeroRequest({
+    method: "PUT",
+    path,
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    body: {
+      Allocations: [{
+        Invoice: { InvoiceID: invoiceId },
+        Amount: money(amount),
+        Date: new Date().toISOString().slice(0, 10),
+      }],
+    },
+  });
+
+  return Array.isArray(result?.Allocations) ? result.Allocations[0] : null;
+};
+
+const applyAvailableCreditToInvoice = async (ctx: any, invoiceId: string, contactId: string, amountDue: number) => {
+  let remaining = money(amountDue);
+  let applied = 0;
+  const allocations: Array<Record<string, unknown>> = [];
+  if (remaining <= 0.005) return { applied, allocations, remaining: 0 };
+
+  const credits = await fetchContactCreditItems(ctx, contactId);
+  for (const credit of credits) {
+    if (remaining <= 0.005) break;
+    const amount = Math.min(remaining, money(credit.amount));
+    if (amount <= 0.005) continue;
+
+    const allocation = await allocateCreditToInvoice(ctx, invoiceId, credit, amount);
+    const allocationId = clean(allocation?.AllocationID);
+    allocations.push({
+      allocationId,
+      creditId: credit.id,
+      kind: credit.kind,
+      amount,
+    });
+    applied = money(applied + amount);
+    remaining = money(remaining - amount);
+  }
+
+  return { applied, allocations, remaining };
+};
+
 const getTopupCreditCandidates = async (ctx: any, member: any, tx: any) => {
   const contactId = clean(member.xero_contact_id);
   if (!contactId) {
@@ -2156,6 +2205,9 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
   const flight = await getFlightLog(adminClient, flightLogId);
   const invoiceId = clean(flight.xero_invoice_id);
   if (!invoiceId) throw new Error("Sync the Xero invoice before applying payments.");
+  const flightContactId = clean(flight?.student?.xero_contact_id);
+  const latestInvoice = await getXeroInvoice(ctx, invoiceId);
+  let invoiceRemaining = money(latestInvoice?.AmountDue ?? flight.calculated_cost ?? 0);
 
   const { data: txRows, error: txError } = await adminClient
     .from("account_transactions")
@@ -2176,6 +2228,48 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
     const paymentLabel = isStripe ? "Stripe payment" : isPrepaid ? "Prepaid payment" : "Flight payment";
     let paymentIdForRow = clean(tx.xero_payment_id);
     if (!tx.xero_payment_id) {
+      if (isPrepaid) {
+        if (!flightContactId) {
+          const reason = "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.";
+          skippedPayments.push(reason);
+          await adminClient.from("account_transactions").update({
+            xero_sync_status: "needs_review",
+            xero_sync_error: reason,
+          }).eq("id", tx.id);
+          continue;
+        }
+
+        const amountToApply = Math.min(money(tx.amount), invoiceRemaining);
+        if (amountToApply <= 0.005) {
+          continue;
+        }
+
+        const creditResult = await applyAvailableCreditToInvoice(ctx, invoiceId, flightContactId, amountToApply);
+        if (creditResult.applied + 0.005 < amountToApply) {
+          const reason = `Only $${creditResult.applied.toFixed(2)} of Xero prepaid credit could be allocated to this invoice. $${amountToApply.toFixed(2)} was required.`;
+          skippedPayments.push(reason);
+          await adminClient.from("account_transactions").update({
+            xero_sync_status: "needs_review",
+            xero_sync_error: reason,
+          }).eq("id", tx.id);
+          continue;
+        }
+
+        const allocationReference = clean(creditResult.allocations.map((allocation: any) => allocation.allocationId || allocation.creditId).filter(Boolean).join(","));
+        paymentIdForRow = allocationReference ? `credit-allocation:${allocationReference}` : `credit-allocation:${invoiceId}:${tx.id}`;
+        invoiceRemaining = money(invoiceRemaining - creditResult.applied);
+        await adminClient.from("account_transactions").update({
+          xero_payment_id: paymentIdForRow,
+          xero_invoice_id: invoiceId,
+          xero_contact_id: flightContactId,
+          xero_synced_at: new Date().toISOString(),
+          xero_sync_status: "synced",
+          xero_sync_error: null,
+        }).eq("id", tx.id);
+        payments.push({ transactionId: tx.id, paymentId: paymentIdForRow, amount: creditResult.applied, kind: "xero_credit_allocation" });
+        continue;
+      }
+
       const accountCode = isStripe
         ? clean(ctx.settings?.stripe_payment_account_code)
         : isPrepaid
@@ -2267,6 +2361,114 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
   });
 
   return { invoiceId, payments, feeTransactions, skipped: (txRows || []).length - payments.length };
+};
+
+const deleteXeroPayment = async (ctx: any, paymentId: string) => {
+  const id = clean(paymentId);
+  if (!id || id.startsWith("credit-allocation:")) return null;
+
+  const result = await xeroRequest({
+    method: "POST",
+    path: "Payments",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    body: {
+      Payments: [{
+        PaymentID: id,
+        Status: "DELETED",
+      }],
+    },
+  });
+
+  return result?.Payments?.[0] || null;
+};
+
+const repairPrepaidFlightCreditAllocation = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  flightLogId: string,
+) => {
+  const flight = await getFlightLog(adminClient, flightLogId);
+  const invoiceId = clean(flight.xero_invoice_id);
+  if (!invoiceId) throw new Error("This flight log is not linked to a Xero invoice.");
+
+  const flightContactId = clean(flight?.student?.xero_contact_id);
+  if (!flightContactId) {
+    throw new Error("This member is not linked to a Xero contact, so prepaid credit cannot be allocated.");
+  }
+
+  const { data: txRows, error: txError } = await adminClient
+    .from("account_transactions")
+    .select("id, amount, payment_method_id, xero_payment_id, payment_methods(name, system_key)")
+    .eq("flight_log_id", flightLogId)
+    .eq("type", "flight_charge")
+    .eq("verified_status", "verified");
+  if (txError) throw txError;
+
+  const prepaidRows = (txRows || []).filter((tx: any) => {
+    const methodName = String(tx.payment_methods?.name || "").toLowerCase();
+    const systemKey = String(tx.payment_methods?.system_key || "").toLowerCase();
+    return systemKey === "pilot_account" || methodName.includes("pilot account") || methodName.includes("prepaid") || methodName.includes("pre-paid");
+  });
+
+  if (prepaidRows.length === 0) {
+    throw new Error("No verified prepaid flight-charge transaction was found for this flight log.");
+  }
+
+  const paymentIds = new Set<string>();
+  const flightPaymentId = clean(flight.xero_payment_id);
+  if (flightPaymentId && !flightPaymentId.startsWith("credit-allocation:")) paymentIds.add(flightPaymentId);
+  for (const tx of prepaidRows) {
+    const paymentId = clean(tx.xero_payment_id);
+    if (paymentId && !paymentId.startsWith("credit-allocation:")) paymentIds.add(paymentId);
+  }
+
+  const deletedPayments: any[] = [];
+  for (const paymentId of paymentIds) {
+    const deleted = await deleteXeroPayment(ctx, paymentId);
+    if (deleted) {
+      deletedPayments.push({
+        paymentId,
+        status: clean(deleted.Status) || "DELETED",
+      });
+    }
+  }
+
+  const now = new Date().toISOString();
+  const prepaidIds = prepaidRows.map((tx: any) => clean(tx.id)).filter(Boolean);
+  if (prepaidIds.length > 0) {
+    const { error: txUpdateError } = await adminClient
+      .from("account_transactions")
+      .update({
+        xero_payment_id: null,
+        xero_synced_at: null,
+        xero_sync_status: "not_synced",
+        xero_sync_error: null,
+      })
+      .in("id", prepaidIds);
+    if (txUpdateError) throw txUpdateError;
+  }
+
+  const { error: flightUpdateError } = await adminClient
+    .from("flight_logs")
+    .update({
+      xero_payment_id: null,
+      xero_payment_synced_at: null,
+      xero_sync_status: "pending",
+      xero_sync_error: null,
+      xero_last_synced_at: now,
+    })
+    .eq("id", flightLogId);
+  if (flightUpdateError) throw flightUpdateError;
+
+  const applied = await applyFlightPayments(adminClient, ctx, flightLogId);
+  return {
+    repaired: true,
+    flightLogId,
+    invoiceId,
+    deletedPayments,
+    applied,
+  };
 };
 
 const createOrUpdateGroundSessionInvoice = async (
@@ -2377,6 +2579,9 @@ const applyGroundSessionPayments = async (
   const session = await getGroundSessionLog(adminClient, groundSessionLogId);
   const invoiceId = clean(session.xero_invoice_id);
   if (!invoiceId) throw new Error("Sync the Xero invoice before applying payments.");
+  const sessionContactId = clean(session?.student?.xero_contact_id);
+  const latestInvoice = await getXeroInvoice(ctx, invoiceId);
+  let invoiceRemaining = money(latestInvoice?.AmountDue ?? session.calculated_cost ?? 0);
 
   const { data: txRows, error: txError } = await adminClient
     .from("account_transactions")
@@ -2402,47 +2607,42 @@ const applyGroundSessionPayments = async (
       continue;
     }
 
-    const accountCode = clean(ctx.settings?.prepaid_payment_account_code);
-    if (!accountCode) {
-      skippedPayments.push("Set the Xero prepaid payment clearing account before applying prepaid ground session payments.");
+    if (!sessionContactId) {
+      skippedPayments.push("This member is not linked to a Xero contact, so prepaid credit cannot be allocated.");
       await adminClient.from("account_transactions").update({
         xero_sync_status: "needs_review",
-        xero_sync_error: "Set the Xero prepaid payment clearing account before applying prepaid ground session payments.",
+        xero_sync_error: "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.",
       }).eq("id", tx.id);
       continue;
     }
 
-    const result = await xeroRequest({
-      method: "POST",
-      path: "Payments",
-      tenantId: ctx.connection.tenant_id,
-      accessToken: ctx.connection.access_token,
-      body: {
-        Payments: [{
-          Invoice: { InvoiceID: invoiceId },
-          Account: { Code: accountCode },
-          Date: isoDate(tx.created_at),
-          Amount: money(tx.amount),
-          Reference: truncateText([
-            "Prepaid payment",
-            buildGroundSessionReference(session),
-          ].filter(Boolean).join(" - ")),
-        }],
-      },
-    });
+    const amountToApply = Math.min(money(tx.amount), invoiceRemaining);
+    if (amountToApply <= 0.005) continue;
 
-    const payment = result?.Payments?.[0];
-    const paymentId = clean(payment?.PaymentID);
-    if (!paymentId) continue;
+    const creditResult = await applyAvailableCreditToInvoice(ctx, invoiceId, sessionContactId, amountToApply);
+    if (creditResult.applied + 0.005 < amountToApply) {
+      const reason = `Only $${creditResult.applied.toFixed(2)} of Xero prepaid credit could be allocated to this ground session invoice. $${amountToApply.toFixed(2)} was required.`;
+      skippedPayments.push(reason);
+      await adminClient.from("account_transactions").update({
+        xero_sync_status: "needs_review",
+        xero_sync_error: reason,
+      }).eq("id", tx.id);
+      continue;
+    }
+
+    const allocationReference = clean(creditResult.allocations.map((allocation: any) => allocation.allocationId || allocation.creditId).filter(Boolean).join(","));
+    const paymentId = allocationReference ? `credit-allocation:${allocationReference}` : `credit-allocation:${invoiceId}:${tx.id}`;
+    invoiceRemaining = money(invoiceRemaining - creditResult.applied);
 
     await adminClient.from("account_transactions").update({
       xero_payment_id: paymentId,
       xero_invoice_id: invoiceId,
+      xero_contact_id: sessionContactId,
       xero_synced_at: new Date().toISOString(),
       xero_sync_status: "synced",
       xero_sync_error: null,
     }).eq("id", tx.id);
-    payments.push({ transactionId: tx.id, paymentId, amount: money(tx.amount) });
+    payments.push({ transactionId: tx.id, paymentId, amount: creditResult.applied, kind: "xero_credit_allocation" });
   }
 
   const paidAmount = payments.reduce((total, item) => total + money(item.amount), 0);
@@ -3121,6 +3321,12 @@ Deno.serve(async (req: Request) => {
       const flightLogId = clean(body.flightLogId);
       if (!flightLogId) return json({ error: "Missing flightLogId" }, 400);
       return json(await applyFlightPayments(adminClient, ctx, flightLogId));
+    }
+
+    if (action === "repair-prepaid-flight-credit-allocation") {
+      const flightLogId = clean(body.flightLogId);
+      if (!flightLogId) return json({ error: "Missing flightLogId" }, 400);
+      return json(await repairPrepaidFlightCreditAllocation(adminClient, ctx, flightLogId));
     }
 
     if (action === "sync-ground-session-invoice") {
