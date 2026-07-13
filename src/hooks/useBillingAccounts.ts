@@ -594,12 +594,15 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
       const ledger = await fetchUserPrepaidLedgerBalance(flightLog.student_id);
       const currentBalance = Number(ledger.verifiedBalance ?? 0);
       const topUpIncrement = Number(minimumPrepaidPack ?? 1000);
+      if (!ledger.xeroConnected) {
+        throw new Error('Prepaid cannot be used until Xero credit can be confirmed. The old CRM prepaid balance is no longer used.');
+      }
       if (currentBalance <= 0.005) {
-        throw new Error(`Prepaid is locked until the member has a positive verified prepaid balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+        throw new Error(`Prepaid is locked until the member has positive Xero credit. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
       }
       if (paymentAmount > currentBalance + 0.005) {
         const requiredTopUp = Math.max(topUpIncrement, Math.ceil((paymentAmount - currentBalance) / topUpIncrement) * topUpIncrement);
-        throw new Error(`This member only has $${currentBalance.toFixed(2)} of verified prepaid funds available, so prepaid cannot cover this amount. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+        throw new Error(`This member only has $${currentBalance.toFixed(2)} of Xero credit available, so prepaid cannot cover this amount. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
       }
 
       const newBalance = Math.round((currentBalance - paymentAmount + Number.EPSILON) * 100) / 100;

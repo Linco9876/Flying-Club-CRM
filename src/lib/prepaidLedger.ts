@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { fetchAllMemberXeroBalances, fetchUserXeroBalance } from './xeroMemberBalance';
 
 export type LedgerTransactionType = 'topup' | 'flight_charge' | 'refund' | 'adjustment';
 export type LedgerVerificationStatus = 'pending' | 'verified' | 'rejected' | null | undefined;
@@ -17,6 +18,8 @@ export interface PrepaidLedgerSummary {
   totalTransactions: number;
   lastTransactionDate: string | null;
   eligibleForPrepaid: boolean;
+  source: 'xero' | 'crm_disabled';
+  xeroConnected: boolean;
 }
 
 const roundMoney = (value: number) =>
@@ -56,6 +59,19 @@ export const summarisePrepaidLedger = (rows: LedgerTransactionRow[]): PrepaidLed
     totalTransactions: rows.length,
     lastTransactionDate,
     eligibleForPrepaid: verifiedBalance > 0.005,
+    source: 'crm_disabled',
+    xeroConnected: false,
+  };
+};
+
+const zeroSummary = (rows: LedgerTransactionRow[] = [], xeroConnected = false): PrepaidLedgerSummary => {
+  const pendingAndHistory = summarisePrepaidLedger(rows);
+  return {
+    ...pendingAndHistory,
+    verifiedBalance: 0,
+    eligibleForPrepaid: false,
+    source: 'crm_disabled',
+    xeroConnected,
   };
 };
 
@@ -67,7 +83,26 @@ export const fetchUserPrepaidLedgerBalance = async (userId: string) => {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return summarisePrepaidLedger((data || []) as LedgerTransactionRow[]);
+  const rows = (data || []) as LedgerTransactionRow[];
+
+  try {
+    const xero = await fetchUserXeroBalance(userId);
+    if (xero.connected) {
+      const pendingAndHistory = summarisePrepaidLedger(rows);
+      const verifiedBalance = Math.round((Number(xero.availableCredit || 0) + Number.EPSILON) * 100) / 100;
+      return {
+        ...pendingAndHistory,
+        verifiedBalance,
+        eligibleForPrepaid: Boolean(xero.eligibleForPrepaid ?? verifiedBalance > 0.005),
+        source: 'xero' as const,
+        xeroConnected: true,
+      };
+    }
+  } catch (xeroError) {
+    console.warn('Unable to load Xero prepaid balance; legacy CRM balance will not be used:', xeroError);
+  }
+
+  return zeroSummary(rows);
 };
 
 export const fetchAllPrepaidLedgerBalances = async () => {
@@ -87,7 +122,28 @@ export const fetchAllPrepaidLedgerBalances = async () => {
 
   const summaries: Record<string, PrepaidLedgerSummary> = {};
   byUser.forEach((rows, userId) => {
-    summaries[userId] = summarisePrepaidLedger(rows);
+    summaries[userId] = zeroSummary(rows);
   });
+
+  try {
+    const xero = await fetchAllMemberXeroBalances();
+    if (xero.connected) {
+      (xero.balances || []).forEach(balance => {
+        if (!balance.userId) return;
+        const pendingAndHistory = summaries[balance.userId] || zeroSummary([]);
+        const verifiedBalance = Math.round((Number(balance.availableCredit || 0) + Number.EPSILON) * 100) / 100;
+        summaries[balance.userId] = {
+          ...pendingAndHistory,
+          verifiedBalance,
+          eligibleForPrepaid: Boolean(balance.eligibleForPrepaid ?? verifiedBalance > 0.005),
+          source: 'xero',
+          xeroConnected: true,
+        };
+      });
+    }
+  } catch (xeroError) {
+    console.warn('Unable to load all Xero prepaid balances; legacy CRM balances will not be used:', xeroError);
+  }
+
   return summaries;
 };

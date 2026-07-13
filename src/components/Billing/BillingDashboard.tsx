@@ -486,7 +486,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
           <p className="text-gray-600 dark:text-gray-400">
             {xeroConnectedForOwnBilling
               ? 'Review your Xero credit, invoices owing, saved card and billing history.'
-              : 'Review your verified prepaid balance, pending top-ups, and billing history.'}
+              : 'Xero balance could not be confirmed. Old CRM balances are no longer shown.'}
           </p>
         </div>
 
@@ -500,7 +500,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 <div>
                   <h2 className="font-semibold text-amber-950 dark:text-amber-100">Xero is not connected right now</h2>
                   <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-                    Your verified CRM prepaid balance still works here. Xero invoices and automatic reconciliation stay hidden until the club reconnects Xero.
+                    The CRM no longer shows or uses the old internal prepaid balance. Reconnect Xero to view real credit, invoices and prepaid access.
                   </p>
                   <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
                     An admin can reconnect Xero from Settings &gt; Integrations. If Xero was just connected, refresh this page.
@@ -525,7 +525,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {xeroConnectedForOwnBilling ? 'Xero credit available' : 'Verified prepaid balance'}
+              {xeroConnectedForOwnBilling ? 'Xero credit available' : 'Xero credit unavailable'}
             </p>
             <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{currencyFormatter(displayedCredit)}</p>
             {xeroConnectedForOwnBilling && (
@@ -558,7 +558,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <p className="mt-1 text-xs text-blue-800 dark:text-blue-200">
               {xeroConnectedForOwnBilling
                 ? `Requires positive Xero credit. Top-ups are made in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`
-                : `Requires a positive verified prepaid balance. Top-ups are made in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`}
+                : 'Prepaid unlocks only after Xero credit can be confirmed.'}
             </p>
           </div>
         </div>

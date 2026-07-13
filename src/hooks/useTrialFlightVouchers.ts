@@ -494,12 +494,15 @@ export const useTrialFlightVouchers = () => {
     const ledger = await fetchUserPrepaidLedgerBalance(payerUserId);
     const currentBalance = Number(ledger.verifiedBalance ?? 0);
     const topUpIncrement = 1000;
+    if (!ledger.xeroConnected) {
+      throw new Error('Prepaid cannot be used until Xero credit can be confirmed. The old CRM prepaid balance is no longer used.');
+    }
     if (currentBalance <= 0.005) {
-      throw new Error(`Prepaid is locked until the member has a positive verified prepaid balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+      throw new Error(`Prepaid is locked until the member has positive Xero credit. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
     }
     if (amount > currentBalance + 0.005) {
       const requiredTopUp = Math.max(topUpIncrement, Math.ceil((amount - currentBalance) / topUpIncrement) * topUpIncrement);
-      throw new Error(`Selected prepaid account only has $${currentBalance.toFixed(2)} of verified prepaid funds available, so it cannot cover this voucher. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+      throw new Error(`Selected prepaid account only has $${currentBalance.toFixed(2)} of Xero credit available, so it cannot cover this voucher. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
     }
 
     const paymentMethodId = await getPilotAccountPaymentMethodId();

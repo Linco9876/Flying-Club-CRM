@@ -514,12 +514,15 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         const ledger = await fetchUserPrepaidLedgerBalance(normalisedLogData.student_id);
         const availableCredit = Number(ledger.verifiedBalance ?? 0);
         const topUpIncrement = 1000;
+        if (!ledger.xeroConnected) {
+          throw new Error('Prepaid cannot be used until Xero credit can be confirmed. The old CRM prepaid balance is no longer used.');
+        }
         if (availableCredit <= 0.005 && !prepaidPaymentAcknowledged) {
-          throw new Error(`Prepaid is locked until the member has a positive verified prepaid balance. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+          throw new Error(`Prepaid is locked until the member has positive Xero credit. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
         if (availableCredit + 0.005 < calculatedCost && !prepaidPaymentAcknowledged) {
           const requiredTopUp = Math.max(topUpIncrement, Math.ceil((calculatedCost - availableCredit) / topUpIncrement) * topUpIncrement);
-          throw new Error(`This member only has $${availableCredit.toFixed(2)} of verified prepaid funds available, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
+          throw new Error(`This member only has $${availableCredit.toFixed(2)} of Xero credit available, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
         prepaidBalanceAfter = Math.round((availableCredit - calculatedCost + Number.EPSILON) * 100) / 100;
       }

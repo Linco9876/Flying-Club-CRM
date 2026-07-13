@@ -194,11 +194,14 @@ export const useGroundSessionLogs = (bookingId?: string) => {
       if (prepaidSelected && calculatedCost > 0) {
         const ledger = await fetchUserPrepaidLedgerBalance(logData.student_id);
         const available = Number(ledger.verifiedBalance ?? 0);
+        if (!ledger.xeroConnected) {
+          throw new Error('Prepaid cannot be used until Xero credit can be confirmed. The old CRM prepaid balance is no longer used.');
+        }
         if (available <= 0.005) {
-          throw new Error('Prepaid is locked until the member has a positive verified prepaid balance. Top-ups can only be made in $1000.00 increments.');
+          throw new Error('Prepaid is locked until the member has positive Xero credit. Top-ups can only be made in $1000.00 increments.');
         }
         if (available + 0.005 < calculatedCost) {
-          throw new Error(`This member only has $${available.toFixed(2)} of verified prepaid funds available, so prepaid cannot cover this ground session. Add a $1000.00 top-up first.`);
+          throw new Error(`This member only has $${available.toFixed(2)} of Xero credit available, so prepaid cannot cover this ground session. Add a $1000.00 top-up first.`);
         }
         balanceAfter = Math.round((available - calculatedCost + Number.EPSILON) * 100) / 100;
       }

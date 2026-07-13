@@ -565,12 +565,17 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     const usesPrepaid = isPrepaidFlightType(selectedType?.name) || isPrepaidPaymentMethod(logData.payment_type);
     if (!usesPrepaid || !logData.student_id) return true;
 
-    setSubmissionMessage('Checking the verified prepaid balance before prepaid is used...');
+    setSubmissionMessage('Checking Xero credit before prepaid is used...');
     const balance = await fetchUserPrepaidLedgerBalance(logData.student_id);
     const availableCredit = Number(balance.verifiedBalance ?? 0);
     const topUpIncrement = 1000;
     const chargeAmount = Number(finalCharge || estimatedCost || 0);
     const requiredTopUp = Math.max(topUpIncrement, Math.ceil(Math.max(0, chargeAmount - availableCredit) / topUpIncrement) * topUpIncrement);
+
+    if (!balance.xeroConnected) {
+      toast.error('Prepaid cannot be used until Xero credit can be confirmed. The old CRM prepaid balance is no longer used.');
+      return false;
+    }
 
     if (availableCredit > 0.005 && availableCredit + 0.005 >= chargeAmount) return true;
 
