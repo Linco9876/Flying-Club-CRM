@@ -72,6 +72,21 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
   const [loading, setLoading] = useState(true);
   const [xeroConnected, setXeroConnected] = useState(false);
   const [minimumPrepaidPack, setMinimumPrepaidPack] = useState(1000);
+  const [loadWarning, setLoadWarning] = useState<string | null>(null);
+
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
 
   useEffect(() => {
     if (!enabled) {
@@ -121,6 +136,7 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
       return;
     }
     setLoading(true);
+    setLoadWarning(null);
     const memberId = scope === 'member' ? scopedUserId : null;
     await Promise.all([
       fetchTransactions(memberId),
@@ -269,18 +285,20 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
         .filter((flight: UnpaidFlight) => flight.xeroInvoiceId)
         .map((flight: UnpaidFlight) => flight.id);
       if (!skipXeroRefresh && xeroFlightIds.length > 0) {
-        try {
-          const { data: refreshData, error: refreshError } = await supabase.functions.invoke('xero-sync', {
-            body: { action: 'refresh-paid-flight-invoices', flightLogIds: xeroFlightIds },
-          });
-          if (refreshError) throw refreshError;
-          if ((refreshData as any)?.paidCount > 0) {
-            await fetchUnpaidFlights(true, memberUserId);
-            await fetchTransactions(memberUserId);
+        void (async () => {
+          try {
+            const { data: refreshData, error: refreshError } = await supabase.functions.invoke('xero-sync', {
+              body: { action: 'refresh-paid-flight-invoices', flightLogIds: xeroFlightIds },
+            });
+            if (refreshError) throw refreshError;
+            if ((refreshData as any)?.paidCount > 0) {
+              await fetchUnpaidFlights(true, memberUserId);
+              await fetchTransactions(memberUserId);
+            }
+          } catch (refreshErr) {
+            console.warn('Unable to refresh Xero invoice payment statuses:', refreshErr);
           }
-        } catch (refreshErr) {
-          console.warn('Unable to refresh Xero invoice payment statuses:', refreshErr);
-        }
+        })();
       }
     } catch (err) {
       console.error('Error fetching unpaid flights:', err);
@@ -305,7 +323,11 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
         let useXeroBalances = false;
         let xeroBalance = 0;
         try {
-          const xeroData = await fetchUserXeroBalance(memberUserId);
+          const xeroData = await withTimeout(
+            fetchUserXeroBalance(memberUserId),
+            12_000,
+            'Xero took too long to return this member balance.'
+          );
           useXeroBalances = Boolean(xeroData.connected);
           setXeroConnected(useXeroBalances);
           setMinimumPrepaidPack(Number(xeroData.minimumPrepaidPack ?? 1000));
@@ -313,6 +335,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
         } catch (error) {
           console.warn('Unable to confirm member Xero balance:', error);
           setXeroConnected(false);
+          setLoadWarning(error instanceof Error ? error.message : 'Xero member balance could not be confirmed.');
         }
 
         const { data: unpaid, error: unpaidError } = await supabase
@@ -348,7 +371,11 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
       let useXeroBalances = false;
 
       try {
-        const xeroData = await fetchAllMemberXeroBalances();
+        const xeroData = await withTimeout(
+          fetchAllMemberXeroBalances(),
+          12_000,
+          'Xero took too long to return member balances. Transactions are available, but Xero credit may be incomplete.'
+        );
         useXeroBalances = Boolean(xeroData.connected);
         setXeroConnected(useXeroBalances);
         setMinimumPrepaidPack(Number(xeroData.minimumPrepaidPack ?? 1000));
@@ -367,6 +394,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
         } else {
           console.warn('Unable to confirm Xero connection while loading pilot accounts:', error);
           setXeroConnected(false);
+          setLoadWarning(message || 'Xero member balances could not be confirmed.');
         }
       }
 
@@ -825,6 +853,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
     pilotAccounts,
     loading,
     xeroConnected,
+    loadWarning,
     minimumPrepaidPack,
     addTopUp,
     createFlightPaymentCheckout,

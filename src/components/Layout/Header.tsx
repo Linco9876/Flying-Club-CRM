@@ -4,7 +4,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Calendar, CreditCard, Plane, User, LogOut } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
-import { fetchOwnXeroBalance } from '../../lib/xeroMemberBalance';
+import {
+  fetchOwnXeroBalance,
+  XERO_MEMBER_BALANCE_UPDATED_EVENT,
+  XeroMemberBalance,
+} from '../../lib/xeroMemberBalance';
 
 const formatCurrency = (amount: number, decimals: number) =>
   new Intl.NumberFormat('en-AU', {
@@ -28,6 +32,17 @@ export const Header: React.FC = () => {
   React.useEffect(() => {
     let mounted = true;
 
+    const applyBalance = (data: XeroMemberBalance | null) => {
+      if (!mounted) return;
+      const showLinkedBalance = Boolean(data?.connected && data?.linked);
+      const netBalance = Number(data?.netBalance ?? (Number(data?.availableCredit ?? 0) - Number(data?.outstandingInvoiceTotal ?? 0)));
+      setBalance(showLinkedBalance && Number.isFinite(netBalance) ? netBalance : null);
+    };
+
+    const handleBalanceUpdate = (event: Event) => {
+      applyBalance((event as CustomEvent<XeroMemberBalance | null>).detail ?? null);
+    };
+
     const fetchBalance = async () => {
       if (!user?.id) {
         if (mounted) {
@@ -38,10 +53,7 @@ export const Header: React.FC = () => {
 
       try {
         const data = await fetchOwnXeroBalance();
-        if (!mounted) return;
-        const showLinkedBalance = Boolean(data.connected && data.linked);
-        const netBalance = Number(data.netBalance ?? (Number(data.availableCredit ?? 0) - Number(data.outstandingInvoiceTotal ?? 0)));
-        setBalance(showLinkedBalance ? netBalance : null);
+        applyBalance(data);
       } catch (error) {
         if (!mounted) return;
         console.error('Failed to load header balance:', error);
@@ -49,9 +61,11 @@ export const Header: React.FC = () => {
       }
     };
 
+    window.addEventListener(XERO_MEMBER_BALANCE_UPDATED_EVENT, handleBalanceUpdate);
     fetchBalance();
     return () => {
       mounted = false;
+      window.removeEventListener(XERO_MEMBER_BALANCE_UPDATED_EVENT, handleBalanceUpdate);
     };
   }, [user?.id]);
 

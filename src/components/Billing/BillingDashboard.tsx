@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { StripeTestModeBanner } from './StripeTestModeBanner';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
-import { CreditCard, ExternalLink, FileText, GitBranch, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
+import { AlertTriangle, CreditCard, ExternalLink, FileText, GitBranch, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
@@ -9,7 +9,7 @@ import { PortalSectionLoader } from '../Layout/PortalSectionLoader';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
-import { fetchOwnXeroInvoices, openOwnXeroInvoicePdf, payOwnXeroInvoice, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
+import { fetchOwnXeroInvoices, openOwnXeroInvoicePdf, payOwnXeroInvoice, publishXeroMemberBalance, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import toast from 'react-hot-toast';
 
@@ -129,6 +129,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     setXeroInvoicesLoading(true);
     try {
       const data = await fetchOwnXeroInvoices(options);
+      publishXeroMemberBalance(data);
       setOwnXeroConnected(Boolean(data.connected));
       setXeroInvoices(data.invoices || []);
       setXeroInvoicesLinked(data.linked !== false);
@@ -142,6 +143,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       console.warn('Failed to load Xero invoices:', error);
       toast.error(error?.message || 'Failed to load Xero invoices');
       setOwnXeroConnected(false);
+      publishXeroMemberBalance(null);
       setXeroInvoices([]);
       setXeroCredit({
         availableCredit: 0,
@@ -909,6 +911,24 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Financial Dashboard</h1>
         <p className="text-gray-600">Manage organisation transactions and pilot accounts</p>
       </div>
+
+      {billing.loadWarning && (
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold">Some Xero information is still catching up</p>
+            <p className="mt-1 text-sm">{billing.loadWarning}</p>
+            <button
+              type="button"
+              onClick={() => void billing.refetch()}
+              className="mt-3 inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/50"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Retry Xero data
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="app-tab-scroller">

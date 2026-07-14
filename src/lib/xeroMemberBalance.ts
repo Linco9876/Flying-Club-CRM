@@ -56,6 +56,14 @@ export interface XeroInvoicePaymentResponse {
   invoice?: XeroPortalInvoice;
 }
 
+export const XERO_MEMBER_BALANCE_UPDATED_EVENT = 'xero-member-balance-updated';
+
+export const publishXeroMemberBalance = (balance: XeroMemberBalance | null) => {
+  window.dispatchEvent(new CustomEvent<XeroMemberBalance | null>(XERO_MEMBER_BALANCE_UPDATED_EVENT, {
+    detail: balance,
+  }));
+};
+
 type CachedValue<T> = {
   expiresAt: number;
   promise: Promise<T>;
