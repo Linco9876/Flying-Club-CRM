@@ -21,7 +21,7 @@ export const AircraftList: React.FC = () => {
     || user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor');
   const canSeeMaintenancePlanning = isStaff;
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft({ includeRates: false });
-  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
+  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones({ enabled: canSeeMaintenancePlanning });
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
@@ -42,7 +42,7 @@ export const AircraftList: React.FC = () => {
   }, []);
 
   usePageLoadState(
-    loading || milestonesLoading,
+    loading || (canSeeMaintenancePlanning && milestonesLoading),
     'Loading aircraft',
     'Preparing fleet status, defects, documents and maintenance milestones...'
   );
@@ -78,7 +78,7 @@ export const AircraftList: React.FC = () => {
     setDuplicatingAircraft(null);
   };
 
-  if (loading || milestonesLoading) {
+  if (loading || (canSeeMaintenancePlanning && milestonesLoading)) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   CalendarDays,
@@ -289,7 +289,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     return () => URL.revokeObjectURL(previewUrl);
   }, [coverFile]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const globalSaveKey = `__${saveKey.replace(/-/g, '')}SettingsSave`;
     const globalCancelKey = `__${saveKey.replace(/-/g, '')}SettingsCancel`;
 

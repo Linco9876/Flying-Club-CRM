@@ -2037,7 +2037,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 {isPilot ? 'Pilot' : 'Student'}
               </span>
             </div>
-            <p className="text-blue-100/80">{isPilot ? 'Pilot File' : 'Student File'}</p>
+            <p className="text-blue-100/80">Pilot File</p>
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">

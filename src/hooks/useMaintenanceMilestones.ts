@@ -32,15 +32,31 @@ export interface MaintenanceCompletion {
   notes?: string;
 }
 
-export const useMaintenanceMilestones = () => {
+interface UseMaintenanceMilestonesOptions {
+  enabled?: boolean;
+}
+
+export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptions) => {
+  const enabled = options?.enabled ?? true;
   const [milestones, setMilestones] = useState<MaintenanceMilestone[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
 
   useEffect(() => {
-    fetchMilestones();
-  }, []);
+    if (enabled) {
+      fetchMilestones();
+      return;
+    }
+
+    setMilestones([]);
+    setLoading(false);
+  }, [enabled]);
 
   const fetchMilestones = async () => {
+    if (!enabled) {
+      setMilestones([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const { data, error } = await supabase

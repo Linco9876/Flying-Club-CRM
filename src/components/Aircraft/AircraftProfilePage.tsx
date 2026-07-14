@@ -43,10 +43,13 @@ export const AircraftProfilePage: React.FC = () => {
   const { aircraftId } = useParams<{ aircraftId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isAdmin = hasAnyRole(user, ['admin']);
+  const isStudentOrPilot = hasAnyRole(user, ['student', 'pilot']) && !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
+  const canManageAircraft = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const { aircraft, loading: aircraftLoading } = useAircraft();
   const { bookings, loading: bookingsLoading } = useBookings();
   const { users } = useUsers();
-  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
+  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones({ enabled: !isStudentOrPilot });
   const { rates, loading: ratesLoading, upsertRate, deleteRate } = useAircraftRates(aircraftId);
   const { flightTypes, paymentMethods } = useBillingSettings();
   const [activeTab, setActiveTab] = useState<AircraftProfileTab>('documents');
@@ -64,9 +67,6 @@ export const AircraftProfilePage: React.FC = () => {
 
   const selectedAircraft = aircraft.find(item => item.id === aircraftId);
   const aircraftIconSrc = getAircraftIconSrc(selectedAircraft?.iconKey);
-  const isAdmin = hasAnyRole(user, ['admin']);
-  const isStudentOrPilot = hasAnyRole(user, ['student', 'pilot']) && !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
-  const canManageAircraft = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
 
   useEffect(() => {
     if (isStudentOrPilot && (activeTab === 'flight-log' || activeTab === 'milestones')) {
@@ -107,7 +107,11 @@ export const AircraftProfilePage: React.FC = () => {
   }, [aircraftId]);
 
   const fetchCompletions = async () => {
-    if (!aircraftId) return;
+    if (!aircraftId || isStudentOrPilot) {
+      setCompletions([]);
+      setCompletionsLoading(false);
+      return;
+    }
     setCompletionsLoading(true);
     try {
       const { data, error } = await supabase
@@ -137,7 +141,7 @@ export const AircraftProfilePage: React.FC = () => {
 
   useEffect(() => {
     fetchCompletions();
-  }, [aircraftId]);
+  }, [aircraftId, isStudentOrPilot]);
 
   const aircraftMilestones = milestones.filter(milestone => milestone.aircraftId === aircraftId);
   const filteredMilestones = aircraftMilestones.filter(milestone => milestoneFilter === 'all' || milestone.status === milestoneFilter);
@@ -325,10 +329,12 @@ export const AircraftProfilePage: React.FC = () => {
           <p className="text-xs font-semibold uppercase text-gray-500">Open Defects</p>
           <p className="mt-1 text-lg font-semibold text-gray-900">{selectedAircraft.defects.length}</p>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <p className="text-xs font-semibold uppercase text-gray-500">Milestones</p>
-          <p className="mt-1 text-lg font-semibold text-gray-900">{aircraftMilestones.length}</p>
-        </div>
+        {!isStudentOrPilot && (
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <p className="text-xs font-semibold uppercase text-gray-500">Milestones</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{aircraftMilestones.length}</p>
+          </div>
+        )}
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase text-gray-500">Bookings</p>
           <p className="mt-1 text-lg font-semibold text-gray-900">{aircraftBookings.length}</p>
