@@ -41,22 +41,34 @@ jobs:
             exit 1
           fi
 
-          response_file="$(mktemp)"
-          http_code="$(
-            curl --silent --show-error \
-              --request POST \
-              --header "Content-Type: application/json" \
-              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-              --data '{"action":"process-next"}' \
-              --output "$response_file" \
-              --write-out "%{http_code}" \
-              "${SUPABASE_URL%/}/functions/v1/xero-sync"
-          )"
+          # A small batch clears normal bursts without approaching Xero's limits.
+          # The pause also gives the shared circuit breaker time to react to 429s.
+          for attempt in 1 2 3; do
+            response_file="$(mktemp)"
+            http_code="$(
+              curl --silent --show-error \
+                --request POST \
+                --header "Content-Type: application/json" \
+                --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+                --data '{"action":"process-next"}' \
+                --output "$response_file" \
+                --write-out "%{http_code}" \
+                "${SUPABASE_URL%/}/functions/v1/xero-sync"
+            )"
 
-          echo "Xero sync processor: HTTP ${http_code}"
-          cat "$response_file"
-          echo
+            echo "Xero sync processor ${attempt}/3: HTTP ${http_code}"
+            cat "$response_file"
+            echo
 
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            exit 1
-          fi
+            if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+              exit 1
+            fi
+
+            if grep -q '"processed":false' "$response_file"; then
+              break
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              sleep 3
+            fi
+          done

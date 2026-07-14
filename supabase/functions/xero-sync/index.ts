@@ -3154,7 +3154,10 @@ const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, it
         processed_by: processedBy,
         updated_at: new Date().toISOString(),
       }).eq("id", item.id);
-      throw error;
+      return {
+        needsReview: true,
+        message,
+      };
     }
 
     if (isRetriableXeroError(error) && attempt < 5) {
@@ -3205,7 +3208,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "");
-    const ctx = await getConnectionAndSettings(adminClient);
+    const ctx: any = await getConnectionAndSettings(adminClient);
     ctx.priorityTopupSync = action === "sync-transaction" && body.priorityTopupSync === true;
 
     if (action === "queue-member-contact") {
