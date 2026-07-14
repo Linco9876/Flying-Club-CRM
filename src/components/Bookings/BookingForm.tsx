@@ -641,7 +641,9 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         .map((endorsement) => endorsement.type.trim().toLowerCase())
     );
     const activeLicences = new Set((selectedPerson?.licences || [])
-      .filter(licence => licence.isActive && (!licence.expiryDate || new Date(licence.expiryDate) >= now))
+      .filter(licence => (licence.verificationStatus || 'verified') === 'verified'
+        && licence.isActive
+        && (!licence.expiryDate || new Date(licence.expiryDate) >= now))
       .map(licence => licence.type.trim().toLowerCase()));
 
     const meetsAllRequired = requiredAllEndorsements.every(type => activeEndorsements.has(type.toLowerCase()));

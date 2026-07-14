@@ -129,6 +129,12 @@ export const useStudents = (options?: UseStudentsOptions) => {
           instructorId: licence.instructor_id,
           sourceCourseId: licence.source_course_id,
           isActive: Boolean(licence.is_active),
+          verificationStatus: licence.verification_status || 'verified',
+          proofDocumentId: licence.proof_document_id || null,
+          submittedBy: licence.submitted_by || null,
+          verifiedBy: licence.verified_by || null,
+          verifiedAt: licence.verified_at ? new Date(licence.verified_at) : undefined,
+          rejectionReason: licence.rejection_reason || null,
         });
         licencesMap.set(licence.student_id, memberLicences);
       });
@@ -312,9 +318,21 @@ export const useStudents = (options?: UseStudentsOptions) => {
           date_obtained: licence.dateObtained || null,
           expiry_date: licence.expiryDate || null,
           issuing_authority: licence.issuingAuthority || null,
-          instructor_id: licence.instructorId || currentAuthUser?.id || null,
+          instructor_id: (licence.verificationStatus || 'verified') === 'verified'
+            ? licence.instructorId || currentAuthUser?.id || null
+            : licence.instructorId || null,
           source_course_id: licence.sourceCourseId || null,
-          is_active: licence.isActive,
+          is_active: (licence.verificationStatus || 'verified') === 'verified' && licence.isActive,
+          verification_status: licence.verificationStatus || 'verified',
+          proof_document_id: licence.proofDocumentId || null,
+          submitted_by: licence.submittedBy || null,
+          verified_by: (licence.verificationStatus || 'verified') !== 'pending'
+            ? licence.verifiedBy || currentAuthUser?.id || null
+            : null,
+          verified_at: (licence.verificationStatus || 'verified') !== 'pending'
+            ? licence.verifiedAt?.toISOString() || new Date().toISOString()
+            : null,
+          rejection_reason: licence.rejectionReason || null,
         })));
         if (licencesError) throw licencesError;
       }
@@ -457,9 +475,21 @@ export const useStudents = (options?: UseStudentsOptions) => {
           date_obtained: licence.dateObtained || null,
           expiry_date: licence.expiryDate || null,
           issuing_authority: licence.issuingAuthority || null,
-          instructor_id: licence.instructorId || currentAuthUser?.id || null,
+          instructor_id: (licence.verificationStatus || 'verified') === 'verified'
+            ? licence.instructorId || currentAuthUser?.id || null
+            : licence.instructorId || null,
           source_course_id: licence.sourceCourseId || null,
-          is_active: licence.isActive,
+          is_active: (licence.verificationStatus || 'verified') === 'verified' && licence.isActive,
+          verification_status: licence.verificationStatus || 'verified',
+          proof_document_id: licence.proofDocumentId || null,
+          submitted_by: licence.submittedBy || null,
+          verified_by: (licence.verificationStatus || 'verified') !== 'pending'
+            ? licence.verifiedBy || currentAuthUser?.id || null
+            : null,
+          verified_at: (licence.verificationStatus || 'verified') !== 'pending'
+            ? licence.verifiedAt?.toISOString() || new Date().toISOString()
+            : null,
+          rejection_reason: licence.rejectionReason || null,
         })));
         if (licencesError) throw licencesError;
       }

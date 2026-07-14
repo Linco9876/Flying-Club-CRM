@@ -995,6 +995,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         expiryDate: infoLicenceDraft.expiryDate ? new Date(infoLicenceDraft.expiryDate) : undefined,
         issuingAuthority: infoLicenceDraft.issuingAuthority.trim() || undefined,
         isActive: true,
+        verificationStatus: 'verified',
+        verifiedBy: user?.id || null,
+        verifiedAt: new Date(),
       }],
     }));
     setInfoLicenceDraft({ type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '' });
@@ -1002,6 +1005,38 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const removeInfoLicence = (licenceId: string) => {
     setInfoForm(prev => ({ ...prev, licences: prev.licences.filter(licence => licence.id !== licenceId) }));
+  };
+
+  const approveInfoLicence = (licenceId: string) => {
+    setInfoForm(prev => ({
+      ...prev,
+      licences: prev.licences.map(licence => licence.id === licenceId ? {
+        ...licence,
+        verificationStatus: 'verified',
+        isActive: true,
+        verifiedBy: user?.id || null,
+        verifiedAt: new Date(),
+        rejectionReason: null,
+      } : licence),
+    }));
+    toast.success('Licence marked approved. Save information to apply the change.');
+  };
+
+  const rejectInfoLicence = (licenceId: string) => {
+    const rejectionReason = window.prompt('Add a short reason the member can see:', '')?.trim();
+    if (rejectionReason === undefined) return;
+    setInfoForm(prev => ({
+      ...prev,
+      licences: prev.licences.map(licence => licence.id === licenceId ? {
+        ...licence,
+        verificationStatus: 'rejected',
+        isActive: false,
+        verifiedBy: user?.id || null,
+        verifiedAt: new Date(),
+        rejectionReason: rejectionReason || 'Licence evidence could not be verified.',
+      } : licence),
+    }));
+    toast.success('Licence marked not approved. Save information to apply the change.');
   };
 
   const saveStudentInfo = async () => {
@@ -1087,9 +1122,23 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             date_obtained: toDateInputValue(licence.dateObtained) || null,
             expiry_date: toDateInputValue(licence.expiryDate) || null,
             issuing_authority: licence.issuingAuthority || null,
-            instructor_id: licence.instructorId || user?.id || null,
+            instructor_id: (licence.verificationStatus || 'verified') === 'verified'
+              ? licence.instructorId || user?.id || null
+              : licence.instructorId || null,
             source_course_id: licence.sourceCourseId || null,
-            is_active: licence.isActive,
+            is_active: (licence.verificationStatus || 'verified') === 'verified' && licence.isActive,
+            verification_status: licence.verificationStatus || 'verified',
+            proof_document_id: licence.proofDocumentId || null,
+            submitted_by: licence.submittedBy || null,
+            verified_by: (licence.verificationStatus || 'verified') === 'verified'
+              ? licence.verifiedBy || user?.id || null
+              : licence.verificationStatus === 'rejected'
+                ? licence.verifiedBy || user?.id || null
+                : null,
+            verified_at: (licence.verificationStatus || 'verified') === 'verified' || licence.verificationStatus === 'rejected'
+              ? licence.verifiedAt?.toISOString() || new Date().toISOString()
+              : null,
+            rejection_reason: licence.rejectionReason || null,
           })));
           if (licencesError) throw licencesError;
         }
@@ -4402,12 +4451,35 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     </div>
                   )}
                   <div className={`${canManageLicences ? 'mt-4' : ''} space-y-2`}>
-                    {infoForm.licences.length > 0 ? infoForm.licences.map(licence => (
-                      <div key={licence.id} className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div><p className="text-sm font-semibold text-gray-900">{licence.type}</p><p className="text-xs text-gray-500">{licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}{licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p></div>
-                        {canManageLicences && <button type="button" onClick={() => removeInfoLicence(licence.id)} className="text-sm font-medium text-red-600 hover:text-red-700">Remove</button>}
-                      </div>
-                    )) : <p className="text-sm text-gray-500">No pilot licences recorded.</p>}
+                    {infoForm.licences.length > 0 ? infoForm.licences.map(licence => {
+                      const status = licence.verificationStatus || 'verified';
+                      return (
+                        <div key={licence.id} className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-gray-900">{licence.type}</p>
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status === 'verified' ? 'bg-green-100 text-green-700' : status === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700'}`}>
+                                {status === 'verified' ? (licence.isActive ? 'Verified' : 'Verified, inactive') : status === 'pending' ? 'Pending review' : 'Not approved'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500">{licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}{licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p>
+                            {status === 'pending' && <p className="mt-1 text-xs font-medium text-amber-700">Submitted by the member with supporting proof.</p>}
+                            {status === 'rejected' && licence.rejectionReason && <p className="mt-1 text-xs font-medium text-red-700">Review note: {licence.rejectionReason}</p>}
+                          </div>
+                          {canManageLicences && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {status === 'pending' && (
+                                <>
+                                  <button type="button" onClick={() => approveInfoLicence(licence.id)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
+                                  <button type="button" onClick={() => rejectInfoLicence(licence.id)} className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>
+                                </>
+                              )}
+                              <button type="button" onClick={() => removeInfoLicence(licence.id)} className="text-sm font-medium text-red-600 hover:text-red-700">Remove</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }) : <p className="text-sm text-gray-500">No pilot licences recorded.</p>}
                   </div>
                 </div>
               </section>

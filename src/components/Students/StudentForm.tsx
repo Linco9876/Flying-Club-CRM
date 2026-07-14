@@ -179,6 +179,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       expiryDate: newLicence.expiryDate ? new Date(newLicence.expiryDate) : undefined,
       issuingAuthority: newLicence.issuingAuthority.trim() || undefined,
       isActive: true,
+      verificationStatus: 'verified',
     };
     setFormData(prev => ({ ...prev, licences: [...prev.licences, licence] }));
     setNewLicence({ type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '' });
@@ -187,6 +188,32 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
   const removeLicence = (licenceId: string) => {
     setFormData(prev => ({ ...prev, licences: prev.licences.filter(item => item.id !== licenceId) }));
+  };
+
+  const approveLicence = (licenceId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      licences: prev.licences.map(item => item.id === licenceId ? {
+        ...item,
+        verificationStatus: 'verified',
+        isActive: true,
+        rejectionReason: null,
+      } : item),
+    }));
+  };
+
+  const rejectLicence = (licenceId: string) => {
+    const reason = window.prompt('Add a short reason the member can see:', '')?.trim();
+    if (reason === undefined) return;
+    setFormData(prev => ({
+      ...prev,
+      licences: prev.licences.map(item => item.id === licenceId ? {
+        ...item,
+        verificationStatus: 'rejected',
+        isActive: false,
+        rejectionReason: reason || 'Licence evidence could not be verified.',
+      } : item),
+    }));
   };
 
   if (!isOpen) return null;
@@ -497,12 +524,28 @@ export const StudentForm: React.FC<StudentFormProps> = ({
               </div>
             </div>
             <div className="space-y-2">
-              {formData.licences.map(licence => (
-                <div key={licence.id} className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div><p className="text-sm font-semibold text-gray-900">{licence.type}</p><p className="text-xs text-gray-600">{licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}{licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p></div>
-                  <button type="button" onClick={() => removeLicence(licence.id)} className="text-sm font-medium text-red-600 hover:text-red-800">Remove</button>
-                </div>
-              ))}
+              {formData.licences.map(licence => {
+                const status = licence.verificationStatus || 'verified';
+                return (
+                  <div key={licence.id} className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-gray-900">{licence.type}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status === 'verified' ? 'bg-green-100 text-green-700' : status === 'pending' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700'}`}>
+                          {status === 'verified' ? 'Verified' : status === 'pending' ? 'Pending review' : 'Not approved'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">{licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}{licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p>
+                      {status === 'rejected' && licence.rejectionReason && <p className="mt-1 text-xs text-red-700">Review note: {licence.rejectionReason}</p>}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {status === 'pending' && <button type="button" onClick={() => approveLicence(licence.id)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">Approve</button>}
+                      {status === 'pending' && <button type="button" onClick={() => rejectLicence(licence.id)} className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700">Reject</button>}
+                      <button type="button" onClick={() => removeLicence(licence.id)} className="text-sm font-medium text-red-600 hover:text-red-800">Remove</button>
+                    </div>
+                  </div>
+                );
+              })}
               {formData.licences.length === 0 && <p className="text-sm text-gray-500">No pilot licences recorded.</p>}
             </div>
           </div>

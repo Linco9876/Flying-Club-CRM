@@ -375,6 +375,12 @@ export interface Licence {
   instructorId?: string | null;
   sourceCourseId?: string | null;
   isActive: boolean;
+  verificationStatus?: 'pending' | 'verified' | 'rejected';
+  proofDocumentId?: string | null;
+  submittedBy?: string | null;
+  verifiedBy?: string | null;
+  verifiedAt?: Date;
+  rejectionReason?: string | null;
 }
 
 export interface GroundSessionLog {

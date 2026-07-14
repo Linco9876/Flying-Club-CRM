@@ -22,7 +22,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
-import { Endorsement } from '../../types';
+import { Endorsement, Licence } from '../../types';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 
@@ -62,7 +62,22 @@ interface ProfileFormData {
   confirmPassword: string;
 }
 
-interface AccountEndorsement extends Pick<Endorsement, 'id' | 'type' | 'dateObtained' | 'expiryDate' | 'isActive'> {}
+type AccountEndorsement = Pick<Endorsement, 'id' | 'type' | 'dateObtained' | 'expiryDate' | 'isActive'>;
+
+type AccountLicence = Pick<Licence,
+  'id' | 'type' | 'licenceNumber' | 'dateObtained' | 'expiryDate' | 'issuingAuthority' |
+  'isActive' | 'verificationStatus' | 'rejectionReason'
+>;
+
+interface PendingLicenceDraft {
+  localId: string;
+  type: string;
+  licenceNumber: string;
+  dateObtained: string;
+  expiryDate: string;
+  issuingAuthority: string;
+  proofFile: File | null;
+}
 
 interface PendingEndorsementDraft {
   localId: string;
@@ -127,6 +142,16 @@ const createPendingEndorsement = (type = ''): PendingEndorsementDraft => ({
   proofFile: null,
 });
 
+const createPendingLicence = (type = ''): PendingLicenceDraft => ({
+  localId: createLocalId(),
+  type,
+  licenceNumber: '',
+  dateObtained: '',
+  expiryDate: '',
+  issuingAuthority: '',
+  proofFile: null,
+});
+
 export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsProps> = ({
   canEdit,
   onFormChange,
@@ -152,10 +177,13 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const [sendingVerification, setSendingVerification] = useState(false);
   const [existingEndorsements, setExistingEndorsements] = useState<AccountEndorsement[]>([]);
   const [pendingEndorsements, setPendingEndorsements] = useState<PendingEndorsementDraft[]>([]);
+  const [existingLicences, setExistingLicences] = useState<AccountLicence[]>([]);
+  const [pendingLicences, setPendingLicences] = useState<PendingLicenceDraft[]>([]);
   const [medicalProofFile, setMedicalProofFile] = useState<File | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const endorsementsSectionRef = useRef<HTMLElement | null>(null);
+  const licencesSectionRef = useRef<HTMLElement | null>(null);
   const hasHandledEndorsementDeepLinkRef = useRef(false);
   const [preferenceForm, setPreferenceForm] = useState<PreferenceFormData>(() => {
     const { user_id, preferences: _preferences, ...defaults } = defaultUserPreferences(user?.id || '');
@@ -196,6 +224,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         { data: userData, error: userError },
         { data: studentData, error: studentError },
         { data: endorsementsData, error: endorsementsError },
+        { data: licencesData, error: licencesError },
         { data: authData, error: authError },
       ] = await Promise.all([
         supabase.from('users').select('*').eq('id', user.id).maybeSingle(),
@@ -205,12 +234,18 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           .select('id, type, date_obtained, expiry_date, is_active')
           .eq('student_id', user.id)
           .order('date_obtained', { ascending: false }),
+        supabase
+          .from('licences')
+          .select('id, type, licence_number, date_obtained, expiry_date, issuing_authority, is_active, verification_status, rejection_reason')
+          .eq('student_id', user.id)
+          .order('created_at', { ascending: false }),
         supabase.auth.getUser(),
       ]);
 
       if (userError) throw userError;
       if (studentError) throw studentError;
       if (endorsementsError) throw endorsementsError;
+      if (licencesError) throw licencesError;
       if (authError) throw authError;
 
       const nextProfile: ProfileFormData = {
@@ -240,8 +275,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       setAvatarFile(null);
       setCoverFile(null);
       setMedicalProofFile(null);
+      setPendingLicences([]);
+      setPendingEndorsements([]);
       setEmailVerified(Boolean(authData.user?.email_confirmed_at));
-      setExistingEndorsements((endorsementsData || []).map((endorsement: any) => ({
+      setExistingEndorsements((endorsementsData || []).map(endorsement => ({
         id: endorsement.id,
         type: endorsement.type,
         dateObtained: new Date(endorsement.date_obtained),
@@ -249,6 +286,18 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         isActive: Boolean(endorsement.is_active),
       })));
       setPendingEndorsements([]);
+      setExistingLicences((licencesData || []).map(licence => ({
+        id: licence.id,
+        type: licence.type,
+        licenceNumber: licence.licence_number || undefined,
+        dateObtained: licence.date_obtained ? new Date(licence.date_obtained) : undefined,
+        expiryDate: licence.expiry_date ? new Date(licence.expiry_date) : undefined,
+        issuingAuthority: licence.issuing_authority || undefined,
+        isActive: Boolean(licence.is_active),
+        verificationStatus: licence.verification_status || 'verified',
+        rejectionReason: licence.rejection_reason || null,
+      })));
+      setPendingLicences([]);
     } catch (err: any) {
       console.error('Failed to load account settings:', err);
       toast.error(err.message || 'Failed to load account settings');
@@ -325,6 +374,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     emailVerified,
     existingEndorsements,
     pendingEndorsements,
+    existingLicences,
+    pendingLicences,
   ]);
 
   const safeImageFilename = (filename: string) => filename
@@ -414,7 +465,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     }
   };
 
-  const uploadEndorsementProof = async (file: File, endorsementType: string) => {
+  const uploadCredentialProof = async (
+    file: File,
+    credentialType: string,
+    credentialLabel: 'Endorsement' | 'Licence'
+  ) => {
     if (!user?.id) throw new Error('User not available');
 
     const storagePath = `${user.id}/${createLocalId()}-${safeFilename(file.name)}`;
@@ -432,7 +487,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       .from('student_documents')
       .insert({
         student_id: user.id,
-        display_name: `Endorsement Proof - ${endorsementType.trim()}`,
+        display_name: `${credentialLabel} Proof - ${credentialType.trim()}`,
         original_filename: file.name,
         storage_path: storagePath,
         mime_type: file.type || null,
@@ -492,29 +547,61 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     onFormChange();
   };
 
+  const addPendingLicence = () => {
+    setPendingLicences(prev => [...prev, createPendingLicence()]);
+    onFormChange();
+  };
+
+  const updatePendingLicence = (
+    localId: string,
+    field: keyof PendingLicenceDraft,
+    value: string | File | null
+  ) => {
+    setPendingLicences(prev => prev.map(licence => (
+      licence.localId === localId ? { ...licence, [field]: value } : licence
+    )));
+    onFormChange();
+  };
+
+  const removePendingLicence = (localId: string) => {
+    setPendingLicences(prev => prev.filter(licence => licence.localId !== localId));
+    onFormChange();
+  };
+
   useEffect(() => {
     if (hasHandledEndorsementDeepLinkRef.current || profileLoading || loading || selectedTab !== 'info') return;
     if (typeof window === 'undefined') return;
 
     const params = new URLSearchParams(window.location.search);
     const focus = params.get('focus');
-    if (focus !== 'endorsements') return;
+    if (focus !== 'endorsements' && focus !== 'licences') return;
 
     hasHandledEndorsementDeepLinkRef.current = true;
     const requestedEndorsement = (params.get('endorsement') || '').trim();
+    const requestedLicence = (params.get('licence') || '').trim();
 
     if (canEdit && isStudentOrPilot) {
-      setPendingEndorsements(prev => {
-        if (requestedEndorsement && prev.some(item => item.type.trim().toLowerCase() === requestedEndorsement.toLowerCase())) {
-          return prev;
-        }
-        return [...prev, createPendingEndorsement(requestedEndorsement)];
-      });
+      if (focus === 'endorsements') {
+        setPendingEndorsements(prev => {
+          if (requestedEndorsement && prev.some(item => item.type.trim().toLowerCase() === requestedEndorsement.toLowerCase())) {
+            return prev;
+          }
+          return [...prev, createPendingEndorsement(requestedEndorsement)];
+        });
+      } else {
+        setPendingLicences(prev => {
+          if (requestedLicence && prev.some(item => item.type.trim().toLowerCase() === requestedLicence.toLowerCase())) {
+            return prev;
+          }
+          return [...prev, createPendingLicence(requestedLicence)];
+        });
+      }
       onFormChange();
     }
 
     window.setTimeout(() => {
-      endorsementsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      (focus === 'licences' ? licencesSectionRef.current : endorsementsSectionRef.current)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 120);
   }, [canEdit, isStudentOrPilot, loading, onFormChange, profileLoading, selectedTab]);
 
@@ -604,6 +691,41 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       toast.success('Password updated');
     }
 
+    const recordedLicenceTypes = new Set(
+      existingLicences
+        .filter(licence => licence.verificationStatus !== 'rejected')
+        .map(licence => licence.type.trim().toLowerCase())
+    );
+
+    for (const licence of pendingLicences) {
+      const normalisedType = licence.type.trim().toLowerCase();
+      if (!normalisedType) {
+        toast.error('Choose a licence type before saving');
+        throw new Error('Licence type is required');
+      }
+      if (recordedLicenceTypes.has(normalisedType)) {
+        toast.error(`${licence.type.trim()} is already recorded or awaiting review`);
+        throw new Error('Licence is already recorded');
+      }
+      recordedLicenceTypes.add(normalisedType);
+      if (!licence.licenceNumber.trim()) {
+        toast.error(`Add the licence number for ${licence.type.trim()}`);
+        throw new Error('Licence number is required');
+      }
+      if (!licence.dateObtained) {
+        toast.error(`Add the issue date for ${licence.type.trim()}`);
+        throw new Error('Licence issue date is required');
+      }
+      if (licence.expiryDate && licence.expiryDate < licence.dateObtained) {
+        toast.error(`The expiry date for ${licence.type.trim()} cannot be before its issue date`);
+        throw new Error('Licence dates are invalid');
+      }
+      if (!licence.proofFile) {
+        toast.error(`Upload proof for ${licence.type.trim()} before saving`);
+        throw new Error('Licence proof is required');
+      }
+    }
+
     for (const endorsement of pendingEndorsements) {
       if (!endorsement.type.trim()) {
         toast.error('Choose an endorsement type before saving');
@@ -672,9 +794,50 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       if (studentError) throw studentError;
     }
 
+    if (pendingLicences.length > 0) {
+      for (const licence of pendingLicences) {
+        const { storagePath, documentId } = await uploadCredentialProof(
+          licence.proofFile!,
+          licence.type,
+          'Licence'
+        );
+        const { error: licenceError } = await supabase
+          .from('licences')
+          .insert({
+            student_id: user.id,
+            type: licence.type.trim(),
+            licence_number: licence.licenceNumber.trim(),
+            date_obtained: licence.dateObtained,
+            expiry_date: licence.expiryDate || null,
+            issuing_authority: licence.issuingAuthority.trim() || null,
+            instructor_id: null,
+            source_course_id: null,
+            is_active: false,
+            verification_status: 'pending',
+            proof_document_id: documentId,
+            submitted_by: user.id,
+            verified_by: null,
+            verified_at: null,
+            rejection_reason: null,
+          });
+
+        if (licenceError) {
+          if (documentId) {
+            await supabase.from('student_documents').delete().eq('id', documentId);
+          }
+          await supabase.storage.from(STUDENT_DOCUMENTS_BUCKET).remove([storagePath]);
+          throw licenceError;
+        }
+      }
+    }
+
     if (pendingEndorsements.length > 0) {
       for (const endorsement of pendingEndorsements) {
-        const { storagePath, documentId } = await uploadEndorsementProof(endorsement.proofFile!, endorsement.type);
+        const { storagePath, documentId } = await uploadCredentialProof(
+          endorsement.proofFile!,
+          endorsement.type,
+          'Endorsement'
+        );
         const { error: endorsementError } = await supabase
           .from('endorsements')
           .insert({
@@ -897,7 +1060,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
   const tabLabel = tabs.find(tab => tab.id === selectedTab)?.label || 'Account & Preferences';
   const introText = {
-    info: 'Update your personal details, contact numbers, emergency contact, preferred aircraft and self-uploaded endorsements.',
+    info: 'Update your personal details, contact numbers, emergency contact, preferred aircraft, licences and endorsements.',
     security: 'Manage your password and account sign-in security.',
     calendar: 'Choose your personal date, time and calendar defaults.',
     notifications: 'Tune notifications for your own account.',
@@ -1059,7 +1222,134 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           </section>
 
           {isStudentOrPilot && (
-            <section className="space-y-4">
+            <section ref={licencesSectionRef} className="scroll-mt-24 space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Pilot licences</h3>
+                  <p className="text-sm text-gray-500">
+                    Add a licence and supporting document. Staff must verify it before it changes your Pilot status or solo-hire access.
+                  </p>
+                </div>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={addPendingLicence}
+                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add licence
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-white p-4">
+                <h4 className="text-sm font-semibold text-gray-900">Current licences</h4>
+                {existingLicences.length === 0 ? (
+                  <p className="mt-2 text-sm text-gray-500">No licences are currently recorded on your profile.</p>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {existingLicences.map(licence => {
+                      const status = licence.verificationStatus || 'verified';
+                      const statusStyle = status === 'verified'
+                        ? 'bg-green-100 text-green-700'
+                        : status === 'pending'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-red-100 text-red-700';
+                      return (
+                        <div key={licence.id} className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">{licence.type}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusStyle}`}>
+                              {status === 'verified' ? (licence.isActive ? 'Verified' : 'Verified, inactive') : status === 'pending' ? 'Pending review' : 'Not approved'}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}
+                            {licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}
+                            {licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ' | No expiry recorded'}
+                          </p>
+                          {licence.issuingAuthority && <p className="mt-1 text-xs text-gray-500">Issued by {licence.issuingAuthority}</p>}
+                          {status === 'pending' && (
+                            <p className="mt-2 text-xs font-medium text-amber-700">This licence does not grant Pilot access until staff verify it.</p>
+                          )}
+                          {status === 'rejected' && licence.rejectionReason && (
+                            <p className="mt-2 text-xs font-medium text-red-700">Review note: {licence.rejectionReason}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {pendingLicences.length > 0 && (
+                <div className="space-y-4">
+                  {pendingLicences.map(licence => (
+                    <div key={licence.localId} className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-900">New licence</h4>
+                          <p className="text-xs text-gray-500">It will be submitted for staff review when you save your settings.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePendingLicence(licence.localId)}
+                          disabled={!canEdit}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-gray-700">Licence</span>
+                          <select value={licence.type} onChange={event => updatePendingLicence(licence.localId, 'type', event.target.value)} disabled={!canEdit} className={inputClass}>
+                            <option value="">Select licence</option>
+                            {trainingSettings.licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-gray-700">Licence number</span>
+                          <input value={licence.licenceNumber} onChange={event => updatePendingLicence(licence.localId, 'licenceNumber', event.target.value)} disabled={!canEdit} className={inputClass} />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-gray-700">Issuing authority</span>
+                          <input value={licence.issuingAuthority} onChange={event => updatePendingLicence(licence.localId, 'issuingAuthority', event.target.value)} disabled={!canEdit} placeholder="RAAus or CASA" className={inputClass} />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-gray-700">Issue date</span>
+                          <input type="date" value={licence.dateObtained} onChange={event => updatePendingLicence(licence.localId, 'dateObtained', event.target.value)} disabled={!canEdit} className={inputClass} />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-sm font-medium text-gray-700">Expiry date</span>
+                          <input type="date" value={licence.expiryDate} onChange={event => updatePendingLicence(licence.localId, 'expiryDate', event.target.value)} disabled={!canEdit} className={inputClass} />
+                        </label>
+                      </div>
+
+                      <div className="mt-4 rounded-md border border-dashed border-gray-300 bg-white p-4">
+                        <label className="mb-2 block text-sm font-medium text-gray-700">Proof of licence</label>
+                        <input
+                          type="file"
+                          onChange={event => updatePendingLicence(licence.localId, 'proofFile', event.target.files?.[0] || null)}
+                          disabled={!canEdit}
+                          className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-700"
+                        />
+                        <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                          <FileUp className="h-3.5 w-3.5" />
+                          {licence.proofFile ? `${licence.proofFile.name} will be saved into Documents` : 'Upload a certificate, licence image or other supporting document'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {isStudentOrPilot && (
+            <section ref={endorsementsSectionRef} className="scroll-mt-24 space-y-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-lg font-medium text-gray-900">Endorsements</h3>
