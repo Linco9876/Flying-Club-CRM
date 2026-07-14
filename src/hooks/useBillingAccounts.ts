@@ -325,7 +325,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
         try {
           const xeroData = await withTimeout(
             fetchUserXeroBalance(memberUserId),
-            12_000,
+            6_000,
             'Xero took too long to return this member balance.'
           );
           useXeroBalances = Boolean(xeroData.connected);
@@ -373,7 +373,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
       try {
         const xeroData = await withTimeout(
           fetchAllMemberXeroBalances(),
-          12_000,
+          6_000,
           'Xero took too long to return member balances. Transactions are available, but Xero credit may be incomplete.'
         );
         useXeroBalances = Boolean(xeroData.connected);
