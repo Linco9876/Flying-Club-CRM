@@ -33,9 +33,9 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 
 let usersCache: User[] | null = null;
 
-export const useUsers = () => {
+export const useUsers = (enabled = true) => {
   const [users, setUsers] = useState<User[]>(() => usersCache || []);
-  const [loading, setLoading] = useState(() => !usersCache);
+  const [loading, setLoading] = useState(() => enabled && !usersCache);
   const [error, setError] = useState<string | null>(null);
 
   const fetchUsers = async () => {
@@ -277,8 +277,12 @@ export const useUsers = () => {
   };
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    if (enabled) {
+      fetchUsers();
+    } else {
+      setLoading(false);
+    }
+  }, [enabled]);
 
   return {
     users,

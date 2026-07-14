@@ -15,17 +15,18 @@ export interface AircraftRate {
   includedTaxes: number;
 }
 
-export const useAircraftRates = (aircraftId?: string) => {
+export const useAircraftRates = (aircraftId?: string, enabled = true) => {
   const [rates, setRates] = useState<AircraftRate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled && Boolean(aircraftId));
 
   useEffect(() => {
-    if (aircraftId) {
+    if (aircraftId && enabled) {
       fetchRates();
     } else {
+      setRates([]);
       setLoading(false);
     }
-  }, [aircraftId]);
+  }, [aircraftId, enabled]);
 
   const fetchRates = async () => {
     if (!aircraftId) return;

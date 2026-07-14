@@ -46,13 +46,16 @@ export const AircraftProfilePage: React.FC = () => {
   const isAdmin = hasAnyRole(user, ['admin']);
   const isStudentOrPilot = hasAnyRole(user, ['student', 'pilot']) && !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canManageAircraft = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
-  const { aircraft, loading: aircraftLoading } = useAircraft();
-  const { bookings, loading: bookingsLoading } = useBookings();
-  const { users } = useUsers();
-  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones({ enabled: !isStudentOrPilot });
-  const { rates, loading: ratesLoading, upsertRate, deleteRate } = useAircraftRates(aircraftId);
-  const { flightTypes, paymentMethods } = useBillingSettings();
   const [activeTab, setActiveTab] = useState<AircraftProfileTab>('documents');
+  const bookingsTabActive = activeTab === 'bookings';
+  const pricingTabActive = activeTab === 'pricing';
+  const maintenanceTabActive = !isStudentOrPilot && activeTab === 'milestones';
+  const { aircraft, loading: aircraftLoading } = useAircraft({ includeRates: false });
+  const { bookings, loading: bookingsLoading } = useBookings(bookingsTabActive);
+  const { users } = useUsers(bookingsTabActive);
+  const { milestones, loading: milestonesLoading } = useMaintenanceMilestones({ enabled: maintenanceTabActive });
+  const { rates, loading: ratesLoading, upsertRate, deleteRate } = useAircraftRates(aircraftId, pricingTabActive);
+  const { flightTypes, paymentMethods } = useBillingSettings({ enabled: pricingTabActive });
   const [documents, setDocuments] = useState<AircraftDocument[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
@@ -103,11 +106,13 @@ export const AircraftProfilePage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchDocuments();
-  }, [aircraftId]);
+    if (activeTab === 'documents') {
+      fetchDocuments();
+    }
+  }, [aircraftId, activeTab]);
 
   const fetchCompletions = async () => {
-    if (!aircraftId || isStudentOrPilot) {
+    if (!aircraftId || !maintenanceTabActive) {
       setCompletions([]);
       setCompletionsLoading(false);
       return;
@@ -141,7 +146,7 @@ export const AircraftProfilePage: React.FC = () => {
 
   useEffect(() => {
     fetchCompletions();
-  }, [aircraftId, isStudentOrPilot]);
+  }, [aircraftId, maintenanceTabActive]);
 
   const aircraftMilestones = milestones.filter(milestone => milestone.aircraftId === aircraftId);
   const filteredMilestones = aircraftMilestones.filter(milestone => milestoneFilter === 'all' || milestone.status === milestoneFilter);
