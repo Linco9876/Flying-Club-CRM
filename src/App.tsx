@@ -471,13 +471,13 @@ const KioskAuthenticatedRoute: React.FC<{
     return <Navigate to="/" replace />;
   }
 
-  const handleNewBooking = () => {
+  const handleNewBooking = (date?: Date) => {
     if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
       toast.error('Student self-booking is disabled. Please contact the club.');
       return;
     }
     setEditingBooking(null);
-    setBookingFormData({});
+    setBookingFormData(date ? { date: format(date, 'yyyy-MM-dd') } : {});
     setShowBookingForm(true);
   };
 
@@ -694,11 +694,13 @@ const AuthenticatedApp: React.FC<{
     navigate(getPathForView(view));
   };
 
-  const handleNewBooking = () => {
+  const handleNewBooking = (date?: Date) => {
     if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
       toast.error('Student self-booking is disabled. Please contact the club.');
       return;
     }
+    setEditingBooking(null);
+    setBookingFormData(date ? { date: format(date, 'yyyy-MM-dd') } : {});
     setShowBookingForm(true);
   };
 

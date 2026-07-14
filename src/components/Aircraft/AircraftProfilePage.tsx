@@ -623,7 +623,12 @@ export const AircraftProfilePage: React.FC = () => {
                 <option value="past">Past</option>
                 <option value="cancelled">Cancelled</option>
               </select>
-              <input value={bookingSearch} onChange={event => setBookingSearch(event.target.value)} placeholder="Filter by pilot, instructor or notes" className={inputClass} />
+              <input
+                value={bookingSearch}
+                onChange={event => setBookingSearch(event.target.value)}
+                placeholder={isStudentOrPilot ? 'Filter bookings' : 'Filter by pilot, instructor or notes'}
+                className={inputClass}
+              />
             </div>
           </div>
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -636,6 +641,13 @@ export const AircraftProfilePage: React.FC = () => {
                 {filteredBookings.map(booking => {
                   const student = users.find(item => item.id === booking.studentId);
                   const instructor = users.find(item => item.id === booking.instructorId);
+                  const isOwnBooking = booking.studentId === user?.id;
+                  const hirerLabel = isStudentOrPilot
+                    ? (isOwnBooking ? booking.hirerName || user?.name || 'Your booking' : 'Booked')
+                    : booking.hirerName || student?.name || 'Unknown pilot/student';
+                  const bookingDetail = isStudentOrPilot
+                    ? `${booking.instructorId ? 'Instructor booked' : 'No instructor'}${isOwnBooking && booking.notes ? ` | ${booking.notes}` : ''}`
+                    : `${booking.instructorName || instructor?.name ? `Instructor: ${booking.instructorName || instructor?.name}` : 'No instructor'} | ${booking.notes || 'No notes'}`;
                   return (
                     <div key={booking.id} className="grid gap-3 p-4 lg:grid-cols-[220px_1fr_140px]">
                       <div>
@@ -643,8 +655,8 @@ export const AircraftProfilePage: React.FC = () => {
                         <p className="mt-1 text-xs text-gray-500">to {booking.endTime.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}</p>
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">{booking.hirerName || student?.name || 'Unknown pilot/student'}</p>
-                        <p className="mt-1 text-xs text-gray-500">{booking.instructorName || instructor?.name ? `Instructor: ${booking.instructorName || instructor?.name}` : 'No instructor'} | {booking.notes || 'No notes'}</p>
+                        <p className="text-sm font-semibold text-gray-900">{hirerLabel}</p>
+                        <p className="mt-1 text-xs text-gray-500">{bookingDetail}</p>
                       </div>
                       <div className="text-right">
                         <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold capitalize text-gray-700">{booking.status.replace('_', ' ')}</span>
@@ -738,6 +750,26 @@ const RateRow: React.FC<RateRowProps> = ({ flightTypeName, rate, disabled, payme
     defaultPaymentMethodId: draft.defaultPaymentMethodId || null,
     includedTaxes: Number(draft.includedTaxes) || 0,
   });
+
+  if (disabled) {
+    return (
+      <div className="grid gap-3 p-4 sm:grid-cols-[minmax(160px,1.5fr)_repeat(3,minmax(90px,1fr))] sm:items-center">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">{flightTypeName}</p>
+          <p className="text-xs text-gray-500">{rate ? 'Current member pricing' : 'No rate configured'}</p>
+        </div>
+        {rate ? (
+          <>
+            <div><p className="text-xs text-gray-500">Charge basis</p><p className="text-sm font-medium capitalize text-gray-900">{rate.chargeType.replace('_', ' ')}</p></div>
+            <div><p className="text-xs text-gray-500">Solo</p><p className="text-sm font-medium text-gray-900">${Number(rate.soloRate || 0).toFixed(2)}</p></div>
+            <div><p className="text-xs text-gray-500">Dual</p><p className="text-sm font-medium text-gray-900">${Number(rate.dualRate || 0).toFixed(2)}</p></div>
+          </>
+        ) : (
+          <p className="text-sm text-gray-500 sm:col-span-3">Contact the club for the current price.</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-3 p-4 xl:grid-cols-[180px_120px_repeat(5,1fr)_120px] xl:items-end">

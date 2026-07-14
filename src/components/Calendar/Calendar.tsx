@@ -50,7 +50,7 @@ import toast from 'react-hot-toast';
 
 interface CalendarProps {
   bookings: Booking[];
-  onNewBooking: () => void;
+  onNewBooking: (date?: Date) => void;
   onNewBookingWithTime?: (
     date: Date,
     startTime: string,
@@ -4107,7 +4107,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             Calendar
           </h2>
           <button
-            onClick={onNewBooking}
+            onClick={() => onNewBooking(currentDate)}
             className="inline-flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-blue-600 px-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 sm:w-auto sm:gap-2 sm:px-4"
           >
             <Plus className="h-4 w-4 shrink-0" />
@@ -4219,7 +4219,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       <div className="grid items-center gap-4 md:grid-cols-[210px_minmax(420px,1fr)_300px] xl:grid-cols-[240px_minmax(520px,1fr)_360px]">
         <div className="flex justify-start">
           <button
-            onClick={onNewBooking}
+            onClick={() => onNewBooking(currentDate)}
             className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
           >
             <Plus className="h-4 w-4 shrink-0" />
