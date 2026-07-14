@@ -70,6 +70,7 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
   const [unpaidFlights, setUnpaidFlights] = useState<UnpaidFlight[]>([]);
   const [pilotAccounts, setPilotAccounts] = useState<PilotAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pilotAccountsLoading, setPilotAccountsLoading] = useState(true);
   const [xeroConnected, setXeroConnected] = useState(false);
   const [minimumPrepaidPack, setMinimumPrepaidPack] = useState(1000);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
@@ -93,7 +94,7 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
       setLoading(false);
       return;
     }
-    fetchAll();
+    void fetchAll({ deferPilotAccounts: true });
   }, [enabled, scope, scopedUserId]);
 
   const createAdminAuditEntry = async ({
@@ -130,19 +131,30 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
     }
   };
 
-  const fetchAll = async () => {
+  const fetchAll = async (fetchOptions: { deferPilotAccounts?: boolean } = {}) => {
     if (!enabled) {
       setLoading(false);
       return;
     }
     setLoading(true);
+    setPilotAccountsLoading(true);
     setLoadWarning(null);
     const memberId = scope === 'member' ? scopedUserId : null;
-    await Promise.all([
+    const coreRequest = Promise.all([
       fetchTransactions(memberId),
       fetchUnpaidFlights(false, memberId),
-      fetchPilotAccounts(memberId),
     ]);
+    const pilotAccountsRequest = fetchPilotAccounts(memberId)
+      .finally(() => setPilotAccountsLoading(false));
+
+    if (fetchOptions.deferPilotAccounts) {
+      await coreRequest;
+      setLoading(false);
+      void pilotAccountsRequest;
+      return;
+    }
+
+    await Promise.all([coreRequest, pilotAccountsRequest]);
     setLoading(false);
   };
 
@@ -852,6 +864,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
     unpaidFlights,
     pilotAccounts,
     loading,
+    pilotAccountsLoading,
     xeroConnected,
     loadWarning,
     minimumPrepaidPack,

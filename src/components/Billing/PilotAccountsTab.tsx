@@ -113,7 +113,7 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onCo
 };
 
 export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }) => {
-  const { pilotAccounts, loading, addTopUp, xeroConnected } = billing;
+  const { pilotAccounts, pilotAccountsLoading, addTopUp, xeroConnected } = billing;
   const { paymentMethods } = useBillingSettings();
   const [sortField, setSortField] = useState<'name' | 'balance' | 'unpaidFlightCount'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -149,7 +149,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
   const topUpAccount = pilotAccounts.find(a => a.userId === topUpUserId);
   const selectedAccount = pilotAccounts.find(a => a.userId === selectedUserId);
 
-  if (loading) {
+  if (pilotAccountsLoading) {
     return (
       <div className="flex items-center justify-center h-48">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
