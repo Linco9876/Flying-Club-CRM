@@ -21,7 +21,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
   preSelectedAircraftId
 }) => {
   const { user } = useAuth();
-  const { aircraft, loading } = useAircraft();
+  const { aircraft, loading } = useAircraft({ includeRates: false });
   const { settings: maintenanceSettings } = useMaintenanceSettings();
   const [formData, setFormData] = useState({
     aircraftId: preSelectedAircraftId || '',

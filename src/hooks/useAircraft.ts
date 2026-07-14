@@ -7,6 +7,8 @@ import { usePageLoadState } from '../context/PageLoadContext';
 
 let staffAircraftCache: Aircraft[] | null = null;
 let publicAircraftCache: Aircraft[] | null = null;
+let staffAircraftSummaryCache: Aircraft[] | null = null;
+let publicAircraftSummaryCache: Aircraft[] | null = null;
 
 const DEFECT_ATTACHMENT_BUCKET = 'defect-attachments';
 
@@ -56,14 +58,20 @@ const getSignedDefectAttachmentUrls = async (photos?: string[] | null) => {
 
 interface UseAircraftOptions {
   participateInPageLoad?: boolean;
+  includeRates?: boolean;
 }
 
 export const useAircraft = (options?: UseAircraftOptions) => {
   const { user } = useAuth();
   const participateInPageLoad = options?.participateInPageLoad ?? true;
+  const includeRates = options?.includeRates ?? true;
   const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
   const canSeePrivateAircraftData = roles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
-  const activeAircraftCache = canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache;
+  const activeAircraftCache = includeRates
+    ? (canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache)
+    : (canSeePrivateAircraftData
+        ? staffAircraftSummaryCache || staffAircraftCache
+        : publicAircraftSummaryCache || publicAircraftCache);
   const [aircraft, setAircraft] = useState<Aircraft[]>(() => activeAircraftCache || []);
   const [loading, setLoading] = useState(() => !activeAircraftCache);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +83,11 @@ export const useAircraft = (options?: UseAircraftOptions) => {
 
   const fetchAircraft = async () => {
     try {
-      const cachedAircraft = canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache;
+      const cachedAircraft = includeRates
+        ? (canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache)
+        : (canSeePrivateAircraftData
+            ? staffAircraftSummaryCache || staffAircraftCache
+            : publicAircraftSummaryCache || publicAircraftCache);
       if (!cachedAircraft) {
         setLoading(true);
       }
@@ -86,7 +98,9 @@ export const useAircraft = (options?: UseAircraftOptions) => {
       const [aircraftResult, defectsResult, ratesResult] = await Promise.all([
         supabase.from('aircraft').select('*').order('registration'),
         supabase.from('defects').select(defectColumns).eq('status', 'open'),
-        supabase.from('aircraft_rates').select('*, flight_types(name), payment_methods(name)')
+        includeRates
+          ? supabase.from('aircraft_rates').select('*, flight_types(name), payment_methods(name)')
+          : Promise.resolve({ data: [], error: null })
       ]);
 
       const { data: aircraftData, error: aircraftError } = aircraftResult;
@@ -208,9 +222,11 @@ export const useAircraft = (options?: UseAircraftOptions) => {
       });
 
       if (canSeePrivateAircraftData) {
-        staffAircraftCache = combinedAircraft;
+        if (includeRates) staffAircraftCache = combinedAircraft;
+        else staffAircraftSummaryCache = combinedAircraft;
       } else {
-        publicAircraftCache = combinedAircraft;
+        if (includeRates) publicAircraftCache = combinedAircraft;
+        else publicAircraftSummaryCache = combinedAircraft;
       }
       setAircraft(combinedAircraft);
       setError(null);
@@ -704,6 +720,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
 
       staffAircraftCache = null;
       publicAircraftCache = null;
+      staffAircraftSummaryCache = null;
+      publicAircraftSummaryCache = null;
       await fetchAircraft();
       toast.success('Aircraft archived');
     } catch (err) {
@@ -729,6 +747,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
 
       staffAircraftCache = null;
       publicAircraftCache = null;
+      staffAircraftSummaryCache = null;
+      publicAircraftSummaryCache = null;
       await fetchAircraft();
       toast.success('Aircraft archived');
     } catch (err) {
@@ -754,6 +774,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
 
       staffAircraftCache = null;
       publicAircraftCache = null;
+      staffAircraftSummaryCache = null;
+      publicAircraftSummaryCache = null;
       await fetchAircraft();
       toast.success('Aircraft restored');
     } catch (err) {
@@ -813,13 +835,17 @@ export const useAircraft = (options?: UseAircraftOptions) => {
   };
 
   useEffect(() => {
-    const cachedAircraft = canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache;
+    const cachedAircraft = includeRates
+      ? (canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache)
+      : (canSeePrivateAircraftData
+          ? staffAircraftSummaryCache || staffAircraftCache
+          : publicAircraftSummaryCache || publicAircraftCache);
     if (cachedAircraft) {
       setAircraft(cachedAircraft);
       setLoading(false);
     }
     fetchAircraft();
-  }, [canSeePrivateAircraftData]);
+  }, [canSeePrivateAircraftData, includeRates]);
 
   return {
     aircraft,

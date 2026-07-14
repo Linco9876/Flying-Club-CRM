@@ -562,7 +562,7 @@ const OneTimeMilestoneModal: React.FC<OneTimeMilestoneModalProps> = ({ aircraft,
 
 export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
-  const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory, deleteDefect } = useAircraft();
+  const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory, deleteDefect } = useAircraft({ includeRates: false });
   const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone, deleteMilestone } = useMaintenanceMilestones();
   const { templates, settings: maintenanceSettings, loading: templatesLoading } = useMaintenanceSettings();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('open');

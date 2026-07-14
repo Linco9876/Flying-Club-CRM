@@ -20,7 +20,7 @@ export const AircraftList: React.FC = () => {
     || user?.role === 'senior_instructor'
     || user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor');
   const canSeeMaintenancePlanning = isStaff;
-  const { aircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft();
+  const { aircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft({ includeRates: false });
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones();
   const [showAircraftForm, setShowAircraftForm] = useState(false);
   const [showDefectForm, setShowDefectForm] = useState(false);
