@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudents } from '../../hooks/useStudents';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
-import { useFlightLogs } from '../../hooks/useFlightLogs';
+import type { FlightLog } from '../../hooks/useFlightLogs';
 import { buildSafetyComplianceSummary, getBfrDueDate, isStudentOnly } from '../../utils/safetyCompliance';
 import { Download, Search, AlertTriangle, CheckCircle, Clock, CalendarDays, ShieldCheck, Loader2 } from 'lucide-react';
 import { hasAnyRole } from '../../utils/rbac';
+import { supabase } from '../../lib/supabase';
 
 interface PilotCurrency {
   id: string;
@@ -26,7 +27,9 @@ interface PilotCurrency {
 export const PilotCurrencyTab: React.FC = () => {
   const { user } = useAuth();
   const { students, loading: studentsLoading } = useStudents();
-  const { flightLogs, loading: flightLogsLoading } = useFlightLogs();
+  const [flightLogs, setFlightLogs] = useState<Array<Pick<FlightLog, 'student_id' | 'instructor_id' | 'start_time' | 'solo_time' | 'flight_duration'>>>([]);
+  const [flightLogsLoading, setFlightLogsLoading] = useState(true);
+  const [flightLogsError, setFlightLogsError] = useState<string | null>(null);
   const { settings } = useSafetySettings();
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -35,6 +38,34 @@ export const PilotCurrencyTab: React.FC = () => {
     (user?.role === 'student' || user?.role === 'pilot' || user?.roles?.some(role => role === 'student' || role === 'pilot')) &&
     !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])
   );
+
+  useEffect(() => {
+    let active = true;
+
+    const fetchCurrencyFlightLogs = async () => {
+      setFlightLogsLoading(true);
+      setFlightLogsError(null);
+      try {
+        const { data, error } = await supabase
+          .from('flight_logs')
+          .select('student_id, instructor_id, start_time, solo_time, flight_duration');
+
+        if (error) throw error;
+        if (active) setFlightLogs(data || []);
+      } catch (error) {
+        if (active) {
+          setFlightLogsError(error instanceof Error ? error.message : 'Failed to load flight activity');
+        }
+      } finally {
+        if (active) setFlightLogsLoading(false);
+      }
+    };
+
+    void fetchCurrencyFlightLogs();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const calculatePilotCurrency = (): PilotCurrency[] => {
     const pilots = isMemberSelfView
@@ -195,6 +226,20 @@ export const PilotCurrencyTab: React.FC = () => {
           <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-600" />
           <p className="mt-3 text-sm font-medium text-gray-700">Loading pilot currency</p>
           <p className="mt-1 text-xs text-gray-500">Checking flight activity, medicals, memberships and flight reviews...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (flightLogsError) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-red-800 shadow-sm">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold">Pilot currency could not be calculated</p>
+            <p className="mt-1 text-sm">{flightLogsError}</p>
+          </div>
         </div>
       </div>
     );
