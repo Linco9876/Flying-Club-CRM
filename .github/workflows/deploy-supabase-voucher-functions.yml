@@ -46,21 +46,14 @@ jobs:
           set -euo pipefail
 
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Missing SUPABASE_ACCESS_TOKEN GitHub secret. Voucher functions will be type-checked but not deployed from GitHub Actions."
+            echo "::error::Missing SUPABASE_ACCESS_TOKEN GitHub secret. Voucher functions cannot be deployed."
             {
-              echo "### Supabase deploy skipped"
+              echo "### Supabase deploy failed"
               echo ""
               echo "Missing \`SUPABASE_ACCESS_TOKEN\` GitHub repository secret."
-              echo "The voucher functions were still type-checked and tested. Add the secret to enable automatic GitHub deploys."
+              echo "Add the secret so code merged to main cannot silently remain undeployed."
             } >> "$GITHUB_STEP_SUMMARY"
-
-            if [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
-              echo "Manual deploy requested, but SUPABASE_ACCESS_TOKEN is missing." >&2
-              exit 1
-            fi
-
-            exit 0
+            exit 1
           fi
 
           echo "available=true" >> "$GITHUB_OUTPUT"
@@ -84,6 +77,7 @@ jobs:
           set -euo pipefail
 
           npx --yes deno test --node-modules-dir=false supabase/functions/_shared/trialVoucherReadiness.test.ts
+          npx --yes deno test --node-modules-dir=false supabase/functions/_shared/stripeMode.test.ts
 
       - name: Deploy voucher Edge Functions
         if: steps.supabase-token.outputs.available == 'true'

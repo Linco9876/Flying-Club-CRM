@@ -15,7 +15,7 @@ This checklist covers the Bendigo Flying Club trial instructional flight voucher
 - Create one product per voucher type, for example Tecnam and PA-28 Archer.
 - Configure:
   - voucher duration in minutes
-  - price and optional Stripe Price ID
+  - price and mode-specific Stripe checkout prices created by the CRM
   - eligible aircraft mode or selected aircraft
   - instructors allowed to fly that voucher
   - email subject/body and booking instructions
@@ -51,8 +51,12 @@ Set these in the Supabase project Edge Function secrets before enabling live vou
 - `BREVO_SENDER_NAME`
 - `TRIAL_VOUCHER_INTERNAL_SECRET`
 - `TRIAL_VOUCHER_CRON_SECRET`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_TEST_SECRET_KEY`
+- `STRIPE_LIVE_SECRET_KEY`
+- `STRIPE_TEST_PUBLISHABLE_KEY`
+- `STRIPE_LIVE_PUBLISHABLE_KEY`
+- `STRIPE_TEST_WEBHOOK_SECRET`
+- `STRIPE_LIVE_WEBHOOK_SECRET`
 
 `TRIAL_VOUCHER_INTERNAL_SECRET` is used when one voucher function calls another internally.
 `TRIAL_VOUCHER_CRON_SECRET` protects scheduled recipient email delivery.
@@ -71,17 +75,16 @@ The voucher function deployment workflow runs Deno checks before deploying. The 
 ## Stripe Setup
 
 - Use **Connect Stripe** in `/gift-vouchers` to open the Stripe API key screen.
-- Add the Stripe secret key to Supabase Edge Function secrets as `STRIPE_SECRET_KEY`. Do not paste secret keys into the browser UI or database.
-- After a voucher product has been saved with a real AUD price, use **Create & link Stripe** in the product editor to create a Stripe Product and Price from the CRM product and automatically save the Stripe Price ID.
-- Alternatively, create Stripe products/prices manually and copy the Stripe Price ID onto the matching voucher product in the CRM.
-- Use the admin product editor's **Check Stripe ID** action to verify the pasted Stripe Price ID exists in Stripe, is active, uses AUD, and matches the CRM sale price.
+- Store all Stripe keys only as Supabase Edge Function secrets. Do not paste secret keys into the browser UI or database.
+- After a voucher product has been saved with a real AUD price, use **Create checkout price** in the product editor. The CRM creates and stores a separate Price ID for the active Test or Live mode.
+- Test mode must never reuse or fall back to a Live Price ID. Switch modes and create the matching price before enabling checkout in that mode.
 - Set the Stripe webhook endpoint to:
 
 ```text
 https://<supabase-project-url>/functions/v1/trial-voucher-stripe-webhook
 ```
 
-- Configure the webhook signing secret as `STRIPE_WEBHOOK_SECRET`.
+- Configure the Test and Live webhook signing secrets separately.
 - At minimum, send checkout session completion/expiry related events to the webhook.
 
 ## Verification Before Live Sales

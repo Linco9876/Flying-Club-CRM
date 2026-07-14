@@ -410,8 +410,11 @@ Deno.serve(async (req: Request) => {
 
     if (action === "validate-stripe-price") {
       let stripeSecretKey = "";
+      let activeStripeMode: "test" | "live" = "live";
       try {
-        stripeSecretKey = (await getActiveStripeMode(adminClient)).secretKey;
+        const stripeMode = await getActiveStripeMode(adminClient);
+        stripeSecretKey = stripeMode.secretKey;
+        activeStripeMode = stripeMode.mode;
       } catch (error) {
         return json({
           error: error instanceof Error ? error.message : "Stripe secret key is not configured in Supabase Edge Function secrets.",
@@ -452,6 +455,9 @@ Deno.serve(async (req: Request) => {
       const unitAmount = typeof stripePrice.unit_amount === "number" ? stripePrice.unit_amount / 100 : null;
       const product = typeof stripePrice.product === "object" ? stripePrice.product : null;
       const issues = [
+        ...(Boolean(stripePrice.livemode) === (activeStripeMode === "live")
+          ? []
+          : [`Stripe price belongs to ${stripePrice.livemode ? "Live" : "Test"} mode, but the CRM is in ${activeStripeMode === "live" ? "Live" : "Test"} mode.`]),
         ...(stripePrice.active ? [] : ["Stripe price is inactive."]),
         ...(product && product.active === false ? ["Stripe product is inactive."] : []),
         ...(currency === "AUD" ? [] : [`Stripe price currency is ${currency || "unknown"}, expected AUD.`]),
