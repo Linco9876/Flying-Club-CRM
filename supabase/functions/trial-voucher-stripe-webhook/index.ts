@@ -662,6 +662,92 @@ const hasFlightPaymentReference = async (
   return Boolean(data);
 };
 
+const syncFlightLogFromXeroInvoicePayment = async ({
+  adminClient,
+  session,
+  sessionId,
+  invoiceId,
+  xeroPaymentId,
+  amountApplied,
+  invoicePaid,
+  event,
+}: {
+  adminClient: SupabaseAdminClient;
+  session: any;
+  sessionId: string;
+  invoiceId: string;
+  xeroPaymentId: string;
+  amountApplied: number;
+  invoicePaid: boolean;
+  event: any;
+}) => {
+  const { data: flightLog, error: flightError } = await adminClient
+    .from("flight_logs")
+    .select(`
+      id,
+      student_id,
+      start_time,
+      calculated_cost,
+      total_cost,
+      payment_status,
+      aircraft!flight_logs_aircraft_id_fkey(registration)
+    `)
+    .eq("xero_invoice_id", invoiceId)
+    .maybeSingle();
+  if (flightError) throw flightError;
+  if (!flightLog) return;
+
+  const paymentIntentId = asString(session.payment_intent) || null;
+  const paymentReference = sessionId || paymentIntentId || xeroPaymentId;
+  const alreadyRecorded = await hasFlightPaymentReference(adminClient, flightLog.id, paymentReference);
+  const paymentMethod = await getStripePaymentMethod(adminClient, session);
+  const now = new Date().toISOString();
+
+  const { error: updateError } = await adminClient
+    .from("flight_logs")
+    .update({
+      payment_status: invoicePaid ? "paid" : "pending",
+      payment_type: paymentMethod?.name || "Stripe Card Payment",
+      stripe_payment_intent_id: paymentIntentId,
+      stripe_payment_status: asString(session.payment_status) || "paid",
+      stripe_paid_at: invoicePaid ? now : null,
+      stripe_payment_error: null,
+      xero_payment_id: xeroPaymentId,
+      updated_at: now,
+      ...stripeModeColumns(stripeModeFromEvent(event)),
+    })
+    .eq("id", flightLog.id);
+  if (updateError) throw updateError;
+
+  if (!alreadyRecorded && amountApplied > 0) {
+    const aircraft = firstJoinRow(flightLog.aircraft) as { registration?: unknown } | undefined;
+    const registration = asString(aircraft?.registration) || "aircraft";
+    const flightDate = flightLog.start_time
+      ? new Date(flightLog.start_time).toLocaleDateString("en-AU")
+      : "flight";
+    const { error: transactionError } = await adminClient
+      .from("account_transactions")
+      .insert({
+        user_id: flightLog.student_id,
+        type: "flight_charge",
+        amount: roundCurrency(amountApplied),
+        description: `Stripe invoice payment (${paymentReference}) - ${registration} flight on ${flightDate}`,
+        flight_log_id: flightLog.id,
+        payment_method_id: paymentMethod?.id || null,
+        stripe_checkout_session_id: sessionId || null,
+        balance_after: null,
+        verified_status: "verified",
+        xero_invoice_id: invoiceId,
+        xero_payment_id: xeroPaymentId,
+        xero_synced_at: now,
+        xero_sync_status: "synced",
+        xero_sync_error: null,
+        ...stripeModeColumns(stripeModeFromEvent(event)),
+      });
+    if (transactionError) throw transactionError;
+  }
+};
+
 const handleMemberTopupStripeEvent = async ({
   adminClient,
   event,
@@ -781,6 +867,16 @@ const handleXeroInvoicePaymentStripeEvent = async ({
   if (recordError) throw recordError;
   if (!record) throw new Error("Xero invoice payment record not found.");
   if (record.xero_payment_id && record.status === "paid") {
+    await syncFlightLogFromXeroInvoicePayment({
+      adminClient,
+      session,
+      sessionId,
+      invoiceId,
+      xeroPaymentId: asString(record.xero_payment_id),
+      amountApplied: money(record.amount),
+      invoicePaid: true,
+      event,
+    });
     return json({ received: true, duplicate: true, paymentRecordId });
   }
 
@@ -864,6 +960,17 @@ const handleXeroInvoicePaymentStripeEvent = async ({
       : null,
     updated_at: new Date().toISOString(),
   }).eq("id", record.id);
+
+  await syncFlightLogFromXeroInvoicePayment({
+    adminClient,
+    session,
+    sessionId,
+    invoiceId,
+    xeroPaymentId,
+    amountApplied: amountToApply,
+    invoicePaid: amountDue - amountToApply <= 0.005,
+    event,
+  });
 
   return json({
     received: true,

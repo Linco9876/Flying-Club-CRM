@@ -391,15 +391,16 @@ const normaliseCreditItems = (items: any[], contactId: string, kind: "overpaymen
     );
 
 const fetchContactCreditItems = async (ctx: any, contactId: string) => {
+  const where = encodeURIComponent(`Contact.ContactID==Guid("${xeroStringLiteral(contactId)}")`);
   const [overpaymentResult, prepaymentResult] = await Promise.all([
     xeroRequest({
-      path: "Overpayments",
+      path: `Overpayments?where=${where}`,
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
       bypassLocalPause: Boolean(ctx.priorityRefresh),
     }),
     xeroRequest({
-      path: "Prepayments",
+      path: `Prepayments?where=${where}`,
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
       bypassLocalPause: Boolean(ctx.priorityRefresh),
@@ -422,16 +423,17 @@ const fetchContactCredit = async (ctx: any, contactId: string) => {
     };
   }
 
+  const where = encodeURIComponent(`Contact.ContactID==Guid("${xeroStringLiteral(contactId)}")`);
   const cacheKey = `credit:${contactId}:${ctx.connection.tenant_id}`;
   const [overpaymentResult, prepaymentResult] = await cachedXeroRead(cacheKey, () => Promise.all([
       xeroRequest({
-        path: "Overpayments",
+        path: `Overpayments?where=${where}`,
         tenantId: ctx.connection.tenant_id,
         accessToken: ctx.connection.access_token,
         bypassLocalPause: Boolean(ctx.priorityRefresh),
       }),
       xeroRequest({
-        path: "Prepayments",
+        path: `Prepayments?where=${where}`,
         tenantId: ctx.connection.tenant_id,
         accessToken: ctx.connection.access_token,
         bypassLocalPause: Boolean(ctx.priorityRefresh),
@@ -490,10 +492,9 @@ const mapInvoice = async (ctx: any, invoice: any) => {
 };
 
 const listContactInvoices = async (ctx: any, contactId: string) => {
-  const where = encodeURIComponent(`Type=="ACCREC"&&Contact.ContactID==Guid("${xeroStringLiteral(contactId)}")`);
   const cacheKey = `invoices:${contactId}:${ctx.connection.tenant_id}`;
   const result = await cachedXeroRead(cacheKey, () => xeroRequest({
-      path: `Invoices?where=${where}&order=Date%20DESC`,
+      path: `Invoices?ContactIDs=${encodeURIComponent(contactId)}&order=Date%20DESC`,
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
       bypassLocalPause: Boolean(ctx.priorityRefresh),
@@ -577,6 +578,153 @@ const applyAvailableCreditToInvoice = async (ctx: any, invoiceId: string, contac
   }
 
   return { applied, allocations, remaining };
+};
+
+const recordFlightPaymentTransaction = async ({
+  adminClient,
+  flightLog,
+  amount,
+  paymentMethodId,
+  description,
+  reference,
+  invoiceId,
+  xeroPaymentId,
+  stripeMode,
+}: {
+  adminClient: SupabaseAdminClient;
+  flightLog: any;
+  amount: number;
+  paymentMethodId: string | null;
+  description: string;
+  reference: string;
+  invoiceId: string;
+  xeroPaymentId: string;
+  stripeMode: "test" | "live";
+}) => {
+  if (money(amount) <= 0 || !reference) return;
+  const { data: existing, error: existingError } = await adminClient
+    .from("account_transactions")
+    .select("id")
+    .eq("flight_log_id", flightLog.id)
+    .eq("type", "flight_charge")
+    .ilike("description", `%${reference}%`)
+    .limit(1)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return;
+
+  const { error } = await adminClient.from("account_transactions").insert({
+    user_id: flightLog.student_id,
+    type: "flight_charge",
+    amount: money(amount),
+    description,
+    flight_log_id: flightLog.id,
+    payment_method_id: paymentMethodId,
+    balance_after: null,
+    verified_status: "verified",
+    xero_invoice_id: invoiceId,
+    xero_payment_id: xeroPaymentId,
+    xero_synced_at: new Date().toISOString(),
+    xero_sync_status: "synced",
+    xero_sync_error: null,
+    ...stripeModeColumns(stripeMode),
+  });
+  if (error) throw error;
+};
+
+const syncFlightLogInvoicePaymentState = async ({
+  adminClient,
+  invoiceId,
+  invoicePaid,
+  creditApplied = 0,
+  allocations = [],
+  stripeAmount = 0,
+  stripePaymentIntentId = "",
+  xeroPaymentId = "",
+  stripeMode,
+}: {
+  adminClient: SupabaseAdminClient;
+  invoiceId: string;
+  invoicePaid: boolean;
+  creditApplied?: number;
+  allocations?: Array<{ creditId?: string; allocationId?: string }>;
+  stripeAmount?: number;
+  stripePaymentIntentId?: string;
+  xeroPaymentId?: string;
+  stripeMode: "test" | "live";
+}) => {
+  const { data: flightLog, error: flightError } = await adminClient
+    .from("flight_logs")
+    .select("id,student_id,start_time,payment_status")
+    .eq("xero_invoice_id", invoiceId)
+    .maybeSingle();
+  if (flightError) throw flightError;
+  if (!flightLog) return;
+
+  const [{ data: pilotAccountMethod, error: pilotMethodError }, { data: stripeMethod, error: stripeMethodError }] =
+    await Promise.all([
+      adminClient.from("payment_methods").select("id").eq("system_key", "pilot_account").maybeSingle(),
+      adminClient.from("payment_methods").select("id").eq("system_key", "stripe_card").maybeSingle(),
+    ]);
+  if (pilotMethodError) throw pilotMethodError;
+  if (stripeMethodError) throw stripeMethodError;
+
+  const allocationReference = allocations
+    .map((allocation) => clean(allocation.allocationId || allocation.creditId))
+    .filter(Boolean)
+    .join(",") || `invoice-credit:${invoiceId}`;
+  if (money(creditApplied) > 0) {
+    await recordFlightPaymentTransaction({
+      adminClient,
+      flightLog,
+      amount: creditApplied,
+      paymentMethodId: pilotAccountMethod?.id || null,
+      description: `Xero credit allocation (${allocationReference}) for invoice ${invoiceId}`,
+      reference: allocationReference,
+      invoiceId,
+      xeroPaymentId: `credit-allocation:${allocationReference}`,
+      stripeMode,
+    });
+  }
+
+  if (money(stripeAmount) > 0 && stripePaymentIntentId) {
+    await recordFlightPaymentTransaction({
+      adminClient,
+      flightLog,
+      amount: stripeAmount,
+      paymentMethodId: stripeMethod?.id || null,
+      description: `Stripe saved-card invoice payment (${stripePaymentIntentId}) for invoice ${invoiceId}`,
+      reference: stripePaymentIntentId,
+      invoiceId,
+      xeroPaymentId,
+      stripeMode,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const paymentType = money(stripeAmount) > 0
+    ? (money(creditApplied) > 0 ? "Split Payment" : "Stripe Card Payment")
+    : "Pilot Account";
+  const creditPaymentReference = allocations
+    .map((allocation) => clean(allocation.allocationId || allocation.creditId))
+    .filter(Boolean)
+    .join(",");
+  const update: Record<string, unknown> = {
+    payment_status: invoicePaid ? "paid" : "pending",
+    payment_type: paymentType,
+    xero_payment_id: clean(xeroPaymentId) || (creditPaymentReference ? `credit-allocation:${creditPaymentReference}` : null),
+    updated_at: now,
+    ...stripeModeColumns(stripeMode),
+  };
+  if (stripePaymentIntentId) {
+    update.stripe_payment_intent_id = stripePaymentIntentId;
+    update.stripe_payment_status = "succeeded";
+    update.stripe_paid_at = invoicePaid ? now : null;
+    update.stripe_payment_error = null;
+  }
+
+  const { error: updateError } = await adminClient.from("flight_logs").update(update).eq("id", flightLog.id);
+  if (updateError) throw updateError;
 };
 
 const createInvoicePaymentCheckout = async ({
@@ -895,7 +1043,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const action = clean(body.action || "self").toLowerCase();
-    const ctx = await getXeroContext(adminClient);
+    const ctx: any = await getXeroContext(adminClient);
     ctx.priorityRefresh = body.priorityRefresh === true;
 
     if (!ctx.connected) {
@@ -956,7 +1104,7 @@ Deno.serve(async (req: Request) => {
     if (!member) return json({ error: "Member not found" }, 404);
 
     const contactId = clean(member.xero_contact_id);
-    const credit = contactId ? await fetchContactCredit(ctx, contactId) : {
+    const emptyCredit = {
       overpaymentCredit: 0,
       prepaymentCredit: 0,
       availableCredit: 0,
@@ -971,11 +1119,14 @@ Deno.serve(async (req: Request) => {
           linked: false,
           invoices: [],
           minimumPrepaidPack: MINIMUM_PREPAID_PACK,
-          ...credit,
+          ...emptyCredit,
         });
       }
 
-      const invoices = await listContactInvoices(ctx, contactId);
+      const [credit, invoices] = await Promise.all([
+        fetchContactCredit(ctx, contactId),
+        listContactInvoices(ctx, contactId),
+      ]);
       const outstandingInvoiceTotal = getOutstandingInvoiceTotal(invoices);
 
       return json({
@@ -992,6 +1143,8 @@ Deno.serve(async (req: Request) => {
         invoices,
       });
     }
+
+    const credit = contactId ? await fetchContactCredit(ctx, contactId) : emptyCredit;
 
     if (action === "pay-invoice") {
       if (!contactId) return json({ error: "This member is not linked to a Xero contact." }, 409);
@@ -1013,6 +1166,23 @@ Deno.serve(async (req: Request) => {
         amountDue = money(creditResult.remaining);
       }
 
+      const { data: stripeSettings } = await adminClient
+        .from("stripe_connect_settings")
+        .select("stripe_mode")
+        .eq("id", true)
+        .maybeSingle();
+      const configuredStripeMode: "test" | "live" = stripeSettings?.stripe_mode === "test" ? "test" : "live";
+      if (creditResult.applied > 0) {
+        await syncFlightLogInvoicePaymentState({
+          adminClient,
+          invoiceId,
+          invoicePaid: amountDue <= 0.005,
+          creditApplied: creditResult.applied,
+          allocations: creditResult.allocations,
+          stripeMode: configuredStripeMode,
+        });
+      }
+
       if (amountDue <= 0.005) {
         return json({
           paidWithCredit: creditResult.applied > 0,
@@ -1031,6 +1201,17 @@ Deno.serve(async (req: Request) => {
           amount: amountDue,
         });
         const updatedInvoice = await getContactInvoice(ctx, invoiceId, contactId);
+        await syncFlightLogInvoicePaymentState({
+          adminClient,
+          invoiceId,
+          invoicePaid: money(updatedInvoice?.AmountDue) <= 0.005,
+          creditApplied: creditResult.applied,
+          allocations: creditResult.allocations,
+          stripeAmount: savedCardPayment.amountApplied,
+          stripePaymentIntentId: savedCardPayment.stripePaymentIntentId,
+          xeroPaymentId: savedCardPayment.xeroPaymentId,
+          stripeMode: configuredStripeMode,
+        });
         return json({
           paidWithSavedCard: true,
           creditApplied: creditResult.applied,
