@@ -34,7 +34,9 @@ stripe-secrets.env
 
 # Local Codex attachments and Supabase CLI cache
 .codex-remote-attachments
+.codex-backups/
 supabase/.temp
+supabase/.branches/
 
 # Local generated artifacts and scratch work
 output/
