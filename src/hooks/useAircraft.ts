@@ -203,6 +203,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
           requiredAllEndorsementTypes: Array.isArray(a.required_endorsement_all_types)
             ? a.required_endorsement_all_types.filter(Boolean)
             : [],
+          requiredLicenceTypes: Array.isArray(a.required_licence_types) ? a.required_licence_types.filter(Boolean) : [],
+          requiredAllLicenceTypes: Array.isArray(a.required_licence_all_types) ? a.required_licence_all_types.filter(Boolean) : [],
           iconKey: a.icon_key || null,
           xeroTrackingCategoryId: a.xero_tracking_category_id || null,
           xeroTrackingCategoryName: a.xero_tracking_category_name || null,
@@ -504,6 +506,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
             aircraftData.requiredEndorsementType ? [aircraftData.requiredEndorsementType] : []
           ),
           required_endorsement_all_types: aircraftData.requiredAllEndorsementTypes || [],
+          required_licence_types: aircraftData.requiredLicenceTypes || [],
+          required_licence_all_types: aircraftData.requiredAllLicenceTypes || [],
           icon_key: aircraftData.iconKey || null,
           xero_tracking_category_id: aircraftData.xeroTrackingCategoryId || null,
           xero_tracking_category_name: aircraftData.xeroTrackingCategoryName || null,
@@ -611,6 +615,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
       if (aircraftData.requiredAllEndorsementTypes !== undefined) {
         updateData.required_endorsement_all_types = aircraftData.requiredAllEndorsementTypes;
       }
+      if (aircraftData.requiredLicenceTypes !== undefined) updateData.required_licence_types = aircraftData.requiredLicenceTypes;
+      if (aircraftData.requiredAllLicenceTypes !== undefined) updateData.required_licence_all_types = aircraftData.requiredAllLicenceTypes;
       if (aircraftData.iconKey !== undefined) updateData.icon_key = aircraftData.iconKey || null;
       if (aircraftData.xeroTrackingCategoryId !== undefined) updateData.xero_tracking_category_id = aircraftData.xeroTrackingCategoryId || null;
       if (aircraftData.xeroTrackingCategoryName !== undefined) updateData.xero_tracking_category_name = aircraftData.xeroTrackingCategoryName || null;

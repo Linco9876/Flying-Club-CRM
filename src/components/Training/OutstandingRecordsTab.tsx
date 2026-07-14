@@ -2104,7 +2104,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                         </label>
                         {form.flightReviewResult === 'pass' && (
                           <p className="text-xs text-orange-800 sm:col-span-2">
-                            On submit, the student's flight review date will be updated. Pilot status is granted through configured endorsements.
+                            On submit, the student's flight review date will be updated. Pilot status is granted by a verified licence.
                           </p>
                         )}
                       </div>

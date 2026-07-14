@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { LessonGradingSystem } from '../types';
 import toast from 'react-hot-toast';
-import { DEFAULT_ENDORSEMENT_TYPES, DEFAULT_PILOT_STATUS_ENDORSEMENTS, normaliseEndorsementType, reconcileAllPilotStatuses, uniqueEndorsementTypes } from '../utils/pilotStatus';
+import { DEFAULT_ENDORSEMENT_TYPES, DEFAULT_LICENCE_TYPES, normaliseEndorsementType, uniqueEndorsementTypes, uniqueLicenceTypes } from '../utils/pilotStatus';
 
 export type NextLessonRule = 'advance_on_pass' | 'always_advance' | 'manual';
 export type CourseCompletionRule = 'all_required_criteria' | 'all_lessons_attempted' | 'criteria_or_lessons';
@@ -25,7 +25,7 @@ export interface TrainingSyllabusSettingsData {
   showPassMarkGuidance: boolean;
   showBestGradeGuidance: boolean;
   endorsementTypes: string[];
-  pilotStatusEndorsementTypes: string[];
+  licenceTypes: string[];
 }
 
 export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
@@ -45,7 +45,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSyllabusSettingsData = {
   showPassMarkGuidance: true,
   showBestGradeGuidance: true,
   endorsementTypes: DEFAULT_ENDORSEMENT_TYPES,
-  pilotStatusEndorsementTypes: DEFAULT_PILOT_STATUS_ENDORSEMENTS,
+  licenceTypes: DEFAULT_LICENCE_TYPES,
 };
 
 const TRAINING_SETTINGS_UPDATED_EVENT = 'training-syllabus-settings-updated';
@@ -70,18 +70,13 @@ const mapRow = (row: any): TrainingSyllabusSettingsData => ({
   courseCompletionRule: row.course_completion_rule ?? DEFAULT_TRAINING_SETTINGS.courseCompletionRule,
   showPassMarkGuidance: row.show_pass_mark_guidance ?? DEFAULT_TRAINING_SETTINGS.showPassMarkGuidance,
   showBestGradeGuidance: row.show_best_grade_guidance ?? DEFAULT_TRAINING_SETTINGS.showBestGradeGuidance,
-  endorsementTypes: uniqueEndorsementTypes([
-    ...(row.endorsement_types || DEFAULT_TRAINING_SETTINGS.endorsementTypes),
-    ...(row.pilot_status_endorsement_types || []),
-  ]),
-  pilotStatusEndorsementTypes: uniqueEndorsementTypes(row.pilot_status_endorsement_types || DEFAULT_TRAINING_SETTINGS.pilotStatusEndorsementTypes),
+  endorsementTypes: uniqueEndorsementTypes(row.endorsement_types || DEFAULT_TRAINING_SETTINGS.endorsementTypes),
+  licenceTypes: uniqueLicenceTypes(row.licence_types || DEFAULT_TRAINING_SETTINGS.licenceTypes),
 });
 
 const toRow = (settings: TrainingSyllabusSettingsData) => ({
-  endorsement_types: uniqueEndorsementTypes([
-    ...settings.endorsementTypes,
-    ...settings.pilotStatusEndorsementTypes,
-  ]),
+  endorsement_types: uniqueEndorsementTypes(settings.endorsementTypes),
+  licence_types: uniqueLicenceTypes(settings.licenceTypes),
   default_grading_system: settings.defaultGradingSystem,
   force_student_acknowledgement_for_all_courses: settings.forceStudentAcknowledgementForAllCourses,
   require_student_acknowledgement: settings.requireStudentAcknowledgement,
@@ -97,7 +92,7 @@ const toRow = (settings: TrainingSyllabusSettingsData) => ({
   course_completion_rule: settings.courseCompletionRule,
   show_pass_mark_guidance: settings.showPassMarkGuidance,
   show_best_grade_guidance: settings.showBestGradeGuidance,
-  pilot_status_endorsement_types: uniqueEndorsementTypes(settings.pilotStatusEndorsementTypes),
+  pilot_status_endorsement_types: [],
 });
 
 export function useTrainingSettings() {
@@ -130,7 +125,6 @@ export function useTrainingSettings() {
 
   const updateSettings = async (updates: Partial<TrainingSyllabusSettingsData>) => {
     const next = { ...settings, ...updates };
-    const shouldReconcilePilotStatus = updates.pilotStatusEndorsementTypes !== undefined;
     const { data: userData } = await supabase.auth.getUser();
     const payload = {
       ...toRow(next),
@@ -145,18 +139,6 @@ export function useTrainingSettings() {
     if (result.error) {
       toast.error('Failed to save training settings');
       throw result.error;
-    }
-
-    if (shouldReconcilePilotStatus) {
-      try {
-        const changedCount = await reconcileAllPilotStatuses(uniqueEndorsementTypes(next.pilotStatusEndorsementTypes));
-        if (changedCount > 0) {
-          toast.success(`${changedCount} member${changedCount === 1 ? '' : 's'} updated from Pilot status endorsement rules`);
-        }
-      } catch (error) {
-        console.error('Failed to reconcile pilot statuses from endorsement settings:', error);
-        toast.error('Settings saved, but existing Pilot statuses could not be updated');
-      }
     }
 
     await fetchSettings();
@@ -186,5 +168,22 @@ export function useTrainingSettings() {
     }
   };
 
-  return { settings, loading, updateSettings, renameEndorsementReferences, refetch: fetchSettings };
+  const renameLicenceReferences = async (renames: Array<{ from: string; to: string }>) => {
+    const cleanRenames = renames
+      .map(rename => ({ from: rename.from.trim(), to: rename.to.trim() }))
+      .filter(rename => rename.from && rename.to && normaliseEndorsementType(rename.from) !== normaliseEndorsementType(rename.to));
+
+    for (const rename of cleanRenames) {
+      const [licencesResult, coursesResult, aircraftResult] = await Promise.all([
+        supabase.from('licences').update({ type: rename.to }).eq('type', rename.from),
+        supabase.from('training_courses').update({ completion_licence_type: rename.to }).eq('completion_licence_type', rename.from),
+        supabase.rpc('rename_aircraft_licence_requirement', { old_value: rename.from, new_value: rename.to }),
+      ]);
+      if (licencesResult.error) throw licencesResult.error;
+      if (coursesResult.error) throw coursesResult.error;
+      if (aircraftResult.error) throw aircraftResult.error;
+    }
+  };
+
+  return { settings, loading, updateSettings, renameEndorsementReferences, renameLicenceReferences, refetch: fetchSettings };
 }

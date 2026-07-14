@@ -69,6 +69,9 @@ interface NewCourseState {
   completionEndorsementEnabled: boolean;
   completionEndorsementType: string;
   completionEndorsementExpiryMonths: string;
+  completionLicenceEnabled: boolean;
+  completionLicenceType: string;
+  completionLicenceExpiryMonths: string;
   tags: string;
   objectives: string;
   evaluationFocus: string;
@@ -740,6 +743,9 @@ const emptyCourseForm = (): CourseFormState => ({
   completionEndorsementEnabled: false,
   completionEndorsementType: '',
   completionEndorsementExpiryMonths: '',
+  completionLicenceEnabled: false,
+  completionLicenceType: '',
+  completionLicenceExpiryMonths: '',
   tags: '',
   objectives: '',
   evaluationFocus: '',
@@ -1448,6 +1454,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const { settings: trainingSettings, loading: trainingSettingsLoading } = useTrainingSettings();
   const { user } = useAuth();
   const endorsementTypes = trainingSettings.endorsementTypes || [];
+  const licenceTypes = trainingSettings.licenceTypes || [];
   const editCourseFormRef = useRef<HTMLDivElement | null>(null);
   const lessonFormRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTargetRef = useRef<'edit-course' | 'lesson' | null>(null);
@@ -1805,6 +1812,9 @@ export const TrainingCourseCatalog: React.FC = () => {
       completionEndorsementEnabled: selectedModule.completionEndorsementEnabled ?? false,
       completionEndorsementType: selectedModule.completionEndorsementType ?? '',
       completionEndorsementExpiryMonths: selectedModule.completionEndorsementExpiryMonths ? String(selectedModule.completionEndorsementExpiryMonths) : '',
+      completionLicenceEnabled: selectedModule.completionLicenceEnabled ?? false,
+      completionLicenceType: selectedModule.completionLicenceType ?? '',
+      completionLicenceExpiryMonths: selectedModule.completionLicenceExpiryMonths ? String(selectedModule.completionLicenceExpiryMonths) : '',
       tags: selectedModule.tags.join(', '),
       objectives: selectedModule.objectives.join('\n'),
       evaluationFocus: selectedModule.evaluationCriteria.join('\n'),
@@ -1830,6 +1840,14 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
     if (editCourse.completionEndorsementEnabled && endorsementTypes.length === 0) {
       toast.error('Add endorsement options in Training / Syllabus Settings first');
+      return;
+    }
+    if (editCourse.completionLicenceEnabled && !editCourse.completionLicenceType.trim()) {
+      toast.error('Select the licence granted by this course');
+      return;
+    }
+    if (editCourse.completionLicenceEnabled && licenceTypes.length === 0) {
+      toast.error('Add licence options in Training / Syllabus Settings first');
       return;
     }
 
@@ -1914,6 +1932,11 @@ export const TrainingCourseCatalog: React.FC = () => {
         completionEndorsementType: editCourse.completionEndorsementType.trim(),
         completionEndorsementExpiryMonths: editCourse.completionEndorsementEnabled && editCourse.completionEndorsementExpiryMonths
           ? Math.max(1, Number(editCourse.completionEndorsementExpiryMonths) || 1)
+          : null,
+        completionLicenceEnabled: editCourse.completionLicenceEnabled,
+        completionLicenceType: editCourse.completionLicenceType.trim(),
+        completionLicenceExpiryMonths: editCourse.completionLicenceEnabled && editCourse.completionLicenceExpiryMonths
+          ? Math.max(1, Number(editCourse.completionLicenceExpiryMonths) || 1)
           : null,
         tags: tags.length > 0 ? tags : cur.tags,
         objectives,
@@ -2112,6 +2135,14 @@ export const TrainingCourseCatalog: React.FC = () => {
       toast.error('Add endorsement options in Training / Syllabus Settings first');
       return;
     }
+    if (newCourse.completionLicenceEnabled && !newCourse.completionLicenceType.trim()) {
+      toast.error('Select the licence granted by this course');
+      return;
+    }
+    if (newCourse.completionLicenceEnabled && licenceTypes.length === 0) {
+      toast.error('Add licence options in Training / Syllabus Settings first');
+      return;
+    }
     if (newCourse.requiresFlyingDeclaration && !newCourse.flyingDeclarationText.trim()) {
       toast.error('Add the flying declaration wording, or turn off the declaration requirement');
       return;
@@ -2170,6 +2201,11 @@ export const TrainingCourseCatalog: React.FC = () => {
       completionEndorsementType: newCourse.completionEndorsementType.trim(),
       completionEndorsementExpiryMonths: newCourse.completionEndorsementEnabled && newCourse.completionEndorsementExpiryMonths
         ? Math.max(1, Number(newCourse.completionEndorsementExpiryMonths) || 1)
+        : null,
+      completionLicenceEnabled: newCourse.completionLicenceEnabled,
+      completionLicenceType: newCourse.completionLicenceType.trim(),
+      completionLicenceExpiryMonths: newCourse.completionLicenceEnabled && newCourse.completionLicenceExpiryMonths
+        ? Math.max(1, Number(newCourse.completionLicenceExpiryMonths) || 1)
         : null,
       prerequisites,
       objectives,
@@ -2860,6 +2896,18 @@ export const TrainingCourseCatalog: React.FC = () => {
                 </div>
               )}
             </div>
+            <div className="rounded-lg border border-blue-200 bg-white p-4 text-sm text-blue-950 md:col-span-2">
+              <label className="flex items-start gap-3">
+                <input type="checkbox" checked={newCourse.completionLicenceEnabled} onChange={event => setNewCourse(prev => ({ ...prev, completionLicenceEnabled: event.target.checked }))} className="mt-1 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500" />
+                <span><span className="block font-semibold">Issue a pilot licence at 100% course completion</span><span className="mt-1 block text-xs text-blue-700">The verified licence is added to the member file and grants Pilot status.</span></span>
+              </label>
+              {newCourse.completionLicenceEnabled && (
+                <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                  <label className="flex flex-col text-xs font-medium text-blue-950">Licence<select value={newCourse.completionLicenceType} onChange={event => setNewCourse(prev => ({ ...prev, completionLicenceType: event.target.value }))} className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900"><option value="">Select licence</option>{licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+                  <label className="flex flex-col text-xs font-medium text-blue-950">Expiry months<input type="number" min={1} value={newCourse.completionLicenceExpiryMonths} onChange={event => setNewCourse(prev => ({ ...prev, completionLicenceExpiryMonths: event.target.value }))} placeholder="No expiry" className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900" /></label>
+                </div>
+              )}
+            </div>
           </div>
           )}
           {/* Assessment criteria for new course */}
@@ -3123,6 +3171,11 @@ export const TrainingCourseCatalog: React.FC = () => {
                           Endorsement
                         </span>
                       )}
+                      {module.completionLicenceEnabled && (
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                          Licence
+                        </span>
+                      )}
                       {module.lessons.some((lesson) => lesson.isFlightTest) && (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
                           Flight test
@@ -3316,6 +3369,14 @@ export const TrainingCourseCatalog: React.FC = () => {
                             <dd className="mt-1 text-slate-700">
                               {selectedModule.completionEndorsementEnabled
                                 ? `${selectedModule.completionEndorsementType || 'Endorsement'}${selectedModule.completionEndorsementExpiryMonths ? ` - expires after ${selectedModule.completionEndorsementExpiryMonths} months` : ''}`
+                                : 'None'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Completion licence</dt>
+                            <dd className="mt-1 text-slate-700">
+                              {selectedModule.completionLicenceEnabled
+                                ? `${selectedModule.completionLicenceType || 'Licence'}${selectedModule.completionLicenceExpiryMonths ? ` - expires after ${selectedModule.completionLicenceExpiryMonths} months` : ''}`
                                 : 'None'}
                             </dd>
                           </div>
@@ -3618,6 +3679,18 @@ export const TrainingCourseCatalog: React.FC = () => {
                               className="mt-1 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-emerald-400 focus:outline-none"
                             />
                           </label>
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950 md:col-span-2">
+                      <label className="flex items-start gap-3">
+                        <input type="checkbox" checked={editCourse.completionLicenceEnabled} onChange={event => setEditCourse(prev => ({ ...prev, completionLicenceEnabled: event.target.checked }))} className="mt-1 h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500" />
+                        <span><span className="block font-semibold">Issue a pilot licence at 100% course completion</span><span className="mt-1 block text-xs text-blue-700">The verified licence is added to the member file and grants Pilot status.</span></span>
+                      </label>
+                      {editCourse.completionLicenceEnabled && (
+                        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                          <label className="flex flex-col text-xs font-medium text-blue-950">Licence<select value={editCourse.completionLicenceType} onChange={event => setEditCourse(prev => ({ ...prev, completionLicenceType: event.target.value }))} className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900"><option value="">Select licence</option>{licenceTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label>
+                          <label className="flex flex-col text-xs font-medium text-blue-950">Expiry months<input type="number" min={1} value={editCourse.completionLicenceExpiryMonths} onChange={event => setEditCourse(prev => ({ ...prev, completionLicenceExpiryMonths: event.target.value }))} placeholder="No expiry" className="mt-1 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-gray-900" /></label>
                         </div>
                       )}
                     </div>

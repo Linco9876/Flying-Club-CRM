@@ -1163,6 +1163,7 @@ export async function exportCoursePdf({
       ['Remaining items', hasMatrixRequirements ? (remainingMatrixRequirements.length > 0 ? String(remainingMatrixRequirements.length) : 'None recorded') : hasMatrixRows ? 'Cannot calculate until lesson requirements are linked' : 'None recorded'],
       ['Flight test lesson', course.lessons.find((lesson) => lesson.isFlightTest)?.name || 'Not designated in course editor'],
       ['Course endorsement', course.completionEndorsementEnabled && course.completionEndorsementType ? course.completionEndorsementType : 'No automatic endorsement configured'],
+      ['Course licence', course.completionLicenceEnabled && course.completionLicenceType ? course.completionLicenceType : 'No automatic licence configured'],
     ];
     drawLabelValueGrid(completionRows, { columns: 4, rowHeight: 30, valueSize: 8 });
     drawText(

@@ -53,6 +53,11 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     completionEndorsementExpiryMonths: row.completion_endorsement_expiry_months === null || row.completion_endorsement_expiry_months === undefined
       ? null
       : Number(row.completion_endorsement_expiry_months),
+    completionLicenceEnabled: Boolean(row.completion_licence_enabled),
+    completionLicenceType: (row.completion_licence_type as string) ?? '',
+    completionLicenceExpiryMonths: row.completion_licence_expiry_months === null || row.completion_licence_expiry_months === undefined
+      ? null
+      : Number(row.completion_licence_expiry_months),
     exams: rawExams.map((exam: any) => ({
       id: String(exam.id ?? `exam-${Date.now()}`),
       name: String(exam.name ?? ''),
@@ -136,6 +141,11 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     completion_endorsement_type: module.completionEndorsementEnabled ? (module.completionEndorsementType || null) : null,
     completion_endorsement_expiry_months: module.completionEndorsementEnabled && module.completionEndorsementExpiryMonths
       ? module.completionEndorsementExpiryMonths
+      : null,
+    completion_licence_enabled: module.completionLicenceEnabled ?? false,
+    completion_licence_type: module.completionLicenceEnabled ? (module.completionLicenceType || null) : null,
+    completion_licence_expiry_months: module.completionLicenceEnabled && module.completionLicenceExpiryMonths
+      ? module.completionLicenceExpiryMonths
       : null,
     exam_requirements: module.exams ?? [],
     resources: module.resources ?? [],
@@ -268,6 +278,9 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       completionEndorsementEnabled: false,
       completionEndorsementType: '',
       completionEndorsementExpiryMonths: null,
+      completionLicenceEnabled: false,
+      completionLicenceType: '',
+      completionLicenceExpiryMonths: null,
       exams: [],
       lessons: [],
       resources: [],

@@ -44,6 +44,7 @@ export interface Student extends User {
   occupation?: string;
   alternatePhone?: string;
   endorsements: Endorsement[];
+  licences: Licence[];
 }
 
 export interface AircraftRate {
@@ -80,6 +81,8 @@ export interface Aircraft {
   requiredEndorsementType?: string | null;
   requiredEndorsementTypes?: string[];
   requiredAllEndorsementTypes?: string[];
+  requiredLicenceTypes?: string[];
+  requiredAllLicenceTypes?: string[];
   iconKey?: 'tecnam' | 'piper' | 'cessna' | 'sling' | 'twin' | string | null;
   xeroTrackingCategoryId?: string | null;
   xeroTrackingCategoryName?: string | null;
@@ -362,6 +365,18 @@ export interface GroundSessionDescriptionOption {
   flightTypeId?: string | null;
 }
 
+export interface Licence {
+  id: string;
+  type: string;
+  licenceNumber?: string;
+  dateObtained?: Date;
+  expiryDate?: Date;
+  issuingAuthority?: string;
+  instructorId?: string | null;
+  sourceCourseId?: string | null;
+  isActive: boolean;
+}
+
 export interface GroundSessionLog {
   id: string;
   bookingId?: string;
@@ -438,6 +453,9 @@ export interface TrainingModule {
   completionEndorsementEnabled?: boolean;
   completionEndorsementType?: string;
   completionEndorsementExpiryMonths?: number | null;
+  completionLicenceEnabled?: boolean;
+  completionLicenceType?: string;
+  completionLicenceExpiryMonths?: number | null;
   exams?: TrainingExam[];
   lessons: TrainingLesson[];
   resources: TrainingResource[];

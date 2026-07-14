@@ -278,11 +278,13 @@ export const AircraftList: React.FC = () => {
                 </div>
               )}
 
-              {(aircraftItem.requiredEndorsementTypes?.length || aircraftItem.requiredEndorsementType || aircraftItem.requiredAllEndorsementTypes?.length) ? (
+              {(aircraftItem.requiredEndorsementTypes?.length || aircraftItem.requiredEndorsementType || aircraftItem.requiredAllEndorsementTypes?.length || aircraftItem.requiredLicenceTypes?.length || aircraftItem.requiredAllLicenceTypes?.length) ? (
                 <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Solo hire endorsement</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Solo hire requirements</p>
+                    {aircraftItem.requiredAllLicenceTypes?.length ? <p className="mt-1 text-xs text-emerald-950"><strong>All licences:</strong> {aircraftItem.requiredAllLicenceTypes.join(', ')}</p> : null}
+                    {aircraftItem.requiredLicenceTypes?.length ? <p className="mt-1 text-xs text-emerald-950"><strong>One licence:</strong> {aircraftItem.requiredLicenceTypes.join(', ')}</p> : null}
                     {aircraftItem.requiredAllEndorsementTypes && aircraftItem.requiredAllEndorsementTypes.length > 0 && (
                       <div className="mt-1">
                         <p className="text-[11px] font-semibold text-emerald-800">Must hold all</p>

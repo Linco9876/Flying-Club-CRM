@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Student, Endorsement, UserRole } from '../types';
+import { Student, Endorsement, Licence, UserRole } from '../types';
 import toast from 'react-hot-toast';
-import { fetchPilotStatusEndorsementTypes, reconcilePilotStatusForUser } from '../utils/pilotStatus';
 import { usePageLoadState } from '../context/PageLoadContext';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -73,21 +72,24 @@ export const useStudents = (options?: UseStudentsOptions) => {
         setLoading(true);
       }
 
-      const [usersResult, studentsResult, endorsementsResult, rolesResult] = await Promise.all([
+      const [usersResult, studentsResult, endorsementsResult, licencesResult, rolesResult] = await Promise.all([
         supabase.from('users').select('*'),
         supabase.from('students').select('*'),
         supabase.from('endorsements').select('*'),
+        supabase.from('licences').select('*'),
         supabase.from('user_roles').select('user_id, role')
       ]);
 
       const { data: usersData, error: usersError } = usersResult;
       const { data: studentsData, error: studentsError } = studentsResult;
       const { data: endorsementsData, error: endorsementsError } = endorsementsResult;
+      const { data: licencesData, error: licencesError } = licencesResult;
       const { data: rolesData, error: rolesError } = rolesResult;
 
       if (usersError) throw usersError;
       if (studentsError) throw studentsError;
       if (endorsementsError) throw endorsementsError;
+      if (licencesError) throw licencesError;
       if (rolesError) {
         console.warn('Could not load member role assignments; falling back to primary roles.', rolesError);
       }
@@ -100,6 +102,7 @@ export const useStudents = (options?: UseStudentsOptions) => {
 
       const studentsMap = new Map(studentsData?.map(s => [s.id, s]) || []);
       const endorsementsMap = new Map<string, Endorsement[]>();
+      const licencesMap = new Map<string, Licence[]>();
 
       endorsementsData?.forEach(e => {
         const studentEndorsements = endorsementsMap.get(e.student_id) || [];
@@ -112,6 +115,22 @@ export const useStudents = (options?: UseStudentsOptions) => {
           isActive: e.is_active
         });
         endorsementsMap.set(e.student_id, studentEndorsements);
+      });
+
+      licencesData?.forEach(licence => {
+        const memberLicences = licencesMap.get(licence.student_id) || [];
+        memberLicences.push({
+          id: licence.id,
+          type: licence.type,
+          licenceNumber: licence.licence_number || undefined,
+          dateObtained: licence.date_obtained ? new Date(licence.date_obtained) : undefined,
+          expiryDate: licence.expiry_date ? new Date(licence.expiry_date) : undefined,
+          issuingAuthority: licence.issuing_authority || undefined,
+          instructorId: licence.instructor_id,
+          sourceCourseId: licence.source_course_id,
+          isActive: Boolean(licence.is_active),
+        });
+        licencesMap.set(licence.student_id, memberLicences);
       });
 
       const combinedStudents: Student[] = (usersData || [])
@@ -165,7 +184,8 @@ export const useStudents = (options?: UseStudentsOptions) => {
           xeroContactSyncStatus: user.xero_contact_sync_status || 'not_linked',
           xeroContactSyncError: user.xero_contact_sync_error || null,
           xeroContactLastSyncedAt: user.xero_contact_last_synced_at || null,
-          endorsements: endorsementsMap.get(user.id) || []
+          endorsements: endorsementsMap.get(user.id) || [],
+          licences: licencesMap.get(user.id) || []
         };
       });
 
@@ -267,8 +287,6 @@ export const useStudents = (options?: UseStudentsOptions) => {
       if (studentError) throw studentError;
 
       const { data: { user: currentAuthUser } } = await supabase.auth.getUser();
-      const pilotStatusEndorsementTypes = await fetchPilotStatusEndorsementTypes();
-
       if (studentData.endorsements && studentData.endorsements.length > 0) {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
           student_id: userData.id,
@@ -286,13 +304,20 @@ export const useStudents = (options?: UseStudentsOptions) => {
         if (endorsementsError) throw endorsementsError;
       }
 
-      await reconcilePilotStatusForUser({
-        userId: userData.id,
-        endorsements: studentData.endorsements || [],
-        pilotStatusEndorsementTypes,
-        currentRole: 'student',
-        currentRoles: ['student'],
-      });
+      if (studentData.licences?.length) {
+        const { error: licencesError } = await supabase.from('licences').insert(studentData.licences.map(licence => ({
+          student_id: userData.id,
+          type: licence.type,
+          licence_number: licence.licenceNumber || null,
+          date_obtained: licence.dateObtained || null,
+          expiry_date: licence.expiryDate || null,
+          issuing_authority: licence.issuingAuthority || null,
+          instructor_id: licence.instructorId || currentAuthUser?.id || null,
+          source_course_id: licence.sourceCourseId || null,
+          is_active: licence.isActive,
+        })));
+        if (licencesError) throw licencesError;
+      }
 
       await fetchStudents();
       toast.success('User added successfully');
@@ -403,7 +428,6 @@ export const useStudents = (options?: UseStudentsOptions) => {
       if (deleteEndorsementsError) throw deleteEndorsementsError;
 
       const { data: { user: currentAuthUser } } = await supabase.auth.getUser();
-      const pilotStatusEndorsementTypes = await fetchPilotStatusEndorsementTypes();
 
       if (studentData.endorsements && studentData.endorsements.length > 0) {
         const endorsementsToInsert = studentData.endorsements.map(e => ({
@@ -422,13 +446,23 @@ export const useStudents = (options?: UseStudentsOptions) => {
         if (endorsementsError) throw endorsementsError;
       }
 
-      await reconcilePilotStatusForUser({
-        userId: id,
-        endorsements: studentData.endorsements || [],
-        pilotStatusEndorsementTypes,
-        currentRole: studentData.role,
-        currentRoles: studentData.roles,
-      });
+      const { error: deleteLicencesError } = await supabase.from('licences').delete().eq('student_id', id);
+      if (deleteLicencesError) throw deleteLicencesError;
+
+      if (studentData.licences?.length) {
+        const { error: licencesError } = await supabase.from('licences').insert(studentData.licences.map(licence => ({
+          student_id: id,
+          type: licence.type,
+          licence_number: licence.licenceNumber || null,
+          date_obtained: licence.dateObtained || null,
+          expiry_date: licence.expiryDate || null,
+          issuing_authority: licence.issuingAuthority || null,
+          instructor_id: licence.instructorId || currentAuthUser?.id || null,
+          source_course_id: licence.sourceCourseId || null,
+          is_active: licence.isActive,
+        })));
+        if (licencesError) throw licencesError;
+      }
 
       await fetchStudents();
       if (emailChangeRequested) {

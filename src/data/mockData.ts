@@ -79,7 +79,8 @@ export const mockStudents: Student[] = [
         instructorId: '2',
         isActive: true
       }
-    ]
+    ],
+    licences: []
   },
   {
     id: '2',
@@ -87,7 +88,8 @@ export const mockStudents: Student[] = [
     name: 'Chief Flying Instructor',
     role: 'instructor',
     phone: '+61 400 789 012',
-    endorsements: []
+    endorsements: [],
+    licences: []
   },
   {
     id: '4',
@@ -108,7 +110,8 @@ export const mockStudents: Student[] = [
         instructorId: '2',
         isActive: true
       }
-    ]
+    ],
+    licences: []
   }
 ];
 

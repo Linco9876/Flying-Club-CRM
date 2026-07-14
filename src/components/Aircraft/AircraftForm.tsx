@@ -95,6 +95,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
     requiredEndorsementType: aircraft?.requiredEndorsementType || '',
     requiredEndorsementTypes: aircraft?.requiredEndorsementTypes || (aircraft?.requiredEndorsementType ? [aircraft.requiredEndorsementType] : []),
     requiredAllEndorsementTypes: aircraft?.requiredAllEndorsementTypes || [],
+    requiredLicenceTypes: aircraft?.requiredLicenceTypes || [],
+    requiredAllLicenceTypes: aircraft?.requiredAllLicenceTypes || [],
     iconKey: aircraft?.iconKey || 'tecnam',
     xeroTrackingCategoryId: aircraft?.xeroTrackingCategoryId || '',
     xeroTrackingCategoryName: aircraft?.xeroTrackingCategoryName || 'Aircraft',
@@ -405,6 +407,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         requiredEndorsementType: aircraft.requiredEndorsementType || '',
         requiredEndorsementTypes: aircraft.requiredEndorsementTypes || (aircraft.requiredEndorsementType ? [aircraft.requiredEndorsementType] : []),
         requiredAllEndorsementTypes: aircraft.requiredAllEndorsementTypes || [],
+        requiredLicenceTypes: aircraft.requiredLicenceTypes || [],
+        requiredAllLicenceTypes: aircraft.requiredAllLicenceTypes || [],
         iconKey: aircraft.iconKey || 'tecnam',
         xeroTrackingCategoryId: aircraft.xeroTrackingCategoryId || '',
         xeroTrackingCategoryName: aircraft.xeroTrackingCategoryName || 'Aircraft',
@@ -439,6 +443,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         requiredEndorsementType: '',
         requiredEndorsementTypes: [],
         requiredAllEndorsementTypes: [],
+        requiredLicenceTypes: [],
+        requiredAllLicenceTypes: [],
         iconKey: 'tecnam',
         xeroTrackingCategoryId: '',
         xeroTrackingCategoryName: 'Aircraft',
@@ -542,6 +548,8 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
       requiredEndorsementType: formData.requiredEndorsementTypes[0] || formData.requiredEndorsementType || null,
       requiredEndorsementTypes: formData.requiredEndorsementTypes,
       requiredAllEndorsementTypes: formData.requiredAllEndorsementTypes,
+      requiredLicenceTypes: formData.requiredLicenceTypes,
+      requiredAllLicenceTypes: formData.requiredAllLicenceTypes,
       iconKey: formData.iconKey || null,
       xeroTrackingCategoryId: xeroTrackingData.xeroTrackingCategoryId,
       xeroTrackingCategoryName: xeroTrackingData.xeroTrackingCategoryName,
@@ -835,10 +843,18 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
               Hire Eligibility
             </h3>
             <p className="mb-4 text-sm text-gray-600">
-              Use this when an aircraft needs a specific endorsement before a pilot can hire it solo.
+              Select the licences and endorsements a pilot must hold before hiring this aircraft without an instructor.
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.7fr)] gap-4">
               <div className="space-y-4">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                  <h4 className="text-sm font-semibold text-emerald-950">Pilot licences</h4>
+                  <p className="mt-1 text-xs text-emerald-800">Every licence selected under Required all is mandatory. Under Accepted alternatives, holding any one is enough.</p>
+                  <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                    <div><p className="mb-2 text-xs font-semibold uppercase text-gray-600">Required all</p><div className="space-y-2">{trainingSettings.licenceTypes.map(type => { const checked = formData.requiredAllLicenceTypes.includes(type); return <label key={`licence-all-${type}`} className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${checked ? 'border-emerald-300 bg-white text-emerald-900' : 'border-gray-200 bg-white text-gray-700'}`}><input type="checkbox" checked={checked} onChange={event => setFormData(prev => ({ ...prev, requiredAllLicenceTypes: event.target.checked ? Array.from(new Set([...prev.requiredAllLicenceTypes, type])) : prev.requiredAllLicenceTypes.filter(item => item !== type) }))} className="h-4 w-4 rounded border-gray-300 text-emerald-600" /><span>{type}</span></label>; })}</div></div>
+                    <div><p className="mb-2 text-xs font-semibold uppercase text-gray-600">Accepted alternatives (any one)</p><div className="space-y-2">{trainingSettings.licenceTypes.map(type => { const checked = formData.requiredLicenceTypes.includes(type); return <label key={`licence-any-${type}`} className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${checked ? 'border-blue-300 bg-white text-blue-900' : 'border-gray-200 bg-white text-gray-700'}`}><input type="checkbox" checked={checked} onChange={event => setFormData(prev => ({ ...prev, requiredLicenceTypes: event.target.checked ? Array.from(new Set([...prev.requiredLicenceTypes, type])) : prev.requiredLicenceTypes.filter(item => item !== type) }))} className="h-4 w-4 rounded border-gray-300 text-blue-600" /><span>{type}</span></label>; })}</div></div>
+                  </div>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Must have every listed endorsement
@@ -940,14 +956,14 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500">
-                    Use this for equivalent licences or endorsements where holding any one of them is enough for solo hire.
+                    Use this for alternative endorsements where holding any one is enough for solo hire.
                   </p>
                 </div>
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                 <p className="font-semibold">Instructor bookings are allowed.</p>
                 <p className="mt-1">
-                  If an instructor is selected, the endorsement rule does not block the booking because the flight is supervised.
+                  If an instructor is selected, licence and endorsement rules do not block the booking because the flight is supervised.
                 </p>
               </div>
             </div>

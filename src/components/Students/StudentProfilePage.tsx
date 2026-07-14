@@ -24,7 +24,6 @@ import {
 } from '../../hooks/useSyllabusMatrix';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
-import { reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 
@@ -41,6 +40,7 @@ interface StudentInfoForm {
   emergencyContactPhone: string;
   emergencyContactRelationship: string;
   endorsements: Student['endorsements'];
+  licences: Student['licences'];
 }
 
 interface StudentInfoEndorsementDraft {
@@ -48,6 +48,14 @@ interface StudentInfoEndorsementDraft {
   dateObtained: string;
   expiryDate: string;
   isActive: boolean;
+}
+
+interface StudentInfoLicenceDraft {
+  type: string;
+  licenceNumber: string;
+  dateObtained: string;
+  expiryDate: string;
+  issuingAuthority: string;
 }
 
 interface TrainingRecordEditForm {
@@ -376,12 +384,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     emergencyContactPhone: '',
     emergencyContactRelationship: '',
     endorsements: [],
+    licences: [],
   });
   const [infoEndorsementDraft, setInfoEndorsementDraft] = useState<StudentInfoEndorsementDraft>({
     type: '',
     dateObtained: '',
     expiryDate: '',
     isActive: true,
+  });
+  const [infoLicenceDraft, setInfoLicenceDraft] = useState<StudentInfoLicenceDraft>({
+    type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '',
   });
   const [editingTrainingRecord, setEditingTrainingRecord] = useState<TrainingRecord | null>(null);
   const [trainingEditForm, setTrainingEditForm] = useState<TrainingRecordEditForm | null>(null);
@@ -448,6 +460,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     return students.find(s => s.id === studentId) ?? null;
   }, [students, studentId]);
   const canEditStudentInfo = Boolean(user && student && (student.id === user.id || hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])));
+  const canManageLicences = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canManageBilling = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
 
   const studentTrainingRecords = useMemo(
@@ -886,6 +899,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       emergencyContactPhone: student.emergencyContact?.phone || '',
       emergencyContactRelationship: student.emergencyContact?.relationship || '',
       endorsements: student.endorsements || [],
+      licences: student.licences || [],
     });
     setInfoEndorsementDraft({
       type: '',
@@ -893,6 +907,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       expiryDate: '',
       isActive: true,
     });
+    setInfoLicenceDraft({ type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '' });
     setShowInfoEditor(true);
   };
 
@@ -951,6 +966,35 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       endorsements: prev.endorsements.filter((endorsement) => endorsement.id !== endorsementId),
     }));
     toast.success('Endorsement removed');
+  };
+
+  const addInfoLicence = () => {
+    const type = infoLicenceDraft.type.trim();
+    if (!type) {
+      toast.error('Select a licence type');
+      return;
+    }
+    if (infoForm.licences.some(licence => licence.isActive && licence.type.trim().toLowerCase() === type.toLowerCase())) {
+      toast.error('That active licence is already recorded');
+      return;
+    }
+    setInfoForm(prev => ({
+      ...prev,
+      licences: [...prev.licences, {
+        id: `info-licence-${Date.now()}`,
+        type,
+        licenceNumber: infoLicenceDraft.licenceNumber.trim() || undefined,
+        dateObtained: infoLicenceDraft.dateObtained ? new Date(infoLicenceDraft.dateObtained) : undefined,
+        expiryDate: infoLicenceDraft.expiryDate ? new Date(infoLicenceDraft.expiryDate) : undefined,
+        issuingAuthority: infoLicenceDraft.issuingAuthority.trim() || undefined,
+        isActive: true,
+      }],
+    }));
+    setInfoLicenceDraft({ type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '' });
+  };
+
+  const removeInfoLicence = (licenceId: string) => {
+    setInfoForm(prev => ({ ...prev, licences: prev.licences.filter(licence => licence.id !== licenceId) }));
   };
 
   const saveStudentInfo = async () => {
@@ -1024,13 +1068,25 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         if (endorsementsError) throw endorsementsError;
       }
 
-      await reconcilePilotStatusForUser({
-        userId: student.id,
-        endorsements: infoForm.endorsements,
-        pilotStatusEndorsementTypes: trainingSettings.pilotStatusEndorsementTypes,
-        currentRole: student.role,
-        currentRoles: student.roles,
-      });
+      if (canManageLicences) {
+        const { error: deleteLicencesError } = await supabase.from('licences').delete().eq('student_id', student.id);
+        if (deleteLicencesError) throw deleteLicencesError;
+
+        if (infoForm.licences.length > 0) {
+          const { error: licencesError } = await supabase.from('licences').insert(infoForm.licences.map(licence => ({
+            student_id: student.id,
+            type: licence.type,
+            licence_number: licence.licenceNumber || null,
+            date_obtained: toDateInputValue(licence.dateObtained) || null,
+            expiry_date: toDateInputValue(licence.expiryDate) || null,
+            issuing_authority: licence.issuingAuthority || null,
+            instructor_id: licence.instructorId || user?.id || null,
+            source_course_id: licence.sourceCourseId || null,
+            is_active: licence.isActive,
+          })));
+          if (licencesError) throw licencesError;
+        }
+      }
 
       await refetchStudents();
       setShowInfoEditor(false);
@@ -2219,6 +2275,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 ))}
               </div>
             </div>
+
+            {student.licences.filter(licence => licence.isActive).length > 0 && (
+              <div className="rounded-lg border border-emerald-200 bg-white p-6 shadow-md">
+                <h2 className="mb-4 flex items-center text-lg font-semibold text-gray-900"><GraduationCap className="mr-2 h-5 w-5 text-emerald-600" />Pilot Licences</h2>
+                <div className="space-y-2">{student.licences.filter(licence => licence.isActive).map(licence => <div key={licence.id} className="rounded border border-emerald-200 bg-emerald-50 p-2"><p className="text-sm font-semibold text-emerald-950">{licence.type}</p><p className="text-xs text-emerald-800">{licence.licenceNumber ? `No. ${licence.licenceNumber}` : 'Number not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p></div>)}</div>
+              </div>
+            )}
 
             {/* Endorsements */}
             {student.endorsements.filter(e => e.isActive).length > 0 && (
@@ -4001,7 +4064,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     </label>
                     {trainingEditForm.flightReviewResult === 'pass' && (
                       <p className="text-xs text-orange-800 md:col-span-3">
-                        Saving a passed review records the flight review date. Pilot status is granted through configured endorsements.
+                        Saving a passed review records the flight review date. Pilot status is granted by a verified licence.
                       </p>
                     )}
                   </div>
@@ -4317,12 +4380,39 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
               </section>
 
               <section>
+                <h3 className="mb-3 text-sm font-semibold text-gray-900">Pilot Licences</h3>
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="mb-4 text-sm text-gray-600">
+                    Active, current licences grant Pilot status. Licence changes must be verified by an instructor or administrator.
+                  </p>
+                  {canManageLicences && (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                      <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Licence</span><input list="student-profile-licence-types" value={infoLicenceDraft.type} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, type: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Select licence" /><datalist id="student-profile-licence-types">{trainingSettings.licenceTypes.map(type => <option key={type} value={type} />)}</datalist></label>
+                      <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Licence number</span><input value={infoLicenceDraft.licenceNumber} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, licenceNumber: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+                      <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Issuing authority</span><input value={infoLicenceDraft.issuingAuthority} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, issuingAuthority: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="RAAus or CASA" /></label>
+                      <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Issued</span><input type="date" value={infoLicenceDraft.dateObtained} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, dateObtained: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+                      <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Expiry</span><input type="date" value={infoLicenceDraft.expiryDate} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, expiryDate: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
+                      <div className="flex items-end"><button type="button" onClick={addInfoLicence} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Add licence</button></div>
+                    </div>
+                  )}
+                  <div className={`${canManageLicences ? 'mt-4' : ''} space-y-2`}>
+                    {infoForm.licences.length > 0 ? infoForm.licences.map(licence => (
+                      <div key={licence.id} className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div><p className="text-sm font-semibold text-gray-900">{licence.type}</p><p className="text-xs text-gray-500">{licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}{licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p></div>
+                        {canManageLicences && <button type="button" onClick={() => removeInfoLicence(licence.id)} className="text-sm font-medium text-red-600 hover:text-red-700">Remove</button>}
+                      </div>
+                    )) : <p className="text-sm text-gray-500">No pilot licences recorded.</p>}
+                  </div>
+                </div>
+              </section>
+
+              <section>
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Endorsements</h3>
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                   <p className="mb-4 text-sm text-gray-600">
                     {isOwnStudentPortal
-                      ? 'Add any endorsements you currently hold. If an endorsement is set to grant Pilot status, you will automatically be treated as a pilot while that endorsement is active and current.'
-                      : 'Add the endorsements this member currently holds. Any endorsement marked as granting Pilot status in Training / Syllabus Settings will automatically make them a pilot when active and current.'}
+                      ? 'Add any endorsements you currently hold. Endorsements record additional privileges but do not change your account to Pilot status.'
+                      : 'Add the endorsements this member currently holds. Endorsements do not grant Pilot status; verified licences do.'}
                   </p>
 
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -5002,66 +5092,35 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
   );
   const canManageCourseEnrolments = Boolean(student && user && hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']));
 
-  const grantCompletionEndorsement = useCallback(async (course: TrainingModule) => {
-    if (!student || !user || !course.completionEndorsementEnabled || !course.completionEndorsementType?.trim()) return;
+  const grantCompletionAwards = useCallback(async (course: TrainingModule) => {
+    if (!student || !user) return;
     if (!hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])) return;
+    if (grantingEndorsementCourseIds.has(course.id)) return;
 
-    const endorsementType = course.completionEndorsementType.trim();
-    const alreadyActive = student.endorsements.some((endorsement) =>
-      endorsement.isActive && endorsement.type.trim().toLowerCase() === endorsementType.toLowerCase()
-    );
-    if (alreadyActive || grantingEndorsementCourseIds.has(course.id)) return;
+    const endorsementType = course.completionEndorsementEnabled ? course.completionEndorsementType?.trim() : '';
+    const licenceType = course.completionLicenceEnabled ? course.completionLicenceType?.trim() : '';
+    const needsEndorsement = Boolean(endorsementType) && !student.endorsements.some(item => item.isActive && item.type.trim().toLowerCase() === endorsementType!.toLowerCase());
+    const needsLicence = Boolean(licenceType) && !student.licences.some(item => item.isActive && item.type.trim().toLowerCase() === licenceType!.toLowerCase());
+    if (!needsEndorsement && !needsLicence) return;
 
     setGrantingEndorsementCourseIds((current) => new Set(current).add(course.id));
     try {
       const obtained = new Date();
-      const expiryDate = course.completionEndorsementExpiryMonths
-        ? new Date(obtained.getFullYear(), obtained.getMonth() + course.completionEndorsementExpiryMonths, obtained.getDate())
-        : null;
-
-      const { error } = await supabase.from('endorsements').insert({
-        student_id: student.id,
-        type: endorsementType,
-        date_obtained: obtained.toISOString().slice(0, 10),
-        expiry_date: expiryDate ? expiryDate.toISOString().slice(0, 10) : null,
-        instructor_id: user.id,
-        is_active: true,
-      });
-
-      if (error) throw error;
-      let pilotRoleGranted = false;
-      try {
-        const reconciled = await reconcilePilotStatusForUser({
-          userId: student.id,
-          endorsements: [
-            ...student.endorsements,
-            {
-              id: 'new',
-              type: endorsementType,
-              dateObtained: obtained,
-              expiryDate: expiryDate || undefined,
-              instructorId: user.id,
-              isActive: true,
-            },
-          ],
-          pilotStatusEndorsementTypes: trainingSettings.pilotStatusEndorsementTypes,
-          currentRole: student.role,
-          currentRoles: student.roles,
-        });
-        pilotRoleGranted = reconciled.changed && reconciled.role === 'pilot';
-      } catch (roleError) {
-        console.error('Failed to reconcile pilot status after endorsement:', roleError);
-        toast.error('Endorsement saved, but Pilot status could not be updated');
+      if (needsEndorsement && endorsementType) {
+        const expiryDate = course.completionEndorsementExpiryMonths ? new Date(obtained.getFullYear(), obtained.getMonth() + course.completionEndorsementExpiryMonths, obtained.getDate()) : null;
+        const { error } = await supabase.from('endorsements').insert({ student_id: student.id, type: endorsementType, date_obtained: obtained.toISOString().slice(0, 10), expiry_date: expiryDate?.toISOString().slice(0, 10) || null, instructor_id: user.id, is_active: true });
+        if (error) throw error;
+      }
+      if (needsLicence && licenceType) {
+        const expiryDate = course.completionLicenceExpiryMonths ? new Date(obtained.getFullYear(), obtained.getMonth() + course.completionLicenceExpiryMonths, obtained.getDate()) : null;
+        const { error } = await supabase.from('licences').insert({ student_id: student.id, type: licenceType, date_obtained: obtained.toISOString().slice(0, 10), expiry_date: expiryDate?.toISOString().slice(0, 10) || null, instructor_id: user.id, source_course_id: course.id, is_active: true });
+        if (error) throw error;
       }
       await refetchStudents();
-      toast.success(
-        pilotRoleGranted
-          ? `${endorsementType} endorsement granted. ${student.name} is now a pilot.`
-          : `${endorsementType} endorsement granted for course completion`
-      );
+      toast.success(needsLicence ? `Course award issued. ${student.name} now has Pilot status.` : 'Course endorsement issued');
     } catch (error) {
-      console.error('Failed to grant completion endorsement:', error);
-      toast.error('Failed to grant completion endorsement');
+      console.error('Failed to grant course completion award:', error);
+      toast.error('Failed to grant course completion award');
     } finally {
       setGrantingEndorsementCourseIds((current) => {
         const next = new Set(current);
@@ -5069,16 +5128,16 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         return next;
       });
     }
-  }, [grantingEndorsementCourseIds, refetchStudents, student, trainingSettings.pilotStatusEndorsementTypes, user]);
+  }, [grantingEndorsementCourseIds, refetchStudents, student, user]);
 
   useEffect(() => {
     if (!student || !user || !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])) return;
     enrolledCourses.forEach(({ course, isComplete, percentage }) => {
-      if (isComplete && percentage >= 100 && course.completionEndorsementEnabled) {
-        void grantCompletionEndorsement(course);
+      if (isComplete && percentage >= 100 && (course.completionEndorsementEnabled || course.completionLicenceEnabled)) {
+        void grantCompletionAwards(course);
       }
     });
-  }, [enrolledCourses, grantCompletionEndorsement, student, user]);
+  }, [enrolledCourses, grantCompletionAwards, student, user]);
 
   const handleExportCourse = async (course: TrainingModule) => {
     if (!student) {
@@ -5296,6 +5355,12 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
                       <Award className="h-3 w-3 mr-1" />
                       Grants {course.completionEndorsementType}
+                    </span>
+                  )}
+                  {course.completionLicenceEnabled && course.completionLicenceType && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
+                      <GraduationCap className="h-3.5 w-3.5" />
+                      Issues {course.completionLicenceType}
                     </span>
                   )}
                   {declarationRequired && (

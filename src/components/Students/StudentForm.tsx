@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, User, Phone, Save, Loader2, Shield, FileText } from 'lucide-react';
-import { Student, Endorsement } from '../../types';
+import { Student, Endorsement, Licence } from '../../types';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
@@ -36,7 +36,8 @@ const buildFormData = (student?: Student) => ({
     phone: student?.emergencyContact?.phone || '',
     relationship: student?.emergencyContact?.relationship || ''
   },
-  endorsements: student?.endorsements || []
+  endorsements: student?.endorsements || [],
+  licences: student?.licences || []
 });
 
 export const StudentForm: React.FC<StudentFormProps> = ({
@@ -64,6 +65,13 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   });
 
   const allEndorsementTypes = trainingSettings.endorsementTypes;
+  const [newLicence, setNewLicence] = useState({
+    type: '',
+    licenceNumber: '',
+    dateObtained: '',
+    expiryDate: '',
+    issuingAuthority: '',
+  });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -152,6 +160,33 @@ export const StudentForm: React.FC<StudentFormProps> = ({
       endorsements: prev.endorsements.filter(e => e.id !== endorsementId)
     }));
     toast.success('Endorsement removed');
+  };
+
+  const addLicence = () => {
+    if (!newLicence.type.trim()) {
+      toast.error('Please select a licence type');
+      return;
+    }
+    if (formData.licences.some(item => item.isActive && item.type.trim().toLowerCase() === newLicence.type.trim().toLowerCase())) {
+      toast.error('That active licence is already recorded');
+      return;
+    }
+    const licence: Licence = {
+      id: `licence-${Date.now()}`,
+      type: newLicence.type.trim(),
+      licenceNumber: newLicence.licenceNumber.trim() || undefined,
+      dateObtained: newLicence.dateObtained ? new Date(newLicence.dateObtained) : undefined,
+      expiryDate: newLicence.expiryDate ? new Date(newLicence.expiryDate) : undefined,
+      issuingAuthority: newLicence.issuingAuthority.trim() || undefined,
+      isActive: true,
+    };
+    setFormData(prev => ({ ...prev, licences: [...prev.licences, licence] }));
+    setNewLicence({ type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '' });
+    toast.success('Licence added');
+  };
+
+  const removeLicence = (licenceId: string) => {
+    setFormData(prev => ({ ...prev, licences: prev.licences.filter(item => item.id !== licenceId) }));
   };
 
   if (!isOpen) return null;
@@ -438,6 +473,37 @@ export const StudentForm: React.FC<StudentFormProps> = ({
                   <option value="Other">Other</option>
                 </select>
               </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-2 flex items-center text-lg font-medium text-gray-900">
+              <Shield className="mr-2 h-5 w-5 text-emerald-600" />
+              Pilot Licences
+            </h3>
+            <p className="mb-4 text-sm text-gray-600">An active, current licence grants Pilot status. Only verified licences should be added here.</p>
+            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs text-gray-600">Licence type</span>
+                  <input list="members-edit-licence-types" value={newLicence.type} onChange={event => setNewLicence(prev => ({ ...prev, type: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Select licence" />
+                  <datalist id="members-edit-licence-types">{trainingSettings.licenceTypes.map(type => <option key={type} value={type} />)}</datalist>
+                </label>
+                <label className="block"><span className="mb-1 block text-xs text-gray-600">Licence number</span><input value={newLicence.licenceNumber} onChange={event => setNewLicence(prev => ({ ...prev, licenceNumber: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2" /></label>
+                <label className="block"><span className="mb-1 block text-xs text-gray-600">Issued</span><input type="date" value={newLicence.dateObtained} onChange={event => setNewLicence(prev => ({ ...prev, dateObtained: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2" /></label>
+                <label className="block"><span className="mb-1 block text-xs text-gray-600">Expiry (optional)</span><input type="date" value={newLicence.expiryDate} onChange={event => setNewLicence(prev => ({ ...prev, expiryDate: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2" /></label>
+                <label className="block"><span className="mb-1 block text-xs text-gray-600">Issuing authority</span><input value={newLicence.issuingAuthority} onChange={event => setNewLicence(prev => ({ ...prev, issuingAuthority: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2" placeholder="RAAus or CASA" /></label>
+                <div className="flex items-end"><button type="button" onClick={addLicence} className="w-full rounded-md bg-emerald-600 px-3 py-2 font-medium text-white hover:bg-emerald-700">Add licence</button></div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {formData.licences.map(licence => (
+                <div key={licence.id} className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="text-sm font-semibold text-gray-900">{licence.type}</p><p className="text-xs text-gray-600">{licence.licenceNumber ? `No. ${licence.licenceNumber} | ` : ''}{licence.dateObtained ? `Issued ${licence.dateObtained.toLocaleDateString()}` : 'Issue date not recorded'}{licence.expiryDate ? ` | Expires ${licence.expiryDate.toLocaleDateString()}` : ''}</p></div>
+                  <button type="button" onClick={() => removeLicence(licence.id)} className="text-sm font-medium text-red-600 hover:text-red-800">Remove</button>
+                </div>
+              ))}
+              {formData.licences.length === 0 && <p className="text-sm text-gray-500">No pilot licences recorded.</p>}
             </div>
           </div>
 

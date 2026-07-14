@@ -45,18 +45,25 @@ function SettingToggle({
 }
 
 export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> = ({ canEdit, onFormChange }) => {
-  const { settings, loading, updateSettings, renameEndorsementReferences } = useTrainingSettings();
+  const { settings, loading, updateSettings, renameEndorsementReferences, renameLicenceReferences } = useTrainingSettings();
   const [formData, setFormData] = useState<TrainingSyllabusSettingsData>(settings);
   const [endorsementInput, setEndorsementInput] = useState('');
   const [editingEndorsement, setEditingEndorsement] = useState<string | null>(null);
   const [editingEndorsementName, setEditingEndorsementName] = useState('');
   const [endorsementRenames, setEndorsementRenames] = useState<Record<string, string>>({});
+  const [licenceInput, setLicenceInput] = useState('');
+  const [editingLicence, setEditingLicence] = useState<string | null>(null);
+  const [editingLicenceName, setEditingLicenceName] = useState('');
+  const [licenceRenames, setLicenceRenames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setFormData(settings);
     setEditingEndorsement(null);
     setEditingEndorsementName('');
     setEndorsementRenames({});
+    setEditingLicence(null);
+    setEditingLicenceName('');
+    setLicenceRenames({});
   }, [settings]);
 
   useEffect(() => {
@@ -64,32 +71,37 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
       await renameEndorsementReferences(
         Object.entries(endorsementRenames).map(([from, to]) => ({ from, to }))
       );
+      await renameLicenceReferences(
+        Object.entries(licenceRenames).map(([from, to]) => ({ from, to }))
+      );
       await updateSettings(formData);
       setEndorsementRenames({});
+      setLicenceRenames({});
     };
     (window as any).__trainingSettingsCancel = () => {
       setFormData(settings);
       setEditingEndorsement(null);
       setEditingEndorsementName('');
       setEndorsementRenames({});
+      setEditingLicence(null);
+      setEditingLicenceName('');
+      setLicenceRenames({});
     };
     return () => {
       delete (window as any).__trainingSettingsSave;
       delete (window as any).__trainingSettingsCancel;
     };
-  }, [endorsementRenames, formData, renameEndorsementReferences, settings, updateSettings]);
+  }, [endorsementRenames, formData, licenceRenames, renameEndorsementReferences, renameLicenceReferences, settings, updateSettings]);
 
   const setField = <K extends keyof TrainingSyllabusSettingsData>(field: K, value: TrainingSyllabusSettingsData[K]) => {
     setFormData(current => ({ ...current, [field]: value }));
     onFormChange();
   };
 
-  const setEndorsementState = (endorsementTypes: string[], pilotStatusEndorsementTypes: string[]) => {
+  const setEndorsementState = (endorsementTypes: string[]) => {
     setFormData(current => ({
       ...current,
       endorsementTypes: uniqueEndorsementTypes(endorsementTypes),
-      pilotStatusEndorsementTypes: uniqueEndorsementTypes(pilotStatusEndorsementTypes)
-        .filter(type => endorsementTypes.some(item => item.trim().toLowerCase() === type.trim().toLowerCase())),
     }));
     onFormChange();
   };
@@ -97,16 +109,13 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
   const addEndorsement = () => {
     const next = uniqueEndorsementTypes([...formData.endorsementTypes, endorsementInput]);
     if (next.length === formData.endorsementTypes.length) return;
-    setEndorsementState(next, formData.pilotStatusEndorsementTypes);
+    setEndorsementState(next);
     setEndorsementInput('');
   };
 
   const removeEndorsement = (type: string) => {
     const keep = (item: string) => item.trim().toLowerCase() !== type.trim().toLowerCase();
-    setEndorsementState(
-      formData.endorsementTypes.filter(keep),
-      formData.pilotStatusEndorsementTypes.filter(keep)
-    );
+    setEndorsementState(formData.endorsementTypes.filter(keep));
   };
 
   const startEditingEndorsement = (type: string) => {
@@ -133,19 +142,32 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
     );
     if (duplicate) return;
 
-    setEndorsementState(
-      formData.endorsementTypes.map(type => type.trim().toLowerCase() === oldKey ? nextName : type),
-      formData.pilotStatusEndorsementTypes.map(type => type.trim().toLowerCase() === oldKey ? nextName : type)
-    );
+    setEndorsementState(formData.endorsementTypes.map(type => type.trim().toLowerCase() === oldKey ? nextName : type));
     setEndorsementRenames(current => ({ ...current, [oldType]: nextName }));
     cancelEditingEndorsement();
   };
 
-  const togglePilotStatusEndorsement = (type: string, checked: boolean) => {
-    const nextPilotTypes = checked
-      ? uniqueEndorsementTypes([...formData.pilotStatusEndorsementTypes, type])
-      : formData.pilotStatusEndorsementTypes.filter(item => item.trim().toLowerCase() !== type.trim().toLowerCase());
-    setEndorsementState(formData.endorsementTypes, nextPilotTypes);
+  const addLicence = () => {
+    const next = uniqueEndorsementTypes([...formData.licenceTypes, licenceInput]);
+    if (next.length === formData.licenceTypes.length) return;
+    setField('licenceTypes', next);
+    setLicenceInput('');
+  };
+
+  const removeLicence = (type: string) => {
+    setField('licenceTypes', formData.licenceTypes.filter(item => item.trim().toLowerCase() !== type.trim().toLowerCase()));
+  };
+
+  const saveLicenceRename = (oldType: string) => {
+    const nextName = editingLicenceName.trim();
+    if (!nextName) return;
+    const oldKey = oldType.trim().toLowerCase();
+    const nextKey = nextName.toLowerCase();
+    if (formData.licenceTypes.some(type => type.trim().toLowerCase() === nextKey && type.trim().toLowerCase() !== oldKey)) return;
+    setField('licenceTypes', formData.licenceTypes.map(type => type.trim().toLowerCase() === oldKey ? nextName : type));
+    setLicenceRenames(current => ({ ...current, [oldType]: nextName }));
+    setEditingLicence(null);
+    setEditingLicenceName('');
   };
 
   if (loading) {
@@ -334,26 +356,24 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
         </h3>
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <p className="text-sm text-gray-600">
-            This is the organisation endorsement list used by courses and member profiles. Tick Pilot status for endorsements that should automatically turn a student into a Pilot when they hold an active, unexpired copy.
+            Endorsements are additional privileges or aircraft qualifications. They never change a member into a pilot account.
           </p>
 
           <div className="mt-4 overflow-hidden rounded-lg border border-gray-200">
-            <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_120px_96px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <div className="hidden sm:grid sm:grid-cols-[minmax(0,1fr)_96px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
               <span>Endorsement</span>
-              <span className="text-center">Pilot status</span>
               <span className="text-right">Actions</span>
             </div>
             {formData.endorsementTypes.length > 0 ? (
               <div className="divide-y divide-gray-100">
                 {formData.endorsementTypes.map(type => {
-                  const grantsPilot = formData.pilotStatusEndorsementTypes.some(item => item.trim().toLowerCase() === type.trim().toLowerCase());
                   const isEditing = editingEndorsement === type;
                   const editDuplicate = isEditing && formData.endorsementTypes.some(item =>
                     item.trim().toLowerCase() === editingEndorsementName.trim().toLowerCase() &&
                     item.trim().toLowerCase() !== type.trim().toLowerCase()
                   );
                   return (
-                    <div key={type} className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_120px_96px] sm:items-center">
+                    <div key={type} className="grid grid-cols-1 gap-3 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_96px] sm:items-center">
                       <div className="min-w-0">
                         {isEditing ? (
                           <div className="space-y-1">
@@ -384,23 +404,9 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
                             {endorsementRenames[type] && (
                               <p className="text-xs text-blue-700">Rename will update member, course, and aircraft records on save.</p>
                             )}
-                            {grantsPilot && (
-                              <p className="text-xs text-orange-700">Active endorsement grants Pilot status</p>
-                            )}
                           </>
                         )}
                       </div>
-                      <label className="flex items-center justify-between gap-3 sm:justify-center">
-                        <span className="text-sm font-medium text-gray-700 sm:hidden">Pilot status</span>
-                        <input
-                          type="checkbox"
-                          disabled={!canEdit || isEditing}
-                          checked={grantsPilot}
-                          onChange={event => togglePilotStatusEndorsement(type, event.target.checked)}
-                          className={toggleClass}
-                          aria-label={`${type} grants Pilot status`}
-                        />
-                      </label>
                       {canEdit ? (
                         <div className="flex justify-end gap-1">
                           {isEditing ? (
@@ -482,16 +488,63 @@ export const TrainingSyllabusSettings: React.FC<TrainingSyllabusSettingsProps> =
             </div>
           )}
 
-          {formData.pilotStatusEndorsementTypes.length > 0 && (
-            <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-orange-800">Currently grants Pilot status</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {formData.pilotStatusEndorsementTypes.map(type => (
-                  <span key={type} className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-orange-900 ring-1 ring-orange-200">
-                    {type}
-                  </span>
-                ))}
-              </div>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="flex items-center text-lg font-medium text-gray-900">
+          <GraduationCap className="mr-2 h-5 w-5 text-emerald-600" />
+          Pilot Licences
+        </h3>
+        <div className="rounded-lg border border-emerald-200 bg-white p-4">
+          <p className="text-sm text-gray-600">
+            Holding any active, unexpired licence makes a member a Pilot. Staff must verify and add licences to a member file; endorsements do not grant Pilot status.
+          </p>
+          <div className="mt-4 divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200">
+            {formData.licenceTypes.map(type => {
+              const isEditing = editingLicence === type;
+              return (
+                <div key={type} className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  {isEditing ? (
+                    <input
+                      value={editingLicenceName}
+                      onChange={event => setEditingLicenceName(event.target.value)}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter') { event.preventDefault(); saveLicenceRename(type); }
+                        if (event.key === 'Escape') { setEditingLicence(null); setEditingLicenceName(''); }
+                      }}
+                      className={inputClass}
+                      autoFocus
+                    />
+                  ) : (
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{type}</p>
+                      {licenceRenames[type] && <p className="text-xs text-blue-700">Rename will update member, course, and aircraft records on save.</p>}
+                    </div>
+                  )}
+                  {canEdit && (
+                    <div className="flex justify-end gap-1">
+                      {isEditing ? (
+                        <>
+                          <button type="button" onClick={() => saveLicenceRename(type)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50" aria-label={`Save ${type} rename`}><Check className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => { setEditingLicence(null); setEditingLicenceName(''); }} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100" aria-label={`Cancel ${type} rename`}><X className="h-4 w-4" /></button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" onClick={() => { setEditingLicence(type); setEditingLicenceName(type); }} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-blue-50 hover:text-blue-700" aria-label={`Rename ${type}`}><Pencil className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => removeLicence(type)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove ${type}`}><X className="h-4 w-4" /></button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {canEdit && (
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <input value={licenceInput} onChange={event => setLicenceInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addLicence(); } }} placeholder="Licence name, e.g. CASA Private Pilot Licence (PPL)" className={inputClass} />
+              <button type="button" onClick={addLicence} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Add licence</button>
             </div>
           )}
         </div>

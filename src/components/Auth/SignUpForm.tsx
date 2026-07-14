@@ -3,7 +3,6 @@ import { supabase } from '../../lib/supabase';
 import { Plane, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DEFAULT_ENDORSEMENT_TYPES } from '../../utils/pilotStatus';
-import { fetchPilotStatusEndorsementTypes, reconcilePilotStatusForUser } from '../../utils/pilotStatus';
 
 interface SignUpFormProps {
   onBackToLogin: () => void;
@@ -145,19 +144,6 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
             if (endorsementsError) throw endorsementsError;
           }
 
-          const pilotStatusEndorsementTypes = await fetchPilotStatusEndorsementTypes();
-          await reconcilePilotStatusForUser({
-            userId: authData.user.id,
-            endorsements: endorsements.map((endorsement) => ({
-              type: endorsement.type,
-              dateObtained: new Date(endorsement.dateObtained),
-              expiryDate: endorsement.expiryDate ? new Date(endorsement.expiryDate) : undefined,
-              isActive: endorsement.isActive,
-            })),
-            pilotStatusEndorsementTypes,
-            currentRole: 'student',
-            currentRoles: ['student'],
-          });
         }
 
         if (authData.session) {
@@ -265,7 +251,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
               <div className="mb-3">
                 <h3 className="text-sm font-semibold text-slate-900">Existing endorsements (optional)</h3>
                 <p className="mt-1 text-xs text-gray-500">
-                  Add any endorsements you already hold. If one matches a Pilot-status endorsement configured by the club, your account will be created as a pilot automatically.
+                  Add any endorsements you already hold. These record additional privileges only; staff must verify and add a pilot licence before the account becomes a Pilot.
                 </p>
               </div>
 

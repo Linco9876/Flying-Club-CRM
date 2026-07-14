@@ -199,6 +199,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     aircraftName: string;
     pilotName: string;
     endorsementType: string;
+    needsStaffLicence: boolean;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const roleBasedInstructors = getInstructors().map((instructor) => ({
@@ -626,7 +627,9 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     const requiredAllEndorsements = (selectedAircraft?.requiredAllEndorsementTypes || [])
       .map(type => type.trim())
       .filter(Boolean);
-    if (!selectedAircraft || (requiredAnyEndorsements.length === 0 && requiredAllEndorsements.length === 0)) return null;
+    const requiredAnyLicences = (selectedAircraft?.requiredLicenceTypes || []).map(type => type.trim()).filter(Boolean);
+    const requiredAllLicences = (selectedAircraft?.requiredAllLicenceTypes || []).map(type => type.trim()).filter(Boolean);
+    if (!selectedAircraft || (requiredAnyEndorsements.length === 0 && requiredAllEndorsements.length === 0 && requiredAnyLicences.length === 0 && requiredAllLicences.length === 0)) return null;
 
     if (data.isGuestBooking) return null;
 
@@ -635,23 +638,31 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     const activeEndorsements = new Set(
       (selectedPerson?.endorsements || [])
         .filter((endorsement) => endorsement.isActive && (!endorsement.expiryDate || new Date(endorsement.expiryDate) >= now))
-        .map((endorsement) => endorsement.type.trim())
+        .map((endorsement) => endorsement.type.trim().toLowerCase())
     );
+    const activeLicences = new Set((selectedPerson?.licences || [])
+      .filter(licence => licence.isActive && (!licence.expiryDate || new Date(licence.expiryDate) >= now))
+      .map(licence => licence.type.trim().toLowerCase()));
 
-    const meetsAllRequired = requiredAllEndorsements.every(type => activeEndorsements.has(type));
-    const meetsAnyRequired = requiredAnyEndorsements.length === 0 || requiredAnyEndorsements.some(type => activeEndorsements.has(type));
+    const meetsAllRequired = requiredAllEndorsements.every(type => activeEndorsements.has(type.toLowerCase()));
+    const meetsAnyRequired = requiredAnyEndorsements.length === 0 || requiredAnyEndorsements.some(type => activeEndorsements.has(type.toLowerCase()));
+    const meetsAllLicences = requiredAllLicences.every(type => activeLicences.has(type.toLowerCase()));
+    const meetsAnyLicence = requiredAnyLicences.length === 0 || requiredAnyLicences.some(type => activeLicences.has(type.toLowerCase()));
 
-    if (meetsAllRequired && meetsAnyRequired) return null;
+    if (meetsAllRequired && meetsAnyRequired && meetsAllLicences && meetsAnyLicence) return null;
 
     const requirementParts = [
       requiredAllEndorsements.length > 0 ? `all of: ${requiredAllEndorsements.join(', ')}` : null,
       requiredAnyEndorsements.length > 0 ? `one of: ${requiredAnyEndorsements.join(', ')}` : null,
+      requiredAllLicences.length > 0 ? `all licences: ${requiredAllLicences.join(', ')}` : null,
+      requiredAnyLicences.length > 0 ? `one licence: ${requiredAnyLicences.join(', ')}` : null,
     ].filter(Boolean);
 
     return {
       aircraftName: `${selectedAircraft.registration} ${selectedAircraft.make} ${selectedAircraft.model}`.trim(),
       pilotName: selectedPerson?.name || users.find(u => u.id === data.studentId)?.name || 'This pilot',
       endorsementType: requirementParts.join(' and '),
+      needsStaffLicence: !meetsAllLicences || !meetsAnyLicence,
     };
   };
 
@@ -1430,22 +1441,22 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </div>
             <div>
               <h3 className="text-base font-semibold text-gray-900">
-                Endorsement needed before solo hire
+                Qualification needed before solo hire
               </h3>
               <p className="mt-1 text-sm text-gray-600">
-                {endorsementWarningState.aircraftName} requires a current {endorsementWarningState.endorsementType} endorsement for solo hire.
+                {endorsementWarningState.aircraftName} requires {endorsementWarningState.endorsementType} for solo hire.
               </p>
             </div>
           </div>
           <div className="space-y-3 px-5 py-4 text-sm text-gray-700">
             <p>
-              {endorsementWarningState.pilotName} does not appear to have that endorsement recorded in this CRM.
+              {endorsementWarningState.pilotName} does not appear to have the required licence or endorsement recorded in this CRM.
             </p>
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
-              Go back and choose a different aircraft or add an instructor. If you already hold the endorsement, add it to your profile settings with supporting proof first.
+              Go back and choose a different aircraft or add an instructor. Existing licences must be verified and added by an instructor or administrator; endorsements can be submitted with supporting proof.
             </div>
             <p className="text-xs text-gray-500">
-              Endorsements can be added from Settings &gt; Update My Info.
+              {endorsementWarningState.needsStaffLicence ? 'Contact staff to have your licence verified and added.' : 'Endorsements can be added from Settings > Update My Info.'}
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
@@ -1456,13 +1467,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             >
               Go back
             </button>
-            <button
+            {!endorsementWarningState.needsStaffLicence && <button
               type="button"
               onClick={handleOpenEndorsementSettings}
               className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
             >
               Add endorsement in settings
             </button>
+            }
           </div>
         </div>
       </div>
