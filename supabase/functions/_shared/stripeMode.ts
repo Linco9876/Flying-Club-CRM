@@ -9,6 +9,11 @@ const cleanMode = (value: unknown): StripeMode => value === "test" ? "test" : "l
 
 export const isTestStripeMode = (mode: StripeMode) => mode === "test";
 
+export const stripePriceIdForMode = (product: any, mode: StripeMode) => {
+  const value = mode === "test" ? product?.stripe_test_price_id : product?.stripe_live_price_id;
+  return typeof value === "string" ? value.trim() : "";
+};
+
 export const getStripeModeSettings = async (adminClient: any): Promise<StripeModeSettings> => {
   const { data, error } = await adminClient
     .from("stripe_connect_settings")

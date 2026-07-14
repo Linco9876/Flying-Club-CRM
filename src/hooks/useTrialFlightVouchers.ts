@@ -23,6 +23,8 @@ const mapProduct = (row: any): TrialFlightVoucherProduct => ({
   price: Number(row.price || 0),
   addons: [],
   stripePriceId: row.stripe_price_id || undefined,
+  stripeTestPriceId: row.stripe_test_price_id || undefined,
+  stripeLivePriceId: row.stripe_live_price_id || undefined,
   emailSubject: row.email_subject || '',
   emailBody: row.email_body || '',
   bookingInstructions: row.booking_instructions || '',
@@ -263,7 +265,6 @@ export const useTrialFlightVouchers = () => {
       instructor_ids: product.instructorIds,
       duration_minutes: product.durationMinutes,
       price: product.price,
-      stripe_price_id: product.stripePriceId?.trim() || null,
       email_subject: product.emailSubject,
       email_body: product.emailBody,
       booking_instructions: product.bookingInstructions,
@@ -277,16 +278,8 @@ export const useTrialFlightVouchers = () => {
 
     let savedId = id || '';
     const { data: savedProduct, error } = await savePayload(payload);
-    if (error) {
-      if (!isMissingColumnError(error)) throw error;
-      const legacyPayload = { ...payload };
-      delete legacyPayload.stripe_price_id;
-      const { data: legacyProduct, error: legacyError } = await savePayload(legacyPayload);
-      if (legacyError) throw legacyError;
-      savedId = legacyProduct?.id || savedId;
-    } else {
-      savedId = savedProduct?.id || savedId;
-    }
+    if (error) throw error;
+    savedId = savedProduct?.id || savedId;
     if (savedId && product.addons !== undefined) {
       await supabase.from('trial_flight_voucher_product_addons').delete().eq('product_id', savedId);
       const activeLinks = product.addons.map(addon => ({ product_id: savedId, addon_id: addon.id }));

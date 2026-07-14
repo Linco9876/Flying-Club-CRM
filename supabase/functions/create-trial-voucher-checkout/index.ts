@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
-import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns } from "../_shared/stripeMode.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, stripePriceIdForMode } from "../_shared/stripeMode.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: product, error: productError } = await adminClient
       .from("trial_flight_voucher_products")
-      .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,is_active")
+      .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_test_price_id,stripe_live_price_id,is_active")
       .eq("id", productId)
       .maybeSingle();
 
@@ -147,8 +147,9 @@ Deno.serve(async (req: Request) => {
         error: `Online checkout is temporarily unavailable: ${setup.issue || "this voucher does not currently have both a serviceable eligible aircraft and a qualified eligible instructor configured"}.`,
       }, 409);
     }
-    if (!product.stripe_price_id) {
-      return json({ error: "Online checkout is not enabled for this voucher yet. Please contact Bendigo Flying Club to purchase it." }, 409);
+    const stripePriceId = stripePriceIdForMode(product, stripeMode.mode);
+    if (!stripePriceId) {
+      return json({ error: `Online checkout is not configured for Stripe ${stripeMode.mode} mode yet. Please contact Bendigo Flying Club.` }, 409);
     }
     if (Number(product.price || 0) <= 0) {
       return json({ error: "Online checkout is not enabled until this voucher has a valid price." }, 409);
@@ -287,7 +288,7 @@ Deno.serve(async (req: Request) => {
 
     const form = new URLSearchParams();
     form.set("mode", "payment");
-    form.set("line_items[0][price]", product.stripe_price_id);
+    form.set("line_items[0][price]", stripePriceId);
     form.set("line_items[0][quantity]", "1");
     selectedAddons.forEach((addon, index) => {
       const lineIndex = index + 1;

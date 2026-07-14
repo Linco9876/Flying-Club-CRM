@@ -152,6 +152,8 @@ export interface TrialFlightVoucherProduct {
   price: number;
   addons?: TrialFlightVoucherAddon[];
   stripePriceId?: string;
+  stripeTestPriceId?: string;
+  stripeLivePriceId?: string;
   emailSubject: string;
   emailBody: string;
   bookingInstructions: string;

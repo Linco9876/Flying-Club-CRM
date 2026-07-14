@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getConnectedStripeAccountId, stripeHeaders, stripeIdempotencyKey } from "../_shared/stripeConnectAccount.ts";
-import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, testModeSubject } from "../_shared/stripeMode.ts";
+import { addStripeModeMetadata, getActiveStripeMode, stripeModeColumns, stripePriceIdForMode, testModeSubject } from "../_shared/stripeMode.ts";
 import { trialVoucherProductBookingSetup } from "../_shared/trialVoucherReadiness.ts";
 
 type SupabaseAdminClient = any;
@@ -254,13 +254,14 @@ Deno.serve(async (req: Request) => {
 
       const { data: product, error: productError } = await adminClient
         .from("trial_flight_voucher_products")
-        .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,is_active")
+        .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_test_price_id,stripe_live_price_id,is_active")
         .eq("id", productId)
         .maybeSingle();
 
       if (productError) return json({ error: productError.message }, 500);
       if (!product?.is_active) return json({ error: "This voucher product is not active." }, 410);
-      if (!product.stripe_price_id) return json({ error: "Create the Stripe checkout price for this voucher product first." }, 409);
+      const stripePriceId = stripePriceIdForMode(product, stripeMode.mode);
+      if (!stripePriceId) return json({ error: `Create the Stripe ${stripeMode.mode} checkout price for this voucher product first.` }, 409);
 
       const price = Number(product.price || 0);
       if (!Number.isFinite(price) || price <= 0) return json({ error: "This voucher product needs a valid sale price." }, 409);
@@ -327,7 +328,7 @@ Deno.serve(async (req: Request) => {
 
       const form = new URLSearchParams();
       form.set("mode", "payment");
-      form.set("line_items[0][price]", product.stripe_price_id);
+      form.set("line_items[0][price]", stripePriceId);
       form.set("line_items[0][quantity]", "1");
       form.set("success_url", `${successUrl}${successUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`);
       form.set("cancel_url", cancelUrl);
@@ -509,17 +510,18 @@ Deno.serve(async (req: Request) => {
 
       const { data: product, error: productError } = await adminClient
         .from("trial_flight_voucher_products")
-        .select("id,name,description,aircraft_mode,duration_minutes,price,stripe_price_id,is_active")
+        .select("id,name,description,aircraft_mode,duration_minutes,price,stripe_test_price_id,stripe_live_price_id,is_active")
         .eq("id", productId)
         .maybeSingle();
 
       if (productError) return json({ error: productError.message }, 500);
       if (!product) return json({ error: "Voucher product not found" }, 404);
       if (!product.is_active) return json({ error: "Activate the voucher product before creating a Stripe price." }, 409);
-      if (product.stripe_price_id && !replaceExisting) {
+      const existingStripePriceId = stripePriceIdForMode(product, stripeMode.mode);
+      if (existingStripePriceId && !replaceExisting) {
         return json({
-          error: "This voucher already has a Stripe Price ID. Validate it or remove it before creating a replacement.",
-          stripePriceId: product.stripe_price_id,
+          error: `This voucher already has a Stripe ${stripeMode.mode} Price ID. Validate it before creating a replacement.`,
+          stripePriceId: existingStripePriceId,
         }, 409);
       }
 
@@ -578,10 +580,11 @@ Deno.serve(async (req: Request) => {
         }, 502);
       }
 
+      const stripePriceColumn = stripeMode.mode === "test" ? "stripe_test_price_id" : "stripe_live_price_id";
       const { error: updateError } = await adminClient
         .from("trial_flight_voucher_products")
         .update({
-          stripe_price_id: stripePrice.id,
+          [stripePriceColumn]: stripePrice.id,
           updated_at: new Date().toISOString(),
         })
         .eq("id", product.id);
@@ -591,6 +594,7 @@ Deno.serve(async (req: Request) => {
       return json({
         created: true,
         productId: product.id,
+        stripeMode: stripeMode.mode,
         accountId: connectedAccountId,
         stripeProduct: {
           id: stripeProduct.id,

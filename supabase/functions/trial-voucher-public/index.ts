@@ -6,7 +6,7 @@ import {
   trialVoucherProductBookingSetup,
 } from "../_shared/trialVoucherReadiness.ts";
 import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
-import { getActiveStripeMode, testModeSubject } from "../_shared/stripeMode.ts";
+import { getActiveStripeMode, stripePriceIdForMode, testModeSubject, type StripeMode } from "../_shared/stripeMode.ts";
 
 type SupabaseAdminClient = any;
 
@@ -553,6 +553,7 @@ const toPublicProduct = (
   endorsementRows: any[] = [],
   addonRows: any[] = [],
   stripeConnected = false,
+  stripeMode: StripeMode = "live",
 ) => {
   const setup = trialVoucherProductBookingSetup(product, aircraftRows, endorsementRows);
   const productAircraftIds = new Set(product.aircraft_ids || []);
@@ -573,7 +574,7 @@ const toPublicProduct = (
     durationMinutes: product.duration_minutes,
     bookingBlockMinutes: Number(product.duration_minutes || 0) + 30,
     price: Number(product.price || 0),
-    checkoutAvailable: stripeConnected && Boolean(product.stripe_price_id) && Number(product.price || 0) > 0 && setup.bookingAvailable,
+    checkoutAvailable: stripeConnected && Boolean(stripePriceIdForMode(product, stripeMode)) && Number(product.price || 0) > 0 && setup.bookingAvailable,
     bookingAvailable: setup.bookingAvailable,
     bookingSetupMessage: setup.issue,
     bookingInstructions: product.booking_instructions,
@@ -967,7 +968,7 @@ Deno.serve(async (req: Request) => {
       ] = await Promise.all([
         adminClient
           .from("trial_flight_voucher_products")
-          .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_price_id,booking_instructions,is_active")
+          .select("id,name,description,aircraft_mode,aircraft_ids,instructor_ids,duration_minutes,price,stripe_test_price_id,stripe_live_price_id,booking_instructions,is_active")
           .eq("is_active", true)
           .order("duration_minutes", { ascending: true }),
         adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type,is_archived,icon_key"),
@@ -1014,7 +1015,16 @@ Deno.serve(async (req: Request) => {
         : { data: [], error: null };
 
       if (endorsementError) return json({ error: endorsementError.message }, 500);
-      const stripeConnected = Boolean(await getConnectedStripeAccountId(adminClient));
+      let activeStripeMode: StripeMode = "live";
+      let activeStripeConfigured = false;
+      try {
+        const stripeMode = await getActiveStripeMode(adminClient);
+        activeStripeMode = stripeMode.mode;
+        activeStripeConfigured = true;
+      } catch {
+        activeStripeConfigured = false;
+      }
+      const stripeConnected = Boolean(await getConnectedStripeAccountId(adminClient)) && activeStripeConfigured;
       const addonById = new Map((addonRows || []).map((addon: any) => [addon.id, addon]));
       const addonsByProduct = new Map<string, any[]>();
       (productAddonRows || []).forEach((row: any) => {
@@ -1026,7 +1036,7 @@ Deno.serve(async (req: Request) => {
         stripeConnected,
         contactEmails,
         products: (products || []).map((product: any) =>
-          toPublicProduct(product, aircraftRows || [], endorsementRows || [], addonsByProduct.get(product.id) || [], stripeConnected)
+          toPublicProduct(product, aircraftRows || [], endorsementRows || [], addonsByProduct.get(product.id) || [], stripeConnected, activeStripeMode)
         ),
       });
     }
