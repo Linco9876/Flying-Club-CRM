@@ -208,7 +208,9 @@ export const LearningCentreDashboard: React.FC = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">Learning Centre</p>
             <h1 className="mt-2 text-2xl font-bold sm:text-3xl">Online Programs</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">
-              Build self-paced or scheduled online courses with articles, videos, quizzes, lesson links, enrolments and progress tracking.
+              {isStaff
+                ? 'Build self-paced or scheduled online courses with articles, videos, quizzes, lesson links, enrolments and progress tracking.'
+                : 'Complete your assigned online programs, review lesson material and keep track of your progress.'}
             </p>
           </div>
           {isStaff && (
@@ -259,8 +261,14 @@ export const LearningCentreDashboard: React.FC = () => {
           {visiblePrograms.length === 0 && (
             <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
               <BookOpen className="mx-auto h-9 w-9 text-gray-300" />
-              <p className="mt-3 font-semibold text-gray-900">No online programs yet</p>
-              <p className="mt-1 text-sm text-gray-500">Create the first program to start building the Learning Centre.</p>
+              <p className="mt-3 font-semibold text-gray-900">
+                {isStaff ? 'No online programs yet' : 'No programs available'}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {isStaff
+                  ? 'Create the first program to start building the Learning Centre.'
+                  : 'Programs assigned or made available to you will appear here.'}
+              </p>
             </div>
           )}
         </aside>
