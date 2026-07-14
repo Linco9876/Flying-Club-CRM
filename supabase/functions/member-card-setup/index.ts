@@ -152,7 +152,57 @@ Deno.serve(async (req: Request) => {
 
     if (action === "status") {
       const connectedAccountId = await getConnectedStripeAccountId(adminClient);
-      const card = await getDefaultCard(adminClient, user.id, stripeMode.mode);
+      let card = await getDefaultCard(adminClient, user.id, stripeMode.mode);
+
+      const cardMetadataMissing = card && (
+        !cleanText(card.card_brand) ||
+        !/^\d{4}$/.test(cleanText(card.card_last4)) ||
+        Number(card.card_exp_month || 0) < 1 ||
+        Number(card.card_exp_year || 0) < new Date().getUTCFullYear()
+      );
+
+      if (cardMetadataMissing && connectedAccountId && stripeSecretKey) {
+        try {
+          const paymentMethodResponse = await fetchStripe(
+            `https://api.stripe.com/v1/payment_methods/${encodeURIComponent(card.stripe_payment_method_id)}`,
+            {
+              method: "GET",
+              headers: stripeHeaders(stripeSecretKey, connectedAccountId),
+            },
+            "Stripe saved card refresh",
+          );
+          const paymentMethod = await paymentMethodResponse.json().catch(() => ({}));
+
+          if (paymentMethodResponse.ok && paymentMethod?.card?.last4) {
+            const refreshedFields = {
+              card_brand: cleanText(paymentMethod.card.brand) || null,
+              card_last4: cleanText(paymentMethod.card.last4) || null,
+              card_exp_month: Number(paymentMethod.card.exp_month || 0) || null,
+              card_exp_year: Number(paymentMethod.card.exp_year || 0) || null,
+            };
+            const { error: refreshError } = await adminClient
+              .from("member_stripe_payment_methods")
+              .update(refreshedFields)
+              .eq("id", card.id)
+              .eq("user_id", user.id);
+            if (refreshError) console.warn("Could not persist refreshed Stripe card metadata:", refreshError);
+            card = { ...card, ...refreshedFields };
+          } else {
+            const message = cleanText(paymentMethod?.error?.message);
+            if (paymentMethodResponse.status === 404 || /similar object exists in (live|test) mode/i.test(message)) {
+              await adminClient
+                .from("member_stripe_payment_methods")
+                .update({ active: false, is_default: false })
+                .eq("id", card.id)
+                .eq("user_id", user.id);
+              card = null;
+            }
+          }
+        } catch (error) {
+          console.warn("Could not refresh incomplete Stripe card metadata:", error);
+        }
+      }
+
       return json({
         configured: Boolean(stripeSecretKey),
         stripeMode: stripeMode.mode,

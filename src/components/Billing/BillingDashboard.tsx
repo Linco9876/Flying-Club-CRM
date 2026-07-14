@@ -91,6 +91,14 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     userId: showOwnBillingOnly ? user?.id : null,
     enabled: !showOwnBillingOnly || Boolean(user?.id),
   });
+  const stripeCardReady = Boolean(
+    stripeCardStatus?.card?.id &&
+    stripeCardStatus.card.brand &&
+    /^\d{4}$/.test(stripeCardStatus.card.last4 || '') &&
+    Number(stripeCardStatus.card.expMonth || 0) >= 1 &&
+    Number(stripeCardStatus.card.expMonth || 0) <= 12 &&
+    Number(stripeCardStatus.card.expYear || 0) >= new Date().getFullYear()
+  );
 
   const loadStripeCardStatus = useCallback(async () => {
     if (!user?.id) {
@@ -688,7 +696,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
               <div>
                 <h2 className="font-semibold text-gray-900 dark:text-gray-100">Saved card for flight payments</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Your card is saved securely with Stripe. The CRM stores only a card reference, brand and last four digits.
+                  {stripeCardReady
+                    ? 'Your card is saved securely with Stripe. The CRM stores only a card reference, brand and last four digits.'
+                    : stripeCardStatus?.card
+                      ? 'The saved card reference is incomplete and cannot be treated as ready for automatic payment. Refresh or replace it below.'
+                      : 'Save a card securely with Stripe for confirmed flight payments. Card numbers never touch the CRM.'}
                 </p>
               </div>
             </div>
@@ -703,7 +715,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             </button>
           </div>
 
-          {stripeCardStatus?.card ? (
+          {stripeCardReady && stripeCardStatus?.card ? (
             <div className="mt-4 flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
@@ -734,6 +746,24 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                   Remove
                 </button>
               </div>
+            </div>
+          ) : stripeCardStatus?.card ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">Saved card needs attention</p>
+                <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                  Stripe card details could not be verified in the active payment mode. Replace this card before using saved-card payments.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveStripeCard}
+                disabled={stripeCardLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:bg-[#171a21] dark:text-red-200"
+              >
+                <Trash2 className="h-4 w-4" />
+                Remove old reference
+              </button>
             </div>
           ) : (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
