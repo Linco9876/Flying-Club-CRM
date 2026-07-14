@@ -91,6 +91,13 @@ interface ExamEditFormState {
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 const LESSON_STUDY_BUCKET = 'training-lesson-assets';
+const MEDICAL_TYPE_OPTIONS = [
+  'Driver Licence Medical',
+  'RAAus Medical Declaration',
+  'CASA Basic Class 2',
+  'CASA Class 2',
+  'CASA Class 1',
+];
 
 const toDateInputValue = (date?: Date) => date ? date.toISOString().slice(0, 10) : '';
 
@@ -4343,11 +4350,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     <span className="block text-sm font-medium text-gray-700 mb-1">Medical Type</span>
                     <select value={infoForm.medicalType} onChange={event => updateInfoField('medicalType', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                       <option value="">Not recorded</option>
-                      <option value="Driver Licence Medical">Driver Licence Medical</option>
-                      <option value="RAAus Medical Declaration">RAAus Medical Declaration</option>
-                      <option value="CASA Basic Class 2">CASA Basic Class 2</option>
-                      <option value="CASA Class 2">CASA Class 2</option>
-                      <option value="CASA Class 1">CASA Class 1</option>
+                      {infoForm.medicalType && !MEDICAL_TYPE_OPTIONS.includes(infoForm.medicalType) && (
+                        <option value={infoForm.medicalType}>{infoForm.medicalType}</option>
+                      )}
+                      {MEDICAL_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
                     </select>
                   </label>
                   <label className="block">
