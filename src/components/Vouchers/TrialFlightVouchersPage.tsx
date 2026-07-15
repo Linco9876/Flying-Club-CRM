@@ -779,6 +779,10 @@ export const TrialFlightVouchersPage: React.FC = () => {
   };
 
   const handleCancelVoucher = async (voucher: TrialFlightVoucher) => {
+    if (voucher.paymentStatus === 'paid') {
+      toast.error('Refund the payment and complete the accounting reversal before cancelling this voucher.');
+      return;
+    }
     if (voucher.bookedBookingId || voucher.status === 'booked') {
       toast.error('Release the linked booking before cancelling this voucher.');
       return;
@@ -2678,7 +2682,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
               {visibleRecentVouchers.map(voucher => {
                 const redeemUrl = getRedeemUrl(voucher.code);
                 const delivery = voucherDeliveryDetails(voucher);
-                const canCancelVoucher = voucher.status !== 'cancelled' && voucher.status !== 'booked' && !voucher.bookedBookingId;
+                const canCancelVoucher = voucher.status !== 'cancelled' && voucher.status !== 'booked' && !voucher.bookedBookingId && voucher.paymentStatus !== 'paid';
                 const isExpanded = expandedVoucherIds.has(voucher.id);
                 return (
                 <div key={voucher.id} className={`rounded-xl border p-2.5 transition ${
@@ -2928,6 +2932,11 @@ export const TrialFlightVouchersPage: React.FC = () => {
                         <XCircle className="h-3.5 w-3.5" />
                         Cancel voucher
                       </button>
+                    )}
+                    {voucher.paymentStatus === 'paid' && voucher.status !== 'cancelled' && !voucher.bookedBookingId && (
+                      <p className="basis-full text-xs text-amber-700 dark:text-amber-300">
+                        Paid voucher: refund the payment and complete the accounting reversal before cancellation.
+                      </p>
                     )}
                   </div>
                     </>

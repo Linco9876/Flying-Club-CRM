@@ -1403,15 +1403,15 @@ const syncTopupTransaction = async (
 ) => {
   const tx = await getAccountTransaction(adminClient, transactionId);
   if (tx.type !== "topup") {
-    throw new Error("Only top-up transactions can be synced as member credit.");
+    throw makeXeroNeedsReviewError("Only top-up transactions can be synced as member credit.");
   }
   if (clean(tx.verified_status) !== "verified") {
-    throw new Error("Only verified top-up transactions can be synced to Xero.");
+    throw makeXeroNeedsReviewError("Only verified top-up transactions can be synced to Xero.");
   }
 
   const amount = money(tx.amount);
   if (amount <= 0) {
-    throw new Error("Top-up amount must be greater than $0.");
+    throw makeXeroNeedsReviewError("Top-up amount must be greater than $0.");
   }
 
   if (clean(tx.xero_bank_transaction_id)) {

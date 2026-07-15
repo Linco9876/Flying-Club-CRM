@@ -634,6 +634,11 @@ Deno.serve(async (req: Request) => {
       if (voucher.status === "cancelled") {
         return json({ cancelled: true, voucherId: voucher.id, alreadyCancelled: true });
       }
+      if (voucher.payment_status === "paid") {
+        return json({
+          error: "Paid vouchers cannot be cancelled until the payment has been refunded and the accounting reversal has been completed.",
+        }, 409);
+      }
       if (voucher.booked_booking_id) {
         return json({ error: "Release the linked booking before cancelling this voucher." }, 409);
       }
@@ -653,7 +658,7 @@ Deno.serve(async (req: Request) => {
         .from("trial_flight_vouchers")
         .update({
           status: "cancelled",
-          payment_status: voucher.payment_status === "paid" ? "refunded" : voucher.payment_status,
+          payment_status: voucher.payment_status,
           notes,
           updated_at: now,
         })

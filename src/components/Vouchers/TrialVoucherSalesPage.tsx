@@ -825,7 +825,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                     disabled={!selectedCatalogProduct.checkoutAvailable}
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-4 text-sm font-black text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
-                    Book now after purchase
+                    Choose a time and book
                     <ArrowRight className="h-4 w-4" />
                   </button>
                   <button
@@ -857,7 +857,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-                  {purchaseMode === 'manual' ? 'Manual voucher request' : purchaseMode === 'book-now' ? 'Book after checkout' : 'Gift certificate checkout'}
+                  {purchaseMode === 'manual' ? 'Manual voucher request' : purchaseMode === 'book-now' ? 'Choose time and pay' : 'Gift certificate checkout'}
                 </p>
                 <h3 className="mt-1 text-2xl font-bold">{selectedProduct.name}</h3>
                 <p className="mt-1 text-sm text-slate-600">{formatPrice(selectedCheckoutTotal)}</p>
