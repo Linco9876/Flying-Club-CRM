@@ -43,6 +43,7 @@ const xeroScopes = [
   "accounting.invoices",
   "accounting.payments",
   "accounting.banktransactions",
+  "accounting.manualjournals",
 ].join(" ");
 
 const cleanString = (value: unknown) => String(value || "").trim();

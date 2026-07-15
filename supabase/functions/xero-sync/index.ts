@@ -244,6 +244,9 @@ const xeroRequest = async ({
       if (response.status === 401 && path.startsWith("BankTransactions")) {
         throw makeXeroNeedsReviewError("Xero refused the prepaid credit sync. Reconnect Xero in Settings > Integrations so the CRM has bank transaction permission, then retry this sync item.");
       }
+      if ((response.status === 401 || response.status === 403) && path.startsWith("ManualJournals")) {
+        throw makeXeroNeedsReviewError("Xero refused the gift voucher journal. Reconnect Xero in Settings > Integrations to grant Manual Journals permission, and make sure the authorising Xero user has Reports access, then retry this sync item.");
+      }
       const error = new Error(message) as Error & { status?: number; payload?: unknown };
       error.status = response.status;
       error.payload = payload;

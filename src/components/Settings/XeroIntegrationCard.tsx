@@ -117,6 +117,7 @@ const requiredXeroScopes = [
   'accounting.payments',
   'accounting.settings',
   'accounting.banktransactions',
+  'accounting.manualjournals',
   'offline_access',
 ];
 
@@ -474,7 +475,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
         ? 'Ready to connect'
         : 'Setup needed';
   const statusDetail = reconnectRequired
-    ? `Xero is connected, but the CRM is missing permission for ${missingScopes.join(', ')}. Reconnect Xero to allow prepaid credits and accounting transactions to sync.`
+    ? `Xero is connected, but the CRM is missing permission for ${missingScopes.join(', ')}. Reconnect Xero to allow prepaid credits, voucher accounting and other transactions to sync.`
     : connected
     ? `Linked to ${xeroStatus?.tenantName || 'a Xero organisation'}. Billing sync can be configured here before invoice posting is enabled.`
     : statusLoadError
@@ -622,7 +623,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
             <p className="font-semibold">Xero needs to be re-authorised.</p>
             <p className="mt-1">
               Xero still reports the app as connected, but the existing token was granted before the CRM started using prepaid credit/overpayment sync.
-              Click <span className="font-semibold">Reconnect Xero</span>, approve the permissions, then retry any failed Xero sync item.
+              Click <span className="font-semibold">Reconnect Xero</span>, approve the permissions, then retry any failed Xero sync item. The authorising Xero user also needs Reports access for gift voucher journals.
             </p>
             <p className="mt-2 text-xs text-amber-800">Missing scope: {missingScopes.join(', ')}</p>
           </div>

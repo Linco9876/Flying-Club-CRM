@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Mail, Maximize2, Minimize2, Pencil, Plane, Plus, Save, Search, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle, Copy, Download, ExternalLink, Loader2, Mail, Maximize2, Minimize2, Pencil, Plane, Plus, Save, Search, ShieldCheck, Ticket, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useStudents } from '../../hooks/useStudents';
@@ -1329,6 +1329,33 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const selectedProductReadiness = selectedProduct ? bookingReadiness(selectedProduct) : null;
   const selectedProductIsIssueable = Boolean(selectedProduct?.isActive && selectedProductReadiness?.ready);
 
+  if (loading || stripeStatusLoading) {
+    return (
+      <div className="flex min-h-[28rem] items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-blue-900/10 bg-white shadow-lg dark:border-blue-300/10 dark:bg-[#171a21]">
+          <div className="bg-gradient-to-r from-blue-950 to-blue-800 px-6 py-7 text-white">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/12">
+                <Plane className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200">Trial instructional flights</p>
+                <h1 className="mt-1 text-xl font-bold">Loading gift vouchers</h1>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 px-6 py-6 text-gray-700 dark:text-gray-200">
+            <Loader2 className="h-6 w-6 shrink-0 animate-spin text-blue-600 dark:text-blue-300" />
+            <div>
+              <p className="font-semibold">Checking products, bookings and payment readiness</p>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">The voucher workspace will appear when its live information is ready.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-3 sm:p-6">
       <div className="mb-6 rounded-2xl bg-gradient-to-r from-blue-950 to-blue-800 p-5 text-white shadow-lg sm:p-6">
@@ -2485,7 +2512,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   const readiness = bookingReadiness(product);
                   return (
                     <option key={product.id} value={product.id} disabled={!readiness.ready}>
-                      {product.name}{readiness.ready ? '' : ' - setup incomplete'}
+                      {product.name} - {product.durationMinutes} min - {formatMoney(product.price)}{readiness.ready ? '' : ' - setup incomplete'}
                     </option>
                   );
                 })}
