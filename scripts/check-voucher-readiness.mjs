@@ -19,7 +19,7 @@ const requiredFiles = [
   'supabase/functions/_shared/stripeMode.test.ts',
   'supabase/migrations/20260714024330_remote_schema_baseline.sql',
   'supabase/migrations/20260714223822_add_mode_specific_voucher_stripe_prices.sql',
-  'supabase/migrations/20260715093400_fix_voucher_xero_sale_accounting.sql',
+  'supabase/migrations/20260715105356_fix_voucher_xero_sale_accounting.sql',
 ];
 
 const supabaseFunctionSecrets = [
@@ -162,7 +162,7 @@ const readRequiredFile = (file) => {
 
 const schemaBaseline = readRequiredFile('supabase/migrations/20260714024330_remote_schema_baseline.sql');
 const stripePriceMigration = readRequiredFile('supabase/migrations/20260714223822_add_mode_specific_voucher_stripe_prices.sql');
-const voucherXeroMigration = readRequiredFile('supabase/migrations/20260715093400_fix_voucher_xero_sale_accounting.sql');
+const voucherXeroMigration = readRequiredFile('supabase/migrations/20260715105356_fix_voucher_xero_sale_accounting.sql');
 const xeroSyncFunction = readRequiredFile('supabase/functions/xero-sync/index.ts');
 
 addCheck(
