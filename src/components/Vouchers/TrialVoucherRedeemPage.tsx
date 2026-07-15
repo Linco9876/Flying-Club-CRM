@@ -554,7 +554,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                     <p className="mt-1 text-sm">
                       {user && isVoucherAccountUser
                         ? 'Choose an available time below.'
-                        : 'Opening the password setup page now. After you set your password, available times will load automatically.'}
+                        : isFullPortalUserOnVoucherPage
+                          ? 'This voucher is already linked to its restricted voucher account.'
+                          : 'Opening the password setup page now. After you set your password, available times will load automatically.'}
                     </p>
                   </div>
                 )}
