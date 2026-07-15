@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 
 export interface FlightLogFieldSetting {
@@ -36,6 +36,10 @@ export function useFlightLogSettings(aircraftId?: string | null) {
   const [settings, setSettings] = useState<FlightLogFieldSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const effectiveSettings = useMemo(
+    () => getEffectiveFlightLogSettings(settings, aircraftId),
+    [settings, aircraftId]
+  );
 
   const fetchSettings = async () => {
     try {
@@ -221,7 +225,7 @@ export function useFlightLogSettings(aircraftId?: string | null) {
 
   return {
     settings,
-    effectiveSettings: getEffectiveFlightLogSettings(settings, aircraftId),
+    effectiveSettings,
     loading,
     error,
     updateSetting,

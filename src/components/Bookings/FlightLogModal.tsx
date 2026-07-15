@@ -91,12 +91,18 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
   const currentTach = aircraft?.totalHours || 0;
 
-  const startTime = booking.startTime instanceof Date ? booking.startTime : new Date(booking.startTime);
+  const startTimeValue = booking.startTime instanceof Date
+    ? booking.startTime.getTime()
+    : Date.parse(booking.startTime);
+  const startTime = new Date(startTimeValue);
+  const startTimeIso = Number.isFinite(startTimeValue) ? startTime.toISOString() : '';
   const endTime = booking.endTime instanceof Date ? booking.endTime : new Date(booking.endTime);
   const isDualFlight = !!booking.instructorId;
   const voucherPaymentType = 'Gift Voucher';
   const isVoucherBooking = !!booking.trialFlightVoucherId || isVoucherPaymentMethod(booking.paymentType);
   const defaultFlightTypeId = isVoucherBooking ? '' : (booking.flightTypeId || '');
+  const hobbsStartEnabled = settings.some(setting => setting.field_name === 'hobbs_start' && setting.is_enabled);
+  const tachStartEnabled = settings.some(setting => setting.field_name === 'start_tach' && setting.is_enabled);
   const fieldClass = 'w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500';
   const labelClass = 'block text-xs font-medium text-gray-700 mb-1';
 
@@ -365,26 +371,25 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     const calculateAutoFilledMeterStarts = async () => {
       if (mode === 'edit') return;
       if (!booking.aircraftId) return;
+      if (!startTimeIso) return;
 
-      const hobbsEnabled = settings.some(setting => setting.field_name === 'hobbs_start' && setting.is_enabled);
-      const tachEnabled = settings.some(setting => setting.field_name === 'start_tach' && setting.is_enabled);
-      if (!hobbsEnabled && !tachEnabled) return;
+      if (!hobbsStartEnabled && !tachStartEnabled) return;
 
       try {
-        const { data: logs, error } = await supabase
+        const { data: previousLog, error } = await supabase
           .from('flight_logs')
           .select('start_time, end_time, start_tach, end_tach, hobbs_start, hobbs_end')
           .eq('aircraft_id', booking.aircraftId)
-          .order('end_time', { ascending: false });
+          .lte('end_time', startTimeIso)
+          .order('end_time', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (error || !logs || logs.length === 0) return;
-
-        const previousLog = logs.find(log => log.end_time && new Date(log.end_time) <= startTime);
-        if (!previousLog) return;
+        if (error || !previousLog) return;
 
         const nextState: Partial<typeof formData> = {};
 
-        if (tachEnabled && previousLog.end_tach != null && previousLog.end_tach !== '') {
+        if (tachStartEnabled && previousLog.end_tach != null && previousLog.end_tach !== '') {
           const startTach = parseFloat(previousLog.end_tach);
           if (Number.isFinite(startTach)) {
             nextState.start_tach = startTach;
@@ -392,7 +397,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
           }
         }
 
-        if (hobbsEnabled && previousLog.hobbs_end != null && previousLog.hobbs_end !== '') {
+        if (hobbsStartEnabled && previousLog.hobbs_end != null && previousLog.hobbs_end !== '') {
           const startHobbs = parseFloat(previousLog.hobbs_end);
           if (Number.isFinite(startHobbs)) {
             nextState.hobbs_start = startHobbs;
@@ -411,7 +416,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       }
     };
     calculateAutoFilledMeterStarts();
-  }, [booking.aircraftId, mode, startTime, settings]);
+  }, [booking.aircraftId, hobbsStartEnabled, mode, startTimeIso, tachStartEnabled]);
 
   const handleTachChange = (field: 'start_tach' | 'end_tach', value: string) => {
     const numValue = value === '' ? '' : parseFloat(value);

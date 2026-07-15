@@ -23,6 +23,12 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
 }) => {
   const { user } = useAuth();
   const { checkTachOverlap } = useFlightLogs();
+  const bookingStartTimestamp = booking.startTime instanceof Date
+    ? booking.startTime.getTime()
+    : Date.parse(String(booking.startTime));
+  const bookingStartIso = Number.isFinite(bookingStartTimestamp)
+    ? new Date(bookingStartTimestamp).toISOString()
+    : '';
 
   // Get booking details
   const aircraft = mockAircraft.find(a => a.id === booking.aircraftId);
@@ -56,7 +62,7 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
   // Automatically calculate start tach based on previous flight logs
   useEffect(() => {
     const calculateStartTach = async () => {
-      if (!booking.aircraftId || !isOpen) {
+      if (!booking.aircraftId || !isOpen || !bookingStartIso) {
         console.log('Skipping tach calculation - no aircraft ID or modal closed');
         return;
       }
@@ -64,33 +70,22 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
       console.log('Calculating start tach for aircraft:', booking.aircraftId);
 
       try {
-        // Fetch all flight logs for this aircraft, ordered by end time descending
-        const { data: logs, error } = await supabase
+        const { data: previousLog, error } = await supabase
           .from('flight_logs')
           .select('start_time, end_time, start_tach, end_tach')
           .eq('aircraft_id', booking.aircraftId)
-          .order('end_time', { ascending: false });
+          .lte('end_time', bookingStartIso)
+          .order('end_time', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         if (error) {
           console.error('Error fetching flight logs:', error);
           return;
         }
 
-        console.log('Found flight logs:', logs?.length || 0);
-
-        if (!logs || logs.length === 0) {
-          console.log('No previous logs found');
-          return;
-        }
-
-        const bookingStartTime = new Date(booking.startTime);
-        console.log('Booking start time:', bookingStartTime);
-
-        // Find the most recent log that ended before this booking started
-        const previousLog = logs.find(log => new Date(log.end_time) <= bookingStartTime);
-
         if (!previousLog) {
-          console.log('No logs before this booking time');
+          console.log('No previous logs found');
           return;
         }
 
@@ -107,7 +102,7 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
     };
 
     calculateStartTach();
-  }, [booking.aircraftId, booking.startTime, isOpen]);
+  }, [booking.aircraftId, bookingStartIso, isOpen]);
 
   const calculateDuration = () => {
     return Math.max(0, formData.tachEnd - formData.tachStart);
