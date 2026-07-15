@@ -56,6 +56,8 @@ const VOUCHER_RESCHEDULE_CUTOFF_HOURS = 72;
 
 type LocalDateParts = { year: number; month: number; day: number };
 
+class AvailabilityRequestError extends Error {}
+
 const localDateFormatter = new Intl.DateTimeFormat("en-AU", {
   timeZone: VOUCHER_TIME_ZONE,
   year: "numeric",
@@ -96,6 +98,43 @@ const localDateKey = (parts: LocalDateParts) => `${parts.year}-${pad(parts.month
 
 const addLocalDays = (parts: LocalDateParts, days: number): LocalDateParts =>
   localDatePartsForInstant(new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 12, 0, 0, 0)));
+
+const localDayOffset = (from: LocalDateParts, to: LocalDateParts) => Math.round(
+  (Date.UTC(to.year, to.month - 1, to.day) - Date.UTC(from.year, from.month - 1, from.day)) / 86_400_000,
+);
+
+const parseLocalDateKey = (value: unknown): LocalDateParts | null => {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const parts = { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  const verified = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  if (
+    verified.getUTCFullYear() !== parts.year ||
+    verified.getUTCMonth() !== parts.month - 1 ||
+    verified.getUTCDate() !== parts.day
+  ) return null;
+  return parts;
+};
+
+const voucherAvailabilityWindow = (now = new Date()) => {
+  const today = localDatePartsForInstant(now);
+  return {
+    startDate: localDateKey(addLocalDays(today, VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS)),
+    endDate: localDateKey(addLocalDays(today, VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS)),
+  };
+};
+
+const requestedAvailabilityDay = (value: unknown, now = new Date()) => {
+  if (value == null || String(value).trim() === "") return null;
+  const requested = parseLocalDateKey(value);
+  if (!requested) throw new AvailabilityRequestError("Choose a valid availability date");
+  const today = localDatePartsForInstant(now);
+  const offset = localDayOffset(today, requested);
+  if (offset < VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS || offset > VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS) {
+    throw new AvailabilityRequestError("That date is outside the online booking window");
+  }
+  return { parts: requested, offset };
+};
 
 const timeZoneOffsetMinutesAt = (date: Date) => {
   const parts = datePartsFromFormatter(localDateTimeFormatter, date);
@@ -801,7 +840,7 @@ const getActiveBookingForReschedule = async (adminClient: SupabaseAdminClient, b
   return booking;
 };
 
-const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: any) => {
+const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: any, requestedDate: unknown) => {
   const blockMinutes = Number(product.duration_minutes || 0) + 30;
   const allowedInstructorIds = new Set<string>(product.instructor_ids || []);
   const allowedAircraftIds = new Set<string>(product.aircraft_ids || []);
@@ -810,9 +849,13 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
   const instructorIds = Array.from(allowedInstructorIds);
   const aircraftIds = Array.from(allowedAircraftIds);
   const now = new Date();
-  const horizon = addMinutes(now, 60 * 24 * VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS);
   const today = localDatePartsForInstant(now);
-  const horizonDay = localDatePartsForInstant(horizon);
+  const requestedDay = requestedAvailabilityDay(requestedDate, now);
+  if (!requestedDay) return [];
+  const queryStart = zonedLocalTimeToUtc(requestedDay.parts, 0, 0);
+  const nextDay = addLocalDays(requestedDay.parts, 1);
+  const queryEnd = zonedLocalTimeToUtc(nextDay, 0, 0);
+  const requestedDateKey = localDateKey(requestedDay.parts);
   const resourceFilter = [
     `aircraft_id.in.(${aircraftIds.join(",")})`,
     `instructor_id.in.(${instructorIds.join(",")})`,
@@ -838,8 +881,8 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
       .select("id,aircraft_id,instructor_id,start_time,end_time,status,deleted_at,has_conflict")
       .is("deleted_at", null)
       .in("status", ["confirmed", "pending_approval"])
-      .gte("end_time", now.toISOString())
-      .lte("start_time", horizon.toISOString())
+      .gt("end_time", queryStart.toISOString())
+      .lt("start_time", queryEnd.toISOString())
       .or(resourceFilter),
     adminClient.from("instructor_weekly_schedules").select("*").or(instructorFilter),
     adminClient.from("instructor_schedule_changes").select("*").or(instructorFilter),
@@ -847,8 +890,8 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
       .from("instructor_absences")
       .select("*")
       .or(instructorFilter)
-      .lte("start_date", localDateKey(horizonDay))
-      .gte("end_date", localDateKey(today)),
+      .lte("start_date", requestedDateKey)
+      .gte("end_date", requestedDateKey),
     adminClient.from("users").select("id,name").in("id", instructorIds),
     adminClient
       .from("endorsements")
@@ -860,8 +903,8 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
       .eq("checkout_intent", "book_now")
       .eq("payment_status", "pending")
       .gt("hold_expires_at", now.toISOString())
-      .gte("held_end_time", now.toISOString())
-      .lte("held_start_time", horizon.toISOString()),
+      .gt("held_end_time", queryStart.toISOString())
+      .lt("held_start_time", queryEnd.toISOString()),
   ]);
 
   if (aircraftError) throw aircraftError;
@@ -886,15 +929,15 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
     endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
   });
   const activeBookings = (bookings || []).filter((booking: any) =>
-    new Date(booking.end_time) >= now &&
-    new Date(booking.start_time) <= horizon
+    new Date(booking.end_time) > queryStart &&
+    new Date(booking.start_time) < queryEnd
   );
 
   const slots: any[] = [];
   const slotKeys = new Set<string>();
   const aircraftUseCount = new Map<string, number>();
 
-  for (let dayOffset = VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS; dayOffset <= VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS; dayOffset += 1) {
+  for (let dayOffset = requestedDay.offset; dayOffset <= requestedDay.offset; dayOffset += 1) {
     const day = addLocalDays(today, dayOffset);
     const dayOfWeek = new Date(Date.UTC(day.year, day.month - 1, day.day)).getUTCDay();
 
@@ -1089,8 +1132,8 @@ Deno.serve(async (req: Request) => {
       if (productError) return json({ error: productError.message }, 500);
       if (!product?.is_active) return json({ error: "This voucher product is not currently available" }, 410);
 
-      const slots = await buildAvailableSlots(adminClient, product);
-      return json({ slots });
+      const slots = await buildAvailableSlots(adminClient, product, body.date);
+      return json({ slots, availabilityWindow: voucherAvailabilityWindow() });
     }
 
     if (action === "checkout-status") {
@@ -1264,9 +1307,13 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      const slots = voucher.status === "redeemed" ? await buildAvailableSlots(adminClient, product) : [];
       const booking = voucher.status === "booked" ? await getBookingSummary(adminClient, voucher.booked_booking_id) : null;
-      return json({ voucher: publicVoucher, slots, booking });
+      return json({
+        voucher: publicVoucher,
+        slots: [],
+        booking,
+        availabilityWindow: voucher.status === "redeemed" ? voucherAvailabilityWindow() : null,
+      });
     }
 
     if (action === "complete-password-setup") {
@@ -1402,8 +1449,8 @@ Deno.serve(async (req: Request) => {
         return json({ error: "This voucher is not available for booking" }, 409);
       }
 
-      const slots = await buildAvailableSlots(adminClient, product);
-      return json({ voucher: publicVoucher, slots });
+      const slots = await buildAvailableSlots(adminClient, product, body.date);
+      return json({ voucher: publicVoucher, slots, availabilityWindow: voucherAvailabilityWindow() });
     }
 
     if (action === "reschedule-availability") {
@@ -1442,10 +1489,10 @@ Deno.serve(async (req: Request) => {
       }
 
       const [slots, booking] = await Promise.all([
-        buildAvailableSlots(adminClient, product),
+        buildAvailableSlots(adminClient, product, body.date),
         getBookingSummary(adminClient, currentBooking.id),
       ]);
-      return json({ voucher: publicVoucher, slots, booking });
+      return json({ voucher: publicVoucher, slots, booking, availabilityWindow: voucherAvailabilityWindow() });
     }
 
     if (action === "reschedule") {
@@ -1482,7 +1529,7 @@ Deno.serve(async (req: Request) => {
         return json({ error: "A valid time, aircraft and instructor are required" }, 400);
       }
 
-      const slots = await buildAvailableSlots(adminClient, product);
+      const slots = await buildAvailableSlots(adminClient, product, localDateKey(localDatePartsForInstant(startTime)));
       const matchingSlot = slots.find((slot: any) =>
         slot.startTime === startTime.toISOString() &&
         slot.aircraftId === aircraftId &&
@@ -1584,7 +1631,7 @@ Deno.serve(async (req: Request) => {
         return json({ error: "A valid time, aircraft and instructor are required" }, 400);
       }
 
-      const slots = await buildAvailableSlots(adminClient, product);
+      const slots = await buildAvailableSlots(adminClient, product, localDateKey(localDatePartsForInstant(startTime)));
       const matchingSlot = slots.find((slot: any) =>
         slot.startTime === startTime.toISOString() &&
         slot.aircraftId === aircraftId &&
@@ -1749,6 +1796,9 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("trial-voucher-public error:", error);
-    return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);
+    return json(
+      { error: error instanceof Error ? error.message : "Unexpected error" },
+      error instanceof AvailabilityRequestError ? 400 : 500,
+    );
   }
 });

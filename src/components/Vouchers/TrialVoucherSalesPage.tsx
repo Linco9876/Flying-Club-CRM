@@ -4,6 +4,12 @@ import { supabase } from '../../lib/supabase';
 import { TrialFlightVoucherAircraftMode } from '../../types';
 import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
 import toast from 'react-hot-toast';
+import {
+  availabilityMonthKeys,
+  isAvailabilityWindow,
+  isDateInAvailabilityWindow,
+  type VoucherAvailabilityWindow,
+} from '../../utils/voucherAvailability';
 
 interface PublicVoucherProduct {
   id: string;
@@ -111,6 +117,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
   const [bookNowSlots, setBookNowSlots] = useState<BookNowSlot[]>([]);
   const [bookNowSlotsLoading, setBookNowSlotsLoading] = useState(false);
   const [bookNowSlotsError, setBookNowSlotsError] = useState('');
+  const [bookNowAvailabilityWindow, setBookNowAvailabilityWindow] = useState<VoucherAvailabilityWindow | null>(null);
   const [selectedBookNowSlot, setSelectedBookNowSlot] = useState<BookNowSlot | null>(null);
   const [selectedBookNowSlotDate, setSelectedBookNowSlotDate] = useState('');
   const [bookNowCalendarMonthKey, setBookNowCalendarMonthKey] = useState('');
@@ -393,6 +400,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
     setShowImmediateRecipientWarning(false);
     setPurchaseMode(mode);
     setBookNowSlots([]);
+    setBookNowAvailabilityWindow(null);
     setBookNowSlotsError('');
     setSelectedBookNowSlot(null);
     setSelectedBookNowSlotDate('');
@@ -408,22 +416,25 @@ export const TrialVoucherSalesPage: React.FC = () => {
     });
   };
 
-  const loadBookNowSlots = async (productId: string) => {
+  const loadBookNowSlots = async (productId: string, date?: string) => {
     setBookNowSlotsLoading(true);
     setBookNowSlotsError('');
     setSelectedBookNowSlot(null);
-    setSelectedBookNowSlotDate('');
+    if (date) {
+      setSelectedBookNowSlotDate(date);
+      setBookNowSlots([]);
+    } else {
+      setSelectedBookNowSlotDate('');
+    }
     try {
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
-        body: { action: 'book-now-availability', productId },
+        body: { action: 'book-now-availability', productId, ...(date ? { date } : {}) },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       const slots = Array.isArray(data?.slots) ? data.slots : [];
       setBookNowSlots(slots);
-      if (slots.length === 0) {
-        setBookNowSlotsError('No online trial flight times are available right now. Please contact the club and we can help arrange a time.');
-      }
+      setBookNowAvailabilityWindow(isAvailabilityWindow(data?.availabilityWindow) ? data.availabilityWindow : null);
     } catch (error) {
       console.error('Failed to load book-now trial flight slots:', error);
       setBookNowSlots([]);
@@ -478,20 +489,20 @@ export const TrialVoucherSalesPage: React.FC = () => {
   );
 
   const bookNowAvailableMonthKeys = useMemo(
-    () => Array.from(new Set(groupedBookNowSlots.map(group => group.dateKey.slice(0, 7)))),
-    [groupedBookNowSlots]
+    () => availabilityMonthKeys(bookNowAvailabilityWindow),
+    [bookNowAvailabilityWindow]
   );
 
   useEffect(() => {
-    if (!groupedBookNowSlots.length) {
+    if (!bookNowAvailableMonthKeys.length) {
       setBookNowCalendarMonthKey('');
       return;
     }
     setBookNowCalendarMonthKey(current => {
       if (current && bookNowAvailableMonthKeys.includes(current)) return current;
-      return groupedBookNowSlots[0].dateKey.slice(0, 7);
+      return bookNowAvailableMonthKeys[0];
     });
-  }, [bookNowAvailableMonthKeys, groupedBookNowSlots]);
+  }, [bookNowAvailableMonthKeys]);
 
   const bookNowCalendarMonth = useMemo(() => {
     if (!bookNowCalendarMonthKey) return null;
@@ -513,11 +524,12 @@ export const TrialVoucherSalesPage: React.FC = () => {
         dateKey,
         dayNumber: date.getUTCDate(),
         isCurrentMonth: date.getUTCMonth() === month - 1,
+        isBookableDate: isDateInAvailabilityWindow(dateKey, bookNowAvailabilityWindow),
         slotsCount: group?.slots.length || 0,
       };
     });
     return { label: monthLabel, days };
-  }, [bookNowCalendarMonthKey, groupedBookNowSlotMap]);
+  }, [bookNowAvailabilityWindow, bookNowCalendarMonthKey, groupedBookNowSlotMap]);
 
   const bookNowCurrentMonthIndex = bookNowCalendarMonthKey ? bookNowAvailableMonthKeys.indexOf(bookNowCalendarMonthKey) : -1;
 
@@ -530,13 +542,6 @@ export const TrialVoucherSalesPage: React.FC = () => {
     if (bookNowCurrentMonthIndex < 0 || bookNowCurrentMonthIndex >= bookNowAvailableMonthKeys.length - 1) return;
     setBookNowCalendarMonthKey(bookNowAvailableMonthKeys[bookNowCurrentMonthIndex + 1]);
   };
-
-  useEffect(() => {
-    if (!selectedBookNowSlotDate) return;
-    if (!groupedBookNowSlots.some(group => group.dateKey === selectedBookNowSlotDate)) {
-      setSelectedBookNowSlotDate('');
-    }
-  }, [groupedBookNowSlots, selectedBookNowSlotDate]);
 
   const visibleBookNowSlots = useMemo(
     () => selectedBookNowSlotDate
@@ -643,7 +648,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
     }
 
     if (purchaseMode === 'book-now') {
-      if (bookNowSlots.length === 0) {
+      if (!bookNowAvailabilityWindow) {
         await loadBookNowSlots(selectedProduct.id);
         return;
       }
@@ -932,11 +937,11 @@ export const TrialVoucherSalesPage: React.FC = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => selectedProduct && void loadBookNowSlots(selectedProduct.id)}
+                      onClick={() => selectedProduct && void loadBookNowSlots(selectedProduct.id, selectedBookNowSlotDate || undefined)}
                       disabled={bookNowSlotsLoading}
                       className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                     >
-                      {bookNowSlotsLoading ? 'Loading...' : bookNowSlots.length ? 'Refresh' : 'Show times'}
+                      {bookNowSlotsLoading ? 'Loading...' : selectedBookNowSlotDate ? 'Refresh day' : 'Show calendar'}
                     </button>
                   </div>
                   {bookNowSlotsLoading ? (
@@ -948,7 +953,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
                       {bookNowSlotsError}
                     </div>
-                  ) : bookNowSlots.length > 0 ? (
+                  ) : bookNowAvailabilityWindow ? (
                     <div className="space-y-3">
                       {bookNowCalendarMonth && (
                         <div className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -990,15 +995,14 @@ export const TrialVoucherSalesPage: React.FC = () => {
                                   key={day.dateKey}
                                   type="button"
                                   onClick={() => {
-                                    if (!hasSlots) return;
-                                    setSelectedBookNowSlotDate(day.dateKey);
-                                    setSelectedBookNowSlot(null);
+                                    if (!day.isBookableDate || !selectedProduct) return;
+                                    void loadBookNowSlots(selectedProduct.id, day.dateKey);
                                   }}
-                                  disabled={!hasSlots}
+                                  disabled={!day.isBookableDate || bookNowSlotsLoading}
                                   className={`min-h-14 rounded-xl border p-1 text-center transition ${
                                     isSelected
                                       ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
-                                      : hasSlots
+                                      : day.isBookableDate
                                         ? 'border-blue-100 bg-white text-slate-900 hover:border-blue-300 hover:bg-blue-50'
                                         : 'border-transparent bg-transparent text-slate-300'
                                   } ${!day.isCurrentMonth ? 'opacity-40' : ''}`}
@@ -1015,7 +1019,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                           </div>
                           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
                             {selectedBookNowSlotDate
-                              ? `Showing times for ${groupedBookNowSlotMap.get(selectedBookNowSlotDate)?.label || 'the selected day'}.`
+                              ? `Showing times for ${groupedBookNowSlotMap.get(selectedBookNowSlotDate)?.label || formatBookNowDateHeading(`${selectedBookNowSlotDate}T12:00:00Z`)}.`
                               : 'Select a day to show available times.'}
                           </p>
                         </div>
@@ -1069,8 +1073,8 @@ export const TrialVoucherSalesPage: React.FC = () => {
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
                 >
                   {checkoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ticket className="h-4 w-4" />}
-                  {purchaseMode === 'book-now' && bookNowSlots.length === 0
-                    ? 'Show available times'
+                  {purchaseMode === 'book-now' && !bookNowAvailabilityWindow
+                    ? 'Show booking calendar'
                     : purchaseMode === 'book-now'
                       ? 'Continue to secure checkout'
                       : 'Continue to card payment'}

@@ -3,6 +3,12 @@ import { CalendarDays, CheckCircle, ChevronLeft, ChevronRight, Gift, Loader2, Pl
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import {
+  availabilityMonthKeys,
+  isAvailabilityWindow,
+  isDateInAvailabilityWindow,
+  type VoucherAvailabilityWindow,
+} from '../../utils/voucherAvailability';
 
 interface PublicVoucher {
   code: string;
@@ -58,6 +64,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const [availabilityAutoLoadedForCode, setAvailabilityAutoLoadedForCode] = useState('');
   const [setupRedirectForCode, setSetupRedirectForCode] = useState('');
   const [availabilityHydrating, setAvailabilityHydrating] = useState(false);
+  const [availabilityWindow, setAvailabilityWindow] = useState<VoucherAvailabilityWindow | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
   const isVoucherAccountUser = Boolean(user?.portalAccessScope === 'trial_voucher');
   const isFullPortalUserOnVoucherPage = Boolean(user && !isVoucherAccountUser);
@@ -74,6 +81,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       setRedeemed({ setupLink: null, setupEmailSent: false });
       setRescheduling(false);
       const linkedSlots = data.slots || [];
+      setAvailabilityWindow(isAvailabilityWindow(data.availabilityWindow) ? data.availabilityWindow : null);
       setBookedSlot(data.booking || null);
       if (data.passwordSetupRequired) {
         setSlots([]);
@@ -81,13 +89,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         return;
       }
       if (data?.error) throw new Error(data.error);
-      const shouldChooseTime = isVoucherAccountUser && data.voucher?.status === 'redeemed' && !data.booking;
-      if (linkedSlots.length > 0 || !shouldChooseTime) {
-        setSlots(linkedSlots);
-      }
-      if (shouldChooseTime && linkedSlots.length === 0) {
-        await loadAvailability(data.voucher?.code || code);
-      }
+      setSlots(linkedSlots);
     } catch (error) {
       if (!code) setVoucher(null);
       toast.error(error instanceof Error ? error.message : 'Could not load your voucher');
@@ -202,13 +204,24 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookedSlot, code, setupRedirectForCode, user, voucher?.status]);
 
-  const loadAvailability = async (nextCode = code, mode: 'booking' | 'reschedule' = 'booking') => {
+  const loadAvailability = async (
+    nextCode = code,
+    mode: 'booking' | 'reschedule' = 'booking',
+    date?: string
+  ) => {
     if (!nextCode.trim()) return;
-    setLoading(true);
     setAvailabilityHydrating(true);
+    if (date) {
+      setSelectedSlotDate(date);
+      setSlots([]);
+    }
     try {
       const { data, error } = await supabase.functions.invoke('trial-voucher-public', {
-        body: { action: mode === 'reschedule' ? 'reschedule-availability' : 'availability', code: nextCode },
+        body: {
+          action: mode === 'reschedule' ? 'reschedule-availability' : 'availability',
+          code: nextCode,
+          ...(date ? { date } : {}),
+        },
       });
       if (error) throw error;
       if (data?.passwordSetupRequired) {
@@ -219,16 +232,16 @@ export const TrialVoucherRedeemPage: React.FC = () => {
       }
       if (data?.error) throw new Error(data.error);
       setSlots(data.slots || []);
+      setAvailabilityWindow(isAvailabilityWindow(data.availabilityWindow) ? data.availabilityWindow : null);
       if (data.booking) setBookedSlot(data.booking);
       if (mode === 'reschedule') {
-        setSelectedSlotDate('');
+        if (!date) setSelectedSlotDate('');
         setRescheduling(true);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not load available times');
     } finally {
       setAvailabilityHydrating(false);
-      setLoading(false);
     }
   };
 
@@ -268,7 +281,7 @@ export const TrialVoucherRedeemPage: React.FC = () => {
           : 'Trial flight booked');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : rescheduling ? 'Could not reschedule this booking' : 'Could not book this time');
-      await loadAvailability(code, rescheduling ? 'reschedule' : 'booking');
+      await loadAvailability(code, rescheduling ? 'reschedule' : 'booking', selectedSlotDate || undefined);
     } finally {
       setLoading(false);
     }
@@ -357,22 +370,22 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   );
 
   const availableMonthKeys = useMemo(
-    () => Array.from(new Set(groupedSlots.map(group => group.dateKey.slice(0, 7)))),
-    [groupedSlots]
+    () => availabilityMonthKeys(availabilityWindow),
+    [availabilityWindow]
   );
 
   const [calendarMonthKey, setCalendarMonthKey] = useState('');
 
   useEffect(() => {
-    if (!groupedSlots.length) {
+    if (!availableMonthKeys.length) {
       setCalendarMonthKey('');
       return;
     }
     setCalendarMonthKey(current => {
       if (current && availableMonthKeys.includes(current)) return current;
-      return groupedSlots[0].dateKey.slice(0, 7);
+      return availableMonthKeys[0];
     });
-  }, [availableMonthKeys, groupedSlots]);
+  }, [availableMonthKeys]);
 
   const calendarMonth = useMemo(() => {
     if (!calendarMonthKey) return null;
@@ -394,11 +407,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
         dateKey,
         dayNumber: date.getUTCDate(),
         isCurrentMonth: date.getUTCMonth() === month - 1,
+        isBookableDate: isDateInAvailabilityWindow(dateKey, availabilityWindow),
         slotsCount: group?.slots.length || 0,
       };
     });
     return { label: monthLabel, days };
-  }, [calendarMonthKey, groupedSlotMap]);
+  }, [availabilityWindow, calendarMonthKey, groupedSlotMap]);
 
   const currentMonthIndex = calendarMonthKey ? availableMonthKeys.indexOf(calendarMonthKey) : -1;
 
@@ -411,13 +425,6 @@ export const TrialVoucherRedeemPage: React.FC = () => {
     if (currentMonthIndex < 0 || currentMonthIndex >= availableMonthKeys.length - 1) return;
     setCalendarMonthKey(availableMonthKeys[currentMonthIndex + 1]);
   };
-
-  useEffect(() => {
-    if (!selectedSlotDate) return;
-    if (!groupedSlots.some(group => group.dateKey === selectedSlotDate)) {
-      setSelectedSlotDate('');
-    }
-  }, [groupedSlots, selectedSlotDate]);
 
   const visibleSlotGroups = useMemo(
     () => selectedSlotDate
@@ -444,11 +451,11 @@ export const TrialVoucherRedeemPage: React.FC = () => {
   const canChooseTime = Boolean(isVoucherAccountUser && ((voucher?.status === 'redeemed' && !bookedSlot) || rescheduling));
 
   useEffect(() => {
-    if (rescheduling || !canChooseTime || !code || slots.length > 0 || availabilityAutoLoadedForCode === code) return;
+    if (rescheduling || !canChooseTime || !code || availabilityWindow || availabilityAutoLoadedForCode === code) return;
     setAvailabilityAutoLoadedForCode(code);
     void loadAvailability(code);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availabilityAutoLoadedForCode, canChooseTime, code, rescheduling, slots.length]);
+  }, [availabilityAutoLoadedForCode, availabilityWindow, canChooseTime, code, rescheduling]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -583,7 +590,9 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                       <div>
                         <h3 className="font-bold text-slate-950">{rescheduling ? 'Choose a new time' : 'Available times'}</h3>
                         <p className="text-sm text-slate-600">
-                          {slots.length} available time{slots.length === 1 ? '' : 's'} found.
+                          {selectedSlotDate
+                            ? `${slots.length} available time${slots.length === 1 ? '' : 's'} on the selected day.`
+                            : 'Choose a day to check its available times.'}
                         </p>
                         <p className="mt-1 text-xs font-bold uppercase tracking-wide text-blue-700">
                           Times shown in Bendigo local time
@@ -605,13 +614,13 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                             Cancel
                           </button>
                         )}
-                        <button onClick={() => loadAvailability(code, rescheduling ? 'reschedule' : 'booking')} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
-                          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                          Refresh
+                        <button onClick={() => loadAvailability(code, rescheduling ? 'reschedule' : 'booking', selectedSlotDate || undefined)} disabled={availabilityHydrating} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60">
+                          {availabilityHydrating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+                          {selectedSlotDate ? 'Refresh day' : 'Refresh calendar'}
                         </button>
                       </div>
                     </div>
-                    {calendarMonth && groupedSlots.length > 0 && (
+                    {calendarMonth && availabilityWindow && (
                       <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <button
@@ -650,12 +659,12 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                               <button
                                 key={day.dateKey}
                                 type="button"
-                                onClick={() => hasSlots && setSelectedSlotDate(day.dateKey)}
-                                disabled={!hasSlots}
+                                onClick={() => day.isBookableDate && void loadAvailability(code, rescheduling ? 'reschedule' : 'booking', day.dateKey)}
+                                disabled={!day.isBookableDate || availabilityHydrating}
                                 className={`min-h-14 rounded-xl border p-1 text-center transition ${
                                   isSelected
                                     ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
-                                    : hasSlots
+                                    : day.isBookableDate
                                       ? 'border-blue-100 bg-white text-slate-900 hover:border-blue-300 hover:bg-blue-50'
                                       : 'border-transparent bg-transparent text-slate-300'
                                 } ${!day.isCurrentMonth ? 'opacity-40' : ''}`}
@@ -673,14 +682,14 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                         <div className="mt-3 rounded-xl bg-white px-3 py-2">
                           <p className="text-xs text-slate-500">
                             {selectedSlotDate
-                              ? `Showing times for ${groupedSlotMap.get(selectedSlotDate)?.label || 'the selected day'}.`
+                              ? `Showing times for ${groupedSlotMap.get(selectedSlotDate)?.label || formatSlotDateHeading(`${selectedSlotDate}T12:00:00Z`)}.`
                               : 'Select a day to show available times.'}
                           </p>
                         </div>
                       </div>
                     )}
                     <div className="max-h-[30rem] space-y-4 overflow-y-auto pr-1">
-                      {slots.length > 0 && !selectedSlotDate && (
+                      {availabilityWindow && !selectedSlotDate && (
                         <div className="rounded-xl bg-blue-50 p-4 text-sm font-medium text-blue-800">
                           Choose a day on the calendar above to see the available times for that day.
                         </div>
@@ -724,11 +733,11 @@ export const TrialVoucherRedeemPage: React.FC = () => {
                           Loading available online voucher times...
                         </div>
                       )}
-                      {slots.length === 0 && !availabilityHydrating && (
+                      {selectedSlotDate && slots.length === 0 && !availabilityHydrating && (
                         <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
                           {rescheduling
-                            ? 'No alternate online voucher times were found. Try refreshing, or contact Bendigo Flying Club for help changing this booking.'
-                            : 'No online voucher times found from two days ahead. Try refreshing, or contact Bendigo Flying Club if you need today or tomorrow.'}
+                            ? 'No alternate online voucher times are available on this day. Choose another day or contact Bendigo Flying Club for help.'
+                            : 'No online voucher times are available on this day. Choose another day, or contact Bendigo Flying Club if you need today or tomorrow.'}
                         </div>
                       )}
                     </div>
