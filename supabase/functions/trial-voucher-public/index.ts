@@ -804,7 +804,23 @@ const getActiveBookingForReschedule = async (adminClient: SupabaseAdminClient, b
 const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: any) => {
   const blockMinutes = Number(product.duration_minutes || 0) + 30;
   const allowedInstructorIds = new Set<string>(product.instructor_ids || []);
-  if (!blockMinutes || allowedInstructorIds.size === 0) return [];
+  const allowedAircraftIds = new Set<string>(product.aircraft_ids || []);
+  if (!blockMinutes || allowedInstructorIds.size === 0 || allowedAircraftIds.size === 0) return [];
+
+  const instructorIds = Array.from(allowedInstructorIds);
+  const aircraftIds = Array.from(allowedAircraftIds);
+  const now = new Date();
+  const horizon = addMinutes(now, 60 * 24 * VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS);
+  const today = localDatePartsForInstant(now);
+  const horizonDay = localDatePartsForInstant(horizon);
+  const resourceFilter = [
+    `aircraft_id.in.(${aircraftIds.join(",")})`,
+    `instructor_id.in.(${instructorIds.join(",")})`,
+  ].join(",");
+  const instructorFilter = [
+    `user_id.in.(${instructorIds.join(",")})`,
+    `instructor_id.in.(${instructorIds.join(",")})`,
+  ].join(",");
 
   const [
     { data: aircraftRows, error: aircraftError },
@@ -816,22 +832,36 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
     { data: endorsements, error: endorsementsError },
     { data: activeHolds, error: activeHoldsError },
   ] = await Promise.all([
-    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type,is_archived"),
-    adminClient.from("bookings").select("id,aircraft_id,instructor_id,start_time,end_time,status,deleted_at,has_conflict"),
-    adminClient.from("instructor_weekly_schedules").select("*"),
-    adminClient.from("instructor_schedule_changes").select("*"),
-    adminClient.from("instructor_absences").select("*"),
-    adminClient.from("users").select("id,name").in("id", Array.from(allowedInstructorIds)),
+    adminClient.from("aircraft").select("id,registration,make,model,status,required_endorsement_type,is_archived").in("id", aircraftIds),
+    adminClient
+      .from("bookings")
+      .select("id,aircraft_id,instructor_id,start_time,end_time,status,deleted_at,has_conflict")
+      .is("deleted_at", null)
+      .in("status", ["confirmed", "pending_approval"])
+      .gte("end_time", now.toISOString())
+      .lte("start_time", horizon.toISOString())
+      .or(resourceFilter),
+    adminClient.from("instructor_weekly_schedules").select("*").or(instructorFilter),
+    adminClient.from("instructor_schedule_changes").select("*").or(instructorFilter),
+    adminClient
+      .from("instructor_absences")
+      .select("*")
+      .or(instructorFilter)
+      .lte("start_date", localDateKey(horizonDay))
+      .gte("end_date", localDateKey(today)),
+    adminClient.from("users").select("id,name").in("id", instructorIds),
     adminClient
       .from("endorsements")
       .select("student_id,type,expiry_date,is_active")
-      .in("student_id", Array.from(allowedInstructorIds)),
+      .in("student_id", instructorIds),
     adminClient
       .from("trial_flight_vouchers")
       .select("id,held_aircraft_id,held_instructor_id,held_start_time,held_end_time,hold_expires_at")
       .eq("checkout_intent", "book_now")
       .eq("payment_status", "pending")
-      .gt("hold_expires_at", new Date().toISOString()),
+      .gt("hold_expires_at", now.toISOString())
+      .gte("held_end_time", now.toISOString())
+      .lte("held_start_time", horizon.toISOString()),
   ]);
 
   if (aircraftError) throw aircraftError;
@@ -855,11 +885,7 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
     instructorEndorsements.push(endorsement);
     endorsementsByInstructor.set(endorsement.student_id, instructorEndorsements);
   });
-  const now = new Date();
-  const horizon = addMinutes(now, 60 * 24 * VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS);
   const activeBookings = (bookings || []).filter((booking: any) =>
-    !booking.deleted_at &&
-    ["confirmed", "pending_approval"].includes(booking.status) &&
     new Date(booking.end_time) >= now &&
     new Date(booking.start_time) <= horizon
   );
@@ -868,7 +894,6 @@ const buildAvailableSlots = async (adminClient: SupabaseAdminClient, product: an
   const slotKeys = new Set<string>();
   const aircraftUseCount = new Map<string, number>();
 
-  const today = localDatePartsForInstant(now);
   for (let dayOffset = VOUCHER_SELF_BOOKING_MIN_LEAD_DAYS; dayOffset <= VOUCHER_SELF_BOOKING_LOOKAHEAD_DAYS; dayOffset += 1) {
     const day = addLocalDays(today, dayOffset);
     const dayOfWeek = new Date(Date.UTC(day.year, day.month - 1, day.day)).getUTCDay();

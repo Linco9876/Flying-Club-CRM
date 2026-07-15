@@ -35,7 +35,7 @@ export const ResetPasswordPage: React.FC = () => {
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const searchParams = new URLSearchParams(window.location.search);
     const voucherCode = searchParams.get('voucherCode') || (hashParams.has('access_token') ? searchParams.get('code') : null);
-    if (originalPathname === '/trial-flight-voucher') {
+    if (originalPathname === '/trial-flight-voucher' || voucherCode) {
       const returnTo = `/trial-flight-voucher${voucherCode ? `?voucherCode=${encodeURIComponent(voucherCode)}` : ''}`;
       sessionStorage.setItem(PASSWORD_RESET_RETURN_KEY, returnTo);
       setPostResetReturnTo(returnTo);
@@ -315,7 +315,7 @@ export const ResetPasswordPage: React.FC = () => {
       }
 
       setTimeout(() => {
-        navigate(redirect.redirectTo, { replace: true });
+        window.location.replace(redirect.redirectTo);
       }, 1200);
     } catch (error: any) {
       console.error('Password update error:', error);
@@ -331,7 +331,7 @@ export const ResetPasswordPage: React.FC = () => {
           sessionStorage.removeItem(PASSWORD_RESET_RETURN_KEY);
         }
         setTimeout(() => {
-          navigate(redirect.redirectTo, { replace: true });
+          window.location.replace(redirect.redirectTo);
         }, 1200);
         return;
       }

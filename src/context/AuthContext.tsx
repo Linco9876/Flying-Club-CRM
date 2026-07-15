@@ -217,6 +217,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (event === 'PASSWORD_RECOVERY') {
         setIsLoading(false);
+        if (window.location.pathname !== '/reset-password') {
+          const params = new URLSearchParams(window.location.search);
+          const voucherCode = params.get('voucherCode') || params.get('code');
+          const resetParams = new URLSearchParams({ type: 'recovery' });
+          if (voucherCode) resetParams.set('voucherCode', voucherCode);
+          window.location.replace(`/reset-password?${resetParams.toString()}`);
+        }
         return;
       }
 
