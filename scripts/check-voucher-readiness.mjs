@@ -15,9 +15,11 @@ const requiredFiles = [
   'supabase/functions/create-trial-voucher-checkout/index.ts',
   'supabase/functions/send-trial-voucher-email/index.ts',
   'supabase/functions/trial-voucher-stripe-webhook/index.ts',
+  'supabase/functions/xero-sync/index.ts',
   'supabase/functions/_shared/stripeMode.test.ts',
   'supabase/migrations/20260714024330_remote_schema_baseline.sql',
   'supabase/migrations/20260714223822_add_mode_specific_voucher_stripe_prices.sql',
+  'supabase/migrations/20260715093400_fix_voucher_xero_sale_accounting.sql',
 ];
 
 const supabaseFunctionSecrets = [
@@ -160,6 +162,8 @@ const readRequiredFile = (file) => {
 
 const schemaBaseline = readRequiredFile('supabase/migrations/20260714024330_remote_schema_baseline.sql');
 const stripePriceMigration = readRequiredFile('supabase/migrations/20260714223822_add_mode_specific_voucher_stripe_prices.sql');
+const voucherXeroMigration = readRequiredFile('supabase/migrations/20260715093400_fix_voucher_xero_sale_accounting.sql');
+const xeroSyncFunction = readRequiredFile('supabase/functions/xero-sync/index.ts');
 
 addCheck(
   'Voucher product and voucher tables have RLS enabled',
@@ -225,6 +229,32 @@ addCheck(
   stripePriceMigration.includes('stripe_test_price_id') &&
     stripePriceMigration.includes('stripe_live_price_id') &&
     adminFunction.includes('stripePriceIdForMode'),
+);
+addCheck(
+  'Stripe voucher sales use a Xero receive transaction into voucher liability',
+  xeroSyncFunction.includes('createVoucherSaleReceipt') &&
+    xeroSyncFunction.includes('path: "BankTransactions"') &&
+    xeroSyncFunction.includes('Type: "RECEIVE"') &&
+    xeroSyncFunction.includes('xero_sale_bank_transaction_id') &&
+    xeroSyncFunction.includes('voucher-liability'),
+);
+addCheck(
+  'Voucher purchaser contacts are linked without exposing Xero credentials',
+  xeroSyncFunction.includes('syncVoucherPurchaserContact') &&
+    xeroSyncFunction.includes('xero_purchaser_contact_id') &&
+    xeroSyncFunction.includes('voucher-contact-${clean(voucher?.id)}'),
+);
+addCheck(
+  'Voucher Xero mutations use idempotency keys',
+  xeroSyncFunction.includes('Idempotency-Key') &&
+    xeroSyncFunction.includes('voucher-sale-${voucherId}') &&
+    xeroSyncFunction.includes('voucher-sale-${voucher.id}') &&
+    xeroSyncFunction.includes('voucher-redemption-${voucher.id}'),
+);
+addCheck(
+  'Voucher Xero receipt and purchaser contact IDs are persisted',
+  voucherXeroMigration.includes('xero_sale_bank_transaction_id') &&
+    voucherXeroMigration.includes('xero_purchaser_contact_id'),
 );
 
 const missingLocalFunctionSecrets = supabaseFunctionSecrets.filter((name) => !process.env[name]);

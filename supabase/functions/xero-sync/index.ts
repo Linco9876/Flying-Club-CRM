@@ -182,6 +182,7 @@ const xeroRequest = async ({
   tenantId,
   accessToken,
   body,
+  idempotencyKey,
   bypassLocalPause = false,
 }: {
   method?: string;
@@ -189,6 +190,7 @@ const xeroRequest = async ({
   tenantId: string;
   accessToken: string;
   body?: Record<string, unknown>;
+  idempotencyKey?: string;
   bypassLocalPause?: boolean;
 }) => {
   const maxAttempts = 5;
@@ -202,6 +204,7 @@ const xeroRequest = async ({
         "Xero-tenant-id": tenantId,
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...(clean(idempotencyKey) ? { "Idempotency-Key": clean(idempotencyKey) } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -890,17 +893,20 @@ const createManualJournal = async ({
   date,
   narration,
   lines,
+  idempotencyKey,
 }: {
   ctx: any;
   date: unknown;
   narration: string;
   lines: Array<{ accountCode: string; amount: number; description: string }>;
+  idempotencyKey?: string;
 }) => {
   const result = await xeroRequest({
     method: "POST",
     path: "ManualJournals",
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
+    idempotencyKey,
     body: {
       ManualJournals: [{
         Date: isoDate(date),
@@ -1596,6 +1602,106 @@ const syncTopupTransaction = async (
   };
 };
 
+const createVoucherSaleReceipt = async ({
+  ctx,
+  voucherId,
+  voucherCode,
+  productName,
+  purchaserContactId,
+  date,
+  amount,
+  fundingAccountCode,
+  liabilityAccountCode,
+}: {
+  ctx: any;
+  voucherId: string;
+  voucherCode: string;
+  productName: string;
+  purchaserContactId: string;
+  date: unknown;
+  amount: number;
+  fundingAccountCode: string;
+  liabilityAccountCode: string;
+}) => {
+  const result = await xeroRequest({
+    method: "POST",
+    path: "BankTransactions",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    idempotencyKey: `voucher-sale-${voucherId}`,
+    body: {
+      BankTransactions: [{
+        Type: "RECEIVE",
+        Contact: { ContactID: purchaserContactId },
+        BankAccount: { Code: fundingAccountCode },
+        Date: isoDate(date),
+        Reference: truncateText(`Voucher ${voucherCode}`),
+        LineAmountTypes: "NoTax",
+        LineItems: [{
+          Description: truncateText(`${productName} - voucher ${voucherCode}`, 4000),
+          Quantity: 1,
+          UnitAmount: money(amount),
+          AccountCode: liabilityAccountCode,
+        }],
+      }],
+    },
+  });
+
+  const bankTransaction = result?.BankTransactions?.[0];
+  const bankTransactionId = clean(bankTransaction?.BankTransactionID);
+  if (!bankTransactionId) {
+    throw new Error("Xero did not return a bank transaction ID for the voucher sale.");
+  }
+
+  return {
+    bankTransactionId,
+    status: clean(bankTransaction?.Status),
+    reference: clean(bankTransaction?.Reference),
+  };
+};
+
+const syncVoucherPurchaserContact = async (ctx: any, voucher: any) => {
+  const purchaserName = clean(voucher?.purchaser_name);
+  const purchaserEmail = clean(voucher?.purchaser_email).toLowerCase();
+  if (!purchaserName) {
+    throw makeXeroNeedsReviewError("The voucher purchaser name is missing. Add it before syncing the voucher to Xero.");
+  }
+  if (!purchaserEmail) {
+    throw makeXeroNeedsReviewError("The voucher purchaser email is missing. Add it before syncing the voucher to Xero.");
+  }
+
+  const matches = await searchXeroContactsByEmail(ctx, purchaserEmail);
+  if (matches.length > 1) {
+    throw makeXeroNeedsReviewError("More than one Xero contact uses this voucher purchaser email. Link or merge the duplicate contacts in Xero before retrying.");
+  }
+
+  let contactId = clean(voucher?.xero_purchaser_contact_id) || (matches.length === 1 ? clean(matches[0]?.ContactID) : "");
+  const payloadContact: Record<string, unknown> = {
+    Name: purchaserName,
+    EmailAddress: purchaserEmail,
+  };
+  if (contactId) payloadContact.ContactID = contactId;
+
+  const response = await xeroRequest({
+    method: "POST",
+    path: "Contacts",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    idempotencyKey: `voucher-contact-${clean(voucher?.id)}`,
+    body: { Contacts: [payloadContact] },
+  });
+
+  const contact = response?.Contacts?.[0] || matches[0];
+  contactId = clean(contact?.ContactID) || contactId;
+  if (!contactId) throw new Error("Xero did not return a voucher purchaser contact ID.");
+
+  return {
+    contactId,
+    contactName: clean(contact?.Name) || purchaserName,
+    contactEmail: clean(contact?.EmailAddress) || purchaserEmail,
+  };
+};
+
 const markQueue = async (adminClient: SupabaseAdminClient, queueId: string | null, update: Record<string, unknown>) => {
   if (!queueId) return;
   await adminClient.from("xero_sync_queue").update({ ...update, updated_at: new Date().toISOString() }).eq("id", queueId);
@@ -2053,6 +2159,8 @@ const getVoucher = async (adminClient: SupabaseAdminClient, voucherId: string) =
       payer_user_id,
       booked_booking_id,
       xero_sale_journal_id,
+      xero_sale_bank_transaction_id,
+      xero_purchaser_contact_id,
       xero_redemption_journal_id,
       xero_sync_status,
       notes,
@@ -2787,10 +2895,12 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
   }
 
   let saleJournalId = clean(voucher.xero_sale_journal_id);
+  let saleBankTransactionId = clean(voucher.xero_sale_bank_transaction_id);
+  let purchaserContactId = clean(voucher.xero_purchaser_contact_id);
   let redemptionJournalId = clean(voucher.xero_redemption_journal_id);
   const result: Record<string, unknown> = { voucherId: voucher.id, voucherCode };
 
-  if (!saleJournalId) {
+  if (!saleJournalId && !saleBankTransactionId) {
     if (!voucherLiabilityAccountCode) {
       return await setNeedsReview("Set a Gift voucher liability account in Xero settings before syncing vouchers.");
     }
@@ -2803,6 +2913,32 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
       if (!fundingAccountCode) {
         return await setNeedsReview("Set the Stripe payment clearing account before syncing Stripe-paid vouchers.");
       }
+
+      const purchaserContact = await syncVoucherPurchaserContact(ctx, voucher);
+      purchaserContactId = purchaserContact.contactId;
+      const saleReceipt = await createVoucherSaleReceipt({
+        ctx,
+        voucherId: voucher.id,
+        voucherCode,
+        productName,
+        purchaserContactId,
+        date: voucher.paid_at || now,
+        amount: voucherAmount,
+        fundingAccountCode,
+        liabilityAccountCode: voucherLiabilityAccountCode,
+      });
+      saleBankTransactionId = saleReceipt.bankTransactionId;
+      result.saleBankTransactionId = saleBankTransactionId;
+      result.purchaserContactId = purchaserContactId;
+
+      await adminClient.from("trial_flight_vouchers").update({
+        xero_sale_bank_transaction_id: saleBankTransactionId,
+        xero_purchaser_contact_id: purchaserContactId,
+        xero_sale_synced_at: now,
+        xero_last_synced_at: now,
+        xero_sync_status: "synced",
+        xero_sync_error: null,
+      }).eq("id", voucher.id);
     } else if (clean(voucher.payment_source) === "prepaid") {
       fundingAccountCode = clean(ctx.settings?.topup_account_code);
       if (!fundingAccountCode) {
@@ -2817,33 +2953,36 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
       return await setNeedsReview("Voucher payment source is not set. Save the voucher again or review it manually.");
     }
 
-    const saleJournal = await createManualJournal({
-      ctx,
-      date: voucher.paid_at || now,
-      narration: saleNarration,
-      lines: [
-        {
-          accountCode: fundingAccountCode,
-          amount: voucherAmount,
-          description: `Funding received for voucher ${voucherCode}`,
-        },
-        {
-          accountCode: voucherLiabilityAccountCode,
-          amount: -voucherAmount,
-          description: `Voucher liability created for ${voucherCode}`,
-        },
-      ],
-    });
+    if (clean(voucher.payment_source) !== "stripe") {
+      const saleJournal = await createManualJournal({
+        ctx,
+        date: voucher.paid_at || now,
+        narration: saleNarration,
+        idempotencyKey: `voucher-sale-${voucher.id}`,
+        lines: [
+          {
+            accountCode: fundingAccountCode,
+            amount: voucherAmount,
+            description: `Funding received for voucher ${voucherCode}`,
+          },
+          {
+            accountCode: voucherLiabilityAccountCode,
+            amount: -voucherAmount,
+            description: `Voucher liability created for ${voucherCode}`,
+          },
+        ],
+      });
 
-    saleJournalId = saleJournal.journalId;
-    result.saleJournalId = saleJournalId;
-    await adminClient.from("trial_flight_vouchers").update({
-      xero_sale_journal_id: saleJournalId,
-      xero_sale_synced_at: now,
-      xero_last_synced_at: now,
-      xero_sync_status: "synced",
-      xero_sync_error: null,
-    }).eq("id", voucher.id);
+      saleJournalId = saleJournal.journalId;
+      result.saleJournalId = saleJournalId;
+      await adminClient.from("trial_flight_vouchers").update({
+        xero_sale_journal_id: saleJournalId,
+        xero_sale_synced_at: now,
+        xero_last_synced_at: now,
+        xero_sync_status: "synced",
+        xero_sync_error: null,
+      }).eq("id", voucher.id);
+    }
   }
 
   const redemptionFlight = await getVoucherRedemptionFlight(adminClient, voucher.booked_booking_id);
@@ -2874,6 +3013,7 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
       ctx,
       date: redemptionFlight.start_time || now,
       narration: redemptionNarration,
+      idempotencyKey: `voucher-redemption-${voucher.id}`,
       lines: [
         {
           accountCode: voucherLiabilityAccountCode,
@@ -2913,6 +3053,8 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
     result: {
       ...result,
       saleJournalId: saleJournalId || null,
+      saleBankTransactionId: saleBankTransactionId || null,
+      purchaserContactId: purchaserContactId || null,
       redemptionJournalId: redemptionJournalId || null,
       redeemed: Boolean(redemptionJournalId),
     },
@@ -2920,6 +3062,8 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
 
   return {
     saleJournalId: saleJournalId || null,
+    saleBankTransactionId: saleBankTransactionId || null,
+    purchaserContactId: purchaserContactId || null,
     redemptionJournalId: redemptionJournalId || null,
     redeemed: Boolean(redemptionJournalId),
   };
