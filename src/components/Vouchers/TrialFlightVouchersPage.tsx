@@ -899,11 +899,12 @@ export const TrialFlightVouchersPage: React.FC = () => {
       };
 
       const drawDetailBox = (label: string, value: string, x: number, y: number, boxWidth: number) => {
+        const boxHeight = 72;
         page.drawRectangle({
           x,
-          y: y - 58,
+          y: y - boxHeight,
           width: boxWidth,
-          height: 58,
+          height: boxHeight,
           color: lightSlate,
           borderColor: rgb(0.86, 0.90, 0.95),
           borderWidth: 1,
