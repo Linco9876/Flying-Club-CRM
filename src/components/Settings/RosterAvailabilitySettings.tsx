@@ -66,14 +66,14 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
 
   // Local draft state for weekly schedule — keyed by day of week
   const [drafts, setDrafts] = useState<{[day: number]: DayDraft}>({});
-  const [savingDay, setSavingDay] = useState<number | null>(null);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   const {
     weeklySchedules,
     absences,
     scheduleChanges,
     loading,
-    upsertWeeklySchedule,
+    upsertWeeklySchedules,
     addAbsence,
     deleteAbsence,
     addScheduleChange,
@@ -131,20 +131,38 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     }));
   };
 
-  const handleSaveDay = async (dayOfWeek: number) => {
+  const handleSaveSchedule = async () => {
     if (!canManageSelectedInstructor || !selectedInstructorId) return;
-    const draft = getDraftForDay(dayOfWeek);
-    setSavingDay(dayOfWeek);
+    const schedules = DAYS_OF_WEEK.map(day => getDraftForDay(day.value));
+
+    for (const schedule of schedules) {
+      if (!schedule.isAvailable) continue;
+      const dayName = DAYS_OF_WEEK.find(day => day.value === schedule.dayOfWeek)?.label || 'Day';
+      if (schedule.startTime >= schedule.endTime) {
+        toast.error(`${dayName}: morning end time must be later than the start time`);
+        return;
+      }
+      const hasAfternoonStart = Boolean(schedule.afternoonStartTime);
+      const hasAfternoonEnd = Boolean(schedule.afternoonEndTime);
+      if (hasAfternoonStart !== hasAfternoonEnd) {
+        toast.error(`${dayName}: select both afternoon times or leave both blank`);
+        return;
+      }
+      if (hasAfternoonStart && schedule.afternoonStartTime! >= schedule.afternoonEndTime!) {
+        toast.error(`${dayName}: afternoon end time must be later than the start time`);
+        return;
+      }
+    }
+
+    setSavingSchedule(true);
     try {
-      await upsertWeeklySchedule({ userId: selectedInstructorId, ...draft });
+      await upsertWeeklySchedules(
+        schedules.map(schedule => ({ userId: selectedInstructorId, ...schedule }))
+      );
       // Clear draft for this day — the effect on weeklySchedules will reset it
-      setDrafts(prev => {
-        const next = { ...prev };
-        delete next[dayOfWeek];
-        return next;
-      });
+      setDrafts({});
     } finally {
-      setSavingDay(null);
+      setSavingSchedule(false);
     }
   };
 
@@ -282,12 +300,27 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
         <>
           {/* Weekly Schedule */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Weekly Schedule</h3>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">Weekly Schedule</h3>
+                <p className="text-sm text-gray-500">Edit any or all days, then save the full week once.</p>
+              </div>
+              {canManageSelectedInstructor && (
+                <button
+                  type="button"
+                  onClick={handleSaveSchedule}
+                  disabled={savingSchedule || Object.keys(drafts).length === 0}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Save className="h-4 w-4" />
+                  {savingSchedule ? 'Saving week...' : 'Save weekly schedule'}
+                </button>
+              )}
+            </div>
             <div className="space-y-3">
               {DAYS_OF_WEEK.map(day => {
                 const draft = getDraftForDay(day.value);
                 const dirty = isDirty(day.value);
-                const saving = savingDay === day.value;
 
                 return (
                   <div
@@ -351,16 +384,6 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                         )}
                       </div>
 
-                      {canManageSelectedInstructor && dirty && (
-                        <button
-                          onClick={() => handleSaveDay(day.value)}
-                          disabled={saving}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-60 shrink-0"
-                        >
-                          <Save className="h-3.5 w-3.5" />
-                          {saving ? 'Saving...' : 'Update'}
-                        </button>
-                      )}
                     </div>
                   </div>
                 );

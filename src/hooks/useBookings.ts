@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, FlightLog, GroundSessionLog } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { useBookingRulesSettings, usePortalUxSettings } from './useSettings';
+import { useBookingRulesSettings, useCalendarSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
 
 const getErrorMessage = (error: unknown) => {
@@ -22,6 +22,11 @@ const getMissingSchemaColumn = (error: unknown) => {
 
 const OPTIONAL_BOOKING_COLUMNS = new Set(['booking_kind', 'has_conflict', 'ground_session_logged']);
 
+export interface BookingCancellationInput {
+  reasonId?: string;
+  notes?: string;
+}
+
 export const useBookings = (enabled = true) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +34,7 @@ export const useBookings = (enabled = true) => {
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
   const { settings: bookingRules } = useBookingRulesSettings();
+  const { settings: calendarSettings } = useCalendarSettings();
   const localCreatedBookingIdsRef = useRef<Set<string>>(new Set());
   const localDeletedBookingIdsRef = useRef<Set<string>>(new Set());
   const missingOptionalBookingColumnsRef = useRef<Set<string>>(new Set());
@@ -61,6 +67,15 @@ export const useBookings = (enabled = true) => {
         'guest_name',
         'guest_email',
         'guest_phone',
+        'cancellation_reason_id',
+        'cancellation_reason_name',
+        'cancellation_notes',
+        'cancellation_fee_type',
+        'cancellation_fee_amount',
+        'cancelled_at',
+        'cancelled_by',
+        'waitlist_reason',
+        'waitlisted_by_defect_id',
       ].filter(field => !missingOptionalBookingColumnsRef.current.has(field)).join(',');
   const flightLogCalendarFields = [
     'id',
@@ -88,7 +103,7 @@ export const useBookings = (enabled = true) => {
     endTime: new Date(row.end_time),
     paymentType: row.payment_type || '',
     notes: row.notes || undefined,
-    status: row.deleted_at ? 'cancelled' : row.status,
+    status: row.deleted_at && row.status !== 'no-show' ? 'cancelled' : row.status,
     bookingKind: row.booking_kind || 'flight',
     hasConflict: row.has_conflict || false,
     deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
@@ -104,6 +119,15 @@ export const useBookings = (enabled = true) => {
     guestName: row.guest_name || undefined,
     guestEmail: row.guest_email || undefined,
     guestPhone: row.guest_phone || undefined,
+    cancellationReasonId: row.cancellation_reason_id || undefined,
+    cancellationReasonName: row.cancellation_reason_name || undefined,
+    cancellationNotes: row.cancellation_notes || undefined,
+    cancellationFeeType: row.cancellation_fee_type || undefined,
+    cancellationFeeAmount: Number(row.cancellation_fee_amount || 0),
+    cancelledAt: row.cancelled_at ? new Date(row.cancelled_at) : undefined,
+    cancelledBy: row.cancelled_by || undefined,
+    waitlistReason: row.waitlist_reason || undefined,
+    waitlistedByDefectId: row.waitlisted_by_defect_id || undefined,
   });
 
   const retryWithoutMissingOptionalColumn = async <T,>(
@@ -198,7 +222,7 @@ export const useBookings = (enabled = true) => {
   const validateTimingRules = (
     startTime: Date,
     endTime: Date,
-    options: { enforceMinNotice?: boolean; requiresApproval?: boolean } = { enforceMinNotice: true }
+    options: { enforceMinNotice?: boolean } = { enforceMinNotice: true }
   ) => {
     const now = Date.now();
     const durationHours = (endTime.getTime() - startTime.getTime()) / (60 * 60 * 1000);
@@ -215,7 +239,6 @@ export const useBookings = (enabled = true) => {
     if (
       !isPastBooking &&
       options.enforceMinNotice !== false &&
-      options.requiresApproval === true &&
       bookingRules?.enforce_min_notice &&
       startTime.getTime() < now + bookingRules.min_booking_notice_hours * 60 * 60 * 1000
     ) {
@@ -812,7 +835,7 @@ export const useBookings = (enabled = true) => {
         Boolean(bookingRules?.require_instructor_approval && !bookingData.instructorId);
 
       validateTimingRules(bookingData.startTime, bookingData.endTime, {
-        requiresApproval: needsApproval,
+        enforceMinNotice: Boolean(bookingData.instructorId),
       });
       if (!options.silent && bookingData.startTime.getTime() < Date.now()) {
         toast('Warning: this booking is being created in the past.');
@@ -844,9 +867,11 @@ export const useBookings = (enabled = true) => {
 
       const conflicts = findConfirmedConflicts(bookingData);
       const isWaitlisted = conflicts.length > 0;
-      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
-        throw new Error('This time overlaps an existing booking and waiting-list overlaps are disabled');
+      if (isWaitlisted && calendarSettings?.conflict_rules === 'block') {
+        throw new Error('This booking conflicts with an existing confirmed booking');
       }
+
+      if (isWaitlisted && calendarSettings?.conflict_rules === 'approval') needsApproval = true;
 
       const bookingStatus = needsApproval ? 'pending_approval' : bookingData.status;
 
@@ -916,7 +941,7 @@ export const useBookings = (enabled = true) => {
         return;
       }
 
-      if (isWaitlisted) {
+      if (createdBooking?.has_conflict) {
         toast('This booking overlaps an existing booking, so it has been placed on the waiting list.');
       } else if (needsApproval) {
         toast.success('Booking request submitted - awaiting approval');
@@ -1019,7 +1044,7 @@ export const useBookings = (enabled = true) => {
         bookingData.endTime !== undefined
       )) {
         validateTimingRules(new Date(candidateBooking.startTime), new Date(candidateBooking.endTime), {
-          enforceMinNotice: false,
+          enforceMinNotice: Boolean(candidateBooking.instructorId),
         });
       }
       if (candidateBooking && (
@@ -1030,8 +1055,8 @@ export const useBookings = (enabled = true) => {
         await assertInstructorAvailable(candidateBooking);
         assertFatigueRules(candidateBooking, id);
       }
-      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
-        throw new Error('This time overlaps an existing booking and waiting-list overlaps are disabled');
+      if (isWaitlisted && calendarSettings?.conflict_rules === 'block') {
+        throw new Error('This booking conflicts with an existing confirmed booking');
       }
 
       if (
@@ -1085,7 +1110,7 @@ export const useBookings = (enabled = true) => {
     }
   };
 
-  const deleteBooking = async (id: string) => {
+  const deleteBooking = async (id: string, cancellation: BookingCancellationInput = {}) => {
     try {
       const booking = bookings.find(existing => existing.id === id);
       if (booking && (booking.flight_logged || booking.flightLog || booking.ground_session_logged || booking.groundSessionLog)) {
@@ -1098,18 +1123,48 @@ export const useBookings = (enabled = true) => {
       ) {
         throw new Error('Student booking cancellation is disabled. Please contact the club.');
       }
-      if (
-        isStudentOrPilot &&
+      const isInsideNoticePeriod = Boolean(
         booking &&
         bookingRules?.enforce_cancellation_notice &&
         new Date(booking.startTime).getTime() < Date.now() + bookingRules.cancellation_notice_hours * 60 * 60 * 1000
-      ) {
-        throw new Error(`Bookings cannot be cancelled within ${bookingRules.cancellation_notice_hours} hours of departure`);
+      );
+      if (isInsideNoticePeriod && !cancellation.reasonId) {
+        throw new Error(`Select a cancellation reason because this booking is within ${bookingRules?.cancellation_notice_hours || 0} hours of departure`);
       }
+
+      let reason: any = null;
+      if (cancellation.reasonId) {
+        const { data: reasonData, error: reasonError } = await supabase
+          .from('booking_cancellation_reasons')
+          .select('id,name,fee_type,fee_amount,is_active')
+          .eq('id', cancellation.reasonId)
+          .maybeSingle();
+        if (reasonError) throw reasonError;
+        if (!reasonData) throw new Error('The selected cancellation reason is no longer available');
+        reason = reasonData;
+      }
+
+      const cancelledAt = new Date();
+      const cancellationFeeType = isInsideNoticePeriod ? reason?.fee_type || 'none' : 'none';
+      const cancellationFeeAmount = isInsideNoticePeriod ? Number(reason?.fee_amount || 0) : 0;
+      const cancelledStatus = cancellationFeeType === 'no_show' ? 'no-show' : 'cancelled';
 
       const { data, error } = await supabase
         .from('bookings')
-        .update({ deleted_at: new Date().toISOString() })
+        .update({
+          deleted_at: cancelledAt.toISOString(),
+          status: cancelledStatus,
+          cancellation_reason_id: reason?.id || null,
+          cancellation_reason_name: reason?.name || null,
+          cancellation_notes: cancellation.notes?.trim() || null,
+          cancellation_fee_type: cancellationFeeType,
+          cancellation_fee_amount: cancellationFeeAmount,
+          cancelled_at: cancelledAt.toISOString(),
+          cancelled_by: user?.id || null,
+          has_conflict: false,
+          waitlist_reason: null,
+          waitlisted_by_defect_id: null,
+        })
         .eq('id', id)
         .select('id')
         .maybeSingle();
@@ -1125,7 +1180,21 @@ export const useBookings = (enabled = true) => {
       localDeletedBookingIdsRef.current.add(id);
       setBookings(prev => prev.map(existing =>
         existing.id === id
-          ? { ...existing, status: 'cancelled', deletedAt: new Date(), hasConflict: false }
+          ? {
+              ...existing,
+              status: cancelledStatus,
+              deletedAt: cancelledAt,
+              cancelledAt,
+              cancelledBy: user?.id,
+              cancellationReasonId: reason?.id,
+              cancellationReasonName: reason?.name,
+              cancellationNotes: cancellation.notes?.trim() || undefined,
+              cancellationFeeType,
+              cancellationFeeAmount,
+              hasConflict: false,
+              waitlistReason: undefined,
+              waitlistedByDefectId: undefined,
+            }
           : existing
       ));
       toast.success('Booking deleted successfully');
@@ -1157,8 +1226,8 @@ export const useBookings = (enabled = true) => {
 
       const conflicts = findConfirmedConflicts(candidateBooking, id);
       const isWaitlisted = conflicts.length > 0;
-      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
-        throw new Error('This booking overlaps an existing booking and waiting-list overlaps are disabled');
+      if (isWaitlisted && calendarSettings?.conflict_rules === 'block') {
+        throw new Error('This booking conflicts with an existing confirmed booking');
       }
 
       const restorePayload: Record<string, unknown> = {
@@ -1279,8 +1348,8 @@ export const useBookings = (enabled = true) => {
       );
 
       const isWaitlisted = conflicts.length > 0;
-      if (isWaitlisted && bookingRules?.allow_double_booking === false) {
-        throw new Error('This booking overlaps an existing booking and waiting-list overlaps are disabled');
+      if (isWaitlisted && calendarSettings?.conflict_rules === 'block') {
+        throw new Error('This booking conflicts with an existing confirmed booking');
       }
 
       const approvePayload: Record<string, unknown> = {

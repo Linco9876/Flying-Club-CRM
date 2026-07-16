@@ -90,6 +90,8 @@ export interface Aircraft {
   xeroTrackingOptionName?: string | null;
   xeroTrackingLastSyncedAt?: Date;
   xeroTrackingSyncError?: string | null;
+  autoGroundedUntil?: Date;
+  autoGroundedByDefectId?: string | null;
   isAvailable?: boolean;
   isArchived?: boolean;
   archivedAt?: Date;
@@ -129,6 +131,15 @@ export interface Booking {
   ground_session_logged?: boolean;
   flightTypeId?: string;
   trialFlightVoucherId?: string;
+  cancellationReasonId?: string;
+  cancellationReasonName?: string;
+  cancellationNotes?: string;
+  cancellationFeeType?: 'none' | 'late_cancel' | 'no_show';
+  cancellationFeeAmount?: number;
+  cancelledAt?: Date;
+  cancelledBy?: string;
+  waitlistReason?: 'resource_conflict' | 'aircraft_grounding' | string;
+  waitlistedByDefectId?: string;
   hirerName?: string;
   instructorName?: string;
   isGuestBooking?: boolean;

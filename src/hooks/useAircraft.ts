@@ -212,6 +212,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
           xeroTrackingOptionName: a.xero_tracking_option_name || null,
           xeroTrackingLastSyncedAt: a.xero_tracking_last_synced_at ? new Date(a.xero_tracking_last_synced_at) : undefined,
           xeroTrackingSyncError: a.xero_tracking_sync_error || null,
+          autoGroundedUntil: a.auto_grounded_until ? new Date(a.auto_grounded_until) : undefined,
+          autoGroundedByDefectId: a.auto_grounded_by_defect_id || null,
           isArchived: Boolean(a.is_archived),
           archivedAt: a.archived_at ? new Date(a.archived_at) : undefined,
           archivedBy: a.archived_by || null,

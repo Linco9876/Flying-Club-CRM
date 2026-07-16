@@ -23,6 +23,7 @@ export interface MaintenanceSettingsData {
   urgentReminderDays: number;
   upcomingReminderDays: number;
   defaultDefectFilter: 'all' | 'open' | 'mel' | 'fixed' | 'deferred';
+  autoGroundDurationHours: number;
 }
 
 const MAINTENANCE_SETTINGS_UPDATED_EVENT = 'maintenance-settings-updated';
@@ -36,7 +37,8 @@ const DEFAULT_SETTINGS: MaintenanceSettingsData = {
   upcomingReminderHours: 25,
   urgentReminderDays: 7,
   upcomingReminderDays: 30,
-  defaultDefectFilter: 'open'
+  defaultDefectFilter: 'open',
+  autoGroundDurationHours: 24
 };
 
 export const useMaintenanceSettings = () => {

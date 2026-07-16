@@ -133,6 +133,24 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
               </label>
             </div>
 
+            <div className="max-w-md">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Automatic grounding period (hours)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="336"
+                value={formData?.autoGroundDurationHours ?? 24}
+                onChange={(e) => handleInputChange('autoGroundDurationHours', Math.max(1, parseInt(e.target.value) || 1))}
+                disabled={!canEdit || !formData?.autoGroundOnMajorDefect}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Existing bookings during this period move to the waiting list for an admin to resolve. They are never deleted.
+              </p>
+            </div>
+
             <div className="flex items-center space-x-3">
               <input
                 type="checkbox"

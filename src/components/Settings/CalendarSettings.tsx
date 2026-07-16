@@ -15,7 +15,7 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
     snapDuration: 15,
     doubleHeightSlots: false,
     resourceDisplayOrder: 'aircraft-first',
-    conflictRules: 'hard-block',
+    conflictRules: 'waitlist',
     weekStartsOn: 'monday',
     showWeekends: true,
     highlightUnloggedBookings: false,
@@ -46,7 +46,7 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
         snap_duration: formData.snapDuration,
         double_height_slots: formData.doubleHeightSlots,
         resource_display_order: formData.resourceDisplayOrder,
-        conflict_rules: 'waitlist',
+        conflict_rules: formData.conflictRules,
         week_starts_on: formData.weekStartsOn,
         show_weekends: formData.showWeekends,
         highlight_unlogged_bookings: formData.highlightUnloggedBookings,
@@ -62,7 +62,7 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
         snapDuration: settings.snap_duration,
         doubleHeightSlots: settings.double_height_slots,
         resourceDisplayOrder: settings.resource_display_order,
-        conflictRules: 'waitlist',
+        conflictRules: settings.conflict_rules,
         weekStartsOn: settings.week_starts_on,
         showWeekends: settings.show_weekends ?? true,
         highlightUnloggedBookings: settings.highlight_unlogged_bookings ?? false,
@@ -246,11 +246,14 @@ export const CalendarSettings: React.FC<CalendarSettingsProps> = ({ canEdit, onF
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Conflict Rules</label>
             <select
-              value="waitlist"
-              disabled
+              value={formData.conflictRules}
+              onChange={(e) => handleInputChange('conflictRules', e.target.value)}
+              disabled={!canEdit}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
             >
-              <option value="waitlist">Waiting list - Keep overlaps out of the confirmed lane</option>
+              <option value="waitlist">Waiting list - keep the new booking out of the confirmed lane</option>
+              <option value="block">Block - do not allow the conflicting booking</option>
+              <option value="approval">Staff approval - waitlist it until staff review</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
               How to handle booking conflicts when resources are double-booked

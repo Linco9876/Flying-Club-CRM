@@ -47,6 +47,7 @@ export interface BookingRulesSettings {
   prevent_past_bookings: boolean;
   enforce_max_duration: boolean;
   max_booking_duration_hours: number;
+  max_active_bookings_per_member: number;
   fatigue_rules_enabled: boolean;
   fatigue_late_finish_time: string;
   fatigue_early_start_time: string;
@@ -463,6 +464,7 @@ export const useBookingRulesSettings = () => {
         prevent_past_bookings: updates.prevent_past_bookings ?? settings?.prevent_past_bookings ?? false,
         enforce_max_duration: updates.enforce_max_duration ?? settings?.enforce_max_duration ?? false,
         max_booking_duration_hours: updates.max_booking_duration_hours ?? settings?.max_booking_duration_hours ?? 8,
+        max_active_bookings_per_member: updates.max_active_bookings_per_member ?? settings?.max_active_bookings_per_member ?? 0,
         fatigue_rules_enabled: updates.fatigue_rules_enabled ?? settings?.fatigue_rules_enabled ?? true,
         fatigue_late_finish_time: updates.fatigue_late_finish_time ?? settings?.fatigue_late_finish_time ?? '22:00',
         fatigue_early_start_time: updates.fatigue_early_start_time ?? settings?.fatigue_early_start_time ?? '07:00',

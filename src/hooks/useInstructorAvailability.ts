@@ -244,6 +244,40 @@ export const useInstructorAvailability = (instructorId?: string) => {
     }
   };
 
+  const upsertWeeklySchedules = async (schedules: Omit<WeeklySchedule, 'id'>[]) => {
+    if (schedules.length === 0) return;
+
+    try {
+      const rows = schedules.map(schedule => ({
+        user_id: schedule.userId,
+        instructor_id: schedule.userId,
+        day_of_week: schedule.dayOfWeek,
+        start_time: schedule.startTime,
+        end_time: schedule.endTime,
+        start_time_2: schedule.afternoonStartTime || null,
+        end_time_2: schedule.afternoonEndTime || null,
+        afternoon_start_time: schedule.afternoonStartTime || null,
+        afternoon_end_time: schedule.afternoonEndTime || null,
+        is_available: schedule.isAvailable,
+        updated_at: new Date().toISOString()
+      }));
+
+      const { error } = await supabase
+        .from('instructor_weekly_schedules')
+        .upsert(rows, { onConflict: 'instructor_id,day_of_week' });
+
+      if (error) throw error;
+
+      await fetchWeeklySchedules(instructorId);
+      notifyAvailabilityUpdated();
+      toast.success('Weekly availability saved');
+    } catch (error) {
+      console.error('Error updating weekly schedules:', error);
+      toast.error('Failed to update weekly availability');
+      throw error;
+    }
+  };
+
   const deleteWeeklySchedule = async (id: string) => {
     try {
       const { error } = await supabase
@@ -543,6 +577,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
     scheduleChanges,
     loading,
     upsertWeeklySchedule,
+    upsertWeeklySchedules,
     deleteWeeklySchedule,
     addAbsence,
     updateAbsence,

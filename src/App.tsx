@@ -590,11 +590,12 @@ const KioskAuthenticatedRoute: React.FC<{
             onUpdateBooking={async (bookingId, updates, silent) => {
               await updateBooking(bookingId, updates, silent);
             }}
-            onDeleteBooking={async (bookingId) => {
+            onDeleteBooking={async (bookingId, cancellation) => {
               try {
-                await deleteBooking(bookingId);
+                await deleteBooking(bookingId, cancellation);
               } catch (error) {
                 console.error('Error deleting booking:', error);
+                throw error;
               }
             }}
             onRestoreBooking={async (bookingId) => {
@@ -855,11 +856,12 @@ const AuthenticatedApp: React.FC<{
                 setShowBookingForm(true);
               }}
               onUpdateBooking={handleUpdateBooking}
-              onDeleteBooking={async (bookingId) => {
+              onDeleteBooking={async (bookingId, cancellation) => {
                 try {
-                  await deleteBooking(bookingId);
+                  await deleteBooking(bookingId, cancellation);
                 } catch (error) {
                   console.error('Error deleting booking:', error);
+                  throw error;
                 }
               }}
               onRestoreBooking={async (bookingId) => {

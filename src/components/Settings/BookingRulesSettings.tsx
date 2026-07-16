@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock } from 'lucide-react';
 import { useBookingRulesSettings } from '../../hooks/useSettings';
 import { BookingFieldSettings } from './BookingFieldSettings';
+import { CancellationReasonsSettings } from './CancellationReasonsSettings';
 
 interface BookingRulesSettingsProps {
   canEdit: boolean;
@@ -13,6 +14,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
   const [formData, setFormData] = useState({
     minBookingNoticeHours: 2,
     maxBookingAdvanceDays: 30,
+    maxActiveBookingsPerMember: 0,
     allowDoubleBooking: false,
     requireInstructorApproval: false,
     cancellationNoticeHours: 24,
@@ -38,6 +40,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
       setFormData({
         minBookingNoticeHours: settings.min_booking_notice_hours,
         maxBookingAdvanceDays: settings.max_booking_advance_days,
+        maxActiveBookingsPerMember: settings.max_active_bookings_per_member ?? 0,
         allowDoubleBooking: settings.allow_double_booking,
         requireInstructorApproval: settings.require_instructor_approval,
         cancellationNoticeHours: settings.cancellation_notice_hours,
@@ -65,6 +68,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
       await updateSettings({
         min_booking_notice_hours: formData.minBookingNoticeHours,
         max_booking_advance_days: formData.maxBookingAdvanceDays,
+        max_active_bookings_per_member: formData.maxActiveBookingsPerMember,
         allow_double_booking: formData.allowDoubleBooking,
         require_instructor_approval: formData.requireInstructorApproval,
         cancellation_notice_hours: formData.cancellationNoticeHours,
@@ -91,6 +95,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
       setFormData({
         minBookingNoticeHours: settings.min_booking_notice_hours,
         maxBookingAdvanceDays: settings.max_booking_advance_days,
+        maxActiveBookingsPerMember: settings.max_active_bookings_per_member ?? 0,
         allowDoubleBooking: settings.allow_double_booking,
         requireInstructorApproval: settings.require_instructor_approval,
         cancellationNoticeHours: settings.cancellation_notice_hours,
@@ -203,8 +208,22 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
                   disabled={!canEdit || !formData.enforceMinNotice}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                 />
-                <p className="text-xs text-gray-500 mt-1">Minimum notice required before flight</p>
+                <p className="text-xs text-gray-500 mt-1">Applies only when an instructor is included in the booking.</p>
               </div>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Maximum active future bookings per member</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={formData.maxActiveBookingsPerMember}
+                onChange={(e) => handleInputChange('maxActiveBookingsPerMember', Math.max(0, parseInt(e.target.value) || 0))}
+                disabled={!canEdit}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+              />
+              <p className="text-xs text-gray-500 mt-1">Counts confirmed and pending future bookings. Set to 0 for no limit.</p>
             </div>
 
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
@@ -277,20 +296,6 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
               </p>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                id="allowDoubleBooking"
-                checked={formData.allowDoubleBooking}
-                onChange={(e) => handleInputChange('allowDoubleBooking', e.target.checked)}
-                disabled={!canEdit}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
-              />
-              <label htmlFor="allowDoubleBooking" className="text-sm text-gray-700">
-                Allow overlapping requests on the waiting list
-              </label>
-            </div>
-
             <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
               <div className="flex items-start space-x-3">
                 <input
@@ -312,6 +317,10 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 p-4">
+          <CancellationReasonsSettings canEdit={canEdit} />
         </div>
 
         <div>

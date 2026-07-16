@@ -46,6 +46,8 @@ import { isPastBooking } from '../../utils/timeUtils';
 import { BookingActionMenu } from '../Bookings/BookingActionMenu';
 import { FlightLogModal } from '../Bookings/FlightLogModal';
 import { GroundSessionLogModal } from '../Bookings/GroundSessionLogModal';
+import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
+import type { BookingCancellationInput } from '../../hooks/useBookings';
 import toast from 'react-hot-toast';
 
 interface CalendarProps {
@@ -61,7 +63,7 @@ interface CalendarProps {
   onEditBooking?: (booking: Booking) => void;
   onCopyBooking?: (booking: Booking) => void;
   onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => void;
-  onDeleteBooking?: (bookingId: string) => Promise<void> | void;
+  onDeleteBooking?: (bookingId: string, cancellation?: BookingCancellationInput) => Promise<void> | void;
   onRestoreBooking?: (bookingId: string) => Promise<void> | void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
   onRefresh?: () => Promise<void> | void;
@@ -333,6 +335,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [showPendingBookings, setShowPendingBookings] = useState(true);
   const [showCancelledBookings, setShowCancelledBookings] = useState(false);
   const [showUnavailableBlocks, setShowUnavailableBlocks] = useState(true);
+  const [hideAllDayUnavailableResources, setHideAllDayUnavailableResources] = useState(false);
   const [downtimeChoice, setDowntimeChoice] = useState<{
     date: Date;
     startTime: string;
@@ -396,6 +399,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   // Action menu and flight log states
   const [actionMenuBooking, setActionMenuBooking] = useState<Booking | null>(null);
+  const [cancellationBooking, setCancellationBooking] = useState<Booking | null>(null);
   const [actionMenuPosition, setActionMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [bookingMenuLoading, setBookingMenuLoading] = useState<{ bookingId: string; x: number; y: number } | null>(null);
   const bookingMenuOpenTokenRef = useRef(0);
@@ -1211,7 +1215,9 @@ export const Calendar: React.FC<CalendarProps> = ({
       }
     });
 
-    return ordered;
+    if (!hideAllDayUnavailableResources) return ordered;
+    const dates = viewMode === 'week' ? getWeekDays() : [currentDate];
+    return ordered.filter(resource => !dates.every(date => isResourceUnavailableAllDay(resource, date)));
   };
 
   const getTimeSlots = () => {
@@ -1533,6 +1539,35 @@ export const Calendar: React.FC<CalendarProps> = ({
     displayWeeklySchedules,
     hasAvailabilityData,
   ]);
+
+  const isResourceUnavailableAllDay = (resource: Resource, date: Date) => {
+    if (resource.type === 'aircraft') {
+      const selectedAircraft = aircraftForLookup.find(item => item.id === resource.id);
+      if (!selectedAircraft) return false;
+      const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0);
+      if (selectedAircraft.autoGroundedUntil) return selectedAircraft.autoGroundedUntil >= dayEnd;
+      return selectedAircraft.status !== 'serviceable';
+    }
+
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarStartHour, 0);
+    const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), calendarEndHour, 0);
+    const periods = getUnavailabilityPeriods(date)
+      .filter(period => period.resourceType === 'instructor' && period.resourceId === resource.id)
+      .map(period => ({
+        start: period.startTime < dayStart ? dayStart : period.startTime,
+        end: period.endTime > dayEnd ? dayEnd : period.endTime,
+      }))
+      .filter(period => period.end > dayStart && period.start < dayEnd)
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+    let coveredUntil = dayStart.getTime();
+    for (const period of periods) {
+      if (period.start.getTime() > coveredUntil) return false;
+      coveredUntil = Math.max(coveredUntil, period.end.getTime());
+      if (coveredUntil >= dayEnd.getTime()) return true;
+    }
+    return false;
+  };
 
   const getBookingsForResource = (
     resourceId: string,
@@ -2665,6 +2700,16 @@ export const Calendar: React.FC<CalendarProps> = ({
           className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
         />
         <span>Unavailable</span>
+      </label>
+
+      <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`} title="Hide aircraft or instructors that are unavailable for the entire displayed day">
+        <input
+          type="checkbox"
+          checked={hideAllDayUnavailableResources}
+          onChange={(event) => setHideAllDayUnavailableResources(event.target.checked)}
+          className={`${isKioskMode ? 'h-3.5 w-3.5' : 'h-4 w-4'} rounded border-gray-300 text-blue-600 focus:ring-blue-500`}
+        />
+        <span>Hide unavailable all day</span>
       </label>
 
       <label className={`inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-[#363b45] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-[#262b33] ${isKioskMode ? 'px-2.5 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'}`}>
@@ -4411,13 +4456,8 @@ export const Calendar: React.FC<CalendarProps> = ({
             }
             if (onDeleteBooking) {
               const bookingToDelete = actionMenuBooking;
-              void Promise.resolve(onDeleteBooking(bookingToDelete.id))
-                .then(() => {
-                  setActionMenuBooking(null);
-                })
-                .catch((error) => {
-                  console.error('Error deleting booking from action menu:', error);
-                });
+              setActionMenuBooking(null);
+              setCancellationBooking(bookingToDelete);
             }
           }}
           onRestore={
@@ -4502,6 +4542,17 @@ export const Calendar: React.FC<CalendarProps> = ({
             setShowGroundSessionLogModal(false);
             setFlightLogBooking(null);
             void Promise.resolve(onRefresh?.());
+          }}
+        />
+      )}
+
+      {cancellationBooking && onDeleteBooking && (
+        <BookingCancellationModal
+          booking={cancellationBooking}
+          onClose={() => setCancellationBooking(null)}
+          onConfirm={async (input) => {
+            await onDeleteBooking(cancellationBooking.id, input);
+            setCancellationBooking(null);
           }}
         />
       )}
