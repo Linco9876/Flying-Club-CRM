@@ -7,9 +7,7 @@ import { Student, UserRole } from '../../types';
 import {
   User,
   Phone,
-  Mail,
   Clock,
-  Award,
   AlertTriangle,
   CheckCircle,
   Loader2,
@@ -155,10 +153,11 @@ export const StudentList: React.FC = () => {
   const visibleMembers = useMemo(() => {
     const roleRank: Record<UserRole, number> = {
       admin: 1,
-      senior_instructor: 2,
-      instructor: 3,
-      pilot: 4,
-      student: 5
+      cfi: 2,
+      senior_instructor: 3,
+      instructor: 4,
+      pilot: 5,
+      student: 6
     };
 
     return [...rawVisibleMembers].sort((a, b) => {
@@ -193,6 +192,7 @@ export const StudentList: React.FC = () => {
 
   const roleLabels: Record<UserRole, string> = {
     admin: 'Admin',
+    cfi: 'CFI',
     senior_instructor: 'Senior Instructor',
     instructor: 'Instructor',
     pilot: 'Pilot',
@@ -212,6 +212,8 @@ export const StudentList: React.FC = () => {
         return 'bg-red-100 text-red-800';
       case 'senior_instructor':
         return 'bg-indigo-100 text-indigo-800';
+      case 'cfi':
+        return 'bg-cyan-100 text-cyan-900';
       case 'instructor':
         return 'bg-green-100 text-green-800';
       case 'pilot':

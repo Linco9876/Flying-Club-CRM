@@ -42,7 +42,7 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
     try {
       setLoading(true);
 
-      const enrichLogs = async (logs: any[]): Promise<OutstandingFlightLog[]> => {
+      const enrichLogs = async (logs: OutstandingFlightLog[]): Promise<OutstandingFlightLog[]> => {
         if (!logs || logs.length === 0) return [];
 
         const studentIds = [...new Set(logs.map(l => l.student_id).filter(Boolean))];
@@ -77,7 +77,7 @@ export function useOutstandingRecords(instructorId?: string, fetchAll?: boolean)
         .from('flight_logs')
         .select('id, booking_id, aircraft_id, student_id, instructor_id, start_time, end_time, dual_time, solo_time, training_record_status')
         .not('instructor_id', 'is', null)
-        .neq('training_record_status', 'dismissed')
+        .eq('training_record_status', 'pending')
         .order('start_time', { ascending: true })
         .limit(1000);
 

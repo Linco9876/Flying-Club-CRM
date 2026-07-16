@@ -47,11 +47,14 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-settings', resource: 'all' },
     { action: 'view-logbook', resource: 'own' },
     { action: 'view-pilot-currency', resource: 'all' },
-    { action: 'view-instructor-approvals', resource: 'all' },
     { action: 'view-safety-reports', resource: 'all' },
     { action: 'view-checklists-docs', resource: 'all' },
     { action: 'edit-settings', resource: 'all' },
     { action: 'edit-personal-settings', resource: 'own' }
+  ],
+  cfi: [
+    { action: 'view-safety', resource: 'all' },
+    { action: 'view-instructor-approvals', resource: 'all' }
   ],
   senior_instructor: [
     { action: 'view-dashboard', resource: 'all' },
@@ -69,7 +72,6 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-billing', resource: 'own' },
     { action: 'view-logbook', resource: 'own' },
     { action: 'view-pilot-currency', resource: 'all' },
-    { action: 'view-instructor-approvals', resource: 'all' },
     { action: 'view-safety-reports', resource: 'all' },
     { action: 'view-checklists-docs', resource: 'all' },
     { action: 'edit-personal-settings', resource: 'own' }
@@ -238,7 +240,10 @@ export const getAuthorizedSafetyTabs = (user: User | null) => {
     );
   }
 
-  return allTabs.filter(tab => can(user, tab.action, 'all'));
+  return allTabs.filter(tab => {
+    if (tab.id === 'instructor-approvals') return hasRole(user, 'cfi');
+    return can(user, tab.action, 'all');
+  });
 };
 
 export const getAuthorizedSettingsSections = (user: User | null) => {

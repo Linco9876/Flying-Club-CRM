@@ -1,4 +1,4 @@
-﻿export type UserRole = 'admin' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
+﻿export type UserRole = 'admin' | 'cfi' | 'senior_instructor' | 'instructor' | 'pilot' | 'student';
 
 export type PortalAccessScope = 'full' | 'trial_voucher' | 'guest_placeholder';
 
@@ -377,7 +377,7 @@ export interface GroundSessionDescriptionOption {
   fixedRate: number;
   flightTypeId?: string | null;
 }
-
+// CFI is an additive authority role; the primary portal role remains admin/instructor.
 export interface Licence {
   id: string;
   type: string;
@@ -528,7 +528,7 @@ export interface TrainingAuditEntry {
   userId: string;
   userName: string;
   action: string;
-  changes: Record<string, any>;
+  changes: Record<string, unknown>;
 }
 
 export interface Defect {

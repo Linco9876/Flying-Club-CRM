@@ -17,8 +17,8 @@ interface PermissionRow {
   description: string;
 }
 
-const editableRoles: UserRole[] = ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'];
-const matrixRoles: UserRole[] = ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'];
+const editableRoles: UserRole[] = ['admin', 'cfi', 'senior_instructor', 'instructor', 'pilot', 'student'];
+const matrixRoles: UserRole[] = ['admin', 'cfi', 'senior_instructor', 'instructor', 'pilot', 'student'];
 
 const permissionRows: PermissionRow[] = [
   { action: 'view-dashboard', name: 'Dashboard', description: 'Can open the main dashboard.' },
@@ -43,6 +43,7 @@ const permissionRows: PermissionRow[] = [
 
 const roleLabels: Record<UserRole, string> = {
   admin: 'Admin',
+  cfi: 'CFI',
   senior_instructor: 'Senior Instructor',
   instructor: 'Instructor',
   pilot: 'Pilot',
@@ -51,6 +52,7 @@ const roleLabels: Record<UserRole, string> = {
 
 const roleBadgeClass: Record<UserRole, string> = {
   admin: 'bg-red-100 text-red-800',
+  cfi: 'bg-cyan-100 text-cyan-900',
   senior_instructor: 'bg-indigo-100 text-indigo-800',
   instructor: 'bg-blue-100 text-blue-800',
   pilot: 'bg-orange-100 text-orange-800',
@@ -100,8 +102,17 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       nextRoles = [...nextRoles, 'instructor'];
     }
 
+    if (role === 'cfi' && isChecked && !nextRoles.includes('instructor')) {
+      nextRoles = [...nextRoles, 'instructor'];
+    }
+
     if (!isChecked && nextRoles.length === 0) {
       toast.error('Each user must keep at least one role.');
+      return;
+    }
+
+    if (role === 'instructor' && !isChecked && targetRoles.includes('cfi')) {
+      toast.error('Remove the CFI authority before removing the Instructor role.');
       return;
     }
 
@@ -119,6 +130,10 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
       setUpdatingUserId(userId);
 
       if (role === 'senior_instructor' && isChecked && !targetRoles.includes('instructor')) {
+        await addRole(userId, 'instructor');
+      }
+
+      if (role === 'cfi' && isChecked && !targetRoles.includes('instructor')) {
         await addRole(userId, 'instructor');
       }
 
@@ -150,7 +165,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
         <p className="text-gray-600">Manage user roles and review the access model currently enforced by the CRM.</p>
       </div>
 
-      <section className="grid grid-cols-1 md:grid-cols-5 gap-3">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
         {matrixRoles.map(role => (
           <div key={role} className="rounded-lg border border-gray-200 bg-white p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{roleLabels[role]}</p>
@@ -168,7 +183,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
               User Role Assignment
             </h3>
             <p className="text-sm text-gray-500 mt-1">
-              Role changes save immediately. Student is standalone; mixed-role users log in as their highest rank: admin, instructor, pilot, then student.
+              Role changes save immediately. CFI is a protected authority added to an Instructor account; it does not replace the person's normal portal role. Student is standalone.
             </p>
           </div>
           <input
@@ -229,11 +244,14 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                               || (role !== 'student' && userRoles.includes('student')));
                           const disabled = !canEdit
                             || isUpdating
+                            || (role === 'instructor' && checked && userRoles.includes('cfi'))
                             || (!checked && role === 'senior_instructor' && !userRoles.includes('instructor'))
                             || wouldConflictWithStudent
                             || (user.id === currentUser?.id && role === 'admin' && checked);
                           const title = wouldConflictWithStudent
                             ? 'Student cannot be combined with any other role'
+                            : role === 'instructor' && checked && userRoles.includes('cfi')
+                              ? 'Remove the CFI authority before removing Instructor'
                             : role === 'senior_instructor' && !userRoles.includes('instructor')
                               ? 'Assign Instructor before Senior Instructor'
                               : undefined;

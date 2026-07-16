@@ -15,7 +15,6 @@ import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import {
-  matrixStandardLabel,
   matrixStandardMeetsRequirement,
   matrixStandardShortLabel,
   formatSyllabusMatrixText,
@@ -23,6 +22,8 @@ import {
   useSyllabusMatrix,
 } from '../../hooks/useSyllabusMatrix';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
+import { hasRole } from '../../utils/rbac';
+import { InstructorComplianceRecordForm } from './InstructorComplianceRecordForm';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 
@@ -176,6 +177,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const { user } = useAuth();
   const { settings: trainingSettings, loading: trainingSettingsLoading } = useTrainingSettings();
   const isAdmin = user?.role === 'admin';
+  const isCfi = hasRole(user, 'cfi');
   const { outstandingLogs, dismissedLogs, loading, dismissRecord, restoreRecord, markRecorded, refetch } = useOutstandingRecords(
     isAdmin ? undefined : user?.id,
     isAdmin
@@ -519,12 +521,26 @@ export const OutstandingRecordsTab: React.FC = () => {
     return map;
   }, [draftRecords]);
   const myOutstandingLogs = useMemo(
-    () => outstandingLogs.filter(log => log.instructor_id === user?.id),
-    [outstandingLogs, user?.id]
+    () => outstandingLogs.filter(log => {
+      if (log.instructor_id !== user?.id) return false;
+      const candidate = users.find(member => member.id === log.student_id);
+      const isInstructorCandidate = candidate?.roles?.some(role => role === 'instructor' || role === 'senior_instructor')
+        || candidate?.role === 'instructor'
+        || candidate?.role === 'senior_instructor';
+      return !isInstructorCandidate || isCfi;
+    }),
+    [isCfi, outstandingLogs, user?.id, users]
   );
   const otherInstructorOutstandingLogs = useMemo(
-    () => outstandingLogs.filter(log => log.instructor_id !== user?.id),
-    [outstandingLogs, user?.id]
+    () => outstandingLogs.filter(log => {
+      if (log.instructor_id === user?.id) return false;
+      const candidate = users.find(member => member.id === log.student_id);
+      const isInstructorCandidate = candidate?.roles?.some(role => role === 'instructor' || role === 'senior_instructor')
+        || candidate?.role === 'instructor'
+        || candidate?.role === 'senior_instructor';
+      return !isInstructorCandidate;
+    }),
+    [outstandingLogs, user?.id, users]
   );
   const visibleOutstandingLogs = queueView === 'dismissed'
     ? []
@@ -532,8 +548,27 @@ export const OutstandingRecordsTab: React.FC = () => {
       ? otherInstructorOutstandingLogs
       : isAdmin
         ? myOutstandingLogs
-        : outstandingLogs;
-  const visibleDismissedLogs = queueView === 'dismissed' ? dismissedLogs : [];
+        : myOutstandingLogs;
+  const visibleDismissedLogs = queueView === 'dismissed'
+    ? dismissedLogs.filter(log => {
+        const candidate = users.find(member => member.id === log.student_id);
+        const isInstructorCandidate = candidate?.roles?.some(role => role === 'instructor' || role === 'senior_instructor')
+          || candidate?.role === 'instructor'
+          || candidate?.role === 'senior_instructor';
+        return !isInstructorCandidate || (isCfi && log.instructor_id === user?.id);
+      })
+    : [];
+  const activeCandidate = activeLog ? users.find(member => member.id === activeLog.student_id) : undefined;
+  const activeIsInstructorCompliance = Boolean(
+    activeCandidate
+    && isCfi
+    && activeLog?.instructor_id === user?.id
+    && (
+      activeCandidate.role === 'instructor'
+      || activeCandidate.role === 'senior_instructor'
+      || activeCandidate.roles?.some(role => role === 'instructor' || role === 'senior_instructor')
+    )
+  );
   const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
     setPendingSubmits(current => {
       const withoutDuplicate = current.filter(item => item.id !== job.id && item.flightLogId !== job.flightLogId);
@@ -1250,6 +1285,12 @@ export const OutstandingRecordsTab: React.FC = () => {
             const durationH = ((log.dual_time ?? 0) + (log.solo_time ?? 0)).toFixed(1);
             const matchingDrafts = draftRecordsByStudent.get(log.student_id) ?? [];
             const isMine = log.instructor_id === user?.id;
+            const candidate = users.find(member => member.id === log.student_id);
+            const isInstructorCandidate = Boolean(
+              candidate?.role === 'instructor'
+              || candidate?.role === 'senior_instructor'
+              || candidate?.roles?.some(role => role === 'instructor' || role === 'senior_instructor')
+            );
 
             return (
               <div
@@ -1283,6 +1324,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                           }`}>
                             {isMine ? 'Assigned to you' : 'Other instructor'}
                           </span>
+                          {isInstructorCandidate && isCfi && (
+                            <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-cyan-900 dark:bg-cyan-950/50 dark:text-cyan-200">
+                              CFI compliance
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">
                           {format(flightDate, 'EEE d MMM yyyy')} &middot; {format(flightDate, 'h:mm a')}
@@ -1328,7 +1374,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                       className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
                     >
                       <BookOpen className="h-4 w-4" />
-                      Add Record
+                      {isInstructorCandidate && isCfi ? 'Complete S&P / Renewal' : 'Add Record'}
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
@@ -1428,8 +1474,22 @@ export const OutstandingRecordsTab: React.FC = () => {
         )}
       </div>
 
-      {/* Right: record entry panel */}
-      {activeLog && (
+      {/* Right: protected instructor compliance or ordinary student record entry */}
+      {activeLog && activeIsInstructorCompliance && activeCandidate && user && (
+        <div className="min-w-0 lg:w-[70%]">
+          <InstructorComplianceRecordForm
+            flightLog={activeLog}
+            candidate={activeCandidate}
+            examiner={user}
+            onClose={closePanel}
+            onCompleted={async () => {
+              await markRecorded(activeLog.id);
+              await refetch();
+            }}
+          />
+        </div>
+      )}
+      {activeLog && !activeIsInstructorCompliance && (
         <div className="min-w-0 lg:w-[70%]">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col dark:border-[#2c2f36] dark:bg-[#171a21]">
             {/* Panel header */}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Shield, Users, Plus, Trash2, Loader2 } from 'lucide-react';
-import { useSafetySettings } from '../../hooks/useSafetySettings';
+import { SafetyReportCategory, useSafetySettings } from '../../hooks/useSafetySettings';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 
 interface SafetyComplianceSettingsProps {
@@ -35,7 +35,10 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
   };
 
   const handleCategoryChange = (id: string, field: string, value: string) => {
-    updateCategory(id, { [field]: value } as any);
+    const updates: Partial<SafetyReportCategory> = field === 'name'
+      ? { name: value }
+      : { defaultAssignee: value };
+    updateCategory(id, updates);
     onFormChange();
   };
 
@@ -54,11 +57,15 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
   }, [settings]);
 
   useEffect(() => {
-    (window as any).__safetySettingsSave = async () => updateSettings(formData);
-    (window as any).__safetySettingsCancel = () => setFormData(settings);
+    const settingsWindow = window as Window & {
+      __safetySettingsSave?: () => Promise<void>;
+      __safetySettingsCancel?: () => void;
+    };
+    settingsWindow.__safetySettingsSave = async () => updateSettings(formData);
+    settingsWindow.__safetySettingsCancel = () => setFormData(settings);
     return () => {
-      delete (window as any).__safetySettingsSave;
-      delete (window as any).__safetySettingsCancel;
+      delete settingsWindow.__safetySettingsSave;
+      delete settingsWindow.__safetySettingsCancel;
     };
   }, [formData, settings]);
 
@@ -93,7 +100,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
           </div>
           <div className="rounded-lg border border-white bg-white p-3 shadow-sm">
             <p className="font-semibold text-slate-950">Instructor S&amp;P checks</p>
-            <p className="mt-1 text-xs leading-5">The Instructor Approvals tab uses the S&amp;P intervals below. Overdue or missing checks are flagged as requiring senior instructor supervision.</p>
+            <p className="mt-1 text-xs leading-5">CFI-only protected records use a 90-day interval for Instructors, 12 months for Senior Instructors and a two-year rating renewal cycle.</p>
           </div>
         </div>
       </div>
@@ -197,34 +204,22 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
 
         {/* Instructor Checks */}
         <div>
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Instructor S&amp;P Check Intervals</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Instructor S&amp;P Check (months)</label>
-              <input
-                type="number"
-                min="1"
-                max="36"
-                value={formData.instructorSopCheckMonths}
-                onChange={(e) => handleInputChange('instructorSopCheckMonths', parseInt(e.target.value))}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-              <p className="text-xs text-gray-500 mt-1">Regular instructor standards and proficiency check interval. Default: 3 months.</p>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Instructor Compliance Cadence</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-4">
+              <p className="text-sm font-semibold text-cyan-950">Instructor S&amp;P</p>
+              <p className="mt-2 text-2xl font-bold text-cyan-900">90 days</p>
+              <p className="mt-1 text-xs leading-5 text-cyan-800">Recorded by a CFI before instructional duties begin and at each recurring check.</p>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Senior Instructor S&amp;P Check (months)</label>
-              <input
-                type="number"
-                min="1"
-                max="48"
-                value={formData.seniorInstructorSopCheckMonths}
-                onChange={(e) => handleInputChange('seniorInstructorSopCheckMonths', parseInt(e.target.value))}
-                disabled={!canEdit}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
-              />
-              <p className="text-xs text-gray-500 mt-1">Senior instructor standards and proficiency check interval. Default: 12 months.</p>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+              <p className="text-sm font-semibold text-blue-950">Senior Instructor S&amp;P</p>
+              <p className="mt-2 text-2xl font-bold text-blue-900">12 months</p>
+              <p className="mt-1 text-xs leading-5 text-blue-800">Includes the higher-level BFR, solo-authorisation and endorsement-training standards.</p>
+            </div>
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+              <p className="text-sm font-semibold text-indigo-950">Rating renewal</p>
+              <p className="mt-2 text-2xl font-bold text-indigo-900">2 years</p>
+              <p className="mt-1 text-xs leading-5 text-indigo-800">The completed RAAus renewal form must be attached before the protected record can be finalised.</p>
             </div>
           </div>
         </div>
