@@ -54,12 +54,6 @@ const resultOptions: Array<{
   },
 ];
 
-const checkTypeLabels: Record<InstructorComplianceCheckType, string> = {
-  initial_issue: "Initial instructor issue",
-  sp_check: "Standards & Proficiency check",
-  renewal: "Instructor rating renewal",
-};
-
 export const InstructorComplianceRecordForm: React.FC<
   InstructorComplianceRecordFormProps
 > = ({ flightLog, candidate, examiner, onClose, onCompleted }) => {
@@ -72,8 +66,6 @@ export const InstructorComplianceRecordForm: React.FC<
     ? "senior_instructor"
     : "instructor";
   const [courseId, setCourseId] = useState("");
-  const [checkType, setCheckType] =
-    useState<InstructorComplianceCheckType>("sp_check");
   const [checkDate, setCheckDate] = useState(() =>
     format(new Date(flightLog.start_time), "yyyy-MM-dd"),
   );
@@ -101,7 +93,14 @@ export const InstructorComplianceRecordForm: React.FC<
   const [showTolerances, setShowTolerances] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const course = courses.find((item) => item.id === courseId) || courses[0];
+  const activeCourses = useMemo(
+    () => courses.filter((item) => item.isActive && item.checkType),
+    [courses],
+  );
+  const course =
+    activeCourses.find((item) => item.id === courseId) || activeCourses[0];
+  const checkType: InstructorComplianceCheckType =
+    course?.checkType || "sp_check";
   const applicableItems = useMemo(
     () =>
       items.filter(
@@ -122,8 +121,8 @@ export const InstructorComplianceRecordForm: React.FC<
   }, [applicableItems]);
 
   useEffect(() => {
-    if (!courseId && courses[0]?.id) setCourseId(courses[0].id);
-  }, [courseId, courses]);
+    if (!courseId && activeCourses[0]?.id) setCourseId(activeCourses[0].id);
+  }, [activeCourses, courseId]);
 
   useEffect(() => {
     setResults((current) => {
@@ -279,7 +278,9 @@ export const InstructorComplianceRecordForm: React.FC<
               <ShieldCheck className="h-4 w-4" /> CFI protected record
             </div>
             <h2 className="mt-2 text-xl font-bold">
-              Instructor Standards &amp; Proficiency
+              {checkType === "renewal"
+                ? "Instructor Rating Renewal"
+                : "Instructor Standards & Proficiency Check"}
             </h2>
             <p className="mt-1 text-sm text-cyan-100">
               {candidate.name} &middot;{" "}
@@ -319,31 +320,23 @@ export const InstructorComplianceRecordForm: React.FC<
                 onChange={(event) => setCourseId(event.target.value)}
                 className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 font-normal dark:border-[#3b414c] dark:bg-[#171a21]"
               >
-                {courses.map((item) => (
+                {activeCourses.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
-              Check type
-              <select
-                value={checkType}
-                onChange={(event) =>
-                  setCheckType(
-                    event.target.value as InstructorComplianceCheckType,
-                  )
-                }
-                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 font-normal dark:border-[#3b414c] dark:bg-[#171a21]"
-              >
-                {Object.entries(checkTypeLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm dark:border-cyan-400/20 dark:bg-cyan-500/10">
+              <span className="block text-xs font-bold uppercase text-cyan-700 dark:text-cyan-300">
+                Selected record type
+              </span>
+              <span className="mt-1 block font-semibold text-cyan-950 dark:text-cyan-100">
+                {checkType === "renewal"
+                  ? "Instructor rating renewal"
+                  : "Standards & Proficiency check"}
+              </span>
+            </div>
             <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
               Check date
               <input
@@ -646,7 +639,11 @@ export const InstructorComplianceRecordForm: React.FC<
               ) : (
                 <ShieldCheck className="h-4 w-4" />
               )}
-              {submitting ? "Saving protected record..." : "Complete CFI check"}
+              {submitting
+                ? "Saving protected record..."
+                : checkType === "renewal"
+                  ? "Complete instructor renewal"
+                  : "Complete S&P check"}
             </button>
           </footer>
         </div>

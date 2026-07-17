@@ -54,7 +54,7 @@ const blankItem = (position: number): DraftItem => ({
   guidance: "",
   required: true,
   applicableLevels: ["instructor", "senior_instructor"],
-  applicableCheckTypes: ["initial_issue", "sp_check", "renewal"],
+  applicableCheckTypes: ["sp_check"],
 });
 
 const blankTemplate = (): TemplateDraft => ({
@@ -62,6 +62,7 @@ const blankTemplate = (): TemplateDraft => ({
   description: "",
   version: "1.0",
   sourceDocuments: [],
+  checkType: "sp_check",
   isActive: true,
   items: [blankItem(0)],
 });
@@ -78,6 +79,7 @@ const toDraft = (
     ...document,
     key: uid(),
   })),
+  checkType: course.checkType || "sp_check",
   isActive: course.isActive,
   items: allItems
     .filter((item) => item.courseId === course.id)
@@ -147,16 +149,6 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
       ? item.applicableLevels.filter((value) => value !== level)
       : [...item.applicableLevels, level];
     updateItem(item.key, { applicableLevels: next });
-  };
-
-  const toggleCheckType = (
-    item: DraftItem,
-    checkType: InstructorComplianceCheckType,
-  ) => {
-    const next = item.applicableCheckTypes.includes(checkType)
-      ? item.applicableCheckTypes.filter((value) => value !== checkType)
-      : [...item.applicableCheckTypes, checkType];
-    updateItem(item.key, { applicableCheckTypes: next });
   };
 
   const moveItem = (index: number, direction: -1 | 1) => {
@@ -242,8 +234,8 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
           CFI access required
         </h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Only a CFI can change the forms used for instructor issues, S&amp;P
-          checks and renewals.
+          Only a CFI can change the forms used for S&amp;P checks and instructor
+          renewals.
         </p>
       </div>
     );
@@ -269,8 +261,8 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
             </div>
             <h1 className="mt-2 text-2xl font-bold">Instructor Reviews</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-100">
-              Edit the protected forms completed for instructor initial issues,
-              Standards &amp; Proficiency checks and renewals. Past results stay
+              Edit the separate forms completed for Standards &amp; Proficiency
+              checks and instructor renewals. Past results stay
               in the instructor's profile and the Safety register.
             </p>
           </div>
@@ -326,6 +318,11 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
                 <span className="rounded-md bg-gray-100 px-2 py-1 dark:bg-gray-800">
                   {course.sourceDocuments.length} source documents
                 </span>
+                {course.checkType && (
+                  <span className="rounded-md bg-cyan-100 px-2 py-1 text-cyan-900 dark:bg-cyan-500/15 dark:text-cyan-200">
+                    {checkTypeLabel[course.checkType]}
+                  </span>
+                )}
               </div>
             </div>
           </article>
@@ -433,6 +430,44 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
                       className={inputClass}
                     />
                   </label>
+                  <fieldset className="sm:col-span-2">
+                    <legend className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                      Form purpose
+                    </legend>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      The CFI chooses between these forms before starting the
+                      protected record.
+                    </p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      {(["sp_check", "renewal"] as const).map((value) => (
+                        <label
+                          key={value}
+                          className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-bold ${draft.checkType === value ? "border-cyan-600 bg-cyan-50 text-cyan-950 dark:bg-cyan-500/10 dark:text-cyan-100" : "border-gray-200 text-gray-700 dark:border-[#39414d] dark:text-gray-200"}`}
+                        >
+                          <input
+                            type="radio"
+                            name="instructor-review-purpose"
+                            checked={draft.checkType === value}
+                            onChange={() =>
+                              setDraft((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      checkType: value,
+                                      items: current.items.map((item) => ({
+                                        ...item,
+                                        applicableCheckTypes: [value],
+                                      })),
+                                    }
+                                  : current,
+                              )
+                            }
+                          />
+                          {checkTypeLabel[value]}
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
                   <div className="sm:col-span-2">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -709,29 +744,9 @@ export const InstructorReviewTemplateWorkspace: React.FC = () => {
                             Check type
                           </legend>
                           <div className="mt-2 flex flex-wrap gap-2">
-                            {(
-                              [
-                                "initial_issue",
-                                "sp_check",
-                                "renewal",
-                              ] as InstructorComplianceCheckType[]
-                            ).map((checkType) => (
-                              <label
-                                key={checkType}
-                                className="flex min-h-10 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-[#39414d]"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={item.applicableCheckTypes.includes(
-                                    checkType,
-                                  )}
-                                  onChange={() =>
-                                    toggleCheckType(item, checkType)
-                                  }
-                                />
-                                {checkTypeLabel[checkType]}
-                              </label>
-                            ))}
+                            <span className="inline-flex min-h-10 items-center rounded-lg border border-gray-200 px-3 text-sm font-semibold dark:border-[#39414d]">
+                              {checkTypeLabel[draft.checkType]}
+                            </span>
                           </div>
                         </fieldset>
                       </div>

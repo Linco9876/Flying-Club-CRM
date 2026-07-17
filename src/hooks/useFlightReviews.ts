@@ -22,6 +22,17 @@ export type FlightReviewAttachmentCategory =
   | "certificate"
   | "other";
 
+export interface FlightReviewAssessmentDetails {
+  applicantMembershipNumber?: string;
+  applicantMembershipExpiry?: string;
+  totalFlightHours?: number;
+  dualFlightHours?: number;
+  commandFlightHours?: number;
+  raausFlightHours?: number;
+  certificateGroup?: string;
+  endorsementsSought?: string;
+}
+
 export interface FlightReviewTemplate {
   id: string;
   title: string;
@@ -66,6 +77,7 @@ export interface FlightReviewRecord {
   groundMinutes: number;
   flightMinutes: number;
   candidateObjectives: string;
+  assessmentDetails: FlightReviewAssessmentDetails;
   emergencyPlanConfirmed: boolean;
   reviewerSummary: string;
   remedialPlan: string;
@@ -195,6 +207,8 @@ const mapRecord = (row: Record<string, unknown>): FlightReviewRecord => ({
   groundMinutes: Number(row.ground_minutes || 0),
   flightMinutes: Number(row.flight_minutes || 0),
   candidateObjectives: (row.candidate_objectives as string) || "",
+  assessmentDetails:
+    (row.assessment_details as FlightReviewAssessmentDetails) || {},
   emergencyPlanConfirmed: Boolean(row.emergency_plan_confirmed),
   reviewerSummary: (row.reviewer_summary as string) || "",
   remedialPlan: (row.remedial_plan as string) || "",
@@ -264,6 +278,7 @@ const updatePayload = (input: RecordUpdate) => {
     ["groundMinutes", "ground_minutes"],
     ["flightMinutes", "flight_minutes"],
     ["candidateObjectives", "candidate_objectives"],
+    ["assessmentDetails", "assessment_details"],
     ["emergencyPlanConfirmed", "emergency_plan_confirmed"],
     ["reviewerSummary", "reviewer_summary"],
     ["remedialPlan", "remedial_plan"],

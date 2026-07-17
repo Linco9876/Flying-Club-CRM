@@ -469,6 +469,12 @@ export interface FlightReviewConfiguration {
   required_evidence: Array<'logbook_entry' | 'authority_form' | 'external_test_report' | 'certificate' | 'other'>;
   source_documents: string[];
   checklist: ReviewChecklistTemplateItem[];
+  requires_logbook_confirmation?: boolean;
+  requires_authority_submission_confirmation?: boolean;
+  requires_reviewer_summary?: boolean;
+  completion_button_label?: string;
+  reviewer_summary_label?: string;
+  remedial_plan_label?: string;
   legacy_import?: boolean;
 }
 

@@ -155,6 +155,19 @@ export const FlightReviewRecordEditor: React.FC<
     registration: record.registration,
     aircraftGroup: record.aircraftGroup || "",
     candidateObjectives: record.candidateObjectives,
+    applicantMembershipNumber:
+      record.assessmentDetails.applicantMembershipNumber || "",
+    applicantMembershipExpiry:
+      record.assessmentDetails.applicantMembershipExpiry || "",
+    totalFlightHours:
+      record.assessmentDetails.totalFlightHours?.toString() || "",
+    dualFlightHours: record.assessmentDetails.dualFlightHours?.toString() || "",
+    commandFlightHours:
+      record.assessmentDetails.commandFlightHours?.toString() || "",
+    raausFlightHours:
+      record.assessmentDetails.raausFlightHours?.toString() || "",
+    certificateGroup: record.assessmentDetails.certificateGroup || "",
+    endorsementsSought: record.assessmentDetails.endorsementsSought || "",
     emergencyPlanConfirmed: record.emergencyPlanConfirmed,
     reviewerSummary: record.reviewerSummary,
     remedialPlan: record.remedialPlan,
@@ -187,6 +200,24 @@ export const FlightReviewRecordEditor: React.FC<
   const belowMinimum =
     Number(form.groundMinutes || 0) < config.minimum_ground_minutes ||
     Number(form.flightMinutes || 0) < config.minimum_flight_minutes;
+  const requiresLogbookConfirmation =
+    record.reviewType === "raaus_bfr" ||
+    config.requires_logbook_confirmation === true;
+  const requiresAuthorityConfirmation =
+    record.reviewType === "raaus_bfr" ||
+    config.requires_authority_submission_confirmation === true;
+  const isPassFail = config.outcome_scheme === "pass_fail";
+  const isRpcFlightTest = record.reviewType === "raaus_rpc_flight_test";
+  const rpcDetailsComplete =
+    !isRpcFlightTest ||
+    (Boolean(form.applicantMembershipNumber.trim()) &&
+      Boolean(form.applicantMembershipExpiry) &&
+      Boolean(form.totalFlightHours) &&
+      Boolean(form.dualFlightHours) &&
+      Boolean(form.commandFlightHours) &&
+      Boolean(form.raausFlightHours) &&
+      Boolean(form.certificateGroup.trim()) &&
+      Boolean(form.endorsementsSought.trim()));
 
   const save = async (statusOverride?: FlightReviewStatus) => {
     const nextStatus = statusOverride || form.status;
@@ -194,6 +225,26 @@ export const FlightReviewRecordEditor: React.FC<
       toast.error(
         "Complete every required checklist item before finishing this review",
       );
+      return;
+    }
+    if (nextStatus === "completed" && !rpcDetailsComplete) {
+      toast.error("Complete the RPC001 applicant and aeronautical experience details");
+      return;
+    }
+    if (
+      nextStatus === "completed" &&
+      config.requires_reviewer_summary &&
+      !form.reviewerSummary.trim()
+    ) {
+      toast.error("Record the examiner's overall notes before completing the form");
+      return;
+    }
+    if (
+      nextStatus === "completed" &&
+      ((requiresLogbookConfirmation && !form.logbookEntryConfirmed) ||
+        (requiresAuthorityConfirmation && !form.authoritySubmissionConfirmed))
+    ) {
+      toast.error("Confirm the required logbook and authority actions first");
       return;
     }
     if (
@@ -219,6 +270,16 @@ export const FlightReviewRecordEditor: React.FC<
         registration: form.registration.trim(),
         aircraftGroup: form.aircraftGroup.trim(),
         candidateObjectives: form.candidateObjectives.trim(),
+        assessmentDetails: {
+          applicantMembershipNumber: form.applicantMembershipNumber.trim(),
+          applicantMembershipExpiry: form.applicantMembershipExpiry,
+          totalFlightHours: Number(form.totalFlightHours || 0),
+          dualFlightHours: Number(form.dualFlightHours || 0),
+          commandFlightHours: Number(form.commandFlightHours || 0),
+          raausFlightHours: Number(form.raausFlightHours || 0),
+          certificateGroup: form.certificateGroup.trim(),
+          endorsementsSought: form.endorsementsSought.trim(),
+        },
         emergencyPlanConfirmed: form.emergencyPlanConfirmed,
         reviewerSummary: form.reviewerSummary.trim(),
         remedialPlan: form.remedialPlan.trim(),
@@ -238,7 +299,9 @@ export const FlightReviewRecordEditor: React.FC<
       setForm((current) => ({ ...current, status: nextStatus }));
       toast.success(
         nextStatus === "completed"
-          ? "Review completed and currency updated"
+          ? isPassFail
+            ? "Assessment passed and recorded"
+            : "Review completed and currency updated"
           : "Review saved",
       );
     } catch (saveError) {
@@ -424,6 +487,101 @@ export const FlightReviewRecordEditor: React.FC<
                   className={inputClass}
                 />
               </label>
+              {isRpcFlightTest && (
+                <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
+                  <div>
+                    <h4 className="font-bold text-blue-950 dark:text-blue-100">
+                      RPC001 applicant and experience details
+                    </h4>
+                    <p className="mt-1 text-xs leading-5 text-blue-800 dark:text-blue-200">
+                      Record the details used by the examiner to confirm eligibility for initial RPC issue.
+                    </p>
+                  </div>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      RAAus member number
+                      <input
+                        value={form.applicantMembershipNumber}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            applicantMembershipNumber: event.target.value,
+                          }))
+                        }
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Membership expiry
+                      <input
+                        type="date"
+                        value={form.applicantMembershipExpiry}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            applicantMembershipExpiry: event.target.value,
+                          }))
+                        }
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Certificate aircraft group
+                      <input
+                        value={form.certificateGroup}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            certificateGroup: event.target.value,
+                          }))
+                        }
+                        placeholder="e.g. Group A"
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Endorsements to issue
+                      <input
+                        value={form.endorsementsSought}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            endorsementsSought: event.target.value,
+                          }))
+                        }
+                        placeholder="e.g. HF, Radio"
+                        className={inputClass}
+                      />
+                    </label>
+                    {[
+                      ["totalFlightHours", "Total flight hours"],
+                      ["dualFlightHours", "Dual hours"],
+                      ["commandFlightHours", "Command hours"],
+                      ["raausFlightHours", "RAAus aircraft hours"],
+                    ].map(([field, label]) => (
+                      <label
+                        key={field}
+                        className="text-sm font-medium text-gray-700 dark:text-gray-200"
+                      >
+                        {label}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={form[field as keyof typeof form] as string}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              [field]: event.target.value,
+                            }))
+                          }
+                          className={inputClass}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <label className="mt-3 flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm text-gray-700 dark:border-[#343b46] dark:text-gray-200">
                 <input
                   type="checkbox"
@@ -592,7 +750,7 @@ export const FlightReviewRecordEditor: React.FC<
               </h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Reviewer summary
+                  {config.reviewer_summary_label || "Reviewer summary"}
                   <textarea
                     rows={5}
                     value={form.reviewerSummary}
@@ -606,7 +764,8 @@ export const FlightReviewRecordEditor: React.FC<
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Further training or development plan
+                  {config.remedial_plan_label ||
+                    "Further training or development plan"}
                   <textarea
                     rows={5}
                     value={form.remedialPlan}
@@ -639,36 +798,41 @@ export const FlightReviewRecordEditor: React.FC<
                   />
                 </label>
               )}
-              {record.reviewType === "raaus_bfr" && (
+              {(requiresLogbookConfirmation ||
+                requiresAuthorityConfirmation) && (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm font-semibold text-gray-800 dark:border-[#343b46] dark:text-gray-100">
-                    <input
-                      type="checkbox"
-                      checked={form.logbookEntryConfirmed}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          logbookEntryConfirmed: event.target.checked,
-                        }))
-                      }
-                      className="h-4 w-4"
-                    />
-                    Logbook entry completed
-                  </label>
-                  <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm font-semibold text-gray-800 dark:border-[#343b46] dark:text-gray-100">
-                    <input
-                      type="checkbox"
-                      checked={form.authoritySubmissionConfirmed}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          authoritySubmissionConfirmed: event.target.checked,
-                        }))
-                      }
-                      className="h-4 w-4"
-                    />
-                    RAAus completion submitted
-                  </label>
+                  {requiresLogbookConfirmation && (
+                    <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm font-semibold text-gray-800 dark:border-[#343b46] dark:text-gray-100">
+                      <input
+                        type="checkbox"
+                        checked={form.logbookEntryConfirmed}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            logbookEntryConfirmed: event.target.checked,
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                      Candidate logbook entry completed
+                    </label>
+                  )}
+                  {requiresAuthorityConfirmation && (
+                    <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm font-semibold text-gray-800 dark:border-[#343b46] dark:text-gray-100">
+                      <input
+                        type="checkbox"
+                        checked={form.authoritySubmissionConfirmed}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            authoritySubmissionConfirmed: event.target.checked,
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                      RAAus form completed and submitted
+                    </label>
+                  )}
                 </div>
               )}
             </section>
@@ -815,7 +979,8 @@ export const FlightReviewRecordEditor: React.FC<
                 className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Complete review
+                {config.completion_button_label ||
+                  (isPassFail ? "Pass assessment" : "Complete review")}
               </button>
               {!completionReady && (
                 <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
@@ -1397,6 +1562,172 @@ export const FlightReviewWorkspace: React.FC = () => {
                           The candidate confirms they have read the outcome.
                         </span>
                       </span>
+                    </label>
+                    <label className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-[#343b46]">
+                      <input
+                        type="checkbox"
+                        checked={
+                          editingTemplate.configuration
+                            .requires_reviewer_summary === true
+                        }
+                        onChange={(event) =>
+                          setEditingTemplate(
+                            (current) =>
+                              current && {
+                                ...current,
+                                configuration: {
+                                  ...current.configuration,
+                                  requires_reviewer_summary:
+                                    event.target.checked,
+                                },
+                              },
+                          )
+                        }
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        <strong className="text-gray-900 dark:text-gray-100">
+                          Require reviewer or examiner notes
+                        </strong>
+                        <span className="mt-1 block text-xs text-gray-500">
+                          Completion is blocked until an overall assessment is
+                          recorded.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-[#343b46]">
+                      <input
+                        type="checkbox"
+                        checked={
+                          editingTemplate.configuration
+                            .requires_logbook_confirmation === true
+                        }
+                        onChange={(event) =>
+                          setEditingTemplate(
+                            (current) =>
+                              current && {
+                                ...current,
+                                configuration: {
+                                  ...current.configuration,
+                                  requires_logbook_confirmation:
+                                    event.target.checked,
+                                },
+                              },
+                          )
+                        }
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        <strong className="text-gray-900 dark:text-gray-100">
+                          Require logbook confirmation
+                        </strong>
+                        <span className="mt-1 block text-xs text-gray-500">
+                          The reviewer confirms the candidate logbook entry.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-[#343b46]">
+                      <input
+                        type="checkbox"
+                        checked={
+                          editingTemplate.configuration
+                            .requires_authority_submission_confirmation ===
+                          true
+                        }
+                        onChange={(event) =>
+                          setEditingTemplate(
+                            (current) =>
+                              current && {
+                                ...current,
+                                configuration: {
+                                  ...current.configuration,
+                                  requires_authority_submission_confirmation:
+                                    event.target.checked,
+                                },
+                              },
+                          )
+                        }
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        <strong className="text-gray-900 dark:text-gray-100">
+                          Require authority submission confirmation
+                        </strong>
+                        <span className="mt-1 block text-xs text-gray-500">
+                          Use when a RAAus or CASA form must be submitted.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="sm:col-span-2 grid gap-4 md:grid-cols-3">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Completion button wording
+                      <input
+                        value={
+                          editingTemplate.configuration
+                            .completion_button_label || ""
+                        }
+                        onChange={(event) =>
+                          setEditingTemplate(
+                            (current) =>
+                              current && {
+                                ...current,
+                                configuration: {
+                                  ...current.configuration,
+                                  completion_button_label: event.target.value,
+                                },
+                              },
+                          )
+                        }
+                        placeholder="Complete review"
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Summary field wording
+                      <input
+                        value={
+                          editingTemplate.configuration
+                            .reviewer_summary_label || ""
+                        }
+                        onChange={(event) =>
+                          setEditingTemplate(
+                            (current) =>
+                              current && {
+                                ...current,
+                                configuration: {
+                                  ...current.configuration,
+                                  reviewer_summary_label: event.target.value,
+                                },
+                              },
+                          )
+                        }
+                        placeholder="Reviewer summary"
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Remedial field wording
+                      <input
+                        value={
+                          editingTemplate.configuration.remedial_plan_label ||
+                          ""
+                        }
+                        onChange={(event) =>
+                          setEditingTemplate(
+                            (current) =>
+                              current && {
+                                ...current,
+                                configuration: {
+                                  ...current.configuration,
+                                  remedial_plan_label: event.target.value,
+                                },
+                              },
+                          )
+                        }
+                        placeholder="Further training plan"
+                        className={inputClass}
+                      />
                     </label>
                   </div>
                   <fieldset className="sm:col-span-2">

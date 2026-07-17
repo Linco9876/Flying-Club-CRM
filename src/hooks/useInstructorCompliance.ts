@@ -15,6 +15,7 @@ export interface InstructorComplianceCourse {
   description: string;
   version: string;
   sourceDocuments: Array<{ name: string; purpose: string }>;
+  checkType?: Exclude<InstructorComplianceCheckType, "initial_issue">;
   isActive: boolean;
 }
 
@@ -101,6 +102,7 @@ export interface SaveInstructorComplianceTemplate {
   description: string;
   version: string;
   sourceDocuments: Array<{ name: string; purpose: string }>;
+  checkType: Exclude<InstructorComplianceCheckType, "initial_issue">;
   isActive: boolean;
   items: Array<{
     section: string;
@@ -123,6 +125,10 @@ const mapCourse = (value: unknown): InstructorComplianceCourse => {
     sourceDocuments: Array.isArray(row.source_documents)
       ? (row.source_documents as Array<{ name: string; purpose: string }>)
       : [],
+    checkType:
+      row.check_type === "renewal" || row.check_type === "sp_check"
+        ? row.check_type
+        : undefined,
     isActive: row.is_active !== false,
   } as InstructorComplianceCourse;
 };
@@ -203,12 +209,13 @@ export function useInstructorCompliance(
 
     try {
       setLoading(true);
+      let courseQuery = supabase
+        .from("instructor_compliance_courses")
+        .select("*")
+        .order("created_at");
+      if (!includeRecords) courseQuery = courseQuery.eq("is_active", true);
       const baseQueries = [
-        supabase
-          .from("instructor_compliance_courses")
-          .select("*")
-          .eq("is_active", true)
-          .order("created_at"),
+        courseQuery,
         supabase
           .from("instructor_compliance_course_items")
           .select("*")
@@ -327,6 +334,7 @@ export function useInstructorCompliance(
           p_description: input.description,
           p_version: input.version,
           p_source_documents: input.sourceDocuments,
+          p_check_type: input.checkType,
           p_is_active: input.isActive,
           p_items: input.items.map((item) => ({
             section: item.section,
