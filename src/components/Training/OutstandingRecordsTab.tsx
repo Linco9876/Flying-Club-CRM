@@ -244,6 +244,21 @@ export const OutstandingRecordsTab: React.FC = () => {
     [selectedCourse, form.lessonId]
   );
 
+  useEffect(() => {
+    if (coursesLoading || recordEntryType !== 'lesson') return;
+
+    if ((step === 'lesson' || step === 'form') && form.courseId && !selectedCourse) {
+      setForm(current => ({ ...current, courseId: '', lessonId: '' }));
+      setStep('course');
+      return;
+    }
+
+    if (step === 'form' && form.lessonId && !selectedLesson) {
+      setForm(current => ({ ...current, lessonId: '' }));
+      setStep('lesson');
+    }
+  }, [coursesLoading, form.courseId, form.lessonId, recordEntryType, selectedCourse, selectedLesson, step]);
+
   const selectedLessonIsFlightTest = Boolean(selectedLesson?.isFlightTest);
 
   const {
@@ -989,7 +1004,18 @@ export const OutstandingRecordsTab: React.FC = () => {
     setRecordEntryType(type);
     setActiveReviewRecordId(null);
     if (type === 'lesson') {
-      setStep(form.lessonId ? 'form' : form.courseId ? 'lesson' : 'course');
+      const savedCourse = courses.find(course => course.id === form.courseId);
+      const savedLesson = savedCourse?.lessons.find(lesson => lesson.id === form.lessonId);
+
+      if (!savedCourse) {
+        setForm(current => ({ ...current, courseId: '', lessonId: '' }));
+        setStep('course');
+      } else if (!savedLesson) {
+        setForm(current => ({ ...current, lessonId: '' }));
+        setStep('lesson');
+      } else {
+        setStep('form');
+      }
     } else {
       setStep('action');
     }
