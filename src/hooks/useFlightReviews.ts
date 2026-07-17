@@ -288,10 +288,14 @@ const safeFileName = (name: string) =>
   name.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-");
 
 export const useFlightReviews = (
-  options: { enabled?: boolean; candidateId?: string } = {},
+  options: {
+    enabled?: boolean;
+    candidateId?: string;
+    includeRecords?: boolean;
+  } = {},
 ) => {
   const { user } = useAuth();
-  const { enabled = true, candidateId } = options;
+  const { enabled = true, candidateId, includeRecords = true } = options;
   const [templates, setTemplates] = useState<FlightReviewTemplate[]>([]);
   const [records, setRecords] = useState<FlightReviewRecord[]>([]);
   const [items, setItems] = useState<FlightReviewRecordItem[]>([]);
@@ -303,6 +307,33 @@ export const useFlightReviews = (
     if (!enabled) return;
     setLoading(true);
     try {
+      const templateQuery = supabase
+        .from("training_courses")
+        .select(
+          "id,title,description,category,version,status,tags,course_purpose,review_configuration,last_updated",
+        )
+        .in("course_purpose", [
+          "flight_review",
+          "flight_test",
+          "proficiency_check",
+        ])
+        .order("title");
+
+      if (!includeRecords) {
+        const templateResult = await templateQuery;
+        if (templateResult.error) throw templateResult.error;
+        setTemplates(
+          (templateResult.data || []).map((row) =>
+            mapTemplate(row as Record<string, unknown>),
+          ),
+        );
+        setRecords([]);
+        setItems([]);
+        setAttachments([]);
+        setError(null);
+        return;
+      }
+
       let recordsQuery = supabase
         .from("flight_review_records")
         .select("*")
@@ -310,17 +341,7 @@ export const useFlightReviews = (
       if (candidateId)
         recordsQuery = recordsQuery.eq("candidate_id", candidateId);
       const [templateResult, recordResult] = await Promise.all([
-        supabase
-          .from("training_courses")
-          .select(
-            "id,title,description,category,version,status,tags,course_purpose,review_configuration,last_updated",
-          )
-          .in("course_purpose", [
-            "flight_review",
-            "flight_test",
-            "proficiency_check",
-          ])
-          .order("title"),
+        templateQuery,
         recordsQuery,
       ]);
       if (templateResult.error) throw templateResult.error;
@@ -372,7 +393,7 @@ export const useFlightReviews = (
     } finally {
       setLoading(false);
     }
-  }, [candidateId, enabled]);
+  }, [candidateId, enabled, includeRecords]);
 
   useEffect(() => {
     void refetch();

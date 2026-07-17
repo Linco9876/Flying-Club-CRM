@@ -2,11 +2,9 @@ import React, { useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  ClipboardCheck,
   ExternalLink,
   FileUp,
   Loader2,
@@ -16,7 +14,6 @@ import {
   Search,
   ShieldCheck,
   Trash2,
-  UserCheck,
   X,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -30,11 +27,9 @@ import {
   type FlightReviewTemplate,
   useFlightReviews,
 } from "../../hooks/useFlightReviews";
-import { useUsers } from "../../hooks/useUsers";
 import type { CoursePurpose, FlightReviewConfiguration } from "../../types";
 import { hasAnyRole } from "../../utils/rbac";
 
-type WorkspaceView = "templates" | "records";
 type TemplateStep = "basic" | "rules" | "checklist" | "publish";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -117,10 +112,7 @@ const inputClass =
 const panelClass =
   "rounded-xl border border-gray-200 bg-white shadow-sm dark:border-[#2c3440] dark:bg-[#171a21]";
 
-const normaliseRoleSet = (roles?: string[], role?: string) =>
-  new Set([...(roles || []), role].filter(Boolean));
-
-interface RecordEditorProps {
+interface FlightReviewRecordEditorProps {
   record: FlightReviewRecord;
   items: FlightReviewRecordItem[];
   attachments: ReturnType<typeof useFlightReviews>["attachments"];
@@ -136,7 +128,9 @@ interface RecordEditorProps {
   >["createAttachmentUrl"];
 }
 
-const RecordEditor: React.FC<RecordEditorProps> = ({
+export const FlightReviewRecordEditor: React.FC<
+  FlightReviewRecordEditorProps
+> = ({
   record,
   items,
   attachments,
@@ -838,29 +832,13 @@ const RecordEditor: React.FC<RecordEditorProps> = ({
 
 export const FlightReviewWorkspace: React.FC = () => {
   const { user } = useAuth();
-  const { users, loading: usersLoading } = useUsers(true);
-  const reviewData = useFlightReviews();
-  const [view, setView] = useState<WorkspaceView>("templates");
+  const reviewData = useFlightReviews({ includeRecords: false });
   const [search, setSearch] = useState("");
   const [editingTemplate, setEditingTemplate] = useState<ReturnType<
     typeof blankTemplate
   > | null>(null);
   const [templateStep, setTemplateStep] = useState<TemplateStep>("basic");
   const [savingTemplate, setSavingTemplate] = useState(false);
-  const [startOpen, setStartOpen] = useState(false);
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
-  const [startForm, setStartForm] = useState({
-    templateId: "",
-    candidateId: "",
-    reviewerUserId: user?.id || "",
-    reviewDate: today(),
-    examinerMode: "internal" as "internal" | "external",
-    externalName: "",
-    externalIdentifier: "",
-    externalOrganisation: "",
-    candidateObjectives: "",
-  });
   const canManage = hasAnyRole(user, [
     "admin",
     "instructor",
@@ -884,27 +862,6 @@ export const FlightReviewWorkspace: React.FC = () => {
           .includes(term),
     );
   }, [reviewData.templates, search]);
-  const filteredRecords = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return reviewData.records.filter((record) => {
-      const candidate = users.find((item) => item.id === record.candidateId);
-      return (
-        !term ||
-        [
-          record.templateSnapshot.title,
-          candidate?.name,
-          record.reviewType,
-          record.registration,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(term)
-      );
-    });
-  }, [reviewData.records, search, users]);
-  const selectedRecord = reviewData.records.find(
-    (record) => record.id === selectedRecordId,
-  );
 
   const openTemplate = (template?: FlightReviewTemplate) => {
     setEditingTemplate(
@@ -954,77 +911,7 @@ export const FlightReviewWorkspace: React.FC = () => {
     }
   };
 
-  const selectedStartTemplate = reviewData.templates.find(
-    (template) => template.id === startForm.templateId,
-  );
-  const eligibleReviewers = useMemo(() => {
-    if (!selectedStartTemplate) return users;
-    const allowed = new Set(
-      selectedStartTemplate.configuration.allowed_reviewer_roles,
-    );
-    return users.filter((candidate) => {
-      const roles = normaliseRoleSet(candidate.roles, candidate.role);
-      return Array.from(roles).some((role) => allowed.has(role));
-    });
-  }, [selectedStartTemplate, users]);
-
-  const beginReview = async () => {
-    if (!startForm.templateId || !startForm.candidateId) {
-      toast.error("Select a template and candidate");
-      return;
-    }
-    if (startForm.examinerMode === "internal" && !startForm.reviewerUserId) {
-      toast.error("Select an authorised reviewer");
-      return;
-    }
-    if (
-      startForm.examinerMode === "external" &&
-      !startForm.externalName.trim()
-    ) {
-      toast.error("Enter the external examiner name");
-      return;
-    }
-    setStarting(true);
-    try {
-      const record = await reviewData.startReview({
-        templateId: startForm.templateId,
-        candidateId: startForm.candidateId,
-        reviewerUserId:
-          startForm.examinerMode === "internal"
-            ? startForm.reviewerUserId
-            : user?.id,
-        externalExaminerName:
-          startForm.examinerMode === "external"
-            ? startForm.externalName
-            : undefined,
-        externalExaminerIdentifier:
-          startForm.examinerMode === "external"
-            ? startForm.externalIdentifier
-            : undefined,
-        externalExaminerOrganisation:
-          startForm.examinerMode === "external"
-            ? startForm.externalOrganisation
-            : undefined,
-        reviewDate: startForm.reviewDate,
-        candidateObjectives: startForm.candidateObjectives,
-      });
-      setStartOpen(false);
-      setView("records");
-      setSelectedRecordId(record.id);
-      toast.success("Review started");
-    } catch (startError) {
-      console.error("Failed to start review:", startError);
-      toast.error(
-        startError instanceof Error
-          ? startError.message
-          : "Failed to start review",
-      );
-    } finally {
-      setStarting(false);
-    }
-  };
-
-  if (reviewData.loading || usersLoading)
+  if (reviewData.loading)
     return (
       <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-gray-500 dark:text-gray-400">
         <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
@@ -1036,60 +923,31 @@ export const FlightReviewWorkspace: React.FC = () => {
     <div className="space-y-5">
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#2c3440] dark:bg-[#171a21]">
         <header className="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 px-5 py-6 text-white sm:px-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
             <div>
               <div className="flex items-center gap-2 text-xs font-bold uppercase text-blue-200">
                 <ShieldCheck className="h-4 w-4" />
-                Reviews and checking
+                Form template library
               </div>
               <h1 className="mt-2 text-2xl font-bold">
                 Flight Reviews &amp; Tests
               </h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">
-                Reusable regulatory templates, multi-session records, evidence,
-                remedial follow-up and currency outcomes in one workflow.
+                Build the forms reviewers complete for flight reviews, tests and
+                proficiency checks. Submitted records are kept in each member's
+                Pilot File, not in this template library.
               </p>
             </div>
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => setStartOpen(true)}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500"
-              >
-                <Plus className="h-4 w-4" />
-                Start review or test
-              </button>
-            )}
           </div>
         </header>
-        <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 p-4 dark:border-[#2c3440] dark:bg-[#11141a] sm:flex-row sm:items-center sm:justify-between">
-          <div className="inline-flex w-full rounded-lg bg-gray-200 p-1 dark:bg-[#232832] sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setView("templates")}
-              className={`flex-1 rounded-md px-4 py-2 text-sm font-bold sm:flex-none ${view === "templates" ? "bg-white text-blue-700 shadow-sm dark:bg-[#171a21] dark:text-blue-200" : "text-gray-600 dark:text-gray-300"}`}
-            >
-              Templates
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("records")}
-              className={`flex-1 rounded-md px-4 py-2 text-sm font-bold sm:flex-none ${view === "records" ? "bg-white text-blue-700 shadow-sm dark:bg-[#171a21] dark:text-blue-200" : "text-gray-600 dark:text-gray-300"}`}
-            >
-              Review records
-            </button>
-          </div>
+        <div className="border-b border-gray-200 bg-gray-50 p-4 dark:border-[#2c3440] dark:bg-[#11141a]">
           <label className="flex min-h-11 w-full items-center rounded-lg border border-gray-300 bg-white px-3 dark:border-[#39414d] dark:bg-[#171a21] sm:max-w-sm">
             <Search className="mr-2 h-4 w-4 text-gray-400" />
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={
-                view === "templates"
-                  ? "Search templates"
-                  : "Search records or members"
-              }
+              placeholder="Search form templates"
               className="w-full border-none bg-transparent text-sm text-gray-900 outline-none dark:text-gray-100"
             />
           </label>
@@ -1102,150 +960,83 @@ export const FlightReviewWorkspace: React.FC = () => {
         </div>
       )}
 
-      {view === "templates" ? (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">
-                Review and test templates
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Changing a template never rewrites records already started from
-                an earlier version.
-              </p>
-            </div>
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => openTemplate()}
-                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800 hover:bg-blue-100 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200"
-              >
-                <Plus className="h-4 w-4" />
-                New template
-              </button>
-            )}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">
+              Review and test templates
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Changing a template never rewrites records already started from an
+              earlier version.
+            </p>
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {filteredTemplates.map((template) => (
-              <article
-                key={template.id}
-                className={`${panelClass} overflow-hidden`}
-              >
-                <div className="border-l-4 border-blue-600 p-4 sm:p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800 dark:bg-blue-500/15 dark:text-blue-200">
-                        {
-                          purposeLabel[
-                            template.coursePurpose as keyof typeof purposeLabel
-                          ]
-                        }
-                      </span>
-                      <h3 className="mt-3 text-lg font-bold text-gray-950 dark:text-gray-100">
-                        {template.title}
-                      </h3>
-                      <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
-                        {template.description}
-                      </p>
-                    </div>
-                    {canManage && (
-                      <button
-                        type="button"
-                        onClick={() => openTemplate(template)}
-                        title="Edit template"
-                        className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 dark:border-[#39414d] dark:text-gray-300 dark:hover:bg-[#11141a]"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                    <span className="rounded-md bg-gray-100 px-2 py-1 dark:bg-gray-800">
-                      v{template.version}
-                    </span>
-                    <span className="rounded-md bg-gray-100 px-2 py-1 dark:bg-gray-800">
-                      {template.configuration.checklist.length} items
-                    </span>
-                    <span className="rounded-md bg-gray-100 px-2 py-1 dark:bg-gray-800">
-                      {template.configuration.authority.toUpperCase()}
-                    </span>
-                    {template.configuration.resets_flight_review && (
-                      <span className="rounded-md bg-emerald-100 px-2 py-1 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200">
-                        Resets flight review
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : (
-        <section className="space-y-3">
-          {filteredRecords.length === 0 ? (
-            <div className={`${panelClass} p-10 text-center`}>
-              <CalendarClock className="mx-auto h-8 w-8 text-gray-400" />
-              <h2 className="mt-3 font-bold text-gray-950 dark:text-gray-100">
-                No review records yet
-              </h2>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Start a review or external test to create the first record.
-              </p>
-            </div>
-          ) : (
-            filteredRecords.map((record) => {
-              const candidate = users.find(
-                (item) => item.id === record.candidateId,
-              );
-              const reviewer = users.find(
-                (item) => item.id === record.reviewerUserId,
-              );
-              const recordItems = reviewData.itemsByRecord.get(record.id) || [];
-              const required = recordItems.filter((item) => item.required);
-              const complete = required.filter(
-                (item) => item.result === "satisfactory",
-              ).length;
-              return (
-                <button
-                  key={record.id}
-                  type="button"
-                  onClick={() => setSelectedRecordId(record.id)}
-                  className={`${panelClass} flex w-full flex-col gap-3 p-4 text-left transition hover:border-blue-300 hover:shadow-md dark:hover:border-blue-500/40 sm:flex-row sm:items-center sm:justify-between`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-bold text-gray-950 dark:text-gray-100">
-                        {candidate?.name || "Unknown member"}
-                      </h3>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusClass[record.status]}`}
-                      >
-                        {statusLabel[record.status]}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                      {record.templateSnapshot.title || record.reviewType}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {format(parseISO(record.reviewDate), "d MMM yyyy")} |{" "}
-                      {record.externalExaminerName ||
-                        reviewer?.name ||
-                        "Reviewer not recorded"}
-                      {record.registration ? ` | ${record.registration}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                      {complete}/{required.length} required
-                    </span>
-                    <ClipboardCheck className="h-5 w-5 text-blue-600" />
-                  </div>
-                </button>
-              );
-            })
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => openTemplate()}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800 hover:bg-blue-100 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200"
+            >
+              <Plus className="h-4 w-4" />
+              New template
+            </button>
           )}
-        </section>
-      )}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {filteredTemplates.map((template) => (
+            <article
+              key={template.id}
+              className={`${panelClass} overflow-hidden`}
+            >
+              <div className="border-l-4 border-blue-600 p-4 sm:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-800 dark:bg-blue-500/15 dark:text-blue-200">
+                      {
+                        purposeLabel[
+                          template.coursePurpose as keyof typeof purposeLabel
+                        ]
+                      }
+                    </span>
+                    <h3 className="mt-3 text-lg font-bold text-gray-950 dark:text-gray-100">
+                      {template.title}
+                    </h3>
+                    <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+                      {template.description}
+                    </p>
+                  </div>
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => openTemplate(template)}
+                      title="Edit template"
+                      className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 dark:border-[#39414d] dark:text-gray-300 dark:hover:bg-[#11141a]"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  <span className="rounded-md bg-gray-100 px-2 py-1 dark:bg-gray-800">
+                    v{template.version}
+                  </span>
+                  <span className="rounded-md bg-gray-100 px-2 py-1 dark:bg-gray-800">
+                    {template.configuration.checklist.length} items
+                  </span>
+                  <span className="rounded-md bg-gray-100 px-2 py-1 dark:bg-gray-800">
+                    {template.configuration.authority.toUpperCase()}
+                  </span>
+                  {template.configuration.resets_flight_review && (
+                    <span className="rounded-md bg-emerald-100 px-2 py-1 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200">
+                      Resets flight review
+                    </span>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       {editingTemplate && (
         <div className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-black/55 p-3 backdrop-blur-sm sm:p-6">
@@ -2127,242 +1918,6 @@ export const FlightReviewWorkspace: React.FC = () => {
             </footer>
           </div>
         </div>
-      )}
-
-      {startOpen && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-black/55 p-3 backdrop-blur-sm">
-          <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-[#171a21]">
-            <header className="flex items-start justify-between gap-3 bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 px-5 py-5 text-white">
-              <div>
-                <p className="text-xs font-bold uppercase text-blue-200">
-                  New record
-                </p>
-                <h2 className="mt-1 text-xl font-bold">
-                  Start a review or test
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStartOpen(false)}
-                className="rounded-lg p-2 hover:bg-white/10"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </header>
-            <div className="grid gap-4 p-5 sm:grid-cols-2">
-              <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                Template
-                <select
-                  value={startForm.templateId}
-                  onChange={(event) =>
-                    setStartForm((current) => ({
-                      ...current,
-                      templateId: event.target.value,
-                      reviewerUserId: "",
-                    }))
-                  }
-                  className={inputClass}
-                >
-                  <option value="">Select template</option>
-                  {reviewData.templates
-                    .filter((template) => template.status === "published")
-                    .map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.title}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                Candidate
-                <select
-                  value={startForm.candidateId}
-                  onChange={(event) =>
-                    setStartForm((current) => ({
-                      ...current,
-                      candidateId: event.target.value,
-                    }))
-                  }
-                  className={inputClass}
-                >
-                  <option value="">Select member</option>
-                  {users
-                    .filter((candidate) => candidate.isActive !== false)
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {candidate.name} | {candidate.email}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                Review date
-                <input
-                  type="date"
-                  value={startForm.reviewDate}
-                  onChange={(event) =>
-                    setStartForm((current) => ({
-                      ...current,
-                      reviewDate: event.target.value,
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                Examiner source
-                <select
-                  value={startForm.examinerMode}
-                  onChange={(event) =>
-                    setStartForm((current) => ({
-                      ...current,
-                      examinerMode: event.target.value as
-                        "internal" | "external",
-                    }))
-                  }
-                  className={inputClass}
-                >
-                  <option value="internal">CRM reviewer</option>
-                  <option value="external">External examiner</option>
-                </select>
-              </label>
-              {startForm.examinerMode === "internal" ? (
-                <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Authorised reviewer
-                  <select
-                    value={startForm.reviewerUserId}
-                    onChange={(event) =>
-                      setStartForm((current) => ({
-                        ...current,
-                        reviewerUserId: event.target.value,
-                      }))
-                    }
-                    className={inputClass}
-                  >
-                    <option value="">Select reviewer</option>
-                    {eligibleReviewers.map((reviewer) => (
-                      <option key={reviewer.id} value={reviewer.id}>
-                        {reviewer.name}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedStartTemplate && eligibleReviewers.length === 0 && (
-                    <span className="mt-1 block text-xs text-red-600">
-                      No active CRM user holds one of this template's authorised
-                      roles.
-                    </span>
-                  )}
-                </label>
-              ) : (
-                <>
-                  <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                    External examiner name
-                    <input
-                      value={startForm.externalName}
-                      onChange={(event) =>
-                        setStartForm((current) => ({
-                          ...current,
-                          externalName: event.target.value,
-                        }))
-                      }
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    ARN, member number or authority
-                    <input
-                      value={startForm.externalIdentifier}
-                      onChange={(event) =>
-                        setStartForm((current) => ({
-                          ...current,
-                          externalIdentifier: event.target.value,
-                        }))
-                      }
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    Organisation
-                    <input
-                      value={startForm.externalOrganisation}
-                      onChange={(event) =>
-                        setStartForm((current) => ({
-                          ...current,
-                          externalOrganisation: event.target.value,
-                        }))
-                      }
-                      className={inputClass}
-                    />
-                  </label>
-                </>
-              )}
-              <label className="sm:col-span-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-                Candidate objectives and planned flying
-                <textarea
-                  rows={3}
-                  value={startForm.candidateObjectives}
-                  onChange={(event) =>
-                    setStartForm((current) => ({
-                      ...current,
-                      candidateObjectives: event.target.value,
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-            </div>
-            <footer className="flex justify-end gap-3 border-t border-gray-200 p-4 dark:border-[#2c3440]">
-              <button
-                type="button"
-                onClick={() => setStartOpen(false)}
-                className="min-h-10 rounded-lg border border-gray-300 px-4 py-2 text-sm font-bold dark:border-[#39414d]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void beginReview()}
-                disabled={starting}
-                className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
-              >
-                {starting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <UserCheck className="h-4 w-4" />
-                )}
-                Start review
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
-
-      {selectedRecord && user && (
-        <RecordEditor
-          record={selectedRecord}
-          items={reviewData.itemsByRecord.get(selectedRecord.id) || []}
-          attachments={
-            reviewData.attachmentsByRecord.get(selectedRecord.id) || []
-          }
-          candidateName={
-            users.find((item) => item.id === selectedRecord.candidateId)
-              ?.name || "Unknown member"
-          }
-          reviewerName={
-            selectedRecord.externalExaminerName ||
-            users.find((item) => item.id === selectedRecord.reviewerUserId)
-              ?.name ||
-            user.name ||
-            "Reviewer"
-          }
-          currentUserId={user.id}
-          onClose={() => setSelectedRecordId(null)}
-          onUpdateRecord={reviewData.updateReview}
-          onUpdateItem={reviewData.updateItem}
-          onUploadAttachment={reviewData.uploadAttachment}
-          onCreateAttachmentUrl={reviewData.createAttachmentUrl}
-        />
       )}
     </div>
   );
