@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Trash2, Undo2 } from 'lucide-react';
+import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Trash2, Undo2, Award, ShieldCheck, Target, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -24,8 +24,12 @@ import {
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 import { hasRole } from '../../utils/rbac';
 import { InstructorComplianceRecordForm } from './InstructorComplianceRecordForm';
+import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
+import { useFlightReviews } from '../../hooks/useFlightReviews';
+import { FlightReviewRecordEditor } from './FlightReviewWorkspace';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
+type RecordEntryType = 'lesson' | 'review_test' | 'instructor_review';
 
 const TRAINING_RECORD_DRAFT_PREFIX = 'bfc_training_record_draft_v1';
 const TRAINING_RECORD_QUEUE_KEY = 'bfc_training_record_submit_queue_v1';
@@ -216,10 +220,19 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [queueView, setQueueView] = useState<'mine' | 'others' | 'dismissed'>('mine');
   const [showDraftComposer, setShowDraftComposer] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+  const [recordEntryType, setRecordEntryType] = useState<RecordEntryType | null>(null);
+  const [activeReviewRecordId, setActiveReviewRecordId] = useState<string | null>(null);
+  const [startingReview, setStartingReview] = useState(false);
   const requestedDraftStudentId = searchParams.get('draftStudentId') || '';
 
   const activeStudentId = activeLog?.student_id;
   const isDraftSession = Boolean(draftSession && activeLog?.id === draftSession.id);
+  const { enrolments: activeStudentEnrolments, loading: enrolmentsLoading } = useStudentCourseEnrolments(activeStudentId);
+  const flightReviews = useFlightReviews({
+    enabled: Boolean(activeStudentId && activeLog && !isDraftSession),
+    candidateId: activeStudentId,
+    includeRecords: true,
+  });
 
   const selectedCourse = useMemo(
     () => courses.find(c => c.id === form.courseId) ?? null,
@@ -254,7 +267,10 @@ export const OutstandingRecordsTab: React.FC = () => {
   );
 
   // Criteria come from the course level, pass marks from the lesson
-  const activeCriteria: LessonAssessmentCriterion[] = selectedCourse?.assessmentCriteria ?? [];
+  const activeCriteria = useMemo<LessonAssessmentCriterion[]>(
+    () => selectedCourse?.assessmentCriteria ?? [],
+    [selectedCourse?.assessmentCriteria]
+  );
 
   useEffect(() => {
     if (!requestedDraftStudentId || users.length === 0) return;
@@ -503,6 +519,70 @@ export const OutstandingRecordsTab: React.FC = () => {
     () => courses.filter(course => course.status === 'published' && course.lessons.length > 0),
     [courses]
   );
+  const activeEnrolledCourseIds = useMemo(
+    () => new Set(activeStudentEnrolments.filter(enrolment => enrolment.status === 'active').map(enrolment => enrolment.courseId)),
+    [activeStudentEnrolments]
+  );
+  const sortedCoursesWithLessons = useMemo(
+    () => [...coursesWithLessons].sort((a, b) => {
+      const aEnrolled = activeEnrolledCourseIds.has(a.id) ? 1 : 0;
+      const bEnrolled = activeEnrolledCourseIds.has(b.id) ? 1 : 0;
+      if (aEnrolled !== bEnrolled) return bEnrolled - aEnrolled;
+      return a.title.localeCompare(b.title);
+    }),
+    [activeEnrolledCourseIds, coursesWithLessons]
+  );
+  const recommendedLesson = useMemo(() => {
+    if (!activeStudentId || coursesWithLessons.length === 0 || enrolmentsLoading) return null;
+
+    const enrolledCourses = coursesWithLessons.filter(course => activeEnrolledCourseIds.has(course.id));
+    if (enrolledCourses.length === 0) return null;
+
+    const completedRecords = trainingRecords
+      .filter(record => record.studentId === activeStudentId && record.status !== 'draft' && Boolean(record.courseId))
+      .sort((a, b) => (b.bookingStartTime ?? b.date).getTime() - (a.bookingStartTime ?? a.date).getTime());
+    const previousRecord = completedRecords.find(record => activeEnrolledCourseIds.has(record.courseId || ''));
+    const course = previousRecord
+      ? enrolledCourses.find(item => item.id === previousRecord.courseId)
+      : enrolledCourses[0];
+    if (!course) return null;
+
+    const rawRecommendation = previousRecord?.nextLesson?.trim() || '';
+    if (/course\s+complete|completed\s+course/i.test(rawRecommendation)) return null;
+
+    const recommendationKey = normaliseSyllabusLessonKey(rawRecommendation).toLowerCase();
+    const lesson = rawRecommendation
+      ? course.lessons.find(item => {
+          const keys = [item.id, item.sequenceCode, item.name, item.sequenceTitle]
+            .filter(Boolean)
+            .map(value => normaliseSyllabusLessonKey(String(value)).toLowerCase());
+          return keys.some(key => key === recommendationKey || recommendationKey.endsWith(key) || key.endsWith(recommendationKey));
+        })
+      : course.lessons[0];
+
+    if (!lesson) return null;
+    const previousLesson = previousRecord
+      ? course.lessons.find(item => item.id === previousRecord.lessonId)
+      : undefined;
+    return { course, lesson, previousRecord, previousLesson };
+  }, [activeEnrolledCourseIds, activeStudentId, coursesWithLessons, enrolmentsLoading, trainingRecords]);
+  const availableReviewTemplates = useMemo(() => {
+    const userRoles = new Set<string>(user?.roles?.length ? user.roles : user?.role ? [user.role] : []);
+    return flightReviews.templates.filter(template => {
+      if (template.status !== 'published') return false;
+      const allowedRoles = template.configuration.allowed_reviewer_roles ?? [];
+      return allowedRoles.length === 0 || allowedRoles.some(role => userRoles.has(role));
+    });
+  }, [flightReviews.templates, user?.role, user?.roles]);
+  const reviewForActiveFlight = useMemo(
+    () => flightReviews.records.find(record => record.flightLogId === activeLog?.id && record.status !== 'cancelled') ?? null,
+    [activeLog?.id, flightReviews.records]
+  );
+  const activeReviewRecord = useMemo(
+    () => flightReviews.records.find(record => record.id === activeReviewRecordId)
+      ?? (reviewForActiveFlight?.id === activeReviewRecordId ? reviewForActiveFlight : null),
+    [activeReviewRecordId, flightReviews.records, reviewForActiveFlight]
+  );
   const studentOptions = useMemo(
     () => users
       .filter(member => {
@@ -690,12 +770,14 @@ export const OutstandingRecordsTab: React.FC = () => {
     setActiveLog(log);
     setDraftSession(null);
     setActiveDraftRecord(draftRecord ?? null);
+    setActiveReviewRecordId(null);
     const draftKey = getDraftKey(user?.id, log.id);
     const savedDraft = draftKey && typeof window !== 'undefined'
       ? window.localStorage.getItem(draftKey)
       : null;
 
     if (draftRecord) {
+      setRecordEntryType('lesson');
       setForm({
         ...emptyForm(),
         courseId: draftRecord.courseId || '',
@@ -717,19 +799,22 @@ export const OutstandingRecordsTab: React.FC = () => {
     } else if (savedDraft) {
       try {
         const parsed = JSON.parse(savedDraft) as { form?: RecordFormState; step?: Step; savedAt?: string };
+        setRecordEntryType('lesson');
         setForm(parsed.form || { ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
         setStep(parsed.step || (parsed.form?.lessonId ? 'form' : parsed.form?.courseId ? 'lesson' : 'course'));
         setProceedWithCarryForward(Boolean((parsed as { proceedWithCarryForward?: boolean }).proceedWithCarryForward));
         setDraftSavedAt(parsed.savedAt ? new Date(parsed.savedAt) : null);
         toast.success('Recovered saved training record draft');
       } catch {
+        setRecordEntryType('lesson');
         setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
         setStep('course');
         setProceedWithCarryForward(false);
       }
     } else {
+      setRecordEntryType(null);
       setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
-      setStep('course');
+      setStep('action');
       setProceedWithCarryForward(false);
       setDraftSavedAt(null);
     }
@@ -771,6 +856,8 @@ export const OutstandingRecordsTab: React.FC = () => {
       aircraft_type: aircraft?.type || record?.aircraftType || undefined,
     });
     setActiveDraftRecord(record ?? null);
+    setRecordEntryType('lesson');
+    setActiveReviewRecordId(null);
     setForm(record ? {
       ...emptyForm(),
       courseId: record.courseId || '',
@@ -796,6 +883,8 @@ export const OutstandingRecordsTab: React.FC = () => {
     setActiveDraftRecord(null);
     setDraftSession(null);
     setStep('action');
+    setRecordEntryType(null);
+    setActiveReviewRecordId(null);
     setForm({ ...emptyForm(), formalBriefing: trainingSettings.defaultFormalBriefing });
     setCommentCleanupOriginal(null);
     setProceedWithCarryForward(false);
@@ -857,8 +946,9 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
   }
 
-  function handleSelectLesson(lessonId: string) {
-    const course = courses.find(c => c.id === form.courseId);
+  function handleSelectLesson(lessonId: string, courseIdOverride?: string) {
+    const targetCourseId = courseIdOverride || form.courseId;
+    const course = courses.find(c => c.id === targetCourseId);
     const lesson = course?.lessons.find(l => l.id === lessonId);
     const studentPreviousRecords = activeStudentId && course
       ? trainingRecords.filter(record => record.studentId === activeStudentId && record.courseId === course.id && record.status !== 'draft')
@@ -881,6 +971,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
     setForm(f => ({
       ...f,
+      courseId: targetCourseId,
       lessonId,
       criteriaGrades: defaults,
       matrixGrades: {},
@@ -892,6 +983,54 @@ export const OutstandingRecordsTab: React.FC = () => {
     setCommentCleanupOriginal(null);
     setProceedWithCarryForward(false);
     setStep('form');
+  }
+
+  function handleSelectRecordType(type: RecordEntryType) {
+    setRecordEntryType(type);
+    setActiveReviewRecordId(null);
+    if (type === 'lesson') {
+      setStep(form.lessonId ? 'form' : form.courseId ? 'lesson' : 'course');
+    } else {
+      setStep('action');
+    }
+  }
+
+  function handleOpenRecommendedLesson() {
+    if (!recommendedLesson) return;
+    setRecordEntryType('lesson');
+    handleSelectLesson(recommendedLesson.lesson.id, recommendedLesson.course.id);
+  }
+
+  async function handleStartReview(templateId: string) {
+    if (!activeLog || !activeStudentId || !user?.id) return;
+    const existing = reviewForActiveFlight;
+    if (existing) {
+      setActiveReviewRecordId(existing.id);
+      return;
+    }
+
+    setStartingReview(true);
+    try {
+      const record = await flightReviews.startReview({
+        templateId,
+        candidateId: activeStudentId,
+        reviewerUserId: user.id,
+        reviewDate: format(new Date(activeLog.start_time), 'yyyy-MM-dd'),
+        flightLogId: activeLog.id,
+        aircraftId: activeLog.aircraft_id || undefined,
+        aircraftType: activeLog.aircraft_type || '',
+        registration: activeLog.aircraft_registration || '',
+      });
+      const flightMinutes = Math.max(0, Math.round(((activeLog.dual_time ?? 0) + (activeLog.solo_time ?? 0)) * 60));
+      if (flightMinutes > 0) {
+        await flightReviews.updateReview(record.id, { flightMinutes });
+      }
+      setActiveReviewRecordId(record.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to start review or test');
+    } finally {
+      setStartingReview(false);
+    }
   }
 
   async function handleCleanupFlightComments(mode: CommentCleanupMode) {
@@ -1170,6 +1309,56 @@ export const OutstandingRecordsTab: React.FC = () => {
     ...(isAdmin ? [{ id: 'others' as const, label: 'Other instructors', icon: BookOpen }] : []),
     { id: 'dismissed' as const, label: 'No record needed', icon: Undo2 },
   ];
+  const recordTypeOptions = [
+    {
+      id: 'lesson' as const,
+      label: 'Lesson',
+      description: 'Complete a lesson record and competency assessment.',
+      icon: BookOpen,
+    },
+    {
+      id: 'review_test' as const,
+      label: 'Review / Test',
+      description: 'Complete a flight review, flight test or proficiency check.',
+      icon: Award,
+    },
+    ...(activeIsInstructorCompliance ? [{
+      id: 'instructor_review' as const,
+      label: 'Instructor Review',
+      description: 'Complete a protected S&P check or instructor renewal.',
+      icon: ShieldCheck,
+    }] : []),
+  ];
+
+  const renderRecordTypeSelector = (compact = false) => (
+    <div className={`grid min-w-0 gap-2 ${recordTypeOptions.length === 3 ? 'md:grid-cols-3' : 'sm:grid-cols-2'}`}>
+      {recordTypeOptions.map(option => {
+        const Icon = option.icon;
+        const selected = recordEntryType === option.id;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => handleSelectRecordType(option.id)}
+            aria-pressed={selected}
+            className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl border px-3 py-3 text-left transition sm:px-4 ${
+              selected
+                ? 'border-blue-500 bg-blue-50 text-blue-950 shadow-sm ring-1 ring-blue-200 dark:bg-blue-950/35 dark:text-blue-100 dark:ring-blue-400/20'
+                : 'border-gray-200 bg-white text-gray-800 hover:border-blue-300 hover:bg-blue-50/60 dark:border-[#343b47] dark:bg-[#171a21] dark:text-gray-100 dark:hover:bg-blue-950/20'
+            }`}
+          >
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${selected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-[#252b35] dark:text-gray-300'}`}>
+              <Icon className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{option.label}</span>
+              {!compact && <span className="mt-0.5 block text-xs leading-4 text-gray-500 dark:text-gray-400">{option.description}</span>}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="flex h-full min-w-0 flex-col gap-4 p-3 sm:p-6">
@@ -1184,7 +1373,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-200">Training queue</p>
                 <h2 className="mt-0.5 text-2xl font-bold tracking-tight">Outstanding Records</h2>
                 <p className="mt-1 max-w-2xl text-sm leading-5 text-blue-100/80">
-                  Start an in-flight draft or switch between your records, other instructor records, and flights marked as no record needed.
+                  Choose a lesson, review or test for each flight, or start an in-flight draft before take-off.
                 </p>
               </div>
             </div>
@@ -1230,9 +1419,9 @@ export const OutstandingRecordsTab: React.FC = () => {
         </div>
       </header>
 
-      <div className="flex min-h-0 min-w-0 flex-col gap-4 lg:flex-row lg:gap-6">
+      <div className={`grid min-h-0 min-w-0 gap-4 lg:gap-6 ${activeLog ? 'lg:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)]' : 'grid-cols-1'}`}>
       {/* Left: list of outstanding flights */}
-      <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'lg:w-[30%] lg:min-w-[18rem]' : 'w-full max-w-2xl mx-auto'}`}>
+      <div className={`flex min-w-0 flex-col gap-4 ${activeLog ? 'order-2 lg:order-1' : 'w-full'}`}>
         {showDraftComposer && (
         <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm dark:border-blue-400/25 dark:from-blue-950/25 dark:to-[#171a21]">
           <div className="flex items-start gap-3">
@@ -1418,7 +1607,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                       className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
                     >
                       <BookOpen className="h-4 w-4" />
-                      {isInstructorCandidate && isCfi ? 'Complete S&P / Renewal' : 'Add Record'}
+                      Create Record
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
@@ -1534,9 +1723,83 @@ export const OutstandingRecordsTab: React.FC = () => {
         )}
       </div>
 
-      {/* Right: protected instructor compliance or ordinary student record entry */}
-      {activeLog && activeIsInstructorCompliance && activeCandidate && user && (
-        <div className="min-w-0 lg:w-[70%]">
+      {/* Active record workspace */}
+      {activeLog && !recordEntryType && (
+        <section className="order-1 min-w-0 lg:order-2">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Create record for</p>
+                <h3 className="mt-1 truncate text-xl font-bold text-gray-950 dark:text-white">{activeLog.student_name || 'Unknown member'}</h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  {format(new Date(activeLog.start_time), 'EEE d MMM yyyy, h:mm a')} &middot; {activeLog.aircraft_registration || 'No aircraft'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePanel}
+                aria-label="Close record workspace"
+                className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-[#252b35] dark:hover:text-gray-100"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+              <div>
+                <h4 className="text-base font-bold text-gray-950 dark:text-white">What are you recording?</h4>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Choose the form that matches this session. The selected workspace will take over the main area.</p>
+              </div>
+              {renderRecordTypeSelector()}
+
+              <div className="border-t border-gray-200 pt-6 dark:border-[#2c2f36]">
+                {enrolmentsLoading ? (
+                  <div className="flex min-h-28 items-center justify-center gap-3 rounded-xl bg-gray-50 text-sm text-gray-600 dark:bg-[#11141a] dark:text-gray-300">
+                    <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                    Finding the recommended lesson...
+                  </div>
+                ) : recommendedLesson ? (
+                  <div className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-400/25 dark:bg-emerald-950/20">
+                    <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+                          <Target className="h-5 w-5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Recommended next lesson</p>
+                          <p className="mt-1 text-base font-bold text-emerald-950 dark:text-emerald-100">
+                            {recommendedLesson.lesson.name || recommendedLesson.lesson.sequenceTitle}
+                          </p>
+                          <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200">
+                            {recommendedLesson.course.title}
+                            {recommendedLesson.previousLesson ? ` · follows ${recommendedLesson.previousLesson.name || recommendedLesson.previousLesson.sequenceTitle}` : ' · first lesson in this enrolment'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleOpenRecommendedLesson}
+                        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                      >
+                        Open lesson
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-600 dark:border-[#39414d] dark:bg-[#11141a] dark:text-gray-300">
+                    No next lesson recommendation is available. Select <strong>Lesson</strong> to choose a course and lesson manually.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeLog && recordEntryType === 'instructor_review' && activeIsInstructorCompliance && activeCandidate && user && (
+        <div className="order-1 min-w-0 space-y-3 lg:order-2">
+          {renderRecordTypeSelector(true)}
           <InstructorComplianceRecordForm
             flightLog={activeLog}
             candidate={activeCandidate}
@@ -1549,8 +1812,76 @@ export const OutstandingRecordsTab: React.FC = () => {
           />
         </div>
       )}
-      {activeLog && !activeIsInstructorCompliance && (
-        <div className="min-w-0 lg:w-[70%]">
+      {activeLog && recordEntryType === 'review_test' && (
+        <section className="order-1 min-w-0 space-y-3 lg:order-2">
+          {renderRecordTypeSelector(true)}
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Review / Test</p>
+                <h3 className="mt-1 truncate text-lg font-bold text-gray-950 dark:text-white">Choose the correct form for {activeLog.student_name}</h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Only published forms you are authorised to conduct are shown.</p>
+              </div>
+              <button type="button" onClick={closePanel} aria-label="Close record workspace" className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-[#252b35] dark:hover:text-gray-100">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 sm:p-6">
+              {flightReviews.loading ? (
+                <div className="flex min-h-48 items-center justify-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                  Loading review and test forms...
+                </div>
+              ) : reviewForActiveFlight ? (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 dark:border-blue-400/25 dark:bg-blue-950/25">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Existing {reviewForActiveFlight.status.replaceAll('_', ' ')}</p>
+                      <h4 className="mt-1 text-base font-bold text-blue-950 dark:text-blue-100">{reviewForActiveFlight.templateSnapshot.title || reviewForActiveFlight.reviewType}</h4>
+                      <p className="mt-1 text-sm text-blue-800 dark:text-blue-200">Continue this record rather than creating a duplicate for the same flight.</p>
+                    </div>
+                    <button type="button" onClick={() => setActiveReviewRecordId(reviewForActiveFlight.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+                      Continue record
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : availableReviewTemplates.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center dark:border-[#39414d] dark:bg-[#11141a]">
+                  <Award className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
+                  <p className="mt-3 text-sm font-semibold text-gray-900 dark:text-gray-100">No review or test forms available</p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Publish a form in Training Courses, or check its permitted reviewer roles.</p>
+                </div>
+              ) : (
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {availableReviewTemplates.map(template => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => void handleStartReview(template.id)}
+                      disabled={startingReview}
+                      className="group flex min-h-32 items-start gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60 dark:border-[#343b47] dark:bg-[#11141a] dark:hover:bg-blue-950/25 sm:p-5"
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 transition group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-950/50 dark:text-blue-200">
+                        {startingReview ? <Loader2 className="h-5 w-5 animate-spin" /> : <Award className="h-5 w-5" />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-base font-bold text-gray-950 dark:text-white">{template.title}</span>
+                        <span className="mt-1 block text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">{template.coursePurpose.replaceAll('_', ' ')}</span>
+                        <span className="mt-2 block text-sm leading-5 text-gray-500 dark:text-gray-400">{template.description || `${template.configuration.checklist?.length ?? 0} assessment items`}</span>
+                      </span>
+                      <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-gray-300 transition group-hover:text-blue-500" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+      {activeLog && recordEntryType === 'lesson' && (
+        <div className="order-1 min-w-0 lg:order-2">
+          <div className="mb-3">{renderRecordTypeSelector(true)}</div>
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col dark:border-[#2c2f36] dark:bg-[#171a21]">
             {/* Panel header */}
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
@@ -1624,6 +1955,21 @@ export const OutstandingRecordsTab: React.FC = () => {
               {step === 'course' && (
                 <div>
                   <p className="text-sm font-medium text-gray-700 mb-4">Which course was this flight for?</p>
+                  {recommendedLesson && (
+                    <button
+                      type="button"
+                      onClick={handleOpenRecommendedLesson}
+                      className="mb-5 flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/35"
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white"><Target className="h-5 w-5" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Recommended next lesson</span>
+                        <span className="mt-0.5 block truncate text-sm font-bold text-emerald-950 dark:text-emerald-100">{recommendedLesson.lesson.name || recommendedLesson.lesson.sequenceTitle}</span>
+                        <span className="block truncate text-xs text-emerald-800 dark:text-emerald-200">{recommendedLesson.course.title}</span>
+                      </span>
+                      <ArrowRight className="h-5 w-5 shrink-0 text-emerald-600" />
+                    </button>
+                  )}
                   {coursesLoading ? (
                     <div className="rounded-xl border border-blue-100 bg-blue-50 p-6 text-center text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/30 dark:text-blue-100">
                       <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" />
@@ -1637,7 +1983,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {coursesWithLessons.map(course => (
+                      {sortedCoursesWithLessons.map(course => (
                         <button
                           key={course.id}
                           onClick={() => handleSelectCourse(course.id)}
@@ -1648,7 +1994,10 @@ export const OutstandingRecordsTab: React.FC = () => {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-gray-900 text-sm break-words">{course.title}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{course.category} &middot; {course.lessons.length} lessons</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {course.category} &middot; {course.lessons.length} lessons
+                              {activeEnrolledCourseIds.has(course.id) && <span className="ml-2 font-semibold text-emerald-600 dark:text-emerald-300">Enrolled</span>}
+                            </p>
                           </div>
                           <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-400 mt-1 shrink-0 transition-colors" />
                         </button>
@@ -2280,6 +2629,28 @@ export const OutstandingRecordsTab: React.FC = () => {
         </div>
       )}
       </div>
+      {activeReviewRecord && activeLog && user && (
+        <FlightReviewRecordEditor
+          record={activeReviewRecord}
+          items={flightReviews.itemsByRecord.get(activeReviewRecord.id) ?? []}
+          attachments={flightReviews.attachmentsByRecord.get(activeReviewRecord.id) ?? []}
+          candidateName={activeLog.student_name || activeCandidate?.name || 'Member'}
+          reviewerName={user.name || 'Reviewer'}
+          currentUserId={user.id}
+          onClose={() => setActiveReviewRecordId(null)}
+          onUpdateRecord={async (id, input) => {
+            const updated = await flightReviews.updateReview(id, input);
+            if (input.status === 'completed') {
+              await markRecorded(activeLog.id);
+              await refetch();
+            }
+            return updated;
+          }}
+          onUpdateItem={flightReviews.updateItem}
+          onUploadAttachment={flightReviews.uploadAttachment}
+          onCreateAttachmentUrl={flightReviews.createAttachmentUrl}
+        />
+      )}
     </div>
   );
 };
