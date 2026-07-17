@@ -128,7 +128,7 @@ export const InstructorComplianceProfilePanel: React.FC<InstructorComplianceProf
             <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center dark:border-[#3b414c]">
               <CalendarClock className="mx-auto h-7 w-7 text-gray-400" />
               <p className="mt-2 font-semibold text-gray-900 dark:text-gray-100">No instructor compliance record yet</p>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">The completed initial issue, S&amp;P or renewal will appear here after the CFI submits it.</p>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Completed S&amp;P checks and instructor renewals will appear here after the CFI submits them. Initial issue assessments are recorded under Flight Reviews &amp; Tests.</p>
             </div>
           ) : (
             <div className="space-y-3">
