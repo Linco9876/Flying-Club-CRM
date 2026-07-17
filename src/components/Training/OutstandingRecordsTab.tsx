@@ -183,7 +183,11 @@ export const OutstandingRecordsTab: React.FC = () => {
     isAdmin
   );
   const { trainingRecords, loading: trainingRecordsLoading, addTrainingRecord, updateTrainingRecord } = useTrainingRecords();
-  const { modules: courses, loading: coursesLoading } = useTrainingModules();
+  const { modules: allCourses, loading: coursesLoading } = useTrainingModules();
+  const courses = useMemo(
+    () => allCourses.filter(course => (course.coursePurpose ?? 'training') === 'training'),
+    [allCourses]
+  );
   const { aircraft: aircraftList, loading: aircraftLoading } = useAircraft();
   const { users, loading: usersLoading } = useUsers();
 

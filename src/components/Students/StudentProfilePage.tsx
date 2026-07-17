@@ -27,6 +27,7 @@ import { hasAnyRole } from '../../utils/rbac';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
+import { FlightReviewsTab } from './FlightReviewsTab';
 
 interface StudentInfoForm {
   name: string;
@@ -364,9 +365,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     if (portalSection === 'training') return 'training';
     return searchParams.get('tab') || (location.pathname.startsWith('/training') ? 'training' : 'profile');
   });
-  const [trainingSubtab, setTrainingSubtab] = useState<'training' | 'exams' | 'courses'>(() => {
+  const [trainingSubtab, setTrainingSubtab] = useState<'training' | 'reviews' | 'exams' | 'courses'>(() => {
     const subtab = searchParams.get('subtab');
-    if (subtab === 'exams' || subtab === 'courses' || subtab === 'training') return subtab;
+    if (subtab === 'reviews' || subtab === 'exams' || subtab === 'courses' || subtab === 'training') return subtab;
     const legacyTab = searchParams.get('tab');
     if (legacyTab === 'exams' || legacyTab === 'courses') return legacyTab;
     return 'training';
@@ -443,7 +444,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     refetch: refetchTrainingRecords,
   } = useTrainingRecords(studentId, { requireStudentId: true });
   const { users } = useUsers();
-  const { modules: trainingCourses } = useTrainingModules();
+  const { modules: allTrainingCourses } = useTrainingModules();
+  const trainingCourses = useMemo(
+    () => allTrainingCourses.filter(course => (course.coursePurpose ?? 'training') === 'training'),
+    [allTrainingCourses]
+  );
   const { settings: portalSettings } = usePortalUxSettings();
   const { reports: safetyReports } = useSafetyReports();
   const { settings: trainingSettings } = useTrainingSettings();
@@ -539,7 +544,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     if (portalSection === 'training') {
       setActiveTab('training');
       const subtab = searchParams.get('subtab');
-      if (subtab === 'training' || subtab === 'exams' || subtab === 'courses') {
+      if (subtab === 'training' || subtab === 'reviews' || subtab === 'exams' || subtab === 'courses') {
         setTrainingSubtab(subtab);
       } else {
         const legacyTab = searchParams.get('tab');
@@ -558,7 +563,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   }, [activeTab, refetchTrainingRecords, studentId]);
 
   const handleTabChange = (tabId: string) => {
-    if (isOwnStudentPortal && portalSection === 'training' && (tabId === 'training' || tabId === 'exams' || tabId === 'courses')) {
+    const isTrainingSubtab = tabId === 'training' || tabId === 'reviews' || tabId === 'exams' || tabId === 'courses';
+    if (isTrainingSubtab && (activeTab === 'training' || (isOwnStudentPortal && portalSection === 'training'))) {
       setActiveTab('training');
       setTrainingSubtab(tabId);
       const nextParams = new URLSearchParams(searchParams);
@@ -1750,9 +1756,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const trainingSubtabs = useMemo(() => [
     { id: 'training', label: 'Training Records' },
-    { id: 'exams', label: 'Exams' },
-    { id: 'courses', label: 'Courses' },
-  ], []);
+    { id: 'reviews', label: 'Reviews & Tests' },
+    ...(isOwnStudentPortal
+      ? [
+          { id: 'exams', label: 'Exams' },
+          { id: 'courses', label: 'Courses' },
+        ]
+      : []),
+  ], [isOwnStudentPortal]);
 
   useEffect(() => {
     if (isOwnStudentPortal && portalSection) return;
@@ -2131,7 +2142,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         </div>
       ) : null}
 
-      {isOwnStudentPortal && portalSection === 'training' ? (
+      {activeTab === 'training' ? (
         <div className="mb-5 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-2 shadow-sm">
           {trainingSubtabs.map((tab) => (
             <button
@@ -3049,6 +3060,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             )}
           </div>
         </div>
+      )}
+
+      {activeTab === 'training' && trainingSubtab === 'reviews' && student && (
+        <FlightReviewsTab studentId={student.id} studentName={student.name} />
       )}
 
       {(activeTab === 'training' && trainingSubtab === 'training') && (

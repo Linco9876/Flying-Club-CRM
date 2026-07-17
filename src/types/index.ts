@@ -444,6 +444,34 @@ export interface TrainingLesson {
   isFlightTest?: boolean;
 }
 
+export type CoursePurpose = 'training' | 'flight_review' | 'flight_test' | 'proficiency_check' | 'instructor_compliance';
+
+export interface ReviewChecklistTemplateItem {
+  key: string;
+  section: string;
+  code: string;
+  title: string;
+  guidance: string;
+  required: boolean;
+}
+
+export interface FlightReviewConfiguration {
+  review_type: string;
+  authority: 'raaus' | 'casa' | 'club' | 'other';
+  outcome_scheme: 'completion' | 'pass_fail';
+  minimum_ground_minutes: number;
+  minimum_flight_minutes: number;
+  validity_months: number;
+  resets_flight_review: boolean;
+  candidate_ack_required: boolean;
+  aircraft_group_alternation_warning?: boolean;
+  allowed_reviewer_roles: string[];
+  required_evidence: Array<'logbook_entry' | 'authority_form' | 'external_test_report' | 'certificate' | 'other'>;
+  source_documents: string[];
+  checklist: ReviewChecklistTemplateItem[];
+  legacy_import?: boolean;
+}
+
 export interface TrainingModule {
   id: string;
   title: string;
@@ -456,6 +484,8 @@ export interface TrainingModule {
   objectives: string[];
   evaluationCriteria: string[];
   tags: string[];
+  coursePurpose?: CoursePurpose;
+  reviewConfiguration?: FlightReviewConfiguration | null;
   /** Course-level criteria shared across all lessons */
   assessmentCriteria: LessonAssessmentCriterion[];
   /** Whether this course normally asks students to acknowledge submitted lesson records */

@@ -34,6 +34,8 @@ function dbCourseToModule(row: Record<string, unknown>, lessons: TrainingLesson[
     objectives: (row.objectives as string[]) ?? [],
     evaluationCriteria: (row.evaluation_criteria as string[]) ?? [],
     tags: (row.tags as string[]) ?? [],
+    coursePurpose: (row.course_purpose as TrainingModule['coursePurpose']) ?? 'training',
+    reviewConfiguration: (row.review_configuration as TrainingModule['reviewConfiguration']) ?? null,
     assessmentCriteria: (row.assessment_criteria as TrainingModule['assessmentCriteria']) ?? [],
     requiresStudentAcknowledgement: row.requires_student_acknowledgement === undefined || row.requires_student_acknowledgement === null
       ? true
@@ -127,6 +129,8 @@ function moduleToDbCourse(module: TrainingModule): Record<string, unknown> {
     objectives: module.objectives,
     evaluation_criteria: module.evaluationCriteria,
     tags: module.tags,
+    course_purpose: module.coursePurpose ?? 'training',
+    review_configuration: module.reviewConfiguration ?? {},
     assessment_criteria: module.assessmentCriteria,
     requires_student_acknowledgement: module.requiresStudentAcknowledgement ?? true,
     two_occasion_competency_rule_enabled: module.twoOccasionCompetencyRuleEnabled ?? false,
@@ -265,6 +269,8 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
       objectives: [],
       evaluationCriteria: [],
       tags: ['draft'],
+      coursePurpose: 'training',
+      reviewConfiguration: null,
       assessmentCriteria: [],
       requiresStudentAcknowledgement: true,
       twoOccasionCompetencyRuleEnabled: false,

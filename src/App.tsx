@@ -36,7 +36,7 @@ const ReportsDashboard = lazy(() => import('./components/Reports/ReportsDashboar
 const SafetyDashboard = lazy(() => import('./components/Safety/SafetyDashboard').then(module => ({ default: module.SafetyDashboard })));
 const SafetyLoginWarningModal = lazy(() => import('./components/Safety/SafetyLoginWarningModal').then(module => ({ default: module.SafetyLoginWarningModal })));
 const TrainingRecordForm = lazy(() => import('./components/Training/TrainingRecordForm').then(module => ({ default: module.TrainingRecordForm })));
-const TrainingCourseCatalog = lazy(() => import('./components/Training/TrainingCourseCatalog').then(module => ({ default: module.TrainingCourseCatalog })));
+const TrainingWorkspacePage = lazy(() => import('./components/Training/TrainingWorkspacePage').then(module => ({ default: module.TrainingWorkspacePage })));
 const TrainingModuleBuilder = lazy(() => import('./components/Training/TrainingModuleBuilder').then(module => ({ default: module.TrainingModuleBuilder })));
 const OutstandingRecordsTab = lazy(() => import('./components/Training/OutstandingRecordsTab').then(module => ({ default: module.OutstandingRecordsTab })));
 const LearningCentreDashboard = lazy(() => import('./components/LearningCentre/LearningCentreDashboard').then(module => ({ default: module.LearningCentreDashboard })));
@@ -904,7 +904,7 @@ const AuthenticatedApp: React.FC<{
         if (user?.role === 'student' || user?.role === 'pilot') {
           return <StudentProfilePage portalSection="training" />;
         }
-        return <TrainingCourseCatalog />;
+        return <TrainingWorkspacePage />;
       case 'learning-centre':
         return <LearningCentreDashboard />;
       case 'pilot-file':

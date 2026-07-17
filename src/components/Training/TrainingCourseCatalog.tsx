@@ -1451,6 +1451,10 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
 
 export const TrainingCourseCatalog: React.FC = () => {
   const { modules, loading: modulesLoading, addModule, updateModule, reorderLessons, deleteModule } = useTrainingModules();
+  const courseModules = useMemo(
+    () => modules.filter(module => (module.coursePurpose ?? 'training') === 'training'),
+    [modules]
+  );
   const { settings: trainingSettings, loading: trainingSettingsLoading } = useTrainingSettings();
   const { user } = useAuth();
   const endorsementTypes = trainingSettings.endorsementTypes || [];
@@ -1460,7 +1464,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const pendingScrollTargetRef = useRef<'edit-course' | 'lesson' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(() => modules[0]?.id ?? null);
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const [courseDetailTab, setCourseDetailTab] = useState<'overview' | 'matrix'>('overview');
   usePageLoadState(
     modulesLoading || trainingSettingsLoading,
@@ -1501,7 +1505,7 @@ export const TrainingCourseCatalog: React.FC = () => {
   const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (modules.length === 0) {
+    if (courseModules.length === 0) {
       setSelectedModuleId(null);
       setShowLessonForm(false);
       setNewLesson(emptyLessonForm());
@@ -1511,20 +1515,20 @@ export const TrainingCourseCatalog: React.FC = () => {
       return;
     }
 
-    if (!selectedModuleId || !modules.some((module) => module.id === selectedModuleId)) {
-      setSelectedModuleId(modules[0].id);
+    if (!selectedModuleId || !courseModules.some((module) => module.id === selectedModuleId)) {
+      setSelectedModuleId(courseModules[0].id);
       setShowLessonForm(false);
       setNewLesson(emptyLessonForm());
       setLessonPassMarks({});
       setLessonRepeatPassRequirements({});
       setLessonStudyAssets([]);
     }
-  }, [modules, selectedModuleId]);
+  }, [courseModules, selectedModuleId]);
 
   const filteredModules = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     const tagFilters = selectedTagFilters.map((tag) => tag.toLowerCase());
-    const sorted = [...modules].sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
+    const sorted = [...courseModules].sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
 
     if (!term && tagFilters.length === 0) {
       return sorted;
@@ -1544,11 +1548,11 @@ export const TrainingCourseCatalog: React.FC = () => {
 
       return matchesSearch && matchesTag;
     });
-  }, [modules, searchTerm, selectedTagFilters]);
+  }, [courseModules, searchTerm, selectedTagFilters]);
 
   const availableTags = useMemo(() => {
     const tags = new Set<string>();
-    modules.forEach((module) => {
+    courseModules.forEach((module) => {
       module.tags.forEach((tag) => {
         const trimmed = tag.trim();
         if (trimmed) tags.add(trimmed);
@@ -1556,7 +1560,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     });
 
     return Array.from(tags).sort((a, b) => a.localeCompare(b));
-  }, [modules]);
+  }, [courseModules]);
 
   useEffect(() => {
     if (selectedTagFilters.length === 0) return;
@@ -1568,7 +1572,7 @@ export const TrainingCourseCatalog: React.FC = () => {
     }
   }, [availableTags, selectedTagFilters]);
 
-  const selectedModule = modules.find((module) => module.id === selectedModuleId) ?? null;
+  const selectedModule = courseModules.find((module) => module.id === selectedModuleId) ?? null;
   const {
     rows: selectedMatrixRows,
     requirements: selectedMatrixRequirements,
@@ -1577,16 +1581,16 @@ export const TrainingCourseCatalog: React.FC = () => {
     refetch: refetchSelectedMatrix,
   } = useSyllabusMatrix(selectedModule?.id);
   const courseStats = useMemo(() => {
-    const published = modules.filter((module) => module.status === 'published').length;
-    const draft = modules.length - published;
-    const lessonCount = modules.reduce((sum, module) => sum + module.lessons.length, 0);
-    const testFlightCount = modules.reduce(
+    const published = courseModules.filter((module) => module.status === 'published').length;
+    const draft = courseModules.length - published;
+    const lessonCount = courseModules.reduce((sum, module) => sum + module.lessons.length, 0);
+    const testFlightCount = courseModules.reduce(
       (sum, module) => sum + module.lessons.filter((lesson) => lesson.isFlightTest).length,
       0
     );
 
     return { published, draft, lessonCount, testFlightCount };
-  }, [modules]);
+  }, [courseModules]);
   const selectedLessonStats = useMemo(() => {
     if (!selectedModule) {
       return { flightTests: 0, exams: 0, criteria: 0 };
