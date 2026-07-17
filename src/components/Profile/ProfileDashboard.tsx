@@ -21,6 +21,7 @@ import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolmen
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { supabase } from '../../lib/supabase';
+import { InstructorComplianceProfilePanel } from './InstructorComplianceProfilePanel';
 
 interface ProfileStudentDetails {
   raausId?: string;
@@ -372,6 +373,8 @@ export const ProfileDashboard: React.FC = () => {
                 </div>
               )}
             </section>
+
+            {user && <InstructorComplianceProfilePanel instructor={user} />}
 
             {isStudentUser && currentCourse && trainingOverview && (
               <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">

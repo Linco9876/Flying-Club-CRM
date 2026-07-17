@@ -26,6 +26,7 @@ import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
+import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
 
 interface StudentInfoForm {
   name: string;
@@ -2364,7 +2365,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           </div>
 
           {/* Right Column - Additional Profile Info */}
-          <div className="lg:col-span-2">
+          <div className="space-y-6 lg:col-span-2">
+            <InstructorComplianceProfilePanel instructor={student} />
             {(!isOwnStudentPortal || portalSettings.show_progress_tracking) ? (
               <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Training Progress Overview</h2>
