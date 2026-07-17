@@ -386,6 +386,23 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
     }
   };
 
+  const deleteDraftTrainingRecord = async (id: string) => {
+    try {
+      const { error } = await supabase.rpc('delete_training_record_draft', {
+        p_record_id: id,
+      });
+
+      if (error) throw error;
+
+      await fetchTrainingRecords(true);
+      toast.success('Draft lesson record deleted');
+    } catch (err) {
+      console.error('Error deleting draft training record:', err);
+      toast.error('Failed to delete draft lesson record');
+      throw err;
+    }
+  };
+
   useEffect(() => {
     void fetchTrainingRecords();
   }, [fetchTrainingRecords]);
@@ -422,6 +439,7 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
     addTrainingRecord,
     updateTrainingRecord,
     deleteTrainingRecord,
+    deleteDraftTrainingRecord,
     refetch
   };
 };

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Undo2 } from 'lucide-react';
+import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Trash2, Undo2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -182,7 +182,7 @@ export const OutstandingRecordsTab: React.FC = () => {
     isAdmin ? undefined : user?.id,
     isAdmin
   );
-  const { trainingRecords, loading: trainingRecordsLoading, addTrainingRecord, updateTrainingRecord } = useTrainingRecords();
+  const { trainingRecords, loading: trainingRecordsLoading, addTrainingRecord, updateTrainingRecord, deleteDraftTrainingRecord } = useTrainingRecords();
   const { modules: allCourses, loading: coursesLoading } = useTrainingModules();
   const courses = useMemo(
     () => allCourses.filter(course => (course.coursePurpose ?? 'training') === 'training'),
@@ -215,6 +215,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [proceedWithCarryForward, setProceedWithCarryForward] = useState(false);
   const [queueView, setQueueView] = useState<'mine' | 'others' | 'dismissed'>('mine');
   const [showDraftComposer, setShowDraftComposer] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const requestedDraftStudentId = searchParams.get('draftStudentId') || '';
 
   const activeStudentId = activeLog?.student_id;
@@ -833,6 +834,29 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
   }
 
+  async function handleDeleteDraftRecord(record: typeof trainingRecords[number]) {
+    const student = users.find(member => member.id === record.studentId);
+    const course = courses.find(item => item.id === record.courseId);
+    const lesson = course?.lessons.find(item => item.id === record.lessonId);
+    const recordLabel = lesson?.name || lesson?.sequenceTitle || course?.title || 'this lesson';
+    const studentLabel = student?.name || 'this member';
+
+    const confirmed = window.confirm(
+      `Delete the draft for ${studentLabel} - ${recordLabel}?\n\nThis cannot be undone, but submitted lesson records will not be affected.`
+    );
+    if (!confirmed) return;
+
+    setDeletingDraftId(record.id);
+    try {
+      await deleteDraftTrainingRecord(record.id);
+      if (activeDraftRecord?.id === record.id) closePanel();
+    } catch {
+      // The hook displays the database error to the user.
+    } finally {
+      setDeletingDraftId(null);
+    }
+  }
+
   function handleSelectLesson(lessonId: string) {
     const course = courses.find(c => c.id === form.courseId);
     const lesson = course?.lessons.find(l => l.id === lessonId);
@@ -1253,15 +1277,31 @@ export const OutstandingRecordsTab: React.FC = () => {
                 const course = courses.find(item => item.id === record.courseId);
                 const lesson = course?.lessons.find(item => item.id === record.lessonId);
                 return (
-                  <button
+                  <div
                     key={record.id}
-                    type="button"
-                    onClick={() => openDraftSession(record)}
-                    className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-left text-xs text-blue-950 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-400/20 dark:bg-[#111827] dark:text-blue-100 dark:hover:bg-blue-950/40"
+                    className="flex w-full items-stretch overflow-hidden rounded-lg border border-blue-200 bg-white text-xs text-blue-950 transition hover:border-blue-300 dark:border-blue-400/20 dark:bg-[#111827] dark:text-blue-100"
                   >
-                    <span className="block truncate font-semibold">{student?.name || 'Unknown member'}</span>
-                    <span className="block truncate opacity-80">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => openDraftSession(record)}
+                      className="min-w-0 flex-1 px-3 py-2 text-left transition hover:bg-blue-100 dark:hover:bg-blue-950/40"
+                    >
+                      <span className="block truncate font-semibold">{student?.name || 'Unknown member'}</span>
+                      <span className="block truncate opacity-80">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteDraftRecord(record)}
+                      disabled={deletingDraftId === record.id}
+                      title="Delete draft lesson record"
+                      aria-label={`Delete draft lesson record for ${student?.name || 'member'}`}
+                      className="flex w-11 shrink-0 items-center justify-center border-l border-blue-100 text-red-500 transition hover:bg-red-50 hover:text-red-700 disabled:cursor-wait disabled:opacity-50 dark:border-blue-400/20 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                    >
+                      {deletingDraftId === record.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -1391,21 +1431,37 @@ export const OutstandingRecordsTab: React.FC = () => {
                         const course = courses.find(item => item.id === record.courseId);
                         const lesson = course?.lessons.find(item => item.id === record.lessonId);
                         return (
-                          <button
+                          <div
                             key={record.id}
-                            type="button"
-                            onClick={() => openLog(log, record)}
-                            className="flex w-full items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-left text-xs text-blue-950 ring-1 ring-blue-100 transition hover:bg-blue-100 dark:bg-[#111827] dark:text-blue-100 dark:ring-blue-400/20 dark:hover:bg-blue-950/40"
+                            className="flex w-full items-stretch overflow-hidden rounded-md bg-white text-xs text-blue-950 ring-1 ring-blue-100 dark:bg-[#111827] dark:text-blue-100 dark:ring-blue-400/20"
                           >
-                            <span className="min-w-0">
-                              <span className="block truncate font-semibold">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
-                              <span className="block truncate opacity-75">Saved {format(record.date, 'd MMM yyyy')}</span>
-                            </span>
-                            <span className="inline-flex shrink-0 items-center gap-1 font-semibold">
-                              <LinkIcon className="h-3.5 w-3.5" />
-                              Use draft
-                            </span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => openLog(log, record)}
+                              className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-blue-100 dark:hover:bg-blue-950/40"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate font-semibold">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
+                                <span className="block truncate opacity-75">Saved {format(record.date, 'd MMM yyyy')}</span>
+                              </span>
+                              <span className="inline-flex shrink-0 items-center gap-1 font-semibold">
+                                <LinkIcon className="h-3.5 w-3.5" />
+                                Use draft
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteDraftRecord(record)}
+                              disabled={deletingDraftId === record.id}
+                              title="Delete draft lesson record"
+                              aria-label="Delete draft lesson record"
+                              className="flex w-11 shrink-0 items-center justify-center border-l border-blue-100 text-red-500 transition hover:bg-red-50 hover:text-red-700 disabled:cursor-wait disabled:opacity-50 dark:border-blue-400/20 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                            >
+                              {deletingDraftId === record.id
+                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                : <Trash2 className="h-4 w-4" />}
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -2177,23 +2233,38 @@ export const OutstandingRecordsTab: React.FC = () => {
 
                   {/* Submit */}
                   <div className="pt-2 border-t border-gray-100">
-                    <button
-                      onClick={isDraftSession ? handleSaveDraftRecord : handleSubmit}
-                      disabled={submitting || (!isDraftSession && trainingSettings.requireFlightComments && !form.flightComments.trim())}
-                      className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {submitting ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          {isDraftSession ? 'Saving draft...' : 'Submitting...'}
-                        </>
-                      ) : (
-                        <>
-                          {isDraftSession ? <Save className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
-                          {isDraftSession ? 'Save Draft Record' : activeDraftRecord ? 'Attach Draft & Submit' : 'Submit Training Record'}
-                        </>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      {activeDraftRecord?.status === 'draft' && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteDraftRecord(activeDraftRecord)}
+                          disabled={submitting || deletingDraftId === activeDraftRecord.id}
+                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-950/30"
+                        >
+                          {deletingDraftId === activeDraftRecord.id
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Trash2 className="h-4 w-4" />}
+                          Delete Draft
+                        </button>
                       )}
-                    </button>
+                      <button
+                        onClick={isDraftSession ? handleSaveDraftRecord : handleSubmit}
+                        disabled={submitting || (!isDraftSession && trainingSettings.requireFlightComments && !form.flightComments.trim())}
+                        className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {submitting ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            {isDraftSession ? 'Saving draft...' : 'Submitting...'}
+                          </>
+                        ) : (
+                          <>
+                            {isDraftSession ? <Save className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+                            {isDraftSession ? 'Save Draft Record' : activeDraftRecord ? 'Attach Draft & Submit' : 'Submit Training Record'}
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <p className="text-xs text-gray-400 text-center mt-2">
                       {isDraftSession
                         ? 'Drafts stay hidden from the student until they are attached to a logged flight and submitted.'
