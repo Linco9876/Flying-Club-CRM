@@ -304,18 +304,20 @@ const sendTrialBookingConfirmationEmail = async ({
   voucher,
   product,
   booking,
+  isUpdate = false,
 }: {
   voucher: any;
   product: any;
   booking: any;
+  isUpdate?: boolean;
 }) => {
   const apiKey = Deno.env.get("BREVO_API_KEY");
   if (!apiKey) return { sent: false, error: "BREVO_API_KEY is not configured" };
 
-  const to = voucher.recipient_email || voucher.purchaser_email;
+  const to = booking?.guestEmail || voucher.recipient_email || voucher.purchaser_email;
   if (!to) return { sent: false, error: "Voucher has no confirmation email address" };
 
-  const toName = voucher.recipient_name || voucher.purchaser_name || to;
+  const toName = booking?.guestName || voucher.recipient_name || voucher.purchaser_name || to;
   const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL") || "no-reply@bendigoflyingclub.com.au";
   const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
   const timeZone = "Australia/Sydney";
@@ -343,7 +345,7 @@ const sendTrialBookingConfirmationEmail = async ({
   const plainText = [
     `Hi ${toName},`,
     "",
-    `Your ${product.name || "trial instructional flight"} is booked.`,
+    `Your ${product.name || "trial instructional flight"} booking ${isUpdate ? "has been updated" : "is confirmed"}.`,
     "",
     `Date: ${dateLabel}`,
     `Arrive: ${startTimeLabel}`,
@@ -373,7 +375,7 @@ const sendTrialBookingConfirmationEmail = async ({
                   <tr>
                     <td style="vertical-align:middle;">
                       <p style="margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:#bfdbfe;font-weight:700;">Bendigo Flying Club</p>
-                      <h1 style="margin:0;font-size:30px;line-height:1.18;color:#ffffff;">Your trial flight is booked</h1>
+                      <h1 style="margin:0;font-size:30px;line-height:1.18;color:#ffffff;">Your trial flight booking ${isUpdate ? "has been updated" : "is confirmed"}</h1>
                       <p style="margin:12px 0 0;font-size:15px;line-height:1.6;color:#dbeafe;">We look forward to welcoming you at the club.</p>
                     </td>
                     <td align="right" width="76" style="vertical-align:top;">
@@ -386,7 +388,7 @@ const sendTrialBookingConfirmationEmail = async ({
             <tr>
               <td style="padding:30px;">
                 <p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:#0f172a;">Hi ${escapeHtml(toName)},</p>
-                <p style="margin:0 0 22px;font-size:16px;line-height:1.65;color:#334155;">Your ${escapeHtml(product.name || "trial instructional flight")} is confirmed.</p>
+                <p style="margin:0 0 22px;font-size:16px;line-height:1.65;color:#334155;">Your ${escapeHtml(product.name || "trial instructional flight")} booking ${isUpdate ? "has been updated. The current details are below." : "is confirmed."}</p>
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;">
                   <tr>
@@ -474,7 +476,10 @@ const sendTrialBookingConfirmationEmail = async ({
     body: JSON.stringify({
       sender: { email: senderEmail, name: senderName },
       to: [{ email: to, name: toName }],
-      subject: testModeSubject(voucher?.stripe_mode === "test" || voucher?.is_test_mode ? "test" : "live", "Your Bendigo Flying Club trial flight is booked"),
+      subject: testModeSubject(
+        voucher?.stripe_mode === "test" || voucher?.is_test_mode ? "test" : "live",
+        isUpdate ? "Your Bendigo Flying Club trial flight booking has been updated" : "Your Bendigo Flying Club trial flight is booked",
+      ),
       htmlContent: html,
       textContent: plainText,
     }),
@@ -765,7 +770,7 @@ const getBookingSummary = async (adminClient: SupabaseAdminClient, bookingId?: s
 
   const { data: booking, error: bookingError } = await adminClient
     .from("bookings")
-    .select("id,start_time,end_time,aircraft_id,instructor_id,status,deleted_at")
+    .select("id,start_time,end_time,aircraft_id,instructor_id,status,deleted_at,guest_name,guest_email")
     .eq("id", bookingId)
     .maybeSingle();
 
@@ -793,6 +798,8 @@ const getBookingSummary = async (adminClient: SupabaseAdminClient, bookingId?: s
       : "Aircraft",
     instructorId: booking.instructor_id,
     instructorName: instructor?.name || "Instructor",
+    guestName: booking.guest_name || "",
+    guestEmail: booking.guest_email || "",
   };
 };
 
@@ -1335,6 +1342,79 @@ Deno.serve(async (req: Request) => {
         voucherAccount: true,
         passwordSetupComplete: true,
         completedAt,
+      });
+    }
+
+    if (action === "staff-booking-update-email") {
+      const { user } = await getAuthenticatedUser(req, supabaseUrl);
+      if (!user) return json({ error: "Sign in as staff to send booking updates" }, 401);
+
+      const [{ data: profile, error: profileError }, { data: roleRows, error: rolesError }] = await Promise.all([
+        adminClient.from("users").select("role,is_active").eq("id", user.id).maybeSingle(),
+        adminClient.from("user_roles").select("role").eq("user_id", user.id),
+      ]);
+      if (profileError || rolesError) {
+        return json({ error: profileError?.message || rolesError?.message || "Could not verify staff access" }, 500);
+      }
+      const staffRoles = new Set([
+        profile?.role,
+        ...(roleRows || []).map((row: any) => row.role),
+      ].filter(Boolean));
+      const canSendBookingUpdates = profile?.is_active !== false && ["admin", "instructor", "senior_instructor", "cfi"]
+        .some((role) => staffRoles.has(role));
+      if (!canSendBookingUpdates) return json({ error: "Only authorised staff can send booking updates" }, 403);
+
+      const bookingId = String(body.bookingId || "").trim();
+      const voucherId = String(body.voucherId || "").trim();
+      if (!bookingId || !voucherId) return json({ error: "Booking and voucher are required" }, 400);
+
+      const [{ data: bookingLink, error: bookingLinkError }, { data: voucher, error: voucherError }] = await Promise.all([
+        adminClient
+          .from("bookings")
+          .select("id,trial_flight_voucher_id,status,deleted_at")
+          .eq("id", bookingId)
+          .maybeSingle(),
+        adminClient
+          .from("trial_flight_vouchers")
+          .select(`
+            *,
+            trial_flight_voucher_products(
+              id,
+              name,
+              duration_minutes
+            )
+          `)
+          .eq("id", voucherId)
+          .maybeSingle(),
+      ]);
+      if (bookingLinkError || voucherError) {
+        return json({ error: bookingLinkError?.message || voucherError?.message || "Could not load booking details" }, 500);
+      }
+      if (!bookingLink || bookingLink.deleted_at || bookingLink.status === "cancelled") {
+        return json({ error: "The booking is no longer active" }, 409);
+      }
+      if (bookingLink.trial_flight_voucher_id !== voucherId || !voucher) {
+        return json({ error: "The voucher is not linked to this booking" }, 409);
+      }
+
+      const booking = await getBookingSummary(adminClient, bookingId);
+      if (!booking) return json({ error: "The current booking details could not be loaded" }, 404);
+      const product = Array.isArray(voucher.trial_flight_voucher_products)
+        ? voucher.trial_flight_voucher_products[0]
+        : voucher.trial_flight_voucher_products;
+      if (!product) return json({ error: "The voucher product could not be loaded" }, 404);
+
+      const email = await sendTrialBookingConfirmationEmail({
+        voucher,
+        product,
+        booking,
+        isUpdate: true,
+      });
+      if (!email.sent) return json({ sent: false, error: email.error || "The email could not be sent" }, 502);
+
+      return json({
+        sent: true,
+        emailTo: booking.guestEmail || voucher.recipient_email || voucher.purchaser_email,
       });
     }
 
