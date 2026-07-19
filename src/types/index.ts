@@ -207,7 +207,7 @@ export interface DutyPeriod {
   flightMinutes: number;
   notes?: string;
   amendmentReason?: string;
-  entrySource: 'manual' | 'automatic_booking';
+  entrySource: 'manual' | 'mobile' | 'automatic_booking';
   autoStartedForBookingId?: string;
   autoClosedAtLimit: boolean;
   breaks: DutyBreak[];

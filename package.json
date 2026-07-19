@@ -16,7 +16,10 @@
     "smoke:vouchers": "node scripts/smoke-voucher-live.mjs",
     "test:vouchers": "npx --yes deno test --node-modules-dir=false supabase/functions/_shared/trialVoucherReadiness.test.ts",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:install": "npm --prefix apps/duty-clock install",
+    "mobile:start": "npm --prefix apps/duty-clock run start",
+    "mobile:check": "npm --prefix apps/duty-clock run typecheck && npm --prefix apps/duty-clock exec expo-doctor"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",

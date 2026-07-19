@@ -11,6 +11,18 @@ npm run dev
 
 Open the local URL printed by Vite. Edit files under `src/`; Vite refreshes the browser as files change.
 
+## Duty Clock mobile app
+
+The lightweight iOS and Android instructor app lives in `apps/duty-clock/`. It uses the same Supabase login and duty records as the portal.
+
+```powershell
+npm run mobile:install
+Copy-Item apps/duty-clock/.env.example apps/duty-clock/.env
+npm run mobile:start
+```
+
+See `apps/duty-clock/README.md` for device testing, signed builds, and store-release requirements.
+
 ## Publish the frontend
 
 The production Cloudflare Pages project is `bendigo-flying-club-portal`. Its custom domain is `portal.bendigoflyingclub.com.au`.

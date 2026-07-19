@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, MapPin, ShieldCheck, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, MapPin, Plus, ShieldCheck, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -7,26 +7,30 @@ import { useAuth } from '../../context/AuthContext';
 type StaffRow = { id: string; name: string; email: string; roles: string[] };
 type RequirementDraft = { enabled: boolean; locations: string; preflightMinutes: number; postflightMinutes: number; notes: string };
 type AuthorisationDraft = { enabled: boolean; priority: number; locations: string; maximumConcurrent: number; remoteAllowed: boolean; qualificationExpiresOn: string; notes: string };
+type DutyClockLocationDraft = { key: string; id?: string; name: string; latitude: number; longitude: number; radiusMetres: number; isPrimary: boolean; isActive: boolean };
 
 export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange?: () => void }> = ({ canEdit = false, onFormChange }) => {
   const { user } = useAuth();
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [requirements, setRequirements] = useState<Record<string, RequirementDraft>>({});
   const [authorisations, setAuthorisations] = useState<Record<string, AuthorisationDraft>>({});
+  const [clockLocations, setClockLocations] = useState<DutyClockLocationDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: roleRows, error: roleError }, { data: requirementRows, error: requirementError }, { data: authorisationRows, error: authorisationError }] = await Promise.all([
+      const [{ data: roleRows, error: roleError }, { data: requirementRows, error: requirementError }, { data: authorisationRows, error: authorisationError }, { data: clockLocationRows, error: clockLocationError }] = await Promise.all([
         supabase.from('user_roles').select('user_id,role').in('role', ['admin', 'senior_instructor', 'instructor']),
         supabase.from('instructor_supervision_requirements').select('*'),
         supabase.from('senior_instructor_authorisations').select('*'),
+        supabase.from('duty_clock_locations').select('*').order('is_primary', { ascending: false }).order('name'),
       ]);
       if (roleError) throw roleError;
       if (requirementError) throw requirementError;
       if (authorisationError) throw authorisationError;
+      if (clockLocationError) throw clockLocationError;
       const ids = Array.from(new Set((roleRows || []).map(row => row.user_id)));
       const { data: users, error: usersError } = ids.length
         ? await supabase.from('users').select('id,name,email').in('id', ids).eq('is_active', true).order('name')
@@ -57,6 +61,16 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
           notes: saved?.notes || '',
         }];
       })));
+      setClockLocations((clockLocationRows || []).map(row => ({
+        key: row.id,
+        id: row.id,
+        name: row.name,
+        latitude: Number(row.latitude),
+        longitude: Number(row.longitude),
+        radiusMetres: Number(row.radius_metres),
+        isPrimary: Boolean(row.is_primary),
+        isActive: Boolean(row.is_active),
+      })));
     } catch (error) {
       console.error('Failed to load duty and supervision settings', error);
       toast.error('Duty and supervision settings could not be loaded');
@@ -77,11 +91,36 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
     setAuthorisations(current => ({ ...current, [id]: { ...current[id], ...patch } }));
     markChanged();
   };
+  const updateClockLocation = (key: string, patch: Partial<DutyClockLocationDraft>) => {
+    setClockLocations(current => current.map(location => location.key === key ? { ...location, ...patch } : patch.isPrimary ? { ...location, isPrimary: false } : location));
+    markChanged();
+  };
 
   const save = React.useCallback(async () => {
     if (!user?.id || !canEdit) return;
     setSaving(true);
     try {
+      const { error: clearPrimaryError } = await supabase.from('duty_clock_locations').update({ is_primary: false, updated_by: user.id, updated_at: new Date().toISOString() }).eq('is_primary', true);
+      if (clearPrimaryError) throw clearPrimaryError;
+      for (const location of clockLocations) {
+        if (!location.name.trim()) throw new Error('Every duty clock location needs a name');
+        if (!Number.isFinite(location.latitude) || location.latitude < -90 || location.latitude > 90) throw new Error(`${location.name}: enter a valid latitude`);
+        if (!Number.isFinite(location.longitude) || location.longitude < -180 || location.longitude > 180) throw new Error(`${location.name}: enter a valid longitude`);
+        const payload = {
+          name: location.name.trim(),
+          latitude: location.latitude,
+          longitude: location.longitude,
+          radius_metres: Math.max(50, Math.round(location.radiusMetres)),
+          is_primary: location.isPrimary,
+          is_active: location.isActive,
+          updated_by: user.id,
+          updated_at: new Date().toISOString(),
+        };
+        const response = location.id
+          ? await supabase.from('duty_clock_locations').update(payload).eq('id', location.id)
+          : await supabase.from('duty_clock_locations').insert(payload);
+        if (response.error) throw response.error;
+      }
       for (const person of staff) {
         const requirement = requirements[person.id];
         if (requirement?.enabled) {
@@ -128,7 +167,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
     } finally {
       setSaving(false);
     }
-  }, [authorisations, canEdit, load, requirements, staff, user?.id]);
+  }, [authorisations, canEdit, clockLocations, load, requirements, staff, user?.id]);
 
   useEffect(() => {
     const settingsWindow = window as Window & { __dutysupervisionSettingsSave?: () => Promise<void>; __dutysupervisionSettingsCancel?: () => Promise<void> };
@@ -157,6 +196,22 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4"><p className="text-xs font-bold uppercase tracking-wide text-gray-500">Authorised seniors</p><p className="mt-1 text-2xl font-bold text-gray-950">{authorisedCount}</p></div>
         <div className={`rounded-xl border p-4 ${supervisedCount > 0 && authorisedCount === 0 ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}><p className="text-xs font-bold uppercase tracking-wide text-gray-500">Coverage setup</p><p className="mt-1 flex items-center gap-2 font-bold text-gray-950">{supervisedCount > 0 && authorisedCount === 0 ? <><AlertTriangle className="h-5 w-5 text-amber-600" /> Needs attention</> : <><CheckCircle2 className="h-5 w-5 text-emerald-600" /> Configured</>}</p></div>
       </div>
+
+      <section className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-blue-600" /><div><h3 className="font-bold text-gray-950">Duty clock locations</h3><p className="text-xs text-gray-500">The mobile app asks for notes when GPS falls outside these radiuses.</p></div></div>
+          {canEdit && <button type="button" onClick={() => { setClockLocations(current => [...current, { key: `new-${Date.now()}`, name: '', latitude: -36.7391667, longitude: 144.3297222, radiusMetres: 1200, isPrimary: current.length === 0, isActive: true }]); markChanged(); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-700"><Plus className="h-4 w-4" /> Add location</button>}
+        </div>
+        <div className="mt-4 space-y-3">
+          {clockLocations.map(location => <div key={location.key} className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 sm:grid-cols-6">
+            <label className="sm:col-span-2 text-xs font-bold uppercase tracking-wide text-gray-500">Name<input disabled={!canEdit} value={location.name} onChange={event => updateClockLocation(location.key, { name: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal" /></label>
+            <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Latitude<input disabled={!canEdit} type="number" step="0.000001" value={location.latitude} onChange={event => updateClockLocation(location.key, { latitude: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
+            <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Longitude<input disabled={!canEdit} type="number" step="0.000001" value={location.longitude} onChange={event => updateClockLocation(location.key, { longitude: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
+            <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Radius (m)<input disabled={!canEdit} type="number" min="50" max="10000" value={location.radiusMetres} onChange={event => updateClockLocation(location.key, { radiusMetres: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
+            <div className="flex flex-col justify-center gap-2 text-sm text-gray-700"><label className="flex items-center gap-2"><input disabled={!canEdit} type="checkbox" checked={location.isPrimary} onChange={event => updateClockLocation(location.key, { isPrimary: event.target.checked })} /> Primary</label><label className="flex items-center gap-2"><input disabled={!canEdit} type="checkbox" checked={location.isActive} onChange={event => updateClockLocation(location.key, { isActive: event.target.checked })} /> Active</label></div>
+          </div>)}
+        </div>
+      </section>
 
       <section>
         <div className="mb-3 flex items-center gap-2"><Users className="h-5 w-5 text-indigo-600" /><div><h3 className="font-bold text-gray-950">Instructor supervision requirements</h3><p className="text-xs text-gray-500">Only flight bookings are included. Blank locations mean all locations.</p></div></div>

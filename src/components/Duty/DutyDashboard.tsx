@@ -363,6 +363,7 @@ export const DutyDashboard: React.FC = () => {
                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${period.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : period.status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>{period.status}</span>
                         {period.isExternal && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800">External duty</span>}
                         {period.entrySource === 'automatic_booking' && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Automatic start</span>}
+                        {period.entrySource === 'mobile' && <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold text-cyan-800">Mobile clock</span>}
                         {period.autoClosedAtLimit && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Maximum assumed</span>}
                       </div>
                       <p className="mt-1 text-sm text-gray-700">{start ? format(start, 'HH:mm') : '—'} – {end ? format(end, 'HH:mm') : 'In progress'}{hours !== null ? ` · ${hours.toFixed(1)} h` : ''}</p>

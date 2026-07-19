@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "BFC Duty Clock",
+    "slug": "bendigo-flying-club-duty-clock",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "bfcdutyclock",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "au.com.bendigoflyingclub.dutyclock",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Your location is checked when you start duty so the club can identify whether you are on-site."
+      }
+    },
+    "android": {
+      "package": "au.com.bendigoflyingclub.dutyclock",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Your location is checked when you start duty so the club can identify whether you are on-site."
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "extra": {
+      "clubTimeZone": "Australia/Sydney"
+    }
+  }
+}
