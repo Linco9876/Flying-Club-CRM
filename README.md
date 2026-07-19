@@ -1,28 +1,56 @@
-# Flying-Club-CRM
+# Flying Club CRM
+
+Vite/React frontend for the Bendigo Flying Club, hosted on Cloudflare Pages and backed by Supabase.
+
+## Edit locally
+
+```powershell
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite. Edit files under `src/`; Vite refreshes the browser as files change.
+
+## Publish the frontend
+
+The production Cloudflare Pages project is `bendigo-flying-club-portal`. Its custom domain is `portal.bendigoflyingclub.com.au`.
+
+Pushing a commit to `main` triggers the existing Cloudflare Git deployment. To publish the current checkout directly instead, run:
+
+```powershell
+npm run deploy:cloudflare
+```
+
+The command builds `dist/` and deploys it to the production branch. SPA fallback routing is configured in `public/_redirects`.
+
+## Edit Supabase
+
+This checkout is linked locally to Supabase project `joarmzswpufrduectjse` (`Flying Club CRM`). Supabase CLI link state is machine-local and intentionally ignored by Git.
+
+Check migration state:
+
+```powershell
+npm run supabase:status
+```
+
+Create a database change as a migration, edit the generated SQL, review it, then push it:
+
+```powershell
+supabase migration new describe_your_change
+supabase db push --dry-run
+npm run supabase:push
+```
+
+Edge Functions live under `supabase/functions/`. Deploy them with:
+
+```powershell
+npm run supabase:functions:deploy
+```
+
+Never place service-role, database, Stripe, Xero, or other secret keys in frontend `VITE_*` variables or commit them. Supabase Edge Function secrets belong in Supabase; CI secrets belong in GitHub repository secrets.
+
+## Supabase Auth redirects
+
+Keep the Supabase production Site URL set to `https://portal.bendigoflyingclub.com.au` and allow `https://portal.bendigoflyingclub.com.au/reset-password` as a redirect URL. Local development can use `VITE_AUTH_REDIRECT_ORIGIN` in an ignored `.env.local` when needed.
 
 [Edit in StackBlitz](https://stackblitz.com/~/github.com/Linco9876/Flying-Club-CRM)
-
-## Production Deployment
-
-This app is a Vite React static site backed by Supabase. It is ready to deploy on Netlify or Vercel.
-
-### Netlify
-
-- Build command: `npm run build`
-- Publish directory: `dist`
-- SPA redirects are configured in `netlify.toml` and `public/_redirects`.
-
-### Vercel
-
-- Build command: `npm run build`
-- Output directory: `dist`
-- SPA rewrites are configured in `vercel.json`.
-
-### Supabase Auth Redirects
-
-After the live URL is created, add these URLs in Supabase Auth settings:
-
-- Site URL: your production domain, for example `https://your-site.netlify.app`
-- Redirect URL: `https://your-site.netlify.app/reset-password`
-
-Do not set `VITE_AUTH_REDIRECT_ORIGIN` in production unless you want reset emails to force a specific domain. Local development can keep it in `.env.local`.

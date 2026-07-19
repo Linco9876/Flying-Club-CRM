@@ -6,6 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "deploy:cloudflare": "npm run build && wrangler pages deploy dist --project-name bendigo-flying-club-portal --branch main",
+    "cloudflare:status": "wrangler pages project list",
+    "supabase:status": "supabase migration list",
+    "supabase:push": "supabase db push",
+    "supabase:functions:deploy": "supabase functions deploy --project-ref joarmzswpufrduectjse",
     "audit:migrations": "node scripts/audit-supabase-migrations.mjs",
     "check:vouchers": "node scripts/check-voucher-readiness.mjs",
     "smoke:vouchers": "node scripts/smoke-voucher-live.mjs",
@@ -43,6 +48,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "wrangler": "^4.112.0"
   }
 }
