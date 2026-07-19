@@ -207,6 +207,9 @@ export interface DutyPeriod {
   flightMinutes: number;
   notes?: string;
   amendmentReason?: string;
+  entrySource: 'manual' | 'automatic_booking';
+  autoStartedForBookingId?: string;
+  autoClosedAtLimit: boolean;
   breaks: DutyBreak[];
   createdAt: Date;
   updatedAt: Date;
@@ -667,7 +670,7 @@ export interface InvoiceItem {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record' | 'booking_approval';
+  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record' | 'booking_approval' | 'duty_auto_started' | 'duty_auto_closed';
   title: string;
   message: string;
   bookingId?: string;

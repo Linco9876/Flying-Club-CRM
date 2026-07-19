@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, X, AlertCircle, Info, Calendar, ClipboardList, Check, XCircle } from 'lucide-react';
+import { Bell, X, AlertCircle, Info, Calendar, ClipboardList, Check, XCircle, Clock3 } from 'lucide-react';
 import { useNotifications } from '../../hooks/useNotifications';
 import { useBookings } from '../../hooks/useBookings';
 import { useAuth } from '../../context/AuthContext';
@@ -26,6 +26,10 @@ export const NotificationBell: React.FC = () => {
         return <ClipboardList className="h-5 w-5 text-amber-500" />;
       case 'booking_approval':
         return <Calendar className="h-5 w-5 text-amber-500" />;
+      case 'duty_auto_started':
+        return <Clock3 className="h-5 w-5 text-blue-500" />;
+      case 'duty_auto_closed':
+        return <Clock3 className="h-5 w-5 text-amber-500" />;
       default:
         return <Info className="h-5 w-5 text-gray-500" />;
     }
@@ -46,6 +50,9 @@ export const NotificationBell: React.FC = () => {
     }
     if (notification.type === 'booking_approval' && notification.metadata?.booking_id) {
       navigate('/calendar?view=list');
+    }
+    if (notification.type === 'duty_auto_started' || notification.type === 'duty_auto_closed') {
+      navigate('/duty');
     }
   };
 

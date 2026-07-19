@@ -99,6 +99,9 @@ export const useDuty = (selectedInstructorId?: string) => {
         flightMinutes: Number(row.flight_minutes || 0),
         notes: row.notes || undefined,
         amendmentReason: row.amendment_reason || undefined,
+        entrySource: row.entry_source || 'manual',
+        autoStartedForBookingId: row.auto_started_for_booking_id || undefined,
+        autoClosedAtLimit: Boolean(row.auto_closed_at_limit),
         breaks: breaksByPeriod.get(row.id) || [],
         createdAt: new Date(row.created_at),
         updatedAt: new Date(row.updated_at),
@@ -195,10 +198,17 @@ export const useDuty = (selectedInstructorId?: string) => {
   };
 
   const endDuty = async (period: DutyPeriod, endTime = new Date()) => {
+    const { data: summaryData, error: summaryError } = await supabase.rpc('get_logged_instructor_flight_summary', {
+      p_instructor_id: period.instructorId,
+      p_duty_date: period.dutyDate,
+    });
+    if (summaryError) throw summaryError;
+    const summary = Array.isArray(summaryData) ? summaryData[0] : summaryData;
     await savePeriod({
       ...period,
       actualEnd: endTime,
       status: 'completed',
+      flightMinutes: Number(summary?.flight_minutes || 0),
       breaks: period.breaks.map(item => ({
         breakStart: item.breakStart,
         breakEnd: item.breakEnd,

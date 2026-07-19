@@ -146,7 +146,7 @@ export const DutyDashboard: React.FC = () => {
   };
 
   const openEdit = (period: DutyPeriod) => {
-    setFlightTimeTouched(true);
+    setFlightTimeTouched(period.status !== 'active');
     setLoggedFlightSummary({ minutes: 0, count: 0, loading: true });
     setForm({
     id: period.id,
@@ -199,7 +199,7 @@ export const DutyDashboard: React.FC = () => {
       const minutes = Number(row?.flight_minutes || 0);
       const count = Number(row?.flight_count || 0);
       setLoggedFlightSummary({ minutes, count, loading: false });
-      if (!form.id && !flightTimeTouched) {
+      if ((!form.id || form.status === 'active') && !flightTimeTouched) {
         setForm(current => current && current.instructorId === form.instructorId && current.dutyDate === form.dutyDate
           ? { ...current, flightHours: hoursFromMinutes(minutes) }
           : current);
@@ -208,7 +208,7 @@ export const DutyDashboard: React.FC = () => {
 
     void loadLoggedFlightTime();
     return () => { cancelled = true; };
-  }, [flightTimeTouched, form?.dutyDate, form?.id, form?.instructorId]);
+  }, [flightTimeTouched, form?.dutyDate, form?.id, form?.instructorId, form?.status]);
 
   const submit = async () => {
     if (!form) return;
@@ -328,7 +328,7 @@ export const DutyDashboard: React.FC = () => {
 
         {activePeriod && (
           <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="font-bold text-blue-950">Duty is currently active</p><p className="text-sm text-blue-800">Remember to add breaks and actual flight time before ending duty.</p></div>
+            <div><p className="font-bold text-blue-950">Duty is currently active</p><p className="text-sm text-blue-800">{activePeriod.entrySource === 'automatic_booking' ? 'Started automatically 30 minutes before your flight. Clock out when your duty finishes.' : 'Remember to add breaks and actual flight time before ending duty.'}</p></div>
             <button type="button" onClick={() => void endDuty(activePeriod).catch(error => toast.error(error.message))} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800"><LogOut className="h-4 w-4" /> End duty now</button>
           </div>
         )}
@@ -362,6 +362,8 @@ export const DutyDashboard: React.FC = () => {
                         <p className="font-bold text-gray-950">{format(new Date(`${period.dutyDate}T12:00:00`), 'EEE, dd MMM yyyy')}</p>
                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${period.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : period.status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>{period.status}</span>
                         {period.isExternal && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800">External duty</span>}
+                        {period.entrySource === 'automatic_booking' && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Automatic start</span>}
+                        {period.autoClosedAtLimit && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Maximum assumed</span>}
                       </div>
                       <p className="mt-1 text-sm text-gray-700">{start ? format(start, 'HH:mm') : '—'} – {end ? format(end, 'HH:mm') : 'In progress'}{hours !== null ? ` · ${hours.toFixed(1)} h` : ''}</p>
                       <p className="mt-1 text-xs text-gray-500">{period.location} · {(period.flightMinutes / 60).toFixed(1)} flight h · {period.breaks.length} {period.breaks.length === 1 ? 'break' : 'breaks'}</p>
