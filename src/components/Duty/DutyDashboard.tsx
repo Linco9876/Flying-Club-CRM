@@ -10,6 +10,7 @@ import { DutyPeriodInput, useDuty } from '../../hooks/useDuty';
 type StaffOption = { id: string; name: string };
 type SupervisionBooking = { id: string; instructorId: string; instructorName: string; startTime: Date; endTime: Date; location: string; status: string; supervisionStatus: string };
 type SupervisionBookingRow = { id: string; instructor_id: string; start_time: string; end_time: string; location?: string; status: string; supervision_status: string };
+type LoggedFlightSummary = { minutes: number; count: number; loading: boolean; error?: string };
 type BreakDraft = {
   breakStart: string;
   breakEnd: string;
@@ -45,6 +46,12 @@ type FormState = {
 
 const toLocalInput = (date?: Date) => date ? format(date, "yyyy-MM-dd'T'HH:mm") : '';
 const fromLocalInput = (value: string) => value ? new Date(value) : undefined;
+const hoursFromMinutes = (minutes: number) => (minutes / 60).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+const readableMinutes = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return [hours ? `${hours} h` : '', remainder ? `${remainder} min` : ''].filter(Boolean).join(' ') || '0 min';
+};
 
 const emptyForm = (instructorId: string, mode: 'record' | 'start' = 'record'): FormState => {
   const now = new Date();
@@ -80,6 +87,8 @@ export const DutyDashboard: React.FC = () => {
   const { periods, loading, savePeriod, endDuty } = useDuty(selectedInstructorId);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [flightTimeTouched, setFlightTimeTouched] = useState(false);
+  const [loggedFlightSummary, setLoggedFlightSummary] = useState<LoggedFlightSummary>({ minutes: 0, count: 0, loading: false });
   const [assignedSupervision, setAssignedSupervision] = useState<SupervisionBooking[]>([]);
   const [uncoveredBookings, setUncoveredBookings] = useState<SupervisionBooking[]>([]);
 
@@ -130,7 +139,16 @@ export const DutyDashboard: React.FC = () => {
     return total + (start && end ? Math.max(0, end.getTime() - start.getTime()) / 3_600_000 : 0);
   }, 0);
 
-  const openEdit = (period: DutyPeriod) => setForm({
+  const openNew = (mode: 'record' | 'start') => {
+    setFlightTimeTouched(false);
+    setLoggedFlightSummary({ minutes: 0, count: 0, loading: true });
+    setForm(emptyForm(selectedInstructorId, mode));
+  };
+
+  const openEdit = (period: DutyPeriod) => {
+    setFlightTimeTouched(true);
+    setLoggedFlightSummary({ minutes: 0, count: 0, loading: true });
+    setForm({
     id: period.id,
     instructorId: period.instructorId,
     dutyDate: period.dutyDate,
@@ -142,7 +160,7 @@ export const DutyDashboard: React.FC = () => {
     status: period.status,
     isExternal: period.isExternal,
     externalOrganisation: period.externalOrganisation || '',
-    flightHours: (period.flightMinutes / 60).toFixed(1),
+    flightHours: hoursFromMinutes(period.flightMinutes),
     notes: period.notes || '',
     amendmentReason: '',
     fitForDuty: true,
@@ -159,7 +177,38 @@ export const DutyDashboard: React.FC = () => {
       facility: item.facility || '',
       notes: item.notes || '',
     })),
-  });
+    });
+  };
+
+  useEffect(() => {
+    if (!form?.instructorId || !form.dutyDate) return;
+    let cancelled = false;
+    setLoggedFlightSummary(current => ({ ...current, loading: true, error: undefined }));
+
+    const loadLoggedFlightTime = async () => {
+      const { data, error } = await supabase.rpc('get_logged_instructor_flight_summary', {
+        p_instructor_id: form.instructorId,
+        p_duty_date: form.dutyDate,
+      });
+      if (cancelled) return;
+      if (error) {
+        setLoggedFlightSummary({ minutes: 0, count: 0, loading: false, error: 'Logged flight time could not be loaded' });
+        return;
+      }
+      const row = Array.isArray(data) ? data[0] : data;
+      const minutes = Number(row?.flight_minutes || 0);
+      const count = Number(row?.flight_count || 0);
+      setLoggedFlightSummary({ minutes, count, loading: false });
+      if (!form.id && !flightTimeTouched) {
+        setForm(current => current && current.instructorId === form.instructorId && current.dutyDate === form.dutyDate
+          ? { ...current, flightHours: hoursFromMinutes(minutes) }
+          : current);
+      }
+    };
+
+    void loadLoggedFlightTime();
+    return () => { cancelled = true; };
+  }, [flightTimeTouched, form?.dutyDate, form?.id, form?.instructorId]);
 
   const submit = async () => {
     if (!form) return;
@@ -202,7 +251,7 @@ export const DutyDashboard: React.FC = () => {
           facility: item.facility,
           notes: item.notes,
         })),
-        ...(!form.id ? { declaration: {
+        ...(!form.id && form.status === 'active' ? { declaration: {
           fitForDuty: form.fitForDuty,
           externalDutyDeclared: form.externalDutyDeclared,
           sleepOpportunityConfirmed: form.sleepOpportunityConfirmed,
@@ -239,11 +288,11 @@ export const DutyDashboard: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             {admin && <button type="button" onClick={() => void exportAudit()} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"><Download className="h-4 w-4" /> Audit CSV</button>}
-            <button type="button" onClick={() => setForm(emptyForm(selectedInstructorId, 'record'))} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
+            <button type="button" onClick={() => openNew('record')} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
               <Plus className="h-4 w-4" /> Add record
             </button>
             {!activePeriod && (
-              <button type="button" onClick={() => setForm(emptyForm(selectedInstructorId, 'start'))} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
+              <button type="button" onClick={() => openNew('start')} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
                 <LogIn className="h-4 w-4" /> Start duty
               </button>
             )}
@@ -328,13 +377,13 @@ export const DutyDashboard: React.FC = () => {
 
       {form && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-3">
-          <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex max-h-[94vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
-              <div><h2 className="text-lg font-bold text-gray-950">{form.id ? 'Edit duty period' : form.status === 'active' ? 'Start duty' : 'Add duty period'}</h2><p className="text-xs text-gray-500">Use actual times whenever they are known.</p></div>
+              <div><h2 className="text-lg font-bold text-gray-950">{form.id ? 'Edit duty period' : form.status === 'active' ? 'Start duty' : 'Add duty period'}</h2><p className="text-xs text-gray-500">{form.status === 'active' && !form.id ? 'Confirm you are fit, then record your start time.' : 'Enter when duty started and finished. Logged flight time is filled automatically.'}</p></div>
               <button type="button" onClick={() => setForm(null)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-5 overflow-y-auto p-5">
-              {!form.id && (
+              {!form.id && form.status === 'active' && (
                 <div className={`rounded-xl border p-4 ${form.fitForDuty ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
                   <div className="flex items-center gap-2">{form.fitForDuty ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-red-600" />}<h3 className="font-bold text-gray-950">Pre-duty declaration</h3></div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -347,17 +396,31 @@ export const DutyDashboard: React.FC = () => {
               )}
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="text-sm font-semibold text-gray-700">Duty date<input type="date" value={form.dutyDate} onChange={event => setForm({ ...form, dutyDate: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                <label className="text-sm font-semibold text-gray-700">Duty date<input type="date" value={form.dutyDate} onChange={event => { setFlightTimeTouched(false); setForm({ ...form, dutyDate: event.target.value }); }} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
                 <label className="text-sm font-semibold text-gray-700">Location<input value={form.location} onChange={event => setForm({ ...form, location: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
-                <label className="text-sm font-semibold text-gray-700">Actual start<input type="datetime-local" value={form.actualStart} onChange={event => setForm({ ...form, actualStart: event.target.value, dutyDate: event.target.value.slice(0, 10) || form.dutyDate })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
-                <label className="text-sm font-semibold text-gray-700">Actual end<input type="datetime-local" value={form.actualEnd} onChange={event => setForm({ ...form, actualEnd: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
-                <label className="text-sm font-semibold text-gray-700">Status<select value={form.status} onChange={event => setForm({ ...form, status: event.target.value as DutyPeriod['status'] })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"><option value="draft">Draft</option><option value="active">Active</option><option value="completed">Completed</option></select></label>
-                <label className="text-sm font-semibold text-gray-700">Actual flight time (hours)<input type="number" min="0" step="0.1" value={form.flightHours} onChange={event => setForm({ ...form, flightHours: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                <label className="text-sm font-semibold text-gray-700">Duty started<input type="datetime-local" value={form.actualStart} onChange={event => { const nextDate = event.target.value.slice(0, 10); if (nextDate && nextDate !== form.dutyDate) setFlightTimeTouched(false); setForm({ ...form, actualStart: event.target.value, dutyDate: nextDate || form.dutyDate }); }} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+                {(form.id || form.status !== 'active') && <label className="text-sm font-semibold text-gray-700">Duty finished<input type="datetime-local" value={form.actualEnd} onChange={event => setForm({ ...form, actualEnd: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>}
+              </div>
+
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <label className="min-w-0 flex-1 text-sm font-semibold text-blue-950">Actual flight time
+                    <div className="relative mt-1">
+                      <input type="number" min="0" step="0.01" value={form.flightHours} onChange={event => { setFlightTimeTouched(true); setForm({ ...form, flightHours: event.target.value }); }} className="w-full rounded-lg border border-blue-300 bg-white px-3 py-2 pr-16 text-gray-950" />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-gray-500">hours</span>
+                    </div>
+                  </label>
+                  {!loggedFlightSummary.loading && loggedFlightSummary.minutes !== Math.round((Number(form.flightHours) || 0) * 60) && (
+                    <button type="button" onClick={() => { setFlightTimeTouched(true); setForm({ ...form, flightHours: hoursFromMinutes(loggedFlightSummary.minutes) }); }} className="mt-6 whitespace-nowrap text-xs font-bold text-blue-700 hover:text-blue-900">Use logged total</button>
+                  )}
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-xs text-blue-800">
+                  {loggedFlightSummary.loading ? <><Clock3 className="h-3.5 w-3.5 animate-spin" /> Checking logged flights…</> : loggedFlightSummary.error ? <><AlertTriangle className="h-3.5 w-3.5" /> {loggedFlightSummary.error}</> : loggedFlightSummary.count > 0 ? <><CheckCircle2 className="h-3.5 w-3.5" /> Prefilled from {loggedFlightSummary.count} logged {loggedFlightSummary.count === 1 ? 'flight' : 'flights'} ({readableMinutes(loggedFlightSummary.minutes)}).</> : <>No flights have been logged for this date yet.</>}
+                </div>
               </div>
 
               <div className="rounded-xl border border-gray-200 p-4">
-                <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Coffee className="h-4 w-4 text-amber-600" /><h3 className="font-bold text-gray-900">Breaks and rest periods</h3></div><button type="button" onClick={() => setForm({ ...form, breaks: [...form.breaks, { breakStart: '', breakEnd: '', breakType: 'break', freeOfDuty: false, affectsCalculation: false, facility: '', notes: '' }] })} className="text-sm font-bold text-blue-600 hover:text-blue-800">+ Add</button></div>
-                <p className="mt-1 text-xs text-gray-500">A normal break does not reduce FDP. Only mark “affects calculation” when the club’s approved rule permits it.</p>
+                <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Coffee className="h-4 w-4 text-amber-600" /><div><h3 className="font-bold text-gray-900">Breaks</h3><p className="text-xs text-gray-500">Optional</p></div></div><button type="button" onClick={() => setForm({ ...form, breaks: [...form.breaks, { breakStart: '', breakEnd: '', breakType: 'break', freeOfDuty: false, affectsCalculation: false, facility: '', notes: '' }] })} className="text-sm font-bold text-blue-600 hover:text-blue-800">+ Add break</button></div>
                 <div className="mt-3 space-y-3">
                   {form.breaks.map((item, index) => (
                     <div key={index} className="rounded-lg bg-gray-50 p-3">
@@ -369,11 +432,17 @@ export const DutyDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2"><label className="flex items-center gap-2 text-sm font-semibold text-gray-700"><input type="checkbox" checked={form.isExternal} onChange={event => setForm({ ...form, isExternal: event.target.checked })} /> Duty performed outside this club</label>{form.isExternal && <input value={form.externalOrganisation} onChange={event => setForm({ ...form, externalOrganisation: event.target.value })} placeholder="External organisation" className="rounded-lg border border-gray-300 px-3 py-2 text-sm" />}</div>
-              <label className="block text-sm font-semibold text-gray-700">Notes<textarea value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} rows={2} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>
+              <details className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <summary className="cursor-pointer text-sm font-bold text-gray-800">More details</summary>
+                <div className="mt-4 space-y-4">
+                  {form.id && <label className="block text-sm font-semibold text-gray-700">Status<select value={form.status} onChange={event => setForm({ ...form, status: event.target.value as DutyPeriod['status'] })} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2"><option value="draft">Draft</option><option value="active">Active</option><option value="completed">Completed</option></select></label>}
+                  <div className="grid gap-3 sm:grid-cols-2"><label className="flex items-center gap-2 text-sm font-semibold text-gray-700"><input type="checkbox" checked={form.isExternal} onChange={event => setForm({ ...form, isExternal: event.target.checked })} /> Duty outside this club</label>{form.isExternal && <input value={form.externalOrganisation} onChange={event => setForm({ ...form, externalOrganisation: event.target.value })} placeholder="External organisation" className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" />}</div>
+                  <label className="block text-sm font-semibold text-gray-700">Notes<textarea value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} rows={2} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2" /></label>
+                </div>
+              </details>
               {form.id && <label className="block text-sm font-semibold text-gray-700">Amendment reason{periods.find(period => period.id === form.id)?.status === 'completed' && <span className="text-red-600"> *</span>}<textarea value={form.amendmentReason} onChange={event => setForm({ ...form, amendmentReason: event.target.value })} rows={2} placeholder="Why is this record being changed?" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2" /></label>}
             </div>
-            <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4"><button type="button" onClick={() => setForm(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button><button type="button" disabled={saving || (!form.id && !form.fitForDuty && form.status === 'active')} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save duty record'}</button></div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4"><button type="button" onClick={() => setForm(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700">Cancel</button><button type="button" disabled={saving || (!form.id && !form.fitForDuty && form.status === 'active')} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : form.id ? 'Save changes' : form.status === 'active' ? 'Start duty' : 'Add duty period'}</button></div>
           </div>
         </div>
       )}
