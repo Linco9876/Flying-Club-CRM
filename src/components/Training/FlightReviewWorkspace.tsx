@@ -512,7 +512,7 @@ export const FlightReviewRecordEditor: React.FC<
                       />
                     </label>
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                      Membership expiry
+                      RAAus membership expiry
                       <input
                         type="date"
                         value={form.applicantMembershipExpiry}

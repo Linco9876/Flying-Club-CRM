@@ -713,7 +713,7 @@ export const TrainingModuleBuilder: React.FC = () => {
                   <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                     <h3 className="text-base font-semibold text-gray-900">Prerequisites</h3>
                     <p className="mt-1 text-xs text-gray-500">
-                      Capture membership, prior training or documentation requirements.
+                      Capture RAAus membership, prior training or documentation requirements.
                     </p>
                     <div className="mt-4 space-y-3">
                       {selectedModule.prerequisites.map((prerequisite, index) => (

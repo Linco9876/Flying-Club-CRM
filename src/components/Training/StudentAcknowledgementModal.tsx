@@ -222,12 +222,12 @@ export const StudentAcknowledgementModal: React.FC = () => {
                   />
                 </label>
                 <label className="flex flex-col text-sm font-medium text-gray-700">
-                  Member number
+                  RAAus member number
                   <input
                     type="text"
                     value={declarationMemberNumber}
                     onChange={(event) => setDeclarationMemberNumber(event.target.value)}
-                    placeholder="RAAus or club member number"
+                    placeholder="RAAus membership number"
                     className="mt-1 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
                 </label>

@@ -177,17 +177,17 @@ export const buildSafetyComplianceSummary = (
     concerns.push({
       type: 'licence',
       severity: 'lapsed',
-      label: 'Membership expired',
+      label: 'RAAus membership expired',
       days: licenceDays,
-      message: `${subjectFor(person, perspective)} membership expired on ${formatDate(person.licenceExpiry)}.`
+      message: `${subjectFor(person, perspective)} RAAus membership expired on ${formatDate(person.licenceExpiry)}.`
     });
   } else if (licenceDays !== null && licenceDays <= settings.licenceWarningDays) {
     concerns.push({
       type: 'licence',
       severity: 'warning',
-      label: 'Membership approaching expiry',
+      label: 'RAAus membership approaching expiry',
       days: licenceDays,
-      message: `${subjectFor(person, perspective)} membership expires on ${formatDate(person.licenceExpiry)}.`
+      message: `${subjectFor(person, perspective)} RAAus membership expires on ${formatDate(person.licenceExpiry)}.`
     });
   }
 

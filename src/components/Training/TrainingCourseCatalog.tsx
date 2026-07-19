@@ -639,7 +639,7 @@ const defaultFlyingDeclarationText = [
   'Persons undertaking flying training and other types of flying in recreational aircraft are advised that there are risks involved.',
   'These risks cannot be specifically quantified; however, recreational aircraft used for pilot training and private flight are constructed, operated and maintained under exemptions from the regulations.',
   'These exemptions are from the regulations that apply to CASA registered aircraft. Whilst similar rule sets apply to our organisation and replace those that we are exempt from, it must be accepted that the overall safety of recreational flying is generally below the well-known commercial air transport standards in Australia.',
-  'I, ________________________________, Member Number: __________________ declare that I am aware of and understand the risks involved in recreational flying training.',
+  'I, ________________________________, RAAus Member Number: __________________ declare that I am aware of and understand the risks involved in recreational flying training.',
 ].join('\n\n');
 
 const defaultGuardianDeclarationText = [
@@ -2811,7 +2811,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                       className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
                     />
                     <span className="mt-1 text-[11px] font-normal text-amber-700">
-                      The typed student name, member number and date are saved with the exact wording shown here.
+                      The typed student name, RAAus member number and date are saved with the exact wording shown here.
                     </span>
                   </label>
                   <label className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-950">
@@ -3597,7 +3597,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                               className="mt-1 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-amber-400 focus:outline-none"
                             />
                             <span className="mt-1 text-[11px] font-normal text-amber-700">
-                              Signed enrolments store a snapshot of this wording, the student's typed name, member number and signing date.
+                              Signed enrolments store a snapshot of this wording, the student's typed name, RAAus member number and signing date.
                             </span>
                           </label>
                           <label className="flex items-start gap-3 rounded-md border border-amber-200 bg-white/70 p-3 text-xs text-amber-950">

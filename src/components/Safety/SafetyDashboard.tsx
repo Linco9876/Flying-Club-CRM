@@ -42,7 +42,7 @@ export const SafetyDashboard: React.FC = () => {
       {
         id: 'pilot-currency',
         title: 'Currency',
-        description: 'Medical, membership, flight review and recent flying status.',
+        description: 'Medical, RAAus membership, flight review and recent flying status.',
         icon: <ShieldCheck className="h-5 w-5" />
       },
       {

@@ -1554,7 +1554,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             <Toggle field="email_notifications" label="Email notifications" description="Receive allowed CRM notifications by email when delivery is connected." />
             <Toggle field="sms_notifications" label="SMS notifications" description="Receive urgent notifications by SMS when SMS delivery is connected." />
             <Toggle field="booking_reminders" label="Booking reminders" description="Receive booking reminders where configured." />
-            <Toggle field="currency_alerts" label="Currency alerts" description="Receive alerts for medical, licence, membership and BFR expiry dates." />
+            <Toggle field="currency_alerts" label="Currency alerts" description="Receive alerts for medical, licence, RAAus membership and BFR expiry dates." />
             {hasStaffRole && <Toggle field="maintenance_alerts" label="Maintenance alerts" description="Receive aircraft maintenance and defect-related alerts." />}
           </div>
         </section>

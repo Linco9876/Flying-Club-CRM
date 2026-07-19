@@ -176,7 +176,7 @@ export const PilotCurrencyTab: React.FC = () => {
       formatDate(pilot.bfrDue),
       pilot.endorsements.join('; ')
     ]);
-    const csv = [['Pilot', 'Status', 'Last Flight', 'Medical Expiry', 'Membership Expiry', 'BFR Due', 'Endorsements'], ...rows]
+    const csv = [['Pilot', 'Status', 'Last Flight', 'Medical Expiry', 'RAAus Membership Expiry', 'BFR Due', 'Endorsements'], ...rows]
       .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
       .join('\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -225,7 +225,7 @@ export const PilotCurrencyTab: React.FC = () => {
         <div className="text-center">
           <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-600" />
           <p className="mt-3 text-sm font-medium text-gray-700">Loading pilot currency</p>
-          <p className="mt-1 text-xs text-gray-500">Checking flight activity, medicals, memberships and flight reviews...</p>
+          <p className="mt-1 text-xs text-gray-500">Checking flight activity, medicals, RAAus membership records and flight reviews...</p>
         </div>
       </div>
     );
@@ -276,7 +276,7 @@ export const PilotCurrencyTab: React.FC = () => {
         icon: <ShieldCheck className="h-5 w-5" />
       },
       {
-        label: 'Membership',
+        label: 'RAAus membership',
         value: formatDate(pilot.licenceExpiry),
         detail: formatDaysUntil(pilot.daysUntilLicenceExpiry),
         icon: <CheckCircle className="h-5 w-5" />
@@ -299,7 +299,7 @@ export const PilotCurrencyTab: React.FC = () => {
               <p className="mt-1 text-sm text-gray-600">
                 {pilot.isStudentOnly
                   ? 'Student accounts do not have solo recency requirements because bookings require instructor oversight.'
-                  : 'This is based on your logged flying, flight review, membership and medical information in this CRM.'}
+                  : 'This is based on your logged flying, flight review, RAAus membership and medical information in this CRM.'}
               </p>
             </div>
             <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold ${getUrgencyColor(pilot.urgencyLevel)}`}>
@@ -445,7 +445,7 @@ export const PilotCurrencyTab: React.FC = () => {
                   {pilot.medicalExpiry && <p className="text-xs text-gray-500">{formatDaysUntil(pilot.daysUntilMedicalExpiry)}</p>}
                 </div>
                 <div className="rounded-lg bg-gray-50 p-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Membership</p>
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">RAAus membership</p>
                   <p className="mt-1 font-semibold text-gray-900">{formatDate(pilot.licenceExpiry)}</p>
                   {pilot.licenceExpiry && <p className="text-xs text-gray-500">{formatDaysUntil(pilot.daysUntilLicenceExpiry)}</p>}
                 </div>
@@ -486,7 +486,7 @@ export const PilotCurrencyTab: React.FC = () => {
                   Medical Expiry
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Membership Expiry
+                  RAAus Membership Expiry
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   BFR Due Date

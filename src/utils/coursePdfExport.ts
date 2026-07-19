@@ -717,7 +717,7 @@ export async function exportCoursePdf({
       courseEnrolment?.declarationSignedAt,
       [
         ['Required', 'Yes'],
-        ['Member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
+        ['RAAus member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
         ['Version', String(courseEnrolment?.declarationVersion ?? course.flyingDeclarationVersion ?? 1)],
         ['Record source', courseEnrolment?.declarationSignedAt ? 'CRM electronic declaration' : 'Awaiting CRM signature'],
       ],
@@ -729,7 +729,7 @@ export async function exportCoursePdf({
       ['Status', declarationSigned ? 'Signed electronically' : 'Not signed'],
       ['Signed by', courseEnrolment?.declarationSignedName || 'Not recorded'],
       ['Signed date', formatDate(courseEnrolment?.declarationSignedAt)],
-      ['Member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
+      ['RAAus member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
       ['Declaration version', String(courseEnrolment?.declarationVersion ?? course.flyingDeclarationVersion ?? 1)],
     ];
     drawLabelValueGrid(declarationRows, { columns: 3, rowHeight: 28, valueSize: 8 });

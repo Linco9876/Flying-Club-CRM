@@ -326,7 +326,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                 />
               </label>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                ARN, member number or authority
+                ARN, RAAus member number or authority
                 <input
                   value={startForm.externalIdentifier}
                   onChange={(event) =>

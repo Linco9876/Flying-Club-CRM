@@ -379,7 +379,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
                   disabled={!canEdit}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                 />
-                <p className="text-xs text-gray-500 mt-1">Shown on login when medical, membership, BFR or currency items need attention.</p>
+                <p className="text-xs text-gray-500 mt-1">Shown on login when medical, RAAus membership, BFR or currency items need attention.</p>
               </div>
 
               <div>

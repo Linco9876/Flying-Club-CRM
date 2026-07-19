@@ -85,7 +85,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">{student.raausId || 'Not provided'}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ra-Aus Membership Expiry</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">RAAus Membership Expiry</label>
                 <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
                   {student.licenceExpiry?.toLocaleDateString() || 'Not provided'}
                 </p>

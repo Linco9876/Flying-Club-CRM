@@ -1902,7 +1902,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       id: 'raaus-expiry',
       date: new Date(student.licenceExpiry),
       title: 'RAAus membership expiry',
-      description: student.raausId ? `Membership ${student.raausId}` : 'Membership number not recorded',
+      description: student.raausId ? `RAAus membership ${student.raausId}` : 'RAAus membership number not recorded',
       kind: 'Compliance',
       badge: student.licenceExpiry >= todayStart ? 'Upcoming' : 'Expired',
       colorClass: student.licenceExpiry >= todayStart ? 'bg-amber-500' : 'bg-red-600',

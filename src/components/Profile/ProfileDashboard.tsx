@@ -227,7 +227,7 @@ export const ProfileDashboard: React.FC = () => {
       : undefined;
 
     return [
-      { label: 'Membership', ...statusForDate(studentDetails?.licenceExpiry) },
+      { label: 'RAAus membership', ...statusForDate(studentDetails?.licenceExpiry) },
       { label: 'Medical', ...statusForDate(studentDetails?.medicalExpiry) },
       ...(isStudentUser ? [] : [{ label: 'Flight review', ...statusForDate(bfrDue) }])
     ];

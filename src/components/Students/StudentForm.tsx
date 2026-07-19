@@ -374,7 +374,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  RAAus Number
+                  RAAus Membership Number
                 </label>
                 <input
                   type="text"
@@ -387,7 +387,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  RAAus Expiry
+                  RAAus Membership Expiry
                 </label>
                 <input
                   type="date"

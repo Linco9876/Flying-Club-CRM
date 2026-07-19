@@ -47,7 +47,7 @@ export const DEFAULT_SAFETY_SETTINGS: SafetyComplianceSettings = {
   autoBlockExpiredLicence: true,
   requireBfrForSolo: true,
   recencyWarningMessage: 'You may not be current for solo aircraft hire. If you have less than 50 pilot in command hours and are outside the recency period, book a check flight with an instructor. If you have more than 50 pilot in command hours, complete 3 take-offs and landings before carrying passengers. If you have flown elsewhere, acknowledge this warning and make sure your records are updated.',
-  safetyLoginWarningMessage: 'Your safety and compliance record needs attention. Please review any medical, membership, BFR or currency items before flying.',
+  safetyLoginWarningMessage: 'Your safety and compliance record needs attention. Please review any medical, RAAus membership, BFR or currency items before flying.',
   safetyLoginWarningTitle: 'Safety items need attention',
   recencyNoFlightMessage: 'No recent logged flight was found for {subject}.',
   recencyLastFlightMessage: '{possessive} last logged flight was {days} days ago.',

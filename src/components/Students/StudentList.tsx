@@ -264,7 +264,7 @@ export const StudentList: React.FC = () => {
     if (medicalMissing || membershipMissing) {
       return {
         label: 'Incomplete',
-        detail: medicalMissing ? 'Medical not recorded' : 'Membership not recorded',
+        detail: medicalMissing ? 'Medical not recorded' : 'RAAus membership not recorded',
         className: 'border-gray-200 bg-gray-50 text-gray-700',
         icon: AlertTriangle
       };
@@ -273,7 +273,7 @@ export const StudentList: React.FC = () => {
     if (medicalExpired || membershipExpired) {
       return {
         label: 'Expired',
-        detail: medicalExpired ? 'Medical expired' : 'Membership expired',
+        detail: medicalExpired ? 'Medical expired' : 'RAAus membership expired',
         className: 'border-red-200 bg-red-50 text-red-700',
         icon: AlertTriangle
       };
@@ -282,7 +282,7 @@ export const StudentList: React.FC = () => {
     if (medicalNearExpiry || licenceNearExpiry) {
       return {
         label: 'Review',
-        detail: medicalNearExpiry ? 'Medical due soon' : 'Membership due soon',
+        detail: medicalNearExpiry ? 'Medical due soon' : 'RAAus membership due soon',
         className: 'border-amber-200 bg-amber-50 text-amber-700',
         icon: AlertTriangle
       };
@@ -810,7 +810,7 @@ export const StudentList: React.FC = () => {
                     Medical {student.medicalExpiry?.toLocaleDateString() || 'not set'}
                   </span>
                   <span className={licenceNearExpiry ? 'text-yellow-700' : 'text-gray-600'}>
-                    Membership {student.licenceExpiry?.toLocaleDateString() || 'not set'}
+                    RAAus membership {student.licenceExpiry?.toLocaleDateString() || 'not set'}
                   </span>
                   {student.phone && (
                     <span className="inline-flex items-center text-gray-600">
