@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Linking, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { colours } from '../theme';
+import { ACCOUNT_DELETION_URL, PRIVACY_URL, SUPPORT_URL } from '../config';
 import { PrimaryButton } from './PrimaryButton';
 
 export const LoginScreen = () => {
@@ -57,6 +58,13 @@ export const LoginScreen = () => {
           </View>
         </View>
         <Text style={styles.help}>Use the same account as the Flight Management System.</Text>
+        <View style={styles.links}>
+          <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}><Text style={styles.link}>Privacy</Text></Pressable>
+          <Text style={styles.linkDot}>·</Text>
+          <Pressable onPress={() => void Linking.openURL(SUPPORT_URL)}><Text style={styles.link}>Support</Text></Pressable>
+          <Text style={styles.linkDot}>·</Text>
+          <Pressable onPress={() => void Linking.openURL(ACCOUNT_DELETION_URL)}><Text style={styles.link}>Account deletion</Text></Pressable>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -76,4 +84,7 @@ const styles = StyleSheet.create({
   input: { height: 52, borderWidth: 1, borderColor: '#C7D0D8', borderRadius: 14, paddingHorizontal: 14, fontSize: 16, color: colours.ink, backgroundColor: '#fff' },
   buttonGap: { marginTop: 22 },
   help: { textAlign: 'center', color: colours.muted, fontSize: 12, marginTop: 18 },
+  links: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 12 },
+  link: { color: colours.blue, fontSize: 12, fontWeight: '700' },
+  linkDot: { color: colours.muted, fontSize: 12 },
 });

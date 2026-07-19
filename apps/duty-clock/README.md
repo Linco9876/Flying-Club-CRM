@@ -61,7 +61,9 @@ npx eas-cli build --platform all --profile production
 
 Apple requires an Apple Developer team and signing credentials. Google Play requires a Play Console developer account. EAS can manage signing credentials interactively, but those accounts must be supplied by the club account owner.
 
-Before public store submission, add the final club-approved app icon, screenshots, support/privacy URLs, and complete Apple and Google location-data disclosures. Use `eas submit` after the store listings exist.
+Before public store submission, capture screenshots from signed physical-device builds and have the account owner verify the prepared Apple and Google privacy disclosures. Use `eas submit` after the store listings exist.
+
+The app icon, public policy/support pages, disclosure draft, listing copy and store-safe distribution sequence are now prepared. Follow [STORE_RELEASE.md](./STORE_RELEASE.md) for the remaining account-owner and submission steps.
 
 ## Checks
 

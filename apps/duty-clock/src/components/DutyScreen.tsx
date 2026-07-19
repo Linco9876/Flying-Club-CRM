@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { User } from '@supabase/supabase-js';
 import { colours } from '../theme';
@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { PrimaryButton } from './PrimaryButton';
 import { StartDutyModal } from './StartDutyModal';
 import { EndDutyModal } from './EndDutyModal';
+import { PRIVACY_URL, SUPPORT_URL } from '../config';
 
 type Props = { user: User };
 
@@ -128,6 +129,11 @@ export const DutyScreen = ({ user }: Props) => {
             <PrimaryButton tone="danger" onPress={() => setEndVisible(true)}>End duty</PrimaryButton>
           </>
         )}
+        <View style={styles.footerLinks}>
+          <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}><Text style={styles.footerLink}>Privacy</Text></Pressable>
+          <Text style={styles.footerDot}>·</Text>
+          <Pressable onPress={() => void Linking.openURL(SUPPORT_URL)}><Text style={styles.footerLink}>Support</Text></Pressable>
+        </View>
       </ScrollView>
 
       <StartDutyModal visible={startVisible} context={context} working={working} onClose={() => setStartVisible(false)} onStart={startDuty} />
@@ -191,4 +197,7 @@ const styles = StyleSheet.create({
   deniedTitle: { color: colours.navy, fontSize: 23, fontWeight: '900', marginTop: 18, textAlign: 'center' },
   deniedText: { color: colours.muted, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 8 },
   deniedButton: { width: '100%', marginTop: 24 },
+  footerLinks: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 8 },
+  footerLink: { color: colours.blue, fontSize: 11, fontWeight: '700' },
+  footerDot: { color: colours.muted, fontSize: 11 },
 });
