@@ -7,6 +7,7 @@ import {
   Clock,
   Loader2,
   Mail,
+  Pencil,
   Plane,
   Phone,
   ShieldCheck,
@@ -204,7 +205,7 @@ export const ProfileDashboard: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [user?.id]);
+  }, [user?.emergencyContact, user?.id]);
 
   usePageLoadState(
     loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading || courseEnrolmentsLoading,
@@ -300,25 +301,36 @@ export const ProfileDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className={`grid w-full min-w-0 gap-2 rounded-xl border border-white/20 bg-black/35 p-2 shadow-lg backdrop-blur-sm sm:w-[21rem] ${stats.myCreditVisible ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <div className="flex w-full flex-col gap-2 sm:w-[21rem]">
                 <button
                   type="button"
-                  onClick={() => setShowFlightStatsModal(true)}
-                  className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
+                  onClick={() => navigate('/settings?tab=account-info')}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/30 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-lg transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-white/80 sm:self-end"
+                  title="Edit your personal details, aviation credentials and profile photos"
                 >
-                  <p className="text-xs text-white/70">Hours</p>
-                  <p className="truncate text-base font-bold tabular-nums sm:text-lg">{stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)}</p>
+                  <Pencil className="h-4 w-4" />
+                  Edit Profile
                 </button>
-                {stats.myCreditVisible && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/billing')}
-                  className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
-                >
-                  <p className="text-xs text-white/70">Credit</p>
-                  <p className="truncate text-base font-bold tabular-nums sm:text-lg">{formatCurrency(stats.myPrepaidBalance, portalSettings.currency_decimals)}</p>
-                </button>
-                )}
+                <div className={`grid w-full min-w-0 gap-2 rounded-xl border border-white/20 bg-black/35 p-2 shadow-lg backdrop-blur-sm ${stats.myCreditVisible ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setShowFlightStatsModal(true)}
+                    className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
+                  >
+                    <p className="text-xs text-white/70">Hours</p>
+                    <p className="truncate text-base font-bold tabular-nums sm:text-lg">{stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)}</p>
+                  </button>
+                  {stats.myCreditVisible && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/billing')}
+                      className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
+                    >
+                      <p className="text-xs text-white/70">Credit</p>
+                      <p className="truncate text-base font-bold tabular-nums sm:text-lg">{formatCurrency(stats.myPrepaidBalance, portalSettings.currency_decimals)}</p>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
