@@ -305,7 +305,7 @@ export const ProfileDashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => navigate('/settings?tab=account-info')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/30 bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-lg transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-white/80 sm:self-end"
+                  className="inline-flex items-center justify-center gap-1.5 self-end rounded-lg border border-white/20 bg-black/25 px-2.5 py-1.5 text-xs font-medium text-white/85 backdrop-blur-sm transition hover:border-white/30 hover:bg-black/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70"
                   title="Edit your personal details, aviation credentials and profile photos"
                 >
                   <Pencil className="h-4 w-4" />
