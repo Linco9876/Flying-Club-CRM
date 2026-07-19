@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarDays, Download, Loader, ShieldCheck } from 'lucide-react';
-import { useReportsData, ReportBooking, ReportUser } from '../../hooks/useReportsData';
+import { useReportsData, ReportUser } from '../../hooks/useReportsData';
+import { supabase } from '../../lib/supabase';
+import { useBookingRulesSettings } from '../../hooks/useSettings';
 
 const formatDateInput = (date: Date) => {
   const year = date.getFullYear();
@@ -65,12 +67,15 @@ const csvCell = (value: unknown) => {
 };
 
 type DutyRow = {
-  booking: ReportBooking;
+  id: string;
+  status: string;
   start: Date;
   end: Date;
   durationHours: number;
-  aircraft: string;
-  hirer: string;
+  flightHours: number;
+  location: string;
+  isExternal: boolean;
+  breakCount: number;
 };
 
 type DailyFatigueRow = {
@@ -86,11 +91,27 @@ type DailyFatigueRow = {
   issues: string[];
 };
 
+type DutyRecordRow = {
+  id: string;
+  actual_start?: string | null;
+  planned_start?: string | null;
+  actual_end?: string | null;
+  planned_end?: string | null;
+  status: string;
+  flight_minutes?: number | null;
+  location?: string | null;
+  is_external?: boolean;
+  duty_breaks?: Array<{ id: string }>;
+};
+
 const isInstructor = (user: ReportUser) =>
   user.roles?.includes('instructor') || user.roles?.includes('senior_instructor');
 
 export const FatigueManagementExportTab: React.FC = () => {
-  const { bookings, users, aircraft, loading, error } = useReportsData();
+  const { users, loading, error } = useReportsData();
+  const { settings: bookingRules } = useBookingRulesSettings();
+  const [dutyRecords, setDutyRecords] = useState<DutyRecordRow[]>([]);
+  const [dutyLoading, setDutyLoading] = useState(false);
   const instructors = useMemo(() => users.filter(isInstructor), [users]);
   const [instructorId, setInstructorId] = useState('');
   const [dateRange, setDateRange] = useState({
@@ -101,11 +122,18 @@ export const FatigueManagementExportTab: React.FC = () => {
   const selectedInstructor = instructors.find(instructor => instructor.id === instructorId) || instructors[0];
   const effectiveInstructorId = instructorId || selectedInstructor?.id || '';
 
-  const aircraftMap = useMemo(() => new Map(aircraft.map(item => [
-    item.id,
-    `${item.registration}${item.make || item.model ? ` - ${[item.make, item.model].filter(Boolean).join(' ')}` : ''}`,
-  ])), [aircraft]);
-  const userMap = useMemo(() => new Map(users.map(user => [user.id, user.name || user.email])), [users]);
+  useEffect(() => {
+    if (!effectiveInstructorId || !dateRange.end) return;
+    const loadDuty = async () => {
+      setDutyLoading(true);
+      const rollingStart = addDays(new Date(`${dateRange.start}T00:00:00`), -364);
+      const { data, error: dutyError } = await supabase.from('duty_periods').select('*,duty_breaks(id)').eq('instructor_id', effectiveInstructorId).gte('duty_date', formatDateInput(rollingStart)).lte('duty_date', dateRange.end).in('status', ['active', 'completed']).order('duty_date');
+      if (dutyError) console.error('Failed to load duty report records', dutyError);
+      setDutyRecords(data || []);
+      setDutyLoading(false);
+    };
+    void loadDuty();
+  }, [dateRange.end, dateRange.start, effectiveInstructorId]);
 
   const report = useMemo(() => {
     if (!effectiveInstructorId || !dateRange.start || !dateRange.end) {
@@ -116,28 +144,31 @@ export const FatigueManagementExportTab: React.FC = () => {
     const rangeEnd = endOfLocalDay(new Date(`${dateRange.end}T00:00:00`));
     const rollingStart = addDays(rangeStart, -364);
 
-    const instructorBookings: DutyRow[] = bookings
-      .filter(booking =>
-        booking.instructor_id === effectiveInstructorId &&
-        booking.status !== 'cancelled' &&
-        booking.status !== 'no-show'
-      )
-      .map(booking => {
-        const start = new Date(booking.start_time);
-        const end = new Date(booking.end_time);
+    const instructorBookings: DutyRow[] = dutyRecords
+      .map(record => {
+        const startValue = record.actual_start || record.planned_start;
+        const endValue = record.actual_end || record.planned_end;
+        if (!startValue || !endValue) return null;
+        const start = new Date(startValue);
+        const end = new Date(endValue);
         return {
-          booking,
+          id: record.id,
+          status: record.status,
           start,
           end,
           durationHours: hoursBetween(start, end),
-          aircraft: aircraftMap.get(booking.aircraft_id) || booking.aircraft_id || 'Unknown aircraft',
-          hirer: userMap.get(booking.student_id) || 'Guest / unknown hirer',
+          flightHours: Number(record.flight_minutes || 0) / 60,
+          location: record.location || 'Bendigo',
+          isExternal: Boolean(record.is_external),
+          breakCount: record.duty_breaks?.length || 0,
         };
       })
+      .filter(Boolean) as DutyRow[];
+    const filteredInstructorBookings = instructorBookings
       .filter(row => row.end >= rollingStart && row.start <= rangeEnd)
       .sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    const visibleDuties = instructorBookings.filter(row => row.end >= rangeStart && row.start <= rangeEnd);
+    const visibleDuties = filteredInstructorBookings.filter(row => row.end >= rangeStart && row.start <= rangeEnd);
     const rows: DailyFatigueRow[] = [];
     const allIssues: string[] = [];
 
@@ -161,7 +192,7 @@ export const FatigueManagementExportTab: React.FC = () => {
       const firstStart = new Date(Math.min(...duties.map(row => row.start.getTime())));
       const lastEnd = new Date(Math.max(...duties.map(row => row.end.getTime())));
       const dutySpanHours = hoursBetween(firstStart, lastEnd);
-      const bookedHours = duties.reduce((total, row) => total + row.durationHours, 0);
+      const bookedHours = duties.reduce((total, row) => total + row.flightHours, 0);
       const fdpLimitHours = getCasaAppendix6FdpLimitHours(firstStart);
       const latestFinish = getLatestCasaAppendix6Finish(firstStart);
       const issues: string[] = [];
@@ -169,25 +200,26 @@ export const FatigueManagementExportTab: React.FC = () => {
       if (dutySpanHours > fdpLimitHours) {
         issues.push(`Daily FDP span ${dutySpanHours.toFixed(1)}h exceeds Appendix 6 limit ${fdpLimitHours}h`);
       }
-      if (bookedHours > 7) {
-        issues.push(`Booked flight/supervision time ${bookedHours.toFixed(1)}h exceeds 7h daily control`);
+      if (bookedHours > Number(bookingRules?.fatigue_max_flight_hours_per_day || 7)) {
+        issues.push(`Recorded flight time ${bookedHours.toFixed(1)}h exceeds ${bookingRules?.fatigue_max_flight_hours_per_day || 7}h daily control`);
       }
       if (lastEnd > latestFinish) {
         issues.push('Duty finishes after 01:00 local time following duty start');
       }
 
-      const sortedAll = instructorBookings.filter(row => row.end <= firstStart).sort((a, b) => b.end.getTime() - a.end.getTime());
+      const sortedAll = filteredInstructorBookings.filter(row => row.end <= firstStart).sort((a, b) => b.end.getTime() - a.end.getTime());
       const previousDuty = sortedAll[0];
       if (previousDuty) {
         const restHours = hoursBetween(previousDuty.end, firstStart);
-        if (restHours < 12) {
-          issues.push(`Only ${restHours.toFixed(1)}h off-duty before first duty; minimum is 12h`);
+        const minimumRest = Number(bookingRules?.fatigue_min_rest_hours || 12);
+        if (restHours < minimumRest) {
+          issues.push(`Only ${restHours.toFixed(1)}h off-duty before first duty; minimum is ${minimumRest}h`);
         }
       }
 
       const rollingHours = (days: number) => {
         const start = addDays(dayStart, -(days - 1));
-        return instructorBookings.reduce((total, row) => {
+        return filteredInstructorBookings.reduce((total, row) => {
           if (row.end <= start || row.start > dayEnd) return total;
           const overlapStart = row.start < start ? start : row.start;
           const overlapEnd = row.end > dayEnd ? dayEnd : row.end;
@@ -199,9 +231,11 @@ export const FatigueManagementExportTab: React.FC = () => {
       if (duty7 > 60) issues.push(`Rolling 7-day CRM duty ${duty7.toFixed(1)}h exceeds 60h`);
       const duty14 = rollingHours(14);
       if (duty14 > 100) issues.push(`Rolling 14-day CRM duty ${duty14.toFixed(1)}h exceeds 100h`);
-      const flight28 = rollingHours(28);
+      const flight28Start = addDays(dayStart, -27);
+      const flight28 = filteredInstructorBookings.filter(row => row.end > flight28Start && row.start <= dayEnd).reduce((total, row) => total + row.flightHours, 0);
       if (flight28 > 100) issues.push(`Rolling 28-day CRM flight/supervision ${flight28.toFixed(1)}h exceeds 100h`);
-      const flight365 = rollingHours(365);
+      const flight365Start = addDays(dayStart, -364);
+      const flight365 = filteredInstructorBookings.filter(row => row.end > flight365Start && row.start <= dayEnd).reduce((total, row) => total + row.flightHours, 0);
       if (flight365 > 1000) issues.push(`Rolling 365-day CRM flight/supervision ${flight365.toFixed(1)}h exceeds 1000h`);
 
       rows.push({
@@ -220,7 +254,7 @@ export const FatigueManagementExportTab: React.FC = () => {
     }
 
     return { rows, duties: visibleDuties, issues: allIssues };
-  }, [aircraftMap, bookings, dateRange.end, dateRange.start, effectiveInstructorId, userMap]);
+  }, [bookingRules?.fatigue_max_flight_hours_per_day, bookingRules?.fatigue_min_rest_hours, dateRange.end, dateRange.start, dutyRecords, effectiveInstructorId]);
 
   const exportCsv = () => {
     if (!selectedInstructor) return;
@@ -229,15 +263,15 @@ export const FatigueManagementExportTab: React.FC = () => {
       ['Instructor', selectedInstructor.name, selectedInstructor.email],
       ['Period', dateRange.start, dateRange.end],
       ['Generated', new Date().toLocaleString()],
-      ['Basis', 'CASA CAO 48.1 Appendix 6 flight training planning checks, based on CRM-known bookings only'],
+      ['Basis', 'CASA CAO 48.1 Appendix 6 flight training planning checks, based on recorded Duty periods'],
       [],
       ['Summary'],
-      ['Total duty rows', report.duties.length],
+      ['Total recorded duty periods', report.duties.length],
       ['Days requiring attention', report.rows.filter(row => row.status === 'attention').length],
-      ['Total booked flight/supervision hours', report.duties.reduce((total, row) => total + row.durationHours, 0).toFixed(1)],
+      ['Total recorded flight hours', report.duties.reduce((total, row) => total + row.flightHours, 0).toFixed(1)],
       [],
       ['Daily fatigue review'],
-      ['Date', 'First duty', 'Last duty', 'FDP limit hours', 'Duty span hours', 'Booked hours', 'Status', 'Issues'],
+      ['Date', 'First duty', 'Last duty', 'FDP limit hours', 'Duty span hours', 'Recorded flight hours', 'Status', 'Issues'],
       ...report.rows.map(row => [
         row.date,
         row.firstStart ? formatTime(row.firstStart) : '',
@@ -249,21 +283,22 @@ export const FatigueManagementExportTab: React.FC = () => {
         row.issues.join('; '),
       ]),
       [],
-      ['Booking detail'],
-      ['Date', 'Start', 'End', 'Duration hours', 'Aircraft', 'Hirer', 'Booking status', 'Flight logged'],
+      ['Duty-period detail'],
+      ['Date', 'Start', 'End', 'Duty hours', 'Flight hours', 'Location', 'External duty', 'Breaks', 'Status'],
       ...report.duties.map(row => [
         formatDate(row.start),
         formatTime(row.start),
         formatTime(row.end),
         row.durationHours.toFixed(1),
-        row.aircraft,
-        row.hirer,
-        row.booking.status,
-        row.booking.flight_logged ? 'Yes' : 'No',
+        row.flightHours.toFixed(1),
+        row.location,
+        row.isExternal ? 'Yes' : 'No',
+        row.breakCount,
+        row.status,
       ]),
       [],
       ['Limitations'],
-      ['This export only includes duties recorded in the CRM. Confirm outside flying, non-flying aviation duties, commuting, standby, actual sleep opportunity, illness and instructor fitness for duty separately.'],
+      ['This export uses completed or active Duty records, including external duty entered in the portal. Confirm that all relevant external and non-flying duty has been entered before relying on the report.'],
     ];
 
     const csv = summaryRows.map(row => row.map(csvCell).join(',')).join('\n');
@@ -276,7 +311,7 @@ export const FatigueManagementExportTab: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  if (loading) {
+  if (loading || dutyLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader className="mr-2 h-6 w-6 animate-spin text-blue-500" />
@@ -340,7 +375,7 @@ export const FatigueManagementExportTab: React.FC = () => {
           </button>
         </div>
         <p className="mt-3 text-xs leading-5 text-gray-500">
-          This report uses CASA Appendix 6 flight-training planning limits and CRM bookings. It is a rostering aid, not a substitute for confirming outside duties and fitness for duty.
+          This report uses CASA Appendix 6 flight-training planning limits and actual records from the Duty tab. It remains a planning aid and depends on complete duty declarations.
         </p>
       </div>
 
@@ -348,17 +383,17 @@ export const FatigueManagementExportTab: React.FC = () => {
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-600">
             <CalendarDays className="h-4 w-4" />
-            Booked duties
+            Recorded duties
           </div>
           <p className="mt-2 text-2xl font-bold text-gray-900">{report.duties.length}</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-600">
             <ShieldCheck className="h-4 w-4" />
-            Booked hours
+            Recorded flight hours
           </div>
           <p className="mt-2 text-2xl font-bold text-gray-900">
-            {report.duties.reduce((total, row) => total + row.durationHours, 0).toFixed(1)}
+            {report.duties.reduce((total, row) => total + row.flightHours, 0).toFixed(1)}
           </p>
         </div>
         <div className={`rounded-xl border p-4 shadow-sm ${report.issues.length ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
@@ -375,7 +410,7 @@ export const FatigueManagementExportTab: React.FC = () => {
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-200 px-5 py-4">
           <h3 className="font-semibold text-gray-900">Daily fatigue review</h3>
-          <p className="mt-1 text-sm text-gray-500">Days without a CRM booking are included so the off-duty pattern is visible.</p>
+          <p className="mt-1 text-sm text-gray-500">Days without a Duty record remain visible; confirm they were genuinely off duty.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -396,7 +431,7 @@ export const FatigueManagementExportTab: React.FC = () => {
                     {row.firstStart && row.lastEnd ? `${formatTime(row.firstStart)} - ${formatTime(row.lastEnd)}` : 'Off duty in CRM'}
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-sm text-gray-700">
-                    {row.bookedHours.toFixed(1)} booked / {row.dutySpanHours.toFixed(1)} span
+                    {row.bookedHours.toFixed(1)} flight / {row.dutySpanHours.toFixed(1)} duty
                   </td>
                   <td className="whitespace-nowrap px-5 py-3">
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${row.status === 'attention' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -404,7 +439,7 @@ export const FatigueManagementExportTab: React.FC = () => {
                     </span>
                   </td>
                   <td className="min-w-[260px] px-5 py-3 text-sm text-gray-600">
-                    {row.issues.length ? row.issues.join('; ') : row.duties.length ? 'No CRM-detected fatigue issue.' : 'No CRM duty recorded.'}
+                    {row.issues.length ? row.issues.join('; ') : row.duties.length ? 'No recorded-duty fatigue issue.' : 'No Duty record entered.'}
                   </td>
                 </tr>
               ))}

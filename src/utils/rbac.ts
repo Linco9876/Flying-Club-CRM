@@ -5,6 +5,7 @@ export type Action =
   | 'view-dashboard'
   | 'view-calendar'
   | 'view-bookings'
+  | 'view-duty'
   | 'view-students'
   | 'view-aircraft'
   | 'view-maintenance'
@@ -35,6 +36,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-dashboard', resource: 'all' },
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'all' },
+    { action: 'view-duty', resource: 'all' },
     { action: 'view-students', resource: 'all' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
@@ -60,6 +62,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-dashboard', resource: 'all' },
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'all' },
+    { action: 'view-duty', resource: 'all' },
     { action: 'view-students', resource: 'all' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
@@ -80,6 +83,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-dashboard', resource: 'all' },
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'all' },
+    { action: 'view-duty', resource: 'all' },
     { action: 'view-students', resource: 'all' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
@@ -198,6 +202,7 @@ export const getAuthorizedMenuItems = (user: User | null) => {
   const allMenuItems: { id: string; label: string; action: Action; resource?: Resource; roles?: UserRole[] }[] = [
     { id: 'dashboard', label: 'Dashboard', action: 'view-dashboard' },
     { id: 'calendar', label: 'Calendar', action: 'view-calendar' },
+    { id: 'duty', label: 'Duty', action: 'view-duty', resource: 'all', roles: ['admin', 'senior_instructor', 'instructor'] },
     { id: 'students', label: 'Members', action: 'view-students' },
     { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' },
     { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' },
@@ -253,6 +258,7 @@ export const getAuthorizedSettingsSections = (user: User | null) => {
     { id: 'organisation', label: 'Organisation', roles: ['admin'] as UserRole[] },
     { id: 'calendar', label: 'Calendar', roles: ['admin'] as UserRole[] },
     { id: 'booking-rules', label: 'Bookings & Rules', roles: ['admin'] as UserRole[] },
+    { id: 'duty-supervision', label: 'Duty & Supervision', roles: ['admin'] as UserRole[] },
     { id: 'roster', label: 'Roster & Availability', roles: ['admin', 'instructor'] as UserRole[] },
     { id: 'training', label: 'Training / Syllabus', roles: ['admin', 'instructor'] as UserRole[] },
     { id: 'billing', label: 'Billing & Rates', roles: ['admin'] as UserRole[] },

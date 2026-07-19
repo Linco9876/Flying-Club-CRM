@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Booking, FlightLog, GroundSessionLog } from '../types';
+import { Booking, DutyAssessment, FlightLog, GroundSessionLog } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useBookingRulesSettings, useCalendarSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
@@ -20,7 +20,11 @@ const getMissingSchemaColumn = (error: unknown) => {
   return match?.[1] || null;
 };
 
-const OPTIONAL_BOOKING_COLUMNS = new Set(['booking_kind', 'has_conflict', 'ground_session_logged']);
+const OPTIONAL_BOOKING_COLUMNS = new Set([
+  'booking_kind', 'has_conflict', 'ground_session_logged', 'location',
+  'duty_override_reason', 'duty_assessment', 'supervision_required',
+  'supervision_status', 'supervising_instructor_id',
+]);
 
 export interface BookingCancellationInput {
   reasonId?: string;
@@ -76,6 +80,12 @@ export const useBookings = (enabled = true) => {
         'cancelled_by',
         'waitlist_reason',
         'waitlisted_by_defect_id',
+        'location',
+        'duty_override_reason',
+        'duty_assessment',
+        'supervision_required',
+        'supervision_status',
+        'supervising_instructor_id',
       ].filter(field => !missingOptionalBookingColumnsRef.current.has(field)).join(',');
   const flightLogCalendarFields = [
     'id',
@@ -128,6 +138,12 @@ export const useBookings = (enabled = true) => {
     cancelledBy: row.cancelled_by || undefined,
     waitlistReason: row.waitlist_reason || undefined,
     waitlistedByDefectId: row.waitlisted_by_defect_id || undefined,
+    location: row.location || 'Bendigo',
+    dutyOverrideReason: row.duty_override_reason || undefined,
+    dutyAssessment: row.duty_assessment || undefined,
+    supervisionRequired: Boolean(row.supervision_required),
+    supervisionStatus: row.supervision_status || 'not_required',
+    supervisingInstructorId: row.supervising_instructor_id || undefined,
   });
 
   const retryWithoutMissingOptionalColumn = async <T,>(
@@ -504,6 +520,38 @@ export const useBookings = (enabled = true) => {
     toast(warnings.join(' '));
   };
 
+  const assessDutyBooking = async (
+    bookingData: Pick<Booking, 'instructorId' | 'startTime' | 'endTime' | 'dutyOverrideReason'>,
+    excludingBookingId?: string
+  ) => {
+    if (!bookingRules?.fatigue_rules_enabled || !bookingData.instructorId) {
+      return { assessment: null as DutyAssessment | null, overrideReason: bookingData.dutyOverrideReason };
+    }
+    const { data, error: assessmentError } = await supabase.rpc('assess_instructor_duty_booking', {
+      p_instructor_id: bookingData.instructorId,
+      p_start: new Date(bookingData.startTime).toISOString(),
+      p_end: new Date(bookingData.endTime).toISOString(),
+      p_exclude_booking_id: excludingBookingId || null,
+    });
+    if (assessmentError) {
+      console.error('Server duty assessment failed', assessmentError);
+      throw new Error('The duty assessment could not be completed. The booking has not been saved.');
+    }
+    const assessment = data as DutyAssessment;
+    if (assessment?.result !== 'warning') {
+      return { assessment, overrideReason: undefined };
+    }
+    if (bookingData.dutyOverrideReason?.trim().length && bookingData.dutyOverrideReason.trim().length >= 10) {
+      return { assessment, overrideReason: bookingData.dutyOverrideReason.trim() };
+    }
+    const warningText = (assessment.warnings || []).map(warning => `• ${warning.message}`).join('\n');
+    const reason = window.prompt(`Duty-limit warning\n\n${warningText}\n\nYou may continue, but must provide a reason (at least 10 characters):`);
+    if (!reason || reason.trim().length < 10) {
+      throw new Error('Booking cancelled: a reason of at least 10 characters is required to continue after a duty warning.');
+    }
+    return { assessment, overrideReason: reason.trim() };
+  };
+
   const fetchBookings = async () => {
     if (!enabled) {
       setBookings([]);
@@ -736,7 +784,7 @@ export const useBookings = (enabled = true) => {
   ) => bookings.filter(existing =>
     existing.id !== excludingBookingId &&
     !existing.hasConflict &&
-    existing.status === 'confirmed' &&
+    (existing.status === 'confirmed' || existing.status === 'pending_supervision') &&
     timeRangesOverlap(bookingData.startTime, bookingData.endTime, existing.startTime, existing.endTime) &&
     (
       existing.aircraftId === bookingData.aircraftId ||
@@ -759,7 +807,7 @@ export const useBookings = (enabled = true) => {
 
       const activeConfirmed = data.filter((booking: any) =>
       !booking.deleted_at &&
-      booking.status === 'confirmed' && !booking.has_conflict
+      (booking.status === 'confirmed' || booking.status === 'pending_supervision') && !booking.has_conflict
     );
     const waitlisted = data.filter((booking: any) =>
       !booking.deleted_at &&
@@ -863,7 +911,7 @@ export const useBookings = (enabled = true) => {
       }
 
       await assertInstructorAvailable(bookingData);
-      assertFatigueRules(bookingData);
+      const dutyResult = await assessDutyBooking(bookingData);
 
       const conflicts = findConfirmedConflicts(bookingData);
       const isWaitlisted = conflicts.length > 0;
@@ -892,6 +940,8 @@ export const useBookings = (enabled = true) => {
         guest_name: bookingData.isGuestBooking ? resolvedGuestName || null : null,
         guest_email: bookingData.isGuestBooking ? resolvedGuestEmail || null : null,
         guest_phone: bookingData.isGuestBooking ? resolvedGuestPhone || null : null,
+        location: bookingData.location?.trim() || 'Bendigo',
+        duty_override_reason: dutyResult.overrideReason || null,
       };
 
       console.log('Insert data:', insertData);
@@ -1053,7 +1103,8 @@ export const useBookings = (enabled = true) => {
         bookingData.endTime !== undefined
       )) {
         await assertInstructorAvailable(candidateBooking);
-        assertFatigueRules(candidateBooking, id);
+        const dutyResult = await assessDutyBooking(candidateBooking, id);
+        updateData.duty_override_reason = dutyResult.overrideReason || null;
       }
       if (isWaitlisted && calendarSettings?.conflict_rules === 'block') {
         throw new Error('This booking conflicts with an existing confirmed booking');
@@ -1334,7 +1385,7 @@ export const useBookings = (enabled = true) => {
       const conflicts = (activeBookings || []).filter((existing: any) =>
         existing.id !== bookingId &&
         !existing.has_conflict &&
-        existing.status === 'confirmed' &&
+        (existing.status === 'confirmed' || existing.status === 'pending_supervision') &&
         timeRangesOverlap(
           bookingToApprove.start_time,
           bookingToApprove.end_time,

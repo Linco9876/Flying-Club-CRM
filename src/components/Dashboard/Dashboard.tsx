@@ -80,6 +80,7 @@ const AlertItem: React.FC<{
 const statusColors: Record<string, string> = {
   confirmed: 'bg-green-100 text-green-800',
   pending_approval: 'bg-amber-100 text-amber-800',
+  pending_supervision: 'bg-orange-100 text-orange-800',
   cancelled: 'bg-red-100 text-red-800',
   completed: 'bg-blue-100 text-blue-800',
 };
@@ -197,7 +198,7 @@ export const Dashboard: React.FC = () => {
                         </p>
                       </div>
                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {booking.status === 'pending_approval' ? 'Pending' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                        {booking.status === 'pending_approval' ? 'Pending approval' : booking.status === 'pending_supervision' ? 'Pending supervision' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </span>
                     </div>
                   ))}
@@ -284,7 +285,7 @@ export const Dashboard: React.FC = () => {
                         </p>
                       </div>
                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {booking.status === 'pending_approval' ? 'Pending' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                        {booking.status === 'pending_approval' ? 'Pending approval' : booking.status === 'pending_supervision' ? 'Pending supervision' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </span>
                     </div>
                   ))}
@@ -372,7 +373,7 @@ export const Dashboard: React.FC = () => {
                         </p>
                       </div>
                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {booking.status === 'pending_approval' ? 'Pending' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                        {booking.status === 'pending_approval' ? 'Pending approval' : booking.status === 'pending_supervision' ? 'Pending supervision' : booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </span>
                     </div>
                   ))}

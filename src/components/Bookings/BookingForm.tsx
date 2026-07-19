@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2 } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -9,7 +9,7 @@ import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
-import { Booking } from '../../types';
+import { Booking, DutyAssessment } from '../../types';
 import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
@@ -39,6 +39,7 @@ interface BookingFormProps {
     guestEmail?: string;
     guestPhone?: string;
     trialFlightVoucherId?: string;
+    location?: string;
   };
 }
 
@@ -96,6 +97,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         guestEmail: booking.guestEmail || '',
         guestPhone: booking.guestPhone || '',
         trialFlightVoucherId: booking.trialFlightVoucherId || '',
+        location: booking.location || 'Bendigo',
       };
     }
 
@@ -116,6 +118,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       guestEmail: prefilledData?.guestEmail || '',
       guestPhone: prefilledData?.guestPhone || '',
       trialFlightVoucherId: prefilledData?.trialFlightVoucherId || '',
+      location: prefilledData?.location || 'Bendigo',
     };
   }, [
     booking?.id,
@@ -130,6 +133,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     booking?.guestEmail,
     booking?.guestPhone,
     booking?.trialFlightVoucherId,
+    booking?.location,
     booking?.startTime,
     booking?.endTime,
     prefilledData?.date,
@@ -147,6 +151,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     prefilledData?.guestEmail,
     prefilledData?.guestPhone,
     prefilledData?.trialFlightVoucherId,
+    prefilledData?.location,
     isKioskMode,
     user?.id,
   ]);
@@ -202,6 +207,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     needsStaffLicence: boolean;
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dutyWarningState, setDutyWarningState] = useState<{ assessment: DutyAssessment; pendingData: typeof formData & { dutyOverrideReason?: string }; reason: string } | null>(null);
   const [sendVoucherUpdateEmail, setSendVoucherUpdateEmail] = useState<boolean | null>(null);
   const roleBasedInstructors = getInstructors().map((instructor) => ({
     id: instructor.id,
@@ -595,7 +601,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     return { startDateTime, endDateTime };
   };
 
-  const submitBookingData = async (data: typeof formData & { status?: Booking['status'] }) => {
+  const submitBookingData = async (data: typeof formData & { status?: Booking['status']; dutyOverrideReason?: string }) => {
     if (isSubmitting || isLoading) return;
     setIsSubmitting(true);
     try {
@@ -611,10 +617,27 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           }
         : data.trialFlightVoucherId
         ? { ...data, flightTypeId: '', paymentType: 'Gift Voucher' }
-        : {
+          : {
             ...data,
             paymentType: derivePaymentTypeForFlightType(data.flightTypeId) || data.paymentType,
           };
+      if (bookingRules?.fatigue_rules_enabled && normalisedBookingData.instructorId && !normalisedBookingData.dutyOverrideReason) {
+        const assessmentStart = new Date(`${normalisedBookingData.date}T${normalisedBookingData.startTime}:00`);
+        const assessmentEnd = new Date(`${normalisedBookingData.endDate}T${normalisedBookingData.endTime}:00`);
+        const { data: assessmentData, error: assessmentError } = await supabase.rpc('assess_instructor_duty_booking', {
+          p_instructor_id: normalisedBookingData.instructorId,
+          p_start: assessmentStart.toISOString(),
+          p_end: assessmentEnd.toISOString(),
+          p_exclude_booking_id: booking?.id || null,
+        });
+        if (assessmentError) throw new Error('The duty assessment could not be completed. The booking has not been saved.');
+        const assessment = assessmentData as DutyAssessment;
+        if (assessment.result === 'warning') {
+          setDutyWarningState({ assessment, pendingData: normalisedBookingData, reason: '' });
+          setIsSubmitting(false);
+          return;
+        }
+      }
       await onSubmit({
         ...normalisedBookingData,
         recurrence: !isEdit && !normalisedBookingData.isGuestBooking && recurrence.enabled ? recurrence : undefined,
@@ -1232,6 +1255,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
+          {!isLoading && !isGroundSessionBooking && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600"><MapPin className="mr-1 inline h-3.5 w-3.5" />Location</label>
+              <input value={formData.location} onChange={event => setFormData(prev => ({ ...prev, location: event.target.value }))} className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Bendigo" />
+              <p className="mt-1 text-[11px] text-gray-500">Used to match authorised supervision coverage.</p>
+            </div>
+          )}
+
           {!isLoading && isVoucherBookingEdit && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
               <div className="flex items-start gap-2">
@@ -1465,6 +1496,24 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         )}
       </div>
     </div>
+    {dutyWarningState && (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4">
+        <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-5 py-4">
+            <div className="rounded-full bg-amber-100 p-2 text-amber-700"><AlertTriangle className="h-5 w-5" /></div>
+            <div><h3 className="font-bold text-amber-950">Duty-limit warning</h3><p className="mt-1 text-sm text-amber-900">This forecast uses recorded Duty history plus bookings for the proposed day.</p></div>
+          </div>
+          <div className="space-y-4 px-5 py-4">
+            <ul className="space-y-2">
+              {dutyWarningState.assessment.warnings.map(warning => <li key={warning.code} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"><span className="font-bold">{warning.code.replaceAll('_', ' ')}:</span> {warning.message}</li>)}
+            </ul>
+            <label className="block text-sm font-bold text-gray-800">Reason for continuing <span className="text-red-600">*</span><textarea value={dutyWarningState.reason} onChange={event => setDutyWarningState(current => current ? { ...current, reason: event.target.value } : current)} rows={3} placeholder="Explain why this booking is being made despite the warning…" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" /></label>
+            <p className="text-xs text-gray-500">The reason, calculation and person continuing will be retained in the audit record.</p>
+          </div>
+          <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4"><button type="button" onClick={() => setDutyWarningState(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700">Go back</button><button type="button" disabled={dutyWarningState.reason.trim().length < 10} onClick={() => { const pending = dutyWarningState.pendingData; const reason = dutyWarningState.reason.trim(); setDutyWarningState(null); void submitBookingData({ ...pending, dutyOverrideReason: reason }); }} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">Continue with reason</button></div>
+        </div>
+      </div>
+    )}
     {safetyWarningState && (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
         <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">

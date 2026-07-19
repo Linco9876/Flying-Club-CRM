@@ -29,6 +29,7 @@ import { usePageLoadState } from '../../context/PageLoadContext';
 const OrganisationSettings = lazy(() => import('./OrganisationSettings').then(module => ({ default: module.OrganisationSettings })));
 const CalendarSettings = lazy(() => import('./CalendarSettings').then(module => ({ default: module.CalendarSettings })));
 const BookingRulesSettings = lazy(() => import('./BookingRulesSettings').then(module => ({ default: module.BookingRulesSettings })));
+const DutySupervisionSettings = lazy(() => import('./DutySupervisionSettings').then(module => ({ default: module.DutySupervisionSettings })));
 const NotificationsSettings = lazy(() => import('./NotificationsSettings').then(module => ({ default: module.NotificationsSettings })));
 const SafetyComplianceSettings = lazy(() => import('./SafetyComplianceSettings').then(module => ({ default: module.SafetyComplianceSettings })));
 const MaintenanceSettings = lazy(() => import('./MaintenanceSettings').then(module => ({ default: module.MaintenanceSettings })));
@@ -87,6 +88,7 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'resources', label: 'Resources (Aircraft & Rooms)', category: 'Club Setup', keywords: ['aircraft fields', 'rooms', 'documents', 'instructor roster'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
     { id: 'calendar', label: 'Calendar', category: 'Operations', keywords: ['default view', 'week starts', 'resource order', 'snap duration', 'conflicts'], icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
     { id: 'booking-rules', label: 'Bookings & Rules', category: 'Operations', keywords: ['advance booking', 'notice', 'cancellation', 'solo approval', 'double booking', 'booking form', 'required fields'], icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },
+    { id: 'duty-supervision', label: 'Duty & Supervision', category: 'Operations', keywords: ['duty', 'fatigue', 'supervision', 'senior instructor', 'priority', 'authorised'], icon: <UserCheck className="h-4 w-4" />, roles: ['admin'], component: DutySupervisionSettings },
     { id: 'roster', label: 'Roster & Availability', category: 'Operations', keywords: ['instructor availability', 'absence', 'weekly schedule', 'duty hours'], icon: <Users className="h-4 w-4" />, roles: ['admin', 'instructor'], component: RosterAvailabilitySettings },
     { id: 'maintenance', label: 'Maintenance', category: 'Operations', keywords: ['defects', 'grounding', 'maintenance reminders', 'milestones'], icon: <Wrench className="h-4 w-4" />, roles: ['admin', 'instructor'], component: MaintenanceSettings },
     { id: 'safety', label: 'Safety & Compliance', category: 'Operations', keywords: ['incidents', 'currency', 'medical', 'checklists', 'compliance'], icon: <Shield className="h-4 w-4" />, roles: ['admin', 'instructor'], component: SafetyComplianceSettings },

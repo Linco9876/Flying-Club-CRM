@@ -55,6 +55,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   const { settings: portalSettings } = usePortalUxSettings();
   const isGroundSession = booking.bookingKind === 'ground';
   const isCancelledBooking = booking.status === 'cancelled' || Boolean(booking.deletedAt);
+  const supervisionCovered = !booking.supervisionRequired || (Boolean(booking.supervisingInstructorId) && booking.supervisionStatus !== 'pending');
+  const effectiveCanLogFlight = canLogFlight && supervisionCovered;
   const logLabel = isGroundSession ? 'Log Ground Session' : 'Log Flight';
   const editLogLabel = isGroundSession ? 'Edit Ground Session Log' : 'Edit Flight Log';
   const deleteLogLabel = isGroundSession ? 'Delete Ground Session Log' : 'Delete Flight Log';
@@ -182,7 +184,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
         </button>
       )}
 
-      {canLogFlight && isFlightLogged ? (
+      {effectiveCanLogFlight && isFlightLogged ? (
         <>
           {onEditFlightLog && (
             <button
@@ -203,7 +205,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
             </button>
           )}
         </>
-      ) : canLogFlight ? (
+      ) : effectiveCanLogFlight ? (
         <button
           onClick={() => handleAction(onLogFlight)}
           className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2 transition-colors"
@@ -211,6 +213,8 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
           <FileText className="h-4 w-4" />
           <span>{logLabel}</span>
         </button>
+      ) : booking.supervisionRequired && !supervisionCovered ? (
+        <div className="px-4 py-2 text-xs font-semibold text-orange-700">Flight logging is unavailable while supervision is pending.</div>
       ) : null}
 
       {hasTrainingRecord && onViewTrainingRecord && (

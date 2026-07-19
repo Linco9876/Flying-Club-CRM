@@ -34,6 +34,7 @@ const MaintenanceBoard = lazy(() => import('./components/Maintenance/Maintenance
 const BillingDashboard = lazy(() => import('./components/Billing/BillingDashboard').then(module => ({ default: module.BillingDashboard })));
 const ReportsDashboard = lazy(() => import('./components/Reports/ReportsDashboard').then(module => ({ default: module.ReportsDashboard })));
 const SafetyDashboard = lazy(() => import('./components/Safety/SafetyDashboard').then(module => ({ default: module.SafetyDashboard })));
+const DutyDashboard = lazy(() => import('./components/Duty/DutyDashboard').then(module => ({ default: module.DutyDashboard })));
 const SafetyLoginWarningModal = lazy(() => import('./components/Safety/SafetyLoginWarningModal').then(module => ({ default: module.SafetyLoginWarningModal })));
 const TrainingRecordForm = lazy(() => import('./components/Training/TrainingRecordForm').then(module => ({ default: module.TrainingRecordForm })));
 const TrainingWorkspacePage = lazy(() => import('./components/Training/TrainingWorkspacePage').then(module => ({ default: module.TrainingWorkspacePage })));
@@ -530,6 +531,8 @@ const KioskAuthenticatedRoute: React.FC<{
           guestEmail: bookingData.guestEmail || undefined,
           guestPhone: bookingData.guestPhone || undefined,
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+          location: bookingData.location || 'Bendigo',
+          dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
         });
     } else {
       const recurrence = bookingData.recurrence;
@@ -555,6 +558,8 @@ const KioskAuthenticatedRoute: React.FC<{
             guestEmail: bookingData.guestEmail || undefined,
             guestPhone: bookingData.guestPhone || undefined,
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+            location: bookingData.location || 'Bendigo',
+            dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
           }, { silent: occurrenceCount > 1 });
         }
 
@@ -755,6 +760,8 @@ const AuthenticatedApp: React.FC<{
           guestEmail: bookingData.guestEmail || undefined,
           guestPhone: bookingData.guestPhone || undefined,
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+          location: bookingData.location || 'Bendigo',
+          dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
         });
     } else {
       const recurrence = bookingData.recurrence;
@@ -780,6 +787,8 @@ const AuthenticatedApp: React.FC<{
             guestEmail: bookingData.guestEmail || undefined,
             guestPhone: bookingData.guestPhone || undefined,
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
+            location: bookingData.location || 'Bendigo',
+            dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
           }, { silent: occurrenceCount > 1 });
         }
 
@@ -888,6 +897,8 @@ const AuthenticatedApp: React.FC<{
         return <StudentList />;
       case 'aircraft':
         return <AircraftList />;
+      case 'duty':
+        return <DutyDashboard />;
       case 'maintenance':
         return <MaintenanceBoard />;
       case 'billing':
@@ -1005,6 +1016,7 @@ const viewPathMap: Record<string, string> = {
   calendar: '/calendar',
   students: '/students',
   aircraft: '/aircraft',
+  duty: '/duty',
   maintenance: '/maintenance',
   training: '/training',
   'learning-centre': '/learning-centre',
@@ -1051,6 +1063,7 @@ const getRequiredActionForView = (view: string) => {
     'calendar': 'view-calendar',
     'students': 'view-students',
     'aircraft': 'view-aircraft',
+    'duty': 'view-duty',
     'maintenance': 'view-maintenance',
     'training': 'view-training',
     'learning-centre': 'view-learning-centre',

@@ -770,6 +770,11 @@ export const Calendar: React.FC<CalendarProps> = ({
     return displayUsers.find((u) => u.id === booking.instructorId)?.name || 'Unknown Instructor';
   };
 
+  const getSupervisingInstructorName = (booking: Booking) => {
+    if (!booking.supervisingInstructorId) return '';
+    return displayUsers.find((u) => u.id === booking.supervisingInstructorId)?.name || booking.supervisingInstructorName || 'Senior instructor';
+  };
+
   const getAircraftName = (booking: Booking) => {
     if (booking.bookingKind === 'ground') return 'Ground session';
     const bookedAircraft = aircraftForLookup.find((a) => a.id === booking.aircraftId);
@@ -787,7 +792,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const passesCalendarFilters = (booking: Booking) => {
     if (isCancelledBooking(booking)) return showCancelledBookings;
     if (!showWaitlistedBookings && booking.hasConflict) return false;
-    if (!showPendingBookings && booking.status === 'pending_approval') return false;
+    if (!showPendingBookings && (booking.status === 'pending_approval' || booking.status === 'pending_supervision')) return false;
     return true;
   };
 
@@ -933,6 +938,10 @@ export const Calendar: React.FC<CalendarProps> = ({
       return 'bg-amber-100/90 border-amber-500 hover:bg-amber-100 text-amber-950';
     }
 
+    if (booking.status === 'pending_supervision') {
+      return 'bg-orange-100/90 border-orange-500 hover:bg-orange-100 text-orange-950';
+    }
+
     if (booking.status === 'cancelled') {
       return 'bg-gray-100/90 border-gray-500 hover:bg-gray-100 text-gray-800';
     }
@@ -974,6 +983,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       ? truncateNotes(booking.notes, estimatedHeight >= 120 ? 84 : 48)
       : '';
     const hirerName = getHirerName(booking);
+    const supervisingName = getSupervisingInstructorName(booking);
 
     if (density === 'name-only') {
       return (
@@ -1001,6 +1011,9 @@ export const Calendar: React.FC<CalendarProps> = ({
               {instructorName}
             </div>
           )}
+          {supervisingName && (
+            <div className="truncate text-[9px] leading-tight opacity-75">Supervised by {supervisingName}</div>
+          )}
           {notes && (
             <div className="mt-auto line-clamp-2 text-[10px] leading-tight opacity-90">
               {notes}
@@ -1023,6 +1036,9 @@ export const Calendar: React.FC<CalendarProps> = ({
             {getAircraftName(booking)}
           </div>
         )}
+        {supervisingName && (
+          <div className="truncate text-[9px] leading-tight opacity-75">Supervised by {supervisingName}</div>
+        )}
         {notes && (
           <div className="mt-auto line-clamp-2 text-[10px] leading-tight opacity-90">
             {notes}
@@ -1037,6 +1053,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     const aircraftName = getAircraftName(booking);
     const notes = canSeePrivateBookingDetails(booking) ? truncateNotes(booking.notes, 110) : '';
     const isLogged = isBookingFlightLogged(booking);
+    const supervisingName = getSupervisingInstructorName(booking);
     const statusLabel = booking.hasConflict
       ? 'Waitlist'
       : isLogged
@@ -1045,6 +1062,8 @@ export const Calendar: React.FC<CalendarProps> = ({
           ? 'Unlogged'
           : booking.status === 'pending_approval'
             ? 'Pending'
+            : booking.status === 'pending_supervision'
+              ? 'Pending supervision'
             : booking.status === 'cancelled'
               ? 'Cancelled'
               : 'Confirmed';
@@ -1096,6 +1115,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             {notes}
           </p>
         )}
+        {supervisingName && <p className="mt-2 text-[11px] font-medium opacity-75">Supervised by {supervisingName}</p>}
       </button>
     );
   };

@@ -121,7 +121,7 @@ export interface Booking {
   endTime: Date;
   paymentType: string;
   notes?: string;
-  status: 'confirmed' | 'cancelled' | 'completed' | 'no-show' | 'pending_approval';
+  status: 'confirmed' | 'cancelled' | 'completed' | 'no-show' | 'pending_approval' | 'pending_supervision';
   bookingKind?: 'flight' | 'ground';
   hasConflict?: boolean;
   deletedAt?: Date;
@@ -146,6 +146,70 @@ export interface Booking {
   guestName?: string;
   guestEmail?: string;
   guestPhone?: string;
+  location?: string;
+  dutyOverrideReason?: string;
+  dutyAssessment?: DutyAssessment;
+  supervisionRequired?: boolean;
+  supervisionStatus?: 'not_required' | 'pending' | 'assigned' | 'acknowledged';
+  supervisingInstructorId?: string;
+  supervisingInstructorName?: string;
+}
+
+export interface DutyWarning {
+  code: string;
+  severity: 'warning' | 'cannot_assess';
+  message: string;
+}
+
+export interface DutyAssessment {
+  result: 'clear' | 'warning' | 'cannot_assess';
+  warnings: DutyWarning[];
+  ruleCodes?: string[];
+  forecastStart?: string;
+  forecastEnd?: string;
+  forecastDutyHours?: number;
+  forecastBookedHours?: number;
+  effectiveDailyLimitHours?: number;
+  previousRecordedDutyEnd?: string | null;
+  rolling7DutyHours?: number;
+  rolling14DutyHours?: number;
+  rolling28FlightHours?: number;
+  rolling365FlightHours?: number;
+  dataSource?: string;
+  engineVersion?: string;
+}
+
+export interface DutyBreak {
+  id: string;
+  dutyPeriodId: string;
+  breakStart: Date;
+  breakEnd: Date;
+  breakType: 'break' | 'rest' | 'split_duty_rest';
+  freeOfDuty: boolean;
+  affectsCalculation: boolean;
+  facility?: string;
+  notes?: string;
+}
+
+export interface DutyPeriod {
+  id: string;
+  instructorId: string;
+  instructorName?: string;
+  dutyDate: string;
+  plannedStart?: Date;
+  plannedEnd?: Date;
+  actualStart?: Date;
+  actualEnd?: Date;
+  location: string;
+  status: 'draft' | 'active' | 'completed';
+  isExternal: boolean;
+  externalOrganisation?: string;
+  flightMinutes: number;
+  notes?: string;
+  amendmentReason?: string;
+  breaks: DutyBreak[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export type TrialFlightVoucherAircraftMode = 'tecnam' | 'archer' | 'specific';

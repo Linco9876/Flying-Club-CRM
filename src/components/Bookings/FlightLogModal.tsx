@@ -522,6 +522,10 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   };
 
   const saveFlightLog = async (logData: any) => {
+    if (booking.supervisionRequired && (booking.supervisionStatus === 'pending' || !booking.supervisingInstructorId)) {
+      toast.error('This flight is pending supervision and cannot be logged until an authorised senior instructor is available.');
+      return;
+    }
     setSubmissionMessage(mode === 'edit'
       ? 'Saving the flight log and updating linked billing records...'
       : 'Logging the flight and syncing billing, Xero and payment records...');

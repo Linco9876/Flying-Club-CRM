@@ -98,6 +98,18 @@ export const useInstructorAvailability = (instructorId?: string) => {
     throw new Error(message);
   };
 
+  const confirmSupervisionImpact = async (targetUserId: string, context: string) => {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('id,start_time,end_time')
+      .eq('supervising_instructor_id', targetUserId)
+      .in('supervision_status', ['assigned', 'acknowledged'])
+      .gte('end_time', new Date().toISOString());
+    if (error || !data?.length) return;
+    const confirmed = window.confirm(`${context} currently affects ${data.length} upcoming supervised ${data.length === 1 ? 'booking' : 'bookings'}. The system will attempt reassignment; any booking without replacement coverage will return to pending supervision. Continue?`);
+    if (!confirmed) throw new Error('Availability change cancelled');
+  };
+
   const getAbsenceOwner = async (id: string) => {
     const existing = absences.find(item => item.id === id);
     if (existing) return existing.userId;
@@ -214,6 +226,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
   const upsertWeeklySchedule = async (schedule: Omit<WeeklySchedule, 'id'>) => {
     try {
+      if (!schedule.isAvailable) await confirmSupervisionImpact(schedule.userId, 'This weekly availability change');
       const { error } = await supabase
         .from('instructor_weekly_schedules')
         .upsert({
@@ -248,6 +261,8 @@ export const useInstructorAvailability = (instructorId?: string) => {
     if (schedules.length === 0) return;
 
     try {
+      const unavailable = schedules.find(schedule => !schedule.isAvailable);
+      if (unavailable) await confirmSupervisionImpact(unavailable.userId, 'This weekly availability change');
       const rows = schedules.map(schedule => ({
         user_id: schedule.userId,
         instructor_id: schedule.userId,
@@ -301,6 +316,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
   const addAbsence = async (absence: Omit<Absence, 'id'>) => {
     try {
       requireAbsencePermission(absence.userId);
+      await confirmSupervisionImpact(absence.userId, 'This absence');
 
       const { error } = await supabase
         .from('instructor_absences')
@@ -330,6 +346,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
     try {
       const ownerId = await getAbsenceOwner(id);
       requireAbsencePermission(ownerId);
+      if (ownerId) await confirmSupervisionImpact(ownerId, 'This absence change');
 
       const updateData: any = { updated_at: new Date().toISOString() };
 
@@ -381,6 +398,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
 
   const addScheduleChange = async (change: Omit<ScheduleChange, 'id'>) => {
     try {
+      if (!change.isAvailable) await confirmSupervisionImpact(change.userId, 'This schedule change');
       const { error } = await supabase
         .from('instructor_schedule_changes')
         .insert({

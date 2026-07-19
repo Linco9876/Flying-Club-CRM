@@ -254,6 +254,8 @@ export const BookingsList: React.FC<BookingsListProps> = ({
         return 'bg-green-100 text-green-800 border-green-200';
       case 'pending_approval':
         return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'pending_supervision':
+        return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'cancelled':
         return 'bg-red-100 text-red-800 border-red-200';
       case 'completed':
@@ -373,6 +375,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 <option value="">Any status</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="pending_approval">Pending approval</option>
+                <option value="pending_supervision">Pending supervision</option>
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
                 <option value="no-show">No-show</option>
@@ -488,7 +491,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                 </div>
                 <div className="flex items-center space-x-3">
                   <span className={`inline-flex px-3 py-1 text-xs font-medium rounded-full border ${getStatusColor(booking.status)}`}>
-                    {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                    {booking.status.replaceAll('_', ' ').replace(/^./, value => value.toUpperCase())}
                   </span>
                   
                   {/* Action Menu - Always Rendered */}
@@ -572,6 +575,12 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                   )}
                 </div>
               </div>
+              {booking.supervisingInstructorId && (
+                <p className="mt-2 text-[11px] font-medium text-gray-500">Supervising senior instructor: {getPersonName(booking.supervisingInstructorId)}</p>
+              )}
+              {booking.supervisionRequired && booking.supervisionStatus === 'pending' && (
+                <p className="mt-2 text-xs font-semibold text-orange-700">Pending — no authorised senior instructor is currently available.</p>
+              )}
               
               {booking.status === 'completed' && (
                 <button 
