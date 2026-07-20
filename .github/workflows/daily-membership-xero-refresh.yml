@@ -1,0 +1,59 @@
+name: Daily Membership Xero Refresh
+
+on:
+  schedule:
+    # 15:00 UTC is 01:00 AEST / 02:00 AEDT, before the database lifecycle job.
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-membership-xero-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh membership invoice payments
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh linked membership invoices from Xero
+        env:
+          ENABLE_XERO_SYNC_WORKER: ${{ vars.ENABLE_XERO_SYNC_WORKER }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] && [ "${ENABLE_XERO_SYNC_WORKER:-false}" != "true" ]; then
+            echo "Membership Xero refresh is disabled. Set ENABLE_XERO_SYNC_WORKER=true to enable it."
+            exit 0
+          fi
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY secrets are required."
+            exit 1
+          fi
+
+          response_file="$(mktemp)"
+          http_code="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --data '{"action":"refresh-membership-invoices"}' \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              "${SUPABASE_URL%/}/functions/v1/xero-sync"
+          )"
+
+          cat "$response_file"
+          echo
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Membership Xero refresh failed with HTTP ${http_code}."
+            exit 1
+          fi
+
+          failed="$(jq '[.results[]? | select(.error)] | length' "$response_file")"
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::${failed} membership invoice refresh(es) failed. The lifecycle stale-data guard will defer any affected cessation."
+            exit 1
+          fi

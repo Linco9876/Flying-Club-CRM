@@ -2,6 +2,8 @@
 
 Vite/React frontend for the Bendigo Flying Club, hosted on Cloudflare Pages and backed by Supabase.
 
+See the [CRM capability guide](docs/CRM_CAPABILITY_GUIDE.md) for the membership lifecycle, booking controls, instructor duty/supervision capabilities and deployment checklist.
+
 ## Edit locally
 
 ```powershell

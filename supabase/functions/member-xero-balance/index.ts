@@ -506,6 +506,38 @@ const listContactInvoices = async (ctx: any, contactId: string) => {
   return Promise.all(invoices.map((invoice: any) => mapInvoice(ctx, invoice)));
 };
 
+const syncMembershipPeriodsFromInvoices = async (adminClient: any, userId: string, invoices: any[]) => {
+  const { data: membership } = await adminClient
+    .from("club_memberships")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!membership?.id) return;
+  const { data: periods } = await adminClient
+    .from("membership_financial_periods")
+    .select("id,xero_invoice_id,fee_disposition")
+    .eq("membership_id", membership.id)
+    .not("xero_invoice_id", "is", null);
+  const invoiceMap = new Map((invoices || []).map(invoice => [clean(invoice.invoiceId), invoice]));
+  for (const period of periods || []) {
+    const invoice = invoiceMap.get(clean(period.xero_invoice_id));
+    if (!invoice) continue;
+    const status = clean(invoice.status).toUpperCase();
+    const amountDue = money(invoice.amountDue);
+    const paid = status === "PAID" || amountDue <= 0.005;
+    await adminClient.from("membership_financial_periods").update({
+      xero_invoice_number: clean(invoice.invoiceNumber) || null,
+      xero_invoice_status: status || null,
+      xero_amount_due: amountDue,
+      xero_last_synced_at: new Date().toISOString(),
+      xero_sync_error: null,
+      fee_disposition: paid ? "paid" : (period.fee_disposition === "overdue" ? "overdue" : "invoiced"),
+      financially_cleared_at: paid ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", period.id);
+  }
+};
+
 const getOutstandingInvoiceTotal = (invoices: Array<{ amountDue?: number }>) =>
   money((invoices || []).reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0));
 
@@ -1127,6 +1159,7 @@ Deno.serve(async (req: Request) => {
         fetchContactCredit(ctx, contactId),
         listContactInvoices(ctx, contactId),
       ]);
+      await syncMembershipPeriodsFromInvoices(adminClient, member.id, invoices);
       const outstandingInvoiceTotal = getOutstandingInvoiceTotal(invoices);
 
       return json({

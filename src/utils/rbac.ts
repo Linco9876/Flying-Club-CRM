@@ -6,6 +6,7 @@ export type Action =
   | 'view-calendar'
   | 'view-bookings'
   | 'view-duty'
+  | 'view-membership'
   | 'view-students'
   | 'view-aircraft'
   | 'view-maintenance'
@@ -37,6 +38,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'all' },
     { action: 'view-duty', resource: 'all' },
+    { action: 'view-membership', resource: 'all' },
     { action: 'view-students', resource: 'all' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
@@ -63,6 +65,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'all' },
     { action: 'view-duty', resource: 'all' },
+    { action: 'view-membership', resource: 'all' },
     { action: 'view-students', resource: 'all' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
@@ -84,6 +87,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'all' },
     { action: 'view-duty', resource: 'all' },
+    { action: 'view-membership', resource: 'all' },
     { action: 'view-students', resource: 'all' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-maintenance', resource: 'all' },
@@ -104,6 +108,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-dashboard', resource: 'all' },
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'own' },
+    { action: 'view-membership', resource: 'own' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-billing', resource: 'own' },
     { action: 'view-training', resource: 'own' },
@@ -120,6 +125,7 @@ export const rolePermissions: Record<UserRole, Permission[]> = {
     { action: 'view-dashboard', resource: 'all' },
     { action: 'view-calendar', resource: 'all' },
     { action: 'view-bookings', resource: 'own' },
+    { action: 'view-membership', resource: 'own' },
     { action: 'view-aircraft', resource: 'all' },
     { action: 'view-billing', resource: 'own' },
     { action: 'view-training', resource: 'own' },
@@ -203,6 +209,7 @@ export const getAuthorizedMenuItems = (user: User | null) => {
     { id: 'dashboard', label: 'Dashboard', action: 'view-dashboard' },
     { id: 'calendar', label: 'Calendar', action: 'view-calendar' },
     { id: 'duty', label: 'Duty', action: 'view-duty', resource: 'all', roles: ['admin', 'senior_instructor', 'instructor'] },
+    { id: 'membership', label: 'Club Membership', action: 'view-membership', resource: hasRole(user, 'admin') ? 'all' : 'own' },
     { id: 'students', label: 'Members', action: 'view-students' },
     { id: 'aircraft', label: 'Aircraft', action: 'view-aircraft' },
     { id: 'maintenance', label: 'Maintenance', action: 'view-maintenance' },

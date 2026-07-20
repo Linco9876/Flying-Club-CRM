@@ -3337,6 +3337,219 @@ const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, it
   }
 };
 
+const updateMembershipPeriodFromInvoice = async (
+  adminClient: SupabaseAdminClient,
+  periodId: string,
+  invoice: any,
+) => {
+  const invoiceId = clean(invoice?.InvoiceID);
+  const status = clean(invoice?.Status).toUpperCase();
+  const amountDue = money(invoice?.AmountDue);
+  const isPaid = status === "PAID" || amountDue <= 0.005;
+  const now = new Date().toISOString();
+  const { error } = await adminClient.from("membership_financial_periods").update({
+    xero_invoice_id: invoiceId || null,
+    xero_invoice_number: clean(invoice?.InvoiceNumber) || null,
+    xero_invoice_status: status || null,
+    xero_amount_due: amountDue,
+    xero_last_synced_at: now,
+    xero_sync_error: null,
+    fee_disposition: isPaid ? "paid" : "invoiced",
+    financially_cleared_at: isPaid ? now : null,
+    updated_at: now,
+  }).eq("id", periodId);
+  if (error) throw error;
+  return {
+    periodId,
+    invoiceId: invoiceId || null,
+    invoiceNumber: clean(invoice?.InvoiceNumber) || null,
+    status: status || null,
+    amountDue,
+    paid: isPaid,
+    syncedAt: now,
+  };
+};
+
+const getMembershipPeriod = async (adminClient: SupabaseAdminClient, periodId: string) => {
+  const { data: period, error } = await adminClient
+    .from("membership_financial_periods")
+    .select("*")
+    .eq("id", periodId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!period) throw new Error("Membership financial period not found.");
+
+  const { data: membership, error: membershipError } = await adminClient
+    .from("club_memberships")
+    .select("id,user_id,membership_class_id,legal_status")
+    .eq("id", period.membership_id)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership) throw new Error("BFC membership record not found.");
+
+  const { data: membershipClass, error: classError } = await adminClient
+    .from("membership_classes")
+    .select("id,code,name,annual_fee,is_fee_exempt")
+    .eq("id", membership.membership_class_id)
+    .maybeSingle();
+  if (classError) throw classError;
+  if (!membershipClass) throw new Error("Membership class not found.");
+
+  return { period, membership, membershipClass };
+};
+
+const createOrRefreshMembershipInvoice = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  periodId: string,
+  sendEmail = false,
+) => {
+  const { period, membership, membershipClass } = await getMembershipPeriod(adminClient, periodId);
+  if (["waived", "fee_exempt"].includes(clean(period.fee_disposition).toLowerCase())) {
+    throw new Error("Waived and fee-exempt memberships do not require a Xero invoice.");
+  }
+
+  if (clean(period.xero_invoice_id)) {
+    const invoice = await getXeroInvoice(ctx, clean(period.xero_invoice_id));
+    if (!invoice) throw new Error("The linked Xero membership invoice could not be found.");
+    const synced = await updateMembershipPeriodFromInvoice(adminClient, period.id, invoice);
+    if (sendEmail) {
+      await xeroRequest({
+        method: "POST",
+        path: `Invoices/${encodeURIComponent(clean(period.xero_invoice_id))}/Email`,
+        tenantId: ctx.connection.tenant_id,
+        accessToken: ctx.connection.access_token,
+      });
+    }
+    return { ...synced, emailSent: sendEmail };
+  }
+
+  const { data: membershipSettings, error: settingsError } = await adminClient
+    .from("membership_settings")
+    .select("xero_membership_item_code")
+    .eq("id", true)
+    .maybeSingle();
+  if (settingsError) throw settingsError;
+  const itemCode = clean(membershipSettings?.xero_membership_item_code);
+  if (!itemCode) {
+    throw new Error("Set the Xero membership item code in Membership settings before issuing invoices.");
+  }
+
+  const member = await getMember(adminClient, membership.user_id);
+  const contact = await syncMemberContact(adminClient, ctx, membership.user_id);
+  const contactId = clean(contact?.contactId || member.xero_contact_id);
+  if (!contactId) throw new Error("The member could not be linked to a Xero contact.");
+
+  const startYear = String(period.financial_year_start).slice(0, 4);
+  const endYear = String(period.financial_year_end).slice(2, 4);
+  const financialYearLabel = `${startYear}/${endYear}`;
+  const result = await xeroRequest({
+    method: "POST",
+    path: "Invoices",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    idempotencyKey: `membership-period-${period.id}`,
+    body: {
+      Invoices: [{
+        Type: "ACCREC",
+        Contact: { ContactID: contactId },
+        Date: isoDate(period.due_date),
+        DueDate: isoDate(period.due_date),
+        Status: "AUTHORISED",
+        Reference: truncateText(`BFC membership ${financialYearLabel}`),
+        LineItems: [{
+          ItemCode: itemCode,
+          Description: truncateText(`${membershipClass.name} Bendigo Flying Club membership ${financialYearLabel}`, 4000),
+          Quantity: 1,
+          UnitAmount: money(period.amount_due),
+        }],
+      }],
+    },
+  });
+  const invoice = result?.Invoices?.[0];
+  if (!invoice?.InvoiceID) throw new Error("Xero did not return a membership invoice ID.");
+  const synced = await updateMembershipPeriodFromInvoice(adminClient, period.id, invoice);
+  if (sendEmail) {
+    await xeroRequest({
+      method: "POST",
+      path: `Invoices/${encodeURIComponent(clean(invoice.InvoiceID))}/Email`,
+      tenantId: ctx.connection.tenant_id,
+      accessToken: ctx.connection.access_token,
+    });
+  }
+  return { ...synced, emailSent: sendEmail };
+};
+
+const issueMembershipRenewals = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  requestedPeriodIds: string[] = [],
+  sendEmail = true,
+) => {
+  let query = adminClient
+    .from("membership_financial_periods")
+    .select("id")
+    .in("fee_disposition", ["invoice_required", "overdue"])
+    .is("xero_invoice_id", null)
+    .gt("amount_due", 0)
+    .order("due_date", { ascending: true })
+    .limit(100);
+  if (requestedPeriodIds.length > 0) query = query.in("id", requestedPeriodIds);
+  const { data: periods, error } = await query;
+  if (error) throw error;
+
+  const results: any[] = [];
+  for (const period of periods || []) {
+    try {
+      results.push(await createOrRefreshMembershipInvoice(adminClient, ctx, period.id, sendEmail));
+    } catch (error) {
+      results.push({ periodId: period.id, error: getErrorMessage(error), emailSent: false });
+    }
+  }
+  return {
+    attempted: results.length,
+    issued: results.filter((item) => !item.error).length,
+    emailed: results.filter((item) => item.emailSent).length,
+    failed: results.filter((item) => item.error).length,
+    results,
+  };
+};
+
+const refreshMembershipInvoices = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  requestedPeriodIds: string[] = [],
+) => {
+  let query = adminClient
+    .from("membership_financial_periods")
+    .select("id,xero_invoice_id")
+    .not("xero_invoice_id", "is", null)
+    .order("updated_at", { ascending: true })
+    .limit(100);
+  if (requestedPeriodIds.length > 0) query = query.in("id", requestedPeriodIds);
+  const { data: periods, error } = await query;
+  if (error) throw error;
+
+  const results: any[] = [];
+  for (const period of periods || []) {
+    try {
+      const invoice = await getXeroInvoice(ctx, clean(period.xero_invoice_id));
+      if (!invoice) throw new Error("Linked invoice not found in Xero.");
+      results.push(await updateMembershipPeriodFromInvoice(adminClient, period.id, invoice));
+    } catch (error) {
+      const message = getErrorMessage(error);
+      const syncedAt = new Date().toISOString();
+      await adminClient.from("membership_financial_periods").update({
+        xero_sync_error: message,
+        xero_last_synced_at: syncedAt,
+        updated_at: syncedAt,
+      }).eq("id", period.id);
+      results.push({ periodId: period.id, error: message });
+    }
+  }
+  return { refreshed: results.length, results };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -3494,6 +3707,22 @@ Deno.serve(async (req: Request) => {
     if (action === "refresh-paid-flight-invoices") {
       const flightLogIds = Array.isArray(body.flightLogIds) ? body.flightLogIds.map(clean).filter(Boolean) : [];
       return json(await refreshPaidFlightInvoices(adminClient, ctx, flightLogIds));
+    }
+
+    if (action === "create-membership-invoice") {
+      const periodId = clean(body.periodId);
+      if (!periodId) return json({ error: "Missing periodId" }, 400);
+      return json(await createOrRefreshMembershipInvoice(adminClient, ctx, periodId, body.sendEmail === true));
+    }
+
+    if (action === "issue-membership-renewals") {
+      const periodIds = Array.isArray(body.periodIds) ? body.periodIds.map(clean).filter(Boolean) : [];
+      return json(await issueMembershipRenewals(adminClient, ctx, periodIds, body.sendEmail !== false));
+    }
+
+    if (action === "refresh-membership-invoices") {
+      const periodIds = Array.isArray(body.periodIds) ? body.periodIds.map(clean).filter(Boolean) : [];
+      return json(await refreshMembershipInvoices(adminClient, ctx, periodIds));
     }
 
     if (action === "sync-transaction") {

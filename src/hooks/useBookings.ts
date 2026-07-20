@@ -23,7 +23,9 @@ const getMissingSchemaColumn = (error: unknown) => {
 const OPTIONAL_BOOKING_COLUMNS = new Set([
   'booking_kind', 'has_conflict', 'ground_session_logged', 'location',
   'duty_override_reason', 'duty_assessment', 'supervision_required',
-  'supervision_status', 'supervising_instructor_id',
+  'supervision_status', 'supervising_instructor_id', 'membership_eligibility_status',
+  'membership_warning_code', 'membership_override_reason', 'membership_overridden_by',
+  'membership_overridden_at', 'membership_eligibility_snapshot',
 ]);
 
 export interface BookingCancellationInput {
@@ -86,6 +88,12 @@ export const useBookings = (enabled = true) => {
         'supervision_required',
         'supervision_status',
         'supervising_instructor_id',
+        'membership_eligibility_status',
+        'membership_warning_code',
+        'membership_override_reason',
+        'membership_overridden_by',
+        'membership_overridden_at',
+        'membership_eligibility_snapshot',
       ].filter(field => !missingOptionalBookingColumnsRef.current.has(field)).join(',');
   const flightLogCalendarFields = [
     'id',
@@ -144,6 +152,12 @@ export const useBookings = (enabled = true) => {
     supervisionRequired: Boolean(row.supervision_required),
     supervisionStatus: row.supervision_status || 'not_required',
     supervisingInstructorId: row.supervising_instructor_id || undefined,
+    membershipEligibilityStatus: row.membership_eligibility_status || undefined,
+    membershipWarningCode: row.membership_warning_code || undefined,
+    membershipOverrideReason: row.membership_override_reason || undefined,
+    membershipOverriddenBy: row.membership_overridden_by || undefined,
+    membershipOverriddenAt: row.membership_overridden_at ? new Date(row.membership_overridden_at) : undefined,
+    membershipEligibilitySnapshot: row.membership_eligibility_snapshot || undefined,
   });
 
   const retryWithoutMissingOptionalColumn = async <T,>(
@@ -942,6 +956,7 @@ export const useBookings = (enabled = true) => {
         guest_phone: bookingData.isGuestBooking ? resolvedGuestPhone || null : null,
         location: bookingData.location?.trim() || 'Bendigo',
         duty_override_reason: dutyResult.overrideReason || null,
+        membership_override_reason: bookingData.membershipOverrideReason?.trim() || null,
       };
 
       console.log('Insert data:', insertData);
@@ -1105,6 +1120,9 @@ export const useBookings = (enabled = true) => {
         await assertInstructorAvailable(candidateBooking);
         const dutyResult = await assessDutyBooking(candidateBooking, id);
         updateData.duty_override_reason = dutyResult.overrideReason || null;
+      }
+      if (bookingData.membershipOverrideReason !== undefined) {
+        updateData.membership_override_reason = bookingData.membershipOverrideReason?.trim() || null;
       }
       if (isWaitlisted && calendarSettings?.conflict_rules === 'block') {
         throw new Error('This booking conflicts with an existing confirmed booking');

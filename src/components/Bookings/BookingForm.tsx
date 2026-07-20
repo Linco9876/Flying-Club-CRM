@@ -9,7 +9,7 @@ import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
-import { Booking, DutyAssessment } from '../../types';
+import { Booking, DutyAssessment, MembershipBookingAssessment } from '../../types';
 import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
@@ -208,6 +208,11 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dutyWarningState, setDutyWarningState] = useState<{ assessment: DutyAssessment; pendingData: typeof formData & { dutyOverrideReason?: string }; reason: string } | null>(null);
+  const [membershipWarningState, setMembershipWarningState] = useState<{
+    assessment: MembershipBookingAssessment;
+    pendingData: typeof formData & { dutyOverrideReason?: string; membershipOverrideReason?: string };
+    reason: string;
+  } | null>(null);
   const [sendVoucherUpdateEmail, setSendVoucherUpdateEmail] = useState<boolean | null>(null);
   const roleBasedInstructors = getInstructors().map((instructor) => ({
     id: instructor.id,
@@ -216,7 +221,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   }));
   const userRole = user?.role || 'student';
   const isAdminUser = Boolean(user?.role === 'admin' || user?.roles?.includes('admin'));
-  const canCreateGuestBooking = isAdminUser;
+  const isStaffUser = Boolean(isAdminUser || user?.role === 'instructor' || user?.role === 'senior_instructor' || user?.roles?.some(role => ['instructor', 'senior_instructor'].includes(role)));
+  const canCreateGuestBooking = isStaffUser;
   const isGroundSessionBooking = formData.bookingKind === 'ground';
   const displayUserRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
   const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
@@ -359,6 +365,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setSafetyWarningState(null);
     setPendingEndorsementSubmit(null);
     setEndorsementWarningState(null);
+    setMembershipWarningState(null);
     setGuestVoucherSearch('');
     setPilotSearch(initialData.isGuestBooking || !initialPilot ? '' : getPilotSearchLabel(initialPilot));
     setShowPilotDropdown(false);
@@ -493,7 +500,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         return;
       }
       if (!canCreateGuestBooking) {
-        toast.error('Only admins can create guest or casual bookings');
+        toast.error('Only instructors or administrators can create guest or casual bookings');
         return;
       }
       if (!formData.guestName.trim()) {
@@ -601,7 +608,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     return { startDateTime, endDateTime };
   };
 
-  const submitBookingData = async (data: typeof formData & { status?: Booking['status']; dutyOverrideReason?: string }) => {
+  const submitBookingData = async (data: typeof formData & { status?: Booking['status']; dutyOverrideReason?: string; membershipOverrideReason?: string }) => {
     if (isSubmitting || isLoading) return;
     setIsSubmitting(true);
     try {
@@ -621,6 +628,27 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             ...data,
             paymentType: derivePaymentTypeForFlightType(data.flightTypeId) || data.paymentType,
           };
+      if (!normalisedBookingData.isGuestBooking && effectiveBookingKind === 'flight' && normalisedBookingData.aircraftId) {
+        const bookingStart = new Date(`${normalisedBookingData.date}T${normalisedBookingData.startTime}:00`);
+        const { data: membershipData, error: membershipError } = await supabase.rpc('assess_member_booking_eligibility', {
+          p_user_id: normalisedBookingData.studentId,
+          p_booking_start: bookingStart.toISOString(),
+          p_is_guest: false,
+          p_has_aircraft: true,
+        });
+        if (membershipError) throw new Error('BFC membership eligibility could not be checked. The booking has not been saved.');
+        const assessment = membershipData as MembershipBookingAssessment;
+        if (assessment?.blocked) {
+          toast.error(assessment.message || 'BFC membership is not financially cleared for aircraft self-booking.');
+          setIsSubmitting(false);
+          return;
+        }
+        if (assessment?.requiresStaffOverride && !normalisedBookingData.membershipOverrideReason) {
+          setMembershipWarningState({ assessment, pendingData: normalisedBookingData, reason: '' });
+          setIsSubmitting(false);
+          return;
+        }
+      }
       if (bookingRules?.fatigue_rules_enabled && normalisedBookingData.instructorId && !normalisedBookingData.dutyOverrideReason) {
         const assessmentStart = new Date(`${normalisedBookingData.date}T${normalisedBookingData.startTime}:00`);
         const assessmentEnd = new Date(`${normalisedBookingData.endDate}T${normalisedBookingData.endTime}:00`);
@@ -1496,6 +1524,26 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         )}
       </div>
     </div>
+    {membershipWarningState && (
+      <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/55 p-4">
+        <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-5 py-4">
+            <div className="rounded-full bg-amber-100 p-2 text-amber-700"><AlertTriangle className="h-5 w-5" /></div>
+            <div><h3 className="font-bold text-amber-950">BFC membership warning</h3><p className="mt-1 text-sm text-amber-900">{membershipWarningState.assessment.message}</p></div>
+          </div>
+          <div className="space-y-4 px-5 py-4">
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+              <div><p className="text-xs font-bold uppercase text-slate-500">Legal membership</p><p className="mt-1 font-semibold text-slate-900">{(membershipWarningState.assessment.legalStatus || 'not recorded').replace(/_/g, ' ')}</p></div>
+              <div><p className="text-xs font-bold uppercase text-slate-500">Fee status</p><p className="mt-1 font-semibold text-slate-900">{(membershipWarningState.assessment.feeDisposition || 'not recorded').replace(/_/g, ' ')}</p></div>
+            </div>
+            <p className="text-sm text-slate-700">You may create this booking for the person, but the override applies only to this booking. It does not mark them as paid or bypass safety, licence, duty, grounding or supervision controls.</p>
+            <label className="block text-sm font-bold text-gray-800">Reason for continuing <span className="text-red-600">*</span><textarea value={membershipWarningState.reason} onChange={event => setMembershipWarningState(current => current ? { ...current, reason: event.target.value } : current)} rows={3} placeholder="Explain why this aircraft booking is being made..." className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 font-normal focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-100" /></label>
+            <p className="text-xs text-gray-500">The warning, status snapshot, reason and staff member will be retained in the booking audit history.</p>
+          </div>
+          <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4"><button type="button" onClick={() => setMembershipWarningState(null)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700">Go back</button><button type="button" disabled={membershipWarningState.reason.trim().length < 10} onClick={() => { const pending = membershipWarningState.pendingData; const reason = membershipWarningState.reason.trim(); setMembershipWarningState(null); void submitBookingData({ ...pending, membershipOverrideReason: reason }); }} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">Continue with reason</button></div>
+        </div>
+      </div>
+    )}
     {dutyWarningState && (
       <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4">
         <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">

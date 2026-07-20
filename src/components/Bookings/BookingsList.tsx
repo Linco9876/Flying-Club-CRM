@@ -581,6 +581,11 @@ export const BookingsList: React.FC<BookingsListProps> = ({
               {booking.supervisionRequired && booking.supervisionStatus === 'pending' && (
                 <p className="mt-2 text-xs font-semibold text-orange-700">Pending — no authorised senior instructor is currently available.</p>
               )}
+              {booking.membershipOverrideReason && (
+                <p className="mt-2 text-[11px] font-medium text-amber-700" title={booking.membershipOverrideReason}>
+                  BFC membership override recorded: {booking.membershipOverrideReason}
+                </p>
+              )}
               
               {booking.status === 'completed' && (
                 <button 

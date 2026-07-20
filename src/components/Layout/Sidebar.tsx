@@ -19,7 +19,8 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
-  Clock3
+  Clock3,
+  BadgeCheck
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -40,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
 
   const allMenuItems = [
     { id: 'students', label: 'Members', icon: Users, roles: ['admin', 'instructor'] },
+    { id: 'membership', label: 'Club Membership', icon: BadgeCheck, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'duty', label: 'Duty', icon: Clock3, roles: ['admin', 'senior_instructor', 'instructor'] },
     { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },

@@ -36,6 +36,7 @@ const ReportsDashboard = lazy(() => import('./components/Reports/ReportsDashboar
 const SafetyDashboard = lazy(() => import('./components/Safety/SafetyDashboard').then(module => ({ default: module.SafetyDashboard })));
 const DutyDashboard = lazy(() => import('./components/Duty/DutyDashboard').then(module => ({ default: module.DutyDashboard })));
 const DutyClockDownloadPage = lazy(() => import('./components/Duty/DutyClockDownloadPage').then(module => ({ default: module.DutyClockDownloadPage })));
+const MembershipDashboard = lazy(() => import('./components/Membership/MembershipDashboard').then(module => ({ default: module.MembershipDashboard })));
 const SafetyLoginWarningModal = lazy(() => import('./components/Safety/SafetyLoginWarningModal').then(module => ({ default: module.SafetyLoginWarningModal })));
 const TrainingRecordForm = lazy(() => import('./components/Training/TrainingRecordForm').then(module => ({ default: module.TrainingRecordForm })));
 const TrainingWorkspacePage = lazy(() => import('./components/Training/TrainingWorkspacePage').then(module => ({ default: module.TrainingWorkspacePage })));
@@ -544,6 +545,7 @@ const KioskAuthenticatedRoute: React.FC<{
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
           location: bookingData.location || 'Bendigo',
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
+          membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
         });
     } else {
       const recurrence = bookingData.recurrence;
@@ -571,6 +573,7 @@ const KioskAuthenticatedRoute: React.FC<{
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
             location: bookingData.location || 'Bendigo',
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
+            membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
           }, { silent: occurrenceCount > 1 });
         }
 
@@ -773,6 +776,7 @@ const AuthenticatedApp: React.FC<{
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
           location: bookingData.location || 'Bendigo',
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
+          membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
         });
     } else {
       const recurrence = bookingData.recurrence;
@@ -800,6 +804,7 @@ const AuthenticatedApp: React.FC<{
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
             location: bookingData.location || 'Bendigo',
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
+            membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
           }, { silent: occurrenceCount > 1 });
         }
 
@@ -910,6 +915,8 @@ const AuthenticatedApp: React.FC<{
         return <AircraftList />;
       case 'duty':
         return <DutyDashboard />;
+      case 'membership':
+        return <MembershipDashboard />;
       case 'maintenance':
         return <MaintenanceBoard />;
       case 'billing':
@@ -1028,6 +1035,7 @@ const viewPathMap: Record<string, string> = {
   students: '/students',
   aircraft: '/aircraft',
   duty: '/duty',
+  membership: '/membership',
   maintenance: '/maintenance',
   training: '/training',
   'learning-centre': '/learning-centre',
@@ -1075,6 +1083,7 @@ const getRequiredActionForView = (view: string) => {
     'students': 'view-students',
     'aircraft': 'view-aircraft',
     'duty': 'view-duty',
+    'membership': 'view-membership',
     'maintenance': 'view-maintenance',
     'training': 'view-training',
     'learning-centre': 'view-learning-centre',
@@ -1097,6 +1106,7 @@ const getRequiredActionForView = (view: string) => {
 const getRequiredResourceForView = (view: string) => {
   const resourceMap: Record<string, 'all' | 'own'> = {
     'billing': 'own',
+    'membership': 'own',
     'financial-dashboard': 'all',
     'profile': 'own',
     'learning-centre': 'own',

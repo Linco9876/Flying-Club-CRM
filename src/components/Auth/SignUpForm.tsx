@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { Plane, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DEFAULT_ENDORSEMENT_TYPES } from '../../utils/pilotStatus';
+import { MembershipDocumentLinks } from '../Membership/MembershipDocumentLinks';
 
 interface SignUpFormProps {
   onBackToLogin: () => void;
@@ -14,8 +15,16 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
     email: '',
     password: '',
     confirmPassword: '',
-    phone: ''
+    phone: '',
+    dateOfBirth: '',
+    residentialAddress: '',
+    serviceAddress: '',
+    membershipClass: 'full',
+    guardianName: ''
   });
+  const [sameServiceAddress, setSameServiceAddress] = useState(true);
+  const [guardianConsent, setGuardianConsent] = useState(false);
+  const [membershipDeclarationsAccepted, setMembershipDeclarationsAccepted] = useState(false);
   const [endorsements, setEndorsements] = useState<Array<{
     id: string;
     type: string;
@@ -88,6 +97,28 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
       return;
     }
 
+    if (!formData.residentialAddress.trim()) {
+      toast.error('Residential address is required for the BFC membership register');
+      return;
+    }
+
+    if (!membershipDeclarationsAccepted) {
+      toast.error('Accept the BFC membership declarations before continuing');
+      return;
+    }
+
+    const isUnder18 = formData.dateOfBirth
+      ? new Date(formData.dateOfBirth) > new Date(new Date().setFullYear(new Date().getFullYear() - 18))
+      : false;
+    if (formData.membershipClass === 'junior' && !isUnder18) {
+      toast.error('Junior membership is for applicants under 18 and requires a date of birth');
+      return;
+    }
+    if (isUnder18 && (!formData.guardianName.trim() || !guardianConsent)) {
+      toast.error('A parent or guardian name and consent are required for applicants under 18');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -99,6 +130,18 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
             name: formData.name,
             phone: formData.phone || null,
             role: 'student',
+            membership_application: true,
+            membership_class: formData.membershipClass,
+            date_of_birth: formData.dateOfBirth || null,
+            residential_address: formData.residentialAddress.trim(),
+            service_address: sameServiceAddress ? formData.residentialAddress.trim() : formData.serviceAddress.trim(),
+            supports_club_purposes: membershipDeclarationsAccepted,
+            agrees_to_constitution: membershipDeclarationsAccepted,
+            agrees_to_member_guarantee: membershipDeclarationsAccepted,
+            agrees_to_code_of_conduct: membershipDeclarationsAccepted,
+            agrees_to_members_manual: membershipDeclarationsAccepted,
+            guardian_name: formData.guardianName.trim() || null,
+            guardian_consent: guardianConsent,
             endorsements: endorsements.map((endorsement) => ({
               type: endorsement.type,
               dateObtained: endorsement.dateObtained,
@@ -153,9 +196,9 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
           onBackToLogin();
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Sign up error:', error);
-      toast.error(error.message || 'Failed to create account');
+      toast.error(error instanceof Error ? error.message : 'Failed to create account');
     } finally {
       setIsLoading(false);
     }
@@ -208,12 +251,45 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                 id="name"
                 name="name"
                 type="text"
+                autoComplete="name"
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full rounded-md border border-gray-300 px-3 py-3 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Enter your full name"
               />
+            </div>
+
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <h3 className="text-sm font-bold text-blue-950">BFC membership application</h3>
+              <p className="mt-1 text-xs text-blue-800">This creates a portal account and submits your Bendigo Flying Club membership application. RAAus membership is separate.</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-gray-700">Membership class
+                  <select value={formData.membershipClass} onChange={event => setFormData({ ...formData, membershipClass: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3">
+                    <option value="full">Full — $150/year (voting)</option>
+                    <option value="junior">Junior — $75/year</option>
+                    <option value="affiliate">Affiliate — $45/year</option>
+                  </select>
+                </label>
+                <label className="block text-sm font-medium text-gray-700">Date of birth
+                  <input type="date" value={formData.dateOfBirth} onChange={event => setFormData({ ...formData, dateOfBirth: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
+                </label>
+                <label className="block text-sm font-medium text-gray-700 sm:col-span-2">Residential address
+                  <textarea required rows={2} value={formData.residentialAddress} onChange={event => setFormData({ ...formData, residentialAddress: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2"><input type="checkbox" checked={sameServiceAddress} onChange={event => setSameServiceAddress(event.target.checked)} className="h-4 w-4 rounded border-gray-300" />Use my residential address for formal notices</label>
+                {!sameServiceAddress && <label className="block text-sm font-medium text-gray-700 sm:col-span-2">Address for service
+                  <textarea required rows={2} value={formData.serviceAddress} onChange={event => setFormData({ ...formData, serviceAddress: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
+                </label>}
+                {formData.dateOfBirth && new Date(formData.dateOfBirth) > new Date(new Date().setFullYear(new Date().getFullYear() - 18)) && <>
+                  <label className="block text-sm font-medium text-gray-700">Parent or guardian name
+                    <input required value={formData.guardianName} onChange={event => setFormData({ ...formData, guardianName: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
+                  </label>
+                  <label className="flex items-center gap-2 self-end pb-3 text-sm text-gray-700"><input type="checkbox" required checked={guardianConsent} onChange={event => setGuardianConsent(event.target.checked)} className="h-4 w-4 rounded border-gray-300" />Parent or guardian consent provided</label>
+                </>}
+              </div>
+              <label className="mt-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-white p-3 text-sm text-gray-700"><input type="checkbox" required checked={membershipDeclarationsAccepted} onChange={event => setMembershipDeclarationsAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" /><span>I support the purposes of Bendigo Flying Club and agree to the Constitution, member guarantee, By-laws, Code of Conduct and Members Manual. These acknowledgements will be retained with my application.<MembershipDocumentLinks /></span></label>
+              <p className="mt-3 text-xs text-blue-800">Membership commences when approved by the committee, or 30 days after this complete application is submitted. Aircraft self-booking requires the membership fee to be paid or waived.</p>
             </div>
 
             <div>
@@ -224,6 +300,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                 id="email"
                 name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -346,6 +423,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                   id="password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   required
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -374,6 +452,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                 id="confirmPassword"
                 name="confirmPassword"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 required
                 value={formData.confirmPassword}
                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}

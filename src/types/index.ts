@@ -113,7 +113,7 @@ export interface Aircraft {
 
 export interface Booking {
   id: string;
-  pilotId: string;
+  pilotId?: string;
   studentId?: string;
   instructorId?: string;
   aircraftId?: string;
@@ -153,6 +153,116 @@ export interface Booking {
   supervisionStatus?: 'not_required' | 'pending' | 'assigned' | 'acknowledged';
   supervisingInstructorId?: string;
   supervisingInstructorName?: string;
+  membershipEligibilityStatus?: 'eligible' | 'not_eligible';
+  membershipWarningCode?: string;
+  membershipOverrideReason?: string;
+  membershipOverriddenBy?: string;
+  membershipOverriddenAt?: Date;
+  membershipEligibilitySnapshot?: MembershipBookingAssessment;
+}
+
+export type MembershipClassCode = 'full' | 'junior' | 'affiliate' | 'life';
+export type MembershipApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'auto_commenced';
+export type MembershipLegalStatus = 'current' | 'ceased_non_payment' | 'resigned' | 'expelled' | 'deceased';
+export type MembershipFeeDisposition = 'invoice_required' | 'invoiced' | 'paid' | 'waived' | 'fee_exempt' | 'overdue' | 'ceased';
+export type MembershipRolloutMode = 'information_only' | 'staff_warning' | 'enforced';
+
+export interface MembershipClass {
+  id: string;
+  code: MembershipClassCode;
+  name: string;
+  annualFee: number;
+  hasVotingRights: boolean;
+  isFeeExempt: boolean;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface MembershipApplication {
+  id: string;
+  userId: string;
+  membershipClassId: string;
+  status: MembershipApplicationStatus;
+  residentialAddress: string;
+  serviceAddress: string;
+  dateOfBirth?: string | null;
+  guardianName?: string | null;
+  guardianConsent: boolean;
+  submittedAt: string;
+  automaticCommencementAt: string;
+  decidedAt?: string | null;
+  decidedBy?: string | null;
+  decisionReason?: string | null;
+  userName?: string;
+  userEmail?: string;
+  membershipClassName?: string;
+  membershipClassCode?: MembershipClassCode;
+}
+
+export interface ClubMembership {
+  id: string;
+  userId: string;
+  membershipClassId: string;
+  applicationId?: string | null;
+  legalStatus: MembershipLegalStatus;
+  commencedAt: string;
+  commencementMethod: 'committee_approval' | 'automatic_30_day' | 'legacy_import' | 'reinstatement';
+  endedAt?: string | null;
+  endReason?: string | null;
+  userName?: string;
+  userEmail?: string;
+  membershipClassName?: string;
+  membershipClassCode?: MembershipClassCode;
+  hasVotingRights?: boolean;
+}
+
+export interface MembershipFinancialPeriod {
+  id: string;
+  membershipId: string;
+  financialYearStart: string;
+  financialYearEnd: string;
+  standardFee: number;
+  amountDue: number;
+  feeDisposition: MembershipFeeDisposition;
+  dueDate: string;
+  graceExpiresAt: string;
+  financiallyClearedAt?: string | null;
+  xeroInvoiceId?: string | null;
+  xeroInvoiceNumber?: string | null;
+  xeroInvoiceStatus?: string | null;
+  xeroAmountDue?: number | null;
+  xeroLastSyncedAt?: string | null;
+  xeroSyncError?: string | null;
+  waiverReason?: string | null;
+  waiverAuthorisedBy?: string | null;
+  waiverAuthorisedAt?: string | null;
+}
+
+export interface MembershipSettings {
+  rolloutMode: MembershipRolloutMode;
+  automaticCommencementDays: number;
+  nonPaymentGraceDays: number;
+  xeroStatusStaleHours: number;
+  xeroMembershipItemCode?: string | null;
+  requireStaffOverrideReason: boolean;
+}
+
+export interface MembershipBookingAssessment {
+  eligible: boolean;
+  reasonCode: string;
+  message: string;
+  isGuest: boolean;
+  legalStatus?: MembershipLegalStatus | null;
+  membershipClass?: MembershipClassCode | null;
+  membershipClassName?: string | null;
+  feeDisposition?: MembershipFeeDisposition | null;
+  dueDate?: string | null;
+  graceExpiresAt?: string | null;
+  xeroLastSyncedAt?: string | null;
+  rolloutMode: MembershipRolloutMode;
+  staffOverrideAllowed: boolean;
+  requiresStaffOverride?: boolean;
+  blocked: boolean;
 }
 
 export interface DutyWarning {
