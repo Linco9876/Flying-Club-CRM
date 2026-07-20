@@ -35,6 +35,7 @@ const BillingDashboard = lazy(() => import('./components/Billing/BillingDashboar
 const ReportsDashboard = lazy(() => import('./components/Reports/ReportsDashboard').then(module => ({ default: module.ReportsDashboard })));
 const SafetyDashboard = lazy(() => import('./components/Safety/SafetyDashboard').then(module => ({ default: module.SafetyDashboard })));
 const DutyDashboard = lazy(() => import('./components/Duty/DutyDashboard').then(module => ({ default: module.DutyDashboard })));
+const DutyClockDownloadPage = lazy(() => import('./components/Duty/DutyClockDownloadPage').then(module => ({ default: module.DutyClockDownloadPage })));
 const SafetyLoginWarningModal = lazy(() => import('./components/Safety/SafetyLoginWarningModal').then(module => ({ default: module.SafetyLoginWarningModal })));
 const TrainingRecordForm = lazy(() => import('./components/Training/TrainingRecordForm').then(module => ({ default: module.TrainingRecordForm })));
 const TrainingWorkspacePage = lazy(() => import('./components/Training/TrainingWorkspacePage').then(module => ({ default: module.TrainingWorkspacePage })));
@@ -364,6 +365,16 @@ const AppContent: React.FC = () => {
       <PageLoadGate routeKey="trial-flight-gift-vouchers">
         <Suspense fallback={<PageLoader />}>
           <TrialVoucherSalesPage />
+        </Suspense>
+      </PageLoadGate>
+    );
+  }
+
+  if (normalisedPathname === '/duty-clock') {
+    return (
+      <PageLoadGate routeKey="duty-clock-download">
+        <Suspense fallback={<PageLoader />}>
+          <DutyClockDownloadPage />
         </Suspense>
       </PageLoadGate>
     );
