@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
-import { colours } from '../theme';
+import { type AppColours, useAppTheme } from '../theme';
 
 type Props = {
   children: ReactNode;
@@ -10,8 +10,10 @@ type Props = {
   tone?: 'primary' | 'success' | 'danger' | 'neutral';
 };
 
-export const PrimaryButton = ({ children, onPress, disabled, loading, tone = 'primary' }: Props) => (
-  <Pressable
+export const PrimaryButton = ({ children, onPress, disabled, loading, tone = 'primary' }: Props) => {
+  const { colours } = useAppTheme();
+  const styles = useMemo(() => createStyles(colours), [colours]);
+  return <Pressable
     accessibilityRole="button"
     disabled={disabled || loading}
     onPress={onPress}
@@ -23,10 +25,10 @@ export const PrimaryButton = ({ children, onPress, disabled, loading, tone = 'pr
     ]}
   >
     {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.label}>{children}</Text>}
-  </Pressable>
-);
+  </Pressable>;
+};
 
-const styles = StyleSheet.create({
+const createStyles = (colours: AppColours) => StyleSheet.create({
   button: { minHeight: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
   primary: { backgroundColor: colours.blue },
   success: { backgroundColor: colours.green },

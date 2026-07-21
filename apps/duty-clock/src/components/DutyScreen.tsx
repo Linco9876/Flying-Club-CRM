@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { User } from '@supabase/supabase-js';
-import { colours } from '../theme';
+import { type AppColours, useAppTheme } from '../theme';
 import { formatClockTime, formatDateTime, formatDuration } from '../utils/time';
 import { useDutyClock } from '../hooks/useDutyClock';
 import { supabase } from '../lib/supabase';
@@ -10,10 +10,13 @@ import { PrimaryButton } from './PrimaryButton';
 import { StartDutyModal } from './StartDutyModal';
 import { EndDutyModal } from './EndDutyModal';
 import { PRIVACY_URL, SUPPORT_URL } from '../config';
+import { AppearanceSelector } from './AppearanceSelector';
 
 type Props = { user: User };
 
 export const DutyScreen = ({ user }: Props) => {
+  const { colours } = useAppTheme();
+  const styles = useMemo(() => createStyles(colours), [colours]);
   const { context, loading, working, error, refresh, startDuty, startBreak, endBreak, endDuty } = useDutyClock(user.id);
   const [now, setNow] = useState(Date.now());
   const [startVisible, setStartVisible] = useState(false);
@@ -134,6 +137,7 @@ export const DutyScreen = ({ user }: Props) => {
           <Text style={styles.footerDot}>·</Text>
           <Pressable onPress={() => void Linking.openURL(SUPPORT_URL)}><Text style={styles.footerLink}>Support</Text></Pressable>
         </View>
+        <AppearanceSelector />
       </ScrollView>
 
       <StartDutyModal visible={startVisible} context={context} working={working} onClose={() => setStartVisible(false)} onStart={startDuty} />
@@ -142,7 +146,7 @@ export const DutyScreen = ({ user }: Props) => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colours: AppColours) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colours.background },
   content: { flexGrow: 1, padding: 20, paddingBottom: 42, gap: 18 },
   loading: { flex: 1, backgroundColor: colours.background, alignItems: 'center', justifyContent: 'center', padding: 28 },
@@ -151,12 +155,12 @@ const styles = StyleSheet.create({
   eyebrow: { color: colours.blue, fontSize: 10, fontWeight: '900', letterSpacing: 1.8 },
   greeting: { color: colours.navy, fontSize: 27, fontWeight: '900', marginTop: 3 },
   signOut: { color: colours.muted, fontSize: 13, fontWeight: '800' },
-  error: { borderRadius: 14, backgroundColor: colours.redLight, borderWidth: 1, borderColor: '#E8AAAA', padding: 12 },
+  error: { borderRadius: 14, backgroundColor: colours.redLight, borderWidth: 1, borderColor: colours.red, padding: 12 },
   errorText: { color: colours.red, fontSize: 12, fontWeight: '700' },
   offDuty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 30 },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: '#E8EDF1', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colours.subtle, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
   offDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#7A8792' },
-  statusText: { color: '#52606B', fontSize: 11, fontWeight: '900', letterSpacing: 1.2 },
+  statusText: { color: colours.subtleText, fontSize: 11, fontWeight: '900', letterSpacing: 1.2 },
   offTitle: { color: colours.navy, fontSize: 30, fontWeight: '900', marginTop: 18 },
   offCopy: { color: colours.muted, fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 310, marginTop: 8 },
   startCircle: { width: 210, height: 210, borderRadius: 105, backgroundColor: colours.green, alignItems: 'center', justifyContent: 'center', marginTop: 36, shadowColor: colours.green, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.28, shadowRadius: 18, elevation: 8 },
@@ -164,7 +168,7 @@ const styles = StyleSheet.create({
   startText: { color: '#fff', fontSize: 31, fontWeight: '900', letterSpacing: 1.5 },
   startSubtext: { color: '#CFF3E3', fontSize: 14, fontWeight: '900', letterSpacing: 2.5 },
   locationPrivacy: { color: colours.muted, fontSize: 11, marginTop: 24 },
-  activeCard: { backgroundColor: colours.navy, borderRadius: 24, padding: 22 },
+  activeCard: { backgroundColor: '#0F2942', borderRadius: 24, padding: 22 },
   activeTopline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   statusBadgeActive: { flexDirection: 'row', gap: 7, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
   activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#56E1A9' },
@@ -176,17 +180,17 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginTop: 6 },
   detailLabel: { color: '#9EB5C6', fontSize: 12 },
   detailValue: { color: '#fff', fontSize: 12, fontWeight: '800', flexShrink: 1, textAlign: 'right' },
-  breakCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: colours.border, padding: 17 },
-  breakCardActive: { backgroundColor: colours.amberLight, borderColor: '#E9C588' },
+  breakCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, backgroundColor: colours.surface, borderWidth: 1, borderColor: colours.border, padding: 17 },
+  breakCardActive: { backgroundColor: colours.amberLight, borderColor: colours.amberBorder },
   breakCopy: { flex: 1 },
   breakEyebrow: { color: colours.amber, fontSize: 10, fontWeight: '900', letterSpacing: 1.1 },
   breakTitle: { color: colours.navy, fontSize: 22, fontWeight: '900', marginTop: 3, fontVariant: ['tabular-nums'] },
   breakDetail: { color: colours.muted, fontSize: 11, marginTop: 3 },
   breakButton: { backgroundColor: colours.blue, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 13 },
-  breakButtonEnd: { backgroundColor: '#fff', borderWidth: 1, borderColor: colours.amber },
+  breakButtonEnd: { backgroundColor: colours.input, borderWidth: 1, borderColor: colours.amber },
   breakButtonText: { color: '#fff', fontSize: 13, fontWeight: '900' },
   breakButtonEndText: { color: colours.amber },
-  flightSummary: { borderRadius: 18, backgroundColor: colours.greenLight, borderWidth: 1, borderColor: '#ACDEC9', padding: 17 },
+  flightSummary: { borderRadius: 18, backgroundColor: colours.greenLight, borderWidth: 1, borderColor: colours.greenBorder, padding: 17 },
   flightLabel: { color: colours.green, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
   flightValue: { color: colours.navy, fontSize: 29, fontWeight: '900', marginTop: 4 },
   flightDetail: { color: colours.muted, fontSize: 11, marginTop: 3 },

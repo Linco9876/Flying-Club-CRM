@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Linking, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { colours } from '../theme';
+import { type AppColours, useAppTheme } from '../theme';
 import { ACCOUNT_DELETION_URL, PRIVACY_URL, SUPPORT_URL } from '../config';
 import { PrimaryButton } from './PrimaryButton';
+import { AppearanceSelector } from './AppearanceSelector';
 
 export const LoginScreen = () => {
+  const { colours } = useAppTheme();
+  const styles = useMemo(() => createStyles(colours), [colours]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -38,7 +41,7 @@ export const LoginScreen = () => {
             value={email}
             onChangeText={setEmail}
             placeholder="you@example.com"
-            placeholderTextColor="#98A3AD"
+            placeholderTextColor={colours.placeholder}
             style={styles.input}
           />
           <Text style={[styles.label, styles.passwordLabel]}>Password</Text>
@@ -49,7 +52,7 @@ export const LoginScreen = () => {
             value={password}
             onChangeText={setPassword}
             placeholder="Your password"
-            placeholderTextColor="#98A3AD"
+            placeholderTextColor={colours.placeholder}
             style={styles.input}
             onSubmitEditing={() => void login()}
           />
@@ -58,6 +61,7 @@ export const LoginScreen = () => {
           </View>
         </View>
         <Text style={styles.help}>Use the same account as the Flight Management System.</Text>
+        <View style={styles.appearance}><AppearanceSelector /></View>
         <View style={styles.links}>
           <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}><Text style={styles.link}>Privacy</Text></Pressable>
           <Text style={styles.linkDot}>·</Text>
@@ -70,7 +74,7 @@ export const LoginScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colours: AppColours) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: colours.background },
   container: { flex: 1, justifyContent: 'center', padding: 24 },
   brandMark: { width: 64, height: 64, borderRadius: 20, backgroundColor: colours.navy, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
@@ -81,9 +85,10 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colours.surface, borderRadius: 22, padding: 20, borderWidth: 1, borderColor: colours.border },
   label: { color: colours.ink, fontSize: 13, fontWeight: '800', marginBottom: 7 },
   passwordLabel: { marginTop: 16 },
-  input: { height: 52, borderWidth: 1, borderColor: '#C7D0D8', borderRadius: 14, paddingHorizontal: 14, fontSize: 16, color: colours.ink, backgroundColor: '#fff' },
+  input: { height: 52, borderWidth: 1, borderColor: colours.inputBorder, borderRadius: 14, paddingHorizontal: 14, fontSize: 16, color: colours.ink, backgroundColor: colours.input },
   buttonGap: { marginTop: 22 },
   help: { textAlign: 'center', color: colours.muted, fontSize: 12, marginTop: 18 },
+  appearance: { marginTop: 14 },
   links: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 12 },
   link: { color: colours.blue, fontSize: 12, fontWeight: '700' },
   linkDot: { color: colours.muted, fontSize: 12 },

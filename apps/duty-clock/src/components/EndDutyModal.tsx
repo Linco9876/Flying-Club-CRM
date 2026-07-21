@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DutyContext } from '../types';
-import { colours } from '../theme';
+import { type AppColours, useAppTheme } from '../theme';
 import { formatDateTime, formatDuration, hoursFromMinutes, minutesFromHours } from '../utils/time';
 import { PrimaryButton } from './PrimaryButton';
 
@@ -15,6 +15,8 @@ type Props = {
 };
 
 export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Props) => {
+  const { colours, isDark } = useAppTheme();
+  const styles = useMemo(() => createStyles(colours), [colours]);
   const [actualEnd, setActualEnd] = useState(new Date());
   const [flightHours, setFlightHours] = useState('0');
   const [notes, setNotes] = useState('');
@@ -77,6 +79,7 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
               value={actualEnd}
               mode="time"
               display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
+              themeVariant={isDark ? 'dark' : 'light'}
               minimumDate={context.activeDuty ? new Date(context.activeDuty.actualStart) : undefined}
               maximumDate={new Date(Date.now() + 5 * 60_000)}
               onChange={changeTime}
@@ -93,6 +96,7 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
                 keyboardType="decimal-pad"
                 selectTextOnFocus
                 style={styles.flightInput}
+                placeholderTextColor={colours.placeholder}
               />
               <Text style={styles.hours}>hours</Text>
             </View>
@@ -107,7 +111,7 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
           ) : null}
 
           <Text style={styles.sectionLabel}>NOTES (OPTIONAL)</Text>
-          <TextInput value={notes} onChangeText={setNotes} multiline placeholder="Anything operations should know?" style={styles.notes} />
+          <TextInput value={notes} onChangeText={setNotes} multiline placeholder="Anything operations should know?" placeholderTextColor={colours.placeholder} style={styles.notes} />
 
           <PrimaryButton tone="danger" loading={working} onPress={() => void submit()}>End duty</PrimaryButton>
         </ScrollView>
@@ -116,28 +120,28 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
   );
 };
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  header: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colours.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+const createStyles = (colours: AppColours) => StyleSheet.create({
+  flex: { flex: 1, backgroundColor: colours.background },
+  header: { backgroundColor: colours.surface, paddingHorizontal: 22, paddingTop: 18, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colours.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: colours.navy, fontSize: 25, fontWeight: '900' },
   subtitle: { color: colours.muted, fontSize: 13, marginTop: 2 },
   close: { color: colours.blue, fontSize: 15, fontWeight: '800' },
   content: { padding: 20, paddingBottom: 44, gap: 12, backgroundColor: colours.background },
   sectionLabel: { color: colours.muted, fontSize: 11, letterSpacing: 1.5, fontWeight: '900', marginTop: 8 },
-  summaryCard: { borderRadius: 20, backgroundColor: colours.navy, padding: 20 },
+  summaryCard: { borderRadius: 20, backgroundColor: '#0F2942', padding: 20 },
   summaryLabel: { color: colours.sky, fontSize: 11, letterSpacing: 1.5, fontWeight: '900' },
   summaryValue: { color: '#fff', fontSize: 36, fontWeight: '900', marginTop: 4 },
   summaryDetail: { color: '#C8D9E6', fontSize: 12, marginTop: 5 },
-  card: { backgroundColor: '#fff', borderRadius: 18, borderWidth: 1, borderColor: colours.border, padding: 18 },
+  card: { backgroundColor: colours.surface, borderRadius: 18, borderWidth: 1, borderColor: colours.border, padding: 18 },
   timeValue: { color: colours.navy, fontSize: 20, fontWeight: '900' },
   hint: { color: colours.muted, fontSize: 12, marginTop: 5 },
-  flightCard: { borderRadius: 18, borderWidth: 1, borderColor: '#ACDEC9', backgroundColor: colours.greenLight, padding: 16 },
+  flightCard: { borderRadius: 18, borderWidth: 1, borderColor: colours.greenBorder, backgroundColor: colours.greenLight, padding: 16 },
   flightStatus: { color: colours.green, fontSize: 13, fontWeight: '800' },
   flightInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
-  flightInput: { minWidth: 120, backgroundColor: '#fff', borderWidth: 1, borderColor: '#9DCBB8', borderRadius: 13, color: colours.ink, fontSize: 25, fontWeight: '900', paddingHorizontal: 14, paddingVertical: 10 },
+  flightInput: { minWidth: 120, backgroundColor: colours.input, borderWidth: 1, borderColor: colours.greenBorder, borderRadius: 13, color: colours.ink, fontSize: 25, fontWeight: '900', paddingHorizontal: 14, paddingVertical: 10 },
   hours: { color: colours.ink, fontSize: 15, fontWeight: '700', marginLeft: 10 },
-  breakNotice: { borderRadius: 16, backgroundColor: colours.amberLight, borderWidth: 1, borderColor: '#E9C588', padding: 14 },
+  breakNotice: { borderRadius: 16, backgroundColor: colours.amberLight, borderWidth: 1, borderColor: colours.amberBorder, padding: 14 },
   breakNoticeTitle: { color: colours.amber, fontSize: 14, fontWeight: '900' },
   breakNoticeText: { color: colours.ink, fontSize: 12, marginTop: 3 },
-  notes: { minHeight: 88, borderWidth: 1, borderColor: '#C7D0D8', borderRadius: 14, padding: 13, fontSize: 15, color: colours.ink, backgroundColor: '#fff', textAlignVertical: 'top' },
+  notes: { minHeight: 88, borderWidth: 1, borderColor: colours.inputBorder, borderRadius: 14, padding: 13, fontSize: 15, color: colours.ink, backgroundColor: colours.input, textAlignVertical: 'top' },
 });

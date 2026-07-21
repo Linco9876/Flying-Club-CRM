@@ -73,9 +73,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          cp android/app/build/outputs/apk/release/app-release.apk release/BFC-Duty-Clock-1.0.0.apk
-          sha256sum release/BFC-Duty-Clock-1.0.0.apk > release/BFC-Duty-Clock-1.0.0.apk.sha256
-          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --verbose --print-certs release/BFC-Duty-Clock-1.0.0.apk
+          APP_VERSION=$(node -p "require('./app.json').expo.version")
+          APK_PATH="release/BFC-Duty-Clock-${APP_VERSION}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK_PATH"
+          sha256sum "$APK_PATH" > "${APK_PATH}.sha256"
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --verbose --print-certs "$APK_PATH"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4

@@ -2,7 +2,7 @@ import React from 'react';
 import { Download, ShieldCheck, Smartphone } from 'lucide-react';
 
 const APK_DOWNLOAD_URL =
-  'https://github.com/Linco9876/Flying-Club-CRM/releases/download/duty-clock-v1.0.0/BFC-Duty-Clock-1.0.0.apk';
+  'https://github.com/Linco9876/Flying-Club-CRM/releases/download/duty-clock-v1.1.0/BFC-Duty-Clock-1.1.0.apk';
 
 export const DutyClockDownloadPage: React.FC = () => (
   <main className="min-h-screen bg-slate-950 px-4 py-10 text-white sm:px-6 sm:py-16">
@@ -37,7 +37,7 @@ export const DutyClockDownloadPage: React.FC = () => (
 
           <div className="mt-5 flex items-start gap-3 rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-100">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" aria-hidden="true" />
-            <p>Version 1.0.0 is digitally signed by Bendigo Flying Club and has passed Android signature verification.</p>
+            <p>Version 1.1.0 is digitally signed by Bendigo Flying Club and has passed Android signature verification.</p>
           </div>
         </div>
 

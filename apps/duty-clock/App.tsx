@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -6,9 +6,11 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from './src/lib/supabase';
 import { LoginScreen } from './src/components/LoginScreen';
 import { DutyScreen } from './src/components/DutyScreen';
-import { colours } from './src/theme';
+import { AppThemeProvider, type AppColours, useAppTheme } from './src/theme';
 
-export default function App() {
+const AppContent = () => {
+  const { colours, isDark } = useAppTheme();
+  const styles = useMemo(() => createStyles(colours), [colours]);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,7 +28,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
       {loading ? (
         <View style={styles.loading}><ActivityIndicator size="large" color={colours.blue} /></View>
       ) : session?.user ? (
@@ -36,8 +38,12 @@ export default function App() {
       )}
     </SafeAreaProvider>
   );
+};
+
+export default function App() {
+  return <AppThemeProvider><AppContent /></AppThemeProvider>;
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colours: AppColours) => StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colours.background },
 });
