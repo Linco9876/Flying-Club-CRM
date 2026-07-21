@@ -42,6 +42,7 @@ supabase/.branches/
 
 # Local generated artifacts and scratch work
 output/
+.playwright-cli/
 tmp/
 tmp-study-upload.txt
 supabase/migrations_legacy_unapplied_20260625/

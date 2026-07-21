@@ -4222,7 +4222,37 @@ const collectMembershipInvoice = async (
   if (
     !preference || !["card", "becs"].includes(clean(preference.payment_method))
   ) {
-    return { attempted: false, reason: "manual_invoice" };
+    const manualMember = await getMember(adminClient, membership.user_id);
+    const contactId = clean(
+      invoice?.Contact?.ContactID || manualMember?.xero_contact_id,
+    );
+    if (!contactId) {
+      return { attempted: false, reason: "manual_invoice_no_xero_contact" };
+    }
+    const credit = await applyAvailableCreditToInvoice(
+      ctx,
+      invoiceId,
+      contactId,
+      amountDue,
+    );
+    if (credit.applied <= 0.005) {
+      return { attempted: false, reason: "manual_invoice_no_prepaid_credit" };
+    }
+    const refreshedInvoice = await getXeroInvoice(ctx, invoiceId);
+    if (refreshedInvoice) {
+      await updateMembershipPeriodFromInvoice(
+        adminClient,
+        period.id,
+        refreshedInvoice,
+      );
+    }
+    return {
+      attempted: true,
+      status: credit.remaining <= 0.005 ? "paid_from_prepaid_credit" : "partially_paid_from_prepaid_credit",
+      prepaidCreditApplied: credit.applied,
+      remaining: credit.remaining,
+      allocations: credit.allocations,
+    };
   }
   if (
     preference.authority_status !== "ready" ||

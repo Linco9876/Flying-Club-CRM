@@ -98,6 +98,23 @@ Saving a card or BECS mandate requires explicit payment authority. Stripe Checko
 
 Xero remains the accounting source of truth. Successful Stripe collections are applied to the matching Xero invoice through the configured Stripe clearing account and the webhook updates the CRM from that result.
 
+For manual annual payment, the CRM checks Xero-confirmed overpayments and prepayments when the membership invoice is issued. Verified credit is allocated to that invoice first; a partial credit leaves only the remainder payable. The legacy portal balance is not treated as spendable unless it is represented by a matching Xero credit.
+
+### Public joining journey and welcome email
+
+The permanent public entry point is `https://portal.bendigoflyingclub.com.au/join`. The main Bendigo Flying Club website should link its **Join the club** call-to-action directly to that URL.
+
+The public journey uses four short steps: membership class and fee, applicant/account details, legal acknowledgements, then payment preference. It explains proration, the committee-or-30-day commencement rule, the separation between BFC and RAAus membership, and the distinction between saving a payment method and taking payment. BECS is presented as preferred; automatic renewal and the optional scholarship contribution both require a positive opt-in.
+
+Submitting creates the portal account and membership application together. When email confirmation is enabled, the confirmation returns to the portal so the applicant can finish secure Stripe setup. Applicants can use the portal as soon as their account is active, while aircraft self-booking remains subject to financial clearance.
+
+A welcome email is sent only when legal membership actually commences, either after committee approval or the 30-day lifecycle. The delivery log prevents duplicate sends, approval attempts delivery immediately, and the daily membership job retries unsent messages. Two variants are selected from the saved preference:
+
+- **Automatic renewal:** explains the 1 July attempt, 60-day payment window after failure, cessation for non-payment and aircraft booking restriction while unpaid.
+- **Annual invoice:** explains invoice-based renewal, the same booking/non-payment rules and the use of Xero-verified prepaid credit when available.
+
+Both versions introduce the member portal and its calendar, profile/RAAus details, flight and training records, logbook, membership and payment features.
+
 When a member cancels through the portal, the CRM withdraws a pending application or resigns a current membership and disables automatic renewal. Any in-flight Stripe collection must be stopped before cancellation continues. A linked unpaid Xero invoice is then deleted while still a draft, or voided after authorisation. Paid or part-paid invoices are retained for accounting history and are not automatically refunded.
 
 The 60-day lifecycle will not automatically cease a membership from a linked Xero invoice if the cached Xero result is missing or older than the configured staleness threshold. The administrator must refresh Xero and rerun the lifecycle; this prevents a false cessation when payment data is stale.
@@ -160,7 +177,7 @@ The July 2019 By-laws still list the old calendar-year fees ($140/$70/$40/$0) an
 ## Deployment checklist for the membership change
 
 1. Review and push `supabase/migrations/20260721120000_add_club_membership_management.sql`.
-2. Deploy the `xero-sync`, `member-xero-balance`, `membership-payment-setup` and `trial-voucher-stripe-webhook` Edge Functions.
+2. Deploy the `xero-sync`, `member-xero-balance`, `membership-payment-setup`, `send-membership-welcome-email` and `trial-voucher-stripe-webhook` Edge Functions.
 3. Confirm the daily `process-bfc-membership-lifecycle` cron job and `daily-membership-xero-refresh` GitHub workflow are active.
 4. In Membership settings, set the accountant-approved Xero membership and scholarship item codes and keep rollout in **Staff warning**.
 5. Import the current register, verify Xero status and add any authorised annual waivers.

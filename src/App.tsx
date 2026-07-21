@@ -21,6 +21,7 @@ import { supabase } from './lib/supabase';
 import { Plane } from 'lucide-react';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
+const MembershipJoinPage = lazy(() => import('./components/Auth/MembershipJoinPage').then(module => ({ default: module.MembershipJoinPage })));
 const BookingForm = lazy(() => import('./components/Bookings/BookingForm'));
 const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboard').then(module => ({ default: module.ProfileDashboard })));
 const Calendar = lazy(() => import('./components/Calendar/Calendar').then(module => ({ default: module.Calendar })));
@@ -332,6 +333,16 @@ const AppContent: React.FC = () => {
       <PageLoadGate routeKey="declaration-sign">
         <Suspense fallback={<PageLoader />}>
           <DeclarationSigningPage />
+        </Suspense>
+      </PageLoadGate>
+    );
+  }
+
+  if (normalisedPathname === '/join') {
+    return (
+      <PageLoadGate routeKey="membership-join">
+        <Suspense fallback={<PageLoader />}>
+          <MembershipJoinPage />
         </Suspense>
       </PageLoadGate>
     );

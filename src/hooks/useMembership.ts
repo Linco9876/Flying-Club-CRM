@@ -314,6 +314,13 @@ export const useMembership = () => {
       if (decision === 'approve') {
         const applicantUserId = applications.find(application => application.id === applicationId)?.userId;
         if (applicantUserId) {
+          const { data: welcomeData, error: welcomeError } = await supabase.functions.invoke('send-membership-welcome-email', {
+            body: { action: 'send-for-user', userId: applicantUserId },
+          });
+          if (welcomeError || welcomeData?.error) {
+            console.warn('Membership approved; welcome email deferred:', welcomeError || welcomeData?.error);
+            toast('Membership approved. The welcome email will be retried by the daily job.', { icon: 'ℹ️' });
+          }
           const { data: invoiceData, error: invoiceError } = await supabase.functions.invoke('xero-sync', {
             body: { action: 'issue-member-membership-invoice', userId: applicantUserId, sendEmail: true },
           });

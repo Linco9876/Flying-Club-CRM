@@ -33,6 +33,29 @@ jobs:
             exit 1
           fi
 
+          welcome_response_file="$(mktemp)"
+          welcome_http_code="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --data '{"action":"send-pending"}' \
+              --output "$welcome_response_file" \
+              --write-out "%{http_code}" \
+              "${SUPABASE_URL%/}/functions/v1/send-membership-welcome-email"
+          )"
+
+          cat "$welcome_response_file"
+          echo
+          if [ "$welcome_http_code" -lt 200 ] || [ "$welcome_http_code" -ge 300 ]; then
+            echo "::warning::Membership welcome email processing returned HTTP ${welcome_http_code}; billing will continue and the next daily run will retry."
+          else
+            welcome_failed="$(jq '.failed // 0' "$welcome_response_file")"
+            if [ "$welcome_failed" -gt 0 ]; then
+              echo "::warning::${welcome_failed} membership welcome email(s) failed and will be retried."
+            fi
+          fi
+
           issue_response_file="$(mktemp)"
           issue_http_code="$(
             curl --silent --show-error \

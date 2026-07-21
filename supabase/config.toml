@@ -21,3 +21,6 @@ verify_jwt = false
 
 [functions.xero-connect]
 verify_jwt = false
+
+[functions.send-membership-welcome-email]
+verify_jwt = false

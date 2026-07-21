@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Plane, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { SignUpForm } from './SignUpForm';
 import { ForgotPasswordForm } from './ForgotPasswordForm';
 
 export const LoginForm: React.FC = () => {
@@ -10,7 +9,6 @@ export const LoginForm: React.FC = () => {
   const [email, setEmail] = useState(() => sessionStorage.getItem('lastPasswordResetEmail') || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showSignUp, setShowSignUp] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,10 +34,6 @@ export const LoginForm: React.FC = () => {
       toast.error('An error occurred during login. Please try again.');
     }
   };
-
-  if (showSignUp) {
-    return <SignUpForm onBackToLogin={() => setShowSignUp(false)} />;
-  }
 
   if (showForgotPassword) {
     return <ForgotPasswordForm onBackToLogin={() => setShowForgotPassword(false)} />;
@@ -157,12 +151,12 @@ export const LoginForm: React.FC = () => {
           </form>
 
           <div className="mt-4 text-center sm:mt-6">
-            <button
-              onClick={() => setShowSignUp(true)}
+            <a
+              href="/join"
               className="text-sm text-blue-600 hover:text-blue-500 font-medium"
             >
-              Don't have an account? Sign up
-            </button>
+              Don't have an account? Join the club
+            </a>
           </div>
         </div>
         </div>
