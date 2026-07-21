@@ -11,6 +11,7 @@ import { StartDutyModal } from './StartDutyModal';
 import { EndDutyModal } from './EndDutyModal';
 import { PRIVACY_URL, SUPPORT_URL } from '../config';
 import { AppearanceSelector } from './AppearanceSelector';
+import { InstallPwaButton } from './InstallPwaButton';
 
 type Props = { user: User };
 
@@ -137,6 +138,7 @@ export const DutyScreen = ({ user }: Props) => {
           <Text style={styles.footerDot}>·</Text>
           <Pressable onPress={() => void Linking.openURL(SUPPORT_URL)}><Text style={styles.footerLink}>Support</Text></Pressable>
         </View>
+        <InstallPwaButton />
         <AppearanceSelector />
       </ScrollView>
 

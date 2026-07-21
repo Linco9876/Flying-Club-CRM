@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DutyContext } from '../types';
 import { type AppColours, useAppTheme } from '../theme';
 import { formatDateTime, formatDuration, hoursFromMinutes, minutesFromHours } from '../utils/time';
 import { PrimaryButton } from './PrimaryButton';
+import { DutyTimePicker } from './DutyTimePicker';
 
 type Props = {
   visible: boolean;
@@ -30,8 +30,8 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
     setShowPicker(Platform.OS === 'ios');
   }, [context.loggedFlightMinutes, visible]);
 
-  const changeTime = (_event: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS === 'android') setShowPicker(false);
+  const changeTime = (selected?: Date) => {
+    if (Platform.OS !== 'ios') setShowPicker(false);
     if (!selected) return;
     const now = new Date();
     const adjusted = new Date(selected);
@@ -75,11 +75,9 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
             <Text style={styles.hint}>Tap to correct the finish time</Text>
           </Pressable>
           {showPicker ? (
-            <DateTimePicker
+            <DutyTimePicker
               value={actualEnd}
-              mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-              themeVariant={isDark ? 'dark' : 'light'}
+              isDark={isDark}
               minimumDate={context.activeDuty ? new Date(context.activeDuty.actualStart) : undefined}
               maximumDate={new Date(Date.now() + 5 * 60_000)}
               onChange={changeTime}

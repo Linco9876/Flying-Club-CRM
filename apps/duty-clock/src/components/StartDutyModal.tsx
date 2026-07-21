@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DutyContext, StartDutyInput } from '../types';
 import { type AppColours, useAppTheme } from '../theme';
@@ -8,6 +7,7 @@ import { readableDistance } from '../utils/geo';
 import { useStartLocation } from '../hooks/useStartLocation';
 import { PrimaryButton } from './PrimaryButton';
 import { ToggleRow } from './ToggleRow';
+import { DutyTimePicker } from './DutyTimePicker';
 
 type Props = {
   visible: boolean;
@@ -58,8 +58,8 @@ export const StartDutyModal = ({ visible, context, working, onClose, onStart }: 
     if (visible && geo.label && geo.label !== 'Checking location…') setLocationLabel(geo.label);
   }, [geo.label, visible]);
 
-  const changeTime = (_event: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS === 'android') setShowPicker(false);
+  const changeTime = (selected?: Date) => {
+    if (Platform.OS !== 'ios') setShowPicker(false);
     if (!selected) return;
     const now = new Date();
     const adjusted = new Date(selected);
@@ -122,11 +122,9 @@ export const StartDutyModal = ({ visible, context, working, onClose, onStart }: 
             <Text style={styles.timeHint}>Tap to adjust · up to {context.maximumBackdateMinutes / 60} hours back</Text>
           </Pressable>
           {showPicker ? (
-            <DateTimePicker
+            <DutyTimePicker
               value={actualStart}
-              mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-              themeVariant={isDark ? 'dark' : 'light'}
+              isDark={isDark}
               minimumDate={new Date(Date.now() - context.maximumBackdateMinutes * 60_000)}
               maximumDate={new Date(Date.now() + 5 * 60_000)}
               onChange={changeTime}

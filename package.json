@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:portal && npm run build:duty-clock-pwa",
+    "build:portal": "vite build",
+    "build:duty-clock-pwa": "node scripts/build-duty-clock-pwa.mjs",
     "deploy:cloudflare": "npm run build && wrangler pages deploy dist --project-name bendigo-flying-club-portal --branch main",
     "cloudflare:status": "wrangler pages project list",
     "supabase:status": "supabase migration list",

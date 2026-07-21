@@ -7,6 +7,14 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "bfcdutyclock",
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/icon.png"
+    },
+    "experiments": {
+      "baseUrl": "/duty-clock/app"
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "au.com.bendigoflyingclub.dutyclock",

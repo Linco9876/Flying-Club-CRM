@@ -35,6 +35,23 @@ export const DutyClockDownloadPage: React.FC = () => (
             Download for Android
           </a>
 
+          <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <span className="h-px flex-1 bg-white/10" />
+            or
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
+
+          <a
+            href="/duty-clock/app/"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-5 py-4 text-base font-bold text-white transition hover:bg-white/15 focus:outline-none focus:ring-4 focus:ring-white/20"
+          >
+            <Smartphone className="h-5 w-5" aria-hidden="true" />
+            Open installable web app
+          </a>
+          <p className="mt-3 text-center text-xs leading-5 text-slate-400">
+            Works on iPhone and Android. Open it, then tap Add to Home Screen inside the app.
+          </p>
+
           <div className="mt-5 flex items-start gap-3 rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-100">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" aria-hidden="true" />
             <p>Version 1.1.0 is digitally signed by Bendigo Flying Club and has passed Android signature verification.</p>

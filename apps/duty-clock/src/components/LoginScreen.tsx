@@ -5,6 +5,7 @@ import { type AppColours, useAppTheme } from '../theme';
 import { ACCOUNT_DELETION_URL, PRIVACY_URL, SUPPORT_URL } from '../config';
 import { PrimaryButton } from './PrimaryButton';
 import { AppearanceSelector } from './AppearanceSelector';
+import { InstallPwaButton } from './InstallPwaButton';
 
 export const LoginScreen = () => {
   const { colours } = useAppTheme();
@@ -61,6 +62,7 @@ export const LoginScreen = () => {
           </View>
         </View>
         <Text style={styles.help}>Use the same account as the Flight Management System.</Text>
+        <InstallPwaButton />
         <View style={styles.appearance}><AppearanceSelector /></View>
         <View style={styles.links}>
           <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}><Text style={styles.link}>Privacy</Text></Pressable>

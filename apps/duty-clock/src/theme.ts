@@ -1,6 +1,6 @@
-import 'expo-sqlite/localStorage/install';
 import { createContext, createElement, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
+import { appStorage } from './storage';
 
 export type ThemeMode = 'light' | 'auto' | 'dark';
 
@@ -40,13 +40,13 @@ export const AppThemeProvider = ({ children }: { children: ReactNode }) => {
   const [mode, setModeState] = useState<ThemeMode>('auto');
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = appStorage.getItem(STORAGE_KEY);
     if (saved === 'light' || saved === 'auto' || saved === 'dark') setModeState(saved);
   }, []);
 
   const setMode = (nextMode: ThemeMode) => {
     setModeState(nextMode);
-    localStorage.setItem(STORAGE_KEY, nextMode);
+    appStorage.setItem(STORAGE_KEY, nextMode);
   };
   const isDark = mode === 'dark' || (mode === 'auto' && systemScheme === 'dark');
   const value = useMemo(() => ({ colours: isDark ? darkColours : lightColours, mode, setMode, isDark }), [isDark, mode]);
