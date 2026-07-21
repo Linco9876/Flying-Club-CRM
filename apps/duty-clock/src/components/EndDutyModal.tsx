@@ -76,7 +76,7 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
             <DateTimePicker
               value={actualEnd}
               mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
               minimumDate={context.activeDuty ? new Date(context.activeDuty.actualStart) : undefined}
               maximumDate={new Date(Date.now() + 5 * 60_000)}
               onChange={changeTime}

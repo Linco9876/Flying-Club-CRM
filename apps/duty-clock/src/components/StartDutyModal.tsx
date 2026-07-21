@@ -123,7 +123,7 @@ export const StartDutyModal = ({ visible, context, working, onClose, onStart }: 
             <DateTimePicker
               value={actualStart}
               mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
               minimumDate={new Date(Date.now() - context.maximumBackdateMinutes * 60_000)}
               maximumDate={new Date(Date.now() + 5 * 60_000)}
               onChange={changeTime}

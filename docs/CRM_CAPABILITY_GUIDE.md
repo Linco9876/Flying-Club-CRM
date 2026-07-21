@@ -166,6 +166,7 @@ The July 2019 By-laws still list the old calendar-year fees ($140/$70/$40/$0) an
 ## Instructor duty and supervision
 
 - Instructors and administrators record duty start, rest periods and duty end in the Duty page.
+- Duty start, finish and break fields use a touch-friendly clock-face picker with large hour/minute controls, explicit AM/PM selection, exact-minute dial input, date selection and a typed-time accessibility fallback. The Android Duty Clock app explicitly requests the matching native clock presentation.
 - Logged flight time pre-fills actual flight time in duty-period entry.
 - If an instructor has not clocked in, duty is automatically inferred from 30 minutes before their first flight.
 - If they do not clock out, the system assumes the configured maximum allowed duty duration.
