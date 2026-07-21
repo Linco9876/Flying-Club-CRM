@@ -360,65 +360,19 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Stripe is not connected for this club." }, 503);
     }
 
-    if (method === "card") {
-      const { data: savedCard, error: cardError } = await adminClient
-        .from("member_stripe_payment_methods")
-        .select(
-          "stripe_customer_id,stripe_payment_method_id,card_brand,card_last4,stripe_mode",
-        )
-        .eq("user_id", user.id)
-        .eq("active", true)
-        .eq("is_default", true)
-        .eq("stripe_mode", stripeMode.mode)
-        .maybeSingle();
-      if (cardError) throw cardError;
-      if (savedCard?.stripe_payment_method_id) {
-        const display = `${clean(savedCard.card_brand) || "Card"} ending ${
-          clean(savedCard.card_last4) || "----"
-        }`;
-        const { data, error } = await adminClient.from(
-          "membership_payment_preferences",
-        ).upsert({
-          user_id: user.id,
-          payment_method: method,
-          auto_renew: autoRenew,
-          scholarship_contribution_enabled: scholarshipEnabled,
-          scholarship_contribution_amount: contributionAmount,
-          authority_status: "ready",
-          stripe_customer_id: savedCard.stripe_customer_id,
-          stripe_payment_method_id: savedCard.stripe_payment_method_id,
-          stripe_payment_method_type: "card",
-          payment_method_display: display,
-          consent_text: consentText,
-          consent_accepted_at: now,
-          consent_ip: req.headers.get("x-forwarded-for") ||
-            req.headers.get("cf-connecting-ip") || null,
-          consent_user_agent: req.headers.get("user-agent") || null,
-          cancelled_at: null,
-          updated_at: now,
-          ...stripeModeColumns(stripeMode.mode),
-        }, { onConflict: "user_id" }).select("*").single();
-        if (error) throw error;
-        await updateUninvoicedPeriodContribution(
-          adminClient,
-          user.id,
-          scholarshipEnabled,
-          contributionAmount,
-        );
-        return json({
-          preference: preferenceResponse(data),
-          setupRequired: false,
-          reusedSavedCard: true,
-        });
-      }
-    }
-
     const existing = await currentPreference(adminClient, user.id);
+    const existingDisplay = clean(existing?.payment_method_display);
+    const existingMethodIsRecognisable = /ending\s+\d{4}$/i.test(
+      existingDisplay,
+    );
     if (
       existing?.payment_method === method &&
       existing?.authority_status === "ready" &&
       existing?.stripe_mode === stripeMode.mode &&
-      clean(existing?.stripe_payment_method_id)
+      clean(existing?.stripe_customer_id) &&
+      clean(existing?.stripe_payment_method_id) &&
+      existingMethodIsRecognisable &&
+      body.forceSetup !== true
     ) {
       const { data, error } = await adminClient.from(
         "membership_payment_preferences",

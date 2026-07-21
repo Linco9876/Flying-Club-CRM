@@ -131,6 +131,7 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
   const [scholarshipEnabled, setScholarshipEnabled] = useState(preference?.scholarshipContributionEnabled || false);
   const [scholarshipAmount, setScholarshipAmount] = useState(String(preference?.scholarshipContributionAmount || 5));
   const [authorityAccepted, setAuthorityAccepted] = useState(false);
+  const [replacePaymentMethod, setReplacePaymentMethod] = useState(false);
 
   React.useEffect(() => {
     if (!preference) return;
@@ -138,15 +139,20 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
     setAutoRenew(preference.autoRenew);
     setScholarshipEnabled(preference.scholarshipContributionEnabled);
     setScholarshipAmount(String(preference.scholarshipContributionAmount || 5));
+    setReplacePaymentMethod(false);
   }, [preference]);
 
   const methods: Array<{ id: MembershipPaymentMethod; title: string; description: string; icon: typeof Landmark; recommended?: boolean }> = [
-    { id: 'becs', title: 'BECS Direct Debit', description: 'Secure payment from an Australian bank account.', icon: Landmark, recommended: true },
+    { id: 'becs', title: 'BECS Direct Debit', description: 'Securely save an Australian bank account. Setup does not transfer any money.', icon: Landmark, recommended: true },
     { id: 'invoice', title: 'Xero invoice', description: 'Receive an invoice and choose when to pay it.', icon: Banknote },
     { id: 'card', title: 'Card', description: 'Use a securely stored card. The club absorbs card fees.', icon: CreditCard },
   ];
   const needsAuthority = paymentMethod !== 'invoice';
   const parsedScholarshipAmount = Number(scholarshipAmount);
+  const preferenceIsReady = preference?.paymentMethod === 'invoice'
+    ? preference.authorityStatus === 'not_required'
+    : preference?.authorityStatus === 'ready' && /ending\s+\d{4}$/i.test(preference.paymentMethodDisplay || '');
+  const opensSecureSetup = needsAuthority && (replacePaymentMethod || !(preference?.paymentMethod === paymentMethod && preferenceIsReady));
   const saveDisabled = membershipApi.busyAction === 'payment-preference'
     || (scholarshipEnabled && (!Number.isFinite(parsedScholarshipAmount) || parsedScholarshipAmount < 0.01))
     || (needsAuthority && !authorityAccepted);
@@ -154,10 +160,10 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-start gap-3">
       <CircleDollarSign className="mt-0.5 h-5 w-5 text-blue-700" />
-      <div><h2 className="font-bold text-slate-950">Payment preference</h2><p className="mt-1 text-sm text-slate-600">Nothing is charged until membership commences. Xero remains the payment record.</p></div>
+      <div><h2 className="font-bold text-slate-950">Payment preference</h2><p className="mt-1 text-sm text-slate-600">The setup screen only saves your payment method. Nothing is charged or transferred until membership commences. Xero remains the payment record.</p></div>
     </div>
     <div className="mt-4 grid gap-3 md:grid-cols-3">
-      {methods.map(method => { const Icon = method.icon; const selected = paymentMethod === method.id; return <button key={method.id} type="button" onClick={() => { setPaymentMethod(method.id); setAuthorityAccepted(false); }} className={`relative rounded-xl border p-4 text-left transition ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 hover:border-slate-300'}`}>
+      {methods.map(method => { const Icon = method.icon; const selected = paymentMethod === method.id; return <button key={method.id} type="button" onClick={() => { setPaymentMethod(method.id); setAuthorityAccepted(false); setReplacePaymentMethod(false); }} className={`relative rounded-xl border p-4 text-left transition ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 hover:border-slate-300'}`}>
         {method.recommended && <span className="absolute right-3 top-3 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">Preferred</span>}
         <Icon className={`h-5 w-5 ${selected ? 'text-blue-700' : 'text-slate-500'}`} /><span className="mt-3 block font-bold text-slate-950">{method.title}</span><span className="mt-1 block text-xs leading-5 text-slate-600">{method.description}</span>
       </button>; })}
@@ -176,9 +182,9 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
       </label>}
     </div>
     {needsAuthority && <label className="mt-4 flex items-start gap-3 text-sm text-slate-700"><input type="checkbox" checked={authorityAccepted} onChange={event => setAuthorityAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span>I authorise the initial membership payment using this method. {autoRenew ? 'I also authorise future annual renewal payments after advance notice.' : 'I am not authorising future annual renewal payments.'}</span></label>}
-    {preference && <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">Current: <span className="font-bold text-slate-800">{preference.paymentMethodDisplay || membershipStatusLabel(preference.paymentMethod)}</span>{preference.authorityStatus === 'ready' && <span className="ml-2 text-emerald-700">Ready</span>}{preference.lastCollectionError && <span className="mt-1 block text-red-700">{preference.lastCollectionError}</span>}</div>}
-    <button disabled={saveDisabled} onClick={() => void membershipApi.savePaymentPreference({ paymentMethod, autoRenew: paymentMethod === 'invoice' ? false : autoRenew, scholarshipContributionEnabled: scholarshipEnabled, scholarshipContributionAmount: parsedScholarshipAmount, authorityAccepted: needsAuthority ? authorityAccepted : false })} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
-      {membershipApi.busyAction === 'payment-preference' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Save payment preference
+    {preference && <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">Current: <span className="font-bold text-slate-800">{preference.paymentMethodDisplay || membershipStatusLabel(preference.paymentMethod)}</span>{preferenceIsReady ? <span className="ml-2 text-emerald-700">Ready</span> : preference.authorityStatus === 'ready' ? <span className="ml-2 font-semibold text-amber-700">Setup incomplete - save again</span> : <span className="ml-2 capitalize text-amber-700">{membershipStatusLabel(preference.authorityStatus)}</span>}{preferenceIsReady && preference.paymentMethod !== 'invoice' && <button type="button" onClick={() => { setReplacePaymentMethod(true); setAuthorityAccepted(false); }} className="ml-3 font-semibold text-blue-700 underline underline-offset-2">Use a different {preference.paymentMethod === 'card' ? 'card' : 'bank account'}</button>}{preference.lastCollectionError && <span className="mt-1 block text-red-700">{preference.lastCollectionError}</span>}</div>}
+    <button disabled={saveDisabled} onClick={() => void membershipApi.savePaymentPreference({ paymentMethod, autoRenew: paymentMethod === 'invoice' ? false : autoRenew, scholarshipContributionEnabled: scholarshipEnabled, scholarshipContributionAmount: parsedScholarshipAmount, authorityAccepted: needsAuthority ? authorityAccepted : false, forceSetup: replacePaymentMethod })} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
+      {membershipApi.busyAction === 'payment-preference' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} {opensSecureSetup ? `Continue to secure ${paymentMethod === 'card' ? 'card' : 'bank'} setup` : 'Save payment preference'}
     </button>
   </section>;
 };

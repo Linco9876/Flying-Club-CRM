@@ -262,6 +262,31 @@ export const useMembership = () => {
 
   useEffect(() => { void refetch(); }, [refetch]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get('payment_setup');
+    if (!outcome) return;
+
+    if (outcome === 'success') {
+      toast.success('Payment method securely saved');
+    } else if (outcome === 'cancelled') {
+      toast('Payment setup cancelled. No money was transferred.', { icon: 'ℹ️' });
+    }
+
+    params.delete('payment_setup');
+    params.delete('session_id');
+    const nextQuery = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`);
+
+    if (outcome !== 'success') return;
+    const firstRefresh = window.setTimeout(() => { void refetch(); }, 1200);
+    const secondRefresh = window.setTimeout(() => { void refetch(); }, 3500);
+    return () => {
+      window.clearTimeout(firstRefresh);
+      window.clearTimeout(secondRefresh);
+    };
+  }, [refetch]);
+
   const runAction = useCallback(async <T,>(key: string, action: () => Promise<T>, success: string) => {
     setBusyAction(key);
     try {
@@ -404,8 +429,10 @@ export const useMembership = () => {
     scholarshipContributionEnabled: boolean;
     scholarshipContributionAmount: number;
     authorityAccepted: boolean;
+    forceSetup?: boolean;
   }) => {
-    const result = await runAction('payment-preference', async () => {
+    setBusyAction('payment-preference');
+    try {
       const returnUrl = `${window.location.origin}/membership`;
       const { data, error: functionError } = await supabase.functions.invoke('membership-payment-setup', {
         body: {
@@ -417,10 +444,19 @@ export const useMembership = () => {
       });
       if (functionError) throw functionError;
       if (data?.error) throw new Error(data.error);
+      if (data?.checkoutUrl) {
+        window.location.assign(data.checkoutUrl);
+        return data;
+      }
+      toast.success(input.paymentMethod === 'invoice' ? 'Invoice preference saved' : 'Payment preference saved');
+      await refetch();
       return data;
-    }, input.paymentMethod === 'invoice' ? 'Invoice preference saved' : 'Payment preference saved');
-    if (result?.checkoutUrl) window.location.assign(result.checkoutUrl);
-    return result;
+    } catch (actionError) {
+      toast.error(errorMessage(actionError, 'Payment preference could not be saved.'));
+      throw actionError;
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const cancelMembership = (reason: string) =>

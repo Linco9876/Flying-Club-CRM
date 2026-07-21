@@ -94,7 +94,7 @@ Applicants and current members can choose one payment preference:
 
 The club does not add a card or payment surcharge. A separate annual scholarship contribution is offered instead. It is unchecked by default, starts at $5 when selected and can be changed by the member to another positive amount. The contribution is shown as its own line on the Xero invoice using the accountant-approved scholarship item code; it is never represented as a fee surcharge.
 
-Saving a card or BECS mandate requires explicit payment authority. Selecting **automatic annual payment** is also optional and unchecked by default. The initial membership invoice may be collected using the selected saved method after membership commences; future annual invoices are collected automatically only when annual payment authority remains enabled. No membership payment is taken while an application is still pending.
+Saving a card or BECS mandate requires explicit payment authority. Stripe Checkout is used only to save and verify the payment method; completing that setup does not transfer funds. Selecting **automatic annual payment** is also optional and unchecked by default. The initial membership invoice may be collected using the selected saved method after membership commences; future annual invoices are collected automatically only when annual payment authority remains enabled. No membership payment is taken while an application is still pending.
 
 Xero remains the accounting source of truth. Successful Stripe collections are applied to the matching Xero invoice through the configured Stripe clearing account and the webhook updates the CRM from that result.
 
