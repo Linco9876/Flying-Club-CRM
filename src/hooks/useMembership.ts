@@ -8,6 +8,8 @@ import {
   MembershipClass,
   MembershipFeeDisposition,
   MembershipFinancialPeriod,
+  MembershipPaymentMethod,
+  MembershipPaymentPreference,
   MembershipRolloutMode,
   MembershipSettings,
 } from '../types';
@@ -62,6 +64,8 @@ interface MembershipFinancialPeriodRow {
   financial_year_start: string;
   financial_year_end: string;
   standard_fee: number | string | null;
+  membership_fee_amount: number | string | null;
+  scholarship_contribution_amount: number | string | null;
   amount_due: number | string | null;
   fee_disposition: MembershipFeeDisposition;
   due_date: string;
@@ -76,6 +80,21 @@ interface MembershipFinancialPeriodRow {
   waiver_reason: string | null;
   waiver_authorised_by: string | null;
   waiver_authorised_at: string | null;
+}
+
+interface MembershipPaymentPreferenceRow {
+  user_id: string;
+  payment_method: MembershipPaymentMethod;
+  auto_renew: boolean | null;
+  scholarship_contribution_enabled: boolean | null;
+  scholarship_contribution_amount: number | string | null;
+  authority_status: MembershipPaymentPreference['authorityStatus'];
+  payment_method_display: string | null;
+  consent_accepted_at: string | null;
+  last_collection_attempt_at: string | null;
+  last_collection_status: string | null;
+  last_collection_error: string | null;
+  updated_at: string;
 }
 
 const errorMessage = (error: unknown, fallback: string) => {
@@ -139,6 +158,8 @@ const mapPeriod = (row: MembershipFinancialPeriodRow): MembershipFinancialPeriod
   financialYearStart: row.financial_year_start,
   financialYearEnd: row.financial_year_end,
   standardFee: Number(row.standard_fee || 0),
+  membershipFeeAmount: Number(row.membership_fee_amount ?? row.amount_due ?? 0),
+  scholarshipContributionAmount: Number(row.scholarship_contribution_amount || 0),
   amountDue: Number(row.amount_due || 0),
   feeDisposition: row.fee_disposition,
   dueDate: row.due_date,
@@ -155,6 +176,21 @@ const mapPeriod = (row: MembershipFinancialPeriodRow): MembershipFinancialPeriod
   waiverAuthorisedAt: row.waiver_authorised_at,
 });
 
+const mapPaymentPreference = (row: MembershipPaymentPreferenceRow): MembershipPaymentPreference => ({
+  userId: row.user_id,
+  paymentMethod: row.payment_method,
+  autoRenew: Boolean(row.auto_renew),
+  scholarshipContributionEnabled: Boolean(row.scholarship_contribution_enabled),
+  scholarshipContributionAmount: Number(row.scholarship_contribution_amount ?? 5),
+  authorityStatus: row.authority_status,
+  paymentMethodDisplay: row.payment_method_display,
+  consentAcceptedAt: row.consent_accepted_at,
+  lastCollectionAttemptAt: row.last_collection_attempt_at,
+  lastCollectionStatus: row.last_collection_status,
+  lastCollectionError: row.last_collection_error,
+  updatedAt: row.updated_at,
+});
+
 export const useMembership = () => {
   const { user } = useAuth();
   const isAdmin = Boolean(user?.role === 'admin' || user?.roles?.includes('admin'));
@@ -162,12 +198,14 @@ export const useMembership = () => {
   const [applications, setApplications] = useState<MembershipApplication[]>([]);
   const [memberships, setMemberships] = useState<ClubMembership[]>([]);
   const [periods, setPeriods] = useState<MembershipFinancialPeriod[]>([]);
+  const [paymentPreferences, setPaymentPreferences] = useState<MembershipPaymentPreference[]>([]);
   const [settings, setSettings] = useState<MembershipSettings>({
     rolloutMode: 'staff_warning',
     automaticCommencementDays: 30,
     nonPaymentGraceDays: 60,
     xeroStatusStaleHours: 24,
     xeroMembershipItemCode: null,
+    xeroScholarshipItemCode: null,
     requireStaffOverrideReason: true,
   });
   const [loading, setLoading] = useState(true);
@@ -178,7 +216,7 @@ export const useMembership = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [classesResult, settingsResult, applicationsResult, membershipsResult, periodsResult] = await Promise.all([
+      const [classesResult, settingsResult, applicationsResult, membershipsResult, periodsResult, preferencesResult] = await Promise.all([
         supabase.from('membership_classes').select('*').order('sort_order'),
         supabase.from('membership_settings').select('*').eq('id', true).maybeSingle(),
         supabase.from('membership_applications').select(`
@@ -192,14 +230,16 @@ export const useMembership = () => {
           membership_class:membership_classes!club_memberships_membership_class_id_fkey(name,code,has_voting_rights)
         `).order('commenced_at', { ascending: false }),
         supabase.from('membership_financial_periods').select('*').order('financial_year_start', { ascending: false }),
+        supabase.from('membership_payment_preferences').select('*'),
       ]);
 
-      const firstError = classesResult.error || settingsResult.error || applicationsResult.error || membershipsResult.error || periodsResult.error;
+      const firstError = classesResult.error || settingsResult.error || applicationsResult.error || membershipsResult.error || periodsResult.error || preferencesResult.error;
       if (firstError) throw firstError;
       setClasses(((classesResult.data || []) as MembershipClassRow[]).map(mapClass));
       setApplications(((applicationsResult.data || []) as MembershipApplicationRow[]).map(mapApplication));
       setMemberships(((membershipsResult.data || []) as ClubMembershipRow[]).map(mapMembership));
       setPeriods(((periodsResult.data || []) as MembershipFinancialPeriodRow[]).map(mapPeriod));
+      setPaymentPreferences(((preferencesResult.data || []) as MembershipPaymentPreferenceRow[]).map(mapPaymentPreference));
       if (settingsResult.data) {
         setSettings({
           rolloutMode: settingsResult.data.rollout_mode,
@@ -207,6 +247,7 @@ export const useMembership = () => {
           nonPaymentGraceDays: Number(settingsResult.data.non_payment_grace_days || 60),
           xeroStatusStaleHours: Number(settingsResult.data.xero_status_stale_hours || 24),
           xeroMembershipItemCode: settingsResult.data.xero_membership_item_code,
+          xeroScholarshipItemCode: settingsResult.data.xero_scholarship_item_code,
           requireStaffOverrideReason: Boolean(settingsResult.data.require_staff_override_reason),
         });
       }
@@ -245,6 +286,18 @@ export const useMembership = () => {
         p_reason: reason || null,
       });
       if (rpcError) throw rpcError;
+      if (decision === 'approve') {
+        const applicantUserId = applications.find(application => application.id === applicationId)?.userId;
+        if (applicantUserId) {
+          const { data: invoiceData, error: invoiceError } = await supabase.functions.invoke('xero-sync', {
+            body: { action: 'issue-member-membership-invoice', userId: applicantUserId, sendEmail: true },
+          });
+          if (invoiceError || invoiceData?.error) {
+            console.warn('Membership approved; Xero invoice issue deferred:', invoiceError || invoiceData?.error);
+            toast('Membership approved. The Xero invoice will be retried by the daily billing job.', { icon: 'ℹ️' });
+          }
+        }
+      }
       return data;
     }, decision === 'approve' ? 'Membership approved' : 'Application rejected');
 
@@ -345,6 +398,43 @@ export const useMembership = () => {
       return data;
     }, 'Xero membership payment refreshed');
 
+  const savePaymentPreference = async (input: {
+    paymentMethod: MembershipPaymentMethod;
+    autoRenew: boolean;
+    scholarshipContributionEnabled: boolean;
+    scholarshipContributionAmount: number;
+    authorityAccepted: boolean;
+  }) => {
+    const result = await runAction('payment-preference', async () => {
+      const returnUrl = `${window.location.origin}/membership`;
+      const { data, error: functionError } = await supabase.functions.invoke('membership-payment-setup', {
+        body: {
+          action: 'save',
+          ...input,
+          successUrl: `${returnUrl}?payment_setup=success`,
+          cancelUrl: `${returnUrl}?payment_setup=cancelled`,
+        },
+      });
+      if (functionError) throw functionError;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    }, input.paymentMethod === 'invoice' ? 'Invoice preference saved' : 'Payment preference saved');
+    if (result?.checkoutUrl) window.location.assign(result.checkoutUrl);
+    return result;
+  };
+
+  const cancelMembership = (reason: string) =>
+    runAction('membership-cancel', async () => {
+      const { data, error: functionError } = await supabase.functions.invoke('membership-payment-setup', {
+        body: { action: 'cancel-membership', reason },
+      });
+      if (functionError) throw functionError;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    }, memberships.some(membership => membership.userId === user?.id && membership.legalStatus === 'current')
+      ? 'Membership cancelled'
+      : 'Membership application withdrawn');
+
   const runLifecycle = () =>
     runAction('lifecycle', async () => {
       const { data, error: rpcError } = await supabase.rpc('process_membership_lifecycle');
@@ -360,16 +450,24 @@ export const useMembership = () => {
       if (updates.nonPaymentGraceDays !== undefined) payload.non_payment_grace_days = updates.nonPaymentGraceDays;
       if (updates.xeroStatusStaleHours !== undefined) payload.xero_status_stale_hours = updates.xeroStatusStaleHours;
       if (updates.xeroMembershipItemCode !== undefined) payload.xero_membership_item_code = updates.xeroMembershipItemCode?.trim() || null;
+      if (updates.xeroScholarshipItemCode !== undefined) payload.xero_scholarship_item_code = updates.xeroScholarshipItemCode?.trim() || null;
       if (updates.requireStaffOverrideReason !== undefined) payload.require_staff_override_reason = updates.requireStaffOverrideReason;
       const { error: updateError } = await supabase.from('membership_settings').update(payload).eq('id', true);
       if (updateError) throw updateError;
     }, 'Membership settings saved');
 
-  const ownApplication = useMemo(() => applications.find(application => application.userId === user?.id), [applications, user?.id]);
+  const ownApplication = useMemo(
+    () => applications.find(application => application.userId === user?.id && application.status === 'pending'),
+    [applications, user?.id],
+  );
   const ownMembership = useMemo(() => memberships.find(membership => membership.userId === user?.id), [memberships, user?.id]);
   const ownPeriods = useMemo(
     () => ownMembership ? periods.filter(period => period.membershipId === ownMembership.id) : [],
     [ownMembership, periods],
+  );
+  const ownPaymentPreference = useMemo(
+    () => paymentPreferences.find(preference => preference.userId === user?.id),
+    [paymentPreferences, user?.id],
   );
 
   return {
@@ -378,10 +476,12 @@ export const useMembership = () => {
     applications,
     memberships,
     periods,
+    paymentPreferences,
     settings,
     ownApplication,
     ownMembership,
     ownPeriods,
+    ownPaymentPreference,
     loading,
     busyAction,
     error,
@@ -394,6 +494,8 @@ export const useMembership = () => {
     refreshAllXeroInvoices,
     issueMembershipRenewals,
     refreshOwnXeroInvoices,
+    savePaymentPreference,
+    cancelMembership,
     runLifecycle,
     updateSettings,
   };

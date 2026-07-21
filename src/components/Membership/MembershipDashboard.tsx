@@ -2,13 +2,18 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
+  Banknote,
   CalendarClock,
   CheckCircle2,
   CircleDollarSign,
+  CreditCard,
   Clock3,
   FileCheck2,
+  Heart,
+  Landmark,
   Loader2,
   RefreshCw,
+  Repeat2,
   Settings2,
   ShieldCheck,
   UserCheck,
@@ -19,7 +24,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { isFinanciallyCleared, membershipStatusLabel, rolloutModeDescription, useMembership } from '../../hooks/useMembership';
 import { useUsers } from '../../hooks/useUsers';
-import { MembershipApplication, MembershipFinancialPeriod, MembershipRolloutMode } from '../../types';
+import { MembershipApplication, MembershipFinancialPeriod, MembershipPaymentMethod, MembershipRolloutMode } from '../../types';
 import { MembershipDocumentLinks } from './MembershipDocumentLinks';
 
 const dateLabel = (value?: string | null) => value
@@ -119,6 +124,75 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
   );
 };
 
+const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+  const preference = membershipApi.ownPaymentPreference;
+  const [paymentMethod, setPaymentMethod] = useState<MembershipPaymentMethod>(preference?.paymentMethod || 'becs');
+  const [autoRenew, setAutoRenew] = useState(preference?.autoRenew || false);
+  const [scholarshipEnabled, setScholarshipEnabled] = useState(preference?.scholarshipContributionEnabled || false);
+  const [scholarshipAmount, setScholarshipAmount] = useState(String(preference?.scholarshipContributionAmount || 5));
+  const [authorityAccepted, setAuthorityAccepted] = useState(false);
+
+  React.useEffect(() => {
+    if (!preference) return;
+    setPaymentMethod(preference.paymentMethod);
+    setAutoRenew(preference.autoRenew);
+    setScholarshipEnabled(preference.scholarshipContributionEnabled);
+    setScholarshipAmount(String(preference.scholarshipContributionAmount || 5));
+  }, [preference]);
+
+  const methods: Array<{ id: MembershipPaymentMethod; title: string; description: string; icon: typeof Landmark; recommended?: boolean }> = [
+    { id: 'becs', title: 'BECS Direct Debit', description: 'Secure payment from an Australian bank account.', icon: Landmark, recommended: true },
+    { id: 'invoice', title: 'Xero invoice', description: 'Receive an invoice and choose when to pay it.', icon: Banknote },
+    { id: 'card', title: 'Card', description: 'Use a securely stored card. The club absorbs card fees.', icon: CreditCard },
+  ];
+  const needsAuthority = paymentMethod !== 'invoice';
+  const parsedScholarshipAmount = Number(scholarshipAmount);
+  const saveDisabled = membershipApi.busyAction === 'payment-preference'
+    || (scholarshipEnabled && (!Number.isFinite(parsedScholarshipAmount) || parsedScholarshipAmount < 0.01))
+    || (needsAuthority && !authorityAccepted);
+
+  return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="flex items-start gap-3">
+      <CircleDollarSign className="mt-0.5 h-5 w-5 text-blue-700" />
+      <div><h2 className="font-bold text-slate-950">Payment preference</h2><p className="mt-1 text-sm text-slate-600">Nothing is charged until membership commences. Xero remains the payment record.</p></div>
+    </div>
+    <div className="mt-4 grid gap-3 md:grid-cols-3">
+      {methods.map(method => { const Icon = method.icon; const selected = paymentMethod === method.id; return <button key={method.id} type="button" onClick={() => { setPaymentMethod(method.id); setAuthorityAccepted(false); }} className={`relative rounded-xl border p-4 text-left transition ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 hover:border-slate-300'}`}>
+        {method.recommended && <span className="absolute right-3 top-3 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">Preferred</span>}
+        <Icon className={`h-5 w-5 ${selected ? 'text-blue-700' : 'text-slate-500'}`} /><span className="mt-3 block font-bold text-slate-950">{method.title}</span><span className="mt-1 block text-xs leading-5 text-slate-600">{method.description}</span>
+      </button>; })}
+    </div>
+    <label className={`mt-4 flex items-start gap-3 rounded-xl border p-4 ${paymentMethod === 'invoice' ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50'}`}>
+      <input type="checkbox" checked={autoRenew} disabled={paymentMethod === 'invoice'} onChange={event => setAutoRenew(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+      <span><span className="flex items-center gap-2 font-bold text-slate-900"><Repeat2 className="h-4 w-4" /> Automatically pay annual renewals</span><span className="mt-1 block text-sm text-slate-600">We will notify you before each annual debit. You can turn this off at any time. Manual Xero invoices cannot be auto-debited.</span></span>
+    </label>
+    <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <label className="flex items-start gap-3">
+        <input type="checkbox" checked={scholarshipEnabled} onChange={event => setScholarshipEnabled(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-violet-300" />
+        <span><span className="flex items-center gap-2 font-bold text-violet-950"><Heart className="h-4 w-4" /> Add a scholarship contribution</span><span className="mt-1 block text-sm text-violet-800">Optional and unchecked by default. It is listed separately from your membership fee in Xero.</span></span>
+      </label>
+      {scholarshipEnabled && <label className="mt-3 block max-w-xs text-sm font-semibold text-violet-950">Contribution amount
+        <div className="mt-1 flex rounded-lg border border-violet-300 bg-white focus-within:ring-2 focus-within:ring-violet-200"><span className="px-3 py-2.5 text-slate-500">$</span><input type="number" min="0.01" step="0.01" inputMode="decimal" value={scholarshipAmount} onChange={event => setScholarshipAmount(event.target.value)} className="min-w-0 flex-1 rounded-r-lg border-0 px-2 py-2.5 outline-none" /></div>
+      </label>}
+    </div>
+    {needsAuthority && <label className="mt-4 flex items-start gap-3 text-sm text-slate-700"><input type="checkbox" checked={authorityAccepted} onChange={event => setAuthorityAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span>I authorise the initial membership payment using this method. {autoRenew ? 'I also authorise future annual renewal payments after advance notice.' : 'I am not authorising future annual renewal payments.'}</span></label>}
+    {preference && <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">Current: <span className="font-bold text-slate-800">{preference.paymentMethodDisplay || membershipStatusLabel(preference.paymentMethod)}</span>{preference.authorityStatus === 'ready' && <span className="ml-2 text-emerald-700">Ready</span>}{preference.lastCollectionError && <span className="mt-1 block text-red-700">{preference.lastCollectionError}</span>}</div>}
+    <button disabled={saveDisabled} onClick={() => void membershipApi.savePaymentPreference({ paymentMethod, autoRenew: paymentMethod === 'invoice' ? false : autoRenew, scholarshipContributionEnabled: scholarshipEnabled, scholarshipContributionAmount: parsedScholarshipAmount, authorityAccepted: needsAuthority ? authorityAccepted : false })} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
+      {membershipApi.busyAction === 'payment-preference' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Save payment preference
+    </button>
+  </section>;
+};
+
+const MembershipCancellation = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  if (!membershipApi.ownApplication && !membershipApi.ownMembership) return null;
+  if (membershipApi.ownApplication?.status === 'withdrawn' || membershipApi.ownMembership?.legalStatus === 'resigned') return null;
+  return <div className="rounded-2xl border border-slate-200 bg-white p-5">
+    {!open ? <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-bold text-slate-900">Cancel membership</h3><p className="mt-1 text-sm text-slate-600">Unpaid Xero membership invoices will be voided. Paid invoices remain as accounting records.</p></div><button onClick={() => setOpen(true)} className="self-start rounded-lg border border-red-300 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50">{membershipApi.ownMembership ? 'Cancel membership' : 'Withdraw application'}</button></div> : <div><h3 className="font-bold text-red-900">Confirm cancellation</h3><p className="mt-1 text-sm text-slate-600">This stops automatic renewal and cancels any unpaid membership invoice.</p><textarea autoFocus rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="Reason for cancellation (minimum 10 characters)" className="mt-3 w-full rounded-lg border border-red-200 px-3 py-2" /><div className="mt-3 flex justify-end gap-2"><button onClick={() => { setOpen(false); setReason(''); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Keep membership</button><button disabled={reason.trim().length < 10 || membershipApi.busyAction === 'membership-cancel'} onClick={async () => { await membershipApi.cancelMembership(reason); setOpen(false); }} className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">{membershipApi.busyAction === 'membership-cancel' && <Loader2 className="h-4 w-4 animate-spin" />} Confirm cancellation</button></div></div>}
+  </div>;
+};
+
 const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
   const { ownApplication, ownMembership, ownPeriods, classes, busyAction, submitApplication, refreshOwnXeroInvoices } = membershipApi;
   const currentPeriod = ownPeriods[0];
@@ -140,6 +214,7 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
           <p className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-500">Financial clearance</p>
           <p className="mt-1 text-xl font-extrabold text-slate-950">{currentPeriod ? moneyLabel(currentPeriod.amountDue) : 'Awaiting fee record'}</p>
           <p className="mt-1 text-sm text-slate-600">{currentPeriod ? `Due ${dateLabel(currentPeriod.dueDate)}` : 'Contact the club'}</p>
+          {currentPeriod && currentPeriod.scholarshipContributionAmount > 0 && <p className="mt-2 text-xs text-violet-700">Includes {moneyLabel(currentPeriod.scholarshipContributionAmount)} scholarship contribution</p>}
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between"><Vote className="h-5 w-5 text-blue-700" />{ownMembership.hasVotingRights ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <XCircle className="h-5 w-5 text-slate-400" />}</div>
@@ -153,9 +228,15 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
         {currentPeriod.xeroInvoiceId && <button disabled={busyAction === 'xero:own'} onClick={() => void refreshOwnXeroInvoices()} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-bold hover:bg-amber-100"><RefreshCw className={`h-4 w-4 ${busyAction === 'xero:own' ? 'animate-spin' : ''}`} /> Refresh Xero payment</button>}
       </div>}
       {currentPeriod?.waiverReason && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><span className="font-bold">Fee waiver:</span> {currentPeriod.waiverReason}</div>}
-    </> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-      <div className="flex items-start gap-3"><Clock3 className="mt-0.5 h-5 w-5 text-amber-700" /><div><h2 className="font-bold text-amber-950">Application pending</h2><p className="mt-1 text-sm text-amber-900">Submitted {dateLabel(ownApplication?.submittedAt)}. If the committee has not decided it earlier, membership is scheduled to commence on {dateLabel(ownApplication?.automaticCommencementAt)}.</p></div></div>
-    </div>}
+      {ownMembership.legalStatus === 'current' && <MembershipPaymentPreferencesCard membershipApi={membershipApi} />}
+      <MembershipCancellation membershipApi={membershipApi} />
+    </> : <>
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+        <div className="flex items-start gap-3"><Clock3 className="mt-0.5 h-5 w-5 text-amber-700" /><div><h2 className="font-bold text-amber-950">Application pending</h2><p className="mt-1 text-sm text-amber-900">Submitted {dateLabel(ownApplication?.submittedAt)}. If the committee has not decided it earlier, membership is scheduled to commence on {dateLabel(ownApplication?.automaticCommencementAt)}.</p></div></div>
+      </div>
+      <MembershipPaymentPreferencesCard membershipApi={membershipApi} />
+      <MembershipCancellation membershipApi={membershipApi} />
+    </>}
   </div>;
 };
 
@@ -207,7 +288,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
   const [draft, setDraft] = useState(membershipApi.settings);
   React.useEffect(() => setDraft(membershipApi.settings), [membershipApi.settings]);
   return <div className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
-    <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div><h2 className="text-lg font-bold text-slate-950">Membership enforcement</h2><p className="mt-1 text-sm text-slate-600">Use warning mode while existing records and Xero links are checked, then enable enforcement.</p></div><div className="space-y-3">{(['information_only', 'staff_warning', 'enforced'] as MembershipRolloutMode[]).map(mode => <label key={mode} className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${draft.rolloutMode === mode ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`}><input type="radio" name="rollout" checked={draft.rolloutMode === mode} onChange={() => setDraft(current => ({ ...current, rolloutMode: mode }))} className="mt-1" /><span><span className="block font-bold text-slate-900">{membershipStatusLabel(mode)}</span><span className="mt-1 block text-sm text-slate-600">{rolloutModeDescription[mode]}</span></span></label>)}</div><div className="grid gap-4 md:grid-cols-3"><label className="text-sm font-semibold text-slate-700">Automatic commencement<input type="number" min={1} max={90} value={draft.automaticCommencementDays} onChange={event => setDraft(current => ({ ...current, automaticCommencementDays: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">days after application</span></label><label className="text-sm font-semibold text-slate-700">Non-payment grace<input type="number" min={1} max={180} value={draft.nonPaymentGraceDays} onChange={event => setDraft(current => ({ ...current, nonPaymentGraceDays: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">days after fee due</span></label><label className="text-sm font-semibold text-slate-700">Xero stale after<input type="number" min={1} max={168} value={draft.xeroStatusStaleHours} onChange={event => setDraft(current => ({ ...current, xeroStatusStaleHours: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">hours</span></label></div><label className="block text-sm font-semibold text-slate-700">Xero membership item code<input value={draft.xeroMembershipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroMembershipItemCode: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" placeholder="e.g. BFC-MEMBERSHIP" /><span className="mt-1 block text-xs font-normal text-slate-500">Create this item in Xero with the accountant-approved account and tax treatment before issuing invoices.</span></label><button disabled={membershipApi.busyAction === 'settings'} onClick={() => void membershipApi.updateSettings(draft)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"><Settings2 className="h-4 w-4" /> Save settings</button></section>
+    <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div><h2 className="text-lg font-bold text-slate-950">Membership enforcement</h2><p className="mt-1 text-sm text-slate-600">Use warning mode while existing records and Xero links are checked, then enable enforcement.</p></div><div className="space-y-3">{(['information_only', 'staff_warning', 'enforced'] as MembershipRolloutMode[]).map(mode => <label key={mode} className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${draft.rolloutMode === mode ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`}><input type="radio" name="rollout" checked={draft.rolloutMode === mode} onChange={() => setDraft(current => ({ ...current, rolloutMode: mode }))} className="mt-1" /><span><span className="block font-bold text-slate-900">{membershipStatusLabel(mode)}</span><span className="mt-1 block text-sm text-slate-600">{rolloutModeDescription[mode]}</span></span></label>)}</div><div className="grid gap-4 md:grid-cols-3"><label className="text-sm font-semibold text-slate-700">Automatic commencement<input type="number" min={1} max={90} value={draft.automaticCommencementDays} onChange={event => setDraft(current => ({ ...current, automaticCommencementDays: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">days after application</span></label><label className="text-sm font-semibold text-slate-700">Non-payment grace<input type="number" min={1} max={180} value={draft.nonPaymentGraceDays} onChange={event => setDraft(current => ({ ...current, nonPaymentGraceDays: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">days after fee due</span></label><label className="text-sm font-semibold text-slate-700">Xero stale after<input type="number" min={1} max={168} value={draft.xeroStatusStaleHours} onChange={event => setDraft(current => ({ ...current, xeroStatusStaleHours: Number(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /><span className="mt-1 block text-xs font-normal text-slate-500">hours</span></label></div><div className="grid gap-4 md:grid-cols-2"><label className="block text-sm font-semibold text-slate-700">Xero membership item code<input value={draft.xeroMembershipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroMembershipItemCode: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" placeholder="e.g. BFC-MEMBERSHIP" /><span className="mt-1 block text-xs font-normal text-slate-500">Use the accountant-approved membership item.</span></label><label className="block text-sm font-semibold text-slate-700">Xero scholarship item code<input value={draft.xeroScholarshipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipItemCode: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" placeholder="e.g. BFC-SCHOLARSHIP" /><span className="mt-1 block text-xs font-normal text-slate-500">Required only when a member opts into a scholarship contribution.</span></label></div><button disabled={membershipApi.busyAction === 'settings'} onClick={() => void membershipApi.updateSettings(draft)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"><Settings2 className="h-4 w-4" /> Save settings</button></section>
     <aside className="space-y-4"><div className="rounded-2xl border border-blue-200 bg-blue-50 p-5"><ShieldCheck className="h-6 w-6 text-blue-700" /><h3 className="mt-3 font-bold text-blue-950">Booking safeguards</h3><ul className="mt-2 space-y-2 text-sm text-blue-900"><li>Guests remain exempt from BFC membership.</li><li>Staff overrides are recorded per booking.</li><li>Safety, duty, grounding and supervision controls remain independent.</li><li>Paid, waived and fee-exempt members are financially cleared.</li></ul></div><button disabled={membershipApi.busyAction === 'lifecycle'} onClick={() => void membershipApi.runLifecycle()} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50"><CalendarClock className="h-4 w-4" /> Run lifecycle now</button></aside>
   </div>;
 };

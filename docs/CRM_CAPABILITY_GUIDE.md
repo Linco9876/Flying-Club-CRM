@@ -84,9 +84,25 @@ Administrators configure a Xero sales item code whose account and tax treatment 
 - allow a member to request a priority refresh of their own linked invoice;
 - retain Xero invoice ID, number, status, amount due, last refresh and any sync error.
 
+### Payment preferences and scholarship contributions
+
+Applicants and current members can choose one payment preference:
+
+- **BECS direct debit (preferred):** saves a bank debit mandate through Stripe;
+- **Xero invoice:** emails an invoice for manual payment; or
+- **Card:** saves a card through Stripe.
+
+The club does not add a card or payment surcharge. A separate annual scholarship contribution is offered instead. It is unchecked by default, starts at $5 when selected and can be changed by the member to another positive amount. The contribution is shown as its own line on the Xero invoice using the accountant-approved scholarship item code; it is never represented as a fee surcharge.
+
+Saving a card or BECS mandate requires explicit payment authority. Selecting **automatic annual payment** is also optional and unchecked by default. The initial membership invoice may be collected using the selected saved method after membership commences; future annual invoices are collected automatically only when annual payment authority remains enabled. No membership payment is taken while an application is still pending.
+
+Xero remains the accounting source of truth. Successful Stripe collections are applied to the matching Xero invoice through the configured Stripe clearing account and the webhook updates the CRM from that result.
+
+When a member cancels through the portal, the CRM withdraws a pending application or resigns a current membership and disables automatic renewal. Any in-flight Stripe collection must be stopped before cancellation continues. A linked unpaid Xero invoice is then deleted while still a draft, or voided after authorisation. Paid or part-paid invoices are retained for accounting history and are not automatically refunded.
+
 The 60-day lifecycle will not automatically cease a membership from a linked Xero invoice if the cached Xero result is missing or older than the configured staleness threshold. The administrator must refresh Xero and rerun the lifecycle; this prevents a false cessation when payment data is stale.
 
-The `daily-membership-xero-refresh` GitHub workflow refreshes linked membership invoices at 01:00 AEST / 02:00 AEDT, ahead of the database lifecycle. It uses the same `ENABLE_XERO_SYNC_WORKER`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` configuration as the existing Xero queue worker. A failed refresh fails visibly in GitHub Actions and the stale-data guard remains the safety backstop.
+The `daily-membership-xero-refresh` GitHub workflow issues due membership renewals and then refreshes linked membership invoices at 01:00 AEST / 02:00 AEDT, ahead of the database lifecycle. It uses the same `ENABLE_XERO_SYNC_WORKER`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` configuration as the existing Xero queue worker. A failed issue or refresh operation fails visibly in GitHub Actions and the stale-data guard remains the safety backstop.
 
 A fee waiver is annual, requires a reason of at least 10 characters, records the authorising administrator and does not create a fake Xero payment. This supports complimentary memberships for substantial volunteer work while preserving accurate accounts.
 
@@ -94,10 +110,10 @@ A fee waiver is annual, requires a reason of at least 10 characters, records the
 
 The **Club Membership** page provides:
 
-- **My membership:** legal status, class, commencement, fee status, due/grace date, voting entitlement and a member-initiated Xero refresh.
+- **My membership:** legal status, class, commencement, fee status, due/grace date, voting entitlement, payment preference, optional scholarship contribution, cancellation and a member-initiated Xero refresh.
 - **Applications:** pending applications, automatic-commencement countdown, approval and reasoned rejection.
 - **Membership register:** member search, current legal/fee state, Xero invoice actions, annual waivers and existing-member import.
-- **Settings:** Xero item code, 30-day commencement, 60-day non-payment grace, Xero staleness threshold and staged booking enforcement.
+- **Settings:** Xero membership and scholarship item codes, 30-day commencement, 60-day non-payment grace, Xero staleness threshold and staged booking enforcement.
 
 Existing members can be imported without reapplying. The import records the original commencement date, class and an opening financial state. Use `invoice required` unless a payment has already been verified; use `waived` only with documented authority.
 
@@ -144,12 +160,12 @@ The July 2019 By-laws still list the old calendar-year fees ($140/$70/$40/$0) an
 ## Deployment checklist for the membership change
 
 1. Review and push `supabase/migrations/20260721120000_add_club_membership_management.sql`.
-2. Deploy the `xero-sync` and `member-xero-balance` Edge Functions.
+2. Deploy the `xero-sync`, `member-xero-balance`, `membership-payment-setup` and `trial-voucher-stripe-webhook` Edge Functions.
 3. Confirm the daily `process-bfc-membership-lifecycle` cron job and `daily-membership-xero-refresh` GitHub workflow are active.
-4. In Membership settings, set the accountant-approved Xero item code and keep rollout in **Staff warning**.
+4. In Membership settings, set the accountant-approved Xero membership and scholarship item codes and keep rollout in **Staff warning**.
 5. Import the current register, verify Xero status and add any authorised annual waivers.
 6. Confirm the versioned governance PDFs under `public/membership-documents/` open from the application form. Replace them only by adding a new document version and path.
-7. Test signup, committee approval, automatic commencement, invoice email, payment refresh, guest booking, member block and staff override in a non-production account.
+7. Test signup, payment-method setup, optional scholarship contribution, committee approval, automatic commencement, invoice email, Stripe collection, cancellation/voiding, payment refresh, guest booking, member block and staff override in a non-production account.
 8. Switch to **Enforced** only after the register reconciliation is complete.
 9. Build the frontend and deploy it to Cloudflare Pages.
 
@@ -157,9 +173,9 @@ The July 2019 By-laws still list the old calendar-year fees ($140/$70/$40/$0) an
 
 - Production Vite build.
 - ESLint on the new membership dashboard, membership hook and updated signup flow.
-- Deno type checks for both modified Xero Edge Functions.
+- Deno type checks for the membership payment setup, Xero sync and Stripe webhook Edge Functions.
 - Supabase linked migration dry run.
-- PostgreSQL migration integration test covering proration, class restrictions, automatic commencement, waivers, guest bookings, staff override audit, stale-Xero deferral and fresh unpaid 60-day cessation.
+- PostgreSQL migration integration tests covering proration, class restrictions, automatic commencement, waivers, guest bookings, staff override audit, stale-Xero deferral, fresh unpaid 60-day cessation and the scholarship contribution snapshot added to a financial period.
 - Manual review of the supplied Constitution, By-laws, Code of Conduct and Members Manual PDFs.
 
 Local full-database reset requires Docker Desktop. If Docker is unavailable, run the migration first in a Supabase staging branch and exercise the checklist above before production rollout.

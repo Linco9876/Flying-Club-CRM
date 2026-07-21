@@ -166,6 +166,8 @@ export type MembershipApplicationStatus = 'pending' | 'approved' | 'rejected' | 
 export type MembershipLegalStatus = 'current' | 'ceased_non_payment' | 'resigned' | 'expelled' | 'deceased';
 export type MembershipFeeDisposition = 'invoice_required' | 'invoiced' | 'paid' | 'waived' | 'fee_exempt' | 'overdue' | 'ceased';
 export type MembershipRolloutMode = 'information_only' | 'staff_warning' | 'enforced';
+export type MembershipPaymentMethod = 'invoice' | 'becs' | 'card';
+export type MembershipPaymentAuthorityStatus = 'not_required' | 'pending' | 'ready' | 'failed' | 'cancelled';
 
 export interface MembershipClass {
   id: string;
@@ -222,6 +224,8 @@ export interface MembershipFinancialPeriod {
   financialYearStart: string;
   financialYearEnd: string;
   standardFee: number;
+  membershipFeeAmount: number;
+  scholarshipContributionAmount: number;
   amountDue: number;
   feeDisposition: MembershipFeeDisposition;
   dueDate: string;
@@ -238,12 +242,28 @@ export interface MembershipFinancialPeriod {
   waiverAuthorisedAt?: string | null;
 }
 
+export interface MembershipPaymentPreference {
+  userId: string;
+  paymentMethod: MembershipPaymentMethod;
+  autoRenew: boolean;
+  scholarshipContributionEnabled: boolean;
+  scholarshipContributionAmount: number;
+  authorityStatus: MembershipPaymentAuthorityStatus;
+  paymentMethodDisplay?: string | null;
+  consentAcceptedAt?: string | null;
+  lastCollectionAttemptAt?: string | null;
+  lastCollectionStatus?: string | null;
+  lastCollectionError?: string | null;
+  updatedAt: string;
+}
+
 export interface MembershipSettings {
   rolloutMode: MembershipRolloutMode;
   automaticCommencementDays: number;
   nonPaymentGraceDays: number;
   xeroStatusStaleHours: number;
   xeroMembershipItemCode?: string | null;
+  xeroScholarshipItemCode?: string | null;
   requireStaffOverrideReason: boolean;
 }
 

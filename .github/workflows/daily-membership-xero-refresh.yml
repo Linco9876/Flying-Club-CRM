@@ -15,7 +15,7 @@ jobs:
     name: Refresh membership invoice payments
     runs-on: ubuntu-latest
     steps:
-      - name: Refresh linked membership invoices from Xero
+      - name: Issue renewals and refresh membership invoices in Xero
         env:
           ENABLE_XERO_SYNC_WORKER: ${{ vars.ENABLE_XERO_SYNC_WORKER }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -33,27 +33,52 @@ jobs:
             exit 1
           fi
 
-          response_file="$(mktemp)"
-          http_code="$(
+          issue_response_file="$(mktemp)"
+          issue_http_code="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --data '{"action":"issue-membership-renewals","sendEmail":true}' \
+              --output "$issue_response_file" \
+              --write-out "%{http_code}" \
+              "${SUPABASE_URL%/}/functions/v1/xero-sync"
+          )"
+
+          cat "$issue_response_file"
+          echo
+          if [ "$issue_http_code" -lt 200 ] || [ "$issue_http_code" -ge 300 ]; then
+            echo "::error::Membership invoice issue failed with HTTP ${issue_http_code}."
+            exit 1
+          fi
+
+          issue_failed="$(jq '.failed // 0' "$issue_response_file")"
+          if [ "$issue_failed" -gt 0 ]; then
+            echo "::error::${issue_failed} membership invoice issue(s) failed. Review Xero item settings and member contact details."
+            exit 1
+          fi
+
+          refresh_response_file="$(mktemp)"
+          refresh_http_code="$(
             curl --silent --show-error \
               --request POST \
               --header "Content-Type: application/json" \
               --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
               --data '{"action":"refresh-membership-invoices"}' \
-              --output "$response_file" \
+              --output "$refresh_response_file" \
               --write-out "%{http_code}" \
               "${SUPABASE_URL%/}/functions/v1/xero-sync"
           )"
 
-          cat "$response_file"
+          cat "$refresh_response_file"
           echo
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            echo "::error::Membership Xero refresh failed with HTTP ${http_code}."
+          if [ "$refresh_http_code" -lt 200 ] || [ "$refresh_http_code" -ge 300 ]; then
+            echo "::error::Membership Xero refresh failed with HTTP ${refresh_http_code}."
             exit 1
           fi
 
-          failed="$(jq '[.results[]? | select(.error)] | length' "$response_file")"
-          if [ "$failed" -gt 0 ]; then
-            echo "::error::${failed} membership invoice refresh(es) failed. The lifecycle stale-data guard will defer any affected cessation."
+          refresh_failed="$(jq '[.results[]? | select(.error)] | length' "$refresh_response_file")"
+          if [ "$refresh_failed" -gt 0 ]; then
+            echo "::error::${refresh_failed} membership invoice refresh(es) failed. The lifecycle stale-data guard will defer any affected cessation."
             exit 1
           fi

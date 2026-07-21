@@ -1,14 +1,22 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getConnectedStripeAccountId, stripeHeaders } from "../_shared/stripeConnectAccount.ts";
-import { getStripeSecretKeyForMode, type StripeMode } from "../_shared/stripeMode.ts";
+import {
+  getConnectedStripeAccountId,
+  stripeHeaders,
+  stripeIdempotencyKey,
+} from "../_shared/stripeConnectAccount.ts";
+import {
+  getStripeSecretKeyForMode,
+  type StripeMode,
+} from "../_shared/stripeMode.ts";
 
 type SupabaseAdminClient = any;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
 const json = (body: Record<string, unknown>, status = 200) =>
@@ -18,15 +26,19 @@ const json = (body: Record<string, unknown>, status = 200) =>
   });
 
 const clean = (value: unknown) => String(value || "").trim();
-const money = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-const quantityValue = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 1000) / 1000;
-const unitRateValue = (value: unknown) => Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000;
+const money = (value: unknown) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+const quantityValue = (value: unknown) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 1000) / 1000;
+const unitRateValue = (value: unknown) =>
+  Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000;
 const getErrorMessage = (error: unknown, fallback = "Xero sync failed") => {
   if (error instanceof Error) return error.message || fallback;
   if (typeof error === "string") return error || fallback;
   if (error && typeof error === "object") {
     const value = error as Record<string, unknown>;
-    const direct = clean(value.message) || clean(value.error) || clean(value.details) || clean(value.hint);
+    const direct = clean(value.message) || clean(value.error) ||
+      clean(value.details) || clean(value.hint);
     if (direct) return direct;
     try {
       const serialized = JSON.stringify(value);
@@ -39,11 +51,15 @@ const getErrorMessage = (error: unknown, fallback = "Xero sync failed") => {
 };
 const truncateText = (value: string, maxLength = 255) => {
   const text = clean(value);
-  return text.length <= maxLength ? text : text.slice(0, maxLength - 1).trimEnd() + "…";
+  return text.length <= maxLength
+    ? text
+    : text.slice(0, maxLength - 1).trimEnd() + "…";
 };
 const isoDate = (value: unknown) => {
   const date = value ? new Date(String(value)) : new Date();
-  return Number.isNaN(date.getTime()) ? new Date().toISOString().slice(0, 10) : date.toISOString().slice(0, 10);
+  return Number.isNaN(date.getTime())
+    ? new Date().toISOString().slice(0, 10)
+    : date.toISOString().slice(0, 10);
 };
 const humanDate = (value: unknown) => {
   const date = value ? new Date(String(value)) : new Date();
@@ -69,21 +85,38 @@ const parseRetryAfterMs = (value: string | null) => {
 };
 
 let xeroRateLimitAdminClient: SupabaseAdminClient | null = null;
-const xeroMaxCallsPerMinute = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_MINUTE") || 40));
-const xeroMaxCallsPerDay = Math.max(1, Number(Deno.env.get("XERO_RATE_LIMIT_PER_DAY") || 4500));
-const xeroSpacingMs = Math.max(0, Number(Deno.env.get("XERO_RATE_LIMIT_SPACING_MS") || 1300));
-const xeroMaxWaitMs = Math.max(1000, Number(Deno.env.get("XERO_RATE_LIMIT_MAX_WAIT_MS") || 30_000));
+const xeroMaxCallsPerMinute = Math.max(
+  1,
+  Number(Deno.env.get("XERO_RATE_LIMIT_PER_MINUTE") || 40),
+);
+const xeroMaxCallsPerDay = Math.max(
+  1,
+  Number(Deno.env.get("XERO_RATE_LIMIT_PER_DAY") || 4500),
+);
+const xeroSpacingMs = Math.max(
+  0,
+  Number(Deno.env.get("XERO_RATE_LIMIT_SPACING_MS") || 1300),
+);
+const xeroMaxWaitMs = Math.max(
+  1000,
+  Number(Deno.env.get("XERO_RATE_LIMIT_MAX_WAIT_MS") || 30_000),
+);
 
-const waitForXeroApiSlot = async (options: { bypassLocalPause?: boolean } = {}) => {
+const waitForXeroApiSlot = async (
+  options: { bypassLocalPause?: boolean } = {},
+) => {
   if (options.bypassLocalPause) return;
   if (!xeroRateLimitAdminClient) return;
 
   for (let attempt = 1; attempt <= 8; attempt += 1) {
-    const { data, error } = await xeroRateLimitAdminClient.rpc("claim_xero_api_slot", {
-      max_calls_per_minute: xeroMaxCallsPerMinute,
-      max_calls_per_day: xeroMaxCallsPerDay,
-      spacing_ms: xeroSpacingMs,
-    });
+    const { data, error } = await xeroRateLimitAdminClient.rpc(
+      "claim_xero_api_slot",
+      {
+        max_calls_per_minute: xeroMaxCallsPerMinute,
+        max_calls_per_day: xeroMaxCallsPerDay,
+        spacing_ms: xeroSpacingMs,
+      },
+    );
 
     if (error) {
       console.warn("Xero rate-limit guard unavailable:", error.message);
@@ -96,7 +129,9 @@ const waitForXeroApiSlot = async (options: { bypassLocalPause?: boolean } = {}) 
     if (waitMs > xeroMaxWaitMs) {
       const retryAfterSeconds = Math.ceil(waitMs / 1000);
       throw Object.assign(
-        new Error(`Xero sync is paused to stay under rate limits. It will retry in about ${retryAfterSeconds} seconds.`),
+        new Error(
+          `Xero sync is paused to stay under rate limits. It will retry in about ${retryAfterSeconds} seconds.`,
+        ),
         { status: 429, retryAfterSeconds },
       );
     }
@@ -110,7 +145,9 @@ const noteXeroRateLimit = async (retryAfterSeconds: number | null) => {
   const { error } = await xeroRateLimitAdminClient.rpc("note_xero_rate_limit", {
     retry_after_seconds: retryAfterSeconds,
   });
-  if (error) console.warn("Failed to record Xero rate-limit pause:", error.message);
+  if (error) {
+    console.warn("Failed to record Xero rate-limit pause:", error.message);
+  }
 };
 
 const isAdminRole = (role: string) => role === "admin";
@@ -129,7 +166,9 @@ const authenticateAdmin = async ({
   serviceRoleKey: string;
 }) => {
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader) return { ok: false, error: "No authorization header", status: 401 };
+  if (!authHeader) {
+    return { ok: false, error: "No authorization header", status: 401 };
+  }
   const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
 
   if (bearerToken && bearerToken === serviceRoleKey) {
@@ -150,7 +189,9 @@ const authenticateAdmin = async ({
     return { ok: true, userId: profileRow?.id ?? null };
   }
 
-  const requestApiKey = clean(req.headers.get("apikey") || req.headers.get("Apikey"));
+  const requestApiKey = clean(
+    req.headers.get("apikey") || req.headers.get("Apikey"),
+  );
   const authApiKey = requestApiKey || anonKey;
   const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
     headers: {
@@ -158,20 +199,35 @@ const authenticateAdmin = async ({
       Authorization: `Bearer ${bearerToken}`,
     },
   });
-  if (!userResponse.ok) return { ok: false, error: `Unauthorized: auth user lookup failed (${userResponse.status})`, status: 401 };
+  if (!userResponse.ok) {
+    return {
+      ok: false,
+      error: `Unauthorized: auth user lookup failed (${userResponse.status})`,
+      status: 401,
+    };
+  }
   const user = await userResponse.json().catch(() => null);
-  if (!user?.id) return { ok: false, error: "Unauthorized: auth user missing", status: 401 };
+  if (!user?.id) {
+    return { ok: false, error: "Unauthorized: auth user missing", status: 401 };
+  }
 
-  const [{ data: roles, error: rolesError }, { data: profile, error: profileError }] = await Promise.all([
+  const [
+    { data: roles, error: rolesError },
+    { data: profile, error: profileError },
+  ] = await Promise.all([
     adminClient.from("user_roles").select("role").eq("user_id", user.id),
     adminClient.from("users").select("role").eq("id", user.id).maybeSingle(),
   ]);
   if (rolesError) return { ok: false, error: rolesError.message, status: 500 };
-  if (profileError) return { ok: false, error: profileError.message, status: 500 };
+  if (profileError) {
+    return { ok: false, error: profileError.message, status: 500 };
+  }
 
   const callerIsAdmin = isAdminRole(String(profile?.role || "")) ||
     (roles || []).some((row: any) => isAdminRole(String(row.role)));
-  if (!callerIsAdmin) return { ok: false, error: "Only admins can sync Xero", status: 403 };
+  if (!callerIsAdmin) {
+    return { ok: false, error: "Only admins can sync Xero", status: 403 };
+  }
 
   return { ok: true, userId: user.id };
 };
@@ -204,7 +260,9 @@ const xeroRequest = async ({
         "Xero-tenant-id": tenantId,
         Accept: "application/json",
         "Content-Type": "application/json",
-        ...(clean(idempotencyKey) ? { "Idempotency-Key": clean(idempotencyKey) } : {}),
+        ...(clean(idempotencyKey)
+          ? { "Idempotency-Key": clean(idempotencyKey) }
+          : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -212,8 +270,13 @@ const xeroRequest = async ({
     const payload = text ? JSON.parse(text) : {};
 
     if (response.status === 429) {
-      const retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
-      const fallbackDelayMs = Math.min(30_000, Math.round((1_500 * (2 ** (attempt - 1))) + Math.random() * 750));
+      const retryAfterMs = parseRetryAfterMs(
+        response.headers.get("Retry-After"),
+      );
+      const fallbackDelayMs = Math.min(
+        30_000,
+        Math.round((1_500 * (2 ** (attempt - 1))) + Math.random() * 750),
+      );
       const waitMs = retryAfterMs > 0 ? retryAfterMs : fallbackDelayMs;
       if (attempt < maxAttempts && waitMs <= 30_000) {
         await noteXeroRateLimit(Math.ceil(waitMs / 1000));
@@ -224,7 +287,11 @@ const xeroRequest = async ({
       const message = seconds
         ? `Xero is rate limiting the CRM. Please wait about ${seconds} seconds and try again.`
         : "Xero is rate limiting the CRM. Please wait a few minutes and try again.";
-      const error = new Error(message) as Error & { status?: number; payload?: unknown; retryAfterSeconds?: number | null };
+      const error = new Error(message) as Error & {
+        status?: number;
+        payload?: unknown;
+        retryAfterSeconds?: number | null;
+      };
       error.status = response.status;
       error.payload = payload;
       error.retryAfterSeconds = seconds;
@@ -235,9 +302,13 @@ const xeroRequest = async ({
     if (!response.ok) {
       const validationMessages = Array.isArray(payload?.Elements)
         ? payload.Elements
-            .flatMap((element: any) => Array.isArray(element?.ValidationErrors) ? element.ValidationErrors : [])
-            .map((item: any) => clean(item?.Message))
-            .filter(Boolean)
+          .flatMap((element: any) =>
+            Array.isArray(element?.ValidationErrors)
+              ? element.ValidationErrors
+              : []
+          )
+          .map((item: any) => clean(item?.Message))
+          .filter(Boolean)
         : [];
       const message = validationMessages[0] ||
         payload?.Message ||
@@ -245,17 +316,29 @@ const xeroRequest = async ({
         payload?.Detail ||
         `Xero request failed with HTTP ${response.status}`;
       if (response.status === 401 && path.startsWith("BankTransactions")) {
-        throw makeXeroNeedsReviewError("Xero refused the prepaid credit sync. Reconnect Xero in Settings > Integrations so the CRM has bank transaction permission, then retry this sync item.");
+        throw makeXeroNeedsReviewError(
+          "Xero refused the prepaid credit sync. Reconnect Xero in Settings > Integrations so the CRM has bank transaction permission, then retry this sync item.",
+        );
       }
-      if ((response.status === 401 || response.status === 403) && path.startsWith("ManualJournals")) {
-        throw makeXeroNeedsReviewError("Xero refused the gift voucher journal. Reconnect Xero in Settings > Integrations to grant Manual Journals permission, and make sure the authorising Xero user has Reports access, then retry this sync item.");
+      if (
+        (response.status === 401 || response.status === 403) &&
+        path.startsWith("ManualJournals")
+      ) {
+        throw makeXeroNeedsReviewError(
+          "Xero refused the gift voucher journal. Reconnect Xero in Settings > Integrations to grant Manual Journals permission, and make sure the authorising Xero user has Reports access, then retry this sync item.",
+        );
       }
-      const error = new Error(message) as Error & { status?: number; payload?: unknown };
+      const error = new Error(message) as Error & {
+        status?: number;
+        payload?: unknown;
+      };
       error.status = response.status;
       error.payload = payload;
       throw error;
     }
-    const remainingMinuteCalls = Number(response.headers.get("X-MinLimit-Remaining"));
+    const remainingMinuteCalls = Number(
+      response.headers.get("X-MinLimit-Remaining"),
+    );
     if (Number.isFinite(remainingMinuteCalls) && remainingMinuteCalls <= 3) {
       await sleep(2_500);
     }
@@ -278,20 +361,30 @@ const getRetryDelayMs = (attempt: number) => {
 };
 
 const isRetriableXeroError = (error: unknown) => {
-  const status = typeof (error as any)?.status === "number" ? Number((error as any).status) : null;
+  const status = typeof (error as any)?.status === "number"
+    ? Number((error as any).status)
+    : null;
   if (status === 429) return true;
   if (status !== null && status >= 500) return true;
   const message = clean((error as any)?.message).toLowerCase();
-  return message.includes("timeout") || message.includes("temporarily unavailable") || message.includes("network");
+  return message.includes("timeout") ||
+    message.includes("temporarily unavailable") || message.includes("network");
 };
 
-const refreshAccessToken = async (adminClient: SupabaseAdminClient, connection: any) => {
+const refreshAccessToken = async (
+  adminClient: SupabaseAdminClient,
+  connection: any,
+) => {
   const clientId = Deno.env.get("XERO_CLIENT_ID");
   const clientSecret = Deno.env.get("XERO_CLIENT_SECRET");
-  if (!clientId || !clientSecret) throw new Error("Xero client ID and secret are not configured.");
+  if (!clientId || !clientSecret) {
+    throw new Error("Xero client ID and secret are not configured.");
+  }
   if (!connection?.refresh_token) throw new Error("Xero is not connected.");
 
-  const expiresAt = connection.expires_at ? new Date(connection.expires_at).getTime() : 0;
+  const expiresAt = connection.expires_at
+    ? new Date(connection.expires_at).getTime()
+    : 0;
   if (connection.access_token && expiresAt - Date.now() > 120_000) {
     return connection;
   }
@@ -311,10 +404,18 @@ const refreshAccessToken = async (adminClient: SupabaseAdminClient, connection: 
   const token = await response.json().catch(() => ({}));
   if (!response.ok) {
     const tokenError = clean(token?.error_description || token?.error);
-    if (response.status === 401 || response.status === 403 || tokenError.toLowerCase().includes("unauthorized") || tokenError.toLowerCase().includes("invalid_grant")) {
-      throw makeXeroNeedsReviewError("Xero is no longer authorised. Reconnect Xero in Settings > Integrations, then retry this sync item.");
+    if (
+      response.status === 401 || response.status === 403 ||
+      tokenError.toLowerCase().includes("unauthorized") ||
+      tokenError.toLowerCase().includes("invalid_grant")
+    ) {
+      throw makeXeroNeedsReviewError(
+        "Xero is no longer authorised. Reconnect Xero in Settings > Integrations, then retry this sync item.",
+      );
     }
-    throw new Error(tokenError || `Xero token refresh failed with HTTP ${response.status}`);
+    throw new Error(
+      tokenError || `Xero token refresh failed with HTTP ${response.status}`,
+    );
   }
 
   const expiresInSeconds = Number(token?.expires_in || 0);
@@ -330,28 +431,43 @@ const refreshAccessToken = async (adminClient: SupabaseAdminClient, connection: 
     expires_at,
     updated_at: new Date().toISOString(),
   };
-  const { error } = await adminClient.from("xero_connection_settings").update(update).eq("id", true);
+  const { error } = await adminClient.from("xero_connection_settings").update(
+    update,
+  ).eq("id", true);
   if (error) throw error;
   return { ...connection, ...update };
 };
 
 const getConnectionAndSettings = async (adminClient: SupabaseAdminClient) => {
-  const [{ data: connection, error: connectionError }, { data: settings, error: settingsError }] = await Promise.all([
-    adminClient.from("xero_connection_settings").select("*").eq("id", true).maybeSingle(),
-    adminClient.from("xero_sync_settings").select("*").eq("id", true).maybeSingle(),
+  const [
+    { data: connection, error: connectionError },
+    { data: settings, error: settingsError },
+  ] = await Promise.all([
+    adminClient.from("xero_connection_settings").select("*").eq("id", true)
+      .maybeSingle(),
+    adminClient.from("xero_sync_settings").select("*").eq("id", true)
+      .maybeSingle(),
   ]);
   if (connectionError) throw connectionError;
   if (settingsError) throw settingsError;
-  if (!connection?.tenant_id || !connection?.refresh_token) throw new Error("Xero is not connected.");
-  return { connection: await refreshAccessToken(adminClient, connection), settings: settings || {} };
+  if (!connection?.tenant_id || !connection?.refresh_token) {
+    throw new Error("Xero is not connected.");
+  }
+  return {
+    connection: await refreshAccessToken(adminClient, connection),
+    settings: settings || {},
+  };
 };
 
-const xeroStringLiteral = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+const xeroStringLiteral = (value: string) =>
+  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 const searchXeroContactsByEmail = async (ctx: any, email: string) => {
   const address = clean(email);
   if (!address) return [];
-  const where = encodeURIComponent(`EmailAddress=="${xeroStringLiteral(address)}"`);
+  const where = encodeURIComponent(
+    `EmailAddress=="${xeroStringLiteral(address)}"`,
+  );
   const result = await xeroRequest({
     path: `Contacts?where=${where}`,
     tenantId: ctx.connection.tenant_id,
@@ -416,11 +532,15 @@ const ensureFlightTypeSalesItem = async (
   const itemName = clean(name) || itemCode;
   const revenueAccountCode = clean(ctx.settings?.revenue_account_code);
   if (!revenueAccountCode) {
-    throw new Error("Set a Xero flight revenue account code before creating flight type sales items.");
+    throw new Error(
+      "Set a Xero flight revenue account code before creating flight type sales items.",
+    );
   }
 
   const existingItems = await listXeroItems(ctx);
-  const existing = existingItems.find((item: any) => item.code.toUpperCase() === itemCode);
+  const existing = existingItems.find((item: any) =>
+    item.code.toUpperCase() === itemCode
+  );
 
   const payload = {
     Code: itemCode,
@@ -439,7 +559,9 @@ const ensureFlightTypeSalesItem = async (
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
     body: {
-      Items: [existing?.itemId ? { ItemID: existing.itemId, ...payload } : payload],
+      Items: [
+        existing?.itemId ? { ItemID: existing.itemId, ...payload } : payload,
+      ],
     },
   });
 
@@ -471,7 +593,9 @@ const listXeroTrackingCategories = async (ctx: any) => {
     tenantId: ctx.connection.tenant_id,
     accessToken: ctx.connection.access_token,
   });
-  const categories = Array.isArray(result?.TrackingCategories) ? result.TrackingCategories : [];
+  const categories = Array.isArray(result?.TrackingCategories)
+    ? result.TrackingCategories
+    : [];
   return categories
     .map((category: any) => ({
       trackingCategoryId: clean(category.TrackingCategoryID),
@@ -504,13 +628,21 @@ const ensureAircraftTrackingOption = async (
   const normalizedOptionName = clean(optionName);
   const requestedCategoryId = clean(categoryId);
 
-  if (!normalizedCategoryName) throw new Error("Tracking category name is required.");
-  if (!normalizedOptionName) throw new Error("Tracking option name is required.");
+  if (!normalizedCategoryName) {
+    throw new Error("Tracking category name is required.");
+  }
+  if (!normalizedOptionName) {
+    throw new Error("Tracking option name is required.");
+  }
 
   const categories = await listXeroTrackingCategories(ctx);
-  let matchingCategory = categories.find((item: any) => requestedCategoryId && item.trackingCategoryId === requestedCategoryId);
+  let matchingCategory = categories.find((item: any) =>
+    requestedCategoryId && item.trackingCategoryId === requestedCategoryId
+  );
   if (!matchingCategory) {
-    matchingCategory = categories.find((item: any) => item.name.toLowerCase() === normalizedCategoryName.toLowerCase());
+    matchingCategory = categories.find((item: any) =>
+      item.name.toLowerCase() === normalizedCategoryName.toLowerCase()
+    );
   }
 
   let categoryCreated = false;
@@ -536,29 +668,45 @@ const ensureAircraftTrackingOption = async (
       trackingCategoryId: clean(createdCategory.TrackingCategoryID),
       name: clean(createdCategory.Name) || normalizedCategoryName,
       status: clean(createdCategory.Status),
-      options: (Array.isArray(createdCategory.Options) ? createdCategory.Options : []).map((option: any) => ({
-        trackingOptionId: clean(option.TrackingOptionID),
-        name: clean(option.Name),
-        status: clean(option.Status),
-      })),
+      options:
+        (Array.isArray(createdCategory.Options) ? createdCategory.Options : [])
+          .map((option: any) => ({
+            trackingOptionId: clean(option.TrackingOptionID),
+            name: clean(option.Name),
+            status: clean(option.Status),
+          })),
     };
     categoryCreated = true;
     optionCreated = true;
   }
 
-  if (clean(matchingCategory.status).toUpperCase() && clean(matchingCategory.status).toUpperCase() !== "ACTIVE") {
-    throw new Error(`Xero tracking category "${matchingCategory.name}" is not active.`);
+  if (
+    clean(matchingCategory.status).toUpperCase() &&
+    clean(matchingCategory.status).toUpperCase() !== "ACTIVE"
+  ) {
+    throw new Error(
+      `Xero tracking category "${matchingCategory.name}" is not active.`,
+    );
   }
 
-  let matchingOption = (matchingCategory.options || []).find((item: any) => item.name.toLowerCase() === normalizedOptionName.toLowerCase());
-  if (matchingOption && clean(matchingOption.status).toUpperCase() && clean(matchingOption.status).toUpperCase() !== "ACTIVE") {
-    throw new Error(`Xero tracking option "${matchingOption.name}" exists but is not active.`);
+  let matchingOption = (matchingCategory.options || []).find((item: any) =>
+    item.name.toLowerCase() === normalizedOptionName.toLowerCase()
+  );
+  if (
+    matchingOption && clean(matchingOption.status).toUpperCase() &&
+    clean(matchingOption.status).toUpperCase() !== "ACTIVE"
+  ) {
+    throw new Error(
+      `Xero tracking option "${matchingOption.name}" exists but is not active.`,
+    );
   }
 
   if (!matchingOption) {
     const createOptionResult = await xeroRequest({
       method: "PUT",
-      path: `TrackingCategories/${encodeURIComponent(matchingCategory.trackingCategoryId)}/Options`,
+      path: `TrackingCategories/${
+        encodeURIComponent(matchingCategory.trackingCategoryId)
+      }/Options`,
       tenantId: ctx.connection.tenant_id,
       accessToken: ctx.connection.access_token,
       body: {
@@ -621,7 +769,8 @@ const ensureStripeClearingAccount = async (ctx: any) => {
         Name: "Stripe Clearing Bank",
         Type: "BANK",
         BankAccountNumber: "STRIPE-CLEARING",
-        Description: "Stripe clearing bank account for CRM card payments and member top-ups.",
+        Description:
+          "Stripe clearing bank account for CRM card payments and member top-ups.",
       }],
     },
   });
@@ -719,7 +868,8 @@ const ensureTopupReceiptAccount = async (ctx: any) => {
         Code: "TOPUPRCPT",
         Name: "Member Top-up Receipts",
         Type: "CURRENT",
-        Description: "Receipt account for member top-ups collected through the CRM.",
+        Description:
+          "Receipt account for member top-ups collected through the CRM.",
         EnablePaymentsToAccount: true,
       }],
     },
@@ -768,7 +918,8 @@ const ensureStripeFeeExpenseAccount = async (ctx: any) => {
         Code: "STRIPEFEE",
         Name: "Stripe Fees",
         Type: "EXPENSE",
-        Description: "Stripe merchant and processing fees from CRM card payments.",
+        Description:
+          "Stripe merchant and processing fees from CRM card payments.",
       }],
     },
   });
@@ -816,7 +967,8 @@ const ensureVoucherLiabilityAccount = async (ctx: any) => {
         Code: "GFTVOUCH",
         Name: "Gift Voucher Liability",
         Type: "CURRLIAB",
-        Description: "Gift voucher liability for CRM voucher sales until redeemed.",
+        Description:
+          "Gift voucher liability for CRM voucher sales until redeemed.",
       }],
     },
   });
@@ -872,7 +1024,9 @@ const ensurePrepaidLiabilityAccount = async (ctx: any) => {
 
   const createdAccount = result?.Accounts?.[0];
   if (!createdAccount) {
-    throw new Error("Xero did not return the member prepaid liability account.");
+    throw new Error(
+      "Xero did not return the member prepaid liability account.",
+    );
   }
 
   return {
@@ -935,8 +1089,14 @@ const createManualJournal = async ({
   };
 };
 
-const fetchStripeFeeDetails = async (adminClient: SupabaseAdminClient, flightLogId: string, tx: any) => {
-  const txMode = tx?.stripe_mode === "test" || tx?.is_test_mode === true ? "test" : "live";
+const fetchStripeFeeDetails = async (
+  adminClient: SupabaseAdminClient,
+  flightLogId: string,
+  tx: any,
+) => {
+  const txMode = tx?.stripe_mode === "test" || tx?.is_test_mode === true
+    ? "test"
+    : "live";
   let stripeSecretKey = "";
   try {
     stripeSecretKey = getStripeSecretKeyForMode(txMode as StripeMode);
@@ -948,8 +1108,10 @@ const fetchStripeFeeDetails = async (adminClient: SupabaseAdminClient, flightLog
   if (!connectedAccountId) return null;
 
   const description = clean(tx.description);
-  const paymentIntentFromDescription = (description.match(/pi_[A-Za-z0-9]+/) || [])[0] || "";
-  const checkoutSessionFromDescription = (description.match(/cs_[A-Za-z0-9]+/) || [])[0] || "";
+  const paymentIntentFromDescription =
+    (description.match(/pi_[A-Za-z0-9]+/) || [])[0] || "";
+  const checkoutSessionFromDescription =
+    (description.match(/cs_[A-Za-z0-9]+/) || [])[0] || "";
 
   let paymentIntentId = paymentIntentFromDescription;
   if (!paymentIntentId) {
@@ -962,12 +1124,20 @@ const fetchStripeFeeDetails = async (adminClient: SupabaseAdminClient, flightLog
   }
 
   if (!paymentIntentId && checkoutSessionFromDescription) {
-    const sessionResponse = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(checkoutSessionFromDescription)}`, {
-      headers: stripeHeaders(stripeSecretKey, connectedAccountId),
-    });
+    const sessionResponse = await fetch(
+      `https://api.stripe.com/v1/checkout/sessions/${
+        encodeURIComponent(checkoutSessionFromDescription)
+      }`,
+      {
+        headers: stripeHeaders(stripeSecretKey, connectedAccountId),
+      },
+    );
     const sessionBody = await sessionResponse.json().catch(() => ({}));
     if (!sessionResponse.ok) {
-      throw new Error(sessionBody?.error?.message || `Stripe checkout lookup failed with ${sessionResponse.status}`);
+      throw new Error(
+        sessionBody?.error?.message ||
+          `Stripe checkout lookup failed with ${sessionResponse.status}`,
+      );
     }
     paymentIntentId = clean(sessionBody?.payment_intent);
   }
@@ -975,12 +1145,17 @@ const fetchStripeFeeDetails = async (adminClient: SupabaseAdminClient, flightLog
   if (!paymentIntentId) return null;
 
   const intentResponse = await fetch(
-    `https://api.stripe.com/v1/payment_intents/${encodeURIComponent(paymentIntentId)}?expand[]=latest_charge.balance_transaction`,
+    `https://api.stripe.com/v1/payment_intents/${
+      encodeURIComponent(paymentIntentId)
+    }?expand[]=latest_charge.balance_transaction`,
     { headers: stripeHeaders(stripeSecretKey, connectedAccountId) },
   );
   const intentBody = await intentResponse.json().catch(() => ({}));
   if (!intentResponse.ok) {
-    throw new Error(intentBody?.error?.message || `Stripe payment intent lookup failed with ${intentResponse.status}`);
+    throw new Error(
+      intentBody?.error?.message ||
+        `Stripe payment intent lookup failed with ${intentResponse.status}`,
+    );
   }
 
   const latestCharge = intentBody?.latest_charge;
@@ -1016,7 +1191,9 @@ const syncStripeFeeExpense = async ({
   }
 
   const clearingAccountCode = clean(ctx.settings?.stripe_payment_account_code);
-  const expenseAccountCode = clean(ctx.settings?.stripe_fee_expense_account_code);
+  const expenseAccountCode = clean(
+    ctx.settings?.stripe_fee_expense_account_code,
+  );
   if (!clearingAccountCode || !expenseAccountCode) {
     return { skipped: true, reason: "account_mapping_missing" };
   }
@@ -1040,7 +1217,9 @@ const syncStripeFeeExpense = async ({
         Reference: `Stripe fee ${feeDetails.paymentIntentId || tx.id}`,
         LineAmountTypes: "NoTax",
         LineItems: [{
-          Description: `Stripe processing fee for CRM payment ${feeDetails.paymentIntentId || tx.id}`,
+          Description: `Stripe processing fee for CRM payment ${
+            feeDetails.paymentIntentId || tx.id
+          }`,
           Quantity: 1,
           UnitAmount: feeDetails.feeAmount,
           AccountCode: expenseAccountCode,
@@ -1074,7 +1253,9 @@ const syncStripeFeeExpense = async ({
 const getMember = async (adminClient: SupabaseAdminClient, userId: string) => {
   const { data, error } = await adminClient
     .from("users")
-    .select("id,name,email,phone,mobile_phone,address,xero_contact_id,xero_contact_name,xero_contact_email,xero_contact_linked_at")
+    .select(
+      "id,name,email,phone,mobile_phone,address,xero_contact_id,xero_contact_name,xero_contact_email,xero_contact_linked_at",
+    )
     .eq("id", userId)
     .maybeSingle();
   if (error) throw error;
@@ -1083,15 +1264,23 @@ const getMember = async (adminClient: SupabaseAdminClient, userId: string) => {
 };
 
 const getRemainingCreditAmount = (item: any) => {
-  const remainingCredit = item?.RemainingCredit ?? item?.RemainingCreditAmount ?? item?.RemainingAmount;
-  if (remainingCredit === undefined || remainingCredit === null || remainingCredit === "") return 0;
+  const remainingCredit = item?.RemainingCredit ??
+    item?.RemainingCreditAmount ?? item?.RemainingAmount;
+  if (
+    remainingCredit === undefined || remainingCredit === null ||
+    remainingCredit === ""
+  ) return 0;
   return Math.max(0, money(remainingCredit));
 };
 
 const getCreditId = (item: any, kind: "overpayment" | "prepayment") =>
   clean(kind === "overpayment" ? item?.OverpaymentID : item?.PrepaymentID);
 
-const normaliseCreditItems = (items: any[], contactId: string, kind: "overpayment" | "prepayment") =>
+const normaliseCreditItems = (
+  items: any[],
+  contactId: string,
+  kind: "overpayment" | "prepayment",
+) =>
   (items || [])
     .map((item: any) => {
       const itemContactId = clean(item?.Contact?.ContactID || item?.ContactID);
@@ -1131,12 +1320,25 @@ const fetchContactCreditItems = async (ctx: any, contactId: string) => {
   ]);
 
   return [
-    ...normaliseCreditItems(overpaymentResult?.Overpayments || [], contactId, "overpayment"),
-    ...normaliseCreditItems(prepaymentResult?.Prepayments || [], contactId, "prepayment"),
+    ...normaliseCreditItems(
+      overpaymentResult?.Overpayments || [],
+      contactId,
+      "overpayment",
+    ),
+    ...normaliseCreditItems(
+      prepaymentResult?.Prepayments || [],
+      contactId,
+      "prepayment",
+    ),
   ];
 };
 
-const allocateCreditToInvoice = async (ctx: any, invoiceId: string, credit: any, amount: number) => {
+const allocateCreditToInvoice = async (
+  ctx: any,
+  invoiceId: string,
+  credit: any,
+  amount: number,
+) => {
   const path = credit.kind === "overpayment"
     ? `Overpayments/${encodeURIComponent(credit.id)}/Allocations`
     : `Prepayments/${encodeURIComponent(credit.id)}/Allocations`;
@@ -1158,7 +1360,12 @@ const allocateCreditToInvoice = async (ctx: any, invoiceId: string, credit: any,
   return Array.isArray(result?.Allocations) ? result.Allocations[0] : null;
 };
 
-const applyAvailableCreditToInvoice = async (ctx: any, invoiceId: string, contactId: string, amountDue: number) => {
+const applyAvailableCreditToInvoice = async (
+  ctx: any,
+  invoiceId: string,
+  contactId: string,
+  amountDue: number,
+) => {
   let remaining = money(amountDue);
   let applied = 0;
   const allocations: Array<Record<string, unknown>> = [];
@@ -1170,7 +1377,12 @@ const applyAvailableCreditToInvoice = async (ctx: any, invoiceId: string, contac
     const amount = Math.min(remaining, money(credit.amount));
     if (amount <= 0.005) continue;
 
-    const allocation = await allocateCreditToInvoice(ctx, invoiceId, credit, amount);
+    const allocation = await allocateCreditToInvoice(
+      ctx,
+      invoiceId,
+      credit,
+      amount,
+    );
     const allocationId = clean(allocation?.AllocationID);
     allocations.push({
       allocationId,
@@ -1200,7 +1412,9 @@ const getTopupCreditCandidates = async (ctx: any, member: any, tx: any) => {
     .map((candidate: any) => {
       const candidateDate = candidate.date ? isoDate(candidate.date) : null;
       const dateDistance = candidateDate
-        ? Math.abs(new Date(candidateDate).getTime() - new Date(txDate).getTime())
+        ? Math.abs(
+          new Date(candidateDate).getTime() - new Date(txDate).getTime(),
+        )
         : Number.MAX_SAFE_INTEGER;
       return {
         ...candidate,
@@ -1210,7 +1424,9 @@ const getTopupCreditCandidates = async (ctx: any, member: any, tx: any) => {
       };
     })
     .sort((left: any, right: any) => {
-      if (left.exactAmount !== right.exactAmount) return left.exactAmount ? -1 : 1;
+      if (left.exactAmount !== right.exactAmount) {
+        return left.exactAmount ? -1 : 1;
+      }
       if (left.sameDate !== right.sameDate) return left.sameDate ? -1 : 1;
       return left.dateDistance - right.dateDistance;
     });
@@ -1244,20 +1460,25 @@ const linkTopupTransactionToCredit = async ({
   return now;
 };
 
-const getFlightBooking = (flight: any) => Array.isArray(flight?.booking) ? flight.booking[0] : flight?.booking;
+const getFlightBooking = (flight: any) =>
+  Array.isArray(flight?.booking) ? flight.booking[0] : flight?.booking;
 
 const getFlightContactLabel = (flight: any) => {
   const booking = getFlightBooking(flight);
   if (booking?.is_guest_booking) {
     return clean(booking?.guest_name) || clean(booking?.guest_email) || "Guest";
   }
-  const student = Array.isArray(flight?.student) ? flight.student[0] : flight?.student;
+  const student = Array.isArray(flight?.student)
+    ? flight.student[0]
+    : flight?.student;
   return clean(student?.name) || clean(student?.email) || "Member";
 };
 
 const syncGuestContact = async (ctx: any, flight: any) => {
   const booking = getFlightBooking(flight);
-  if (!booking?.is_guest_booking) throw new Error("This booking is not marked as a guest booking.");
+  if (!booking?.is_guest_booking) {
+    throw new Error("This booking is not marked as a guest booking.");
+  }
 
   const guestName = clean(booking?.guest_name);
   const guestEmail = clean(booking?.guest_email);
@@ -1267,7 +1488,9 @@ const syncGuestContact = async (ctx: any, flight: any) => {
 
   const matches = await searchXeroContactsByEmail(ctx, guestEmail);
   if (matches.length > 1) {
-    throw makeXeroNeedsReviewError("More than one Xero contact uses this guest email. Please link or merge the guest contact in Xero first.");
+    throw makeXeroNeedsReviewError(
+      "More than one Xero contact uses this guest email. Please link or merge the guest contact in Xero first.",
+    );
   }
 
   let contactId = matches.length === 1 ? clean(matches[0]?.ContactID) : "";
@@ -1275,7 +1498,9 @@ const syncGuestContact = async (ctx: any, flight: any) => {
     Name: guestName,
     EmailAddress: guestEmail,
   };
-  if (guestPhone) payloadContact.Phones = [{ PhoneType: "MOBILE", PhoneNumber: guestPhone }];
+  if (guestPhone) {
+    payloadContact.Phones = [{ PhoneType: "MOBILE", PhoneNumber: guestPhone }];
+  }
   if (contactId) payloadContact.ContactID = contactId;
 
   const result = await xeroRequest({
@@ -1299,7 +1524,10 @@ const syncGuestContact = async (ctx: any, flight: any) => {
   };
 };
 
-const getAccountTransaction = async (adminClient: SupabaseAdminClient, transactionId: string) => {
+const getAccountTransaction = async (
+  adminClient: SupabaseAdminClient,
+  transactionId: string,
+) => {
   const { data, error } = await adminClient
     .from("account_transactions")
     .select(`
@@ -1331,8 +1559,7 @@ const getAccountTransaction = async (adminClient: SupabaseAdminClient, transacti
 const getTopupFundingAccountCode = (ctx: any, paymentMethod: any) => {
   const paymentSystemKey = clean(paymentMethod?.system_key).toLowerCase();
   const paymentMethodName = clean(paymentMethod?.name).toLowerCase();
-  const isStripePaymentMethod =
-    paymentSystemKey === "stripe_card" ||
+  const isStripePaymentMethod = paymentSystemKey === "stripe_card" ||
     paymentSystemKey === "stripe_card_payment" ||
     paymentSystemKey === "stripe" ||
     paymentMethodName.includes("stripe");
@@ -1344,7 +1571,12 @@ const getTopupFundingAccountCode = (ctx: any, paymentMethod: any) => {
   return clean(ctx.settings?.topup_receipt_account_code);
 };
 
-const getXeroBankAccountCode = async (ctx: any, preferredCode: string, fallbackCode: string, fallbackName: string) => {
+const getXeroBankAccountCode = async (
+  ctx: any,
+  preferredCode: string,
+  fallbackCode: string,
+  fallbackName: string,
+) => {
   const existingAccounts = await listXeroAccounts(ctx);
   const preferred = existingAccounts.find((account: any) =>
     account.status === "ACTIVE" &&
@@ -1375,7 +1607,8 @@ const getXeroBankAccountCode = async (ctx: any, preferredCode: string, fallbackC
         Name: fallbackName,
         Type: "BANK",
         BankAccountNumber: fallbackCode,
-        Description: `${fallbackName} account created by the CRM for Xero bank transactions.`,
+        Description:
+          `${fallbackName} account created by the CRM for Xero bank transactions.`,
       }],
     },
   });
@@ -1391,15 +1624,16 @@ const getXeroReceivablesAccountCode = async (ctx: any) => {
     bypassLocalPause: Boolean(ctx.priorityTopupSync),
   });
   const accounts = Array.isArray(result?.Accounts) ? result.Accounts : [];
-  const receivablesAccount = accounts.find((account: any) =>
-    clean(account?.Status) === "ACTIVE" &&
-    clean(account?.SystemAccount).toUpperCase() === "DEBTORS" &&
-    clean(account?.Code)
-  ) || accounts.find((account: any) =>
-    clean(account?.Status) === "ACTIVE" &&
-    clean(account?.Name).toLowerCase().includes("accounts receivable") &&
-    clean(account?.Code)
-  );
+  const receivablesAccount =
+    accounts.find((account: any) =>
+      clean(account?.Status) === "ACTIVE" &&
+      clean(account?.SystemAccount).toUpperCase() === "DEBTORS" &&
+      clean(account?.Code)
+    ) || accounts.find((account: any) =>
+      clean(account?.Status) === "ACTIVE" &&
+      clean(account?.Name).toLowerCase().includes("accounts receivable") &&
+      clean(account?.Code)
+    );
 
   return clean(receivablesAccount?.Code);
 };
@@ -1412,10 +1646,14 @@ const syncTopupTransaction = async (
 ) => {
   const tx = await getAccountTransaction(adminClient, transactionId);
   if (tx.type !== "topup") {
-    throw makeXeroNeedsReviewError("Only top-up transactions can be synced as member credit.");
+    throw makeXeroNeedsReviewError(
+      "Only top-up transactions can be synced as member credit.",
+    );
   }
   if (clean(tx.verified_status) !== "verified") {
-    throw makeXeroNeedsReviewError("Only verified top-up transactions can be synced to Xero.");
+    throw makeXeroNeedsReviewError(
+      "Only verified top-up transactions can be synced to Xero.",
+    );
   }
 
   const amount = money(tx.amount);
@@ -1442,14 +1680,14 @@ const syncTopupTransaction = async (
 
   const paymentSystemKey = clean(tx.payment_method?.system_key).toLowerCase();
   const paymentMethodName = clean(tx.payment_method?.name).toLowerCase();
-  const isStripeTopup =
-    paymentSystemKey === "stripe_card" ||
+  const isStripeTopup = paymentSystemKey === "stripe_card" ||
     paymentSystemKey === "stripe_card_payment" ||
     paymentSystemKey === "stripe" ||
     paymentMethodName.includes("stripe");
 
   if (isStripeTopup && !clean(tx.stripe_checkout_session_id)) {
-    const message = "This Stripe top-up has no Stripe checkout confirmation. Re-run it through Stripe checkout or manually confirm the Stripe payment before syncing to Xero.";
+    const message =
+      "This Stripe top-up has no Stripe checkout confirmation. Re-run it through Stripe checkout or manually confirm the Stripe payment before syncing to Xero.";
     await adminClient.from("account_transactions").update({
       xero_sync_status: "needs_review",
       xero_sync_error: message,
@@ -1458,15 +1696,27 @@ const syncTopupTransaction = async (
   }
 
   const member = await getMember(adminClient, tx.user_id);
-  const contactResult = await syncMemberContact(adminClient, ctx, tx.user_id, queueId);
+  const contactResult = await syncMemberContact(
+    adminClient,
+    ctx,
+    tx.user_id,
+    queueId,
+  );
   const contactId = clean(contactResult?.contactId || member.xero_contact_id);
   if (!contactId) {
-    throw makeXeroNeedsReviewError("This member is not linked to a Xero contact yet.");
+    throw makeXeroNeedsReviewError(
+      "This member is not linked to a Xero contact yet.",
+    );
   }
 
   if (!isStripeTopup) {
-    const { candidates } = await getTopupCreditCandidates(ctx, { ...member, xero_contact_id: contactId }, tx);
-    const exactMatches = candidates.filter((candidate: any) => candidate.exactAmount);
+    const { candidates } = await getTopupCreditCandidates(ctx, {
+      ...member,
+      xero_contact_id: contactId,
+    }, tx);
+    const exactMatches = candidates.filter((candidate: any) =>
+      candidate.exactAmount
+    );
 
     if (exactMatches.length === 1) {
       const now = await linkTopupTransactionToCredit({
@@ -1514,16 +1764,30 @@ const syncTopupTransaction = async (
 
   const receivablesAccountCode = await getXeroReceivablesAccountCode(ctx);
   if (!receivablesAccountCode) {
-    throw makeXeroNeedsReviewError("Xero did not return an active Accounts Receivable account for the prepaid overpayment.");
+    throw makeXeroNeedsReviewError(
+      "Xero did not return an active Accounts Receivable account for the prepaid overpayment.",
+    );
   }
 
-  const configuredFundingAccountCode = getTopupFundingAccountCode(ctx, tx.payment_method);
+  const configuredFundingAccountCode = getTopupFundingAccountCode(
+    ctx,
+    tx.payment_method,
+  );
   if (!configuredFundingAccountCode) {
-    throw makeXeroNeedsReviewError("Set the member top-up receipt account in Xero settings before syncing Stripe top-ups.");
+    throw makeXeroNeedsReviewError(
+      "Set the member top-up receipt account in Xero settings before syncing Stripe top-ups.",
+    );
   }
-  const fundingAccountCode = await getXeroBankAccountCode(ctx, configuredFundingAccountCode, "STRIPEBNK", "Stripe Clearing Bank");
+  const fundingAccountCode = await getXeroBankAccountCode(
+    ctx,
+    configuredFundingAccountCode,
+    "STRIPEBNK",
+    "Stripe Clearing Bank",
+  );
   if (!fundingAccountCode) {
-    throw makeXeroNeedsReviewError("Xero did not return a valid bank account for Stripe top-up receipts.");
+    throw makeXeroNeedsReviewError(
+      "Xero did not return a valid bank account for Stripe top-up receipts.",
+    );
   }
   if (fundingAccountCode !== configuredFundingAccountCode) {
     await adminClient.from("xero_sync_settings").update({
@@ -1533,12 +1797,19 @@ const syncTopupTransaction = async (
   }
 
   const reference = truncateText(
-    [clean(member.name) || clean(member.email) || "Member", "prepaid top-up", humanDate(tx.created_at)]
+    [
+      clean(member.name) || clean(member.email) || "Member",
+      "prepaid top-up",
+      humanDate(tx.created_at),
+    ]
       .filter(Boolean)
       .join(" - "),
     255,
   );
-  const description = truncateText(clean(tx.description) || "CRM prepaid top-up", 4000);
+  const description = truncateText(
+    clean(tx.description) || "CRM prepaid top-up",
+    4000,
+  );
 
   const result = await xeroRequest({
     method: "POST",
@@ -1566,7 +1837,9 @@ const syncTopupTransaction = async (
   const bankTransaction = result?.BankTransactions?.[0];
   const bankTransactionId = clean(bankTransaction?.BankTransactionID);
   if (!bankTransactionId) {
-    throw new Error("Xero did not return a bank transaction ID for the prepaid top-up.");
+    throw new Error(
+      "Xero did not return a bank transaction ID for the prepaid top-up.",
+    );
   }
 
   const now = new Date().toISOString();
@@ -1638,7 +1911,10 @@ const createVoucherSaleReceipt = async ({
         Reference: truncateText(`Voucher ${voucherCode}`),
         LineAmountTypes: "NoTax",
         LineItems: [{
-          Description: truncateText(`${productName} - voucher ${voucherCode}`, 4000),
+          Description: truncateText(
+            `${productName} - voucher ${voucherCode}`,
+            4000,
+          ),
           Quantity: 1,
           UnitAmount: money(amount),
           AccountCode: liabilityAccountCode,
@@ -1650,7 +1926,9 @@ const createVoucherSaleReceipt = async ({
   const bankTransaction = result?.BankTransactions?.[0];
   const bankTransactionId = clean(bankTransaction?.BankTransactionID);
   if (!bankTransactionId) {
-    throw new Error("Xero did not return a bank transaction ID for the voucher sale.");
+    throw new Error(
+      "Xero did not return a bank transaction ID for the voucher sale.",
+    );
   }
 
   return {
@@ -1664,18 +1942,25 @@ const syncVoucherPurchaserContact = async (ctx: any, voucher: any) => {
   const purchaserName = clean(voucher?.purchaser_name);
   const purchaserEmail = clean(voucher?.purchaser_email).toLowerCase();
   if (!purchaserName) {
-    throw makeXeroNeedsReviewError("The voucher purchaser name is missing. Add it before syncing the voucher to Xero.");
+    throw makeXeroNeedsReviewError(
+      "The voucher purchaser name is missing. Add it before syncing the voucher to Xero.",
+    );
   }
   if (!purchaserEmail) {
-    throw makeXeroNeedsReviewError("The voucher purchaser email is missing. Add it before syncing the voucher to Xero.");
+    throw makeXeroNeedsReviewError(
+      "The voucher purchaser email is missing. Add it before syncing the voucher to Xero.",
+    );
   }
 
   const matches = await searchXeroContactsByEmail(ctx, purchaserEmail);
   if (matches.length > 1) {
-    throw makeXeroNeedsReviewError("More than one Xero contact uses this voucher purchaser email. Link or merge the duplicate contacts in Xero before retrying.");
+    throw makeXeroNeedsReviewError(
+      "More than one Xero contact uses this voucher purchaser email. Link or merge the duplicate contacts in Xero before retrying.",
+    );
   }
 
-  let contactId = clean(voucher?.xero_purchaser_contact_id) || (matches.length === 1 ? clean(matches[0]?.ContactID) : "");
+  let contactId = clean(voucher?.xero_purchaser_contact_id) ||
+    (matches.length === 1 ? clean(matches[0]?.ContactID) : "");
   const payloadContact: Record<string, unknown> = {
     Name: purchaserName,
     EmailAddress: purchaserEmail,
@@ -1693,7 +1978,9 @@ const syncVoucherPurchaserContact = async (ctx: any, voucher: any) => {
 
   const contact = response?.Contacts?.[0] || matches[0];
   contactId = clean(contact?.ContactID) || contactId;
-  if (!contactId) throw new Error("Xero did not return a voucher purchaser contact ID.");
+  if (!contactId) {
+    throw new Error("Xero did not return a voucher purchaser contact ID.");
+  }
 
   return {
     contactId,
@@ -1702,21 +1989,38 @@ const syncVoucherPurchaserContact = async (ctx: any, voucher: any) => {
   };
 };
 
-const markQueue = async (adminClient: SupabaseAdminClient, queueId: string | null, update: Record<string, unknown>) => {
+const markQueue = async (
+  adminClient: SupabaseAdminClient,
+  queueId: string | null,
+  update: Record<string, unknown>,
+) => {
   if (!queueId) return;
-  await adminClient.from("xero_sync_queue").update({ ...update, updated_at: new Date().toISOString() }).eq("id", queueId);
+  await adminClient.from("xero_sync_queue").update({
+    ...update,
+    updated_at: new Date().toISOString(),
+  }).eq("id", queueId);
 };
 
-const clearQueueItemsForFlightLog = async (adminClient: SupabaseAdminClient, flightLogId: string) => {
+const clearQueueItemsForFlightLog = async (
+  adminClient: SupabaseAdminClient,
+  flightLogId: string,
+) => {
   const { error } = await adminClient
     .from("xero_sync_queue")
     .delete()
-    .or(`and(entity_type.eq.flight_invoice,entity_id.eq.${flightLogId}),and(entity_type.eq.flight_payment,entity_id.eq.${flightLogId})`);
+    .or(
+      `and(entity_type.eq.flight_invoice,entity_id.eq.${flightLogId}),and(entity_type.eq.flight_payment,entity_id.eq.${flightLogId})`,
+    );
 
   if (error) throw error;
 };
 
-const syncMemberContact = async (adminClient: SupabaseAdminClient, ctx: any, userId: string, queueId: string | null = null) => {
+const syncMemberContact = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  userId: string,
+  queueId: string | null = null,
+) => {
   await markQueue(adminClient, queueId, { status: "processing" });
   const member = await getMember(adminClient, userId);
 
@@ -1729,12 +2033,16 @@ const syncMemberContact = async (adminClient: SupabaseAdminClient, ctx: any, use
       contact = matches[0];
       contactId = clean(contact.ContactID);
     } else if (matches.length > 1) {
-      const message = "More than one Xero contact uses this email. Link the contact manually.";
+      const message =
+        "More than one Xero contact uses this email. Link the contact manually.";
       await adminClient.from("users").update({
         xero_contact_sync_status: "needs_review",
         xero_contact_sync_error: message,
       }).eq("id", userId);
-      await markQueue(adminClient, queueId, { status: "needs_review", last_error: message });
+      await markQueue(adminClient, queueId, {
+        status: "needs_review",
+        last_error: message,
+      });
       return { linked: false, needsReview: true, reason: message, matches };
     }
   }
@@ -1744,9 +2052,14 @@ const syncMemberContact = async (adminClient: SupabaseAdminClient, ctx: any, use
     EmailAddress: clean(member.email),
   };
   const phone = clean(member.mobile_phone) || clean(member.phone);
-  if (phone) payloadContact.Phones = [{ PhoneType: "MOBILE", PhoneNumber: phone }];
+  if (phone) {
+    payloadContact.Phones = [{ PhoneType: "MOBILE", PhoneNumber: phone }];
+  }
   if (clean(member.address)) {
-    payloadContact.Addresses = [{ AddressType: "STREET", AddressLine1: clean(member.address) }];
+    payloadContact.Addresses = [{
+      AddressType: "STREET",
+      AddressLine1: clean(member.address),
+    }];
   }
   if (contactId) payloadContact.ContactID = contactId;
 
@@ -1766,25 +2079,44 @@ const syncMemberContact = async (adminClient: SupabaseAdminClient, ctx: any, use
     xero_contact_id: contactId,
     xero_contact_name: clean(contact?.Name) || clean(member.name),
     xero_contact_email: clean(contact?.EmailAddress) || clean(member.email),
-    xero_contact_linked_at: member.xero_contact_id ? member.xero_contact_linked_at : new Date().toISOString(),
+    xero_contact_linked_at: member.xero_contact_id
+      ? member.xero_contact_linked_at
+      : new Date().toISOString(),
     xero_contact_sync_status: "synced",
     xero_contact_sync_error: null,
     xero_contact_last_synced_at: new Date().toISOString(),
   };
-  const { error } = await adminClient.from("users").update(update).eq("id", userId);
+  const { error } = await adminClient.from("users").update(update).eq(
+    "id",
+    userId,
+  );
   if (error) throw error;
 
   await markQueue(adminClient, queueId, {
     status: "synced",
     processed_at: new Date().toISOString(),
     xero_contact_id: contactId,
-    result: { contactId, name: update.xero_contact_name, email: update.xero_contact_email },
+    result: {
+      contactId,
+      name: update.xero_contact_name,
+      email: update.xero_contact_email,
+    },
   });
 
-  return { linked: true, contactId, contactName: update.xero_contact_name, contactEmail: update.xero_contact_email };
+  return {
+    linked: true,
+    contactId,
+    contactName: update.xero_contact_name,
+    contactEmail: update.xero_contact_email,
+  };
 };
 
-const linkContactManually = async (adminClient: SupabaseAdminClient, ctx: any, userId: string, contactId: string) => {
+const linkContactManually = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  userId: string,
+  contactId: string,
+) => {
   const result = await xeroRequest({
     path: `Contacts/${encodeURIComponent(contactId)}`,
     tenantId: ctx.connection.tenant_id,
@@ -1801,10 +2133,18 @@ const linkContactManually = async (adminClient: SupabaseAdminClient, ctx: any, u
     xero_contact_sync_error: null,
   }).eq("id", userId);
   if (error) throw error;
-  return { linked: true, contactId: clean(contact.ContactID), contactName: clean(contact.Name), contactEmail: clean(contact.EmailAddress) };
+  return {
+    linked: true,
+    contactId: clean(contact.ContactID),
+    contactName: clean(contact.Name),
+    contactEmail: clean(contact.EmailAddress),
+  };
 };
 
-const getFlightLog = async (adminClient: SupabaseAdminClient, flightLogId: string) => {
+const getFlightLog = async (
+  adminClient: SupabaseAdminClient,
+  flightLogId: string,
+) => {
   const { data, error } = await adminClient
     .from("flight_logs")
     .select(`
@@ -1838,7 +2178,10 @@ const getFlightLog = async (adminClient: SupabaseAdminClient, flightLogId: strin
   return data;
 };
 
-const getGroundSessionLog = async (adminClient: SupabaseAdminClient, groundSessionLogId: string) => {
+const getGroundSessionLog = async (
+  adminClient: SupabaseAdminClient,
+  groundSessionLogId: string,
+) => {
   const { data, error } = await adminClient
     .from("ground_session_logs")
     .select(`
@@ -1868,7 +2211,9 @@ const buildAircraftTrackingPayload = (aircraft: any) => {
   }
 
   return [{
-    ...(categoryId ? { TrackingCategoryID: categoryId } : { Name: categoryName }),
+    ...(categoryId
+      ? { TrackingCategoryID: categoryId }
+      : { Name: categoryName }),
     ...(optionId ? { TrackingOptionID: optionId } : { Option: optionName }),
   }];
 };
@@ -1882,7 +2227,11 @@ const getXeroInvoice = async (ctx: any, invoiceId: string) => {
   return result?.Invoices?.[0] || null;
 };
 
-const updateXeroInvoiceStatus = async (ctx: any, invoiceId: string, status: "DELETED" | "VOIDED") => {
+const updateXeroInvoiceStatus = async (
+  ctx: any,
+  invoiceId: string,
+  status: "DELETED" | "VOIDED",
+) => {
   const result = await xeroRequest({
     method: "POST",
     path: "Invoices",
@@ -1900,26 +2249,36 @@ const updateXeroInvoiceStatus = async (ctx: any, invoiceId: string, status: "DEL
 };
 
 const buildFlightReference = (flight: any) => {
-  const aircraft = Array.isArray(flight?.aircraft) ? flight.aircraft[0] : flight?.aircraft;
-  return truncateText([
-    "Flight",
-    getFlightContactLabel(flight),
-    clean(aircraft?.registration),
-    humanDate(flight?.start_time),
-  ].filter(Boolean).join(" - "));
+  const aircraft = Array.isArray(flight?.aircraft)
+    ? flight.aircraft[0]
+    : flight?.aircraft;
+  return truncateText(
+    [
+      "Flight",
+      getFlightContactLabel(flight),
+      clean(aircraft?.registration),
+      humanDate(flight?.start_time),
+    ].filter(Boolean).join(" - "),
+  );
 };
 
 const buildGroundSessionReference = (session: any) => {
-  const student = Array.isArray(session?.student) ? session.student[0] : session?.student;
-  return truncateText([
-    "Ground",
-    clean(student?.name),
-    humanDate(session?.start_time),
-  ].filter(Boolean).join(" - "));
+  const student = Array.isArray(session?.student)
+    ? session.student[0]
+    : session?.student;
+  return truncateText(
+    [
+      "Ground",
+      clean(student?.name),
+      humanDate(session?.start_time),
+    ].filter(Boolean).join(" - "),
+  );
 };
 
 const buildPaymentReference = (flight: any, tx: any, paymentLabel: string) => {
-  const aircraft = Array.isArray(flight?.aircraft) ? flight.aircraft[0] : flight?.aircraft;
+  const aircraft = Array.isArray(flight?.aircraft)
+    ? flight.aircraft[0]
+    : flight?.aircraft;
   const fallback = [
     paymentLabel,
     getFlightContactLabel(flight),
@@ -1939,28 +2298,46 @@ const createFlightReversalCreditNote = async ({
   flight: any;
 }) => {
   const cost = money(flight.calculated_cost ?? flight.total_cost);
-  if (cost <= 0) throw new Error("This flight has no billable amount to reverse.");
-  if (!ctx.settings?.revenue_account_code) throw new Error("Set a Xero flight revenue account code before reversing this flight.");
+  if (cost <= 0) {
+    throw new Error("This flight has no billable amount to reverse.");
+  }
+  if (!ctx.settings?.revenue_account_code) {
+    throw new Error(
+      "Set a Xero flight revenue account code before reversing this flight.",
+    );
+  }
 
   const contactResult = getFlightBooking(flight)?.is_guest_booking
     ? await syncGuestContact(ctx, flight)
     : await syncMemberContact(adminClient, ctx, flight.student_id);
-  if (!contactResult?.contactId) throw new Error("Could not link this member to a Xero contact.");
+  if (!contactResult?.contactId) {
+    throw new Error("Could not link this member to a Xero contact.");
+  }
 
-  const aircraft = Array.isArray(flight.aircraft) ? flight.aircraft[0] : flight.aircraft;
-  const flightType = Array.isArray(flight.flight_types) ? flight.flight_types[0] : flight.flight_types;
-  const instructor = Array.isArray(flight.instructor) ? flight.instructor[0] : flight.instructor;
+  const aircraft = Array.isArray(flight.aircraft)
+    ? flight.aircraft[0]
+    : flight.aircraft;
+  const flightType = Array.isArray(flight.flight_types)
+    ? flight.flight_types[0]
+    : flight.flight_types;
+  const instructor = Array.isArray(flight.instructor)
+    ? flight.instructor[0]
+    : flight.instructor;
   const description = [
     "Reversal",
     flightType?.name || "Flight",
     aircraft?.registration ? `Aircraft ${aircraft.registration}` : null,
-    flight.flight_duration ? `${Number(flight.flight_duration).toFixed(1)} hr` : null,
+    flight.flight_duration
+      ? `${Number(flight.flight_duration).toFixed(1)} hr`
+      : null,
     instructor?.name ? `Instructor ${instructor.name}` : null,
   ].filter(Boolean).join(" - ");
   const durationHours = quantityValue(flight.flight_duration);
   const hasDurationQuantity = durationHours > 0;
   const creditQuantity = hasDurationQuantity ? durationHours : 1;
-  const unitAmount = hasDurationQuantity ? unitRateValue(cost / durationHours) : cost;
+  const unitAmount = hasDurationQuantity
+    ? unitRateValue(cost / durationHours)
+    : cost;
   const aircraftTracking = buildAircraftTrackingPayload(aircraft);
 
   const result = await xeroRequest({
@@ -1974,17 +2351,22 @@ const createFlightReversalCreditNote = async ({
         Contact: { ContactID: contactResult.contactId },
         Date: isoDate(flight.start_time),
         Status: "AUTHORISED",
-        Reference: truncateText([
-          "Reversal",
-          clean(flight.xero_invoice_number) || clean(flight.xero_invoice_id) || buildFlightReference(flight),
-        ].filter(Boolean).join(" - ")),
+        Reference: truncateText(
+          [
+            "Reversal",
+            clean(flight.xero_invoice_number) ||
+            clean(flight.xero_invoice_id) || buildFlightReference(flight),
+          ].filter(Boolean).join(" - "),
+        ),
         LineAmountTypes: "Inclusive",
         LineItems: [{
           Description: description,
           Quantity: creditQuantity,
           UnitAmount: unitAmount,
           AccountCode: clean(ctx.settings.revenue_account_code),
-          ...(clean(ctx.settings.tax_type) ? { TaxType: clean(ctx.settings.tax_type) } : {}),
+          ...(clean(ctx.settings.tax_type)
+            ? { TaxType: clean(ctx.settings.tax_type) }
+            : {}),
           ...(aircraftTracking ? { Tracking: aircraftTracking } : {}),
         }],
       }],
@@ -2051,7 +2433,11 @@ const reverseFlightLogInXero = async ({
   const flight = await getFlightLog(adminClient, flightLogId);
   const invoiceId = clean(flight.xero_invoice_id);
   if (!invoiceId) {
-    return { ok: true, action: "crm-only", message: "No Xero invoice linked to this flight log." };
+    return {
+      ok: true,
+      action: "crm-only",
+      message: "No Xero invoice linked to this flight log.",
+    };
   }
 
   const invoice = await getXeroInvoice(ctx, invoiceId);
@@ -2067,28 +2453,43 @@ const reverseFlightLogInXero = async ({
     .eq("type", "flight_charge");
   if (paymentRowsError) throw paymentRowsError;
 
-  const hasPayments = Boolean(clean(flight.xero_payment_id)) || (paymentRows || []).some((row: any) => clean(row.xero_payment_id));
+  const hasPayments = Boolean(clean(flight.xero_payment_id)) ||
+    (paymentRows || []).some((row: any) => clean(row.xero_payment_id));
 
   if (mode === "void-delete") {
-    if (hasPayments || invoiceStatus === "PAID" || invoiceStatus === "PARTPAID") {
-      throw new Error("This Xero invoice already has payments. Use the credit note reversal flow instead.");
+    if (
+      hasPayments || invoiceStatus === "PAID" || invoiceStatus === "PARTPAID"
+    ) {
+      throw new Error(
+        "This Xero invoice already has payments. Use the credit note reversal flow instead.",
+      );
     }
 
-    const targetStatus = invoiceStatus === "DRAFT" || invoiceStatus === "SUBMITTED"
-      ? "DELETED"
-      : "VOIDED";
-    const updatedInvoice = await updateXeroInvoiceStatus(ctx, invoiceId, targetStatus);
+    const targetStatus =
+      invoiceStatus === "DRAFT" || invoiceStatus === "SUBMITTED"
+        ? "DELETED"
+        : "VOIDED";
+    const updatedInvoice = await updateXeroInvoiceStatus(
+      ctx,
+      invoiceId,
+      targetStatus,
+    );
 
     return {
       ok: true,
       action: targetStatus.toLowerCase(),
       invoiceId,
-      invoiceNumber: clean(updatedInvoice?.InvoiceNumber) || clean(invoice.InvoiceNumber) || null,
+      invoiceNumber: clean(updatedInvoice?.InvoiceNumber) ||
+        clean(invoice.InvoiceNumber) || null,
       invoiceStatus: clean(updatedInvoice?.Status) || targetStatus,
     };
   }
 
-  const creditNote = await createFlightReversalCreditNote({ adminClient, ctx, flight });
+  const creditNote = await createFlightReversalCreditNote({
+    adminClient,
+    ctx,
+    flight,
+  });
   const invoiceAmountDue = money((invoice as any)?.AmountDue);
   let allocation: any = null;
   if (invoiceAmountDue > 0) {
@@ -2104,17 +2505,23 @@ const reverseFlightLogInXero = async ({
     ok: true,
     action: "credit-note",
     invoiceId,
-    invoiceNumber: clean(invoice.InvoiceNumber) || clean(flight.xero_invoice_number) || null,
+    invoiceNumber: clean(invoice.InvoiceNumber) ||
+      clean(flight.xero_invoice_number) || null,
     invoiceStatus,
     creditNoteId: creditNote.creditNoteId,
     creditNoteNumber: creditNote.creditNoteNumber,
     creditNoteStatus: creditNote.status,
     allocationAmount: allocation ? money((allocation as any)?.Amount || 0) : 0,
-    settlementStatus: allocation ? "allocated_to_invoice" : "open_credit_on_contact",
+    settlementStatus: allocation
+      ? "allocated_to_invoice"
+      : "open_credit_on_contact",
   };
 };
 
-const getLinkedVoucherForFlight = async (adminClient: SupabaseAdminClient, bookingId: string | null | undefined) => {
+const getLinkedVoucherForFlight = async (
+  adminClient: SupabaseAdminClient,
+  bookingId: string | null | undefined,
+) => {
   const id = clean(bookingId);
   if (!id) return null;
 
@@ -2137,11 +2544,16 @@ const getLinkedVoucherForFlight = async (adminClient: SupabaseAdminClient, booki
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  const voucher = Array.isArray(data?.voucher) ? data?.voucher[0] : data?.voucher;
+  const voucher = Array.isArray(data?.voucher)
+    ? data?.voucher[0]
+    : data?.voucher;
   return voucher?.id ? voucher : null;
 };
 
-const getVoucher = async (adminClient: SupabaseAdminClient, voucherId: string) => {
+const getVoucher = async (
+  adminClient: SupabaseAdminClient,
+  voucherId: string,
+) => {
   const { data, error } = await adminClient
     .from("trial_flight_vouchers")
     .select(`
@@ -2176,7 +2588,10 @@ const getVoucher = async (adminClient: SupabaseAdminClient, voucherId: string) =
   };
 };
 
-const getVoucherRedemptionFlight = async (adminClient: SupabaseAdminClient, bookingId: string | null | undefined) => {
+const getVoucherRedemptionFlight = async (
+  adminClient: SupabaseAdminClient,
+  bookingId: string | null | undefined,
+) => {
   const id = clean(bookingId);
   if (!id) return null;
 
@@ -2202,44 +2617,80 @@ const getVoucherRedemptionFlight = async (adminClient: SupabaseAdminClient, book
   if (!flight) return null;
   return {
     ...flight,
-    aircraft: Array.isArray(flight.aircraft) ? flight.aircraft[0] : flight.aircraft,
-    flight_types: Array.isArray(flight.flight_types) ? flight.flight_types[0] : flight.flight_types,
+    aircraft: Array.isArray(flight.aircraft)
+      ? flight.aircraft[0]
+      : flight.aircraft,
+    flight_types: Array.isArray(flight.flight_types)
+      ? flight.flight_types[0]
+      : flight.flight_types,
   };
 };
 
-const createOrUpdateFlightInvoice = async (adminClient: SupabaseAdminClient, ctx: any, flightLogId: string, queueId: string | null = null) => {
+const createOrUpdateFlightInvoice = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  flightLogId: string,
+  queueId: string | null = null,
+) => {
   await markQueue(adminClient, queueId, { status: "processing" });
   const flight = await getFlightLog(adminClient, flightLogId);
-  const linkedVoucher = await getLinkedVoucherForFlight(adminClient, flight.booking_id);
+  const linkedVoucher = await getLinkedVoucherForFlight(
+    adminClient,
+    flight.booking_id,
+  );
   if (linkedVoucher) {
     const voucherCode = clean(linkedVoucher.code);
     if (clean(linkedVoucher.payment_status) === "paid") {
-      throw new Error(`This flight is covered by gift voucher ${voucherCode || linkedVoucher.id}. Sync the voucher liability release instead of creating a Xero invoice.`);
+      throw new Error(
+        `This flight is covered by gift voucher ${
+          voucherCode || linkedVoucher.id
+        }. Sync the voucher liability release instead of creating a Xero invoice.`,
+      );
     }
-    throw new Error(`This flight is linked to gift voucher ${voucherCode || linkedVoucher.id}, but that voucher is not fully paid. Review the voucher before creating a Xero invoice.`);
+    throw new Error(
+      `This flight is linked to gift voucher ${
+        voucherCode || linkedVoucher.id
+      }, but that voucher is not fully paid. Review the voucher before creating a Xero invoice.`,
+    );
   }
   const cost = money(flight.calculated_cost ?? flight.total_cost);
   if (cost <= 0) throw new Error("This flight has no billable amount.");
-  if (!ctx.settings?.revenue_account_code) throw new Error("Set a Xero flight revenue account code before syncing invoices.");
+  if (!ctx.settings?.revenue_account_code) {
+    throw new Error(
+      "Set a Xero flight revenue account code before syncing invoices.",
+    );
+  }
 
   const contactResult = getFlightBooking(flight)?.is_guest_booking
     ? await syncGuestContact(ctx, flight)
     : await syncMemberContact(adminClient, ctx, flight.student_id);
-  if (!contactResult?.contactId) throw new Error("Could not link this member to a Xero contact.");
+  if (!contactResult?.contactId) {
+    throw new Error("Could not link this member to a Xero contact.");
+  }
 
-  const aircraft = Array.isArray(flight.aircraft) ? flight.aircraft[0] : flight.aircraft;
-  const flightType = Array.isArray(flight.flight_types) ? flight.flight_types[0] : flight.flight_types;
-  const instructor = Array.isArray(flight.instructor) ? flight.instructor[0] : flight.instructor;
+  const aircraft = Array.isArray(flight.aircraft)
+    ? flight.aircraft[0]
+    : flight.aircraft;
+  const flightType = Array.isArray(flight.flight_types)
+    ? flight.flight_types[0]
+    : flight.flight_types;
+  const instructor = Array.isArray(flight.instructor)
+    ? flight.instructor[0]
+    : flight.instructor;
   const description = [
     flightType?.name || "Flight",
     aircraft?.registration ? `Aircraft ${aircraft.registration}` : null,
-    flight.flight_duration ? `${Number(flight.flight_duration).toFixed(1)} hr` : null,
+    flight.flight_duration
+      ? `${Number(flight.flight_duration).toFixed(1)} hr`
+      : null,
     instructor?.name ? `Instructor ${instructor.name}` : null,
   ].filter(Boolean).join(" - ");
   const durationHours = quantityValue(flight.flight_duration);
   const hasDurationQuantity = durationHours > 0;
   const invoiceQuantity = hasDurationQuantity ? durationHours : 1;
-  const unitAmount = hasDurationQuantity ? unitRateValue(cost / durationHours) : cost;
+  const unitAmount = hasDurationQuantity
+    ? unitRateValue(cost / durationHours)
+    : cost;
   const aircraftTracking = buildAircraftTrackingPayload(aircraft);
 
   let existingInvoice: any = null;
@@ -2250,10 +2701,20 @@ const createOrUpdateFlightInvoice = async (adminClient: SupabaseAdminClient, ctx
     if (!updatableStatuses.has(existingStatus)) {
       await adminClient.from("flight_logs").update({
         xero_sync_status: "needs_review",
-        xero_sync_error: `Xero invoice ${clean(existingInvoice?.InvoiceNumber) || clean(flight.xero_invoice_number) || clean(flight.xero_invoice_id)} is ${existingStatus || "not editable"} and was not updated automatically.`,
+        xero_sync_error: `Xero invoice ${
+          clean(existingInvoice?.InvoiceNumber) ||
+          clean(flight.xero_invoice_number) || clean(flight.xero_invoice_id)
+        } is ${
+          existingStatus || "not editable"
+        } and was not updated automatically.`,
       }).eq("id", flightLogId);
       throw makeXeroNeedsReviewError(
-        `Xero invoice ${clean(existingInvoice?.InvoiceNumber) || clean(flight.xero_invoice_number) || clean(flight.xero_invoice_id)} is ${existingStatus || "not editable"} and should not be overwritten automatically. Review it in the Xero sync queue.`,
+        `Xero invoice ${
+          clean(existingInvoice?.InvoiceNumber) ||
+          clean(flight.xero_invoice_number) || clean(flight.xero_invoice_id)
+        } is ${
+          existingStatus || "not editable"
+        } and should not be overwritten automatically. Review it in the Xero sync queue.`,
       );
     }
   }
@@ -2270,9 +2731,13 @@ const createOrUpdateFlightInvoice = async (adminClient: SupabaseAdminClient, ctx
       Description: description,
       Quantity: invoiceQuantity,
       UnitAmount: unitAmount,
-      ...(clean(flightType?.xero_item_code) ? { ItemCode: clean(flightType.xero_item_code).toUpperCase() } : {}),
+      ...(clean(flightType?.xero_item_code)
+        ? { ItemCode: clean(flightType.xero_item_code).toUpperCase() }
+        : {}),
       AccountCode: clean(ctx.settings.revenue_account_code),
-      ...(clean(ctx.settings.tax_type) ? { TaxType: clean(ctx.settings.tax_type) } : {}),
+      ...(clean(ctx.settings.tax_type)
+        ? { TaxType: clean(ctx.settings.tax_type) }
+        : {}),
       ...(aircraftTracking ? { Tracking: aircraftTracking } : {}),
     }],
   };
@@ -2297,7 +2762,8 @@ const createOrUpdateFlightInvoice = async (adminClient: SupabaseAdminClient, ctx
     xero_sync_status: "synced",
     xero_sync_error: null,
   };
-  const { error } = await adminClient.from("flight_logs").update(invoiceUpdate).eq("id", flightLogId);
+  const { error } = await adminClient.from("flight_logs").update(invoiceUpdate)
+    .eq("id", flightLogId);
   if (error) throw error;
 
   await markQueue(adminClient, queueId, {
@@ -2305,24 +2771,43 @@ const createOrUpdateFlightInvoice = async (adminClient: SupabaseAdminClient, ctx
     processed_at: new Date().toISOString(),
     xero_contact_id: contactResult.contactId,
     xero_invoice_id: invoiceId,
-    result: { invoiceId, invoiceNumber: invoiceUpdate.xero_invoice_number, status: invoiceUpdate.xero_invoice_status },
+    result: {
+      invoiceId,
+      invoiceNumber: invoiceUpdate.xero_invoice_number,
+      status: invoiceUpdate.xero_invoice_status,
+    },
   });
 
-  return { invoiceId, invoiceNumber: invoiceUpdate.xero_invoice_number, status: invoiceUpdate.xero_invoice_status };
+  return {
+    invoiceId,
+    invoiceNumber: invoiceUpdate.xero_invoice_number,
+    status: invoiceUpdate.xero_invoice_status,
+  };
 };
 
-const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, flightLogId: string, queueId: string | null = null) => {
+const applyFlightPayments = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  flightLogId: string,
+  queueId: string | null = null,
+) => {
   await markQueue(adminClient, queueId, { status: "processing" });
   const flight = await getFlightLog(adminClient, flightLogId);
   const invoiceId = clean(flight.xero_invoice_id);
-  if (!invoiceId) throw new Error("Sync the Xero invoice before applying payments.");
+  if (!invoiceId) {
+    throw new Error("Sync the Xero invoice before applying payments.");
+  }
   const flightContactId = clean(flight?.student?.xero_contact_id);
   const latestInvoice = await getXeroInvoice(ctx, invoiceId);
-  let invoiceRemaining = money(latestInvoice?.AmountDue ?? flight.calculated_cost ?? 0);
+  let invoiceRemaining = money(
+    latestInvoice?.AmountDue ?? flight.calculated_cost ?? 0,
+  );
 
   const { data: txRows, error: txError } = await adminClient
     .from("account_transactions")
-    .select("id, amount, description, payment_method_id, created_at, xero_payment_id, xero_fee_bank_transaction_id, payment_methods(name, system_key)")
+    .select(
+      "id, amount, description, payment_method_id, created_at, xero_payment_id, xero_fee_bank_transaction_id, payment_methods(name, system_key)",
+    )
     .eq("flight_log_id", flightLogId)
     .eq("type", "flight_charge")
     .eq("verified_status", "verified");
@@ -2333,15 +2818,24 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
   const skippedPayments: string[] = [];
   for (const tx of txRows || []) {
     const methodName = String(tx.payment_methods?.name || "").toLowerCase();
-    const systemKey = String(tx.payment_methods?.system_key || "").toLowerCase();
-    const isStripe = systemKey === "stripe" || methodName.includes("stripe") || methodName.includes("card");
-    const isPrepaid = systemKey === "pilot_account" || methodName.includes("pilot account") || methodName.includes("prepaid") || methodName.includes("pre-paid");
-    const paymentLabel = isStripe ? "Stripe payment" : isPrepaid ? "Prepaid payment" : "Flight payment";
+    const systemKey = String(tx.payment_methods?.system_key || "")
+      .toLowerCase();
+    const isStripe = systemKey === "stripe" || methodName.includes("stripe") ||
+      methodName.includes("card");
+    const isPrepaid = systemKey === "pilot_account" ||
+      methodName.includes("pilot account") || methodName.includes("prepaid") ||
+      methodName.includes("pre-paid");
+    const paymentLabel = isStripe
+      ? "Stripe payment"
+      : isPrepaid
+      ? "Prepaid payment"
+      : "Flight payment";
     let paymentIdForRow = clean(tx.xero_payment_id);
     if (!tx.xero_payment_id) {
       if (isPrepaid) {
         if (!flightContactId) {
-          const reason = "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.";
+          const reason =
+            "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.";
           skippedPayments.push(reason);
           await adminClient.from("account_transactions").update({
             xero_sync_status: "needs_review",
@@ -2355,9 +2849,18 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
           continue;
         }
 
-        const creditResult = await applyAvailableCreditToInvoice(ctx, invoiceId, flightContactId, amountToApply);
+        const creditResult = await applyAvailableCreditToInvoice(
+          ctx,
+          invoiceId,
+          flightContactId,
+          amountToApply,
+        );
         if (creditResult.applied + 0.005 < amountToApply) {
-          const reason = `Only $${creditResult.applied.toFixed(2)} of Xero prepaid credit could be allocated to this invoice. $${amountToApply.toFixed(2)} was required.`;
+          const reason = `Only $${
+            creditResult.applied.toFixed(2)
+          } of Xero prepaid credit could be allocated to this invoice. $${
+            amountToApply.toFixed(2)
+          } was required.`;
           skippedPayments.push(reason);
           await adminClient.from("account_transactions").update({
             xero_sync_status: "needs_review",
@@ -2366,8 +2869,14 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
           continue;
         }
 
-        const allocationReference = clean(creditResult.allocations.map((allocation: any) => allocation.allocationId || allocation.creditId).filter(Boolean).join(","));
-        paymentIdForRow = allocationReference ? `credit-allocation:${allocationReference}` : `credit-allocation:${invoiceId}:${tx.id}`;
+        const allocationReference = clean(
+          creditResult.allocations.map((allocation: any) =>
+            allocation.allocationId || allocation.creditId
+          ).filter(Boolean).join(","),
+        );
+        paymentIdForRow = allocationReference
+          ? `credit-allocation:${allocationReference}`
+          : `credit-allocation:${invoiceId}:${tx.id}`;
         invoiceRemaining = money(invoiceRemaining - creditResult.applied);
         await adminClient.from("account_transactions").update({
           xero_payment_id: paymentIdForRow,
@@ -2377,23 +2886,30 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
           xero_sync_status: "synced",
           xero_sync_error: null,
         }).eq("id", tx.id);
-        payments.push({ transactionId: tx.id, paymentId: paymentIdForRow, amount: creditResult.applied, kind: "xero_credit_allocation" });
+        payments.push({
+          transactionId: tx.id,
+          paymentId: paymentIdForRow,
+          amount: creditResult.applied,
+          kind: "xero_credit_allocation",
+        });
         continue;
       }
 
       const accountCode = isStripe
         ? clean(ctx.settings?.stripe_payment_account_code)
         : isPrepaid
-          ? clean(ctx.settings?.prepaid_payment_account_code)
-          : "";
+        ? clean(ctx.settings?.prepaid_payment_account_code)
+        : "";
       if (!accountCode) {
         const reason = !tx.payment_method_id
           ? "Payment method is missing on the flight charge transaction."
           : isPrepaid
-            ? "Set the Xero prepaid payment clearing account before applying prepaid flight payments."
-            : isStripe
-              ? "Set the Xero Stripe clearing account before applying card flight payments."
-              : `Payment method ${clean(tx.payment_methods?.name) || tx.payment_method_id} is not mapped to a Xero clearing account.`;
+          ? "Set the Xero prepaid payment clearing account before applying prepaid flight payments."
+          : isStripe
+          ? "Set the Xero Stripe clearing account before applying card flight payments."
+          : `Payment method ${
+            clean(tx.payment_methods?.name) || tx.payment_method_id
+          } is not mapped to a Xero clearing account.`;
         skippedPayments.push(reason);
         await adminClient.from("account_transactions").update({
           xero_sync_status: "needs_review",
@@ -2428,7 +2944,11 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
           xero_sync_status: "synced",
           xero_sync_error: null,
         }).eq("id", tx.id);
-        payments.push({ transactionId: tx.id, paymentId, amount: money(tx.amount) });
+        payments.push({
+          transactionId: tx.id,
+          paymentId,
+          amount: money(tx.amount),
+        });
       }
     }
 
@@ -2445,7 +2965,9 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
           feeTransactions.push(feeResult);
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Stripe fee sync failed";
+        const message = error instanceof Error
+          ? error.message
+          : "Stripe fee sync failed";
         await adminClient.from("account_transactions").update({
           xero_fee_sync_error: message,
         }).eq("id", tx.id);
@@ -2471,7 +2993,12 @@ const applyFlightPayments = async (adminClient: SupabaseAdminClient, ctx: any, f
     result: { payments, feeTransactions },
   });
 
-  return { invoiceId, payments, feeTransactions, skipped: (txRows || []).length - payments.length };
+  return {
+    invoiceId,
+    payments,
+    feeTransactions,
+    skipped: (txRows || []).length - payments.length,
+  };
 };
 
 const deleteXeroPayment = async (ctx: any, paymentId: string) => {
@@ -2501,16 +3028,22 @@ const repairPrepaidFlightCreditAllocation = async (
 ) => {
   const flight = await getFlightLog(adminClient, flightLogId);
   const invoiceId = clean(flight.xero_invoice_id);
-  if (!invoiceId) throw new Error("This flight log is not linked to a Xero invoice.");
+  if (!invoiceId) {
+    throw new Error("This flight log is not linked to a Xero invoice.");
+  }
 
   const flightContactId = clean(flight?.student?.xero_contact_id);
   if (!flightContactId) {
-    throw new Error("This member is not linked to a Xero contact, so prepaid credit cannot be allocated.");
+    throw new Error(
+      "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.",
+    );
   }
 
   const { data: txRows, error: txError } = await adminClient
     .from("account_transactions")
-    .select("id, amount, payment_method_id, xero_payment_id, payment_methods(name, system_key)")
+    .select(
+      "id, amount, payment_method_id, xero_payment_id, payment_methods(name, system_key)",
+    )
     .eq("flight_log_id", flightLogId)
     .eq("type", "flight_charge")
     .eq("verified_status", "verified");
@@ -2518,20 +3051,29 @@ const repairPrepaidFlightCreditAllocation = async (
 
   const prepaidRows = (txRows || []).filter((tx: any) => {
     const methodName = String(tx.payment_methods?.name || "").toLowerCase();
-    const systemKey = String(tx.payment_methods?.system_key || "").toLowerCase();
-    return systemKey === "pilot_account" || methodName.includes("pilot account") || methodName.includes("prepaid") || methodName.includes("pre-paid");
+    const systemKey = String(tx.payment_methods?.system_key || "")
+      .toLowerCase();
+    return systemKey === "pilot_account" ||
+      methodName.includes("pilot account") || methodName.includes("prepaid") ||
+      methodName.includes("pre-paid");
   });
 
   if (prepaidRows.length === 0) {
-    throw new Error("No verified prepaid flight-charge transaction was found for this flight log.");
+    throw new Error(
+      "No verified prepaid flight-charge transaction was found for this flight log.",
+    );
   }
 
   const paymentIds = new Set<string>();
   const flightPaymentId = clean(flight.xero_payment_id);
-  if (flightPaymentId && !flightPaymentId.startsWith("credit-allocation:")) paymentIds.add(flightPaymentId);
+  if (flightPaymentId && !flightPaymentId.startsWith("credit-allocation:")) {
+    paymentIds.add(flightPaymentId);
+  }
   for (const tx of prepaidRows) {
     const paymentId = clean(tx.xero_payment_id);
-    if (paymentId && !paymentId.startsWith("credit-allocation:")) paymentIds.add(paymentId);
+    if (paymentId && !paymentId.startsWith("credit-allocation:")) {
+      paymentIds.add(paymentId);
+    }
   }
 
   const deletedPayments: any[] = [];
@@ -2592,23 +3134,49 @@ const createOrUpdateGroundSessionInvoice = async (
   const session = await getGroundSessionLog(adminClient, groundSessionLogId);
   const cost = money(session.calculated_cost);
   if (cost <= 0) throw new Error("This ground session has no billable amount.");
-  if (!ctx.settings?.revenue_account_code) throw new Error("Set a Xero flight revenue account code before syncing invoices.");
+  if (!ctx.settings?.revenue_account_code) {
+    throw new Error(
+      "Set a Xero flight revenue account code before syncing invoices.",
+    );
+  }
 
-  const contactResult = await syncMemberContact(adminClient, ctx, session.student_id);
-  if (!contactResult?.contactId) throw new Error("Could not link this member to a Xero contact.");
+  const contactResult = await syncMemberContact(
+    adminClient,
+    ctx,
+    session.student_id,
+  );
+  if (!contactResult?.contactId) {
+    throw new Error("Could not link this member to a Xero contact.");
+  }
 
-  const sessionType = Array.isArray(session.flight_types) ? session.flight_types[0] : session.flight_types;
-  const sessionDescription = Array.isArray(session.ground_session_description_options)
-    ? session.ground_session_description_options[0]
-    : session.ground_session_description_options;
-  const instructor = Array.isArray(session.instructor) ? session.instructor[0] : session.instructor;
+  const sessionType = Array.isArray(session.flight_types)
+    ? session.flight_types[0]
+    : session.flight_types;
+  const sessionDescription =
+    Array.isArray(session.ground_session_description_options)
+      ? session.ground_session_description_options[0]
+      : session.ground_session_description_options;
+  const instructor = Array.isArray(session.instructor)
+    ? session.instructor[0]
+    : session.instructor;
   const durationHours = quantityValue(session.duration_hours);
   const fixedPrice = clean(sessionDescription?.pricing_mode) === "fixed";
-  const invoiceQuantity = fixedPrice ? 1 : durationHours > 0 ? durationHours : 1;
-  const unitAmount = fixedPrice ? cost : durationHours > 0 ? unitRateValue(cost / durationHours) : cost;
+  const invoiceQuantity = fixedPrice
+    ? 1
+    : durationHours > 0
+    ? durationHours
+    : 1;
+  const unitAmount = fixedPrice
+    ? cost
+    : durationHours > 0
+    ? unitRateValue(cost / durationHours)
+    : cost;
   const description = [
-    clean(session.description_text) || sessionDescription?.name || sessionType?.name || "Ground session",
-    !fixedPrice && durationHours > 0 ? `${Number(session.duration_hours).toFixed(2)} hr` : null,
+    clean(session.description_text) || sessionDescription?.name ||
+    sessionType?.name || "Ground session",
+    !fixedPrice && durationHours > 0
+      ? `${Number(session.duration_hours).toFixed(2)} hr`
+      : null,
     instructor?.name ? `Instructor ${instructor.name}` : null,
   ].filter(Boolean).join(" - ");
 
@@ -2620,10 +3188,20 @@ const createOrUpdateGroundSessionInvoice = async (
     if (!updatableStatuses.has(existingStatus)) {
       await adminClient.from("ground_session_logs").update({
         xero_sync_status: "needs_review",
-        xero_sync_error: `Xero invoice ${clean(existingInvoice?.InvoiceNumber) || clean(session.xero_invoice_number) || clean(session.xero_invoice_id)} is ${existingStatus || "not editable"} and was not updated automatically.`,
+        xero_sync_error: `Xero invoice ${
+          clean(existingInvoice?.InvoiceNumber) ||
+          clean(session.xero_invoice_number) || clean(session.xero_invoice_id)
+        } is ${
+          existingStatus || "not editable"
+        } and was not updated automatically.`,
       }).eq("id", groundSessionLogId);
       throw makeXeroNeedsReviewError(
-        `Xero invoice ${clean(existingInvoice?.InvoiceNumber) || clean(session.xero_invoice_number) || clean(session.xero_invoice_id)} is ${existingStatus || "not editable"} and should not be overwritten automatically. Review it in the Xero sync queue.`,
+        `Xero invoice ${
+          clean(existingInvoice?.InvoiceNumber) ||
+          clean(session.xero_invoice_number) || clean(session.xero_invoice_id)
+        } is ${
+          existingStatus || "not editable"
+        } and should not be overwritten automatically. Review it in the Xero sync queue.`,
       );
     }
   }
@@ -2640,12 +3218,18 @@ const createOrUpdateGroundSessionInvoice = async (
       Description: description,
       Quantity: invoiceQuantity,
       UnitAmount: unitAmount,
-      ...(clean(sessionType?.xero_item_code) ? { ItemCode: clean(sessionType.xero_item_code).toUpperCase() } : {}),
+      ...(clean(sessionType?.xero_item_code)
+        ? { ItemCode: clean(sessionType.xero_item_code).toUpperCase() }
+        : {}),
       AccountCode: clean(ctx.settings.revenue_account_code),
-      ...(clean(ctx.settings.tax_type) ? { TaxType: clean(ctx.settings.tax_type) } : {}),
+      ...(clean(ctx.settings.tax_type)
+        ? { TaxType: clean(ctx.settings.tax_type) }
+        : {}),
     }],
   };
-  if (session.xero_invoice_id) invoicePayload.InvoiceID = session.xero_invoice_id;
+  if (session.xero_invoice_id) {
+    invoicePayload.InvoiceID = session.xero_invoice_id;
+  }
 
   const result = await xeroRequest({
     method: "POST",
@@ -2666,7 +3250,9 @@ const createOrUpdateGroundSessionInvoice = async (
     xero_sync_status: "synced",
     xero_sync_error: null,
   };
-  const { error } = await adminClient.from("ground_session_logs").update(invoiceUpdate).eq("id", groundSessionLogId);
+  const { error } = await adminClient.from("ground_session_logs").update(
+    invoiceUpdate,
+  ).eq("id", groundSessionLogId);
   if (error) throw error;
 
   await markQueue(adminClient, queueId, {
@@ -2674,10 +3260,18 @@ const createOrUpdateGroundSessionInvoice = async (
     processed_at: new Date().toISOString(),
     xero_contact_id: contactResult.contactId,
     xero_invoice_id: invoiceId,
-    result: { invoiceId, invoiceNumber: invoiceUpdate.xero_invoice_number, status: invoiceUpdate.xero_invoice_status },
+    result: {
+      invoiceId,
+      invoiceNumber: invoiceUpdate.xero_invoice_number,
+      status: invoiceUpdate.xero_invoice_status,
+    },
   });
 
-  return { invoiceId, invoiceNumber: invoiceUpdate.xero_invoice_number, status: invoiceUpdate.xero_invoice_status };
+  return {
+    invoiceId,
+    invoiceNumber: invoiceUpdate.xero_invoice_number,
+    status: invoiceUpdate.xero_invoice_status,
+  };
 };
 
 const applyGroundSessionPayments = async (
@@ -2689,14 +3283,20 @@ const applyGroundSessionPayments = async (
   await markQueue(adminClient, queueId, { status: "processing" });
   const session = await getGroundSessionLog(adminClient, groundSessionLogId);
   const invoiceId = clean(session.xero_invoice_id);
-  if (!invoiceId) throw new Error("Sync the Xero invoice before applying payments.");
+  if (!invoiceId) {
+    throw new Error("Sync the Xero invoice before applying payments.");
+  }
   const sessionContactId = clean(session?.student?.xero_contact_id);
   const latestInvoice = await getXeroInvoice(ctx, invoiceId);
-  let invoiceRemaining = money(latestInvoice?.AmountDue ?? session.calculated_cost ?? 0);
+  let invoiceRemaining = money(
+    latestInvoice?.AmountDue ?? session.calculated_cost ?? 0,
+  );
 
   const { data: txRows, error: txError } = await adminClient
     .from("account_transactions")
-    .select("id, amount, description, payment_method_id, created_at, xero_payment_id, payment_methods(name, system_key)")
+    .select(
+      "id, amount, description, payment_method_id, created_at, xero_payment_id, payment_methods(name, system_key)",
+    )
     .eq("ground_session_log_id", groundSessionLogId)
     .eq("type", "flight_charge")
     .eq("verified_status", "verified");
@@ -2706,23 +3306,37 @@ const applyGroundSessionPayments = async (
   const skippedPayments: string[] = [];
   for (const tx of txRows || []) {
     const methodName = String(tx.payment_methods?.name || "").toLowerCase();
-    const systemKey = String(tx.payment_methods?.system_key || "").toLowerCase();
-    const isPrepaid = systemKey === "pilot_account" || methodName.includes("pilot account") || methodName.includes("prepaid") || methodName.includes("pre-paid");
+    const systemKey = String(tx.payment_methods?.system_key || "")
+      .toLowerCase();
+    const isPrepaid = systemKey === "pilot_account" ||
+      methodName.includes("pilot account") || methodName.includes("prepaid") ||
+      methodName.includes("pre-paid");
     if (!isPrepaid) {
-      skippedPayments.push(`Payment method ${clean(tx.payment_methods?.name) || tx.payment_method_id} is not mapped to an automatic ground-session Xero payment flow.`);
+      skippedPayments.push(
+        `Payment method ${
+          clean(tx.payment_methods?.name) || tx.payment_method_id
+        } is not mapped to an automatic ground-session Xero payment flow.`,
+      );
       continue;
     }
 
     if (tx.xero_payment_id) {
-      payments.push({ transactionId: tx.id, paymentId: clean(tx.xero_payment_id), amount: money(tx.amount) });
+      payments.push({
+        transactionId: tx.id,
+        paymentId: clean(tx.xero_payment_id),
+        amount: money(tx.amount),
+      });
       continue;
     }
 
     if (!sessionContactId) {
-      skippedPayments.push("This member is not linked to a Xero contact, so prepaid credit cannot be allocated.");
+      skippedPayments.push(
+        "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.",
+      );
       await adminClient.from("account_transactions").update({
         xero_sync_status: "needs_review",
-        xero_sync_error: "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.",
+        xero_sync_error:
+          "This member is not linked to a Xero contact, so prepaid credit cannot be allocated.",
       }).eq("id", tx.id);
       continue;
     }
@@ -2730,9 +3344,18 @@ const applyGroundSessionPayments = async (
     const amountToApply = Math.min(money(tx.amount), invoiceRemaining);
     if (amountToApply <= 0.005) continue;
 
-    const creditResult = await applyAvailableCreditToInvoice(ctx, invoiceId, sessionContactId, amountToApply);
+    const creditResult = await applyAvailableCreditToInvoice(
+      ctx,
+      invoiceId,
+      sessionContactId,
+      amountToApply,
+    );
     if (creditResult.applied + 0.005 < amountToApply) {
-      const reason = `Only $${creditResult.applied.toFixed(2)} of Xero prepaid credit could be allocated to this ground session invoice. $${amountToApply.toFixed(2)} was required.`;
+      const reason = `Only $${
+        creditResult.applied.toFixed(2)
+      } of Xero prepaid credit could be allocated to this ground session invoice. $${
+        amountToApply.toFixed(2)
+      } was required.`;
       skippedPayments.push(reason);
       await adminClient.from("account_transactions").update({
         xero_sync_status: "needs_review",
@@ -2741,8 +3364,14 @@ const applyGroundSessionPayments = async (
       continue;
     }
 
-    const allocationReference = clean(creditResult.allocations.map((allocation: any) => allocation.allocationId || allocation.creditId).filter(Boolean).join(","));
-    const paymentId = allocationReference ? `credit-allocation:${allocationReference}` : `credit-allocation:${invoiceId}:${tx.id}`;
+    const allocationReference = clean(
+      creditResult.allocations.map((allocation: any) =>
+        allocation.allocationId || allocation.creditId
+      ).filter(Boolean).join(","),
+    );
+    const paymentId = allocationReference
+      ? `credit-allocation:${allocationReference}`
+      : `credit-allocation:${invoiceId}:${tx.id}`;
     invoiceRemaining = money(invoiceRemaining - creditResult.applied);
 
     await adminClient.from("account_transactions").update({
@@ -2753,19 +3382,31 @@ const applyGroundSessionPayments = async (
       xero_sync_status: "synced",
       xero_sync_error: null,
     }).eq("id", tx.id);
-    payments.push({ transactionId: tx.id, paymentId, amount: creditResult.applied, kind: "xero_credit_allocation" });
+    payments.push({
+      transactionId: tx.id,
+      paymentId,
+      amount: creditResult.applied,
+      kind: "xero_credit_allocation",
+    });
   }
 
-  const paidAmount = payments.reduce((total, item) => total + money(item.amount), 0);
+  const paidAmount = payments.reduce(
+    (total, item) => total + money(item.amount),
+    0,
+  );
   const now = new Date().toISOString();
   const { error: updateError } = await adminClient
     .from("ground_session_logs")
     .update({
       xero_payment_id: payments[0]?.paymentId || null,
       xero_payment_synced_at: payments.length > 0 ? now : null,
-      payment_status: paidAmount >= money(session.calculated_cost) ? "paid" : "pending",
+      payment_status: paidAmount >= money(session.calculated_cost)
+        ? "paid"
+        : "pending",
       xero_sync_status: skippedPayments.length > 0 ? "needs_review" : "synced",
-      xero_sync_error: skippedPayments.length > 0 ? skippedPayments.join(" ") : null,
+      xero_sync_error: skippedPayments.length > 0
+        ? skippedPayments.join(" ")
+        : null,
       xero_last_synced_at: now,
     })
     .eq("id", groundSessionLogId);
@@ -2791,7 +3432,9 @@ const refreshPaidFlightInvoices = async (
     .from("flight_logs")
     .select("id, xero_invoice_id, xero_invoice_number")
     .not("xero_invoice_id", "is", null)
-    .or("payment_status.is.null,payment_status.eq.unpaid,payment_status.eq.pending")
+    .or(
+      "payment_status.is.null,payment_status.eq.unpaid,payment_status.eq.pending",
+    )
     .limit(50);
 
   const ids = flightLogIds.map(clean).filter(Boolean);
@@ -2812,7 +3455,8 @@ const refreshPaidFlightInvoices = async (
     const latestPaymentId = clean(payments[payments.length - 1]?.PaymentID);
     const update: Record<string, unknown> = {
       xero_invoice_status: invoiceStatus || null,
-      xero_invoice_number: clean(invoice?.InvoiceNumber) || clean(flight.xero_invoice_number) || null,
+      xero_invoice_number: clean(invoice?.InvoiceNumber) ||
+        clean(flight.xero_invoice_number) || null,
       xero_invoice_synced_at: new Date().toISOString(),
     };
 
@@ -2842,11 +3486,16 @@ const refreshPaidFlightInvoices = async (
   return {
     checked: (flights || []).length,
     updated,
-    paidCount: updated.filter(row => row.markedPaid).length,
+    paidCount: updated.filter((row) => row.markedPaid).length,
   };
 };
 
-const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, voucherId: string, queueId: string | null = null) => {
+const syncVoucherLifecycle = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  voucherId: string,
+  queueId: string | null = null,
+) => {
   await markQueue(adminClient, queueId, { status: "processing" });
   const voucher = await getVoucher(adminClient, voucherId);
   const now = new Date().toISOString();
@@ -2856,7 +3505,10 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
   const voucherLiabilityAccountCode = clean(ctx.settings?.voucher_account_code);
   const revenueAccountCode = clean(ctx.settings?.revenue_account_code);
 
-  const setNeedsReview = async (message: string, extraResult: Record<string, unknown> = {}) => {
+  const setNeedsReview = async (
+    message: string,
+    extraResult: Record<string, unknown> = {},
+  ) => {
     await adminClient.from("trial_flight_vouchers").update({
       xero_sync_status: "needs_review",
       xero_sync_error: message,
@@ -2885,24 +3537,35 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
     await markQueue(adminClient, queueId, {
       status: "cancelled",
       last_error: null,
-      result: { voucherId: voucher.id, voucherCode, skipped: "voucher_not_paid" },
+      result: {
+        voucherId: voucher.id,
+        voucherCode,
+        skipped: "voucher_not_paid",
+      },
     });
     return { skipped: true, reason: "voucher_not_paid" };
   }
 
   if (voucherAmount <= 0) {
-    return await setNeedsReview("Voucher payment amount is zero. Review this voucher before sending it to Xero.");
+    return await setNeedsReview(
+      "Voucher payment amount is zero. Review this voucher before sending it to Xero.",
+    );
   }
 
   let saleJournalId = clean(voucher.xero_sale_journal_id);
   let saleBankTransactionId = clean(voucher.xero_sale_bank_transaction_id);
   let purchaserContactId = clean(voucher.xero_purchaser_contact_id);
   let redemptionJournalId = clean(voucher.xero_redemption_journal_id);
-  const result: Record<string, unknown> = { voucherId: voucher.id, voucherCode };
+  const result: Record<string, unknown> = {
+    voucherId: voucher.id,
+    voucherCode,
+  };
 
   if (!saleJournalId && !saleBankTransactionId) {
     if (!voucherLiabilityAccountCode) {
-      return await setNeedsReview("Set a Gift voucher liability account in Xero settings before syncing vouchers.");
+      return await setNeedsReview(
+        "Set a Gift voucher liability account in Xero settings before syncing vouchers.",
+      );
     }
 
     let fundingAccountCode = "";
@@ -2911,7 +3574,9 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
     if (clean(voucher.payment_source) === "stripe") {
       fundingAccountCode = clean(ctx.settings?.stripe_payment_account_code);
       if (!fundingAccountCode) {
-        return await setNeedsReview("Set the Stripe payment clearing account before syncing Stripe-paid vouchers.");
+        return await setNeedsReview(
+          "Set the Stripe payment clearing account before syncing Stripe-paid vouchers.",
+        );
       }
 
       const purchaserContact = await syncVoucherPurchaserContact(ctx, voucher);
@@ -2942,15 +3607,24 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
     } else if (clean(voucher.payment_source) === "prepaid") {
       fundingAccountCode = clean(ctx.settings?.topup_account_code);
       if (!fundingAccountCode) {
-        return await setNeedsReview("Set the Member prepaid liability account before syncing prepaid-funded vouchers.");
+        return await setNeedsReview(
+          "Set the Member prepaid liability account before syncing prepaid-funded vouchers.",
+        );
       }
-      saleNarration = `Gift voucher funded from member prepaid balance ${voucherCode} - ${productName}`;
+      saleNarration =
+        `Gift voucher funded from member prepaid balance ${voucherCode} - ${productName}`;
     } else if (clean(voucher.payment_source) === "manual") {
-      return await setNeedsReview("Manual-paid vouchers are left for review so the club can choose the correct bank or cash account in Xero.");
+      return await setNeedsReview(
+        "Manual-paid vouchers are left for review so the club can choose the correct bank or cash account in Xero.",
+      );
     } else if (clean(voucher.payment_source) === "waived") {
-      return await setNeedsReview("Complimentary or waived vouchers are not auto-posted. Review this voucher manually in Xero.");
+      return await setNeedsReview(
+        "Complimentary or waived vouchers are not auto-posted. Review this voucher manually in Xero.",
+      );
     } else {
-      return await setNeedsReview("Voucher payment source is not set. Save the voucher again or review it manually.");
+      return await setNeedsReview(
+        "Voucher payment source is not set. Save the voucher again or review it manually.",
+      );
     }
 
     if (clean(voucher.payment_source) !== "stripe") {
@@ -2985,17 +3659,29 @@ const syncVoucherLifecycle = async (adminClient: SupabaseAdminClient, ctx: any, 
     }
   }
 
-  const redemptionFlight = await getVoucherRedemptionFlight(adminClient, voucher.booked_booking_id);
+  const redemptionFlight = await getVoucherRedemptionFlight(
+    adminClient,
+    voucher.booked_booking_id,
+  );
   if (redemptionFlight && !redemptionJournalId) {
     if (!voucherLiabilityAccountCode) {
-      return await setNeedsReview("Set a Gift voucher liability account before releasing redeemed vouchers into revenue.", result);
+      return await setNeedsReview(
+        "Set a Gift voucher liability account before releasing redeemed vouchers into revenue.",
+        result,
+      );
     }
     if (!revenueAccountCode) {
-      return await setNeedsReview("Set a Flight revenue account before releasing redeemed vouchers into revenue.", result);
+      return await setNeedsReview(
+        "Set a Flight revenue account before releasing redeemed vouchers into revenue.",
+        result,
+      );
     }
     if (clean(redemptionFlight.xero_invoice_id)) {
       return await setNeedsReview(
-        `Flight log ${redemptionFlight.id} already has Xero invoice ${clean(redemptionFlight.xero_invoice_number) || clean(redemptionFlight.xero_invoice_id)}. Remove or review that invoice before syncing the voucher redemption.`,
+        `Flight log ${redemptionFlight.id} already has Xero invoice ${
+          clean(redemptionFlight.xero_invoice_number) ||
+          clean(redemptionFlight.xero_invoice_id)
+        }. Remove or review that invoice before syncing the voucher redemption.`,
         { ...result, flightLogId: redemptionFlight.id },
       );
     }
@@ -3112,7 +3798,10 @@ const queueStatusForEntity = async (
     };
   }
 
-  if (item.entity_type === "flight_invoice" || item.entity_type === "flight_payment") {
+  if (
+    item.entity_type === "flight_invoice" ||
+    item.entity_type === "flight_payment"
+  ) {
     const { data } = await adminClient
       .from("flight_logs")
       .select(`
@@ -3122,12 +3811,20 @@ const queueStatusForEntity = async (
       `)
       .eq("id", item.entity_id)
       .maybeSingle();
-    const student = Array.isArray(data?.student) ? data?.student[0] : data?.student;
-    const aircraft = Array.isArray(data?.aircraft) ? data?.aircraft[0] : data?.aircraft;
-    const date = data?.start_time ? new Date(data.start_time).toLocaleDateString("en-AU") : "";
+    const student = Array.isArray(data?.student)
+      ? data?.student[0]
+      : data?.student;
+    const aircraft = Array.isArray(data?.aircraft)
+      ? data?.aircraft[0]
+      : data?.aircraft;
+    const date = data?.start_time
+      ? new Date(data.start_time).toLocaleDateString("en-AU")
+      : "";
     return {
       entityLabel: clean(student?.name) || "Flight log",
-      entityDetail: [date, clean(aircraft?.registration), clean(data?.xero_invoice_number)].filter(Boolean).join(" · ") || null,
+      entityDetail:
+        [date, clean(aircraft?.registration), clean(data?.xero_invoice_number)]
+          .filter(Boolean).join(" · ") || null,
       recordStatus: clean(data?.xero_sync_status) || null,
     };
   }
@@ -3139,9 +3836,14 @@ const queueStatusForEntity = async (
       .eq("id", item.entity_id)
       .maybeSingle();
     return {
-      entityLabel: clean(data?.purchaser_name) || clean(data?.code) || "Voucher",
-      entityDetail: [clean(data?.code), clean(data?.purchaser_email)].filter(Boolean).join(" · ") || null,
-      recordStatus: clean(data?.xero_sync_status) || clean(data?.status) || null,
+      entityLabel: clean(data?.purchaser_name) || clean(data?.code) ||
+        "Voucher",
+      entityDetail:
+        [clean(data?.code), clean(data?.purchaser_email)].filter(Boolean).join(
+          " · ",
+        ) || null,
+      recordStatus: clean(data?.xero_sync_status) || clean(data?.status) ||
+        null,
     };
   }
 
@@ -3161,9 +3863,15 @@ const queueStatusForEntity = async (
       .maybeSingle();
     const user = Array.isArray(data?.user) ? data?.user[0] : data?.user;
     return {
-      entityLabel: clean(user?.name) || clean(user?.email) || "Account transaction",
-      entityDetail: [clean(data?.type), clean(data?.description), money(data?.amount).toFixed(2)].filter(Boolean).join(" · ") || null,
-      recordStatus: clean(data?.xero_sync_status) || clean(data?.verified_status) || null,
+      entityLabel: clean(user?.name) || clean(user?.email) ||
+        "Account transaction",
+      entityDetail: [
+        clean(data?.type),
+        clean(data?.description),
+        money(data?.amount).toFixed(2),
+      ].filter(Boolean).join(" · ") || null,
+      recordStatus: clean(data?.xero_sync_status) ||
+        clean(data?.verified_status) || null,
     };
   }
 
@@ -3174,7 +3882,11 @@ const queueStatusForEntity = async (
   };
 };
 
-const listQueue = async (adminClient: SupabaseAdminClient, statusFilter = "all", limit = 50) => {
+const listQueue = async (
+  adminClient: SupabaseAdminClient,
+  statusFilter = "all",
+  limit = 50,
+) => {
   const { data: statusRows, error: statusError } = await adminClient
     .from("xero_sync_queue")
     .select("status");
@@ -3206,7 +3918,15 @@ const listQueue = async (adminClient: SupabaseAdminClient, statusFilter = "all",
       acc.all += 1;
       return acc;
     },
-    { all: 0, pending: 0, processing: 0, synced: 0, needs_review: 0, failed: 0, cancelled: 0 },
+    {
+      all: 0,
+      pending: 0,
+      processing: 0,
+      synced: 0,
+      needs_review: 0,
+      failed: 0,
+      cancelled: 0,
+    },
   );
 
   return { items, counts };
@@ -3222,8 +3942,14 @@ const getStripeTestSyncAllowed = async (adminClient: SupabaseAdminClient) => {
   return Boolean(data?.allow_test_mode_xero_sync);
 };
 
-const isTestModeQueueItem = async (adminClient: SupabaseAdminClient, item: any) => {
-  if (item.entity_type === "flight_invoice" || item.entity_type === "flight_payment") {
+const isTestModeQueueItem = async (
+  adminClient: SupabaseAdminClient,
+  item: any,
+) => {
+  if (
+    item.entity_type === "flight_invoice" ||
+    item.entity_type === "flight_payment"
+  ) {
     const { data, error } = await adminClient
       .from("flight_logs")
       .select("is_test_mode,stripe_mode")
@@ -3256,7 +3982,12 @@ const isTestModeQueueItem = async (adminClient: SupabaseAdminClient, item: any) 
   return false;
 };
 
-const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, item: any, processedBy: string | null) => {
+const processQueueRecord = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  item: any,
+  processedBy: string | null,
+) => {
   await adminClient.from("xero_sync_queue").update({
     status: "processing",
     attempts: Number(item.attempts || 0) + 1,
@@ -3269,7 +4000,9 @@ const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, it
       const allowTestSync = await getStripeTestSyncAllowed(adminClient);
       if (!allowTestSync) {
         throw Object.assign(
-          new Error("Skipped: this is a Stripe Test Mode record. Enable test-mode Xero sync in Settings > Integrations only if this should be sent to Xero."),
+          new Error(
+            "Skipped: this is a Stripe Test Mode record. Enable test-mode Xero sync in Settings > Integrations only if this should be sent to Xero.",
+          ),
           { queueStatus: "needs_review" },
         );
       }
@@ -3277,15 +4010,40 @@ const processQueueRecord = async (adminClient: SupabaseAdminClient, ctx: any, it
 
     let result: Record<string, unknown>;
     if (item.action === "upsert_contact") {
-      result = await syncMemberContact(adminClient, ctx, item.entity_id, item.id);
+      result = await syncMemberContact(
+        adminClient,
+        ctx,
+        item.entity_id,
+        item.id,
+      );
     } else if (item.action === "create_invoice") {
-      result = await createOrUpdateFlightInvoice(adminClient, ctx, item.entity_id, item.id);
+      result = await createOrUpdateFlightInvoice(
+        adminClient,
+        ctx,
+        item.entity_id,
+        item.id,
+      );
     } else if (item.action === "apply_payment") {
-      result = await applyFlightPayments(adminClient, ctx, item.entity_id, item.id);
+      result = await applyFlightPayments(
+        adminClient,
+        ctx,
+        item.entity_id,
+        item.id,
+      );
     } else if (item.action === "sync_transaction") {
-      result = await syncTopupTransaction(adminClient, ctx, item.entity_id, item.id);
+      result = await syncTopupTransaction(
+        adminClient,
+        ctx,
+        item.entity_id,
+        item.id,
+      );
     } else if (item.action === "sync_voucher") {
-      result = await syncVoucherLifecycle(adminClient, ctx, item.entity_id, item.id);
+      result = await syncVoucherLifecycle(
+        adminClient,
+        ctx,
+        item.entity_id,
+        item.id,
+      );
     } else {
       throw new Error(`Unsupported Xero queue action: ${item.action}`);
     }
@@ -3345,19 +4103,21 @@ const updateMembershipPeriodFromInvoice = async (
   const invoiceId = clean(invoice?.InvoiceID);
   const status = clean(invoice?.Status).toUpperCase();
   const amountDue = money(invoice?.AmountDue);
-  const isPaid = status === "PAID" || amountDue <= 0.005;
+  const isVoided = ["VOIDED", "DELETED", "CANCELLED"].includes(status);
+  const isPaid = !isVoided && (status === "PAID" || amountDue <= 0.005);
   const now = new Date().toISOString();
-  const { error } = await adminClient.from("membership_financial_periods").update({
-    xero_invoice_id: invoiceId || null,
-    xero_invoice_number: clean(invoice?.InvoiceNumber) || null,
-    xero_invoice_status: status || null,
-    xero_amount_due: amountDue,
-    xero_last_synced_at: now,
-    xero_sync_error: null,
-    fee_disposition: isPaid ? "paid" : "invoiced",
-    financially_cleared_at: isPaid ? now : null,
-    updated_at: now,
-  }).eq("id", periodId);
+  const { error } = await adminClient.from("membership_financial_periods")
+    .update({
+      xero_invoice_id: invoiceId || null,
+      xero_invoice_number: clean(invoice?.InvoiceNumber) || null,
+      xero_invoice_status: status || null,
+      xero_amount_due: amountDue,
+      xero_last_synced_at: now,
+      xero_sync_error: null,
+      fee_disposition: isVoided ? "ceased" : isPaid ? "paid" : "invoiced",
+      financially_cleared_at: isPaid ? now : null,
+      updated_at: now,
+    }).eq("id", periodId);
   if (error) throw error;
   return {
     periodId,
@@ -3366,11 +4126,15 @@ const updateMembershipPeriodFromInvoice = async (
     status: status || null,
     amountDue,
     paid: isPaid,
+    voided: isVoided,
     syncedAt: now,
   };
 };
 
-const getMembershipPeriod = async (adminClient: SupabaseAdminClient, periodId: string) => {
+const getMembershipPeriod = async (
+  adminClient: SupabaseAdminClient,
+  periodId: string,
+) => {
   const { data: period, error } = await adminClient
     .from("membership_financial_periods")
     .select("*")
@@ -3381,7 +4145,7 @@ const getMembershipPeriod = async (adminClient: SupabaseAdminClient, periodId: s
 
   const { data: membership, error: membershipError } = await adminClient
     .from("club_memberships")
-    .select("id,user_id,membership_class_id,legal_status")
+    .select("id,user_id,membership_class_id,legal_status,commenced_at")
     .eq("id", period.membership_id)
     .maybeSingle();
   if (membershipError) throw membershipError;
@@ -3398,51 +4162,385 @@ const getMembershipPeriod = async (adminClient: SupabaseAdminClient, periodId: s
   return { period, membership, membershipClass };
 };
 
+const createMembershipXeroPayment = async (
+  ctx: any,
+  invoiceId: string,
+  amount: number,
+  reference: string,
+  stripePaymentIntentId: string,
+) => {
+  const accountCode = clean(ctx.settings?.stripe_payment_account_code);
+  if (!accountCode) {
+    throw new Error(
+      "Set the Xero Stripe clearing account before collecting automatic membership payments.",
+    );
+  }
+  const result = await xeroRequest({
+    method: "POST",
+    path: "Payments",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    idempotencyKey: `membership-payment-${stripePaymentIntentId}`,
+    body: {
+      Payments: [{
+        Invoice: { InvoiceID: invoiceId },
+        Account: { Code: accountCode },
+        Date: new Date().toISOString().slice(0, 10),
+        Amount: money(amount),
+        Reference: truncateText(reference),
+      }],
+    },
+  });
+  const paymentId = clean(result?.Payments?.[0]?.PaymentID);
+  if (!paymentId) {
+    throw new Error(
+      "Xero did not return a payment ID for the membership collection.",
+    );
+  }
+  return paymentId;
+};
+
+const collectMembershipInvoice = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  period: any,
+  membership: any,
+  invoice: any,
+) => {
+  const invoiceId = clean(invoice?.InvoiceID);
+  const amountDue = money(invoice?.AmountDue);
+  if (!invoiceId || amountDue <= 0.005) {
+    return { attempted: false, reason: "nothing_due" };
+  }
+
+  const { data: preference, error: preferenceError } = await adminClient
+    .from("membership_payment_preferences")
+    .select("*")
+    .eq("user_id", membership.user_id)
+    .maybeSingle();
+  if (preferenceError) throw preferenceError;
+  if (
+    !preference || !["card", "becs"].includes(clean(preference.payment_method))
+  ) {
+    return { attempted: false, reason: "manual_invoice" };
+  }
+  if (
+    preference.authority_status !== "ready" ||
+    !clean(preference.stripe_payment_method_id) ||
+    !clean(preference.stripe_customer_id)
+  ) {
+    return { attempted: false, reason: "payment_authority_not_ready" };
+  }
+
+  const commencedDate = String(membership.commenced_at || "").slice(0, 10);
+  const isInitialPeriod = Boolean(
+    commencedDate &&
+      commencedDate >= String(period.financial_year_start).slice(0, 10) &&
+      commencedDate <= String(period.financial_year_end).slice(0, 10),
+  );
+  if (!isInitialPeriod && !preference.auto_renew) {
+    return { attempted: false, reason: "automatic_renewal_not_authorised" };
+  }
+
+  const { data: existingPayment, error: existingError } = await adminClient
+    .from("xero_invoice_portal_payments")
+    .select("id,status,stripe_payment_intent_id,xero_payment_id")
+    .eq("xero_invoice_id", invoiceId)
+    .in("status", ["pending", "paid", "needs_review"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existingPayment) {
+    return {
+      attempted: false,
+      reason: "collection_already_recorded",
+      paymentRecordId: existingPayment.id,
+      status: existingPayment.status,
+    };
+  }
+
+  const stripeMode = clean(preference.stripe_mode) === "test" ? "test" : "live";
+  const stripeSecretKey = getStripeSecretKeyForMode(stripeMode);
+  const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+  if (!connectedAccountId) {
+    throw new Error("Stripe is not connected for this club.");
+  }
+  const { data: member, error: memberError } = await adminClient
+    .from("users")
+    .select("id,email,xero_contact_id")
+    .eq("id", membership.user_id)
+    .maybeSingle();
+  if (memberError) throw memberError;
+  if (!member?.xero_contact_id) {
+    throw new Error("The member is not linked to the Xero invoice contact.");
+  }
+
+  const { data: paymentRecord, error: recordError } = await adminClient
+    .from("xero_invoice_portal_payments")
+    .insert({
+      user_id: membership.user_id,
+      xero_contact_id: clean(member.xero_contact_id),
+      xero_invoice_id: invoiceId,
+      xero_invoice_number: clean(invoice?.InvoiceNumber) || null,
+      amount: amountDue,
+      currency: clean(invoice?.CurrencyCode) || "AUD",
+      status: "pending",
+      stripe_mode: stripeMode,
+      is_test_mode: stripeMode === "test",
+    })
+    .select("id")
+    .single();
+  if (recordError) throw recordError;
+
+  const form = new URLSearchParams();
+  form.set("amount", String(Math.round(amountDue * 100)));
+  form.set("currency", (clean(invoice?.CurrencyCode) || "AUD").toLowerCase());
+  form.set("customer", clean(preference.stripe_customer_id));
+  form.set("payment_method", clean(preference.stripe_payment_method_id));
+  form.set("off_session", "true");
+  form.set("confirm", "true");
+  form.set(
+    "description",
+    clean(invoice?.InvoiceNumber)
+      ? `Bendigo Flying Club membership invoice ${clean(invoice.InvoiceNumber)}`
+      : "Bendigo Flying Club membership payment",
+  );
+  form.set("metadata[crm_payment_type]", "membership_invoice_auto_payment");
+  form.set("metadata[payment_record_id]", paymentRecord.id);
+  form.set("metadata[membership_period_id]", period.id);
+  form.set("metadata[user_id]", membership.user_id);
+  form.set("metadata[xero_contact_id]", clean(member.xero_contact_id));
+  form.set("metadata[xero_invoice_id]", invoiceId);
+  form.set("metadata[xero_invoice_number]", clean(invoice?.InvoiceNumber));
+  form.set("metadata[stripe_mode]", stripeMode);
+  form.set("metadata[test_mode]", stripeMode === "test" ? "true" : "false");
+
+  const paymentResponse = await fetch(
+    "https://api.stripe.com/v1/payment_intents",
+    {
+      method: "POST",
+      headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Idempotency-Key": stripeIdempotencyKey(
+          "membership-invoice-collection",
+          stripeMode,
+          period.id,
+          invoiceId,
+        ),
+      }),
+      body: form,
+    },
+  );
+  const paymentIntent = await paymentResponse.json().catch(() => ({}));
+  const now = new Date().toISOString();
+  const failureMessage = clean(paymentIntent?.error?.message) ||
+    (!paymentResponse.ok ? "Stripe membership collection failed." : null);
+
+  if (!paymentResponse.ok) {
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "failed",
+      stripe_payment_intent_id:
+        clean(paymentIntent?.error?.payment_intent?.id) || null,
+      error: failureMessage,
+      updated_at: now,
+    }).eq("id", paymentRecord.id);
+    await adminClient.from("membership_payment_preferences").update({
+      last_collection_attempt_at: now,
+      last_collection_status: "failed",
+      last_collection_error: failureMessage,
+      updated_at: now,
+    }).eq("user_id", membership.user_id);
+    return {
+      attempted: true,
+      status: "failed",
+      error: failureMessage,
+      paymentRecordId: paymentRecord.id,
+    };
+  }
+
+  await adminClient.from("xero_invoice_portal_payments").update({
+    stripe_payment_intent_id: clean(paymentIntent.id),
+    status: paymentIntent.status === "succeeded"
+      ? "pending"
+      : paymentIntent.status === "processing"
+      ? "pending"
+      : "failed",
+    error: ["succeeded", "processing"].includes(clean(paymentIntent.status))
+      ? null
+      : `Stripe returned ${
+        clean(paymentIntent.status) || "an incomplete status"
+      }.`,
+    updated_at: now,
+  }).eq("id", paymentRecord.id);
+  await adminClient.from("membership_payment_preferences").update({
+    last_collection_attempt_at: now,
+    last_collection_status: clean(paymentIntent.status) || "pending",
+    last_collection_error: null,
+    updated_at: now,
+  }).eq("user_id", membership.user_id);
+
+  if (paymentIntent.status !== "succeeded") {
+    return {
+      attempted: true,
+      status: clean(paymentIntent.status) || "pending",
+      paymentRecordId: paymentRecord.id,
+    };
+  }
+
+  const { data: latestRecord } = await adminClient
+    .from("xero_invoice_portal_payments")
+    .select("xero_payment_id,status")
+    .eq("id", paymentRecord.id)
+    .maybeSingle();
+  let xeroPaymentId = clean(latestRecord?.xero_payment_id);
+  if (!xeroPaymentId) {
+    xeroPaymentId = await createMembershipXeroPayment(
+      ctx,
+      invoiceId,
+      amountDue,
+      `Stripe membership payment ${clean(paymentIntent.id)}`,
+      clean(paymentIntent.id),
+    );
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "paid",
+      xero_payment_id: xeroPaymentId,
+      error: null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", paymentRecord.id);
+  }
+  const paidInvoice = await getXeroInvoice(ctx, invoiceId);
+  if (paidInvoice) {
+    await updateMembershipPeriodFromInvoice(
+      adminClient,
+      period.id,
+      paidInvoice,
+    );
+  }
+  await adminClient.from("membership_payment_preferences").update({
+    last_collection_status: "succeeded",
+    last_collection_error: null,
+    updated_at: new Date().toISOString(),
+  }).eq("user_id", membership.user_id);
+  return {
+    attempted: true,
+    status: "succeeded",
+    paymentRecordId: paymentRecord.id,
+    xeroPaymentId,
+  };
+};
+
 const createOrRefreshMembershipInvoice = async (
   adminClient: SupabaseAdminClient,
   ctx: any,
   periodId: string,
   sendEmail = false,
 ) => {
-  const { period, membership, membershipClass } = await getMembershipPeriod(adminClient, periodId);
-  if (["waived", "fee_exempt"].includes(clean(period.fee_disposition).toLowerCase())) {
-    throw new Error("Waived and fee-exempt memberships do not require a Xero invoice.");
+  const { period, membership, membershipClass } = await getMembershipPeriod(
+    adminClient,
+    periodId,
+  );
+  if (
+    ["waived", "fee_exempt"].includes(
+      clean(period.fee_disposition).toLowerCase(),
+    )
+  ) {
+    throw new Error(
+      "Waived and fee-exempt memberships do not require a Xero invoice.",
+    );
   }
 
   if (clean(period.xero_invoice_id)) {
     const invoice = await getXeroInvoice(ctx, clean(period.xero_invoice_id));
-    if (!invoice) throw new Error("The linked Xero membership invoice could not be found.");
-    const synced = await updateMembershipPeriodFromInvoice(adminClient, period.id, invoice);
+    if (!invoice) {
+      throw new Error("The linked Xero membership invoice could not be found.");
+    }
+    const synced = await updateMembershipPeriodFromInvoice(
+      adminClient,
+      period.id,
+      invoice,
+    );
     if (sendEmail) {
       await xeroRequest({
         method: "POST",
-        path: `Invoices/${encodeURIComponent(clean(period.xero_invoice_id))}/Email`,
+        path: `Invoices/${
+          encodeURIComponent(clean(period.xero_invoice_id))
+        }/Email`,
         tenantId: ctx.connection.tenant_id,
         accessToken: ctx.connection.access_token,
       });
     }
-    return { ...synced, emailSent: sendEmail };
+    const collection = await collectMembershipInvoice(
+      adminClient,
+      ctx,
+      period,
+      membership,
+      invoice,
+    )
+      .catch((error) => ({
+        attempted: true,
+        status: "failed",
+        error: getErrorMessage(error),
+      }));
+    return { ...synced, emailSent: sendEmail, collection };
   }
 
   const { data: membershipSettings, error: settingsError } = await adminClient
     .from("membership_settings")
-    .select("xero_membership_item_code")
+    .select("xero_membership_item_code,xero_scholarship_item_code")
     .eq("id", true)
     .maybeSingle();
   if (settingsError) throw settingsError;
   const itemCode = clean(membershipSettings?.xero_membership_item_code);
   if (!itemCode) {
-    throw new Error("Set the Xero membership item code in Membership settings before issuing invoices.");
+    throw new Error(
+      "Set the Xero membership item code in Membership settings before issuing invoices.",
+    );
+  }
+  const scholarshipAmount = money(period.scholarship_contribution_amount);
+  const scholarshipItemCode = clean(
+    membershipSettings?.xero_scholarship_item_code,
+  );
+  if (scholarshipAmount > 0 && !scholarshipItemCode) {
+    throw new Error(
+      "Set the Xero scholarship item code in Membership settings before invoicing a scholarship contribution.",
+    );
   }
 
   const member = await getMember(adminClient, membership.user_id);
   const contact = await syncMemberContact(adminClient, ctx, membership.user_id);
   const contactId = clean(contact?.contactId || member.xero_contact_id);
-  if (!contactId) throw new Error("The member could not be linked to a Xero contact.");
+  if (!contactId) {
+    throw new Error("The member could not be linked to a Xero contact.");
+  }
 
   const startYear = String(period.financial_year_start).slice(0, 4);
   const endYear = String(period.financial_year_end).slice(2, 4);
   const financialYearLabel = `${startYear}/${endYear}`;
+  const membershipFeeAmount = money(
+    period.membership_fee_amount ??
+      (money(period.amount_due) - scholarshipAmount),
+  );
+  const lineItems = [{
+    ItemCode: itemCode,
+    Description: truncateText(
+      `${membershipClass.name} Bendigo Flying Club membership ${financialYearLabel}`,
+      4000,
+    ),
+    Quantity: 1,
+    UnitAmount: membershipFeeAmount,
+  }];
+  if (scholarshipAmount > 0) {
+    lineItems.push({
+      ItemCode: scholarshipItemCode,
+      Description: truncateText(
+        `Optional Bendigo Flying Club scholarship contribution ${financialYearLabel}`,
+        4000,
+      ),
+      Quantity: 1,
+      UnitAmount: scholarshipAmount,
+    });
+  }
   const result = await xeroRequest({
     method: "POST",
     path: "Invoices",
@@ -3457,18 +4555,19 @@ const createOrRefreshMembershipInvoice = async (
         DueDate: isoDate(period.due_date),
         Status: "AUTHORISED",
         Reference: truncateText(`BFC membership ${financialYearLabel}`),
-        LineItems: [{
-          ItemCode: itemCode,
-          Description: truncateText(`${membershipClass.name} Bendigo Flying Club membership ${financialYearLabel}`, 4000),
-          Quantity: 1,
-          UnitAmount: money(period.amount_due),
-        }],
+        LineItems: lineItems,
       }],
     },
   });
   const invoice = result?.Invoices?.[0];
-  if (!invoice?.InvoiceID) throw new Error("Xero did not return a membership invoice ID.");
-  const synced = await updateMembershipPeriodFromInvoice(adminClient, period.id, invoice);
+  if (!invoice?.InvoiceID) {
+    throw new Error("Xero did not return a membership invoice ID.");
+  }
+  const synced = await updateMembershipPeriodFromInvoice(
+    adminClient,
+    period.id,
+    invoice,
+  );
   if (sendEmail) {
     await xeroRequest({
       method: "POST",
@@ -3477,7 +4576,19 @@ const createOrRefreshMembershipInvoice = async (
       accessToken: ctx.connection.access_token,
     });
   }
-  return { ...synced, emailSent: sendEmail };
+  const collection = await collectMembershipInvoice(
+    adminClient,
+    ctx,
+    period,
+    membership,
+    invoice,
+  )
+    .catch((error) => ({
+      attempted: true,
+      status: "failed",
+      error: getErrorMessage(error),
+    }));
+  return { ...synced, emailSent: sendEmail, collection };
 };
 
 const issueMembershipRenewals = async (
@@ -3501,9 +4612,20 @@ const issueMembershipRenewals = async (
   const results: any[] = [];
   for (const period of periods || []) {
     try {
-      results.push(await createOrRefreshMembershipInvoice(adminClient, ctx, period.id, sendEmail));
+      results.push(
+        await createOrRefreshMembershipInvoice(
+          adminClient,
+          ctx,
+          period.id,
+          sendEmail,
+        ),
+      );
     } catch (error) {
-      results.push({ periodId: period.id, error: getErrorMessage(error), emailSent: false });
+      results.push({
+        periodId: period.id,
+        error: getErrorMessage(error),
+        emailSent: false,
+      });
     }
   }
   return {
@@ -3535,7 +4657,13 @@ const refreshMembershipInvoices = async (
     try {
       const invoice = await getXeroInvoice(ctx, clean(period.xero_invoice_id));
       if (!invoice) throw new Error("Linked invoice not found in Xero.");
-      results.push(await updateMembershipPeriodFromInvoice(adminClient, period.id, invoice));
+      results.push(
+        await updateMembershipPeriodFromInvoice(
+          adminClient,
+          period.id,
+          invoice,
+        ),
+      );
     } catch (error) {
       const message = getErrorMessage(error);
       const syncedAt = new Date().toISOString();
@@ -3550,8 +4678,380 @@ const refreshMembershipInvoices = async (
   return { refreshed: results.length, results };
 };
 
+const issueMemberMembershipInvoice = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  userId: string,
+  sendEmail = true,
+) => {
+  const { data: membership, error: membershipError } = await adminClient
+    .from("club_memberships")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("legal_status", "current")
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership) return { issued: false, reason: "membership_not_current" };
+  const { data: period, error: periodError } = await adminClient
+    .from("membership_financial_periods")
+    .select("id")
+    .eq("membership_id", membership.id)
+    .order("financial_year_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (periodError) throw periodError;
+  if (!period) return { issued: false, reason: "financial_period_not_ready" };
+  return {
+    issued: true,
+    result: await createOrRefreshMembershipInvoice(
+      adminClient,
+      ctx,
+      period.id,
+      sendEmail,
+    ),
+  };
+};
+
+const cancelPendingMembershipCollections = async (
+  adminClient: SupabaseAdminClient,
+  invoiceId: string,
+) => {
+  const { data: records, error } = await adminClient
+    .from("xero_invoice_portal_payments")
+    .select("id,stripe_payment_intent_id,stripe_mode,status")
+    .eq("xero_invoice_id", invoiceId)
+    .eq("status", "pending");
+  if (error) throw error;
+  if (!records?.length) return [];
+
+  const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+  if (!connectedAccountId) {
+    throw Object.assign(
+      new Error(
+        "A membership payment is still pending and Stripe is not connected. Reconnect Stripe before cancelling this membership.",
+      ),
+      { status: 409 },
+    );
+  }
+
+  const results: any[] = [];
+  for (const record of records) {
+    const paymentIntentId = clean(record.stripe_payment_intent_id);
+    if (!paymentIntentId) {
+      throw Object.assign(
+        new Error(
+          "A membership payment has just started. Wait a moment and try the cancellation again.",
+        ),
+        { status: 409 },
+      );
+    }
+    const stripeMode = clean(record.stripe_mode) === "test" ? "test" : "live";
+    const stripeSecretKey = getStripeSecretKeyForMode(stripeMode as StripeMode);
+    const retrieveResponse = await fetch(
+      `https://api.stripe.com/v1/payment_intents/${
+        encodeURIComponent(paymentIntentId)
+      }`,
+      { headers: stripeHeaders(stripeSecretKey, connectedAccountId) },
+    );
+    const paymentIntent = await retrieveResponse.json().catch(() => ({}));
+    if (!retrieveResponse.ok) {
+      throw new Error(
+        clean(paymentIntent?.error?.message) ||
+          "The pending Stripe membership payment could not be checked.",
+      );
+    }
+    if (paymentIntent.status === "succeeded") {
+      throw Object.assign(
+        new Error(
+          "The membership payment has completed and is being reconciled. Wait for the payment confirmation, then cancel again.",
+        ),
+        { status: 409 },
+      );
+    }
+    if (paymentIntent.status !== "canceled") {
+      const cancelResponse = await fetch(
+        `https://api.stripe.com/v1/payment_intents/${
+          encodeURIComponent(paymentIntentId)
+        }/cancel`,
+        {
+          method: "POST",
+          headers: stripeHeaders(stripeSecretKey, connectedAccountId),
+        },
+      );
+      const cancelledIntent = await cancelResponse.json().catch(() => ({}));
+      if (!cancelResponse.ok || cancelledIntent.status !== "canceled") {
+        throw Object.assign(
+          new Error(
+            clean(cancelledIntent?.error?.message) ||
+              "The pending Stripe membership payment could not be stopped. Try again after its status updates.",
+          ),
+          { status: 409 },
+        );
+      }
+    }
+    const now = new Date().toISOString();
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "cancelled",
+      error:
+        "Cancelled because the membership was cancelled before collection completed.",
+      updated_at: now,
+    }).eq("id", record.id).eq("status", "pending");
+    results.push({
+      paymentRecordId: record.id,
+      paymentIntentId,
+      status: "cancelled",
+    });
+  }
+  return results;
+};
+
+const cancelMembership = async (
+  adminClient: SupabaseAdminClient,
+  getXeroContext: () => Promise<any>,
+  userId: string,
+  reason: string,
+  actorId: string | null,
+) => {
+  const cancellationReason = clean(reason);
+  if (cancellationReason.length < 10) {
+    throw Object.assign(
+      new Error("A cancellation reason of at least 10 characters is required."),
+      { status: 400 },
+    );
+  }
+  const { data: application, error: applicationError } = await adminClient
+    .from("membership_applications")
+    .select("id,status")
+    .eq("user_id", userId)
+    .in("status", ["pending", "approved", "auto_commenced"])
+    .order("submitted_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (applicationError) throw applicationError;
+  const { data: membership, error: membershipError } = await adminClient
+    .from("club_memberships")
+    .select("id,legal_status")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!application && !membership) {
+    throw Object.assign(
+      new Error("No membership application or membership was found."),
+      { status: 404 },
+    );
+  }
+  if (
+    application?.status !== "pending" && membership?.legal_status !== "current"
+  ) {
+    throw Object.assign(
+      new Error(
+        "This membership application or membership is already inactive.",
+      ),
+      { status: 409 },
+    );
+  }
+
+  const invoiceResults: any[] = [];
+  const paidPeriodIds = new Set<string>();
+  const preservedPeriodIds = new Set<string>();
+  let xeroContext: any = null;
+  if (membership) {
+    const { data: periods, error: periodsError } = await adminClient
+      .from("membership_financial_periods")
+      .select("*")
+      .eq("membership_id", membership.id);
+    if (periodsError) throw periodsError;
+
+    for (const period of periods || []) {
+      if (
+        !clean(period.xero_invoice_id) &&
+        ["paid", "waived", "fee_exempt"].includes(
+          clean(period.fee_disposition).toLowerCase(),
+        )
+      ) {
+        preservedPeriodIds.add(period.id);
+        invoiceResults.push({
+          periodId: period.id,
+          invoiceId: clean(period.xero_invoice_id) || null,
+          invoiceNumber: clean(period.xero_invoice_number) || null,
+          action: "preserved",
+          reason: "financial_period_already_settled",
+          status: clean(period.xero_invoice_status) || null,
+        });
+        continue;
+      }
+      const invoiceId = clean(period.xero_invoice_id);
+      if (!invoiceId) {
+        invoiceResults.push({
+          periodId: period.id,
+          action: "crm_only",
+          reason: "no_xero_invoice",
+        });
+        continue;
+      }
+      xeroContext ||= await getXeroContext();
+      const invoice = await getXeroInvoice(xeroContext, invoiceId);
+      if (!invoice) {
+        throw new Error(
+          `The linked Xero membership invoice ${
+            clean(period.xero_invoice_number) || invoiceId
+          } could not be found.`,
+        );
+      }
+      const status = clean(invoice.Status).toUpperCase();
+      const amountPaid = money(invoice.AmountPaid);
+      if (["PAID", "PARTPAID"].includes(status) || amountPaid > 0.005) {
+        paidPeriodIds.add(period.id);
+        preservedPeriodIds.add(period.id);
+        invoiceResults.push({
+          periodId: period.id,
+          invoiceId,
+          invoiceNumber: clean(invoice.InvoiceNumber) || null,
+          action: "preserved",
+          reason: "invoice_has_payment",
+          status,
+        });
+        continue;
+      }
+      if (["VOIDED", "DELETED", "CANCELLED"].includes(status)) {
+        invoiceResults.push({
+          periodId: period.id,
+          invoiceId,
+          action: "already_void",
+          status,
+        });
+        continue;
+      }
+      const collectionCancellations = await cancelPendingMembershipCollections(
+        adminClient,
+        invoiceId,
+      );
+      const targetStatus = ["DRAFT", "SUBMITTED"].includes(status)
+        ? "DELETED"
+        : "VOIDED";
+      const updatedInvoice = await updateXeroInvoiceStatus(
+        xeroContext,
+        invoiceId,
+        targetStatus,
+      );
+      invoiceResults.push({
+        periodId: period.id,
+        invoiceId,
+        invoiceNumber:
+          clean(updatedInvoice?.InvoiceNumber || invoice.InvoiceNumber) || null,
+        action: targetStatus.toLowerCase(),
+        status: clean(updatedInvoice?.Status) || targetStatus,
+        collectionCancellations,
+      });
+    }
+
+    for (const period of periods || []) {
+      if (preservedPeriodIds.has(period.id)) continue;
+      const invoiceResult = invoiceResults.find((item) =>
+        item.periodId === period.id
+      );
+      const { error } = await adminClient.from("membership_financial_periods")
+        .update({
+          fee_disposition: "ceased",
+          xero_invoice_status: invoiceResult?.status ||
+            period.xero_invoice_status,
+          xero_amount_due: invoiceResult?.action === "voided" ||
+              invoiceResult?.action === "deleted" ||
+              invoiceResult?.action === "already_void"
+            ? 0
+            : period.xero_amount_due,
+          xero_last_synced_at: invoiceResult?.invoiceId
+            ? new Date().toISOString()
+            : period.xero_last_synced_at,
+          xero_sync_error: null,
+          financially_cleared_at: null,
+          updated_at: new Date().toISOString(),
+        }).eq("id", period.id);
+      if (error) throw error;
+    }
+  }
+
+  const now = new Date().toISOString();
+  if (application?.status === "pending") {
+    const { error } = await adminClient.from("membership_applications").update({
+      status: "withdrawn",
+      decided_at: now,
+      decided_by: actorId,
+      decision_reason: cancellationReason,
+      updated_at: now,
+    }).eq("id", application.id).eq("status", "pending");
+    if (error) throw error;
+  }
+  if (membership?.legal_status === "current") {
+    const { error } = await adminClient.from("club_memberships").update({
+      legal_status: "resigned",
+      ended_at: now,
+      end_reason: cancellationReason,
+      updated_at: now,
+    }).eq("id", membership.id).eq("legal_status", "current");
+    if (error) throw error;
+  }
+  await adminClient.from("membership_payment_preferences").update({
+    auto_renew: false,
+    authority_status: "cancelled",
+    cancelled_at: now,
+    updated_at: now,
+  }).eq("user_id", userId).neq("payment_method", "invoice");
+  await adminClient.from("membership_payment_setup_sessions").update({
+    status: "cancelled",
+    updated_at: now,
+  }).eq("user_id", userId).eq("status", "pending");
+
+  const { error: eventError } = await adminClient.from(
+    "membership_status_events",
+  ).insert({
+    membership_id: membership?.id || null,
+    application_id: application?.id || null,
+    user_id: userId,
+    event_type: membership?.legal_status === "current"
+      ? "membership_cancelled"
+      : "application_withdrawn",
+    actor_id: actorId,
+    details: {
+      reason: cancellationReason,
+      xeroInvoices: invoiceResults,
+      paidInvoicesPreserved: paidPeriodIds.size,
+      settledPeriodsPreserved: preservedPeriodIds.size,
+    },
+  });
+  if (eventError) throw eventError;
+  await adminClient.from("notifications").insert({
+    user_id: userId,
+    type: "membership",
+    title: membership?.legal_status === "current"
+      ? "BFC membership cancelled"
+      : "Membership application withdrawn",
+    message: paidPeriodIds.size > 0
+      ? "Your membership has been cancelled. Paid Xero invoices were retained as accounting records."
+      : preservedPeriodIds.size > 0
+      ? "Your membership has been cancelled. Settled membership records were retained for the club's history."
+      : "Your membership has been cancelled and any unpaid Xero membership invoice has been voided.",
+    metadata: {
+      membershipId: membership?.id || null,
+      applicationId: application?.id || null,
+    },
+    is_read: false,
+  });
+
+  return {
+    cancelled: true,
+    applicationWithdrawn: application?.status === "pending",
+    membershipResigned: membership?.legal_status === "current",
+    invoiceResults,
+    paidInvoicesPreserved: paidPeriodIds.size,
+    settledPeriodsPreserved: preservedPeriodIds.size,
+  };
+};
+
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   try {
@@ -3563,19 +5063,55 @@ Deno.serve(async (req: Request) => {
     });
     xeroRateLimitAdminClient = adminClient;
 
-    const auth = await authenticateAdmin({ req, supabaseUrl, anonKey, adminClient, serviceRoleKey });
+    const auth = await authenticateAdmin({
+      req,
+      supabaseUrl,
+      anonKey,
+      adminClient,
+      serviceRoleKey,
+    });
     if (!auth.ok) return json({ error: auth.error }, auth.status);
 
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "");
+
+    if (action === "cancel-membership") {
+      const userId = clean(body.userId);
+      const reason = clean(body.reason);
+      if (!userId) return json({ error: "Missing userId" }, 400);
+      const actorId = clean(body.requestedByUserId) === userId
+        ? userId
+        : auth.userId;
+      return json(
+        await cancelMembership(
+          adminClient,
+          () => getConnectionAndSettings(adminClient),
+          userId,
+          reason,
+          actorId,
+        ),
+      );
+    }
+
     const ctx: any = await getConnectionAndSettings(adminClient);
-    ctx.priorityTopupSync = action === "sync-transaction" && body.priorityTopupSync === true;
+    ctx.priorityTopupSync = action === "sync-transaction" &&
+      body.priorityTopupSync === true;
 
     if (action === "queue-member-contact") {
       const userId = clean(body.userId);
       if (!userId) return json({ error: "Missing userId" }, 400);
-      const row = await queueItem(adminClient, "contact", userId, "upsert_contact", auth.userId, { reason: "manual_queue" });
-      await adminClient.from("users").update({ xero_contact_sync_status: "queued", xero_contact_sync_error: null }).eq("id", userId);
+      const row = await queueItem(
+        adminClient,
+        "contact",
+        userId,
+        "upsert_contact",
+        auth.userId,
+        { reason: "manual_queue" },
+      );
+      await adminClient.from("users").update({
+        xero_contact_sync_status: "queued",
+        xero_contact_sync_error: null,
+      }).eq("id", userId);
       return json({ queued: true, queueItem: row });
     }
 
@@ -3589,11 +5125,13 @@ Deno.serve(async (req: Request) => {
       const email = clean(body.email);
       if (!email) return json({ contacts: [] });
       const contacts = await searchXeroContactsByEmail(ctx, email);
-      return json({ contacts: contacts.map((contact: any) => ({
-        contactId: clean(contact.ContactID),
-        name: clean(contact.Name),
-        email: clean(contact.EmailAddress),
-      })) });
+      return json({
+        contacts: contacts.map((contact: any) => ({
+          contactId: clean(contact.ContactID),
+          name: clean(contact.Name),
+          email: clean(contact.EmailAddress),
+        })),
+      });
     }
 
     if (action === "list-accounts") {
@@ -3645,7 +5183,13 @@ Deno.serve(async (req: Request) => {
       if (!categoryName || !optionName) {
         return json({ error: "Missing categoryName or optionName" }, 400);
       }
-      return json(await ensureAircraftTrackingOption(ctx, { categoryName, optionName, categoryId }));
+      return json(
+        await ensureAircraftTrackingOption(ctx, {
+          categoryName,
+          optionName,
+          categoryId,
+        }),
+      );
     }
 
     if (action === "ensure-flight-type-item") {
@@ -3656,28 +5200,51 @@ Deno.serve(async (req: Request) => {
       if (!flightTypeId || !code || !name) {
         return json({ error: "Missing flightTypeId, code or name" }, 400);
       }
-      return json(await ensureFlightTypeSalesItem(adminClient, ctx, { flightTypeId, code, name, description }));
+      return json(
+        await ensureFlightTypeSalesItem(adminClient, ctx, {
+          flightTypeId,
+          code,
+          name,
+          description,
+        }),
+      );
     }
 
     if (action === "link-contact") {
       const userId = clean(body.userId);
       const contactId = clean(body.contactId);
-      if (!userId || !contactId) return json({ error: "Missing userId or contactId" }, 400);
-      return json(await linkContactManually(adminClient, ctx, userId, contactId));
+      if (!userId || !contactId) {
+        return json({ error: "Missing userId or contactId" }, 400);
+      }
+      return json(
+        await linkContactManually(adminClient, ctx, userId, contactId),
+      );
     }
 
     if (action === "queue-flight-invoice") {
       const flightLogId = clean(body.flightLogId);
       if (!flightLogId) return json({ error: "Missing flightLogId" }, 400);
-      const row = await queueItem(adminClient, "flight_invoice", flightLogId, "create_invoice", auth.userId, { reason: "manual_queue" });
-      await adminClient.from("flight_logs").update({ xero_sync_status: "queued", xero_sync_error: null }).eq("id", flightLogId);
+      const row = await queueItem(
+        adminClient,
+        "flight_invoice",
+        flightLogId,
+        "create_invoice",
+        auth.userId,
+        { reason: "manual_queue" },
+      );
+      await adminClient.from("flight_logs").update({
+        xero_sync_status: "queued",
+        xero_sync_error: null,
+      }).eq("id", flightLogId);
       return json({ queued: true, queueItem: row });
     }
 
     if (action === "sync-flight-invoice") {
       const flightLogId = clean(body.flightLogId);
       if (!flightLogId) return json({ error: "Missing flightLogId" }, 400);
-      return json(await createOrUpdateFlightInvoice(adminClient, ctx, flightLogId));
+      return json(
+        await createOrUpdateFlightInvoice(adminClient, ctx, flightLogId),
+      );
     }
 
     if (action === "apply-flight-payments") {
@@ -3689,39 +5256,92 @@ Deno.serve(async (req: Request) => {
     if (action === "repair-prepaid-flight-credit-allocation") {
       const flightLogId = clean(body.flightLogId);
       if (!flightLogId) return json({ error: "Missing flightLogId" }, 400);
-      return json(await repairPrepaidFlightCreditAllocation(adminClient, ctx, flightLogId));
+      return json(
+        await repairPrepaidFlightCreditAllocation(
+          adminClient,
+          ctx,
+          flightLogId,
+        ),
+      );
     }
 
     if (action === "sync-ground-session-invoice") {
       const groundSessionLogId = clean(body.groundSessionLogId);
-      if (!groundSessionLogId) return json({ error: "Missing groundSessionLogId" }, 400);
-      return json(await createOrUpdateGroundSessionInvoice(adminClient, ctx, groundSessionLogId));
+      if (!groundSessionLogId) {
+        return json({ error: "Missing groundSessionLogId" }, 400);
+      }
+      return json(
+        await createOrUpdateGroundSessionInvoice(
+          adminClient,
+          ctx,
+          groundSessionLogId,
+        ),
+      );
     }
 
     if (action === "apply-ground-session-payments") {
       const groundSessionLogId = clean(body.groundSessionLogId);
-      if (!groundSessionLogId) return json({ error: "Missing groundSessionLogId" }, 400);
-      return json(await applyGroundSessionPayments(adminClient, ctx, groundSessionLogId));
+      if (!groundSessionLogId) {
+        return json({ error: "Missing groundSessionLogId" }, 400);
+      }
+      return json(
+        await applyGroundSessionPayments(adminClient, ctx, groundSessionLogId),
+      );
     }
 
     if (action === "refresh-paid-flight-invoices") {
-      const flightLogIds = Array.isArray(body.flightLogIds) ? body.flightLogIds.map(clean).filter(Boolean) : [];
-      return json(await refreshPaidFlightInvoices(adminClient, ctx, flightLogIds));
+      const flightLogIds = Array.isArray(body.flightLogIds)
+        ? body.flightLogIds.map(clean).filter(Boolean)
+        : [];
+      return json(
+        await refreshPaidFlightInvoices(adminClient, ctx, flightLogIds),
+      );
     }
 
     if (action === "create-membership-invoice") {
       const periodId = clean(body.periodId);
       if (!periodId) return json({ error: "Missing periodId" }, 400);
-      return json(await createOrRefreshMembershipInvoice(adminClient, ctx, periodId, body.sendEmail === true));
+      return json(
+        await createOrRefreshMembershipInvoice(
+          adminClient,
+          ctx,
+          periodId,
+          body.sendEmail === true,
+        ),
+      );
+    }
+
+    if (action === "issue-member-membership-invoice") {
+      const userId = clean(body.userId);
+      if (!userId) return json({ error: "Missing userId" }, 400);
+      return json(
+        await issueMemberMembershipInvoice(
+          adminClient,
+          ctx,
+          userId,
+          body.sendEmail !== false,
+        ),
+      );
     }
 
     if (action === "issue-membership-renewals") {
-      const periodIds = Array.isArray(body.periodIds) ? body.periodIds.map(clean).filter(Boolean) : [];
-      return json(await issueMembershipRenewals(adminClient, ctx, periodIds, body.sendEmail !== false));
+      const periodIds = Array.isArray(body.periodIds)
+        ? body.periodIds.map(clean).filter(Boolean)
+        : [];
+      return json(
+        await issueMembershipRenewals(
+          adminClient,
+          ctx,
+          periodIds,
+          body.sendEmail !== false,
+        ),
+      );
     }
 
     if (action === "refresh-membership-invoices") {
-      const periodIds = Array.isArray(body.periodIds) ? body.periodIds.map(clean).filter(Boolean) : [];
+      const periodIds = Array.isArray(body.periodIds)
+        ? body.periodIds.map(clean).filter(Boolean)
+        : [];
       return json(await refreshMembershipInvoices(adminClient, ctx, periodIds));
     }
 
@@ -3736,9 +5356,18 @@ Deno.serve(async (req: Request) => {
       if (!transactionId) return json({ error: "Missing transactionId" }, 400);
       const tx = await getAccountTransaction(adminClient, transactionId);
       const member = await getMember(adminClient, tx.user_id);
-      const contactResult = await syncMemberContact(adminClient, ctx, tx.user_id);
-      const contactId = clean(contactResult?.contactId || member.xero_contact_id);
-      const { candidates } = await getTopupCreditCandidates(ctx, { ...member, xero_contact_id: contactId }, tx);
+      const contactResult = await syncMemberContact(
+        adminClient,
+        ctx,
+        tx.user_id,
+      );
+      const contactId = clean(
+        contactResult?.contactId || member.xero_contact_id,
+      );
+      const { candidates } = await getTopupCreditCandidates(ctx, {
+        ...member,
+        xero_contact_id: contactId,
+      }, tx);
       return json({
         transactionId,
         contactId: contactId || null,
@@ -3760,20 +5389,51 @@ Deno.serve(async (req: Request) => {
       const creditId = clean(body.creditId);
       const creditKind = clean(body.creditKind).toLowerCase();
       if (!transactionId || !creditId || !creditKind) {
-        return json({ error: "Missing transactionId, creditId or creditKind" }, 400);
+        return json(
+          { error: "Missing transactionId, creditId or creditKind" },
+          400,
+        );
       }
       if (creditKind !== "overpayment" && creditKind !== "prepayment") {
-        return json({ error: "creditKind must be overpayment or prepayment" }, 400);
+        return json(
+          { error: "creditKind must be overpayment or prepayment" },
+          400,
+        );
       }
       const tx = await getAccountTransaction(adminClient, transactionId);
       const member = await getMember(adminClient, tx.user_id);
-      const contactResult = await syncMemberContact(adminClient, ctx, tx.user_id);
-      const contactId = clean(contactResult?.contactId || member.xero_contact_id);
-      if (!contactId) return json({ error: "Member is not linked to a Xero contact yet." }, 400);
-      const { candidates } = await getTopupCreditCandidates(ctx, { ...member, xero_contact_id: contactId }, tx);
-      const match = candidates.find((candidate: any) => clean(candidate.id) === creditId && candidate.kind === creditKind);
-      if (!match) return json({ error: "Selected Xero credit could not be found for this member." }, 404);
-      const now = await linkTopupTransactionToCredit({ adminClient, transactionId, contactId, creditId });
+      const contactResult = await syncMemberContact(
+        adminClient,
+        ctx,
+        tx.user_id,
+      );
+      const contactId = clean(
+        contactResult?.contactId || member.xero_contact_id,
+      );
+      if (!contactId) {
+        return json(
+          { error: "Member is not linked to a Xero contact yet." },
+          400,
+        );
+      }
+      const { candidates } = await getTopupCreditCandidates(ctx, {
+        ...member,
+        xero_contact_id: contactId,
+      }, tx);
+      const match = candidates.find((candidate: any) =>
+        clean(candidate.id) === creditId && candidate.kind === creditKind
+      );
+      if (!match) {
+        return json({
+          error: "Selected Xero credit could not be found for this member.",
+        }, 404);
+      }
+      const now = await linkTopupTransactionToCredit({
+        adminClient,
+        transactionId,
+        contactId,
+        creditId,
+      });
       return json({
         matched: true,
         transactionId,
@@ -3790,7 +5450,8 @@ Deno.serve(async (req: Request) => {
         xero_bank_transaction_id: null,
         xero_synced_at: null,
         xero_sync_status: "needs_review",
-        xero_sync_error: "Xero link was removed manually. Choose the correct credit to match again.",
+        xero_sync_error:
+          "Xero link was removed manually. Choose the correct credit to match again.",
       }).eq("id", transactionId);
       if (error) throw error;
       return json({ unlinked: true, transactionId });
@@ -3800,9 +5461,20 @@ Deno.serve(async (req: Request) => {
       const flightLogId = clean(body.flightLogId);
       const mode = clean(body.mode || "auto").toLowerCase();
       if (!flightLogId) return json({ error: "Missing flightLogId" }, 400);
-      const resolvedMode = mode === "credit-note" ? "credit-note" : mode === "void-delete" ? "void-delete" : "";
-      if (!resolvedMode) return json({ error: "Mode must be void-delete or credit-note" }, 400);
-      const result = await reverseFlightLogInXero({ adminClient, ctx, flightLogId, mode: resolvedMode });
+      const resolvedMode = mode === "credit-note"
+        ? "credit-note"
+        : mode === "void-delete"
+        ? "void-delete"
+        : "";
+      if (!resolvedMode) {
+        return json({ error: "Mode must be void-delete or credit-note" }, 400);
+      }
+      const result = await reverseFlightLogInXero({
+        adminClient,
+        ctx,
+        flightLogId,
+        mode: resolvedMode,
+      });
       await clearQueueItemsForFlightLog(adminClient, flightLogId);
       return json(result);
     }
@@ -3824,9 +5496,18 @@ Deno.serve(async (req: Request) => {
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      if (!item) return json({ processed: false, message: "No pending Xero sync work." });
+      if (!item) {
+        return json({
+          processed: false,
+          message: "No pending Xero sync work.",
+        });
+      }
 
-      return json({ processed: true, itemId: item.id, result: await processQueueRecord(adminClient, ctx, item, auth.userId) });
+      return json({
+        processed: true,
+        itemId: item.id,
+        result: await processQueueRecord(adminClient, ctx, item, auth.userId),
+      });
     }
 
     if (action === "process-item") {
@@ -3839,7 +5520,11 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
       if (error) throw error;
       if (!item) return json({ error: "Queue item not found" }, 404);
-      return json({ processed: true, itemId: item.id, result: await processQueueRecord(adminClient, ctx, item, auth.userId) });
+      return json({
+        processed: true,
+        itemId: item.id,
+        result: await processQueueRecord(adminClient, ctx, item, auth.userId),
+      });
     }
 
     if (action === "retry-item") {
