@@ -44,6 +44,7 @@ export const DutyTimePicker: React.FC<DutyTimePickerProps> = ({ label, value, de
   const [keyboardMode, setKeyboardMode] = useState(false);
   const hourButtonRef = useRef<HTMLButtonElement>(null);
   const minuteButtonRef = useRef<HTMLButtonElement>(null);
+  const dialDragging = useRef(false);
   const lastWheelAt = useRef<Record<ClockPhase, number>>({ hour: 0, minute: 0 });
   const shown = useMemo(() => displayTime(value), [value]);
   const period = hour24 >= 12 ? 'PM' : 'AM';
@@ -126,9 +127,39 @@ export const DutyTimePicker: React.FC<DutyTimePickerProps> = ({ label, value, de
     if (phase === 'hour') {
       const selected = Math.round(angle / (Math.PI * 2) * 12) % 12 || 12;
       setHour(selected);
-      setPhase('minute');
     } else {
       setMinute(Math.round(angle / (Math.PI * 2) * 60) % 60);
+    }
+  };
+
+  const handleDialPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dialDragging.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    selectFromDial(event);
+  };
+
+  const handleDialPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dialDragging.current) return;
+    event.preventDefault();
+    selectFromDial(event);
+  };
+
+  const handleDialPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dialDragging.current) return;
+    event.preventDefault();
+    selectFromDial(event);
+    dialDragging.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (phase === 'hour') setPhase('minute');
+  };
+
+  const handleDialPointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
+    dialDragging.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
 
@@ -212,7 +243,7 @@ export const DutyTimePicker: React.FC<DutyTimePickerProps> = ({ label, value, de
                 </div>
               </div>
 
-              <p className="duty-time-picker-wheel-hint mt-2 text-center text-[11px] font-medium text-slate-500">Hover over hours or minutes and scroll to adjust</p>
+              <p className="duty-time-picker-wheel-hint mt-2 text-center text-[11px] font-medium text-slate-500">Tap or drag the clock · Scroll hours or minutes</p>
               <span className="sr-only" aria-live="polite">Selected time {hour12}:{pad(minute)} {period}</span>
 
               {keyboardMode ? (
@@ -234,14 +265,19 @@ export const DutyTimePicker: React.FC<DutyTimePickerProps> = ({ label, value, de
               ) : (
                 <div
                   className="duty-time-picker-dial relative mx-auto mt-5 aspect-square w-[min(76vw,320px)] touch-none select-none rounded-full bg-slate-900 shadow-inner outline-none ring-blue-500 focus:ring-4"
-                  onPointerDown={selectFromDial}
+                  onPointerDown={handleDialPointerDown}
+                  onPointerMove={handleDialPointerMove}
+                  onPointerUp={handleDialPointerUp}
+                  onPointerCancel={handleDialPointerCancel}
+                  onLostPointerCapture={() => { dialDragging.current = false; }}
                   onKeyDown={handleDialKey}
                   role="slider"
                   tabIndex={0}
-                  aria-label={phase === 'hour' ? 'Select hour' : 'Select minute'}
+                  aria-label={phase === 'hour' ? 'Select hour. Tap or drag around the clock.' : 'Select minute. Tap or drag around the clock.'}
                   aria-valuemin={phase === 'hour' ? 1 : 0}
                   aria-valuemax={phase === 'hour' ? 12 : 59}
                   aria-valuenow={dialValue}
+                  aria-valuetext={phase === 'hour' ? `${hour12} ${period}` : `${minute} minutes`}
                 >
                   <div className="pointer-events-none absolute left-1/2 top-1/2 h-[32%] w-0.5 origin-bottom -translate-x-1/2 -translate-y-full bg-blue-500" style={{ transform: `translateX(-50%) translateY(-100%) rotate(${dialAngle}deg)`, transformOrigin: 'bottom center' }}>
                     <span className="absolute -left-2.5 -top-2.5 h-5 w-5 rounded-full bg-blue-500" />

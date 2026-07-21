@@ -1170,6 +1170,14 @@ html[data-portal-theme='dark'] .kiosk-login-surface textarea::placeholder {
   background-color: rgb(15 23 42) !important;
 }
 
+.duty-time-picker-dial {
+  cursor: crosshair;
+}
+
+.duty-time-picker-dial:active {
+  cursor: grabbing;
+}
+
 .duty-time-picker-readout-button {
   color: rgb(241 245 249) !important;
   cursor: ns-resize;
