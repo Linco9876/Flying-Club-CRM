@@ -1158,3 +1158,173 @@ html[data-portal-theme='dark'] .kiosk-login-surface input::placeholder,
 html[data-portal-theme='dark'] .kiosk-login-surface textarea::placeholder {
   color: rgb(156 163 175) !important;
 }
+
+/* Duty clock picker: explicit colours prevent broad theme remaps from reducing contrast. */
+.duty-time-picker-dialog {
+  border: 1px solid rgb(226 232 240);
+  color-scheme: light;
+}
+
+.duty-time-picker-readout,
+.duty-time-picker-dial {
+  background-color: rgb(15 23 42) !important;
+}
+
+.duty-time-picker-readout-button {
+  color: rgb(241 245 249) !important;
+  cursor: ns-resize;
+}
+
+.duty-time-picker-readout-button.is-selected,
+.duty-time-picker-dial-label.is-selected {
+  background-color: rgb(29 78 216) !important;
+  color: white !important;
+}
+
+.duty-time-picker-period {
+  border-color: rgb(203 213 225) !important;
+  background-color: white !important;
+  color: rgb(71 85 105) !important;
+}
+
+.duty-time-picker-period:hover {
+  border-color: rgb(96 165 250) !important;
+  background-color: rgb(239 246 255) !important;
+}
+
+.duty-time-picker-period.is-selected {
+  border-color: rgb(37 99 235) !important;
+  background-color: rgb(219 234 254) !important;
+  color: rgb(23 37 84) !important;
+}
+
+.duty-time-picker-mode {
+  color: rgb(71 85 105) !important;
+}
+
+.duty-time-picker-mode:hover,
+.duty-time-picker-mode.is-selected {
+  background-color: rgb(219 234 254) !important;
+  color: rgb(30 64 175) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-field {
+  color: rgb(226 232 240) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-trigger {
+  border-color: rgb(71 85 105) !important;
+  background-color: rgb(15 23 42) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-trigger:hover {
+  border-color: rgb(96 165 250) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-trigger-icon {
+  background-color: rgb(30 58 138 / 0.38) !important;
+  color: rgb(147 197 253) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-trigger-value.is-set {
+  color: rgb(248 250 252) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-trigger-value.is-empty,
+html[data-portal-theme='dark'] .duty-time-picker-trigger-detail {
+  color: rgb(203 213 225) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-trigger-change,
+html[data-portal-theme='dark'] .duty-time-picker-accent {
+  color: rgb(147 197 253) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-overlay {
+  background-color: rgb(2 6 23 / 0.82) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-dialog {
+  border-color: rgb(51 65 85) !important;
+  background-color: rgb(15 23 42) !important;
+  color-scheme: dark;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-readout,
+html[data-portal-theme='dark'] .duty-time-picker-dial {
+  background-color: rgb(2 6 23) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-dial {
+  box-shadow: inset 0 0 0 1px rgb(51 65 85) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-title {
+  color: rgb(248 250 252) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-subtitle,
+html[data-portal-theme='dark'] .duty-time-picker-wheel-hint,
+html[data-portal-theme='dark'] .duty-time-picker-typed-label {
+  color: rgb(203 213 225) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-close,
+html[data-portal-theme='dark'] .duty-time-picker-cancel {
+  color: rgb(226 232 240) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-close:hover,
+html[data-portal-theme='dark'] .duty-time-picker-cancel:hover {
+  background-color: rgb(51 65 85) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-date-row,
+html[data-portal-theme='dark'] .duty-time-picker-typed {
+  border-color: rgb(71 85 105) !important;
+  background-color: rgb(30 41 59) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-date-input,
+html[data-portal-theme='dark'] .duty-time-picker-typed-input {
+  border-color: rgb(100 116 139) !important;
+  background-color: rgb(15 23 42) !important;
+  color: rgb(248 250 252) !important;
+  color-scheme: dark;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-period {
+  border-color: rgb(100 116 139) !important;
+  background-color: rgb(30 41 59) !important;
+  color: rgb(226 232 240) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-period:hover {
+  border-color: rgb(147 197 253) !important;
+  background-color: rgb(51 65 85) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-period.is-selected {
+  border-color: rgb(96 165 250) !important;
+  background-color: rgb(29 78 216) !important;
+  color: white !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-mode {
+  color: rgb(203 213 225) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-mode:hover,
+html[data-portal-theme='dark'] .duty-time-picker-mode.is-selected {
+  background-color: rgb(30 58 138 / 0.52) !important;
+  color: rgb(191 219 254) !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-confirm {
+  background-color: rgb(29 78 216) !important;
+  color: white !important;
+}
+
+html[data-portal-theme='dark'] .duty-time-picker-confirm:hover {
+  background-color: rgb(30 64 175) !important;
+}
