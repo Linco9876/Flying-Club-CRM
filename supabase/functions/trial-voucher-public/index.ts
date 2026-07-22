@@ -368,9 +368,7 @@ const sendTrialBookingConfirmationEmail = async ({
     }
     calendarToken = calendarLink.token;
   }
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
-  if (!supabaseUrl) return { sent: false, error: "SUPABASE_URL is not configured" };
-  const calendarUrl = `${supabaseUrl}/functions/v1/calendar-feed?event=${encodeURIComponent(calendarToken)}`;
+  const calendarUrl = `${siteOrigin()}/calendar-booking?event=${encodeURIComponent(calendarToken)}`;
   const preheader = `Confirmed for ${dateLabel} at ${startTimeLabel}.`;
   const plainText = [
     `Hi ${toName},`,

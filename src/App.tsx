@@ -50,6 +50,7 @@ const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashb
 const TrialFlightVouchersPage = lazy(() => import('./components/Vouchers/TrialFlightVouchersPage').then(module => ({ default: module.TrialFlightVouchersPage })));
 const TrialVoucherRedeemPage = lazy(() => import('./components/Vouchers/TrialVoucherRedeemPage').then(module => ({ default: module.TrialVoucherRedeemPage })));
 const TrialVoucherSalesPage = lazy(() => import('./components/Vouchers/TrialVoucherSalesPage').then(module => ({ default: module.TrialVoucherSalesPage })));
+const CalendarBookingPage = lazy(() => import('./components/Calendar/CalendarBookingPage').then(module => ({ default: module.CalendarBookingPage })));
 const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
 
 const buildCopiedBookingFormData = (booking: Booking) => ({
@@ -363,6 +364,16 @@ const AppContent: React.FC = () => {
       <PageLoadGate routeKey="trial-flight-voucher">
         <Suspense fallback={<PageLoader />}>
           <TrialVoucherRedeemPage />
+        </Suspense>
+      </PageLoadGate>
+    );
+  }
+
+  if (normalisedPathname === '/calendar-booking') {
+    return (
+      <PageLoadGate routeKey="calendar-booking">
+        <Suspense fallback={<PageLoader />}>
+          <CalendarBookingPage />
         </Suspense>
       </PageLoadGate>
     );

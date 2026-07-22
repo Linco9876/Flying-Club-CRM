@@ -40,12 +40,26 @@ const errorPage = (message: string, status = 404) => new Response(`<!doctype htm
   headers: htmlHeaders,
 });
 
+// Supabase's gateway converts non-2xx HTML responses to text/plain. Email links are
+// browser destinations, so keep the friendly page renderable and carry the semantic
+// status in a private response header. Subscription feeds retain real HTTP errors.
+const eventErrorPage = (message: string, semanticStatus = 404) => {
+  const response = errorPage(message, 200);
+  response.headers.set("X-Calendar-Link-Status", String(semanticStatus));
+  return response;
+};
+
 const calendarResponse = (calendar: string, filename: string) => new Response(calendar, {
   headers: {
     ...securityHeaders,
     "Content-Type": "text/calendar; charset=utf-8",
     "Content-Disposition": `inline; filename="${filename}"`,
   },
+});
+
+const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...securityHeaders, "Content-Type": "application/json; charset=utf-8" },
 });
 
 const labelStatus = (status: string, deletedAt?: string | null) => {
@@ -224,19 +238,27 @@ const handleFeed = async (admin: any, feedKey: string) => {
 };
 
 const handleEvent = async (admin: any, requestUrl: URL, token: string) => {
+  if (requestUrl.searchParams.get("download") !== "1" && requestUrl.searchParams.get("format") !== "json") {
+    return Response.redirect(`${SITE_ORIGIN}/calendar-booking?event=${encodeURIComponent(token)}`, 302);
+  }
+  const wantsJson = requestUrl.searchParams.get("format") === "json";
   const { data: link, error: linkError } = await admin
     .from("booking_calendar_links")
     .select("booking_id,revoked_at,last_accessed_at")
     .eq("token", token)
     .maybeSingle();
-  if (linkError || !link || link.revoked_at) return errorPage("This booking calendar link is invalid or has been replaced.");
+  if (linkError || !link || link.revoked_at) return wantsJson
+    ? jsonResponse({ error: "This booking calendar link is invalid or has been replaced.", status: 404 })
+    : eventErrorPage("This booking calendar link is invalid or has been replaced.");
 
   const { data: booking, error: bookingError } = await admin
     .from("bookings")
     .select("id,student_id,instructor_id,supervising_instructor_id,aircraft_id,start_time,end_time,status,booking_kind,trial_flight_voucher_id,guest_name,location,supervision_status,deleted_at,cancelled_at,created_at,updated_at")
     .eq("id", link.booking_id)
     .maybeSingle();
-  if (bookingError || !booking) return errorPage("This booking no longer exists.", 410);
+  if (bookingError || !booking) return wantsJson
+    ? jsonResponse({ error: "This booking no longer exists.", status: 410 })
+    : eventErrorPage("This booking no longer exists.", 410);
 
   const lookup = await loadPeopleAndAircraft(admin, [booking]);
   let manageUrl = `${SITE_ORIGIN}/calendar`;
@@ -253,11 +275,28 @@ const handleEvent = async (admin: any, requestUrl: URL, token: string) => {
     manageUrl,
   });
   const downloadUrl = new URL(requestUrl);
+  downloadUrl.searchParams.delete("format");
   downloadUrl.searchParams.set("download", "1");
   const calendar = buildCalendar(CALENDAR_NAME, [event]);
   void touchAccess(admin, "booking_calendar_links", "booking_id", link.booking_id, link.last_accessed_at);
   if (requestUrl.searchParams.get("download") === "1") {
     return calendarResponse(calendar, `bfc-booking-${booking.id.slice(0, 8)}.ics`);
+  }
+
+  if (wantsJson) {
+    return jsonResponse({
+      event: {
+        uid: event.uid,
+        title: event.title,
+        description: event.description || "",
+        location: event.location || LOCATION_FALLBACK,
+        start: new Date(event.start).toISOString(),
+        end: new Date(event.end).toISOString(),
+        status: event.status || "CONFIRMED",
+      },
+      manageUrl,
+      downloadUrl: downloadUrl.toString(),
+    });
   }
 
   const timeZone = "Australia/Sydney";
