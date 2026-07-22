@@ -301,11 +301,13 @@ const sendVoucherAccountSetupEmail = async ({
 };
 
 const sendTrialBookingConfirmationEmail = async ({
+  adminClient,
   voucher,
   product,
   booking,
   isUpdate = false,
 }: {
+  adminClient: SupabaseAdminClient;
   voucher: any;
   product: any;
   booking: any;
@@ -341,6 +343,34 @@ const sendTrialBookingConfirmationEmail = async ({
   const flightMinutes = Number(product.duration_minutes || 0);
   const blockMinutes = flightMinutes + 30;
   const bookingUrl = `${siteOrigin()}/trial-flight-voucher?voucherCode=${encodeURIComponent(voucher.code)}`;
+  const { data: existingCalendarLink, error: existingCalendarLinkError } = await adminClient
+    .from("booking_calendar_links")
+    .select("token,revoked_at")
+    .eq("booking_id", booking.bookingId)
+    .maybeSingle();
+  if (existingCalendarLinkError) {
+    return { sent: false, error: `Could not create calendar link: ${existingCalendarLinkError.message}` };
+  }
+  let calendarToken = existingCalendarLink?.token;
+  if (!calendarToken || existingCalendarLink?.revoked_at) {
+    const nextToken = crypto.randomUUID();
+    const { data: calendarLink, error: calendarLinkError } = await adminClient
+      .from("booking_calendar_links")
+      .upsert({
+        booking_id: booking.bookingId,
+        token: nextToken,
+        revoked_at: null,
+      }, { onConflict: "booking_id" })
+      .select("token")
+      .single();
+    if (calendarLinkError || !calendarLink?.token) {
+      return { sent: false, error: `Could not create calendar link: ${calendarLinkError?.message || "no token returned"}` };
+    }
+    calendarToken = calendarLink.token;
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
+  if (!supabaseUrl) return { sent: false, error: "SUPABASE_URL is not configured" };
+  const calendarUrl = `${supabaseUrl}/functions/v1/calendar-feed?event=${encodeURIComponent(calendarToken)}`;
   const preheader = `Confirmed for ${dateLabel} at ${startTimeLabel}.`;
   const plainText = [
     `Hi ${toName},`,
@@ -353,6 +383,7 @@ const sendTrialBookingConfirmationEmail = async ({
     `Flight: ${flightMinutes ? `${flightMinutes} minutes` : "as listed on your voucher"}`,
     "",
     `Manage booking: ${bookingUrl}`,
+    `Add to calendar: ${calendarUrl}`,
     `Voucher code: ${voucher.code}`,
     "",
     "Please wear comfortable clothing and enclosed shoes. Contact Bendigo Flying Club if you need help.",
@@ -439,10 +470,18 @@ const sendTrialBookingConfirmationEmail = async ({
                   </tr>
                 </table>
 
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 12px;">
                   <tr>
                     <td align="center" style="border-radius:14px;background:#2563eb;">
                       <a href="${escapeHtml(bookingUrl)}" style="display:block;padding:15px 20px;color:#ffffff;text-decoration:none;font-weight:800;font-size:15px;">View or reschedule booking</a>
+                    </td>
+                  </tr>
+                </table>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 22px;">
+                  <tr>
+                    <td align="center" style="border:1px solid #bfdbfe;border-radius:14px;background:#eff6ff;">
+                      <a href="${escapeHtml(calendarUrl)}" style="display:block;padding:14px 20px;color:#1d4ed8;text-decoration:none;font-weight:800;font-size:15px;">Add to calendar</a>
                     </td>
                   </tr>
                 </table>
@@ -1405,6 +1444,7 @@ Deno.serve(async (req: Request) => {
       if (!product) return json({ error: "The voucher product could not be loaded" }, 404);
 
       const email = await sendTrialBookingConfirmationEmail({
+        adminClient,
         voucher,
         product,
         booking,
@@ -1670,6 +1710,7 @@ Deno.serve(async (req: Request) => {
 
       const bookedSummary = { ...matchingSlot, bookingId, ...rescheduleInfoFor(matchingSlot.startTime) };
       const confirmationEmail = await sendTrialBookingConfirmationEmail({
+        adminClient,
         voucher,
         product,
         booking: bookedSummary,
@@ -1740,6 +1781,7 @@ Deno.serve(async (req: Request) => {
 
       const bookedSummary = { ...matchingSlot, bookingId };
       const confirmationEmail = await sendTrialBookingConfirmationEmail({
+        adminClient,
         voucher,
         product,
         booking: bookedSummary,

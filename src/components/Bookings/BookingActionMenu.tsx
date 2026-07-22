@@ -1,8 +1,10 @@
 import React from 'react';
-import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy, RotateCcw } from 'lucide-react';
+import { CreditCard as Edit, FileText, Trash2, MoreVertical, Check, X as XIcon, User, Copy, RotateCcw, CalendarPlus } from 'lucide-react';
 import { Booking } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
+import { bookingToCalendarEvent } from '../../utils/calendar';
+import { AddToCalendarModal } from './AddToCalendarModal';
 
 interface BookingActionMenuProps {
   booking: Booking;
@@ -26,6 +28,7 @@ interface BookingActionMenuProps {
   isFlightLogged?: boolean;
   position?: { x: number; y: number };
   onClose?: () => void;
+  calendarAircraftLabel?: string;
 }
 
 export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
@@ -50,6 +53,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
   isFlightLogged = false,
   position,
   onClose,
+  calendarAircraftLabel,
 }) => {
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
@@ -66,6 +70,7 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       : portalSettings.allow_booking_cancellation && booking.studentId === user.id
   );
   const [isOpen, setIsOpen] = React.useState(position ? true : false);
+  const [showCalendarModal, setShowCalendarModal] = React.useState(false);
   const [fixedMenuStyle, setFixedMenuStyle] = React.useState<React.CSSProperties>(() => ({
     left: position?.x ?? 0,
     top: position?.y ?? 0,
@@ -109,6 +114,16 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       setIsOpen(false);
     }
     window.setTimeout(action, 0);
+  };
+
+  const openCalendarModal = () => {
+    setIsOpen(false);
+    setShowCalendarModal(true);
+  };
+
+  const closeCalendarModal = () => {
+    setShowCalendarModal(false);
+    if (position && onClose) onClose();
   };
 
   React.useLayoutEffect(() => {
@@ -173,6 +188,14 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
           <span>Edit Booking</span>
         </button>
       )}
+
+      <button
+        onClick={openCalendarModal}
+        className="flex w-full items-center space-x-2 px-4 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-slate-800"
+      >
+        <CalendarPlus className="h-4 w-4" />
+        <span>Add to calendar</span>
+      </button>
 
       {onCopy && (
         <button
@@ -270,17 +293,26 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
 
   if (position) {
     return (
-      <div
-        ref={menuRef}
-        className="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 min-w-[200px]"
-        style={fixedMenuStyle}
-      >
-        {menuContent}
-      </div>
+      <>
+        <div
+          ref={menuRef}
+          className="fixed z-50 min-w-[200px] rounded-lg border border-gray-200 bg-white py-2 shadow-lg"
+          style={fixedMenuStyle}
+        >
+          {menuContent}
+        </div>
+        {showCalendarModal && (
+          <AddToCalendarModal
+            event={bookingToCalendarEvent(booking, { aircraftLabel: calendarAircraftLabel, viewerId: user?.id, portalUrl: `${window.location.origin}/calendar` })}
+            onClose={closeCalendarModal}
+          />
+        )}
+      </>
     );
   }
 
   return (
+    <>
     <div className="relative" ref={menuRef}>
       <button
         onClick={(e) => {
@@ -294,10 +326,17 @@ export const BookingActionMenu: React.FC<BookingActionMenuProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+        <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
           {menuContent}
         </div>
       )}
     </div>
+    {showCalendarModal && (
+      <AddToCalendarModal
+        event={bookingToCalendarEvent(booking, { aircraftLabel: calendarAircraftLabel, viewerId: user?.id, portalUrl: `${window.location.origin}/calendar` })}
+        onClose={closeCalendarModal}
+      />
+    )}
+    </>
   );
 };

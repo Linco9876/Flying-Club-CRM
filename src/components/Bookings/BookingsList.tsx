@@ -497,6 +497,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
                   {/* Action Menu - Always Rendered */}
                   <BookingActionMenu
                     booking={booking}
+                    calendarAircraftLabel={aircraft ? [aircraft.registration, aircraft.make, aircraft.model].filter(Boolean).join(' ') : undefined}
                     onEdit={() => {
                       setSelectedBooking(booking);
                       setShowEditForm(true);

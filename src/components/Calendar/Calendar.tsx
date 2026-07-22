@@ -4417,6 +4417,10 @@ export const Calendar: React.FC<CalendarProps> = ({
       {actionMenuBooking && (
         <BookingActionMenu
           booking={actionMenuBooking}
+          calendarAircraftLabel={(() => {
+            const calendarAircraft = aircraft.find(item => item.id === actionMenuBooking.aircraftId);
+            return calendarAircraft ? [calendarAircraft.registration, calendarAircraft.make, calendarAircraft.model].filter(Boolean).join(' ') : undefined;
+          })()}
           position={actionMenuPosition}
           canEdit={canUseBookingActions(actionMenuBooking)}
           canLogFlight={canUseBookingActions(actionMenuBooking)}

@@ -29,3 +29,8 @@ verify_jwt = false
 # The function validates the bearer token with Auth and enforces self/staff scope internally.
 # Disabling the legacy gateway JWT check avoids valid modern sessions being rejected before that code runs.
 verify_jwt = false
+
+[functions.calendar-feed]
+# Calendar clients and guest email links cannot send a Supabase JWT. Access is controlled
+# with revocable, high-entropy bearer tokens and all data access runs through service role.
+verify_jwt = false

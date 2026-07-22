@@ -25,6 +25,7 @@ import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { Endorsement, Licence } from '../../types';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
+import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 
 interface PersonalPreferencesSettingsProps {
   canEdit: boolean;
@@ -1544,6 +1545,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
               <option value="month">Month View</option>
             </Select>
           </div>
+          {user?.id && (
+            <CalendarSubscriptionSettings userId={user.id} canEdit={canEdit} hasStaffRole={Boolean(hasStaffRole)} />
+          )}
         </section>
       )}
 

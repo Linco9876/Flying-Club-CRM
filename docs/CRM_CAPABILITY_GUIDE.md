@@ -175,6 +175,52 @@ The July 2019 By-laws still list the old calendar-year fees ($140/$70/$40/$0) an
 - Instructor bookings requiring supervision remain pending unless an authorised senior instructor is available.
 - The assigned supervisor appears in small print on the booking. If that person becomes unavailable, the booking moves to the next available authorised supervisor; if none remains, senior instructors are warned and the booking returns to pending.
 
+## External calendar integration
+
+The portal provides a read-only calendar layer for Apple Calendar, Google Calendar, Outlook and any standards-compliant calendar application. The CRM remains the source of truth: external calendars cannot create, edit, approve or cancel bookings.
+
+### Private live subscription
+
+Every full-portal user can create a private subscription under **Account Settings → Calendar**. The subscription uses a high-entropy bearer URL because consumer calendar applications cannot send a portal login session when refreshing an internet calendar.
+
+The user can:
+
+- subscribe through Apple Calendar or copy the URL into Google Calendar or Outlook;
+- include or exclude pending bookings;
+- include assigned senior-instructor supervision and duty periods where relevant;
+- pause delivery without changing the URL; and
+- replace the private URL immediately if it is disclosed.
+
+The feed includes only bookings in which the user is the hirer, instructor or assigned supervisor. It never exports private booking notes, payment details, membership data, duty declarations or fatigue information. Pending bookings are marked tentative and cancelled bookings are published as cancelled so compatible calendar clients can update an existing event. Event UIDs remain stable across reschedules.
+
+Calendar applications decide how often subscribed calendars refresh. This can take hours in some applications, so all subscription UI and event descriptions state that the portal is authoritative.
+
+### Individual booking actions
+
+The booking action menu provides **Add to calendar** for active bookings. Users can add the current event to Google Calendar, Outlook, Apple Calendar or another application through a standard `.ics` file. This is a one-time copy; users who want automatic reschedule and cancellation updates should use the live subscription.
+
+Trial-flight voucher confirmation and update emails include a prominent **Add to calendar** button. Each booking has a stable, opaque calendar token. Opening the email button loads the current booking from the CRM and then offers Google, Outlook and `.ics` options, so an old email does not embed stale dates after a reschedule. Cancelled bookings show a cancellation notice. Tokens expose only the minimum event details and can be revoked server-side.
+
+### Calendar service controls
+
+- `calendar_feed_settings` stores user-owned feed preferences and revocable feed keys behind row-level security.
+- `booking_calendar_links` stores per-booking email tokens and is inaccessible to anonymous and authenticated database roles; only the calendar Edge Function's service role can exchange a token.
+- The public `calendar-feed` Edge Function accepts only opaque tokens, adds no-index/no-referrer/security headers, and serves standards-compliant UTC iCalendar data with escaped and folded lines.
+- Subscription access timestamps are updated at most hourly to avoid a database write for every polling request.
+- Calendar feeds cover the previous 180 days and the next 540 days, keeping payloads bounded while preserving useful recent history.
+
+### Calendar release verification
+
+Before release:
+
+1. Apply `20260723100000_add_secure_calendar_integrations.sql`.
+2. Deploy the `calendar-feed` and `trial-voucher-public` Edge Functions.
+3. Run `npm run test:calendar` and the production portal build.
+4. Confirm a full-portal user can create, pause and replace a private subscription.
+5. Confirm another authenticated user cannot read or change that subscription row.
+6. Confirm a trial-voucher booking confirmation contains the calendar button and its link shows the current booking.
+7. Import the same event in Google, Outlook and an `.ics` client; then reschedule or cancel it and verify the live feed retains its UID and changes status or time.
+
 ## Deployment checklist for the membership change
 
 1. Review and push `supabase/migrations/20260721120000_add_club_membership_management.sql`.
