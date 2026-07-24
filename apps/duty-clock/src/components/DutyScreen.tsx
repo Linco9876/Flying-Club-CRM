@@ -12,6 +12,7 @@ import { EndDutyModal } from './EndDutyModal';
 import { PRIVACY_URL, SUPPORT_URL } from '../config';
 import { AppearanceSelector } from './AppearanceSelector';
 import { InstallPwaButton } from './InstallPwaButton';
+import { DutyHistoryModal } from './DutyHistoryModal';
 
 type Props = { user: User };
 
@@ -22,6 +23,7 @@ export const DutyScreen = ({ user }: Props) => {
   const [now, setNow] = useState(Date.now());
   const [startVisible, setStartVisible] = useState(false);
   const [endVisible, setEndVisible] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -133,6 +135,18 @@ export const DutyScreen = ({ user }: Props) => {
             <PrimaryButton tone="danger" onPress={() => setEndVisible(true)}>End duty</PrimaryButton>
           </>
         )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open previous duty periods"
+          onPress={() => setHistoryVisible(true)}
+          style={({ pressed }) => [styles.historyButton, pressed && styles.pressed]}
+        >
+          <View>
+            <Text style={styles.historyTitle}>Previous duty periods</Text>
+            <Text style={styles.historyDetail}>Review your completed duty records</Text>
+          </View>
+          <Text style={styles.historyChevron} accessibilityElementsHidden>›</Text>
+        </Pressable>
         <View style={styles.footerLinks}>
           <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}><Text style={styles.footerLink}>Privacy</Text></Pressable>
           <Text style={styles.footerDot}>·</Text>
@@ -144,6 +158,7 @@ export const DutyScreen = ({ user }: Props) => {
 
       <StartDutyModal visible={startVisible} context={context} working={working} onClose={() => setStartVisible(false)} onStart={startDuty} />
       <EndDutyModal visible={endVisible} context={context} working={working} onClose={() => setEndVisible(false)} onEnd={endDuty} />
+      <DutyHistoryModal visible={historyVisible} userId={user.id} onClose={() => setHistoryVisible(false)} />
     </SafeAreaView>
   );
 };
@@ -196,6 +211,10 @@ const createStyles = (colours: AppColours) => StyleSheet.create({
   flightLabel: { color: colours.green, fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
   flightValue: { color: colours.navy, fontSize: 29, fontWeight: '900', marginTop: 4 },
   flightDetail: { color: colours.muted, fontSize: 11, marginTop: 3 },
+  historyButton: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderRadius: 18, borderWidth: 1, borderColor: colours.border, backgroundColor: colours.surface, paddingHorizontal: 17, paddingVertical: 13 },
+  historyTitle: { color: colours.navy, fontSize: 15, fontWeight: '900' },
+  historyDetail: { color: colours.muted, fontSize: 11, marginTop: 3 },
+  historyChevron: { color: colours.blue, fontSize: 30, fontWeight: '500', lineHeight: 32 },
   pressed: { opacity: 0.86, transform: [{ scale: 0.99 }] },
   disabled: { opacity: 0.5 },
   deniedIcon: { width: 58, height: 58, borderRadius: 20, backgroundColor: colours.amberLight, alignItems: 'center', justifyContent: 'center' },
