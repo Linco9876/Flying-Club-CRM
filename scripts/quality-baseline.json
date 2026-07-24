@@ -1,0 +1,6 @@
+{
+  "note": "Release ceiling: compiler and lint errors must remain at zero. Hook warnings may only decrease from this reviewed baseline.",
+  "eslintErrors": 0,
+  "eslintWarnings": 63,
+  "typescriptErrors": 0
+}

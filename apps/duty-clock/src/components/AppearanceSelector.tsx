@@ -21,6 +21,7 @@ export const AppearanceSelector = () => {
             key={option.value}
             accessibilityRole="radio"
             accessibilityState={{ checked: selected }}
+            aria-checked={selected}
             onPress={() => setMode(option.value)}
             style={[styles.option, selected && styles.selected]}
           >

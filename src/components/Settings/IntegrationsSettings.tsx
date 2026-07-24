@@ -2,6 +2,7 @@ import React from 'react';
 import { Plug } from 'lucide-react';
 import { StripeIntegrationCard } from './StripeIntegrationCard';
 import { XeroIntegrationCard } from './XeroIntegrationCard';
+import { DeveloperIntegrationsCard } from './DeveloperIntegrationsCard';
 
 interface IntegrationsSettingsProps {
   canEdit: boolean;
@@ -21,6 +22,7 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ canE
 
       <StripeIntegrationCard canEdit={canEdit} />
       <XeroIntegrationCard canEdit={canEdit} onFormChange={onFormChange} />
+      <DeveloperIntegrationsCard canEdit={canEdit} />
     </div>
   );
 };

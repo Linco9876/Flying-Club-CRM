@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save, Send, Clock, User, Plane, FileText, Upload, FileSignature as Signature, Check, Plus, Search, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Save, Send, Clock, User, FileText, Upload, FileSignature as Signature, Check, Plus, Search, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { mockAircraft, mockStudents, mockSyllabusSequences } from '../../data/mockData';
-import { Booking, TrainingRecord, SyllabusSequence, TrainingSequenceResult } from '../../types';
+import { Booking, TrainingRecord, SyllabusSequence } from '../../types';
 import toast from 'react-hot-toast';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 
@@ -262,11 +262,14 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
       dualTimeMin: formData.dualTime * 60,
       soloTimeMin: formData.soloTime * 60,
       comments: formData.lessonComments,
+      briefingComments: '',
       formalBriefing: formData.formalBriefing,
+      criteriaGrades: {},
       lessonCodes: formData.lessonCode ? [formData.lessonCode] : [],
       nextLesson: formData.nextLessonCode,
       status: 'draft',
       studentAck: false,
+      studentComments: '',
       attachments: uploadedFiles.map(f => f.name),
       auditLog: [],
       sequences: selectedSequences.map((s, index) => ({
@@ -308,13 +311,16 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
       dualTimeMin: formData.dualTime * 60,
       soloTimeMin: formData.soloTime * 60,
       comments: formData.lessonComments,
+      briefingComments: '',
       formalBriefing: formData.formalBriefing,
+      criteriaGrades: {},
       lessonCodes: formData.lessonCode ? [formData.lessonCode] : [],
       nextLesson: formData.nextLessonCode,
       status: 'submitted',
       instructorSignatureUrl: `data:text/plain;base64,${btoa(instructorSignature)}`,
       studentAck: formData.studentAck,
       studentAckName: studentAckName,
+      studentComments: '',
       instructorSignTimestamp: new Date(),
       studentAckTimestamp: new Date(),
       attachments: uploadedFiles.map(f => f.name),
@@ -717,7 +723,7 @@ export const TrainingRecordForm: React.FC<TrainingRecordFormProps> = ({
                 
                 {selectedSequences.length > 0 ? (
                   <div className="space-y-4">
-                    {selectedSequences.map((entry, index) => (
+                    {selectedSequences.map((entry) => (
                       <div key={entry.sequence.id} className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center justify-between mb-3">
                           <div>

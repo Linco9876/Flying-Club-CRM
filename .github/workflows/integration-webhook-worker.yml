@@ -1,0 +1,33 @@
+name: Integration webhook worker
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-webhook-worker
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Deliver pending integration events
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          INTEGRATION_WORKER_SECRET: ${{ secrets.INTEGRATION_WORKER_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${INTEGRATION_WORKER_SECRET:-}"
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "x-worker-secret: $INTEGRATION_WORKER_SECRET" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            "$SUPABASE_URL/functions/v1/integration-webhook-worker"

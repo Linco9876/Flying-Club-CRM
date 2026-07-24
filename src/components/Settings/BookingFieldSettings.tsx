@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings } from 'lucide-react';
+import { Save, Settings } from 'lucide-react';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import toast from 'react-hot-toast';
 
@@ -75,7 +75,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
       }
       setHasChanges(false);
       if (!embedded) toast.success('Settings saved successfully');
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to save settings');
     }
   };

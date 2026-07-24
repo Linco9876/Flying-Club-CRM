@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Eye, RotateCcw } from 'lucide-react';
+import { Calendar, RotateCcw } from 'lucide-react';
 import { useCalendarSettings } from '../../hooks/useSettings';
 
 interface CalendarSettingsProps {

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { BookOpen, Clock, Download, TrendingUp, Navigation } from 'lucide-react';
-import { useFlightLogs, FlightLog } from '../../hooks/useFlightLogs';
+import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
 
@@ -70,8 +70,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
     });
   };
 
-  const exportExcel = async () => {
-    const XLSX = await import('xlsx');
+  const exportCsv = () => {
     const rows = enrichedLogs.map(log => ({
       Date: formatDate(log.start_time),
       'Aircraft Type': log.aircraft ? `${log.aircraft.make} ${log.aircraft.model}` : '',
@@ -98,23 +97,18 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       Comments: '',
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    worksheet['!cols'] = [
-      { wch: 14 },
-      { wch: 22 },
-      { wch: 20 },
-      { wch: 24 },
-      { wch: 24 },
-      { wch: 12 },
-      { wch: 14 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 40 },
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Logbook');
-    XLSX.writeFile(workbook, `${userName.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'logbook'}-logbook.xlsx`);
+    const headers = Object.keys(rows[0] || {});
+    const escapeCell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const csv = [
+      headers.map(escapeCell).join(','),
+      ...rows.map((row) => headers.map((header) => escapeCell(row[header as keyof typeof row])).join(',')),
+    ].join('\r\n');
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${userName.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'logbook'}-logbook.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   if (loading) {
@@ -199,12 +193,12 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
           </div>
           <button
             type="button"
-            onClick={exportExcel}
+            onClick={exportCsv}
             disabled={enrichedLogs.length === 0}
             className="inline-flex items-center justify-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
-            Export Excel
+            Export CSV
           </button>
         </div>
 

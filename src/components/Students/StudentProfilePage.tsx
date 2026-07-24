@@ -683,7 +683,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   }, [fetchStudentInvoices]);
 
   const selectedExamCourse = trainingCourses.find(course => course.id === examForm.courseId) ?? null;
-  const selectedExam = selectedExamCourse?.exams.find(exam => exam.id === examForm.examId) ?? null;
+  const selectedExam = selectedExamCourse?.exams?.find(exam => exam.id === examForm.examId) ?? null;
   const canManageExamResult = useCallback((result: StudentExamResult) => {
     if (!user) return false;
     return result.instructorId === user.id || hasAnyRole(user, ['admin']);

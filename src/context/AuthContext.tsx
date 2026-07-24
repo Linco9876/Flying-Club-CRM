@@ -20,9 +20,9 @@ export const useAuth = () => {
   return context;
 };
 
-const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+const withTimeout = <T,>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> => {
   return Promise.race([
-    promise,
+    Promise.resolve(promise),
     new Promise<T>((_, reject) =>
       setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
     )
@@ -148,7 +148,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     let mounted = true;
-    let initTimeout: NodeJS.Timeout;
 
     const initAuth = async () => {
       try {
@@ -196,7 +195,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    initTimeout = setTimeout(() => {
+    const initTimeout = setTimeout(() => {
       if (mounted) {
         console.error('Auth initialization timed out');
         setIsLoading(false);

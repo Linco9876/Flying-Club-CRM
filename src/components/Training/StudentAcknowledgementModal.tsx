@@ -23,13 +23,6 @@ const stripHtml = (value: string) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-const createAuditId = () => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-};
-
 const isUnder18 = (dateOfBirth?: Date) => {
   if (!dateOfBirth) return false;
   const today = new Date();

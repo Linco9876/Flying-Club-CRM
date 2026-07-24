@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, User, Mail, Phone, Calendar, FileText, AlertTriangle, Award, Clock } from 'lucide-react';
+import { X, User, FileText, AlertTriangle, Award, Clock } from 'lucide-react';
 import { Student } from '../../types';
 import { mockTrainingRecords } from '../../data/mockData';
 
@@ -13,9 +13,9 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
   if (!isOpen) return null;
 
   const trainingRecords = mockTrainingRecords.filter(r => r.studentId === student.id);
-  const totalFlightTime = trainingRecords.reduce((sum, record) => sum + record.soloTime + record.dualTime, 0);
-  const soloTime = trainingRecords.reduce((sum, record) => sum + record.soloTime, 0);
-  const dualTime = trainingRecords.reduce((sum, record) => sum + record.dualTime, 0);
+  const totalFlightTime = trainingRecords.reduce((sum, record) => sum + record.soloTimeMin + record.dualTimeMin, 0) / 60;
+  const soloTime = trainingRecords.reduce((sum, record) => sum + record.soloTimeMin, 0) / 60;
+  const dualTime = trainingRecords.reduce((sum, record) => sum + record.dualTimeMin, 0) / 60;
 
   const endorsementTypes = [
     { value: 'PC', label: 'Pilot Certificate' },
@@ -241,22 +241,22 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ isOpen, onClose,
                     {trainingRecords.slice(0, 5).map(record => (
                       <tr key={record.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {record.lessonNumber}
+                          {record.lessonId || record.lessonCodes.join(', ') || '—'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {record.lessonDate.toLocaleDateString()}
+                          {record.date.toLocaleDateString()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {record.soloTime > 0 ? `${record.soloTime}h Solo` : `${record.dualTime}h Dual`}
+                          {record.soloTimeMin > 0 ? `${(record.soloTimeMin / 60).toFixed(1)}h Solo` : `${(record.dualTimeMin / 60).toFixed(1)}h Dual`}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            record.grade === 'C' ? 'bg-green-100 text-green-800' :
-                            record.grade === 'S' ? 'bg-yellow-100 text-yellow-800' :
-                            record.grade === 'NC' ? 'bg-red-100 text-red-800' :
+                            record.sequences[0]?.competence === 'C' ? 'bg-green-100 text-green-800' :
+                            record.sequences[0]?.competence === 'S' ? 'bg-yellow-100 text-yellow-800' :
+                            record.sequences[0]?.competence === 'NC' ? 'bg-red-100 text-red-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
-                            {record.grade}
+                            {record.sequences[0]?.competence || '—'}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">

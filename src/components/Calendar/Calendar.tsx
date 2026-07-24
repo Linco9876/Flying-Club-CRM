@@ -10,7 +10,6 @@ import {
   endOfMonth,
   eachDayOfInterval,
   addWeeks,
-  subWeeks,
   addMonths,
   subMonths,
 } from 'date-fns';
@@ -62,7 +61,7 @@ interface CalendarProps {
   ) => void;
   onEditBooking?: (booking: Booking) => void;
   onCopyBooking?: (booking: Booking) => void;
-  onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => void;
+  onUpdateBooking?: (bookingId: string, updates: Partial<Booking>, silent?: boolean) => Promise<void> | void;
   onDeleteBooking?: (bookingId: string, cancellation?: BookingCancellationInput) => Promise<void> | void;
   onRestoreBooking?: (bookingId: string) => Promise<void> | void;
   onApproveBooking?: (bookingId: string) => Promise<void> | void;
@@ -368,11 +367,6 @@ export const Calendar: React.FC<CalendarProps> = ({
     startX: number;
     startY: number;
   } | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({
-    x: 0,
-    y: 0,
-  });
-
   // Time selection states
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{
@@ -1935,7 +1929,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     updateDragPreview({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
-      resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
+      resourceId: resourceType === 'aircraft' ? booking.aircraftId || '' : booking.instructorId || '',
       resourceType
     });
   };
@@ -1960,7 +1954,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     updateDragPreview({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
-      resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
+      resourceId: resourceType === 'aircraft' ? booking.aircraftId || '' : booking.instructorId || '',
       resourceType
     });
   };
@@ -1991,7 +1985,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           updateDragPreview({
             startTime: newStartTime,
             endTime: originalEnd,
-            resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId : resizingBooking.booking.instructorId || '',
+            resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId || '' : resizingBooking.booking.instructorId || '',
             resourceType
           });
         }
@@ -2004,7 +1998,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           updateDragPreview({
             startTime: originalStart,
             endTime: newEndTime,
-            resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId : resizingBooking.booking.instructorId || '',
+            resourceId: resourceType === 'aircraft' ? resizingBooking.booking.aircraftId || '' : resizingBooking.booking.instructorId || '',
             resourceType
           });
         }
@@ -2074,7 +2068,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     }
     resetBookingInteractionState();
 
-    void onUpdateBooking(booking.id, updates, true)
+    void Promise.resolve(onUpdateBooking(booking.id, updates, true))
       .catch((error) => {
         console.error('Error updating booking:', error);
         setOptimisticBookingUpdates((current) => {
@@ -2474,29 +2468,10 @@ export const Calendar: React.FC<CalendarProps> = ({
     updateDragPreview({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
-      resourceId: resourceType === 'aircraft' ? booking.aircraftId : booking.instructorId || '',
+      resourceId: resourceType === 'aircraft' ? booking.aircraftId || '' : booking.instructorId || '',
       resourceType,
     });
     navigator.vibrate?.(10);
-  };
-
-  const isTimeSlotInDragRange = (
-    slot: number,
-    resourceId: string,
-    resourceType: 'aircraft' | 'instructor',
-    dayIndex?: number
-  ) => {
-    if (!isDragging || !dragStart || !dragEnd) return false;
-    if (
-      resourceId !== dragStart.resourceId ||
-      resourceType !== dragStart.resourceType ||
-      dayIndex !== dragStart.dayIndex
-    )
-      return false;
-
-    const minSlot = Math.min(dragStart.hour, dragEnd.hour);
-    const maxSlot = Math.max(dragStart.hour, dragEnd.hour);
-    return slot >= minSlot && slot <= maxSlot;
   };
 
   const getTimeSlotDragRangeMeta = (
@@ -2854,20 +2829,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                       currentDate
                     );
 
-                    const prevSlot = slot - 1;
-                    const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
-                      resource.id,
-                      resource.type,
-                      prevSlot,
-                      currentDate
-                    ) : null;
-
-                    const isFirstSlotOfPeriod = unavailability && (
-                      !prevUnavailability ||
-                      prevUnavailability.reason !== unavailability.reason ||
-                      prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
-                    );
-
                     const dragRangeMeta = getTimeSlotDragRangeMeta(
                       slot,
                       resource.id,
@@ -2917,7 +2878,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                             );
                           }
                         }}
-                        onMouseDown={(e) =>
+                        onMouseDown={() =>
                           !unavailability && !draggedBooking &&
                           handleMouseDown(
                             slot,
@@ -3360,20 +3321,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                         day
                       );
 
-                      const prevSlot = slot - 1;
-                      const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
-                        selectedAircraftId,
-                        'aircraft',
-                        prevSlot,
-                        day
-                      ) : null;
-
-                      const isFirstSlotOfPeriod = unavailability && (
-                        !prevUnavailability ||
-                        prevUnavailability.reason !== unavailability.reason ||
-                        prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
-                      );
-
                       const dragRangeMeta = getTimeSlotDragRangeMeta(
                         slot,
                         selectedAircraftId,
@@ -3422,7 +3369,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               );
                             }
                           }}
-                          onMouseDown={(e) =>
+                          onMouseDown={() =>
                             !unavailability && !draggedBooking &&
                             handleMouseDown(
                               slot,
@@ -3468,20 +3415,6 @@ export const Calendar: React.FC<CalendarProps> = ({
                         'instructor',
                         slot,
                         day
-                      );
-
-                      const prevSlot = slot - 1;
-                      const prevUnavailability = prevSlot >= timeSlots[0] ? getUnavailabilityForSlot(
-                        selectedInstructorId,
-                        'instructor',
-                        prevSlot,
-                        day
-                      ) : null;
-
-                      const isFirstSlotOfPeriod = unavailability && (
-                        !prevUnavailability ||
-                        prevUnavailability.reason !== unavailability.reason ||
-                        prevUnavailability.startTime.getTime() !== unavailability.startTime.getTime()
                       );
 
                       const dragRangeMeta = getTimeSlotDragRangeMeta(
@@ -3532,7 +3465,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                               );
                             }
                           }}
-                          onMouseDown={(e) =>
+                          onMouseDown={() =>
                             !unavailability && !draggedBooking &&
                             handleMouseDown(
                               slot,
@@ -3594,7 +3527,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             })}
 
             {showUnavailableBlocks && weekDays.map((day, dayIndex) => {
-              const overlays = [];
+              const overlays: React.ReactNode[] = [];
               let columnOffset = 0;
 
               if (hasAircraft) {
@@ -3679,7 +3612,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
             {/* Render bookings as grid items */}
             {weekDays.map((day, dayIndex) => {
-              const bookingElements = [];
+              const bookingElements: React.ReactNode[] = [];
               let columnOffset = 0;
 
               // Add aircraft bookings if selected
@@ -4536,7 +4469,11 @@ export const Calendar: React.FC<CalendarProps> = ({
 
       {showFlightLogModal && flightLogBooking && (
         <FlightLogModal
-          booking={flightLogBooking}
+          booking={{
+            ...flightLogBooking,
+            studentId: flightLogBooking.studentId || flightLogBooking.pilotId || '',
+            aircraftId: flightLogBooking.aircraftId || '',
+          }}
           mode={flightLogMode}
           flightLogId={getBookingFlightLogId(flightLogBooking)}
           onApproveBooking={onApproveBooking}

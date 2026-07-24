@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !serviceRoleKey) return json({ isTestMode: false });
+    if (!supabaseUrl || !serviceRoleKey) return json({ isTestMode: true });
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -31,6 +31,6 @@ Deno.serve(async (req: Request) => {
     return json({ isTestMode: settings.mode === "test" });
   } catch (error) {
     console.error("stripe-public-status error:", error);
-    return json({ isTestMode: false });
+    return json({ isTestMode: true });
   }
 });

@@ -80,7 +80,7 @@ interface QueuedTrainingRecordSubmit {
     status: 'submitted' | 'locked';
     studentAck: boolean;
     studentComments: string;
-    attachments: unknown[];
+    attachments: string[];
     isFlightReview: boolean;
     flightReviewType?: string;
     flightReviewResult?: 'pass' | 'fail' | 'not_assessed';
@@ -971,7 +971,7 @@ export const OutstandingRecordsTab: React.FC = () => {
 
     const highestByCriterion = studentPreviousRecords.reduce<Record<string, string>>((acc, record) => {
       Object.entries(record.criteriaGrades ?? {}).forEach(([criterionId, grade]) => {
-        const criterion = course.assessmentCriteria.find(item => item.id === criterionId);
+        const criterion = course?.assessmentCriteria.find(item => item.id === criterionId);
         acc[criterionId] = bestGrade(acc[criterionId], grade, criterion?.gradingSystem) ?? '-';
       });
       return acc;

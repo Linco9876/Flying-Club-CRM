@@ -162,12 +162,13 @@ interface StripeConnectStatus {
 
 type VoucherAdminTab = 'products' | 'issue' | 'recent';
 type VoucherIssuePaymentHandling = 'paid' | 'stripe_link' | 'prepaid' | 'waived';
+const SHOW_LEGACY_VOUCHER_CONTROLS = false;
 
 export const TrialFlightVouchersPage: React.FC = () => {
   const { user } = useAuth();
   const { aircraft } = useAircraft();
   const { students: members } = useStudents();
-  const { users, getInstructors } = useUsers();
+  const { getInstructors } = useUsers();
   const { products, addons, vouchers, loading, refetch, saveProduct, saveAddon, issueVoucher, sendVoucherPaymentLink, issueVoucherUsingPrepaid, sendVoucherEmail, markVoucherReady, processDueVoucherEmails, releaseVoucherBooking, cancelVoucher } = useTrialFlightVouchers();
   const [productForm, setProductForm] = useState(emptyProduct);
   const [addonForm, setAddonForm] = useState<Omit<TrialFlightVoucherAddon, 'id' | 'createdAt' | 'updatedAt'>>({
@@ -376,7 +377,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
     });
   };
 
-  const applyPreset = (aircraftMode: TrialFlightVoucherAircraftMode) => {
+  const applyPreset = (aircraftMode: Exclude<TrialFlightVoucherAircraftMode, 'specific'>) => {
     setEditingProductId(undefined);
     setShowProductForm(true);
     const selectedAircraft = aircraftMode === 'archer' ? aircraftByMode.archers : aircraftByMode.tecnams;
@@ -819,14 +820,6 @@ export const TrialFlightVouchersPage: React.FC = () => {
       toast.error(`Could not copy ${label.toLowerCase()}`);
     }
   };
-
-  const escapeHtml = (value: unknown) =>
-    String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
 
   const downloadVoucherCertificate = async (voucher: TrialFlightVoucher) => {
     const product = products.find(item => item.id === voucher.productId);
@@ -1434,7 +1427,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
         </div>
       </section>
 
-      {false && (
+      {SHOW_LEGACY_VOUCHER_CONTROLS && (
       <>
       <section className="mb-6 grid gap-3 lg:grid-cols-4">
         {standardReadinessSummary.map(item => (
@@ -2372,7 +2365,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
           </>
           )}
 
-          {false && (
+          {SHOW_LEGACY_VOUCHER_CONTROLS && (
           <div className="mt-6 border-t border-gray-200 pt-4 dark:border-[#2c2f36]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>

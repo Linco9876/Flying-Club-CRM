@@ -6,10 +6,11 @@ The local Windows job writes daily backups to OneDrive when the club computer is
 
 ## What it backs up
 
-- Public CRM tables as JSON files.
+- Every table exposed by the current Supabase REST schema, discovered at backup time rather than maintained in a stale allow-list.
 - Supabase Auth user records, excluding passwords because Supabase does not expose passwords.
 - Storage bucket files such as student documents, aircraft documents, safety documents, defect attachments, logos, avatars, and exam uploads.
-- A `manifest.json` with row counts, file counts, warnings, and prune details.
+- A `manifest.json` with row counts and SHA-256 integrity data for every backed-up file.
+- The cloud job packages and encrypts the complete recovery point with `age` before anything leaves the runner. Raw CRM data is never uploaded.
 
 ## Local Windows Setup
 
@@ -30,9 +31,16 @@ node .\scripts\backup-crm.mjs --env=.\scripts\backup-crm.env
 
 ## Restore Notes
 
-These backups are designed for recovery and audit. Table files can be imported back into Supabase, and Storage files can be re-uploaded to their original buckets. For a full disaster recovery restore, restore tables in dependency order and then re-upload Storage contents.
+These backups are designed for recovery and audit. Table files can be imported back into Supabase, Auth identities recreated using the Admin API, and Storage files re-uploaded to their original buckets. Restore tables in dependency order and run the repository migrations first when rebuilding an empty project.
 
-Keep at least one tested restore process outside the live project.
+`.github/workflows/monthly-backup-restore-drill.yml` has two mandatory stages:
+
+1. download the latest encrypted OneDrive recovery point, verify its external checksum, decrypt it, and verify every file against the manifest; and
+2. create an encrypted relational backup, decrypt and checksum it, restore the `public` and `private` schema, exact object grants, application data, Storage metadata, Auth identities and password hashes into the isolated Supabase recovery project, then compare source and recovery counts.
+
+The second stage uses `SUPABASE_ACCESS_TOKEN` and `SUPABASE_RECOVERY_PROJECT_REF`. It never resets the production project. A failure alerts administrators through the Actions failure monitor. Keep the private `age` identity outside GitHub as an additional break-glass copy.
+
+The recovery project is disposable and must not contain unique club data. The drill intentionally omits Supabase-managed vector Storage tables and managed `supabase_admin` default-ACL entries, while retaining the application object ACLs needed for an operational recovery. Storage binary files remain in the encrypted file backup and are verified separately.
 
 ## Cloud Setup
 
@@ -45,6 +53,8 @@ Add these GitHub repository secrets:
 - `RCLONE_CONFIG`: the full contents of a working `rclone.conf` that contains a OneDrive remote.
 - `RCLONE_REMOTE`: the OneDrive remote name from `rclone.conf`, for example `onedrive`.
 - `ONEDRIVE_BACKUP_PATH`: the destination folder, for example `CRM Backups/Bendigo Flying Club Portal`.
+- `BACKUP_AGE_PUBLIC_KEY`: the `age1...` public recipient. The daily job refuses to upload without it.
+- `BACKUP_AGE_PRIVATE_KEY`: the corresponding `AGE-SECRET-KEY-...` identity, used only by the monthly recovery drill. Retain a second offline copy.
 - `ALERT_WEBHOOK_URL`: optional webhook URL for failed backup/deploy alerts.
 - `ALERT_WEBHOOK_TYPE`: optional webhook payload type: `generic`, `slack`, `discord`, or `teams`.
 

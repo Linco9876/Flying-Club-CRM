@@ -13,29 +13,35 @@ npm run dev
 
 Open the local URL printed by Vite. Edit files under `src/`; Vite refreshes the browser as files change.
 
-## Duty Clock mobile app
+## Duty Clock PWA
 
-The lightweight iOS and Android instructor app lives in `apps/duty-clock/`. It uses the same Supabase login and duty records as the portal.
+The lightweight installable instructor PWA lives in `apps/duty-clock/`. It uses the same Supabase login and duty records as the portal without a separate App Store or Play Store build.
 
 ```powershell
-npm run mobile:install
+npm --prefix apps/duty-clock install
 Copy-Item apps/duty-clock/.env.example apps/duty-clock/.env
-npm run mobile:start
+npm run duty-pwa:start
 ```
 
-See `apps/duty-clock/README.md` for device testing, signed builds, and store-release requirements.
+See `apps/duty-clock/README.md` for installation and device-testing requirements.
 
 ## Publish the frontend
 
 The production Cloudflare Pages project is `bendigo-flying-club-portal`. Its custom domain is `portal.bendigoflyingclub.com.au`.
 
-Pushing a commit to `main` triggers the existing Cloudflare Git deployment. To publish the current checkout directly instead, run:
+Cloudflare's legacy Git production and preview deployments are disabled. Production is published only by `.github/workflows/deploy-production.yml` after the protected `main` quality checks pass and the GitHub `production` reviewer approves the deployment.
+
+For an explicitly authorised manual recovery deployment, run:
 
 ```powershell
 npm run deploy:cloudflare
 ```
 
-The command builds `dist/` and deploys it to the production branch. SPA fallback routing is configured in `public/_redirects`.
+The command builds `dist/` and deploys it to the production branch. It bypasses the GitHub reviewer workflow, so it is for documented recovery use only. SPA fallback routing is configured in `public/_redirects`.
+
+## Acceptance testing
+
+`npm run test:acceptance:recovery` provisions disposable users for all six roles in the isolated Supabase recovery project, tests authenticated iPhone/WebKit and Android/Chromium viewport journeys including staff MFA, then removes the users. These are browser emulations, not physical-device results. Physical iPhone and Android release sign-off still requires connected devices or real-device-cloud credentials.
 
 ## Edit Supabase
 

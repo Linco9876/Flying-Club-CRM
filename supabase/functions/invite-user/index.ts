@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +22,7 @@ const getLegacyUsersRole = (primaryRole: string) =>
     : primaryRole;
 
 const generateSetupLink = async (
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: SupabaseClient,
   email: string,
   redirectTo?: string,
 ) => {

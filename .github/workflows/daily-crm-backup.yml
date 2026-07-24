@@ -22,6 +22,8 @@ jobs:
 
       - name: Install rclone
         run: |
+          sudo apt-get update
+          sudo apt-get install -y age
           curl https://rclone.org/install.sh | sudo bash
 
       - name: Prepare backup environment
@@ -38,6 +40,29 @@ jobs:
       - name: Run CRM backup
         run: node ./scripts/backup-crm.mjs --env="$RUNNER_TEMP/backup-crm.env"
 
+      - name: Verify and encrypt backup
+        env:
+          BACKUP_AGE_PUBLIC_KEY: ${{ secrets.BACKUP_AGE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BACKUP_AGE_PUBLIC_KEY:-}" ]; then
+            echo "::error::BACKUP_AGE_PUBLIC_KEY is required. Unencrypted backups are never uploaded."
+            exit 1
+          fi
+          backup_dir="$(find "$RUNNER_TEMP/crm-backup" -mindepth 1 -maxdepth 1 -type d -name 'backup-*' -print -quit)"
+          test -n "$backup_dir"
+          node ./scripts/verify-crm-backup.mjs "$backup_dir"
+          archive="$RUNNER_TEMP/$(basename "$backup_dir").tar.gz"
+          encrypted="$archive.age"
+          tar -C "$(dirname "$backup_dir")" -czf "$archive" "$(basename "$backup_dir")"
+          age -r "$BACKUP_AGE_PUBLIC_KEY" -o "$encrypted" "$archive"
+          encrypted_name="$(basename "$encrypted")"
+          (cd "$(dirname "$encrypted")" && sha256sum "$encrypted_name" > "$encrypted_name.sha256")
+          rm -f "$archive"
+          rm -rf "$RUNNER_TEMP/crm-backup"
+          mkdir -p "$RUNNER_TEMP/encrypted-crm-backup"
+          mv "$encrypted" "$encrypted.sha256" "$RUNNER_TEMP/encrypted-crm-backup/"
+
       - name: Configure OneDrive upload
         env:
           RCLONE_CONFIG_CONTENT: ${{ secrets.RCLONE_CONFIG }}
@@ -51,12 +76,19 @@ jobs:
           RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
           ONEDRIVE_BACKUP_PATH: ${{ secrets.ONEDRIVE_BACKUP_PATH }}
         run: |
-          rclone copy "$RUNNER_TEMP/crm-backup" "$RCLONE_REMOTE:$ONEDRIVE_BACKUP_PATH" --create-empty-src-dirs --fast-list
+          set -euo pipefail
+          test -n "${RCLONE_REMOTE:-}"
+          test -n "${ONEDRIVE_BACKUP_PATH:-}"
+          rclone copy "$RUNNER_TEMP/encrypted-crm-backup" "$RCLONE_REMOTE:$ONEDRIVE_BACKUP_PATH" --create-empty-src-dirs --fast-list
+          rclone delete "$RCLONE_REMOTE:$ONEDRIVE_BACKUP_PATH" \
+            --min-age 45d \
+            --include '*.tar.gz.age' \
+            --include '*.tar.gz.age.sha256'
 
-      - name: Upload backup as GitHub artifact
+      - name: Upload encrypted backup as GitHub artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: crm-backup-${{ github.run_id }}
-          path: ${{ runner.temp }}/crm-backup
+          path: ${{ runner.temp }}/encrypted-crm-backup
           retention-days: 7
+          if-no-files-found: error

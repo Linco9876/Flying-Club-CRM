@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2, MapPin, Search } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -62,6 +62,16 @@ interface PublicInstructorOption {
   email: string;
 }
 
+interface AvailableSlot {
+  slot_start: string;
+  slot_end: string;
+  aircraft_id: string;
+  aircraft_registration: string;
+  aircraft_description: string;
+  instructor_id: string;
+  instructor_name: string;
+}
+
 const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, isKioskMode = false, prefilledData }) => {
   const { user } = useAuth();
   const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
@@ -69,7 +79,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { students, loading: studentsLoading } = useStudents({ participateInPageLoad: false });
   const { flightLogs, loading: flightLogsLoading } = useFlightLogs(undefined, { participateInPageLoad: false });
   const { settings: safetySettings } = useSafetySettings({ participateInPageLoad: false });
-  const { settings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
+  const { isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes, paymentMethods } = useBillingSettings();
   const { settings: portalSettings } = usePortalUxSettings();
   const { settings: bookingRules } = useBookingRulesSettings();
@@ -199,7 +209,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     pilotName: string;
     picHours: number;
   } | null>(null);
-  const [pendingEndorsementSubmit, setPendingEndorsementSubmit] = useState<typeof formData | null>(null);
   const [endorsementWarningState, setEndorsementWarningState] = useState<{
     aircraftName: string;
     pilotName: string;
@@ -214,6 +223,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     reason: string;
   } | null>(null);
   const [sendVoucherUpdateEmail, setSendVoucherUpdateEmail] = useState<boolean | null>(null);
+  const [findingSlots, setFindingSlots] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const roleBasedInstructors = getInstructors().map((instructor) => ({
     id: instructor.id,
     name: instructor.name,
@@ -280,6 +291,48 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const availableFlightTypes = flightTypes.filter((flightType) =>
     flightType.active && (!formData.isGuestBooking || !isPrepaidLikeFlightType(flightType.name))
   );
+
+  const findNextAvailableSlots = async () => {
+    const proposedStart = new Date(`${formData.date}T${formData.startTime || '09:00'}:00`);
+    const proposedEnd = new Date(`${formData.endDate || formData.date}T${formData.endTime || '11:00'}:00`);
+    const durationMinutes = Math.max(15, Math.min(480, Math.round((proposedEnd.getTime() - proposedStart.getTime()) / 60000) || 120));
+    setFindingSlots(true);
+    try {
+      const { data, error } = await supabase.rpc('find_next_available_slots', {
+        p_after: Number.isNaN(proposedStart.getTime()) ? new Date().toISOString() : proposedStart.toISOString(),
+        p_duration_minutes: durationMinutes,
+        p_search_days: 30,
+        p_aircraft_ids: formData.aircraftId ? [formData.aircraftId] : null,
+        p_instructor_ids: formData.instructorId ? [formData.instructorId] : null,
+        p_limit: 8,
+      });
+      if (error) throw error;
+      const slots = (data || []) as AvailableSlot[];
+      setAvailableSlots(slots);
+      if (!slots.length) toast('No matching aircraft and instructor slot was found in the next 30 days.');
+    } catch (error) {
+      console.error('Available slot search failed:', error);
+      toast.error('Could not search availability. Please try again.');
+    } finally {
+      setFindingSlots(false);
+    }
+  };
+
+  const chooseAvailableSlot = (slot: AvailableSlot) => {
+    const start = new Date(slot.slot_start);
+    const end = new Date(slot.slot_end);
+    setFormData((current) => ({
+      ...current,
+      date: format(start, 'yyyy-MM-dd'),
+      endDate: format(end, 'yyyy-MM-dd'),
+      startTime: format(start, 'HH:mm'),
+      endTime: format(end, 'HH:mm'),
+      aircraftId: slot.aircraft_id,
+      instructorId: slot.instructor_id,
+    }));
+    setAvailableSlots([]);
+    toast.success('Available aircraft and instructor selected');
+  };
   const filteredGuestVoucherOptions = guestVoucherOptions.filter((option) => {
     const query = guestVoucherSearch.trim().toLowerCase();
     if (!query) return true;
@@ -363,7 +416,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setFormData(initialData);
     setPendingSafetySubmit(null);
     setSafetyWarningState(null);
-    setPendingEndorsementSubmit(null);
     setEndorsementWarningState(null);
     setMembershipWarningState(null);
     setGuestVoucherSearch('');
@@ -1233,6 +1285,45 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               <p className="mt-1 text-xs text-gray-500">
                 Ground sessions are scheduled against the instructor only. Booking type, payment method and description are chosen when the session is logged.
               </p>
+            </div>
+          )}
+
+          {!isLoading && !isGroundSessionBooking && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
+              <button
+                type="button"
+                onClick={() => void findNextAvailableSlots()}
+                disabled={findingSlots}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-blue-800 shadow-sm ring-1 ring-blue-200 hover:bg-blue-100 disabled:opacity-60"
+              >
+                {findingSlots ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                Find the next available slot
+              </button>
+              <p className="mt-2 text-xs leading-5 text-blue-900">
+                Searches serviceable aircraft and available instructors together. Selected aircraft or instructor filters are respected.
+              </p>
+              {availableSlots.length > 0 && (
+                <div className="mt-3 space-y-2" role="list" aria-label="Available aircraft and instructor times">
+                  {availableSlots.map((slot) => {
+                    const start = new Date(slot.slot_start);
+                    const end = new Date(slot.slot_end);
+                    return (
+                      <button
+                        key={`${slot.slot_start}:${slot.aircraft_id}:${slot.instructor_id}`}
+                        type="button"
+                        role="listitem"
+                        onClick={() => chooseAvailableSlot(slot)}
+                        className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-left text-xs hover:border-blue-500 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <span className="block font-bold text-slate-950">
+                          {start.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}, {format(start, 'HH:mm')}–{format(end, 'HH:mm')}
+                        </span>
+                        <span className="mt-0.5 block text-slate-600">{slot.aircraft_registration} · {slot.instructor_name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

@@ -1,22 +1,24 @@
-# BFC Duty Clock
+# BFC Duty Clock PWA
 
-Lightweight Expo app for Bendigo Flying Club instructors on iOS and Android. It uses the portal's Supabase authentication and duty records.
+Duty Clock is a lightweight Progressive Web App for Bendigo Flying Club instructors. It uses the same Supabase account and duty records as the main portal and is published at `/duty-clock/app/`.
+
+There is no native application, APK, app-store build or separate update channel. iPhone, iPad, Android and desktop users install the secure web version from their browser and receive the current release automatically.
 
 ## What instructors can do
 
 - Sign in with their existing portal account.
+- Install Duty Clock on their home screen.
 - Start duty with an adjustable start time (up to two hours back).
-- Confirm GPS-derived location or edit the location name.
+- Confirm a GPS-derived location or edit the location name.
 - Add mandatory context when outside a configured club geofence.
-- Complete the pre-duty fitness, external-duty, sleep, and optional sleepiness declaration.
+- Complete the pre-duty fitness, external-duty, sleep and optional sleepiness declaration.
 - Start and end breaks during the day.
-- End duty with flight time prefilled from that day's flight logs and edit it before saving.
+- End duty with flight time prefilled from that day's flight logs.
+- Use the accessible light, dark or automatic appearance.
 
-The app requests foreground location only when Start duty is opened. It does not request or perform background location tracking.
+Location is requested only when Start duty is opened. There is no background location tracking. Duty writes remain server-authoritative; the service worker never queues a clock event or claims an offline write succeeded.
 
-## Local device testing
-
-Requirements: Node.js, npm, and the Expo Go app on the test phone.
+## Local development
 
 ```powershell
 npm install
@@ -24,52 +26,17 @@ Copy-Item .env.example .env
 npm run start
 ```
 
-Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env`. These are public client settings; never put a Supabase service-role key in the app.
+Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env`. These are public client settings; never put a Supabase service-role key in the PWA.
 
-Scan the Expo QR code from an iPhone or Android phone on the same network. Only users with an admin, senior instructor, or instructor role can clock duty.
-
-## Club location setup
-
-An administrator can manage duty-clock geofences in the web portal under **Settings -> Duty & Supervision -> Duty clock locations**. Bendigo Airport is seeded as the primary location with a 1.2 km radius; review the radius before rollout.
-
-## Signed iOS and Android builds
-
-The production identifiers are:
-
-- iOS: `au.com.bendigoflyingclub.dutyclock`
-- Android: `au.com.bendigoflyingclub.dutyclock`
-
-Sign in to the club's Expo account and initialise its EAS project once:
-
-```powershell
-npx eas-cli login
-npx eas-cli build:configure
-```
-
-Create internal test builds:
-
-```powershell
-npx eas-cli build --platform android --profile preview
-npx eas-cli build --platform ios --profile preview
-```
-
-Create store builds:
-
-```powershell
-npx eas-cli build --platform all --profile production
-```
-
-Apple requires an Apple Developer team and signing credentials. Google Play requires a Play Console developer account. EAS can manage signing credentials interactively, but those accounts must be supplied by the club account owner.
-
-Before public store submission, capture screenshots from signed physical-device builds and have the account owner verify the prepared Apple and Google privacy disclosures. Use `eas submit` after the store listings exist.
-
-The app icon, public policy/support pages, disclosure draft, listing copy and store-safe distribution sequence are now prepared. Follow [STORE_RELEASE.md](./STORE_RELEASE.md) for the remaining account-owner and submission steps.
-
-## Checks
+## Build and checks
 
 ```powershell
 npm run typecheck
-npx expo-doctor
-npx expo export --platform android
-npx expo export --platform ios
+npm run build
 ```
+
+The repository root `npm run build` performs the supported production export and packages the manifest, icons, service worker and install guidance with the portal. Follow [PWA_RELEASE.md](./PWA_RELEASE.md) for device acceptance checks.
+
+## Club location setup
+
+An administrator manages duty-clock geofences under **Settings → Duty & Supervision → Duty clock locations**. Bendigo Airport is seeded as the primary location with a 1.2 km radius; review the radius before rollout.

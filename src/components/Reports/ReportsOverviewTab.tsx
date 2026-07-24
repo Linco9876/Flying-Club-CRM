@@ -107,8 +107,6 @@ export const ReportsOverviewTab: React.FC = () => {
     });
 
     const usersById = new Map(users.map(user => [user.id, user]));
-    const aircraftById = new Map(aircraft.map(item => [item.id, item]));
-
     const topPilots = Array.from(pilotHours.entries())
       .map(([id, hours]) => ({ id, name: usersById.get(id)?.name || 'Unknown pilot', hours }))
       .sort((a, b) => b.hours - a.hours)

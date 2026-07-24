@@ -1,24 +1,19 @@
 {
   "name": "bendigo-flying-club-duty-clock",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "start": "expo start --web",
+    "build": "expo export --platform web",
     "typecheck": "tsc --noEmit",
-    "assets:generate": "node scripts/generate-assets.mjs",
-    "build:preview": "eas build --platform all --profile preview",
-    "build:production": "eas build --platform all --profile production"
+    "assets:generate": "node scripts/generate-assets.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.6",
-    "@react-native-community/datetimepicker": "9.1.0",
     "@supabase/supabase-js": "^2.110.7",
     "expo": "~57.0.7",
     "expo-location": "~57.0.5",
-    "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -31,5 +26,8 @@
     "@types/react": "~19.2.2",
     "sharp": "^0.35.3",
     "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

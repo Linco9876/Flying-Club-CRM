@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, AlertTriangle, Camera, Upload, Save } from 'lucide-react';
+import { X, AlertTriangle, Camera, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
@@ -187,8 +187,6 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
   };
 
   if (!isOpen) return null;
-
-  const selectedAircraft = aircraft.find(a => a.id === formData.aircraftId);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

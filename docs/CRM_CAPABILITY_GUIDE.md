@@ -8,7 +8,7 @@ This guide describes the operational capabilities of the Bendigo Flying Club (BF
 - Supabase authentication, PostgreSQL data, row-level security, scheduled lifecycle jobs and Edge Functions.
 - Role-based access for members, instructors, senior instructors and administrators.
 - Aircraft bookings, flight records, training, instructor duty, senior-instructor supervision, maintenance, safety, billing, Xero and Stripe integrations.
-- A separate lightweight Duty Clock application uses the same Supabase duty records.
+- A separate lightweight, installable Duty Clock PWA uses the same Supabase duty records. Native APK distribution has been retired.
 
 ## BFC club membership
 
@@ -243,3 +243,88 @@ Before release:
 - Manual review of the supplied Constitution, By-laws, Code of Conduct and Members Manual PDFs.
 
 Local full-database reset requires Docker Desktop. If Docker is unavailable, run the migration first in a Supabase staging branch and exercise the checklist above before production rollout.
+
+## Platform hardening and extensibility release (23 July 2026)
+
+### Recovery
+
+- The backup job discovers the current Supabase REST schema instead of relying on a manually maintained table list.
+- Auth identities, all discoverable CRM tables and every Storage bucket are included.
+- Every file has a size and SHA-256 digest in the manifest. Any skipped table, Auth failure or bucket failure makes the job fail rather than publishing a partial recovery point.
+- Cloud backups are packaged and encrypted with `age` before leaving the runner. Only encrypted archives and their external checksums reach OneDrive or GitHub artifacts.
+- A monthly recovery drill first validates the latest encrypted OneDrive archive, then performs a real encrypted database restore into a separate Supabase recovery project. It compares public-table and Auth-user counts after restoring application schemas, grants, data, Storage metadata, Auth identities and password hashes. Keep a second copy of the private `age` identity offline.
+
+### Quality-gated releases
+
+- Pull requests and every push to `main` run the production dependency audit, the code-quality ratchet, local migration audit, full portal/PWA build, every Edge Function type check and every Deno unit test.
+- CodeQL and Dependabot provide continuous security scanning and grouped weekly dependency updates.
+- Production is an ordered, single release: database dry-run and migration, all Edge Functions, frontend build, then Cloudflare Pages direct upload.
+- The GitHub `production` environment requires a reviewer. `main` has strict, admin-enforced protection requiring the portal, Edge Function, quality CodeQL and scheduled CodeQL checks, linear history and resolved conversations.
+- Cloudflare automatic production and preview Git deployments are disabled. The reviewed direct-upload workflow is the only normal production publisher.
+- The quality baseline is zero ESLint errors and zero TypeScript errors. CI fails on any compiler or lint error; the reviewed React warning ceiling can only decrease.
+
+### Authentication and browser security
+
+- Instructor, senior-instructor and administrator sessions require TOTP MFA. The second factor is retained for the authenticated session, so users are normally prompted only on a new browser or device.
+- Members can enable the same authenticator protection from Account Security without being forced to do so.
+- The shared database admin helper now requires AAL2, so every older policy and privileged function that already relies on admin status inherits MFA enforcement. High-impact staff settings also have restrictive AAL2 policies; browser UI checks are not the security boundary.
+- Cloudflare static responses set a restrictive content security policy, HSTS, clickjacking protection, MIME sniffing protection, referrer controls, cross-origin isolation controls and a narrow permissions policy.
+- Public membership signup supports Cloudflare Turnstile when `VITE_TURNSTILE_SITE_KEY` and the matching Supabase CAPTCHA secret are configured.
+- Password creation and reset screens require at least 12 characters.
+- Stripe is explicitly pinned to Test Mode, the database default is Test Mode, failures report the fail-safe test state, and test transactions cannot sync into Xero. A later switch to live collection remains a deliberate MFA-protected administrator action.
+
+### Membership privacy and usability
+
+- Date of birth is required for every membership class, address-for-service validation is explicit, and guardian requirements remain age-based.
+- The versioned `/privacy` notice explains collection, purposes, role access, Supabase/Cloudflare/Stripe/Xero processing, retention, security and member choices.
+- A separate, unchecked privacy acknowledgement is required. Its notice version and acceptance timestamp are stored with the application and enforced by the database.
+- The public login hero is delivered as a substantially smaller WebP asset. Progress contrast, semantic current-step state, password controls and public privacy navigation have been improved.
+- The scholarship contribution remains optional, unchecked by default and editable from the $5 suggestion.
+
+### Progressive Web Apps
+
+- The complete role-aware portal is installable from its header on iPhone, iPad, Android and desktop.
+- The root manifest provides portal shortcuts for Calendar, Duty and Membership. Its service worker caches only the static shell and same-origin assets; Supabase/API data is never cached as an offline source of truth.
+- A dedicated offline page explains that live bookings and club records require a connection.
+- Duty Clock is PWA-only. Its manifest, maskable icons, automatic update path, app-shell service worker and platform-specific install guidance are part of every portal build.
+- Duty actions remain server-authoritative. The PWA does not claim an offline clock event succeeded when it has not reached Supabase.
+
+### Availability search
+
+The booking form's **Find the next available slot** action searches aircraft and instructors as a combined resource:
+
+- only serviceable, non-archived aircraft;
+- only active instructor, senior-instructor or administrator accounts;
+- weekly schedules, one-off changes and absences through the established availability rule;
+- no overlapping aircraft or instructor booking;
+- selected aircraft/instructor filters when the user has already made a choice;
+- 15-minute increments, bounded duration, range and result count.
+
+Choosing a result fills both resources and the start/end values. Final submission still applies membership, endorsements, aircraft state, duty, supervision and safety controls, so availability search can never bypass an operational rule.
+
+### Integration API and webhooks
+
+- `integration-api/v1` provides scoped read endpoints for aircraft, availability and privacy-minimised changed bookings.
+- API keys are generated with 256 bits of randomness, displayed once, stored only as SHA-256 hashes, individually scoped and immediately revocable. Per-key rate limiting and request audit records are built in.
+- Webhook endpoints must be public HTTPS addresses. Signing secrets are service-role-only and displayed once.
+- Booking, club-membership and membership-financial events enter a transactional outbox. A scheduled worker expands deliveries, signs the exact body with HMAC-SHA256, supplies stable event IDs and retries with exponential backoff.
+- Consumers must verify timestamp and signature, use `X-BFC-Event-Id` idempotently, and return 2xx only after durable acceptance. See `docs/INTEGRATIONS_API.md`.
+
+### Required repository and service configuration
+
+Before the first gated production release, configure or complete:
+
+- GitHub secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BACKUP_AGE_PUBLIC_KEY`, `BACKUP_AGE_PRIVATE_KEY`, `RCLONE_CONFIG`, `RCLONE_REMOTE`, `ONEDRIVE_BACKUP_PATH`, `INTEGRATION_WORKER_SECRET`, and optionally `VITE_TURNSTILE_SITE_KEY`.
+- Supabase Edge Function secret `INTEGRATION_WORKER_SECRET` with the same value used by GitHub Actions.
+- The Cloudflare Turnstile secret in Supabase Auth CAPTCHA settings when Turnstile is enabled.
+- A durable, scoped Cloudflare API token with Pages Write access in `CLOUDFLARE_API_TOKEN`. The local Wrangler OAuth token is intentionally not copied to CI because it expires.
+- Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The recovery harness supplies disposable accounts and the test matrix, but emulation is not physical-device evidence.
+- An independent manual web/API penetration test, remediation of all critical/high findings, and a clean retest before live payments or broad third-party API access. See `docs/PENETRATION_TEST_SCOPE.md`.
+
+### Release-readiness evidence (24 July 2026)
+
+- Encrypted isolated restore passed with 125 public tables, 26 Auth users, 25 profiles, 150 bookings, 104 flight logs, 1 club membership, 10 Storage buckets and 14 Storage objects matching production.
+- Authenticated emulated acceptance passed for admin, CFI, senior instructor, instructor, pilot and student on iPhone/WebKit and Android/Chromium configurations. Test users and MFA factors are disposable and removed after the run.
+- Portal/PWA production build, dependency audits, migration audit, 25 Edge Function type checks and 12 Edge Function unit tests pass.
+- ESLint: 0 errors. TypeScript: 0 errors. React hook/refresh warnings: 63 and ratcheted.
+- Stripe remains explicitly in Test Mode.

@@ -40,12 +40,6 @@
     </noscript>
     <!-- The root element for your Expo app. -->
     <div id="root"></div>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function () {
-          navigator.serviceWorker.register('/duty-clock/app/duty-clock-sw.js', { scope: '/duty-clock/app/' });
-        });
-      }
-    </script>
+    <script src="/duty-clock/app/duty-clock-bootstrap.js"></script>
   </body>
 </html>

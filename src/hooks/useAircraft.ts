@@ -12,6 +12,23 @@ let publicAircraftSummaryCache: Aircraft[] | null = null;
 
 const DEFECT_ATTACHMENT_BUCKET = 'defect-attachments';
 
+interface DefectQueryRow {
+  id: string;
+  aircraft_id: string;
+  reported_by?: string | null;
+  date_reported: string;
+  summary?: string | null;
+  description: string;
+  status: Defect['status'];
+  photos?: string[] | null;
+  mel_notes?: string | null;
+  fix_notes?: string | null;
+  severity: Defect['severity'];
+  location?: string | null;
+  tach_hours?: number | null;
+  hobbs_hours?: number | null;
+}
+
 const getDefectAttachmentPath = (value: string) => {
   if (!value) return value;
 
@@ -113,7 +130,8 @@ export const useAircraft = (options?: UseAircraftOptions) => {
       if (ratesError) throw ratesError;
 
       const defectsMap = new Map<string, Defect[]>();
-      const hydratedDefects = await Promise.all((defectsData || []).map(async (d) => ({
+      const defectRows = (defectsData || []) as unknown as DefectQueryRow[];
+      const hydratedDefects = await Promise.all(defectRows.map(async (d) => ({
         ...d,
         signedPhotos: await getSignedDefectAttachmentUrls(d.photos)
       })));
@@ -123,18 +141,18 @@ export const useAircraft = (options?: UseAircraftOptions) => {
         aircraftDefects.push({
           id: d.id,
           aircraftId: d.aircraft_id,
-          reportedBy: canSeePrivateAircraftData ? d.reported_by : undefined,
+          reportedBy: canSeePrivateAircraftData ? (d.reported_by ?? 'Unknown') : '',
           dateReported: new Date(d.date_reported),
           summary: d.summary || undefined,
           description: d.description,
           status: d.status,
           photos: d.signedPhotos,
-          melNotes: canSeePrivateAircraftData ? d.mel_notes : undefined,
-          fixNotes: canSeePrivateAircraftData ? d.fix_notes : undefined,
+          melNotes: canSeePrivateAircraftData ? (d.mel_notes ?? undefined) : undefined,
+          fixNotes: canSeePrivateAircraftData ? (d.fix_notes ?? undefined) : undefined,
           severity: d.severity,
-          location: d.location,
-          tachHours: d.tach_hours,
-          hobbsHours: d.hobbs_hours
+          location: d.location ?? undefined,
+          tachHours: d.tach_hours ?? undefined,
+          hobbsHours: d.hobbs_hours ?? undefined
         });
         defectsMap.set(d.aircraft_id, aircraftDefects);
       });

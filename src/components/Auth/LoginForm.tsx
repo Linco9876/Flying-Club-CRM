@@ -40,9 +40,9 @@ export const LoginForm: React.FC = () => {
   }
 
   return (
-    <div className="auth-light-surface relative min-h-screen overflow-hidden bg-[#f8fbff] lg:grid lg:grid-cols-2">
+    <main className="auth-light-surface relative min-h-screen overflow-hidden bg-[#f8fbff] lg:grid lg:grid-cols-2">
       <img
-        src="/auth-aircraft-sunset.png"
+        src="/auth-aircraft-sunset.webp"
         alt="Aircraft wing at sunset"
         className="auth-hero-image absolute inset-0 h-full w-full object-cover object-left-center"
       />
@@ -121,6 +121,7 @@ export const LoginForm: React.FC = () => {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? (
                     <EyeOff className="h-5 w-5 text-gray-400" />
@@ -157,10 +158,12 @@ export const LoginForm: React.FC = () => {
             >
               Don't have an account? Join the club
             </a>
+            <span className="mx-2 text-gray-300" aria-hidden="true">·</span>
+            <a href="/privacy" className="text-sm font-medium text-blue-600 hover:text-blue-500">Privacy</a>
           </div>
         </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 };

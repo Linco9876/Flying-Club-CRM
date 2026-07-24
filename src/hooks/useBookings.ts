@@ -966,7 +966,7 @@ export const useBookings = (enabled = true) => {
         .insert(payload)
         .select(getBookingSelectFields());
 
-      let { data, error } = await runBookingMutationWithOptionalColumnRetry(insertData, runInsert);
+      const { data, error } = await runBookingMutationWithOptionalColumnRetry(insertData, runInsert);
 
       if (error) {
         console.error('Supabase error details:', {
@@ -984,17 +984,18 @@ export const useBookings = (enabled = true) => {
       }
 
       console.log('Booking created:', data);
-      const createdBooking = data?.[0];
-      if (createdBooking?.id) {
+      const createdRows = data as unknown as Array<Record<string, unknown>> | null;
+      const createdBooking = createdRows?.[0];
+      if (typeof createdBooking?.id === 'string') {
         localCreatedBookingIdsRef.current.add(createdBooking.id);
         setBookings(prev => [mapBookingRow(createdBooking, undefined, undefined), ...prev]);
       }
 
       // Send approval notifications if needed
-      if (needsApproval && data && data.length > 0) {
+      if (needsApproval && typeof createdBooking?.id === 'string') {
         const { error: notifyError } = await supabase
           .rpc('notify_instructor_booking_request', {
-            booking_id: data[0].id
+            booking_id: createdBooking.id
           });
 
         if (notifyError) {

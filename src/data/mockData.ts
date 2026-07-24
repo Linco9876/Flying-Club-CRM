@@ -236,12 +236,15 @@ export const mockTrainingRecords: TrainingRecord[] = [
     dualTimeMin: 90,
     soloTimeMin: 0,
     comments: 'Good progress on forced landings. Practice radio work.',
+    briefingComments: '',
     formalBriefing: true,
+    criteriaGrades: {},
     lessonCodes: ['FL', 'RA'],
     nextLesson: 'Cross-country preparation',
     status: 'submitted',
     studentAck: true,
     studentAckName: 'John Pilot',
+    studentComments: '',
     instructorSignTimestamp: new Date('2024-01-20T15:30:00'),
     studentAckTimestamp: new Date('2024-01-20T15:35:00'),
     attachments: [],
@@ -277,11 +280,14 @@ export const mockTrainingRecords: TrainingRecord[] = [
     dualTimeMin: 0,
     soloTimeMin: 72,
     comments: 'Excellent solo circuits. Ready for cross-country preparation.',
+    briefingComments: '',
     formalBriefing: true,
+    criteriaGrades: {},
     lessonCodes: ['TC', 'TL'],
     status: 'submitted',
     studentAck: true,
     studentAckName: 'John Pilot',
+    studentComments: '',
     instructorSignTimestamp: new Date('2024-01-18T10:30:00'),
     studentAckTimestamp: new Date('2024-01-18T10:35:00'),
     attachments: [],
@@ -413,6 +419,7 @@ export const mockTrainingModules: TrainingModule[] = [
       'Correctly execute go-around procedures when required',
       'Verbalise and apply emergency actions without prompting'
     ],
+    assessmentCriteria: [],
     tags: ['pre-solo', 'circuit', 'safety'],
     lessons: [
       {
@@ -435,6 +442,7 @@ export const mockTrainingModules: TrainingModule[] = [
           '• Conduct full RA-Aus daily inspection\n• Identify unserviceable items and escalate appropriately',
         theory:
           'Review aircraft POH limitations, abnormal procedures and local airfield hazards before dispatch.',
+        passMarks: {},
         assessmentCriteria: [
           {
             id: 'criterion-ps1-1',
@@ -469,6 +477,7 @@ export const mockTrainingModules: TrainingModule[] = [
         flightExercises:
           '• Circuit planning and spacing in crosswind conditions\n• Stabilised final approach with go-around decision points',
         theory: 'Listen to CTAF recordings and practise readbacks to prepare for in-circuit workload.',
+        passMarks: {},
         assessmentCriteria: [
           {
             id: 'criterion-ps2-1',
@@ -503,6 +512,7 @@ export const mockTrainingModules: TrainingModule[] = [
         flightExercises:
           '• Field selection under time pressure\n• MAYDAY call and passenger brief in simulated engine failure',
         theory: 'Create kneeboard notes for engine failure checks and recite passenger briefs.',
+        passMarks: {},
         assessmentCriteria: [
           {
             id: 'criterion-ps3-1',
@@ -554,6 +564,7 @@ export const mockTrainingModules: TrainingModule[] = [
       'Manage diversions with in-flight replanning and fuel assessment',
       'Maintain CTAF and controlled airspace radio phraseology without prompting'
     ],
+    assessmentCriteria: [],
     tags: ['navigation', 'cross-country', 'advanced'],
     lessons: [
       {
@@ -575,6 +586,7 @@ export const mockTrainingModules: TrainingModule[] = [
         flightExercises:
           '• Prepare flight log with wind and fuel calculations\n• Create weather and NOTAM briefing pack',
         theory: 'Download latest area forecasts and NOTAMs and review alternate requirements.',
+        passMarks: {},
         assessmentCriteria: [
           {
             id: 'criterion-nav1-1',
@@ -609,6 +621,7 @@ export const mockTrainingModules: TrainingModule[] = [
         flightExercises:
           '• Waypoint to waypoint timing checks\n• Diversion planning and alternates',
         theory: 'Prepare two diversion legs including fuel burn estimates and review lost procedure checklists.',
+        passMarks: {},
         assessmentCriteria: [
           {
             id: 'criterion-nav2-1',
@@ -643,6 +656,7 @@ export const mockTrainingModules: TrainingModule[] = [
         flightExercises:
           '• Tower clearance requests and readbacks\n• Transponder and CTAF changeover flows',
         theory: 'Practise CTAF and tower phraseology scripts, focusing on readback standards.',
+        passMarks: {},
         assessmentCriteria: [
           {
             id: 'criterion-nav3-1',

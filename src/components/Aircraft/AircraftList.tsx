@@ -15,10 +15,10 @@ export const AircraftList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.roles?.includes('admin');
-  const isStaff = isAdmin
+  const isStaff = Boolean(isAdmin
     || user?.role === 'instructor'
     || user?.role === 'senior_instructor'
-    || user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor');
+    || user?.roles?.some(role => role === 'instructor' || role === 'senior_instructor'));
   const canSeeMaintenancePlanning = isStaff;
   const { aircraft, loading, addAircraft, updateAircraft, reportDefect, archiveAircraft, restoreAircraft } = useAircraft({ includeRates: false });
   const { milestones, loading: milestonesLoading } = useMaintenanceMilestones({ enabled: canSeeMaintenancePlanning });
@@ -132,19 +132,6 @@ export const AircraftList: React.FC = () => {
         return <Wrench className="h-5 w-5 text-yellow-600" />;
       default:
         return <Plane className="h-5 w-5 text-gray-600" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'serviceable':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'unserviceable':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'maintenance':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 

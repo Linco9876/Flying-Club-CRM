@@ -196,7 +196,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       setXeroInvoicesChecked(false);
       void Promise.all([
         billing.refetch(),
-        loadXeroInvoices({ forceRefresh: true, priorityRefresh: true }),
+        loadXeroInvoices({ forceRefresh: true }),
       ]);
     } else if (topUpResult === 'cancelled') {
       toast('Top-up payment cancelled');

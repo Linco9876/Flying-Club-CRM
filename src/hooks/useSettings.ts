@@ -16,7 +16,7 @@ export interface OrganisationSettings {
   booking_day_start: string;
   booking_day_end: string;
   default_slot_length: number;
-  logo_url?: string;
+  logo_url?: string | null;
 }
 
 export interface CalendarSettings {
@@ -412,7 +412,7 @@ export const useCalendarSettings = () => {
       if (error) throw error;
 
       setSettings(prev => prev ? { ...prev, ...updates } : { id: '', ...payload } as CalendarSettings);
-    } catch (err: any) {
+    } catch (_err: any) {
       // silent
     }
   };

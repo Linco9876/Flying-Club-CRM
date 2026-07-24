@@ -457,21 +457,6 @@ const fetchContactCredit = async (ctx: any, contactId: string) => {
 
 const xeroStringLiteral = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-const getInvoiceUrl = async (ctx: any, invoiceId: string) => {
-  try {
-    const result = await xeroRequest({
-      path: `Invoices/${encodeURIComponent(invoiceId)}/OnlineInvoice`,
-      tenantId: ctx.connection.tenant_id,
-      accessToken: ctx.connection.access_token,
-    });
-    const onlineInvoice = Array.isArray(result?.OnlineInvoices) ? result.OnlineInvoices[0] : result?.OnlineInvoice;
-    return clean(onlineInvoice?.OnlineInvoiceUrl || onlineInvoice?.Url);
-  } catch (error) {
-    console.warn("Unable to fetch Xero online invoice URL:", error);
-    return "";
-  }
-};
-
 const mapInvoice = async (ctx: any, invoice: any) => {
   const invoiceId = clean(invoice?.InvoiceID);
   const amountDue = money(invoice?.AmountDue);
@@ -761,7 +746,7 @@ const syncFlightLogInvoicePaymentState = async ({
 
 const createInvoicePaymentCheckout = async ({
   adminClient,
-  ctx,
+  ctx: _ctx,
   member,
   invoice,
   amount,

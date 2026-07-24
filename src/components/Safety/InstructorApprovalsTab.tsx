@@ -98,7 +98,7 @@ export const InstructorApprovalsTab: React.FC = () => {
         id: instructor.id,
         name: instructor.name,
         email: instructor.email,
-        level: isSenior ? 'Senior Instructor' : 'Instructor',
+        level: isSenior ? 'Senior Instructor' as const : 'Instructor' as const,
         intervalLabel: isSenior ? '12 months' : '90 days',
         spDue,
         renewalDue,

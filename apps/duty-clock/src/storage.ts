@@ -1,3 +1,1 @@
-import 'expo-sqlite/localStorage/install';
-
-export const appStorage = localStorage;
+export const appStorage = window.localStorage;

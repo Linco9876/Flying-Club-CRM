@@ -1,5 +1,5 @@
 // Timezone-aware utility functions
-import { format, isAfter, isBefore, parseISO } from 'date-fns';
+import { format, isBefore, parseISO } from 'date-fns';
 
 export const getCurrentTime = (): Date => {
   return new Date();

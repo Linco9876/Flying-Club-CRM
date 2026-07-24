@@ -26,6 +26,7 @@ import { Endorsement, Licence } from '../../types';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
+import { MfaSettings } from '../Auth/MfaSecurity';
 
 interface PersonalPreferencesSettingsProps {
   canEdit: boolean;
@@ -669,8 +670,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         toast.error('Enter your current password before changing password');
         throw new Error('Current password required');
       }
-      if (profileForm.newPassword.length < 6) {
-        toast.error('New password must be at least 6 characters');
+      if (profileForm.newPassword.length < 12) {
+        toast.error('New password must be at least 12 characters');
         throw new Error('Password too short');
       }
       if (profileForm.newPassword !== profileForm.confirmPassword) {
@@ -1483,7 +1484,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
       {selectedTab === 'security' && (
         <section className="space-y-4">
-          <h3 className="text-lg font-medium text-gray-900">Password</h3>
+          <h3 className="text-lg font-medium text-gray-900">Account security</h3>
+          <MfaSettings />
           <div className={`rounded-lg border px-4 py-3 ${emailVerified ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
@@ -1512,7 +1514,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
               )}
             </div>
           </div>
-          <p className="text-sm text-gray-500">Password changes require your current password before a new password is saved.</p>
+          <h4 className="pt-2 font-semibold text-gray-900">Change password</h4>
+          <p className="text-sm text-gray-500">Password changes require your current password before a new password is saved. Use at least 12 characters.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {renderProfileField({ label: 'Current Password', field: 'currentPassword', type: 'password' })}
             {renderProfileField({ label: 'New Password', field: 'newPassword', type: 'password' })}

@@ -250,7 +250,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
       setShowScheduleChangeForm(false);
       setNewSchedule({});
       setNewScheduleEffectiveDate('');
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to save schedule changes');
     }
   };

@@ -150,7 +150,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
     return userBookings
       .filter(booking => {
         const startTime = new Date(booking.startTime);
-        const aircraftInfo = getAircraftInfo(booking.aircraftId);
+        const aircraftInfo = booking.aircraftId ? getAircraftInfo(booking.aircraftId) : undefined;
         const pilotName = booking.guestName || booking.hirerName || getPersonName(booking.studentId || booking.pilotId);
         const instructorName = getPersonName(booking.instructorId);
         const aircraftLabel = [aircraftInfo?.registration, aircraftInfo?.make, aircraftInfo?.model]
@@ -468,7 +468,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
 
       <div className="space-y-4">
         {filteredBookings.map(booking => {
-          const aircraft = getAircraftInfo(booking.aircraftId);
+          const aircraft = booking.aircraftId ? getAircraftInfo(booking.aircraftId) : undefined;
           const startTime = new Date(booking.startTime);
           const endTime = new Date(booking.endTime);
           const duration = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);

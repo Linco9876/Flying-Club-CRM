@@ -1,10 +1,32 @@
 import { execFileSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const migrationsDir = resolve(root, 'supabase', 'migrations');
 const jsonOutput = process.argv.includes('--json');
+const localOnlyAudit = process.argv.includes('--local');
+const migrationFiles = readdirSync(migrationsDir)
+  .filter((name) => /^\d{14}_.+\.sql$/.test(name))
+  .sort();
+const localVersions = migrationFiles.map((name) => name.slice(0, 14));
+const duplicateLocalVersions = [...new Set(
+  localVersions.filter((version, index) => localVersions.indexOf(version) !== index),
+)].sort();
+
+if (localOnlyAudit) {
+  const emptyFiles = migrationFiles.filter((name) => readFileSync(resolve(migrationsDir, name), 'utf8').trim().length === 0);
+  const unsafeTransactions = migrationFiles.filter((name) => {
+    const sql = readFileSync(resolve(migrationsDir, name), 'utf8');
+    return /\b(commit|rollback)\s*;/i.test(sql);
+  });
+  if (duplicateLocalVersions.length || emptyFiles.length || unsafeTransactions.length) {
+    console.error(JSON.stringify({ duplicateLocalVersions, emptyFiles, unsafeTransactions }, null, 2));
+    process.exit(1);
+  }
+  console.log(`Local migration audit passed: ${migrationFiles.length} ordered migration files with unique versions.`);
+  process.exit(0);
+}
 
 const stripAnsi = (value) => value.replace(/\u001b\[[0-9;]*m/g, '');
 
@@ -38,13 +60,6 @@ if (rows.length === 0) {
 const localOnly = rows.filter((row) => row.local && !row.remote).map((row) => row.local);
 const remoteOnly = rows.filter((row) => !row.local && row.remote).map((row) => row.remote);
 const matched = rows.filter((row) => row.local && row.remote && row.local === row.remote).length;
-
-const localVersions = readdirSync(migrationsDir)
-  .filter((name) => /^\d{14}_.+\.sql$/.test(name))
-  .map((name) => name.slice(0, 14));
-const duplicateLocalVersions = [...new Set(
-  localVersions.filter((version, index) => localVersions.indexOf(version) !== index),
-)].sort();
 
 const result = {
   status: localOnly.length === 0 && remoteOnly.length === 0 && duplicateLocalVersions.length === 0

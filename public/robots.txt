@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /join
+Allow: /privacy
+Disallow: /kiosk
+Disallow: /reset-password
+Disallow: /calendar-booking
+Disallow: /declaration-sign

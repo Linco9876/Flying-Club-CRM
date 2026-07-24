@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Lock, Copy, ExternalLink, Mail, QrCode, Loader2 } from 'lucide-react';
-import { FlightPaymentLinkResult, useFlightLogs } from '../../hooks/useFlightLogs';
+import { CreateFlightLogData, FlightPaymentLinkResult, useFlightLogs } from '../../hooks/useFlightLogs';
 import { useFlightLogSettings } from '../../hooks/useFlightLogSettings';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -32,6 +32,9 @@ interface Booking {
   guestEmail?: string;
   guestPhone?: string;
   hirerName?: string;
+  supervisionRequired?: boolean;
+  supervisionStatus?: 'not_required' | 'pending' | 'assigned' | 'acknowledged';
+  supervisingInstructorId?: string;
 }
 
 interface FlightLogModalProps {
@@ -521,7 +524,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     return null;
   };
 
-  const saveFlightLog = async (logData: any) => {
+  const saveFlightLog = async (logData: CreateFlightLogData) => {
     if (booking.supervisionRequired && (booking.supervisionStatus === 'pending' || !booking.supervisingInstructorId)) {
       toast.error('This flight is pending supervision and cannot be logged until an authorised senior instructor is available.');
       return;
@@ -541,15 +544,18 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     }
 
     const result = mode === 'edit'
-      ? await updateFlightLog(targetFlightLogId, logData)
+      ? await updateFlightLog(targetFlightLogId as string, logData)
       : await createFlightLog(logData);
-    const { error, data } = result;
+    const { error } = result;
     if (error) {
       toast.error(error);
       return;
     }
 
-    const paymentLink = (data as any)?.paymentLink as FlightPaymentLinkResult | null | undefined;
+    const createdData = mode === 'create' && 'data' in result
+      ? result.data as { paymentLink?: FlightPaymentLinkResult | null } | null
+      : null;
+    const paymentLink = createdData?.paymentLink;
     if (mode === 'create' && paymentLink?.checkoutUrl) {
       toast.success('Flight logged successfully');
       setPaymentLinkResult(paymentLink);

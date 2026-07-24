@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Calculator, Plane, Clock, User } from 'lucide-react';
+import { X, Save, Calculator, Plane, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { mockAircraft, mockStudents } from '../../data/mockData';
 import { Booking, FlightLog } from '../../types';
@@ -138,10 +138,16 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
       duration: duration,
       tachStart: formData.tachStart,
       tachEnd: formData.tachEnd,
+      engineStart: formData.tachStart,
+      engineEnd: formData.tachEnd,
       totalCost: totalCost,
       notes: formData.notes
     };
 
+    if (!booking.aircraftId) {
+      toast.error('Select an aircraft before logging the flight');
+      return;
+    }
     const { overlaps } = await checkTachOverlap(
       booking.aircraftId,
       formData.tachStart,

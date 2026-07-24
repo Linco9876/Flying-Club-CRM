@@ -1,0 +1,23 @@
+{
+  "id": "/",
+  "name": "Bendigo Flying Club Portal",
+  "short_name": "BFC Portal",
+  "description": "Bookings, membership, training, duty, maintenance and club administration.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#07111f",
+  "theme_color": "#0f2942",
+  "orientation": "any",
+  "categories": ["business", "productivity", "travel"],
+  "icons": [
+    { "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Calendar", "short_name": "Calendar", "url": "/calendar" },
+    { "name": "Duty", "short_name": "Duty", "url": "/duty" },
+    { "name": "Membership", "short_name": "Membership", "url": "/membership" }
+  ]
+}

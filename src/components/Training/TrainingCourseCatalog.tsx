@@ -2417,13 +2417,8 @@ export const TrainingCourseCatalog: React.FC = () => {
     const timestamp = Date.now();
     const lesson: TrainingLesson = {
       id: `lesson-${timestamp}`,
-      sequenceId: sequenceId || `custom-${timestamp}`,
-      sequenceCode,
-      sequenceTitle,
-      stage: newLesson.stage,
-      durationMinutes: Math.round(durationMinutes),
-      minCompetency: newLesson.minCompetency,
       ...lessonBase,
+      sequenceId: sequenceId || `custom-${timestamp}`,
     };
 
     let uploadedPaths: string[] = [];
@@ -4459,7 +4454,7 @@ export const TrainingCourseCatalog: React.FC = () => {
                       const flightExercisesContent = formatRichTextContent(lesson.flightExercises);
                       const theoryContent = formatRichTextContent(lesson.theory);
                       const prepContent = formatRichTextContent(lesson.studentPreparation);
-                      const studyGuideContent = formatRichTextContent(lesson.studyGuide);
+                      const studyGuideContent = formatRichTextContent(lesson.studyGuide ?? '');
                       const isFirstLesson = lessonIndex === 0;
                       const isLastLesson = lessonIndex === selectedModule.lessons.length - 1;
 

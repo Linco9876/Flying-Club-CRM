@@ -92,8 +92,8 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
       return;
     }
 
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (formData.password.length < 12) {
+      toast.error('Password must be at least 12 characters');
       return;
     }
 
@@ -207,7 +207,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
   return (
     <div className="auth-light-surface relative min-h-screen overflow-hidden bg-[#f8fbff] lg:grid lg:grid-cols-2">
       <img
-        src="/auth-aircraft-sunset.png"
+        src="/auth-aircraft-sunset.webp"
         alt="Aircraft wing at sunset"
         className="auth-hero-image absolute inset-0 h-full w-full object-cover object-left-center"
       />
@@ -428,7 +428,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full rounded-md border border-gray-300 px-3 py-3 pr-10 shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Create a password (min 6 characters)"
+                  placeholder="Create a password (min 12 characters)"
                 />
                 <button
                   type="button"

@@ -1,20 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle,
   BookOpen,
   CheckCircle,
-  ChevronRight,
-  Eye,
   FileQuestion,
   Film,
   GraduationCap,
-  Layers,
-  Lock,
   Plus,
   Save,
   Settings,
   Sparkles,
-  Users,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTrainingModules } from '../../context/TrainingModulesContext';

@@ -57,7 +57,7 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
           notes: result.notes || '',
           fileName: result.file_name || undefined,
           filePath: result.file_path || undefined,
-          createdAt: result.created_at ? new Date(result.created_at) : undefined,
+          createdAt: result.created_at ? new Date(result.created_at) : new Date(),
         })));
       }
       setLoadingExams(false);

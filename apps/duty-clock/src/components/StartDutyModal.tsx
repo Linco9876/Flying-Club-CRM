@@ -18,7 +18,7 @@ type Props = {
 };
 
 export const StartDutyModal = ({ visible, context, working, onClose, onStart }: Props) => {
-  const { colours, isDark } = useAppTheme();
+  const { colours } = useAppTheme();
   const styles = useMemo(() => createStyles(colours), [colours]);
   const [actualStart, setActualStart] = useState(new Date());
   const [showPicker, setShowPicker] = useState(Platform.OS === 'ios');
@@ -124,7 +124,6 @@ export const StartDutyModal = ({ visible, context, working, onClose, onStart }: 
           {showPicker ? (
             <DutyTimePicker
               value={actualStart}
-              isDark={isDark}
               minimumDate={new Date(Date.now() - context.maximumBackdateMinutes * 60_000)}
               maximumDate={new Date(Date.now() + 5 * 60_000)}
               onChange={changeTime}
