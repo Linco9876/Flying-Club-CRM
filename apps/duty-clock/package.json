@@ -6,6 +6,7 @@
   "scripts": {
     "start": "expo start --web",
     "build": "expo export --platform web",
+    "check": "npm run typecheck && npx --yes expo-doctor",
     "typecheck": "tsc --noEmit",
     "assets:generate": "node scripts/generate-assets.mjs"
   },

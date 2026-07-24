@@ -278,9 +278,21 @@ function Invoke-PostgresTool {
   $process = New-Object Diagnostics.Process
   $process.StartInfo = $start
   [void]$process.Start()
-  $stdout = $process.StandardOutput.ReadToEnd()
-  $stderr = $process.StandardError.ReadToEnd()
-  $process.WaitForExit()
+  # Drain both redirected streams concurrently. Schema drops can emit enough
+  # PostgreSQL NOTICE output to fill stderr; reading stdout to completion first
+  # can then deadlock even though the database command has finished.
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  if (-not $process.WaitForExit(600000)) {
+    try {
+      $process.Kill()
+    } catch {
+      # Preserve the timeout as the primary failure.
+    }
+    throw "$Executable exceeded the 10-minute recovery command timeout."
+  }
+  $stdout = $stdoutTask.GetAwaiter().GetResult()
+  $stderr = $stderrTask.GetAwaiter().GetResult()
   if ($process.ExitCode -ne 0) {
     throw "$Executable failed with exit code $($process.ExitCode): $stderr"
   }
@@ -430,6 +442,7 @@ $restoreList = Join-Path $drillDirectory 'restore-input.list'
 $plainAuthDump = Join-Path $drillDirectory 'production-auth-users.json'
 $encryptedAuthDump = Join-Path $drillDirectory 'production-auth-users.json.encrypted'
 $restoredAuthDump = Join-Path $drillDirectory 'restore-auth-users.json'
+$resetSqlPath = Join-Path $drillDirectory 'reset-recovery.sql'
 [void](New-Item -ItemType Directory -Path $drillDirectory)
 
 $encryptionKey = New-Object byte[] 32
@@ -510,9 +523,52 @@ try {
     -ProjectRef $RecoveryProjectRef `
     -ReadOnly $false
   Write-Output '  Clearing stale tenant sessions and application schemas.'
+  # Realtime publications are Supabase-managed and may be owned by a platform
+  # role that temporary database administrators cannot assume. Dropping the
+  # application schemas removes their publication memberships without trying
+  # to replace the managed publication objects themselves.
+  $resetSql = @'
+set role postgres;
+set lock_timeout = '30s';
+set statement_timeout = '90s';
+
+select pg_terminate_backend(activity.pid)
+from pg_stat_activity activity
+join pg_roles role on role.rolname = activity.usename
+where activity.datname = current_database()
+  and activity.pid <> pg_backend_pid()
+  and activity.backend_type = 'client backend'
+  and not role.rolsuper;
+
+drop schema if exists public cascade;
+drop schema if exists private cascade;
+
+do $bfc$
+declare
+  recoverable_tables text;
+begin
+  select string_agg(format('%I.%I', schemaname, tablename), ', ')
+  into recoverable_tables
+  from pg_catalog.pg_tables
+  where (
+      schemaname = 'auth'
+      and tablename <> 'schema_migrations'
+    )
+    or (
+      schemaname = 'storage'
+      and tablename not in ('migrations', 'buckets_vectors', 'vector_indexes')
+    );
+
+  if recoverable_tables is not null then
+    execute 'truncate table ' || recoverable_tables || ' cascade';
+  end if;
+end
+$bfc$;
+'@
+  [IO.File]::WriteAllText($resetSqlPath, $resetSql, [Text.UTF8Encoding]::new($false))
   [void](Invoke-PostgresTool `
     -Executable 'psql' `
-    -Arguments '-X --set ON_ERROR_STOP=1 -q -c "set role postgres; set lock_timeout = ''30s''; set statement_timeout = ''90s''; select pg_terminate_backend(activity.pid) from pg_stat_activity activity join pg_roles role on role.rolname = activity.usename where activity.datname = current_database() and activity.pid <> pg_backend_pid() and activity.backend_type = ''client backend'' and not role.rolsuper; drop publication if exists supabase_realtime; drop publication if exists supabase_realtime_messages_publication; drop schema if exists public cascade; drop schema if exists private cascade"' `
+    -Arguments "-X --set ON_ERROR_STOP=1 -q --file=`"$resetSqlPath`"" `
     -HostName $recoveryHost `
     -ProjectRef $RecoveryProjectRef `
     -Login $recoveryLogin)
@@ -586,6 +642,9 @@ try {
   }
   if ([IO.File]::Exists($encryptedAuthDump)) {
     [IO.File]::Delete($encryptedAuthDump)
+  }
+  if ([IO.File]::Exists($resetSqlPath)) {
+    [IO.File]::Delete($resetSqlPath)
   }
   if ([IO.Directory]::Exists($drillDirectory)) {
     [IO.Directory]::Delete($drillDirectory, $false)

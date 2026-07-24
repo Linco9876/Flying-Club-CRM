@@ -1,7 +1,9 @@
 param(
   [string]$RecoveryProjectRef = 'hohmmwvtisnuuoumipjq',
   [string]$Project,
-  [string]$Grep
+  [string]$Grep,
+  [string]$SupabaseAccessToken = $env:SUPABASE_ACCESS_TOKEN,
+  [switch]$BrowserStack
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,7 +66,11 @@ function New-RandomPassword {
   }
 }
 
-$token = Get-SupabaseManagementToken
+$token = if ($SupabaseAccessToken) {
+  $SupabaseAccessToken
+} else {
+  Get-SupabaseManagementToken
+}
 $managementHeaders = @{ Authorization = "Bearer $token" }
 $keys = Invoke-RestMethod `
   -Uri "https://api.supabase.com/v1/projects/$RecoveryProjectRef/api-keys" `
@@ -82,7 +88,11 @@ $serviceHeaders = @{
   'Content-Type' = 'application/json'
 }
 $roles = @('admin', 'cfi', 'senior_instructor', 'instructor', 'pilot', 'student')
-$devices = @('iphone-emulation', 'android-emulation')
+$devices = if ($BrowserStack) {
+  @('real-iphone', 'real-android')
+} else {
+  @('iphone-emulation', 'android-emulation')
+}
 $createdUserIds = New-Object Collections.Generic.List[string]
 $credentials = @{}
 $runId = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -172,14 +182,18 @@ try {
   $env:VITE_SUPABASE_URL = $projectUrl
   $env:VITE_SUPABASE_ANON_KEY = $anonKey
   $env:ACCEPTANCE_USERS_JSON = $credentials | ConvertTo-Json -Depth 5 -Compress
-  $playwrightArguments = @('playwright', 'test')
-  if ($Project) {
-    $playwrightArguments += @('--project', $Project)
+  if ($BrowserStack) {
+    & node scripts/run-browserstack-real-device-acceptance.mjs
+  } else {
+    $playwrightArguments = @('playwright', 'test')
+    if ($Project) {
+      $playwrightArguments += @('--project', $Project)
+    }
+    if ($Grep) {
+      $playwrightArguments += @('--grep', $Grep)
+    }
+    & npx.cmd @playwrightArguments
   }
-  if ($Grep) {
-    $playwrightArguments += @('--grep', $Grep)
-  }
-  & npx.cmd @playwrightArguments
   if ($LASTEXITCODE -ne 0) {
     throw "Playwright acceptance tests failed with exit code $LASTEXITCODE."
   }
