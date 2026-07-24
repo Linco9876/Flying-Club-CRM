@@ -21,7 +21,7 @@
     "test:calendar": "npx --yes deno test --node-modules-dir=false supabase/functions/_shared/calendar.test.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "lint": "eslint . --quiet",
-    "audit:dependencies": "npm audit --audit-level=high && npm --prefix apps/duty-clock audit --audit-level=high",
+    "audit:dependencies": "node scripts/audit-dependencies.mjs",
     "quality:ratchet": "node scripts/quality-ratchet.mjs",
     "quality": "npm run quality:ratchet && npm run audit:dependencies && npm run audit:migrations:local && npm run build",
     "test:acceptance:recovery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-recovery-acceptance.ps1",
@@ -42,7 +42,7 @@
     "react-big-calendar": "^1.19.4",
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.6.0",
-    "react-router-dom": "^7.15.0"
+    "react-router-dom": "7.18.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
