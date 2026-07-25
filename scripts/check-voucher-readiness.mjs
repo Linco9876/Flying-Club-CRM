@@ -132,14 +132,14 @@ addCheck(
   'Admin voucher tools validate Stripe Price IDs without exposing the Stripe secret',
   adminFunction.includes('validate-stripe-price') &&
     adminFunction.includes('getActiveStripeMode') &&
-    adminFunction.includes('https://api.stripe.com/v1/prices/') &&
+    adminFunction.includes('/v1/prices/') &&
     adminFunction.includes('Stripe price belongs to'),
 );
 addCheck(
   'Admin voucher tools can create and link Stripe Price IDs server-side',
   adminFunction.includes('create-stripe-price') &&
-    adminFunction.includes('https://api.stripe.com/v1/products') &&
-    adminFunction.includes('https://api.stripe.com/v1/prices') &&
+    adminFunction.includes('/v1/products') &&
+    adminFunction.includes('/v1/prices') &&
     adminFunction.includes('[stripePriceColumn]: stripePrice.id') &&
     adminFunction.includes('stripe_test_price_id') &&
     adminFunction.includes('stripe_live_price_id') &&

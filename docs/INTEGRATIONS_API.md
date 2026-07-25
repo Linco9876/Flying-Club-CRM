@@ -35,7 +35,7 @@ Availability request example:
 
 ## Webhooks
 
-Admins register public HTTPS endpoints and choose event types. The signing secret is displayed once. Delivery retries use exponential backoff for up to eight attempts. Each attempt uses an atomic five-minute delivery lease, so a worker interruption is reclaimed instead of leaving an event permanently stuck.
+Admins register public HTTPS endpoints and choose event types. The signing secret is displayed once. Delivery retries use exponential backoff for up to eight attempts, including temporary DNS resolution failures. Unsafe or non-allowlisted destinations are abandoned immediately. Each attempt uses an atomic five-minute delivery lease, so a worker interruption is reclaimed instead of leaving an event permanently stuck.
 
 Delivery is fail-closed. The exact destination hostname must be listed in the Edge Function secret `INTEGRATION_WEBHOOK_ALLOWED_HOSTS` as a comma-separated allowlist. Immediately before every request, the worker resolves all available A and AAAA records and rejects the destination if any answer is loopback, link-local, private, reserved or otherwise non-public. The TLS connection is pinned to one of those validated addresses while the certificate and SNI are still checked against the approved hostname, closing the second-lookup DNS-rebinding window. Redirects and non-standard HTTPS ports are rejected. This allowlist is intentionally empty until a third-party integration has been approved.
 

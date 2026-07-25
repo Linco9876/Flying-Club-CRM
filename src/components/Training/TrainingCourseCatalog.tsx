@@ -273,7 +273,39 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ label, value, onChange,
   const insertLink = useCallback(() => {
     const url = linkUrl.trim();
     if (!url) return;
-    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    let href: string;
+    try {
+      let parsed: URL | null = null;
+      try {
+        parsed = new URL(url);
+      } catch {
+        // Schemeless hostnames are normalised below.
+      }
+      if (parsed && !['http:', 'https:'].includes(parsed.protocol)) {
+        const colonIndex = url.indexOf(':');
+        const authorityEnd = url.indexOf('/', colonIndex + 1);
+        const hostnameCandidate = url.slice(0, colonIndex).toLowerCase();
+        const portCandidate = url.slice(colonIndex + 1, authorityEnd < 0 ? undefined : authorityEnd);
+        const port = Number(portCandidate);
+        const looksLikeHostAndPort = (
+          hostnameCandidate === 'localhost'
+          || hostnameCandidate.includes('.')
+          || hostnameCandidate.startsWith('[')
+        ) && /^\d{1,5}$/.test(portCandidate) && port >= 1 && port <= 65_535;
+        if (!looksLikeHostAndPort) throw new Error('Unsupported link protocol');
+        parsed = null;
+      }
+      if (!parsed) {
+        parsed = new URL(`https://${url}`);
+      }
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+        throw new Error('Unsupported link');
+      }
+      href = parsed.toString();
+    } catch {
+      toast.error('Enter a valid HTTP or HTTPS link');
+      return;
+    }
     restoreSelection();
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {

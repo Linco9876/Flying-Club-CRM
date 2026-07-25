@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Building2, Globe, Phone, Mail, MapPin, X, Loader, Image as ImageIcon } from 'lucide-react';
 import { useOrganisationSettings } from '../../hooks/useSettings';
+import { safeImageSource } from '../../utils/imageSource';
 
 interface OrganisationSettingsProps {
   canEdit: boolean;
@@ -27,6 +28,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoImageSource = safeImageSource(logoPreview);
 
   useEffect(() => {
     if (settings) {
@@ -171,9 +173,9 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
             {/* Preview */}
             <div className="relative flex-shrink-0">
               <div className="w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden">
-                {logoPreview ? (
+                {logoImageSource ? (
                   <img
-                    src={logoPreview}
+                    src={logoImageSource}
                     alt="Business logo"
                     className="w-full h-full object-contain"
                   />

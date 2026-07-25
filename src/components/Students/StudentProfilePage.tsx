@@ -26,7 +26,7 @@ import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
-import { formatRichTextContent } from '../../utils/richText';
+import { formatRichTextContent, richTextToPlainText } from '../../utils/richText';
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
 import { FlightReviewsTab } from './FlightReviewsTab';
 
@@ -127,7 +127,7 @@ const formatFileSize = (bytes?: number) => {
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
-const hasMeaningfulCourseContent = (value?: string) => String(value || '').replace(/<[^>]+>/g, '').trim().length > 0;
+const hasMeaningfulCourseContent = (value?: string) => richTextToPlainText(value || '').length > 0;
 
 const matchLessonIndexByLabel = (lessons: TrainingModule['lessons'], label?: string) => {
   const target = (label || '').trim().toLowerCase();
