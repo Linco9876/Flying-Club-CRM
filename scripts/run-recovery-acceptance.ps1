@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$PSDefaultParameterValues['Invoke-RestMethod:TimeoutSec'] = 30
 
 Add-Type @'
 using System;

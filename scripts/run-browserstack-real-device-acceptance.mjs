@@ -232,8 +232,17 @@ const testRole = async (driver, deviceKey, role) => {
   await email.clear();
   await email.sendKeys(credential.email);
   const password = await findVisible(driver, By.css('#password'));
+  await password.clear();
   await password.sendKeys(credential.password);
-  await clickButton(driver, 'Sign In');
+  const [enteredEmail, enteredPassword] = await Promise.all([
+    email.getAttribute('value'),
+    password.getAttribute('value'),
+  ]);
+  if (enteredEmail !== credential.email || enteredPassword !== credential.password) {
+    throw new Error(`${deviceKey}:${role} credentials were not entered exactly on the mobile keyboard.`);
+  }
+  const loginForm = await email.findElement(By.xpath('ancestor::form[1]'));
+  await driver.executeScript('arguments[0].requestSubmit();', loginForm);
 
   if (staffRoles.has(role)) {
     await findVisible(
@@ -247,7 +256,7 @@ const testRole = async (driver, deviceKey, role) => {
       By.xpath('//summary[contains(normalize-space(.),"scan it")]'),
     );
     await reveal.click();
-    const secret = (await findVisible(driver, By.css('details code'))).getText();
+    const secret = await (await findVisible(driver, By.css('details code'))).getText();
     const codeInput = await findVisible(
       driver,
       By.css('input[aria-label="Six-digit authenticator code"]'),
