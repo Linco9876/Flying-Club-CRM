@@ -4,7 +4,7 @@ import https from 'node:https';
 import browserStackLocal from 'browserstack-local';
 import selenium from 'selenium-webdriver';
 
-const { Builder, By, until } = selenium;
+const { Builder, By } = selenium;
 const credentials = JSON.parse(process.env.ACCEPTANCE_USERS_JSON || '{}');
 const username = process.env.BROWSERSTACK_USERNAME;
 const accessKey = process.env.BROWSERSTACK_ACCESS_KEY;
@@ -166,9 +166,13 @@ const stopRemoteSession = async (sessionId) => {
 };
 
 const findVisible = async (driver, locator, timeout = 20_000) => {
-  const element = await driver.wait(until.elementLocated(locator), timeout);
-  await driver.wait(until.elementIsVisible(element), timeout);
-  return element;
+  return driver.wait(async () => {
+    const elements = await driver.findElements(locator);
+    for (const element of elements) {
+      if (await element.isDisplayed()) return element;
+    }
+    return false;
+  }, timeout, `No visible element found for ${locator}.`);
 };
 
 const clickButton = async (driver, name) => {
@@ -406,4 +410,4 @@ try {
   vite.kill();
 }
 
-if (failed) process.exitCode = 1;
+process.exit(failed ? 1 : 0);
