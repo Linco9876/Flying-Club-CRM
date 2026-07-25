@@ -12,6 +12,8 @@ const roles = ['admin', 'cfi', 'senior_instructor', 'instructor', 'pilot', 'stud
 const staffRoles = new Set(['admin', 'cfi', 'senior_instructor', 'instructor']);
 const baseUrl = 'http://bs-local.com:4178';
 const localIdentifier = `bfc-${process.env.GITHUB_RUN_ID || Date.now()}-${process.env.GITHUB_RUN_ATTEMPT || 'local'}`;
+const logoutLocator = By.css('button[aria-label="Logout"]');
+const mfaCodeLocator = By.css('input[aria-label="Six-digit authenticator code"]');
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const withTimeout = async (promise, timeoutMs, description) => {
@@ -95,6 +97,12 @@ const totp = (secret, now = Date.now()) => {
     | (digest[offset + 3] & 0xff)
   ) % 1_000_000;
   return number.toString().padStart(6, '0');
+};
+
+const freshTotp = async (secret) => {
+  const remainingMs = 30_000 - (Date.now() % 30_000);
+  if (remainingMs < 10_000) await delay(remainingMs + 500);
+  return totp(secret);
 };
 
 const waitForHttp = async (url, timeoutMs = 120_000) => {
@@ -257,16 +265,40 @@ const testRole = async (driver, deviceKey, role) => {
     );
     await reveal.click();
     const secret = await (await findVisible(driver, By.css('details code'))).getText();
-    const codeInput = await findVisible(
-      driver,
-      By.css('input[aria-label="Six-digit authenticator code"]'),
-      60_000,
-    );
-    await codeInput.sendKeys(totp(secret.trim()));
-    await clickButton(driver, 'Verify and finish');
+    const submitEnrollmentCode = async () => {
+      const code = await freshTotp(secret.trim());
+      const codeInput = await findVisible(driver, mfaCodeLocator, 60_000);
+      await codeInput.clear();
+      await codeInput.sendKeys(code);
+      if ((await codeInput.getAttribute('value')) !== code) {
+        throw new Error(`${deviceKey}:${role} MFA code was not entered exactly on the mobile keyboard.`);
+      }
+      await driver.executeScript('document.activeElement?.blur();');
+      const verifyButton = await findVisible(
+        driver,
+        By.xpath('//button[normalize-space(.)="Verify and finish"]'),
+      );
+      await driver.executeScript('arguments[0].click();', verifyButton);
+    };
+    await submitEnrollmentCode();
+    let authenticated = await optionalVisible(driver, logoutLocator, 30_000);
+    if (!authenticated) {
+      const retryButton = await optionalVisible(
+        driver,
+        By.xpath('//button[normalize-space(.)="Verify and finish"]'),
+        2_000,
+      );
+      if (retryButton) {
+        await submitEnrollmentCode();
+        authenticated = await optionalVisible(driver, logoutLocator, 60_000);
+      }
+    }
+    if (!authenticated) {
+      throw new Error(`${deviceKey}:${role} did not leave MFA enrollment after two fresh codes.`);
+    }
   }
 
-  await findVisible(driver, By.xpath('//button[normalize-space(.)="Logout"]'));
+  await findVisible(driver, logoutLocator);
   await findVisible(driver, By.xpath('//*[self::h1 or self::h2][normalize-space(.)="Bendigo Flying Club"]'));
 
   const later = await optionalVisible(driver, By.xpath('//button[normalize-space(.)="Later"]'));
@@ -291,12 +323,12 @@ const testRole = async (driver, deviceKey, role) => {
   const calendar = await findVisible(driver, By.css('header button[aria-label="Calendar"]'));
   await calendar.click();
   await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/calendar'), 20_000);
-  await findVisible(driver, By.xpath('//button[normalize-space(.)="Logout"]'));
+  await findVisible(driver, logoutLocator);
 
   const profile = await findVisible(driver, By.css('header button[aria-label="Profile"]'));
   await profile.click();
   await driver.wait(async () => new URL(await driver.getCurrentUrl()).pathname === '/', 20_000);
-  await findVisible(driver, By.xpath('//button[normalize-space(.)="Logout"]'));
+  await findVisible(driver, logoutLocator);
 
   const hasHorizontalOverflow = await driver.executeScript(
     'return document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;',
@@ -348,7 +380,7 @@ try {
             video: true,
             networkLogs: true,
             consoleLogs: 'errors',
-            idleTimeout: 300,
+            idleTimeout: 60,
           },
         })
         .build();
