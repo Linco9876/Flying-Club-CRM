@@ -1,5 +1,6 @@
 import React from 'react';
 import { CalendarDays, Download, ExternalLink, Loader2, Plane, ShieldCheck } from 'lucide-react';
+import { publicSupabaseUrl } from '../../lib/supabase';
 import { BrowserCalendarEvent, googleCalendarUrl, outlookCalendarUrl } from '../../utils/calendar';
 
 interface CalendarBookingPayload {
@@ -28,7 +29,7 @@ export const CalendarBookingPage: React.FC = () => {
   const token = new URLSearchParams(window.location.search).get('event') || '';
   const [payload, setPayload] = React.useState<CalendarBookingPayload | null>(null);
   const [error, setError] = React.useState('');
-  const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+  const supabaseUrl = publicSupabaseUrl;
 
   React.useEffect(() => {
     let cancelled = false;
