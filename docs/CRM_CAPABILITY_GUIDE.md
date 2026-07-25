@@ -321,10 +321,11 @@ Before the first gated production release, configure or complete:
 - Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The manual Quality Gates workflow provisions disposable recovery-project accounts and MFA factors, connects through BrowserStack Local, runs the matrix, and removes the test identities.
 - An independent manual web/API penetration test, remediation of all critical/high findings, and a clean retest before live payments or broad third-party API access. See `docs/PENETRATION_TEST_SCOPE.md`.
 
-### Release-readiness evidence (24 July 2026)
+### Release-readiness evidence (25 July 2026)
 
 - Encrypted isolated restore passed with 125 public tables, 26 Auth users, 25 profiles, 150 bookings, 104 flight logs, 1 club membership, 10 Storage buckets and 14 Storage objects matching production.
 - Authenticated emulated acceptance passed for admin, CFI, senior instructor, instructor, pilot and student on iPhone/WebKit and Android/Chromium configurations. Test users and MFA factors are disposable and removed after the run.
+- Authenticated physical-device acceptance passed for the same six roles on an iPhone 16 running iOS 18/Safari and a Samsung Galaxy S23 Ultra running Android 13/Chrome. The run covered staff MFA, role-specific navigation, calendar/profile journeys and horizontal-overflow checks through BrowserStack Local.
 - Portal/PWA production build, dependency audits, migration audit, 25 Edge Function type checks and 12 Edge Function unit tests pass.
 - ESLint: 0 errors. TypeScript: 0 errors. React hook/refresh warnings: 69 and ratcheted after the ESLint 10/React Hooks 7 upgrade.
 - Stripe remains explicitly in Test Mode.
