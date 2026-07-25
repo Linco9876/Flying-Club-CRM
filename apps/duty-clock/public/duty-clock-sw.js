@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bfc-duty-clock-v1.2.0';
+const CACHE_NAME = 'bfc-duty-clock-v1.2.1';
 const APP_ROOT = '/duty-clock/app/';
 const CORE_FILES = [
   APP_ROOT,

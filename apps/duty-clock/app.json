@@ -2,7 +2,7 @@
   "expo": {
     "name": "BFC Duty Clock",
     "slug": "bendigo-flying-club-duty-clock",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",

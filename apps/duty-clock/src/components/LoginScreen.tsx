@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Linking, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { type AppColours, useAppTheme } from '../theme';
 import { ACCOUNT_DELETION_URL, PRIVACY_URL, SUPPORT_URL } from '../config';
@@ -13,16 +13,40 @@ export const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>();
+  const emailRef = useRef('');
+  const passwordRef = useRef('');
+  const loginInFlightRef = useRef(false);
 
   const login = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert('Enter your login', 'Use the same email and password as the club portal.');
+    if (loginInFlightRef.current) return;
+    const currentEmail = emailRef.current.trim();
+    const currentPassword = passwordRef.current;
+    if (!currentEmail || !currentPassword) {
+      setErrorMessage('Enter the same email address and password you use for the club portal.');
       return;
     }
+    loginInFlightRef.current = true;
+    setErrorMessage(undefined);
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setLoading(false);
-    if (error) Alert.alert('Could not sign in', error.message);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: currentEmail,
+        password: currentPassword,
+      });
+      if (error) {
+        setErrorMessage(
+          error.code === 'invalid_credentials'
+            ? 'That email address or password is not correct. Use the same login as the club portal.'
+            : 'Sign-in could not be completed. Check your connection and try again.',
+        );
+      }
+    } catch {
+      setErrorMessage('The Duty Clock could not reach the login service. Check your connection and try again.');
+    } finally {
+      loginInFlightRef.current = false;
+      setLoading(false);
+    }
   };
 
   return (
@@ -41,7 +65,11 @@ export const LoginScreen = () => {
             autoComplete="email"
             keyboardType="email-address"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={value => {
+              emailRef.current = value;
+              setEmail(value);
+              if (errorMessage) setErrorMessage(undefined);
+            }}
             placeholder="you@example.com"
             placeholderTextColor={colours.placeholder}
             style={styles.input}
@@ -53,12 +81,21 @@ export const LoginScreen = () => {
             autoComplete="current-password"
             secureTextEntry
             value={password}
-            onChangeText={setPassword}
+            onChangeText={value => {
+              passwordRef.current = value;
+              setPassword(value);
+              if (errorMessage) setErrorMessage(undefined);
+            }}
             placeholder="Your password"
             placeholderTextColor={colours.placeholder}
             style={styles.input}
             onSubmitEditing={() => void login()}
           />
+          {errorMessage ? (
+            <View style={styles.error} accessibilityLiveRegion="polite">
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
           <View style={styles.buttonGap}>
             <PrimaryButton loading={loading} onPress={() => void login()}>Sign in</PrimaryButton>
           </View>
@@ -108,6 +145,8 @@ const createStyles = (colours: AppColours) => StyleSheet.create({
   label: { color: colours.ink, fontSize: 13, fontWeight: '800', marginBottom: 7 },
   passwordLabel: { marginTop: 16 },
   input: { height: 52, borderWidth: 1, borderColor: colours.inputBorder, borderRadius: 14, paddingHorizontal: 14, fontSize: 16, color: colours.ink, backgroundColor: colours.input },
+  error: { marginTop: 14, borderRadius: 12, borderWidth: 1, borderColor: colours.red, backgroundColor: colours.redLight, paddingHorizontal: 12, paddingVertical: 10 },
+  errorText: { color: colours.red, fontSize: 13, lineHeight: 18, fontWeight: '700' },
   buttonGap: { marginTop: 22 },
   help: { textAlign: 'center', color: colours.muted, fontSize: 12, marginTop: 18 },
   appearance: { marginTop: 14 },
