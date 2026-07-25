@@ -137,6 +137,26 @@ const stopLocal = (instance) => withTimeout(new Promise((resolve) => {
   instance?.tunnel?.kill?.('SIGKILL');
 });
 
+const stopRemoteSession = async (sessionId) => {
+  if (!sessionId) return;
+  const authorization = Buffer.from(`${username}:${accessKey}`).toString('base64');
+  try {
+    const response = await fetch(
+      `https://hub.browserstack.com/wd/hub/session/${encodeURIComponent(sessionId)}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Basic ${authorization}` },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`BrowserStack returned HTTP ${response.status}.`);
+    }
+  } catch (error) {
+    console.error(`BrowserStack session ${sessionId} shutdown failed:`, error);
+  }
+};
+
 const findVisible = async (driver, locator, timeout = 20_000) => {
   const element = await driver.wait(until.elementLocated(locator), timeout);
   await driver.wait(until.elementIsVisible(element), timeout);
@@ -185,16 +205,13 @@ const resetBrowserState = async (driver) => {
 
 const reportBrowserState = async (driver, deviceName) => {
   try {
-    const [url, title, source] = await Promise.all([
+    const [url, title, bodyText] = await Promise.all([
       driver.getCurrentUrl(),
       driver.getTitle(),
-      driver.getPageSource(),
+      driver.executeScript('return document.body?.innerText || "";'),
     ]);
-    const summary = source
-      .replace(/\s+/g, ' ')
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-      .slice(0, 1_000);
-    console.error(`${deviceName} browser state: URL=${url}; title=${title}; HTML=${summary}`);
+    const summary = String(bodyText).replace(/\s+/g, ' ').slice(0, 2_500);
+    console.error(`${deviceName} browser state: URL=${url}; title=${title}; text=${summary}`);
   } catch (error) {
     console.error(`${deviceName} browser diagnostics failed:`, error);
   }
@@ -222,6 +239,7 @@ const testRole = async (driver, deviceKey, role) => {
     await findVisible(
       driver,
       By.xpath('//*[self::h1 or self::h2][normalize-space(.)="Protect your staff account"]'),
+      60_000,
     );
     await clickButton(driver, 'Set up authenticator');
     const reveal = await findVisible(
@@ -232,7 +250,8 @@ const testRole = async (driver, deviceKey, role) => {
     const secret = (await findVisible(driver, By.css('details code'))).getText();
     const codeInput = await findVisible(
       driver,
-      By.xpath('//label[contains(normalize-space(.),"Six-digit authenticator code")]/following::input[1]'),
+      By.css('input[aria-label="Six-digit authenticator code"]'),
+      60_000,
     );
     await codeInput.sendKeys(totp(secret.trim()));
     await clickButton(driver, 'Verify and finish');
@@ -296,6 +315,7 @@ try {
 
   for (const device of devices) {
     let driver;
+    let sessionId;
     const seleniumAgent = new https.Agent({ keepAlive: true, timeout: 60_000 });
     try {
       driver = await new Builder()
@@ -323,6 +343,7 @@ try {
           },
         })
         .build();
+      sessionId = (await driver.getSession()).getId();
 
       for (const role of roles) {
         process.stdout.write(`Testing ${role} on ${device.deviceName}...\n`);
@@ -335,13 +356,7 @@ try {
       if (driver) await reportBrowserState(driver, device.deviceName);
       console.error(`${device.deviceName} failed:`, error);
     } finally {
-      if (driver) {
-        try {
-          await withTimeout(driver.quit(), 30_000, `${device.deviceName} session shutdown`);
-        } catch (error) {
-          console.error(error.message);
-        }
-      }
+      await stopRemoteSession(sessionId);
       seleniumAgent.destroy();
     }
   }
