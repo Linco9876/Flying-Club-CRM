@@ -195,7 +195,7 @@ try {
     & npx.cmd @playwrightArguments
   }
   if ($LASTEXITCODE -ne 0) {
-    throw "Playwright acceptance tests failed with exit code $LASTEXITCODE."
+    throw "Authenticated acceptance tests failed with exit code $LASTEXITCODE."
   }
 } finally {
   foreach ($userId in $createdUserIds) {

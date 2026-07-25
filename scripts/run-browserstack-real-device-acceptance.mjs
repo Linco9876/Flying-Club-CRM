@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import https from 'node:https';
 import browserStackLocal from 'browserstack-local';
 import selenium from 'selenium-webdriver';
 
@@ -11,6 +12,24 @@ const roles = ['admin', 'cfi', 'senior_instructor', 'instructor', 'pilot', 'stud
 const staffRoles = new Set(['admin', 'cfi', 'senior_instructor', 'instructor']);
 const baseUrl = 'http://bs-local.com:4178';
 const localIdentifier = `bfc-${process.env.GITHUB_RUN_ID || Date.now()}-${process.env.GITHUB_RUN_ATTEMPT || 'local'}`;
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+const withTimeout = async (promise, timeoutMs, description) => {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`${description} timed out after ${timeoutMs / 1_000} seconds.`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
 
 const expectedMenuItems = {
   admin: ['Members', 'Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Financial Dashboard', 'Settings'],
@@ -87,28 +106,35 @@ const waitForHttp = async (url, timeoutMs = 120_000) => {
     } catch {
       // The development server is still starting.
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await delay(500);
   }
   throw new Error(`Timed out waiting for ${url}.`);
 };
 
-const startLocal = (instance) => new Promise((resolve, reject) => {
-  instance.start(
-    {
-      key: accessKey,
-      localIdentifier,
-      onlyAutomate: true,
-    },
-    (error) => (error ? reject(error) : resolve()),
-  );
-});
+const startLocal = (instance) => withTimeout(
+  new Promise((resolve, reject) => {
+    instance.start(
+      {
+        key: accessKey,
+        localIdentifier,
+        onlyAutomate: true,
+      },
+      (error) => (error ? reject(error) : resolve()),
+    );
+  }),
+  120_000,
+  'BrowserStack Local startup',
+);
 
-const stopLocal = (instance) => new Promise((resolve) => {
+const stopLocal = (instance) => withTimeout(new Promise((resolve) => {
   if (!instance?.isRunning()) {
     resolve();
     return;
   }
   instance.stop(() => resolve());
+}), 30_000, 'BrowserStack Local shutdown').catch((error) => {
+  console.error(error.message);
+  instance?.tunnel?.kill?.('SIGKILL');
 });
 
 const findVisible = async (driver, locator, timeout = 20_000) => {
@@ -148,9 +174,30 @@ const setSessionStatus = async (driver, status, reason) => {
 
 const resetBrowserState = async (driver) => {
   await driver.get(baseUrl);
+  await driver.wait(
+    async () => (await driver.executeScript('return document.readyState;')) === 'complete',
+    30_000,
+  );
   await driver.executeScript('window.localStorage.clear(); window.sessionStorage.clear();');
   await driver.manage().deleteAllCookies();
   await driver.get(baseUrl);
+};
+
+const reportBrowserState = async (driver, deviceName) => {
+  try {
+    const [url, title, source] = await Promise.all([
+      driver.getCurrentUrl(),
+      driver.getTitle(),
+      driver.getPageSource(),
+    ]);
+    const summary = source
+      .replace(/\s+/g, ' ')
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+      .slice(0, 1_000);
+    console.error(`${deviceName} browser state: URL=${url}; title=${title}; HTML=${summary}`);
+  } catch (error) {
+    console.error(`${deviceName} browser diagnostics failed:`, error);
+  }
 };
 
 const testRole = async (driver, deviceKey, role) => {
@@ -249,9 +296,11 @@ try {
 
   for (const device of devices) {
     let driver;
+    const seleniumAgent = new https.Agent({ keepAlive: true, timeout: 60_000 });
     try {
       driver = await new Builder()
         .usingServer('https://hub.browserstack.com/wd/hub')
+        .usingHttpAgent(seleniumAgent)
         .withCapabilities({
           browserName: device.browserName,
           'bstack:options': {
@@ -283,9 +332,17 @@ try {
     } catch (error) {
       failed = true;
       if (driver) await setSessionStatus(driver, 'failed', error instanceof Error ? error.message : String(error));
+      if (driver) await reportBrowserState(driver, device.deviceName);
       console.error(`${device.deviceName} failed:`, error);
     } finally {
-      if (driver) await driver.quit();
+      if (driver) {
+        try {
+          await withTimeout(driver.quit(), 30_000, `${device.deviceName} session shutdown`);
+        } catch (error) {
+          console.error(error.message);
+        }
+      }
+      seleniumAgent.destroy();
     }
   }
 } finally {

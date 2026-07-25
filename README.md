@@ -41,7 +41,9 @@ The command builds `dist/` and deploys it to the production branch. It bypasses 
 
 ## Acceptance testing
 
-`npm run test:acceptance:recovery` provisions disposable users for all six roles in the isolated Supabase recovery project, tests authenticated iPhone/WebKit and Android/Chromium viewport journeys including staff MFA, then removes the users. These are browser emulations, not physical-device results. Physical iPhone and Android release sign-off still requires connected devices or real-device-cloud credentials.
+`npm run test:acceptance:recovery` provisions disposable users for all six roles in the isolated Supabase recovery project, tests authenticated iPhone/WebKit and Android/Chromium viewport journeys including staff MFA, then removes the users. These are browser emulations, not physical-device results.
+
+The manual **Quality Gates** workflow also provides `run_real_device_acceptance`. When selected, it starts a private BrowserStack Local tunnel and runs the same six authenticated role journeys, including staff MFA, on a physical iPhone and Android device. It requires `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY`, `SUPABASE_ACCESS_TOKEN`, and `SUPABASE_RECOVERY_PROJECT_REF` as GitHub repository secrets. Disposable users and MFA factors are removed after the run.
 
 ## Edit Supabase
 

@@ -252,7 +252,7 @@ Local full-database reset requires Docker Desktop. If Docker is unavailable, run
 - Auth identities, all discoverable CRM tables and every Storage bucket are included.
 - Every file has a size and SHA-256 digest in the manifest. Any skipped table, Auth failure or bucket failure makes the job fail rather than publishing a partial recovery point.
 - Cloud backups are packaged and encrypted with `age` before leaving the runner. Only encrypted archives and their external checksums reach OneDrive or GitHub artifacts.
-- A monthly recovery drill first validates the latest encrypted OneDrive archive, then performs a real encrypted database restore into a separate Supabase recovery project. It compares public-table and Auth-user counts after restoring application schemas, grants, data, Storage metadata, Auth identities and password hashes. Keep a second copy of the private `age` identity offline.
+- A monthly recovery drill first validates the latest encrypted OneDrive archive, then performs a real encrypted database restore into a separate Supabase recovery project. It compares public-table and Auth-user counts after restoring application schemas, grants, data, Storage metadata, Auth identities and password hashes. The reset is repeatable, preserves Supabase-managed publications and excludes only provider-managed migration/vector tables. Keep a second copy of the private `age` identity offline.
 
 ### Quality-gated releases
 
@@ -314,11 +314,11 @@ Choosing a result fills both resources and the start/end values. Final submissio
 
 Before the first gated production release, configure or complete:
 
-- GitHub secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BACKUP_AGE_PUBLIC_KEY`, `BACKUP_AGE_PRIVATE_KEY`, `RCLONE_CONFIG`, `RCLONE_REMOTE`, `ONEDRIVE_BACKUP_PATH`, `INTEGRATION_WORKER_SECRET`, and optionally `VITE_TURNSTILE_SITE_KEY`.
+- GitHub secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_RECOVERY_PROJECT_REF`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY`, `BACKUP_AGE_PUBLIC_KEY`, `BACKUP_AGE_PRIVATE_KEY`, `RCLONE_CONFIG`, `RCLONE_REMOTE`, `ONEDRIVE_BACKUP_PATH`, `INTEGRATION_WORKER_SECRET`, and optionally `VITE_TURNSTILE_SITE_KEY`.
 - Supabase Edge Function secret `INTEGRATION_WORKER_SECRET` with the same value used by GitHub Actions.
 - The Cloudflare Turnstile secret in Supabase Auth CAPTCHA settings when Turnstile is enabled.
 - A durable, scoped Cloudflare API token with Pages Write access in `CLOUDFLARE_API_TOKEN`. The local Wrangler OAuth token is intentionally not copied to CI because it expires.
-- Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The recovery harness supplies disposable accounts and the test matrix, but emulation is not physical-device evidence.
+- Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The manual Quality Gates workflow provisions disposable recovery-project accounts and MFA factors, connects through BrowserStack Local, runs the matrix, and removes the test identities.
 - An independent manual web/API penetration test, remediation of all critical/high findings, and a clean retest before live payments or broad third-party API access. See `docs/PENETRATION_TEST_SCOPE.md`.
 
 ### Release-readiness evidence (24 July 2026)
@@ -326,5 +326,5 @@ Before the first gated production release, configure or complete:
 - Encrypted isolated restore passed with 125 public tables, 26 Auth users, 25 profiles, 150 bookings, 104 flight logs, 1 club membership, 10 Storage buckets and 14 Storage objects matching production.
 - Authenticated emulated acceptance passed for admin, CFI, senior instructor, instructor, pilot and student on iPhone/WebKit and Android/Chromium configurations. Test users and MFA factors are disposable and removed after the run.
 - Portal/PWA production build, dependency audits, migration audit, 25 Edge Function type checks and 12 Edge Function unit tests pass.
-- ESLint: 0 errors. TypeScript: 0 errors. React hook/refresh warnings: 63 and ratcheted.
+- ESLint: 0 errors. TypeScript: 0 errors. React hook/refresh warnings: 69 and ratcheted after the ESLint 10/React Hooks 7 upgrade.
 - Stripe remains explicitly in Test Mode.
