@@ -26,6 +26,7 @@ import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
+import { formatRichTextContent } from '../../utils/richText';
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
 import { FlightReviewsTab } from './FlightReviewsTab';
 
@@ -103,46 +104,7 @@ const MEDICAL_TYPE_OPTIONS = [
 
 const toDateInputValue = (date?: Date) => date ? date.toISOString().slice(0, 10) : '';
 
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-const formatCourseRichText = (value?: string) => {
-  const trimmed = String(value || '').trim();
-  if (!trimmed) return '';
-  const html = /<\/?[a-z][\s\S]*>/i.test(trimmed)
-    ? trimmed
-    : escapeHtml(trimmed)
-    .split(/\n{2,}/)
-    .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br />')}</p>`)
-    .join('');
-  if (typeof DOMParser === 'undefined') return html;
-
-  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  const allowed = new Set(['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'a']);
-  const walk = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent || '');
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-    const element = node as Element;
-    const tag = element.tagName.toLowerCase();
-    const normalized = tag === 'b' ? 'strong' : tag === 'i' ? 'em' : tag;
-    const inner = Array.from(element.childNodes).map(walk).join('');
-    if (!allowed.has(normalized)) return inner;
-    if (normalized === 'br') return '<br />';
-    if (normalized === 'a') {
-      const href = element.getAttribute('href') || '';
-      return /^https?:\/\//i.test(href)
-        ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>`
-        : inner;
-    }
-    return `<${normalized}>${inner}</${normalized}>`;
-  };
-  return Array.from(doc.body.childNodes).map(walk).join('').trim();
-};
+const formatCourseRichText = (value?: string) => formatRichTextContent(value || '');
 
 const CourseRichText: React.FC<{ value?: string; fallback?: string }> = ({ value, fallback = 'Not recorded' }) => {
   const html = formatCourseRichText(value);

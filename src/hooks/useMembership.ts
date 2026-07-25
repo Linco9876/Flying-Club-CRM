@@ -340,6 +340,7 @@ export const useMembership = () => {
     dateOfBirth?: string;
     guardianName?: string;
     guardianConsent: boolean;
+    privacyNoticeAccepted: boolean;
   }) => runAction('application:submit', async () => {
     const { data, error: rpcError } = await supabase.rpc('submit_membership_application', {
       p_membership_class_code: input.membershipClassCode,
@@ -353,8 +354,8 @@ export const useMembership = () => {
       p_agrees_to_member_guarantee: true,
       p_agrees_to_code_of_conduct: true,
       p_agrees_to_members_manual: true,
-      p_privacy_notice_accepted: true,
-      p_privacy_notice_version: '2026-07-23',
+      p_privacy_notice_accepted: input.privacyNoticeAccepted,
+      p_privacy_notice_version: input.privacyNoticeAccepted ? '2026-07-23' : null,
     });
     if (rpcError) throw rpcError;
     return data;

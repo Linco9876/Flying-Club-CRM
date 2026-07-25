@@ -1,6 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hmacSha256Hex, safePublicWebhookUrl } from "../_shared/integrationSecurity.ts";
+import {
+  allowedWebhookHosts,
+  hmacSha256Hex,
+  pinnedHttpsPost,
+  resolvePublicWebhookDestination,
+} from "../_shared/integrationSecurity.ts";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -14,6 +19,7 @@ Deno.serve(async (request: Request) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceKey) return json({ error: "Worker is not configured" }, 503);
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const webhookHostAllowlist = allowedWebhookHosts(Deno.env.get("INTEGRATION_WEBHOOK_ALLOWED_HOSTS"));
 
   const { data: events, error: eventError } = await admin.from("integration_webhook_events")
     .select("id, event_type").is("expanded_at", null).order("occurred_at").limit(50);
@@ -30,9 +36,17 @@ Deno.serve(async (request: Request) => {
     await admin.from("integration_webhook_events").update({ expanded_at: new Date().toISOString() }).eq("id", event.id);
   }
 
-  const { data: pending, error: pendingError } = await admin.from("integration_webhook_deliveries")
-    .select("id, endpoint_id, event_id, attempt_count, integration_webhook_endpoints(url), integration_webhook_events(event_type, payload, occurred_at)")
-    .in("status", ["pending", "failed"]).lte("next_attempt_at", new Date().toISOString()).order("next_attempt_at").limit(25);
+  const { data: claimed, error: claimError } = await admin.rpc("claim_integration_webhook_deliveries", {
+    p_limit: 25,
+    p_lease_timeout_seconds: 300,
+  });
+  if (claimError) throw claimError;
+  const claimedIds = (claimed || []).map((delivery: { id: string }) => delivery.id);
+  const { data: pending, error: pendingError } = claimedIds.length
+    ? await admin.from("integration_webhook_deliveries")
+      .select("id, endpoint_id, event_id, attempt_count, integration_webhook_endpoints(url), integration_webhook_events(event_type, payload, occurred_at)")
+      .in("id", claimedIds)
+    : { data: [], error: null };
   if (pendingError) throw pendingError;
   let succeeded = 0;
   let failed = 0;
@@ -41,10 +55,13 @@ Deno.serve(async (request: Request) => {
     const endpoint = Array.isArray(delivery.integration_webhook_endpoints) ? delivery.integration_webhook_endpoints[0] : delivery.integration_webhook_endpoints;
     const event = Array.isArray(delivery.integration_webhook_events) ? delivery.integration_webhook_events[0] : delivery.integration_webhook_events;
     const { data: secretRow } = await admin.from("integration_webhook_secrets").select("signing_secret").eq("endpoint_id", delivery.endpoint_id).single();
-    if (!endpoint?.url || !event || !secretRow?.signing_secret || !safePublicWebhookUrl(endpoint.url)) {
+    const destination = endpoint?.url
+      ? await resolvePublicWebhookDestination(endpoint.url, webhookHostAllowlist)
+      : null;
+    if (!endpoint?.url || !event || !secretRow?.signing_secret || !destination) {
       await admin.from("integration_webhook_deliveries").update({
         status: "abandoned",
-        last_error: "Webhook endpoint is missing required data or is not a safe public HTTPS address",
+        last_error: "Webhook endpoint is missing required data, is not allowlisted, or does not resolve only to public addresses",
         updated_at: new Date().toISOString(),
       }).eq("id", delivery.id);
       failed += 1;
@@ -52,17 +69,12 @@ Deno.serve(async (request: Request) => {
     }
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const body = JSON.stringify({ id: delivery.event_id, type: event.event_type, occurredAt: event.occurred_at, data: event.payload });
-    const attempt = delivery.attempt_count + 1;
-    await admin.from("integration_webhook_deliveries").update({ status: "delivering", attempt_count: attempt, updated_at: new Date().toISOString() }).eq("id", delivery.id);
-    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const attempt = delivery.attempt_count;
     try {
-      const controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 10_000);
-      const response = await fetch(endpoint.url, {
-        method: "POST",
-        signal: controller.signal,
-        redirect: "error",
-        headers: {
+      const response = await pinnedHttpsPost(
+        destination,
+        body,
+        {
           "Content-Type": "application/json",
           "User-Agent": "BFC-Portal-Webhooks/1.0",
           "X-BFC-Event-Id": delivery.event_id,
@@ -70,9 +82,8 @@ Deno.serve(async (request: Request) => {
           "X-BFC-Timestamp": timestamp,
           "X-BFC-Signature": `v1=${await hmacSha256Hex(secretRow.signing_secret, `${timestamp}.${body}`)}`,
         },
-        body,
-      });
-      const excerpt = (await response.text()).slice(0, 500);
+      );
+      const excerpt = response.text.slice(0, 500);
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${excerpt}`);
       await admin.from("integration_webhook_deliveries").update({ status: "succeeded", response_status: response.status, response_excerpt: excerpt, delivered_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", delivery.id);
       await admin.from("integration_webhook_endpoints").update({ last_success_at: new Date().toISOString() }).eq("id", delivery.endpoint_id);
@@ -88,8 +99,6 @@ Deno.serve(async (request: Request) => {
       }).eq("id", delivery.id);
       await admin.from("integration_webhook_endpoints").update({ last_failure_at: new Date().toISOString() }).eq("id", delivery.endpoint_id);
       failed += 1;
-    } finally {
-      if (timeout !== undefined) clearTimeout(timeout);
     }
   }
   return json({ expanded: events?.length || 0, processed: pending?.length || 0, succeeded, failed });

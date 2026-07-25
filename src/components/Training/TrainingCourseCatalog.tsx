@@ -33,6 +33,11 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
+  formatRichTextContent as formatSafeRichText,
+  richTextToPlainText as safeRichTextToPlainText,
+  sanitizeRichText as sanitizeSafeRichText,
+} from '../../utils/richText';
+import {
   LessonStudyAsset,
   LessonAssessmentCriterion,
   LessonGradingSystem,
@@ -118,118 +123,9 @@ type EditableLessonStudyAsset = LessonStudyAsset & {
 
 const LESSON_STUDY_BUCKET = 'training-lesson-assets';
 
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-const sanitizeRichText = (html: string): string => {
-  if (!html) return '';
-
-  // Use a real DOM parser so we walk the actual tree — much more reliable than regex
-  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  const allowed = new Set(['p', 'br', 'strong', 'em', 'u', 'ul', 'ol', 'li', 'a']);
-
-  const walk = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return escapeHtml(node.textContent ?? '');
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-
-    const el = node as Element;
-    const tag = el.tagName.toLowerCase();
-
-    // Normalize legacy tags
-    const norm = tag === 'b' ? 'strong' : tag === 'i' ? 'em' : tag;
-
-    // Replace block-level wrappers with p
-    const blockTags = new Set(['div', 'section', 'article', 'header', 'footer', 'main', 'nav', 'aside', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
-    if (blockTags.has(norm)) {
-      const inner = Array.from(el.childNodes).map(walk).join('');
-      return `<p>${inner}</p>`;
-    }
-
-    // Strip span/font/other inline wrappers but keep children
-    const stripWrappers = new Set(['span', 'font', 'code', 'pre', 'mark', 'small', 'sub', 'sup']);
-    if (stripWrappers.has(norm)) {
-      return Array.from(el.childNodes).map(walk).join('');
-    }
-
-    if (!allowed.has(norm)) {
-      return Array.from(el.childNodes).map(walk).join('');
-    }
-
-    if (norm === 'br') return '<br />';
-
-    const inner = Array.from(el.childNodes).map(walk).join('');
-
-    if (norm === 'a') {
-      const href = el.getAttribute('href') ?? '';
-      // Only allow safe URLs
-      const safe = /^https?:\/\//i.test(href) ? href : '';
-      if (!safe) return inner;
-      return `<a href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
-    }
-
-    // Drop empty block tags
-    if ((norm === 'p' || norm === 'li') && !inner.trim()) return '';
-
-    return `<${norm}>${inner}</${norm}>`;
-  };
-
-  const result = Array.from(doc.body.childNodes).map(walk).join('').replace(/\u00a0/g, ' ').trim();
-  return result;
-};
-
-const decodeHtmlEntities = (text: string) =>
-  text
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-
-const formatRichTextContent = (content: string) => {
-  if (!content) {
-    return '';
-  }
-
-  const trimmed = content.trim();
-  if (!trimmed) {
-    return '';
-  }
-
-  const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(trimmed);
-  if (looksLikeHtml) {
-    return sanitizeRichText(trimmed);
-  }
-
-  const escaped = escapeHtml(trimmed);
-  return escaped
-    .split(/\n{2,}/)
-    .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br />')}</p>`)
-    .join('');
-};
-
-const richTextToPlainText = (content: string) => {
-  if (!content) {
-    return '';
-  }
-
-  const source = sanitizeRichText(content) || content;
-  const withoutTags = source
-    .replace(/<li[^>]*>/gi, '\n')
-    .replace(/<\/(li|p|ol|ul)>/gi, '\n')
-    .replace(/<br\s*\/?\s*>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/\r/g, '');
-
-  return decodeHtmlEntities(withoutTags).replace(/\u00a0/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-};
+const sanitizeRichText = sanitizeSafeRichText;
+const formatRichTextContent = formatSafeRichText;
+const richTextToPlainText = safeRichTextToPlainText;
 
 const getPassingGradeOptions = (system: LessonGradingSystem) => {
   switch (system) {

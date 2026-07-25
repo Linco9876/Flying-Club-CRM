@@ -8,20 +8,9 @@ import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolmen
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { TrainingModule, TrainingRecord } from '../../types';
+import { richTextToPlainText } from '../../utils/richText';
 
-const stripHtml = (value: string) =>
-  String(value || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|li|div|ul|ol)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+const stripHtml = richTextToPlainText;
 
 const isUnder18 = (dateOfBirth?: Date) => {
   if (!dateOfBirth) return false;
