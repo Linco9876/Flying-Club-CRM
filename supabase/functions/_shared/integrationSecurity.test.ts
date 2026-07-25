@@ -1,5 +1,11 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { hmacSha256Hex, safePublicWebhookUrl, sha256Hex } from "./integrationSecurity.ts";
+import {
+  allowedWebhookHosts,
+  hmacSha256Hex,
+  resolvedPublicWebhookUrl,
+  safePublicWebhookUrl,
+  sha256Hex,
+} from "./integrationSecurity.ts";
 
 Deno.test("integration keys use stable SHA-256 hashes", async () => {
   assertEquals(
@@ -27,5 +33,22 @@ Deno.test("webhooks reject local and private network destinations", () => {
   assertEquals(safePublicWebhookUrl("https://[fd00::1]/hook"), false);
   assertEquals(safePublicWebhookUrl("https://[fe80::1]/hook"), false);
   assertEquals(safePublicWebhookUrl("https://[::ffff:127.0.0.1]/hook"), false);
+  assertEquals(safePublicWebhookUrl("https://[0:0:0:0:0:ffff:7f00:1]/hook"), false);
+  assertEquals(safePublicWebhookUrl("https://[2001:0db8:0:0:0:0:0:1]/hook"), false);
+  assertEquals(safePublicWebhookUrl("https://[2606:4700::6810:85e5]/hook"), true);
   assertEquals(safePublicWebhookUrl("https://service.local/hook"), false);
+  assertEquals(safePublicWebhookUrl("https://hooks.example.com:8443/hook"), false);
+});
+
+Deno.test("webhooks require an allowlisted hostname with only public DNS answers", async () => {
+  const allowlist = allowedWebhookHosts("hooks.example.com, EVENTS.EXAMPLE.ORG ");
+  const publicResolver = (_hostname: string, type: "A" | "AAAA") =>
+    Promise.resolve(type === "A" ? ["93.184.216.34"] : ["2606:4700::6810:85e5"]);
+  const rebindingResolver = (_hostname: string, type: "A" | "AAAA") =>
+    Promise.resolve(type === "A" ? ["93.184.216.34", "127.0.0.1"] : []);
+
+  assertEquals(await resolvedPublicWebhookUrl("https://hooks.example.com/bfc", allowlist, publicResolver), true);
+  assertEquals(await resolvedPublicWebhookUrl("https://other.example.com/bfc", allowlist, publicResolver), false);
+  assertEquals(await resolvedPublicWebhookUrl("https://hooks.example.com/bfc", allowlist, rebindingResolver), false);
+  assertEquals(await resolvedPublicWebhookUrl("https://127.0.0.1/bfc", new Set(["127.0.0.1"]), publicResolver), false);
 });

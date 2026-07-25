@@ -306,8 +306,8 @@ Choosing a result fills both resources and the start/end values. Final submissio
 
 - `integration-api/v1` provides scoped read endpoints for aircraft, availability and privacy-minimised changed bookings.
 - API keys are generated with 256 bits of randomness, displayed once, stored only as SHA-256 hashes, individually scoped and immediately revocable. Per-key rate limiting and request audit records are built in.
-- Webhook endpoints must be public HTTPS addresses. Signing secrets are service-role-only and displayed once.
-- Booking, club-membership and membership-financial events enter a transactional outbox. A scheduled worker expands deliveries, signs the exact body with HMAC-SHA256, supplies stable event IDs and retries with exponential backoff.
+- Webhook endpoints must use an explicitly approved hostname and public HTTPS on port 443. The worker re-resolves A and AAAA records before every request, rejects any non-public answer, pins TLS to a validated address while verifying the approved hostname, and does not follow redirects. Signing secrets are service-role-only and displayed once.
+- Booking, club-membership and membership-financial events enter a transactional outbox. A scheduled worker atomically leases deliveries, reclaims interrupted work after five minutes, signs the exact body with HMAC-SHA256, supplies stable event IDs and retries with exponential backoff.
 - Consumers must verify timestamp and signature, use `X-BFC-Event-Id` idempotently, and return 2xx only after durable acceptance. See `docs/INTEGRATIONS_API.md`.
 
 ### Required repository and service configuration
@@ -315,7 +315,7 @@ Choosing a result fills both resources and the start/end values. Final submissio
 Before the first gated production release, configure or complete:
 
 - GitHub secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_RECOVERY_PROJECT_REF`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY`, `BACKUP_AGE_PUBLIC_KEY`, `BACKUP_AGE_PRIVATE_KEY`, `RCLONE_CONFIG`, `RCLONE_REMOTE`, `ONEDRIVE_BACKUP_PATH`, `INTEGRATION_WORKER_SECRET`, and optionally `VITE_TURNSTILE_SITE_KEY`.
-- Supabase Edge Function secret `INTEGRATION_WORKER_SECRET` with the same value used by GitHub Actions.
+- Supabase Edge Function secret `INTEGRATION_WORKER_SECRET` with the same value used by GitHub Actions, plus a comma-separated `INTEGRATION_WEBHOOK_ALLOWED_HOSTS` allowlist. Leave the allowlist empty until a third-party integration is approved.
 - The Cloudflare Turnstile secret in Supabase Auth CAPTCHA settings when Turnstile is enabled.
 - A durable, scoped Cloudflare API token with Pages Write access in `CLOUDFLARE_API_TOKEN`. The local Wrangler OAuth token is intentionally not copied to CI because it expires.
 - Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The manual Quality Gates workflow provisions disposable recovery-project accounts and MFA factors, connects through BrowserStack Local, runs the matrix, and removes the test identities.

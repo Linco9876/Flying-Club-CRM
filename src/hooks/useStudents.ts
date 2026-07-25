@@ -220,7 +220,9 @@ export const useStudents = (options?: UseStudentsOptions) => {
         throw new Error('User with this email already exists');
       }
 
-      const tempPassword = Math.random().toString(36).slice(-8) + 'A1!';
+      const randomBytes = crypto.getRandomValues(new Uint8Array(18));
+      const randomPart = Array.from(randomBytes, byte => byte.toString(36).padStart(2, '0')).join('');
+      const tempPassword = `${randomPart}A1!`;
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: studentData.email,

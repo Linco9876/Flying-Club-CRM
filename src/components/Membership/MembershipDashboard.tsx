@@ -53,6 +53,7 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
     dateOfBirth?: string;
     guardianName?: string;
     guardianConsent: boolean;
+    privacyNoticeAccepted: boolean;
   }) => Promise<unknown>;
   busy: boolean;
   classes: Array<{ code: string; name: string; annualFee: number }>;
@@ -60,6 +61,7 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
   const { user } = useAuth();
   const [sameAddress, setSameAddress] = useState(true);
   const [accepted, setAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [form, setForm] = useState({
     membershipClassCode: 'full',
     residentialAddress: user?.address || '',
@@ -72,9 +74,13 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!accepted) return;
+    if (!accepted || !privacyAccepted) return;
     if (form.membershipClassCode === 'junior' && !isJunior) return;
-    await onSubmit({ ...form, serviceAddress: sameAddress ? form.residentialAddress : form.serviceAddress });
+    await onSubmit({
+      ...form,
+      serviceAddress: sameAddress ? form.residentialAddress : form.serviceAddress,
+      privacyNoticeAccepted: privacyAccepted,
+    });
   };
 
   return (
@@ -117,7 +123,13 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
         <input type="checkbox" required checked={accepted} onChange={event => setAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
         <span>I support the purposes of Bendigo Flying Club and agree to the Constitution, member guarantee, By-laws, Code of Conduct and Members Manual. I understand these acknowledgements will be retained with my application.<MembershipDocumentLinks /></span>
       </label>
-      <button disabled={busy || !accepted || (form.membershipClassCode === 'junior' && !isJunior)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
+      <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+        <input type="checkbox" required checked={privacyAccepted} onChange={event => setPrivacyAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+        <span>
+          I have read the <a href="/privacy" target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">portal privacy notice</a> and understand how my information is used for membership, bookings, safety, training, accounting and portal security.
+        </span>
+      </label>
+      <button disabled={busy || !accepted || !privacyAccepted || (form.membershipClassCode === 'junior' && !isJunior)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />} Submit application
       </button>
     </form>

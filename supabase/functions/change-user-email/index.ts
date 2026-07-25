@@ -151,6 +151,7 @@ Deno.serve(async (req: Request) => {
       message: "Email change verification link generated. The CRM email will update after the new email is verified.",
     });
   } catch (err) {
-    return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 500);
+    console.error("change-user-email failed", err);
+    return jsonResponse({ error: "The email address could not be changed" }, 500);
   }
 });

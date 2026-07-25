@@ -5578,6 +5578,6 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Unknown action" }, 400);
   } catch (error) {
     console.error("xero-sync error:", error);
-    return json({ error: getErrorMessage(error) }, 500);
+    return json({ error: "The accounting request could not be completed" }, 500);
   }
 });

@@ -2,6 +2,7 @@ import { Student, StudentExamResult, TrainingModule, TrainingRecord, User } from
 import { supabase } from '../lib/supabase';
 import { formatSyllabusMatrixText } from '../hooks/useSyllabusMatrix';
 import type { StudentCourseEnrolment } from '../hooks/useStudentCourseEnrolments';
+import { richTextToPlainText } from './richText';
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
@@ -173,19 +174,7 @@ const wrapText = (text: string, font: any, size: number, maxWidth: number) => {
   return lines.length > 0 ? lines : [''];
 };
 
-const stripHtml = (value: string) =>
-  String(value || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|li|div|ul|ol)>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+const stripHtml = richTextToPlainText;
 
 const downloadBlob = (bytes: Uint8Array, filename: string) => {
   const blob = new Blob([Uint8Array.from(bytes).buffer], { type: 'application/pdf' });

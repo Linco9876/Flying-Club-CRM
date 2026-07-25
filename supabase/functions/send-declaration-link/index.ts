@@ -330,6 +330,7 @@ Deno.serve(async (req: Request) => {
 
     return jsonResponse({ results });
   } catch (err) {
-    return jsonResponse({ error: err instanceof Error ? err.message : String(err) }, 500);
+    console.error("send-declaration-link failed", err);
+    return jsonResponse({ error: "The declaration link could not be sent" }, 500);
   }
 });
