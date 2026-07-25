@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { MembershipDocumentLinks } from '../Membership/MembershipDocumentLinks';
+import { TurnstileWidget } from './TurnstileWidget';
 
 type PaymentMethod = 'becs' | 'invoice' | 'card';
+const turnstileEnabled = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
 
 const classes = [
   { code: 'full', name: 'Full', fee: 150, note: 'Voting membership' },
@@ -23,12 +25,14 @@ export const MembershipJoinPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [sameAddress, setSameAddress] = useState(true);
   const [accepted, setAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [guardianConsent, setGuardianConsent] = useState(false);
   const [authorityAccepted, setAuthorityAccepted] = useState(false);
   const [scholarshipEnabled, setScholarshipEnabled] = useState(false);
   const [scholarshipAmount, setScholarshipAmount] = useState(5);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('becs');
   const [autoRenew, setAutoRenew] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
   const [form, setForm] = useState({
     membershipClass: 'full', name: '', email: '', phone: '', password: '', confirmPassword: '',
     dateOfBirth: '', residentialAddress: '', serviceAddress: '', guardianName: '',
@@ -58,18 +62,22 @@ export const MembershipJoinPage: React.FC = () => {
 
   const validateStep = () => {
     if (step === 0) {
+      if (!form.dateOfBirth) {
+        toast.error('Enter your date of birth so the club can confirm the correct membership class');
+        return false;
+      }
       if (form.membershipClass === 'junior' && !isUnder18) {
         toast.error('Junior membership requires a date of birth showing the applicant is under 18');
         return false;
       }
     }
     if (step === 1) {
-      if (!form.name.trim() || !form.email.trim() || !form.password || !form.residentialAddress.trim()) {
+      if (!form.name.trim() || !form.email.trim() || !form.password || !form.residentialAddress.trim() || (!sameAddress && !form.serviceAddress.trim())) {
         toast.error('Complete the required contact and account details');
         return false;
       }
-      if (form.password.length < 6) {
-        toast.error('Password must be at least 6 characters');
+      if (form.password.length < 12) {
+        toast.error('Password must be at least 12 characters');
         return false;
       }
       if (form.password !== form.confirmPassword) {
@@ -81,8 +89,8 @@ export const MembershipJoinPage: React.FC = () => {
         return false;
       }
     }
-    if (step === 2 && !accepted) {
-      toast.error('Please accept the membership agreements');
+    if (step === 2 && (!accepted || !privacyAccepted)) {
+      toast.error('Please accept the membership agreements and privacy notice');
       return false;
     }
     return true;
@@ -118,12 +126,17 @@ export const MembershipJoinPage: React.FC = () => {
       toast.error('Accept the payment authority before continuing');
       return;
     }
+    if (turnstileEnabled && !captchaToken) {
+      toast.error('Complete the quick security check before submitting');
+      return;
+    }
     setBusy(true);
     try {
       const { data, error } = await supabase.auth.signUp({
         email: form.email.trim().toLowerCase(),
         password: form.password,
         options: {
+          captchaToken: captchaToken || undefined,
           data: {
             name: form.name.trim(), phone: form.phone.trim() || null, role: 'student', membership_application: true,
             membership_class: form.membershipClass, date_of_birth: form.dateOfBirth || null,
@@ -136,6 +149,9 @@ export const MembershipJoinPage: React.FC = () => {
             membership_auto_renew: paymentMethod !== 'invoice' && autoRenew,
             membership_scholarship_enabled: scholarshipEnabled,
             membership_scholarship_amount: scholarshipEnabled ? scholarshipAmount : 5,
+            privacy_notice_accepted: true,
+            privacy_notice_version: '2026-07-23',
+            privacy_notice_accepted_at: new Date().toISOString(),
           },
           emailRedirectTo: `${window.location.origin}/membership?continue=payment`,
         },
@@ -190,7 +206,7 @@ export const MembershipJoinPage: React.FC = () => {
         <section className="rounded-3xl bg-white p-5 shadow-2xl sm:p-8">
           <ol className="grid grid-cols-4 gap-2" aria-label="Membership application progress">
             {steps.map((label, index) => (
-              <li key={label} className={`border-t-4 pt-2 text-center text-[11px] font-semibold sm:text-xs ${index <= step ? 'border-blue-600 text-blue-700' : 'border-slate-200 text-slate-400'}`}>
+              <li key={label} aria-current={index === step ? 'step' : undefined} className={`border-t-4 pt-2 text-center text-[11px] font-semibold sm:text-xs ${index <= step ? 'border-blue-700 text-blue-800' : 'border-slate-300 text-slate-600'}`}>
                 <span className="hidden sm:inline">{index + 1}. </span>{label}
               </li>
             ))}
@@ -202,11 +218,11 @@ export const MembershipJoinPage: React.FC = () => {
               <p className="mt-1 text-sm text-slate-600">Fees are annual and the first year is prorated to 30 June when membership commences.</p>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 {classes.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
-                  <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.fee}<span className="text-xs font-normal text-slate-500">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.note}</span>
+                  <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.fee}<span className="text-xs font-normal text-slate-600">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.note}</span>
                 </button>)}
               </div>
-              <label className="mt-5 block text-sm font-medium">Date of birth {form.membershipClass === 'junior' && <span className="text-red-600">*</span>}
-                <input type="date" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" />
+              <label className="mt-5 block text-sm font-medium">Date of birth <span className="text-red-600">*</span>
+                <input required type="date" autoComplete="bday" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" />
               </label>
               <p className="mt-5 rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">Life membership is awarded by the club and is not available through online signup. RAAus membership is separate from club membership.</p>
             </div>}
@@ -217,7 +233,7 @@ export const MembershipJoinPage: React.FC = () => {
                 <label className="text-sm font-medium sm:col-span-2">Full name *<input autoComplete="name" value={form.name} onChange={e => update('name', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
                 <label className="text-sm font-medium">Email *<input type="email" autoComplete="email" value={form.email} onChange={e => update('email', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
                 <label className="text-sm font-medium">Phone<input type="tel" autoComplete="tel" value={form.phone} onChange={e => update('phone', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
-                <label className="text-sm font-medium">Password *<input type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={form.password} onChange={e => update('password', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
+                <label className="text-sm font-medium">Password *<input type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={12} value={form.password} onChange={e => update('password', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use at least 12 characters.</span></label>
                 <label className="text-sm font-medium">Confirm password *<input type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={form.confirmPassword} onChange={e => update('confirmPassword', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
                 <label className="flex items-center gap-2 text-xs sm:col-span-2"><input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} /> Show password</label>
                 <label className="text-sm font-medium sm:col-span-2">Residential address *<textarea rows={2} value={form.residentialAddress} onChange={e => update('residentialAddress', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
@@ -233,6 +249,7 @@ export const MembershipJoinPage: React.FC = () => {
               <p className="mt-2 text-sm leading-6 text-slate-600">Please read the club documents. Your acknowledgement is stored with the application.</p>
               <div className="mt-4 rounded-2xl border border-slate-200 p-4"><MembershipDocumentLinks /></div>
               <label className="mt-5 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1 h-4 w-4" /><span>I support the purposes of Bendigo Flying Club and agree to the Constitution, member guarantee, By-laws, Code of Conduct and Members Manual.</span></label>
+              <label className="mt-3 flex items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-800"><input type="checkbox" checked={privacyAccepted} onChange={e => setPrivacyAccepted(e.target.checked)} className="mt-1 h-4 w-4" /><span>I have read the <a href="/privacy" target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">portal privacy notice</a> and understand how my information is used for membership, bookings, safety, training, accounting and portal security.</span></label>
               <p className="mt-4 text-xs leading-5 text-slate-600">Membership commences when approved at a committee meeting, or automatically 30 days after a complete application is submitted. Your portal account can be used as soon as it is activated.</p>
             </div>}
 
@@ -255,6 +272,7 @@ export const MembershipJoinPage: React.FC = () => {
                 <label className="flex items-center gap-3 text-sm font-semibold text-emerald-950"><input type="checkbox" checked={scholarshipEnabled} onChange={e => setScholarshipEnabled(e.target.checked)} /> Add an optional scholarship contribution</label>
                 {scholarshipEnabled && <label className="mt-3 block text-xs text-emerald-900">Annual contribution amount<input type="number" min="0.01" step="0.01" value={scholarshipAmount} onChange={e => setScholarshipAmount(Number(e.target.value))} className="mt-1 w-36 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm" /></label>}
               </div>
+              <div className="mt-4"><TurnstileWidget onToken={setCaptchaToken} /></div>
             </div>}
           </div>
 

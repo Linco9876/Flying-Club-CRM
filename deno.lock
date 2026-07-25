@@ -282,20 +282,22 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
-        "npm:@eslint/js@^9.9.1",
-        "npm:@supabase/supabase-js@^2.58.0",
+        "npm:@eslint/js@^10.0.1",
+        "npm:@playwright/test@^1.62.0",
+        "npm:@supabase/supabase-js@^2.110.8",
         "npm:@types/node@^24.3.0",
+        "npm:@types/qrcode@^1.5.6",
         "npm:@types/react-big-calendar@^1.16.2",
         "npm:@types/react-dom@^18.3.0",
         "npm:@types/react-router-dom@^5.3.3",
         "npm:@types/react@^18.3.5",
-        "npm:@vitejs/plugin-react@^4.3.1",
+        "npm:@vitejs/plugin-react@^6.0.4",
         "npm:autoprefixer@^10.4.18",
         "npm:date-fns@^4.1.0",
-        "npm:eslint-plugin-react-hooks@^5.1.0-rc.0",
-        "npm:eslint-plugin-react-refresh@~0.4.11",
-        "npm:eslint@^9.9.1",
-        "npm:globals@^15.9.0",
+        "npm:eslint-plugin-react-hooks@^7.1.1",
+        "npm:eslint-plugin-react-refresh@~0.5.3",
+        "npm:eslint@^10.8.0",
+        "npm:globals@^17.7.0",
         "npm:lucide-react@0.344",
         "npm:pdf-lib@^1.17.1",
         "npm:postcss@^8.4.35",
@@ -303,13 +305,12 @@
         "npm:react-big-calendar@^1.19.4",
         "npm:react-dom@^18.3.1",
         "npm:react-hot-toast@^2.6.0",
-        "npm:react-router-dom@^7.8.2",
+        "npm:react-router-dom@7.18.1",
         "npm:react@^18.3.1",
         "npm:tailwindcss@^3.4.1",
-        "npm:typescript-eslint@^8.3.0",
+        "npm:typescript-eslint@^8.65.0",
         "npm:typescript@^5.5.3",
-        "npm:vite@^5.4.2",
-        "npm:xlsx@~0.18.5"
+        "npm:vite@^8.1.5"
       ]
     }
   }

@@ -15,7 +15,6 @@ import {
   ExternalLink,
   Calendar,
   CheckSquare,
-  MoreVertical,
   Edit as EditIcon,
   History as HistoryIcon,
   Trash2,
@@ -588,10 +587,11 @@ export const MaintenanceBoard: React.FC = () => {
     ? aircraft.find(a => a.id === selectedDefect.aircraftId)
     : undefined;
 
-  const canMarkFixed =
+  const canMarkFixed = Boolean(
     !maintenanceSettings.requireMaintenanceApproval ||
     user?.role === 'admin' ||
-    user?.roles?.includes('admin');
+    user?.roles?.includes('admin')
+  );
   const canManageMaintenanceMilestones =
     user?.role === 'admin' ||
     user?.roles?.includes('admin');
@@ -770,18 +770,6 @@ export const MaintenanceBoard: React.FC = () => {
   const calculateHoursRemaining = (nextDueHours?: number, currentHours?: number) => {
     if (nextDueHours === undefined || currentHours === undefined) return null;
     return Math.max(0, nextDueHours - currentHours);
-  };
-
-  const getMilestonesByType = () => {
-    const milestoneTypes = new Map<string, typeof milestones[0][]>();
-    milestones.forEach(m => {
-      const key = m.title;
-      if (!milestoneTypes.has(key)) {
-        milestoneTypes.set(key, []);
-      }
-      milestoneTypes.get(key)!.push(m);
-    });
-    return milestoneTypes;
   };
 
   const getWarnings = () => {
@@ -1418,7 +1406,7 @@ export const MaintenanceBoard: React.FC = () => {
             <div className="p-6">
               {defectHistory.length > 0 ? (
                 <div className="space-y-4">
-                  {defectHistory.map((entry: any, index: number) => (
+                  {defectHistory.map((entry: any) => (
                     <div key={entry.id} className="border-l-4 border-blue-500 pl-4 py-2">
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-medium text-gray-900 capitalize">{entry.field_name.replace('_', ' ')}</span>

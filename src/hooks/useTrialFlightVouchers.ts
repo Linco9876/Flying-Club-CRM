@@ -572,7 +572,10 @@ export const useTrialFlightVouchers = () => {
       return data;
     } catch (emailError) {
       await fetchAll();
-      throw new Error(await extractFunctionErrorMessage(emailError, 'Voucher marked ready, but email delivery failed'));
+      throw new Error(
+        await extractFunctionErrorMessage(emailError, 'Voucher marked ready, but email delivery failed'),
+        { cause: emailError },
+      );
     }
   };
 

@@ -34,3 +34,11 @@ verify_jwt = false
 # Calendar clients and guest email links cannot send a Supabase JWT. Access is controlled
 # with revocable, high-entropy bearer tokens and all data access runs through service role.
 verify_jwt = false
+
+[functions.integration-api]
+# Authenticates versioned server-to-server API keys internally.
+verify_jwt = false
+
+[functions.integration-webhook-worker]
+# Authenticates scheduled calls with INTEGRATION_WORKER_SECRET.
+verify_jwt = false

@@ -45,7 +45,6 @@ const stripePaymentFields = (session: any) => {
 
 const addMinutes = (date: Date, minutes: number) => new Date(date.getTime() + minutes * 60_000);
 const pad = (value: number) => String(value).padStart(2, "0");
-const dateKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const overlaps = (aStart: Date | string, aEnd: Date | string, bStart: Date | string, bEnd: Date | string) =>
   new Date(aStart) < new Date(bEnd) && new Date(aEnd) > new Date(bStart);
 const VOUCHER_TIME_ZONE = "Australia/Sydney";

@@ -155,14 +155,13 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
         };
       })
     );
-  // Deliberately depend on existingRates so we repopulate after the fetch completes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately depend on existingRates so we repopulate after the fetch completes
   }, [isOpen, isEdit, aircraft?.id, flightTypes, existingRates, billingLoading, ratesLoading]);
 
   const [maintenanceMilestones, setMaintenanceMilestones] = useState<MaintenanceMilestone[]>([]);
-  const [newMilestone, setNewMilestone] = useState({
+  const [newMilestone, setNewMilestone] = useState<Omit<MaintenanceMilestone, 'id'>>({
     title: '',
-    dueCondition: 'hours' as const,
+    dueCondition: 'hours',
     dueValue: ''
   });
 
@@ -189,7 +188,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   }, [isOpen, isEdit, aircraft?.id]);
 
   const [uploadedFiles, setUploadedFiles] = useState<UploadedDocument[]>([]);
-  const [existingDocumentTypes, setExistingDocumentTypes] = useState<string[]>([]);
+  const [, setExistingDocumentTypes] = useState<string[]>([]);
   const [xeroTrackingCategories, setXeroTrackingCategories] = useState<XeroTrackingCategory[]>([]);
   const [xeroTrackingLoading, setXeroTrackingLoading] = useState(false);
   const [xeroTrackingSyncing, setXeroTrackingSyncing] = useState(false);
@@ -1276,7 +1275,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                 <div>
                   <select
                     value={newMilestone.dueCondition}
-                    onChange={(e) => setNewMilestone(prev => ({ ...prev, dueCondition: e.target.value as any }))}
+                    onChange={(e) => setNewMilestone(prev => ({ ...prev, dueCondition: e.target.value as MaintenanceMilestone['dueCondition'] }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="hours">Hours</option>

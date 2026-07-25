@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const defaultTables = [
   'account_transactions',
@@ -111,7 +112,8 @@ async function writeJson(filePath, data) {
 }
 
 function safeName(name) {
-  return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+  const sanitized = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+  return sanitized === '.' || sanitized === '..' ? '_' : sanitized;
 }
 
 async function supabaseFetch(url, serviceRoleKey, endpoint, options = {}) {
@@ -130,6 +132,22 @@ async function supabaseFetch(url, serviceRoleKey, endpoint, options = {}) {
   }
 
   return response;
+}
+
+async function discoverTables({ url, serviceRoleKey }) {
+  const response = await supabaseFetch(url, serviceRoleKey, '/rest/v1/', {
+    headers: { Accept: 'application/openapi+json' }
+  });
+  const spec = await response.json();
+  const tables = Object.keys(spec.definitions || {})
+    .filter((name) => !name.startsWith('_'))
+    .sort();
+
+  if (!tables.length) {
+    throw new Error('Supabase REST schema returned no tables; refusing to create an incomplete backup.');
+  }
+
+  return tables;
 }
 
 async function backupTable({ url, serviceRoleKey, table, outDir, pageSize }) {
@@ -177,25 +195,31 @@ async function listBuckets({ url, serviceRoleKey }) {
 
 async function listStorageObjects({ url, serviceRoleKey, bucket, prefix = '' }) {
   const objects = [];
-  const response = await supabaseFetch(
-    url,
-    serviceRoleKey,
-    `/storage/v1/object/list/${encodeURIComponent(bucket)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefix, limit: 1000, offset: 0, sortBy: { column: 'name', order: 'asc' } })
-    }
-  );
-  const entries = await response.json();
+  const pageSize = 1000;
 
-  for (const entry of entries) {
-    const objectPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.id === null || entry.metadata === null) {
-      objects.push(...await listStorageObjects({ url, serviceRoleKey, bucket, prefix: objectPath }));
-    } else {
-      objects.push({ ...entry, path: objectPath });
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await supabaseFetch(
+      url,
+      serviceRoleKey,
+      `/storage/v1/object/list/${encodeURIComponent(bucket)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prefix, limit: pageSize, offset, sortBy: { column: 'name', order: 'asc' } })
+      }
+    );
+    const entries = await response.json();
+
+    for (const entry of entries) {
+      const objectPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.id === null || entry.metadata === null) {
+        objects.push(...await listStorageObjects({ url, serviceRoleKey, bucket, prefix: objectPath }));
+      } else {
+        objects.push({ ...entry, path: objectPath });
+      }
     }
+
+    if (entries.length < pageSize) break;
   }
 
   return objects;
@@ -228,6 +252,32 @@ async function backupBucket({ url, serviceRoleKey, bucket, outDir }) {
   return { bucket, objects: objects.length };
 }
 
+async function sha256File(filePath) {
+  const hash = crypto.createHash('sha256');
+  hash.update(await fs.readFile(filePath));
+  return hash.digest('hex');
+}
+
+async function collectChecksums(root, current = root) {
+  const entries = await fs.readdir(current, { withFileTypes: true });
+  const checksums = [];
+
+  for (const entry of entries) {
+    const filePath = path.join(current, entry.name);
+    if (entry.isDirectory()) {
+      checksums.push(...await collectChecksums(root, filePath));
+    } else if (entry.isFile() && entry.name !== 'manifest.json') {
+      checksums.push({
+        path: path.relative(root, filePath).replaceAll('\\', '/'),
+        sha256: await sha256File(filePath),
+        bytes: (await fs.stat(filePath)).size
+      });
+    }
+  }
+
+  return checksums.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 async function pruneOldBackups(root, retentionDays) {
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
@@ -256,7 +306,16 @@ async function main() {
   const backupRoot = requireEnv('BACKUP_ROOT');
   const pageSize = Number.parseInt(process.env.PAGE_SIZE || '1000', 10);
   const retentionDays = Number.parseInt(process.env.RETENTION_DAYS || '45', 10);
-  const tables = (process.env.BACKUP_TABLES?.split(',').map((table) => table.trim()).filter(Boolean)) || defaultTables;
+  const configuredTables = process.env.BACKUP_TABLES?.split(',').map((table) => table.trim()).filter(Boolean);
+  const tables = configuredTables?.length
+    ? configuredTables
+    : await discoverTables({ url, serviceRoleKey }).catch((error) => {
+        if (process.env.ALLOW_BACKUP_TABLE_FALLBACK === 'true') {
+          console.warn(`${error.message} Falling back to the legacy list because ALLOW_BACKUP_TABLE_FALLBACK=true.`);
+          return defaultTables;
+        }
+        throw error;
+      });
   const configuredBuckets = process.env.BACKUP_BUCKETS?.split(',').map((bucket) => bucket.trim()).filter(Boolean);
   const buckets = configuredBuckets?.length ? configuredBuckets : await listBuckets({ url, serviceRoleKey }).catch(() => defaultBuckets);
 
@@ -274,7 +333,11 @@ async function main() {
     tables: [],
     auth: null,
     storage: [],
-    warnings: []
+    warnings: [],
+    integrity: {
+      algorithm: 'sha256',
+      files: []
+    }
   };
 
   for (const table of tables) {
@@ -297,12 +360,20 @@ async function main() {
     if (result.error) manifest.warnings.push({ type: 'bucket', name: bucket, message: result.error });
   }
 
+  manifest.integrity.files = await collectChecksums(backupDir);
+  manifest.summary = {
+    tableCount: manifest.tables.length,
+    totalRows: manifest.tables.reduce((sum, table) => sum + table.rows, 0),
+    authUsers: manifest.auth?.users || 0,
+    bucketCount: manifest.storage.length,
+    storageObjects: manifest.storage.reduce((sum, bucket) => sum + bucket.objects, 0),
+    integrityFiles: manifest.integrity.files.length
+  };
   manifest.pruned = await pruneOldBackups(backupRoot, retentionDays);
   await writeJson(path.join(backupDir, 'manifest.json'), manifest);
 
   if (manifest.warnings.length) {
-    console.warn(`Backup finished with ${manifest.warnings.length} warning(s): ${backupDir}`);
-    process.exitCode = 2;
+    throw new Error(`Backup is incomplete (${manifest.warnings.length} warning(s)); refusing to publish it. See ${path.join(backupDir, 'manifest.json')}.`);
   } else {
     console.log(`Backup complete: ${backupDir}`);
   }

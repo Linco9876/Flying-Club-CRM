@@ -15,7 +15,7 @@ type Props = {
 };
 
 export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Props) => {
-  const { colours, isDark } = useAppTheme();
+  const { colours } = useAppTheme();
   const styles = useMemo(() => createStyles(colours), [colours]);
   const [actualEnd, setActualEnd] = useState(new Date());
   const [flightHours, setFlightHours] = useState('0');
@@ -77,7 +77,6 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
           {showPicker ? (
             <DutyTimePicker
               value={actualEnd}
-              isDark={isDark}
               minimumDate={context.activeDuty ? new Date(context.activeDuty.actualStart) : undefined}
               maximumDate={new Date(Date.now() + 5 * 60_000)}
               onChange={changeTime}

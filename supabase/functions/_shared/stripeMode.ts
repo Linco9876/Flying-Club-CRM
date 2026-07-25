@@ -5,7 +5,7 @@ export interface StripeModeSettings {
   allowTestModeXeroSync: boolean;
 }
 
-const cleanMode = (value: unknown): StripeMode => value === "test" ? "test" : "live";
+const cleanMode = (value: unknown): StripeMode => value === "live" ? "live" : "test";
 
 export const isTestStripeMode = (mode: StripeMode) => mode === "test";
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Gift, Loader2, Mail, Plane, Ticket } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Gift, Loader2, Mail, Plane, Ticket } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { TrialFlightVoucherAircraftMode } from '../../types';
 import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
@@ -131,11 +131,6 @@ export const TrialVoucherSalesPage: React.FC = () => {
     recipientDeliveryAt: '',
   });
   const minimumDeliveryAt = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 5 * 60_000)), []);
-  const missingStandardOptions: Array<{
-    mode: TrialFlightVoucherAircraftMode;
-    name: string;
-    description: string;
-  }> = [];
   const selectedCatalogProduct = useMemo(
     () => products.find(product => product.id === selectedCatalogProductId) || products[0] || null,
     [products, selectedCatalogProductId]

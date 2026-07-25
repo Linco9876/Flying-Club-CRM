@@ -14,7 +14,7 @@ interface TopUpModalProps {
   paymentMethods: { id: string; name: string; active: boolean; allowAccountTopup?: boolean }[];
 }
 
-const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onConfirm, paymentMethods }) => {
+const TopUpModal: React.FC<TopUpModalProps> = ({ userId: _userId, userName, onClose, onConfirm, paymentMethods }) => {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('Account top-up');
   const [paymentMethodId, setPaymentMethodId] = useState('');

@@ -29,7 +29,6 @@ export const ResetPasswordPage: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     let recoveryConfirmed = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const originalPathname = window.location.pathname;
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
@@ -192,7 +191,7 @@ export const ResetPasswordPage: React.FC = () => {
       }
     });
 
-    timeoutId = setTimeout(async () => {
+    const timeoutId = setTimeout(async () => {
       if (cancelled || recoveryConfirmed) return;
 
       try {
@@ -286,8 +285,8 @@ export const ResetPasswordPage: React.FC = () => {
       return;
     }
 
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+    if (password.length < 12) {
+      toast.error('Password must be at least 12 characters');
       return;
     }
 
@@ -386,7 +385,7 @@ export const ResetPasswordPage: React.FC = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-3 py-3 pr-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Enter new password (min 6 characters)"
+                  placeholder="Enter new password (min 12 characters)"
                 />
                 <button
                   type="button"

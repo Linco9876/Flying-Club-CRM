@@ -171,7 +171,7 @@ Deno.serve(async (req: Request) => {
     let setupLink: string | null = null;
     let emailSent = false;
     let emailError: string | null = null;
-    let action: "promoted_existing" | "created_new" = existingUser ? "promoted_existing" : "created_new";
+    const action: "promoted_existing" | "created_new" = existingUser ? "promoted_existing" : "created_new";
 
     if (!memberId) {
       const { data: authData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(guestEmail, {

@@ -36,6 +36,7 @@ export const LoginScreen = () => {
         <View style={styles.card}>
           <Text style={styles.label}>Email</Text>
           <TextInput
+            accessibilityLabel="Email address"
             autoCapitalize="none"
             autoComplete="email"
             keyboardType="email-address"
@@ -47,6 +48,7 @@ export const LoginScreen = () => {
           />
           <Text style={[styles.label, styles.passwordLabel]}>Password</Text>
           <TextInput
+            accessibilityLabel="Password"
             autoCapitalize="none"
             autoComplete="current-password"
             secureTextEntry
@@ -65,11 +67,29 @@ export const LoginScreen = () => {
         <InstallPwaButton />
         <View style={styles.appearance}><AppearanceSelector /></View>
         <View style={styles.links}>
-          <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)}><Text style={styles.link}>Privacy</Text></Pressable>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Privacy"
+            onPress={() => void Linking.openURL(PRIVACY_URL)}
+          >
+            <Text style={styles.link}>Privacy</Text>
+          </Pressable>
           <Text style={styles.linkDot}>·</Text>
-          <Pressable onPress={() => void Linking.openURL(SUPPORT_URL)}><Text style={styles.link}>Support</Text></Pressable>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Support"
+            onPress={() => void Linking.openURL(SUPPORT_URL)}
+          >
+            <Text style={styles.link}>Support</Text>
+          </Pressable>
           <Text style={styles.linkDot}>·</Text>
-          <Pressable onPress={() => void Linking.openURL(ACCOUNT_DELETION_URL)}><Text style={styles.link}>Account deletion</Text></Pressable>
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel="Account deletion"
+            onPress={() => void Linking.openURL(ACCOUNT_DELETION_URL)}
+          >
+            <Text style={styles.link}>Account deletion</Text>
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

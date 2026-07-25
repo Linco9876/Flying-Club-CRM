@@ -42,7 +42,7 @@ export const KioskLoginForm: React.FC<KioskLoginFormProps> = ({ sessionKey }) =>
   return (
     <div className="kiosk-login-surface relative min-h-screen overflow-hidden bg-[#f8fbff] lg:grid lg:grid-cols-2">
       <img
-        src="/auth-aircraft-sunset.png"
+        src="/auth-aircraft-sunset.webp"
         alt="Aircraft wing at sunset"
         className="auth-hero-image absolute inset-0 h-full w-full object-cover object-left-center"
       />

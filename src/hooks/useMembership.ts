@@ -353,6 +353,8 @@ export const useMembership = () => {
       p_agrees_to_member_guarantee: true,
       p_agrees_to_code_of_conduct: true,
       p_agrees_to_members_manual: true,
+      p_privacy_notice_accepted: true,
+      p_privacy_notice_version: '2026-07-23',
     });
     if (rpcError) throw rpcError;
     return data;

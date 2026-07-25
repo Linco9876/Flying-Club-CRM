@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Loader2, Calendar, Wrench, Edit } from 'lucide-react';
+import { X, Loader2, Wrench, Edit } from 'lucide-react';
 import { MaintenanceMilestone } from '../../hooks/useMaintenanceMilestones';
 
 interface MaintenanceCompleteModalProps {

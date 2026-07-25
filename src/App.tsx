@@ -19,9 +19,11 @@ import { KioskLoginForm } from './components/Kiosk/KioskLoginForm';
 import { KioskCalendarShell } from './components/Kiosk/KioskCalendarShell';
 import { supabase } from './lib/supabase';
 import { Plane } from 'lucide-react';
+import { MfaGate } from './components/Auth/MfaSecurity';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
 const MembershipJoinPage = lazy(() => import('./components/Auth/MembershipJoinPage').then(module => ({ default: module.MembershipJoinPage })));
+const PrivacyNoticePage = lazy(() => import('./components/Legal/PrivacyNoticePage'));
 const BookingForm = lazy(() => import('./components/Bookings/BookingForm'));
 const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboard').then(module => ({ default: module.ProfileDashboard })));
 const Calendar = lazy(() => import('./components/Calendar/Calendar').then(module => ({ default: module.Calendar })));
@@ -349,6 +351,16 @@ const AppContent: React.FC = () => {
     );
   }
 
+  if (normalisedPathname === '/privacy') {
+    return (
+      <PageLoadGate routeKey="privacy">
+        <Suspense fallback={<PageLoader />}>
+          <PrivacyNoticePage />
+        </Suspense>
+      </PageLoadGate>
+    );
+  }
+
   if (isPasswordRecovery) {
     return (
       <PageLoadGate routeKey="reset-password">
@@ -439,19 +451,23 @@ const AppContent: React.FC = () => {
     return <LoginForm />;
   }
 
-  return <AuthenticatedApp
-    user={user}
-    showBookingForm={showBookingForm}
-    setShowBookingForm={setShowBookingForm}
-    showTrainingRecordForm={showTrainingRecordForm}
-    setShowTrainingRecordForm={setShowTrainingRecordForm}
-    editingBooking={editingBooking}
-    setEditingBooking={setEditingBooking}
-    selectedBookingForRecord={selectedBookingForRecord}
-    setSelectedBookingForRecord={setSelectedBookingForRecord}
-    bookingFormData={bookingFormData}
-    setBookingFormData={setBookingFormData}
-  />;
+  return (
+    <MfaGate>
+      <AuthenticatedApp
+        user={user}
+        showBookingForm={showBookingForm}
+        setShowBookingForm={setShowBookingForm}
+        showTrainingRecordForm={showTrainingRecordForm}
+        setShowTrainingRecordForm={setShowTrainingRecordForm}
+        editingBooking={editingBooking}
+        setEditingBooking={setEditingBooking}
+        selectedBookingForRecord={selectedBookingForRecord}
+        setSelectedBookingForRecord={setSelectedBookingForRecord}
+        bookingFormData={bookingFormData}
+        setBookingFormData={setBookingFormData}
+      />
+    </MfaGate>
+  );
 };
 
 const KioskRoute: React.FC<{
@@ -711,7 +727,7 @@ const AuthenticatedApp: React.FC<{
   const location = useLocation();
   const activeView = getViewForPath(location.pathname);
   const bookingsEnabled = activeView === 'calendar' || showBookingForm || showTrainingRecordForm || Boolean(editingBooking || selectedBookingForRecord);
-  const { bookings, addBooking, updateBooking, deleteBooking, restoreBooking, approveBooking, rejectBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
+  const { bookings, addBooking, updateBooking, deleteBooking, restoreBooking, approveBooking, refetch: refetchBookings } = useBookings(bookingsEnabled);
   const { settings: portalSettings, loading: portalSettingsLoading } = usePortalUxSettings();
   const { preferences: userPreferences, loading: userPreferencesLoading } = useUserPreferences(user?.id || '');
   const effectiveTheme = userPreferences?.theme || getStoredPortalTheme(user?.id) || 'auto';
@@ -864,10 +880,6 @@ const AuthenticatedApp: React.FC<{
     setSelectedBookingForRecord(null);
   };
 
-  const handleOpenTrainingRecord = (booking: Booking) => {
-    setSelectedBookingForRecord(booking);
-    setShowTrainingRecordForm(true);
-  };
   const requiredAction = getRequiredActionForView(activeView);
   const requiredResource = getRequiredResourceForView(activeView);
 

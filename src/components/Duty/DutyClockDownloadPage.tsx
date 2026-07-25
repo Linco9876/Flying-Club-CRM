@@ -1,9 +1,6 @@
 import React from 'react';
 import { Download, ShieldCheck, Smartphone } from 'lucide-react';
 
-const APK_DOWNLOAD_URL =
-  'https://github.com/Linco9876/Flying-Club-CRM/releases/download/duty-clock-v1.1.0/BFC-Duty-Clock-1.1.0.apk';
-
 export const DutyClockDownloadPage: React.FC = () => (
   <main className="min-h-screen bg-slate-950 px-4 py-10 text-white sm:px-6 sm:py-16">
     <div className="mx-auto max-w-xl">
@@ -21,47 +18,33 @@ export const DutyClockDownloadPage: React.FC = () => (
             <Smartphone className="h-8 w-8" aria-hidden="true" />
           </div>
 
-          <p className="text-sm font-semibold text-sky-300">Android app</p>
+          <p className="text-sm font-semibold text-sky-300">Installable web app</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">BFC Duty Clock</h1>
           <p className="mt-4 text-base leading-7 text-slate-300">
-            Clock on, record breaks and end your duty period from your Android phone. Sign in with your existing portal account.
+            Clock on, record breaks and end your duty period from any modern phone. It updates automatically and uses your existing portal account.
           </p>
 
           <a
-            href={APK_DOWNLOAD_URL}
+            href="/duty-clock/app/"
             className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-400 px-5 py-4 text-base font-bold text-slate-950 transition hover:bg-sky-300 focus:outline-none focus:ring-4 focus:ring-sky-300/40"
           >
             <Download className="h-5 w-5" aria-hidden="true" />
-            Download for Android
-          </a>
-
-          <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            <span className="h-px flex-1 bg-white/10" />
-            or
-            <span className="h-px flex-1 bg-white/10" />
-          </div>
-
-          <a
-            href="/duty-clock/app/"
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-5 py-4 text-base font-bold text-white transition hover:bg-white/15 focus:outline-none focus:ring-4 focus:ring-white/20"
-          >
-            <Smartphone className="h-5 w-5" aria-hidden="true" />
-            Open installable web app
+            Open Duty Clock
           </a>
           <p className="mt-3 text-center text-xs leading-5 text-slate-400">
-            Works on iPhone and Android. Open it, then tap Add to Home Screen inside the app.
+            Works on iPhone, iPad, Android and desktop. Open it, then choose Add to Home Screen or Install.
           </p>
 
           <div className="mt-5 flex items-start gap-3 rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-100">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" aria-hidden="true" />
-            <p>Version 1.1.0 is digitally signed by Bendigo Flying Club and has passed Android signature verification.</p>
+            <p>No APK or app-store download is required. The secure PWA is served from the club portal and receives updates automatically.</p>
           </div>
         </div>
 
         <div className="border-t border-white/10 bg-black/15 px-6 py-5 text-sm leading-6 text-slate-300 sm:px-9">
-          <p className="font-semibold text-white">Installation</p>
+          <p className="font-semibold text-white">Add it to your phone</p>
           <p className="mt-1">
-            Open the downloaded APK and follow Android's prompts. The first installation may ask you to allow installs from your browser or Files app.
+            iPhone or iPad: open in Safari, tap Share, then Add to Home Screen. Android: open the browser menu and choose Install app.
           </p>
         </div>
       </section>

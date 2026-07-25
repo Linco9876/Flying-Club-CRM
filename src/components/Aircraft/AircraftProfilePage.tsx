@@ -266,14 +266,15 @@ export const AircraftProfilePage: React.FC = () => {
     return <div className="p-3 text-sm text-gray-500 sm:p-6">Aircraft not found.</div>;
   }
 
-  const tabs: Array<{ id: AircraftProfileTab; label: string; icon: React.ReactNode; staffOnly?: boolean }> = [
+  const allTabs: Array<{ id: AircraftProfileTab; label: string; icon: React.ReactNode; staffOnly?: boolean }> = [
     { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" /> },
     { id: 'defects', label: 'Defects', icon: <AlertTriangle className="h-4 w-4" /> },
     { id: 'flight-log', label: 'Flight Log', icon: <Plane className="h-4 w-4" /> },
     { id: 'milestones', label: 'Milestones', icon: <Wrench className="h-4 w-4" /> },
     { id: 'bookings', label: 'Bookings', icon: <Calendar className="h-4 w-4" /> },
     { id: 'pricing', label: 'Pricing', icon: <Settings className="h-4 w-4" /> },
-  ].filter(tab => {
+  ];
+  const tabs = allTabs.filter(tab => {
     if (isStudentOrPilot) return ['documents', 'defects', 'bookings', 'pricing'].includes(tab.id);
     return !tab.staffOnly || canManageAircraft;
   });
@@ -779,7 +780,7 @@ const RateRow: React.FC<RateRowProps> = ({ flightTypeName, rate, disabled, payme
       </div>
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-gray-500">Charge</span>
-        <select disabled={disabled} value={draft.chargeType} onChange={event => setDraft(prev => ({ ...prev, chargeType: event.target.value }))} className={inputClass}>
+        <select disabled={disabled} value={draft.chargeType} onChange={event => setDraft(prev => ({ ...prev, chargeType: event.target.value as AircraftRate['chargeType'] }))} className={inputClass}>
           <option value="tach">Tach</option>
           <option value="flat">Flat</option>
           <option value="per_pax">Per pax</option>

@@ -97,7 +97,7 @@ function dbLessonToLesson(row: Record<string, unknown>): TrainingLesson {
     theory: (row.theory as string) ?? '',
     studyGuide: (row.study_guide as string) ?? '',
     studyAssets: rawStudyAssets
-      .map((asset: any) => ({
+      .map((asset: Record<string, unknown>): LessonStudyAsset => ({
         id: String(asset.id ?? `study-asset-${Date.now()}`),
         type: asset.type === 'image' ? 'image' : 'document',
         title: String(asset.title ?? ''),

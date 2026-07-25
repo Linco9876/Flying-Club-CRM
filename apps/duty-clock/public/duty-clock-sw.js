@@ -1,9 +1,10 @@
-const CACHE_NAME = 'bfc-duty-clock-v1.1.0';
+const CACHE_NAME = 'bfc-duty-clock-v1.2.0';
 const APP_ROOT = '/duty-clock/app/';
 const CORE_FILES = [
   APP_ROOT,
   `${APP_ROOT}index.html`,
   `${APP_ROOT}manifest.webmanifest`,
+  `${APP_ROOT}duty-clock-bootstrap.js`,
   `${APP_ROOT}pwa-icon-192.png`,
   `${APP_ROOT}pwa-icon-512.png`,
   `${APP_ROOT}pwa-icon-maskable-512.png`,
@@ -39,7 +40,11 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET' || url.origin !== self.location.origin || !url.pathname.startsWith(APP_ROOT)) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(async () => (await caches.match(`${APP_ROOT}index.html`)) || Response.error()));
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .then(response => response.ok ? response : Promise.reject(new Error('Navigation failed')))
+        .catch(async () => (await caches.match(`${APP_ROOT}index.html`)) || Response.error())
+    );
     return;
   }
 

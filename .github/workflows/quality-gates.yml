@@ -1,0 +1,132 @@
+name: Quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Block dependency vulnerabilities
+        run: npm run audit:dependencies
+      - name: Enforce code-quality ratchet
+        run: npm run quality:ratchet
+      - name: Audit migration safety and ordering
+        run: npm run audit:migrations:local
+      - name: Build portal and PWAs
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+
+  edge-functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Type-check every Edge Function
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            npx --yes deno check --node-modules-dir=false "$file"
+          done < <(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print | sort)
+      - name: Run every Edge Function unit test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tests < <(find supabase/functions -name '*.test.ts' -print | sort)
+          test "${#tests[@]}" -gt 0
+          npx --yes deno test --node-modules-dir=false "${tests[@]}"
+
+  code-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+
+  deployment-credential-readiness:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify Cloudflare token and Pages project access without deploying
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          npx --yes wrangler@latest whoami
+          npx --yes wrangler@latest pages project list
+      - name: Verify Supabase management access without changing a project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_RECOVERY_PROJECT_REF: ${{ secrets.SUPABASE_RECOVERY_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_RECOVERY_PROJECT_REF:-}"
+          npx --yes supabase@latest projects list |
+            grep -F "${SUPABASE_RECOVERY_PROJECT_REF}"
+
+  real-device-acceptance:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Run authenticated acceptance on physical iPhone and Android devices
+        shell: pwsh
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_RECOVERY_PROJECT_REF: ${{ secrets.SUPABASE_RECOVERY_PROJECT_REF }}
+        run: |
+          if (-not $env:BROWSERSTACK_USERNAME -or -not $env:BROWSERSTACK_ACCESS_KEY) {
+            throw 'BrowserStack credentials are required.'
+          }
+          if (-not $env:SUPABASE_ACCESS_TOKEN -or -not $env:SUPABASE_RECOVERY_PROJECT_REF) {
+            throw 'Supabase recovery credentials are required.'
+          }
+          ./scripts/run-recovery-acceptance.ps1 `
+            -RecoveryProjectRef $env:SUPABASE_RECOVERY_PROJECT_REF `
+            -SupabaseAccessToken $env:SUPABASE_ACCESS_TOKEN `
+            -BrowserStack

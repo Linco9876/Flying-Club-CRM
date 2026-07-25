@@ -188,7 +188,7 @@ const stripHtml = (value: string) =>
     .trim();
 
 const downloadBlob = (bytes: Uint8Array, filename: string) => {
-  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const blob = new Blob([Uint8Array.from(bytes).buffer], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -332,17 +332,6 @@ export async function exportCoursePdf({
       cursor -= 10;
     });
     cursor -= 4;
-  };
-
-  const drawSignatureLines = (labels: string[]) => {
-    ensureSpace(48);
-    const columnWidth = (width - margin * 2 - 16) / labels.length;
-    labels.forEach((label, index) => {
-      const x = margin + index * (columnWidth + 8);
-      page.drawLine({ start: { x, y: cursor - 24 }, end: { x: x + columnWidth, y: cursor - 24 }, thickness: 0.6, color: borderGrey });
-      page.drawText(label, { x, y: cursor - 38, size: 7, font: bold, color: grey });
-    });
-    cursor -= 52;
   };
 
   const drawDigitalSignatureBox = (
@@ -696,7 +685,7 @@ export async function exportCoursePdf({
   cursor -= 70;
 
   drawSectionTitle(isRplSyllabusCourse ? 'Student and Course Details' : 'Details');
-  const detailRows = [
+  const detailRows: Array<[string, string]> = [
     ['RAAus Number', student.raausId || 'Not recorded'],
     ['RAAus Expiry', formatDate(student.licenceExpiry)],
     ['CASA ARN', student.casaId || 'Not recorded'],
@@ -955,7 +944,6 @@ export async function exportCoursePdf({
       cursor -= 16 + Math.ceil(keyLines.length / 3) * 10;
     }
 
-    const leftWidths = [42, 92, 58, 46];
     const improvedLeftWidths = [150, 92, 50, 34];
     const matrixWidth = width - margin * 2 - improvedLeftWidths.reduce((a, b) => a + b, 0) - 54;
     const criterionWidth = criteria.length > 0 ? Math.max(18, Math.min(34, matrixWidth / criteria.length)) : 0;

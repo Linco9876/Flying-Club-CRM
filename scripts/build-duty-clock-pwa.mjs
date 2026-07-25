@@ -32,4 +32,6 @@ const run = (args, cwd = appDirectory) => {
 
 run(['ci']);
 run(['run', 'assets:generate']);
-run(['exec', '--', 'expo', 'export', '--platform', 'web', '--output-dir', '../../dist/duty-clock/app']);
+// Public Supabase settings are inlined by Metro. Clear its transform cache so a
+// recovery/staging export can never be reused for a production build.
+run(['exec', '--', 'expo', 'export', '--platform', 'web', '--clear', '--output-dir', '../../dist/duty-clock/app']);
