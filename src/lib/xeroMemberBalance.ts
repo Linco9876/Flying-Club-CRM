@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { publicSupabaseKey, publicSupabaseUrl, supabase } from './supabase';
 import { getSupabaseFunctionErrorMessage } from './supabaseFunctionErrors';
 
 export interface XeroMemberBalance {
@@ -184,12 +184,10 @@ export const openOwnXeroInvoicePdf = async (invoiceId: string, invoiceNumber?: s
     throw new Error('You need to be logged in to view this invoice');
   }
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const response = await fetch(`${supabaseUrl}/functions/v1/member-xero-balance`, {
+  const response = await fetch(`${publicSupabaseUrl}/functions/v1/member-xero-balance`, {
     method: 'POST',
     headers: {
-      apikey: supabaseAnonKey,
+      apikey: publicSupabaseKey,
       authorization: `Bearer ${accessToken}`,
       'content-type': 'application/json',
     },

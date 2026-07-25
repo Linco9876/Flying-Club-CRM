@@ -1,7 +1,7 @@
 import React from 'react';
 import { CalendarClock, Check, Clipboard, ExternalLink, Loader2, RefreshCw, Shield, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { supabase } from '../../lib/supabase';
+import { publicSupabaseUrl, supabase } from '../../lib/supabase';
 
 interface CalendarFeedSettings {
   user_id: string;
@@ -46,7 +46,7 @@ export const CalendarSubscriptionSettings: React.FC<CalendarSubscriptionSettings
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
-  const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+  const supabaseUrl = publicSupabaseUrl;
   const feedUrl = settings?.feed_key ? `${supabaseUrl}/functions/v1/calendar-feed?feed=${settings.feed_key}` : '';
   const webcalUrl = feedUrl.replace(/^https?:\/\//, 'webcal://');
 

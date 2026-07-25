@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { publicSupabaseKey, publicSupabaseUrl, supabase } from '../lib/supabase';
 import { UserRole } from '../types';
 import toast from 'react-hot-toast';
 
@@ -84,13 +84,12 @@ export const useInvitations = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const response = await fetch(`${supabaseUrl}/functions/v1/invite-user`, {
+      const response = await fetch(`${publicSupabaseUrl}/functions/v1/invite-user`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
-          'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Apikey': publicSupabaseKey,
         },
         body: JSON.stringify({
           email: data.email,

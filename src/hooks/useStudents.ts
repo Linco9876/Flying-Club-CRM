@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { publicSupabaseKey, publicSupabaseUrl, supabase } from '../lib/supabase';
 import { Student, Endorsement, Licence, UserRole } from '../types';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../context/PageLoadContext';
@@ -375,12 +375,12 @@ export const useStudents = (options?: UseStudentsOptions) => {
         const appBasePath = import.meta.env.VITE_AUTH_REDIRECT_ORIGIN ? '/' : import.meta.env.BASE_URL;
         const redirectTo = `${redirectBase}${appBasePath}`;
 
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/change-user-email`, {
+        const response = await fetch(`${publicSupabaseUrl}/functions/v1/change-user-email`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`,
-            Apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            Apikey: publicSupabaseKey,
           },
           body: JSON.stringify({
             userId: id,

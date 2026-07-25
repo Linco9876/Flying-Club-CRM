@@ -16,6 +16,8 @@ if (existsSync(productionEnvPath)) {
 
 buildEnvironment.EXPO_PUBLIC_SUPABASE_URL ||= buildEnvironment.VITE_SUPABASE_URL;
 buildEnvironment.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||= buildEnvironment.VITE_SUPABASE_ANON_KEY;
+buildEnvironment.EXPO_PUBLIC_SUPABASE_URL = buildEnvironment.EXPO_PUBLIC_SUPABASE_URL?.trim();
+buildEnvironment.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = buildEnvironment.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
 
 if (!buildEnvironment.EXPO_PUBLIC_SUPABASE_URL || !buildEnvironment.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
   throw new Error('Duty Clock PWA requires the public Supabase URL and publishable key.');
