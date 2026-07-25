@@ -55,13 +55,10 @@ Deno.serve(async (request: Request) => {
     const endpoint = Array.isArray(delivery.integration_webhook_endpoints) ? delivery.integration_webhook_endpoints[0] : delivery.integration_webhook_endpoints;
     const event = Array.isArray(delivery.integration_webhook_events) ? delivery.integration_webhook_events[0] : delivery.integration_webhook_events;
     const { data: secretRow } = await admin.from("integration_webhook_secrets").select("signing_secret").eq("endpoint_id", delivery.endpoint_id).single();
-    const destination = endpoint?.url
-      ? await resolvePublicWebhookDestination(endpoint.url, webhookHostAllowlist)
-      : null;
-    if (!endpoint?.url || !event || !secretRow?.signing_secret || !destination) {
+    if (!endpoint?.url || !event || !secretRow?.signing_secret) {
       await admin.from("integration_webhook_deliveries").update({
         status: "abandoned",
-        last_error: "Webhook endpoint is missing required data, is not allowlisted, or does not resolve only to public addresses",
+        last_error: "Webhook endpoint is missing required delivery data",
         updated_at: new Date().toISOString(),
       }).eq("id", delivery.id);
       failed += 1;
@@ -71,6 +68,16 @@ Deno.serve(async (request: Request) => {
     const body = JSON.stringify({ id: delivery.event_id, type: event.event_type, occurredAt: event.occurred_at, data: event.payload });
     const attempt = delivery.attempt_count;
     try {
+      const destination = await resolvePublicWebhookDestination(endpoint.url, webhookHostAllowlist);
+      if (!destination) {
+        await admin.from("integration_webhook_deliveries").update({
+          status: "abandoned",
+          last_error: "Webhook endpoint is not allowlisted or resolves to a non-public address",
+          updated_at: new Date().toISOString(),
+        }).eq("id", delivery.id);
+        failed += 1;
+        continue;
+      }
       const response = await pinnedHttpsPost(
         destination,
         body,

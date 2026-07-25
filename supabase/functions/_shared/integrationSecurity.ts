@@ -95,6 +95,13 @@ export const allowedWebhookHosts = (value: string | undefined) =>
 
 type DnsResolver = (hostname: string, recordType: "A" | "AAAA") => Promise<string[]>;
 
+export class WebhookDnsResolutionError extends Error {
+  constructor(hostname: string) {
+    super(`Webhook hostname could not be resolved: ${hostname}`);
+    this.name = "WebhookDnsResolutionError";
+  }
+}
+
 export const resolvePublicWebhookDestination = async (
   value: string,
   allowedHosts: ReadonlySet<string>,
@@ -113,6 +120,7 @@ export const resolvePublicWebhookDestination = async (
     resolveDns(host, "AAAA"),
   ]);
   const addresses = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  if (addresses.length === 0) throw new WebhookDnsResolutionError(host);
   return addresses.length > 0 && addresses.every(publicIpAddress) ? { url, addresses } : null;
 };
 

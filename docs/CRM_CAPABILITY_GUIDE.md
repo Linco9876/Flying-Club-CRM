@@ -307,7 +307,7 @@ Choosing a result fills both resources and the start/end values. Final submissio
 - `integration-api/v1` provides scoped read endpoints for aircraft, availability and privacy-minimised changed bookings.
 - API keys are generated with 256 bits of randomness, displayed once, stored only as SHA-256 hashes, individually scoped and immediately revocable. Per-key rate limiting and request audit records are built in.
 - Webhook endpoints must use an explicitly approved hostname and public HTTPS on port 443. The worker re-resolves A and AAAA records before every request, rejects any non-public answer, pins TLS to a validated address while verifying the approved hostname, and does not follow redirects. Signing secrets are service-role-only and displayed once.
-- Booking, club-membership and membership-financial events enter a transactional outbox. A scheduled worker atomically leases deliveries, reclaims interrupted work after five minutes, signs the exact body with HMAC-SHA256, supplies stable event IDs and retries with exponential backoff.
+- Booking, club-membership and membership-financial events enter a transactional outbox. A scheduled worker atomically leases deliveries, reclaims interrupted work after five minutes, signs the exact body with HMAC-SHA256, supplies stable event IDs and retries network, HTTP and temporary DNS failures with exponential backoff.
 - Consumers must verify timestamp and signature, use `X-BFC-Event-Id` idempotently, and return 2xx only after durable acceptance. See `docs/INTEGRATIONS_API.md`.
 
 ### Required repository and service configuration

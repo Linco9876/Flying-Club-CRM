@@ -25,6 +25,7 @@ import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { Endorsement, Licence } from '../../types';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
+import { safeImageSource } from '../../utils/imageSource';
 import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 import { MfaSettings } from '../Auth/MfaSecurity';
 
@@ -997,14 +998,16 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     onChoose: (file: File | undefined) => void;
     onRemove: () => void;
     shape?: 'avatar' | 'rectangle';
-  }) => (
+  }) => {
+    const imageSource = safeImageSource(preview);
+    return (
     <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-4">
         <div className={`relative flex flex-shrink-0 items-center justify-center overflow-hidden bg-blue-600 text-white ${
           shape === 'avatar' ? 'h-20 w-20 rounded-full ring-4 ring-blue-50' : 'h-20 w-32 rounded-lg border border-gray-200'
         }`}>
-          {preview ? (
-            <img src={preview} alt="" className="h-full w-full object-cover" />
+          {imageSource ? (
+            <img src={imageSource} alt="" className="h-full w-full object-cover" />
           ) : shape === 'avatar' ? (
             <User className="h-9 w-9" />
           ) : (
@@ -1048,7 +1051,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         )}
       </div>
     </div>
-  );
+    );
+  };
 
   const timezones = [
     'Australia/Melbourne',

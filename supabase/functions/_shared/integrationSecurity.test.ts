@@ -1,7 +1,8 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import {
   allowedWebhookHosts,
   hmacSha256Hex,
+  resolvePublicWebhookDestination,
   resolvedPublicWebhookUrl,
   safePublicWebhookUrl,
   sha256Hex,
@@ -51,4 +52,9 @@ Deno.test("webhooks require an allowlisted hostname with only public DNS answers
   assertEquals(await resolvedPublicWebhookUrl("https://other.example.com/bfc", allowlist, publicResolver), false);
   assertEquals(await resolvedPublicWebhookUrl("https://hooks.example.com/bfc", allowlist, rebindingResolver), false);
   assertEquals(await resolvedPublicWebhookUrl("https://127.0.0.1/bfc", new Set(["127.0.0.1"]), publicResolver), false);
+  await assertRejects(
+    () => resolvePublicWebhookDestination("https://hooks.example.com/bfc", allowlist, () => Promise.reject(new Error("DNS unavailable"))),
+    Error,
+    "could not be resolved",
+  );
 });
