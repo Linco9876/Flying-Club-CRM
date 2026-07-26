@@ -74,5 +74,3 @@ Never place service-role, database, Stripe, Xero, or other secret keys in fronte
 ## Supabase Auth redirects
 
 Keep the Supabase production Site URL set to `https://portal.bendigoflyingclub.com.au` and allow `https://portal.bendigoflyingclub.com.au/reset-password` as a redirect URL. Local development can use `VITE_AUTH_REDIRECT_ORIGIN` in an ignored `.env.local` when needed.
-
-[Edit in StackBlitz](https://stackblitz.com/~/github.com/Linco9876/Flying-Club-CRM)

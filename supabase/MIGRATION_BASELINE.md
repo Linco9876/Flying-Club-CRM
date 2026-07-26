@@ -2,7 +2,7 @@
 
 The migration history was rebased on 14 July 2026 because the repository and
 the linked production project had accumulated different histories through a
-mix of Bolt, dashboard, CLI, and direct SQL changes.
+mix of browser-based editing, dashboard, CLI, and direct SQL changes.
 
 `20260714024330_remote_schema_baseline.sql` is a schema-only snapshot of the
 linked production database. It also contains the current storage bucket
