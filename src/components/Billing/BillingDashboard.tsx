@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { StripeTestModeBanner } from './StripeTestModeBanner';
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
-import { AlertTriangle, CreditCard, ExternalLink, FileText, GitBranch, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Users, Wallet } from 'lucide-react';
+import { AlertTriangle, CreditCard, ExternalLink, FileText, GitBranch, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, Users, Wallet, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
@@ -77,7 +77,11 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const [xeroInvoicesLinked, setXeroInvoicesLinked] = useState(true);
   const [invoicePaymentLoadingId, setInvoicePaymentLoadingId] = useState<string | null>(null);
   const [invoiceViewingId, setInvoiceViewingId] = useState<string | null>(null);
+  const [showSavedCardModal, setShowSavedCardModal] = useState(false);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
   const invoiceViewRequestsRef = useRef<Set<string>>(new Set());
+  const savedCardTriggerRef = useRef<HTMLButtonElement>(null);
+  const savedCardDialogRef = useRef<HTMLElement>(null);
   const { user } = useAuth();
   const { settings: portalSettings } = usePortalUxSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
@@ -99,6 +103,43 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     Number(stripeCardStatus.card.expMonth || 0) <= 12 &&
     Number(stripeCardStatus.card.expYear || 0) >= new Date().getFullYear()
   );
+
+  useEffect(() => {
+    if (!showSavedCardModal) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const dialog = savedCardDialogRef.current;
+    const triggerElement = savedCardTriggerRef.current;
+    const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+    const focusableElements = dialog ? Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)) : [];
+    focusableElements[0]?.focus();
+
+    const handleDialogKeyboard = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowSavedCardModal(false);
+        return;
+      }
+      if (event.key !== 'Tab' || focusableElements.length === 0) return;
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleDialogKeyboard);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleDialogKeyboard);
+      triggerElement?.focus();
+    };
+  }, [showSavedCardModal]);
 
   const loadStripeCardStatus = useCallback(async () => {
     if (!user?.id) {
@@ -275,7 +316,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     }
   };
 
-  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && (stripeCardLoading || xeroInvoicesLoading || !xeroInvoicesChecked));
+  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && (xeroInvoicesLoading || !xeroInvoicesChecked));
   usePageLoadState(
     pageLoading,
     showOwnBillingOnly ? 'Loading your balance' : 'Loading financial dashboard',
@@ -488,106 +529,209 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       }
     };
 
+    const processingFundsTotal = pendingTopUpAmount + awaitingXeroTopUpAmount;
+    const visibleTransactions = showAllTransactions ? transactions : transactions.slice(0, 8);
+    const prepaidStatusMessage = !xeroConnectedForOwnBilling
+      ? 'Access cannot be confirmed while your balance is unavailable.'
+      : prepaidEligible
+        ? 'Prepaid aircraft rates are available on your account.'
+        : 'A positive cleared balance is required to use prepaid aircraft rates.';
+
     return (
-      <div className="space-y-4 p-3 sm:space-y-6 sm:p-6">
+      <div className="space-y-5 p-3 sm:space-y-6 sm:p-6">
         <StripeTestModeBanner />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Billing</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            {xeroConnectedForOwnBilling
-              ? 'Review your Xero credit, invoices owing, saved card and billing history.'
-              : 'Xero balance could not be confirmed. Old CRM balances are no longer shown.'}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Balance &amp; billing</h1>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Your Bendigo Flying Club flying account.</p>
         </div>
 
         {!xeroConnectedForOwnBilling && (
-          <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
-                  <Wallet className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="font-semibold text-amber-950 dark:text-amber-100">Xero is not connected right now</h2>
-                  <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-                    The CRM no longer shows or uses the old internal prepaid balance. Reconnect Xero to view real credit, invoices and prepaid access.
-                  </p>
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                    An admin can reconnect Xero from Settings &gt; Integrations. If Xero was just connected, refresh this page.
-                  </p>
-                </div>
+          <section className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
+              <div>
+                <h2 className="text-sm font-semibold">Your current balance is temporarily unavailable</h2>
+                <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">Try refreshing in a moment. Contact the club if this continues.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setXeroInvoicesChecked(false);
-                  void Promise.all([billing.refetch(), loadXeroInvoices({ forceRefresh: true })]);
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setXeroInvoicesChecked(false);
+                void Promise.all([billing.refetch(), loadXeroInvoices({ forceRefresh: true })]);
+              }}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
           </section>
         )}
 
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {xeroConnectedForOwnBilling ? 'Xero credit available' : 'Xero credit unavailable'}
-            </p>
-            <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{currencyFormatter(displayedCredit)}</p>
-            {xeroConnectedForOwnBilling && (
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]" aria-labelledby="account-balance-title">
+          <div className="bg-gradient-to-br from-blue-700 to-blue-600 p-5 text-white sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p id="account-balance-title" className="text-sm font-medium text-blue-100">Available balance</p>
+                <p className="mt-1 text-4xl font-bold tracking-tight">
+                  {xeroConnectedForOwnBilling ? currencyFormatter(displayedCredit) : '—'}
+                </p>
+                <p className="mt-2 max-w-xl text-sm text-blue-100">
+                  Cleared funds available for flying and eligible account charges.
+                </p>
+              </div>
+              <span className={`inline-flex w-fit items-center rounded-full px-3 py-1.5 text-sm font-semibold ${
+                prepaidEligible
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-amber-100 text-amber-900'
+              }`}>
+                Prepaid access {prepaidEligible ? 'unlocked' : 'locked'}
+              </span>
+            </div>
+            <p className="mt-4 text-sm text-blue-50">{prepaidStatusMessage}</p>
+          </div>
+
+          <div className="grid divide-y divide-gray-200 dark:divide-[#2c2f36] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="p-4 sm:p-5">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Invoices owing</p>
+              <p className="mt-1 text-xl font-bold text-gray-900 dark:text-gray-100">
+                {xeroConnectedForOwnBilling ? currencyFormatter(outstandingInvoiceTotal) : '—'}
+              </p>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Overpayments {currencyFormatter(xeroCredit.overpaymentCredit)} / Prepayments {currencyFormatter(xeroCredit.prepaymentCredit)}
+                {outstandingInvoiceTotal > 0.005 ? 'Payment is required on open invoices.' : 'Nothing currently due.'}
               </p>
-            )}
-          </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
-            <p className="text-sm text-amber-700 dark:text-amber-300">
-              {xeroConnectedForOwnBilling ? 'Invoices owing in Xero' : 'Pending approval'}
-            </p>
-            <p className="mt-1 text-2xl font-bold text-amber-900 dark:text-amber-100">
-              {currencyFormatter(xeroConnectedForOwnBilling ? outstandingInvoiceTotal : pendingTopUpAmount)}
-            </p>
-            {xeroConnectedForOwnBilling && pendingTopUpAmount > 0.005 && (
-              <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-                {currencyFormatter(pendingTopUpAmount)} submitted in CRM, awaiting admin verification.
+            </div>
+            <div className="p-4 sm:p-5">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Funds processing</p>
+              <p className="mt-1 text-xl font-bold text-gray-900 dark:text-gray-100">{currencyFormatter(processingFundsTotal)}</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {processingFundsTotal > 0.005 ? 'Submitted funds will appear after confirmation.' : 'No payments awaiting confirmation.'}
               </p>
-            )}
-            {xeroConnectedForOwnBilling && awaitingXeroTopUpAmount > 0.005 && (
-              <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-                {currencyFormatter(awaitingXeroTopUpAmount)} verified in CRM, awaiting Xero credit sync.
+            </div>
+            <div className="p-4 sm:p-5">
+              <button
+                type="button"
+                ref={savedCardTriggerRef}
+                onClick={() => setShowSavedCardModal(true)}
+                className="flex w-full items-center gap-3 rounded-xl text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-[#171a21]"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
+                  <CreditCard className="h-5 w-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">Manage payment card</span>
+                  <span className="mt-0.5 block truncate text-xs text-gray-500 dark:text-gray-400">
+                    {stripeCardLoading
+                      ? 'Checking card status…'
+                      : stripeCardReady && stripeCardStatus?.card
+                      ? `${stripeCardStatus.card.brand || 'Card'} ending ${stripeCardStatus.card.last4 || '----'}`
+                      : stripeCardStatus?.card
+                        ? 'Saved card needs attention'
+                        : 'No saved card'}
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <form onSubmit={handleTopUpSubmit} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="rounded-lg bg-blue-50 p-2 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
+              <Wallet className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100">Add funds</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Add funds in {currencyFormatter(billing.minimumPrepaidPack)} increments. Card payments update automatically; manual payments appear after confirmation.
               </p>
+            </div>
+          </div>
+          <div className={`grid gap-3 md:items-end ${
+            isStripeTopUpSelected
+              ? 'md:grid-cols-[minmax(9rem,0.7fr)_minmax(12rem,1fr)_auto]'
+              : selectedTopUpMethod
+                ? 'md:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1.4fr)_auto]'
+                : 'md:grid-cols-[minmax(9rem,0.7fr)_minmax(12rem,1fr)_auto]'
+          }`}>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Amount</span>
+              <div className="relative mt-1">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-500 dark:text-gray-400">$</span>
+                <input
+                  type="number"
+                  min={billing.minimumPrepaidPack}
+                  step={billing.minimumPrepaidPack}
+                  value={topUpAmount}
+                  onChange={event => setTopUpAmount(event.target.value)}
+                  placeholder={String(billing.minimumPrepaidPack)}
+                  className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-7 pr-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
+                  required
+                />
+              </div>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Payment method</span>
+              <select
+                value={topUpPaymentMethodId}
+                onChange={event => setTopUpPaymentMethodId(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
+                required
+              >
+                <option value="">Select method</option>
+                {accountTopUpPaymentMethods.map(method => (
+                  <option key={method.id} value={method.id}>{method.name}</option>
+                ))}
+              </select>
+            </label>
+            {selectedTopUpMethod && !isStripeTopUpSelected && (
+              <>
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Payment date</span>
+                  <input
+                    type="date"
+                    value={topUpDate}
+                    onChange={event => setTopUpDate(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
+                    required
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Reference or note</span>
+                  <input
+                    type="text"
+                    value={topUpReference}
+                    onChange={event => setTopUpReference(event.target.value)}
+                    placeholder="Receipt or bank reference"
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
+                  />
+                </label>
+              </>
             )}
+            <button
+              type="submit"
+              disabled={submittingTopUp || !selectedTopUpMethod || !Number(topUpAmount) || Number(topUpAmount) < billing.minimumPrepaidPack || Number(topUpAmount) % billing.minimumPrepaidPack !== 0}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-[#363b45]"
+            >
+              {submittingTopUp ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {isStripeTopUpSelected ? 'Continue to payment' : 'Add funds'}
+            </button>
           </div>
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-5 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
-            <p className="text-sm text-blue-700 dark:text-blue-300">Prepaid rate access</p>
-            <p className="mt-1 text-2xl font-bold text-blue-900 dark:text-blue-100">{prepaidEligible ? 'Unlocked' : 'Locked'}</p>
-            <p className="mt-1 text-xs text-blue-800 dark:text-blue-200">
-              {xeroConnectedForOwnBilling
-                ? `Requires positive Xero credit. Top-ups are made in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`
-                : 'Prepaid unlocks only after Xero credit can be confirmed.'}
-            </p>
-          </div>
-        </div>
+        </form>
 
         {xeroConnectedForOwnBilling && (
-        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36] sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-slate-100 p-2 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <div className="rounded-lg bg-blue-50 p-2 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
                 <FileText className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Xero invoices</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  All invoices linked to your Xero contact, including invoices created outside the CRM.
-                </p>
+                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Invoices</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">View or pay invoices linked to your club account.</p>
                 {xeroCredit.availableCredit > 0.005 && (
                   <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
-                    Available Xero credit is applied first. If it does not cover the invoice, you can pay the difference by saved card or checkout.
+                    Your available balance is applied before any card payment.
                   </p>
                 )}
               </div>
@@ -610,10 +754,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
           {!xeroInvoicesLinked ? (
             <div className="p-5 text-sm text-amber-800 dark:text-amber-200">
-              Your CRM account is not linked to a Xero contact yet, so invoices cannot be shown here.
+              Invoices are not available for this account yet. Contact the club if you expected to see one.
             </div>
           ) : xeroInvoices.length === 0 ? (
-            <p className="p-5 text-sm text-gray-500 dark:text-gray-400">No Xero invoices found for your account.</p>
+            <p className="p-5 text-sm text-gray-500 dark:text-gray-400">No invoices to show.</p>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-[#2c2f36]">
               {xeroInvoices.map(invoice => {
@@ -663,8 +807,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                           disabled={invoicePaymentLoadingId === invoice.invoiceId}
                           className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
                         >
-                          {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                          Pay checkout
+                           {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                           Pay now
                         </button>
                       )}
                       {amountDue > 0.005 && stripeCardStatus?.card && (
@@ -674,8 +818,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                           disabled={invoicePaymentLoadingId === invoice.invoiceId}
                           className="inline-flex items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-950/50"
                         >
-                          {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                          Saved card
+                           {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                           Use saved card
                         </button>
                       )}
                     </div>
@@ -687,209 +831,19 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         </section>
         )}
 
-        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-blue-100 p-2 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-gray-900 dark:text-gray-100">Saved card for flight payments</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {stripeCardReady
-                    ? 'Your card is saved securely with Stripe. The CRM stores only a card reference, brand and last four digits.'
-                    : stripeCardStatus?.card
-                      ? 'The saved card reference is incomplete and cannot be treated as ready for automatic payment. Refresh or replace it below.'
-                      : 'Save a card securely with Stripe for confirmed flight payments. Card numbers never touch the CRM.'}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={loadStripeCardStatus}
-              disabled={stripeCardLoading}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242c]"
-            >
-              {stripeCardLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Refresh
-            </button>
-          </div>
-
-          {stripeCardReady && stripeCardStatus?.card ? (
-            <div className="mt-4 flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
-                  {stripeCardStatus.card.brand || 'Card'} ending {stripeCardStatus.card.last4 || '----'}
-                </p>
-                <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">
-                  Expires {String(stripeCardStatus.card.expMonth || '').padStart(2, '0')}/{stripeCardStatus.card.expYear || '----'}
-                  {stripeCardStatus.card.consentAcceptedAt
-                    ? ` · Authority accepted ${new Date(stripeCardStatus.card.consentAcceptedAt).toLocaleDateString(dateLocale)}`
-                    : ''}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStripeConsentAccepted(false)}
-                  className="rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-[#171a21] dark:text-emerald-100"
-                >
-                  Replace card below
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRemoveStripeCard}
-                  disabled={stripeCardLoading}
-                  className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:bg-[#171a21] dark:text-red-200"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Remove
-                </button>
-              </div>
-            </div>
-          ) : stripeCardStatus?.card ? (
-            <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">Saved card needs attention</p>
-                <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-                  Stripe card details could not be verified in the active payment mode. Replace this card before using saved-card payments.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleRemoveStripeCard}
-                disabled={stripeCardLoading}
-                className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:bg-[#171a21] dark:text-red-200"
-              >
-                <Trash2 className="h-4 w-4" />
-                Remove old reference
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-              No saved card is active for automatic flight payments.
-            </div>
-          )}
-
-          <div className="mt-4 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-[#2c2f36] dark:bg-[#11141a]">
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={stripeConsentAccepted}
-                onChange={event => setStripeConsentAccepted(event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-200">
-                {stripeCardStatus?.consentText || 'I authorise Bendigo Flying Club to securely store my card with Stripe and charge my saved card for flight charges, aircraft hire, training flights, and related flying charges that are logged and confirmed in the Members Flight Management System. I understand the final amount may be calculated after the flight from the aircraft rate, flight type, tach/flight time, instructor charges, and any approved adjustments. I understand my card details are stored by Stripe, not by the CRM, and I can remove or replace my saved card from my portal. If a charge fails, I remain responsible for the outstanding balance.'}
-              </span>
-            </label>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Use this only if you agree to card-on-file billing for confirmed flight charges. Card numbers never touch the CRM.
-              </p>
-              <button
-                type="button"
-                onClick={handleSaveStripeCard}
-                disabled={stripeCardLoading || !stripeConsentAccepted || !stripeCardStatus?.connected}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-[#363b45]"
-              >
-                {stripeCardLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-                {stripeCardStatus?.card ? 'Replace saved card' : 'Save card with Stripe'}
-              </button>
-            </div>
-            {stripeCardStatus && !stripeCardStatus.connected && (
-              <p className="text-xs font-medium text-amber-700 dark:text-amber-200">
-                Stripe is not connected for this club yet, so cards cannot be saved.
-              </p>
-            )}
-          </div>
-        </section>
-
-        <form onSubmit={handleTopUpSubmit} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-          <div className="mb-4 flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-300" />
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+          <div className="flex flex-col gap-1 border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36] sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-semibold text-gray-900 dark:text-gray-100">Add funds</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {isStripeTopUpSelected
-                  ? 'Stripe will confirm the payment date and reference automatically after checkout. No admin approval is needed once Stripe confirms payment.'
-                  : xeroConnectedForOwnBilling
-                  ? `Submitted funds appear as pending until an admin verifies them. They are not counted as Xero credit until reconciled in Xero. Top-ups must be in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`
-                  : `Submitted funds appear as pending until an admin approves the payment. Top-ups must be in ${currencyFormatter(billing.minimumPrepaidPack)} increments.`}
-              </p>
+              <h2 className="font-semibold text-gray-900 dark:text-gray-100">Recent activity</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Payments, credits and flying charges.</p>
             </div>
-          </div>
-          <div className={`grid gap-3 md:items-end ${isStripeTopUpSelected ? 'md:grid-cols-[minmax(9rem,0.7fr)_minmax(12rem,1fr)_auto]' : 'md:grid-cols-[minmax(9rem,0.7fr)_minmax(10rem,1fr)_minmax(10rem,1fr)_minmax(12rem,1.4fr)_auto]'}`}>
-            <label className="block">
-              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Amount</span>
-              <input
-                type="number"
-                min={billing.minimumPrepaidPack}
-                step={billing.minimumPrepaidPack}
-                value={topUpAmount}
-                onChange={event => setTopUpAmount(event.target.value)}
-                placeholder={String(billing.minimumPrepaidPack)}
-                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
-                required
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Payment method</span>
-              <select
-                value={topUpPaymentMethodId}
-                onChange={event => setTopUpPaymentMethodId(event.target.value)}
-                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
-              >
-                <option value="">Select method</option>
-                {accountTopUpPaymentMethods.map(method => (
-                  <option key={method.id} value={method.id}>{method.name}</option>
-                ))}
-              </select>
-            </label>
-            {!isStripeTopUpSelected && (
-              <>
-                <label className="block">
-                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Payment date</span>
-                  <input
-                    type="date"
-                    value={topUpDate}
-                    onChange={event => setTopUpDate(event.target.value)}
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
-                    required
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Reference or note</span>
-                  <input
-                    type="text"
-                    value={topUpReference}
-                    onChange={event => setTopUpReference(event.target.value)}
-                    placeholder="Receipt number, bank reference..."
-                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-[#363b45] dark:bg-[#11141a] dark:text-gray-100"
-                  />
-                </label>
-              </>
-            )}
-            <button
-              type="submit"
-              disabled={submittingTopUp || !Number(topUpAmount) || Number(topUpAmount) < billing.minimumPrepaidPack || Number(topUpAmount) % billing.minimumPrepaidPack !== 0}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-[#363b45]"
-            >
-              <Plus className="h-4 w-4" />
-              {isStripeTopUpSelected ? 'Continue to Stripe' : 'Add funds'}
-            </button>
-          </div>
-        </form>
-
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
-          <div className="border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36]">
-            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Billing history</h2>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{transactions.length} total</span>
           </div>
           {transactions.length === 0 ? (
-            <p className="p-5 text-sm text-gray-500 dark:text-gray-400">No billing transactions recorded yet.</p>
+            <p className="p-5 text-sm text-gray-500 dark:text-gray-400">No account activity yet.</p>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-[#2c2f36]">
-              {transactions.map(transaction => {
+              {visibleTransactions.map(transaction => {
                 const signedAmount = getSignedTransactionAmount(transaction.type, transaction.amount);
                 return (
                   <div key={transaction.id} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
@@ -902,7 +856,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                               ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
                               : 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200'
                           }`}>
-                            {transaction.verifiedStatus}
+                            {transaction.verifiedStatus === 'pending' ? 'Processing' : 'Not approved'}
                           </span>
                         )}
                       </div>
@@ -917,9 +871,150 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                   </div>
                 );
               })}
+              {transactions.length > 8 && (
+                <div className="px-5 py-3 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllTransactions(value => !value)}
+                    className="rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30"
+                  >
+                    {showAllTransactions ? 'Show recent only' : `View all ${transactions.length} transactions`}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
+
+        {showSavedCardModal && (
+          <div
+            className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/80 p-3 sm:p-6"
+            role="presentation"
+            onMouseDown={() => setShowSavedCardModal(false)}
+          >
+            <section
+              ref={savedCardDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="saved-card-dialog-title"
+              className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#363b45] dark:bg-[#171a21]"
+              onMouseDown={event => event.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4 dark:border-[#2c2f36] dark:bg-[#171a21]">
+                <div className="flex items-start gap-3">
+                  <span className="rounded-lg bg-blue-50 p-2 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
+                    <ShieldCheck className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 id="saved-card-dialog-title" className="font-semibold text-gray-950 dark:text-gray-100">Saved payment card</h2>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Manage the card used for confirmed flight charges.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSavedCardModal(false)}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-gray-300 dark:hover:bg-[#252a33] dark:hover:text-white"
+                  aria-label="Close saved card settings"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 p-5">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void loadStripeCardStatus()}
+                    disabled={stripeCardLoading}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-[#363b45] dark:text-gray-200 dark:hover:bg-[#20242c]"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${stripeCardLoading ? 'animate-spin' : ''}`} />
+                    Refresh status
+                  </button>
+                </div>
+
+                {stripeCardLoading && !stripeCardStatus ? (
+                  <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600 dark:border-[#2c2f36] dark:bg-[#11141a] dark:text-gray-300">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking your saved card…
+                  </div>
+                ) : stripeCardReady && stripeCardStatus?.card ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold capitalize text-emerald-950 dark:text-emerald-100">
+                        {stripeCardStatus.card.brand || 'Card'} ending {stripeCardStatus.card.last4 || '----'}
+                      </p>
+                      <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">
+                        Expires {String(stripeCardStatus.card.expMonth || '').padStart(2, '0')}/{stripeCardStatus.card.expYear || '----'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveStripeCard}
+                      disabled={stripeCardLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:bg-[#171a21] dark:text-red-200"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove card
+                    </button>
+                  </div>
+                ) : stripeCardStatus?.card ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">Saved card needs attention</p>
+                      <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">Remove or replace it before using saved-card payments.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveStripeCard}
+                      disabled={stripeCardLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:bg-[#171a21] dark:text-red-200"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove card
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-[#2c2f36] dark:bg-[#11141a] dark:text-gray-200">
+                    No saved card is currently active.
+                  </div>
+                )}
+
+                <div className="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-[#2c2f36]">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {stripeCardStatus?.card ? 'Replace saved card' : 'Save a card'}
+                    </h3>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Your card details are stored by Stripe, not by the CRM.</p>
+                  </div>
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={stripeConsentAccepted}
+                      onChange={event => setStripeConsentAccepted(event.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm leading-6 text-gray-700 dark:text-gray-200">
+                      {stripeCardStatus?.consentText || 'I authorise Bendigo Flying Club to securely store my card with Stripe and charge my saved card for flight charges, aircraft hire, training flights, and related flying charges that are logged and confirmed in the Members Flight Management System. I understand the final amount may be calculated after the flight from the aircraft rate, flight type, tach/flight time, instructor charges, and any approved adjustments. I understand my card details are stored by Stripe, not by the CRM, and I can remove or replace my saved card from my portal. If a charge fails, I remain responsible for the outstanding balance.'}
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSaveStripeCard}
+                    disabled={stripeCardLoading || !stripeConsentAccepted || !stripeCardStatus?.connected}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-[#363b45]"
+                  >
+                    {stripeCardLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+                    {stripeCardStatus?.card ? 'Replace card with Stripe' : 'Save card with Stripe'}
+                  </button>
+                  {stripeCardStatus && !stripeCardStatus.connected && (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-200">Card setup is temporarily unavailable.</p>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     );
   }
