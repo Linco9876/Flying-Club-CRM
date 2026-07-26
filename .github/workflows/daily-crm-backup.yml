@@ -86,7 +86,7 @@ jobs:
             --include '*.tar.gz.age.sha256'
 
       - name: Upload encrypted backup as GitHub artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: crm-backup-${{ github.run_id }}
           path: ${{ runner.temp }}/encrypted-crm-backup
