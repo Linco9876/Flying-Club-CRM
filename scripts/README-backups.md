@@ -84,7 +84,7 @@ Copy the full contents into the GitHub secret named `RCLONE_CONFIG`.
 
 Cloud backup and deploy alerts are sent by GitHub Actions when `ALERT_WEBHOOK_URL` is configured as a repository secret.
 
-GitHub Actions also creates an unread in-app `system` notification for every admin user when a watched workflow fails, is cancelled, or times out. The notification uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from GitHub repository secrets.
+GitHub Actions also creates an unread in-app `system` notification for every admin user when a watched workflow fails on `main`. Cancelled, skipped, pull-request and repeated attempts do not alert. The notification uses `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from GitHub repository secrets.
 
 Local Windows backup alerts use the same setting in `scripts/backup-crm.env`:
 

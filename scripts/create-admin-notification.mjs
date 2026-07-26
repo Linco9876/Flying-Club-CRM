@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 function parseArgs() {
   const args = new Map();
@@ -31,7 +32,7 @@ function requireEnv(name) {
   return value;
 }
 
-async function supabaseJson(url, serviceRoleKey, endpoint, options = {}) {
+export async function supabaseJson(url, serviceRoleKey, endpoint, options = {}) {
   const response = await fetch(`${url}${endpoint}`, {
     ...options,
     headers: {
@@ -47,7 +48,14 @@ async function supabaseJson(url, serviceRoleKey, endpoint, options = {}) {
     throw new Error(`${endpoint} failed with ${response.status}: ${body.slice(0, 500)}`);
   }
 
-  return response.status === 204 ? null : response.json();
+  const body = await response.text();
+  if (!body.trim()) return null;
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(`${endpoint} returned invalid JSON with ${response.status}: ${body.slice(0, 500)}`);
+  }
 }
 
 async function getAdminUserIds(url, serviceRoleKey) {
@@ -123,7 +131,9 @@ async function main() {
   console.log(`Created backup failure notification for ${rows.length} admin user(s).`);
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
