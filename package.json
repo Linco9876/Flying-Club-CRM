@@ -24,7 +24,7 @@
     "lint": "eslint . --quiet",
     "audit:dependencies": "node scripts/audit-dependencies.mjs",
     "quality:ratchet": "node scripts/quality-ratchet.mjs",
-    "quality": "npm run quality:ratchet && npm run audit:dependencies && npm run audit:migrations:local && npm run test:automation-alerts && npm run build",
+    "quality": "npm run quality:ratchet && npm run audit:dependencies && npm run audit:migrations:local && npm run test:automation-alerts && npm run duty-pwa:check && npm run build",
     "test:acceptance:recovery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-recovery-acceptance.ps1",
     "test:acceptance:browserstack": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-recovery-acceptance.ps1 -BrowserStack",
     "preview": "vite preview",
