@@ -30,12 +30,14 @@ jobs:
         run: npm run quality:ratchet
       - name: Audit migration safety and ordering
         run: npm run audit:migrations:local
+      - name: Test automation alert handling
+        run: npm run test:automation-alerts
       - name: Build portal and PWAs
         run: npm run build
         env:
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://ci-placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci-placeholder-anon-key-not-for-runtime' }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY || '1x00000000000000000000AA' }}
 
   edge-functions:
     runs-on: ubuntu-latest
