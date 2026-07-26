@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Check, Copy, Loader2, LockKeyhole, Maximize2, ShieldCheck, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -9,7 +9,7 @@ type TotpEnrollment = {
   totp: { qr_code: string; secret: string; uri: string };
 };
 
-const codeInputClass = 'w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-center font-mono text-xl tracking-[0.3em] text-gray-950 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500';
+const codeInputClass = 'w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-center font-mono text-xl tracking-[0.3em] text-gray-950 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white';
 
 const verifyFactor = async (factorId: string, code: string) => {
   const challenge = await supabase.auth.mfa.challenge({ factorId });
@@ -26,6 +26,24 @@ export const MfaSetup: React.FC<{ onVerified?: () => void; compact?: boolean }> 
   const [enrollment, setEnrollment] = React.useState<TotpEnrollment>();
   const [code, setCode] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [showLargeQr, setShowLargeQr] = React.useState(false);
+  const [secretCopied, setSecretCopied] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!showLargeQr) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowLargeQr(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [showLargeQr]);
 
   const begin = async () => {
     setBusy(true);
@@ -36,6 +54,7 @@ export const MfaSetup: React.FC<{ onVerified?: () => void; compact?: boolean }> 
       });
       if (result.error) throw result.error;
       setEnrollment(result.data as TotpEnrollment);
+      setSecretCopied(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not start authenticator setup');
     } finally {
@@ -54,11 +73,23 @@ export const MfaSetup: React.FC<{ onVerified?: () => void; compact?: boolean }> 
       toast.success('Authenticator protection is now active');
       setEnrollment(undefined);
       setCode('');
+      setShowLargeQr(false);
       onVerified?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'That code could not be verified');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const copySetupKey = async () => {
+    if (!enrollment) return;
+    try {
+      await navigator.clipboard.writeText(enrollment.totp.secret);
+      setSecretCopied(true);
+      window.setTimeout(() => setSecretCopied(false), 2500);
+    } catch {
+      toast.error('Could not copy the setup key. Press and hold the key to copy it manually.');
     }
   };
 
@@ -78,13 +109,46 @@ export const MfaSetup: React.FC<{ onVerified?: () => void; compact?: boolean }> 
 
   return (
     <div className={compact ? 'space-y-4' : 'space-y-5'}>
-      <div className="grid gap-4 sm:grid-cols-[180px_1fr] sm:items-center">
-        <img src={enrollment.totp.qr_code} alt="Authenticator QR code" className="mx-auto h-44 w-44 rounded-xl border border-gray-200 bg-white p-2" />
-        <div className="text-sm leading-6 text-gray-600">
+      <div className="space-y-4">
+        <div className="mx-auto w-full max-w-[20rem] rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <img
+            src={enrollment.totp.qr_code}
+            alt="Authenticator QR code"
+            className="block aspect-square h-auto w-full"
+            style={{ imageRendering: 'pixelated' }}
+          />
+        </div>
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => setShowLargeQr(true)}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-950/60"
+          >
+            <Maximize2 className="h-4 w-4" aria-hidden="true" />
+            Open larger QR code
+          </button>
+        </div>
+        <div className="text-sm leading-6 text-gray-600 dark:text-gray-300">
           <p>Scan this code with 1Password, Bitwarden, Google Authenticator, Microsoft Authenticator or another TOTP app.</p>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            For the clearest scan, turn up the monitor brightness and hold your phone about 20–30 cm from the screen.
+          </p>
           <details className="mt-2">
-            <summary className="cursor-pointer font-medium text-blue-700">Can’t scan it?</summary>
-            <code className="mt-2 block break-all rounded bg-gray-100 p-2 text-xs text-gray-800">{enrollment.totp.secret}</code>
+            <summary className="cursor-pointer font-medium text-blue-700 dark:text-blue-300">Can’t scan it? Use a setup key</summary>
+            <div className="mt-2 flex items-start gap-2 rounded-lg bg-gray-100 p-2 dark:bg-gray-800">
+              <code className="min-w-0 flex-1 break-all px-1 py-1 font-mono text-sm font-semibold tracking-wider text-gray-900 dark:text-gray-100">
+                {enrollment.totp.secret}
+              </code>
+              <button
+                type="button"
+                onClick={() => void copySetupKey()}
+                className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-700"
+                aria-label="Copy authenticator setup key"
+              >
+                {secretCopied ? <Check className="h-4 w-4 text-green-600" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+                {secretCopied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
           </details>
         </div>
       </div>
@@ -105,6 +169,46 @@ export const MfaSetup: React.FC<{ onVerified?: () => void; compact?: boolean }> 
       <button type="button" onClick={() => void confirm()} disabled={busy || code.length !== 6} className="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
         {busy ? 'Verifying…' : 'Verify and finish'}
       </button>
+      {showLargeQr && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center bg-black/85 p-3 sm:p-6"
+          role="presentation"
+          onMouseDown={() => setShowLargeQr(false)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="large-mfa-qr-title"
+            className="max-h-[96vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-6"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <div>
+                <h2 id="large-mfa-qr-title" className="text-lg font-bold text-gray-950">Scan authenticator code</h2>
+                <p className="mt-1 text-sm text-gray-600">This larger view is optimised for scanning from a monitor.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLargeQr(false)}
+                autoFocus
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Close enlarged QR code"
+              >
+                <X className="h-6 w-6" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="mx-auto w-fit max-w-full bg-white p-5">
+              <img
+                src={enrollment.totp.qr_code}
+                alt="Enlarged authenticator QR code"
+                className="block aspect-square h-auto max-w-full"
+                style={{ width: 'min(78vw, 32rem)', imageRendering: 'pixelated' }}
+              />
+            </div>
+            <p className="mt-3 text-center text-sm text-gray-600">Press Escape, tap outside the panel, or use the close button when finished.</p>
+          </section>
+        </div>
+      )}
     </div>
   );
 };
