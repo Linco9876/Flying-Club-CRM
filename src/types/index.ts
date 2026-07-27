@@ -238,6 +238,11 @@ export interface MembershipFinancialPeriod {
   xeroAmountDue?: number | null;
   xeroLastSyncedAt?: string | null;
   xeroSyncError?: string | null;
+  billingSyncStatus?: 'queued' | 'processing' | 'succeeded' | 'failed' | 'needs_review' | null;
+  billingSyncAttempts: number;
+  billingSyncNextAttemptAt?: string | null;
+  billingSyncError?: string | null;
+  billingSyncUpdatedAt?: string | null;
   waiverReason?: string | null;
   waiverAuthorisedBy?: string | null;
   waiverAuthorisedAt?: string | null;

@@ -9,6 +9,13 @@ import {
   getStripeSecretKeyForMode,
   type StripeMode,
 } from "../_shared/stripeMode.ts";
+import {
+  collectionWasSubmitted,
+  DEFAULT_MEMBERSHIP_ITEM_CODE,
+  DEFAULT_SCHOLARSHIP_ITEM_CODE,
+  membershipBillingRetryDelayMs,
+  membershipCollectionIdempotencyParts,
+} from "../_shared/membershipBilling.ts";
 
 type SupabaseAdminClient = any;
 
@@ -510,6 +517,102 @@ const listXeroItems = async (ctx: any) => {
     status: clean(item.Status),
     isTrackedAsInventory: Boolean(item.IsTrackedAsInventory),
   }));
+};
+
+const ensureMembershipSalesItem = async (
+  ctx: any,
+  {
+    code,
+    name,
+    description,
+  }: {
+    code: string;
+    name: string;
+    description: string;
+  },
+) => {
+  const itemCode = clean(code).toUpperCase();
+  const revenueAccountCode = clean(ctx.settings?.revenue_account_code);
+  if (!revenueAccountCode) {
+    throw makeXeroNeedsReviewError(
+      "Set the Xero revenue account code in Settings > Integrations, then retry membership billing.",
+    );
+  }
+
+  const existingItems = await listXeroItems(ctx);
+  const existing = existingItems.find((item: any) =>
+    item.code.toUpperCase() === itemCode
+  );
+  if (existing && clean(existing.status).toUpperCase() === "DELETED") {
+    const recreated = await xeroRequest({
+      method: "PUT",
+      path: "Items",
+      tenantId: ctx.connection.tenant_id,
+      accessToken: ctx.connection.access_token,
+      idempotencyKey: `membership-item-recreate-${itemCode.toLowerCase()}-${
+        clean(existing.itemId)
+      }`,
+      body: {
+        Items: [{
+          Code: itemCode,
+          Name: name,
+          Description: description,
+          IsTrackedAsInventory: false,
+          SalesDetails: {
+            AccountCode: revenueAccountCode,
+            TaxType: clean(ctx.settings?.tax_type) || undefined,
+          },
+        }],
+      },
+    });
+    const recreatedItem = recreated?.Items?.[0];
+    if (!recreatedItem?.ItemID) {
+      throw makeXeroNeedsReviewError(
+        `The deleted Xero item ${itemCode} could not be recreated automatically. Choose another membership item code and retry.`,
+      );
+    }
+    return {
+      itemId: clean(recreatedItem.ItemID),
+      code: clean(recreatedItem.Code) || itemCode,
+      name: clean(recreatedItem.Name) || name,
+      description: clean(recreatedItem.Description) || description,
+      status: clean(recreatedItem.Status) || "ACTIVE",
+      isTrackedAsInventory: false,
+    };
+  }
+  if (existing) return existing;
+
+  const result = await xeroRequest({
+    method: "PUT",
+    path: "Items",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+    idempotencyKey: `membership-item-${itemCode.toLowerCase()}`,
+    body: {
+      Items: [{
+        Code: itemCode,
+        Name: name,
+        Description: description,
+        IsTrackedAsInventory: false,
+        SalesDetails: {
+          AccountCode: revenueAccountCode,
+          TaxType: clean(ctx.settings?.tax_type) || undefined,
+        },
+      }],
+    },
+  });
+  const created = result?.Items?.[0];
+  if (!created?.ItemID) {
+    throw new Error(`Xero did not return the newly created ${itemCode} item.`);
+  }
+  return {
+    itemId: clean(created.ItemID),
+    code: clean(created.Code) || itemCode,
+    name: clean(created.Name) || name,
+    description: clean(created.Description) || description,
+    status: clean(created.Status) || "ACTIVE",
+    isTrackedAsInventory: false,
+  };
 };
 
 const ensureFlightTypeSalesItem = async (
@@ -3763,9 +3866,22 @@ const queueItem = async (
   requestedBy: string | null,
   payload: Record<string, unknown> = {},
 ) => {
+  const { data: existing, error: existingError } = await adminClient
+    .from("xero_sync_queue")
+    .select("*")
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId)
+    .eq("action", action)
+    .in("status", ["pending", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return existing;
+
   const { data, error } = await adminClient
     .from("xero_sync_queue")
-    .upsert({
+    .insert({
       entity_type: entityType,
       entity_id: entityId,
       action,
@@ -3774,11 +3890,204 @@ const queueItem = async (
       payload,
       next_attempt_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }, { onConflict: "entity_type,entity_id,action,status" })
+    })
     .select("*")
     .single();
-  if (error) throw error;
+  if (error) {
+    if ((error as any)?.code === "23505") {
+      const { data: raced, error: racedError } = await adminClient
+        .from("xero_sync_queue")
+        .select("*")
+        .eq("entity_type", entityType)
+        .eq("entity_id", entityId)
+        .eq("action", action)
+        .in("status", ["pending", "processing"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (racedError) throw racedError;
+      return raced;
+    }
+    throw error;
+  }
   return data;
+};
+
+const updateMembershipBillingState = async (
+  adminClient: SupabaseAdminClient,
+  periodId: string,
+  update: {
+    status: "queued" | "processing" | "succeeded" | "failed" | "needs_review";
+    attempts?: number;
+    nextAttemptAt?: string | null;
+    error?: string | null;
+  },
+) => {
+  const now = new Date().toISOString();
+  const values: Record<string, unknown> = {
+    billing_sync_status: update.status,
+    billing_sync_updated_at: now,
+    updated_at: now,
+  };
+  if (update.attempts !== undefined) {
+    values.billing_sync_attempts = update.attempts;
+  }
+  if (update.nextAttemptAt !== undefined) {
+    values.billing_sync_next_attempt_at = update.nextAttemptAt;
+  }
+  if (update.error !== undefined) {
+    values.billing_sync_error = update.error;
+    values.xero_sync_error = update.error;
+  }
+  const { error } = await adminClient.from("membership_financial_periods")
+    .update(values)
+    .eq("id", periodId);
+  if (error) throw error;
+};
+
+const queueMembershipBilling = async (
+  adminClient: SupabaseAdminClient,
+  periodId: string,
+  requestedBy: string | null,
+  payload: Record<string, unknown> = {},
+) => {
+  const { data: existing, error: existingError } = await adminClient
+    .from("xero_sync_queue")
+    .select("*")
+    .eq("entity_type", "membership_period")
+    .eq("entity_id", periodId)
+    .eq("action", "sync_membership")
+    .in("status", ["pending", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) {
+    const mergedPayload = {
+      ...(existing.payload || {}),
+      ...payload,
+      sendEmail: existing.payload?.sendEmail === true ||
+        payload.sendEmail === true,
+    };
+    if (existing.status === "pending") {
+      const { error: mergeError } = await adminClient
+        .from("xero_sync_queue")
+        .update({
+          payload: mergedPayload,
+          requested_by: existing.requested_by || requestedBy,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+      if (mergeError) throw mergeError;
+      existing.payload = mergedPayload;
+    }
+    await updateMembershipBillingState(adminClient, periodId, {
+      status: existing.status === "processing" ? "processing" : "queued",
+      attempts: Number(existing.attempts || 0),
+      nextAttemptAt: existing.next_attempt_at,
+      error: existing.last_error || null,
+    });
+    return existing;
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await adminClient.from("xero_sync_queue").insert({
+    entity_type: "membership_period",
+    entity_id: periodId,
+    action: "sync_membership",
+    status: "pending",
+    priority: 40,
+    requested_by: requestedBy,
+    payload,
+    next_attempt_at: now,
+    updated_at: now,
+  }).select("*").single();
+  if (error) {
+    if ((error as any)?.code === "23505") {
+      const { data: raced, error: racedError } = await adminClient
+        .from("xero_sync_queue")
+        .select("*")
+        .eq("entity_type", "membership_period")
+        .eq("entity_id", periodId)
+        .eq("action", "sync_membership")
+        .in("status", ["pending", "processing"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (racedError) throw racedError;
+      return raced;
+    }
+    throw error;
+  }
+  await updateMembershipBillingState(adminClient, periodId, {
+    status: "queued",
+    attempts: 0,
+    nextAttemptAt: now,
+    error: null,
+  });
+  return data;
+};
+
+const notifyMembershipBillingFailure = async (
+  adminClient: SupabaseAdminClient,
+  periodId: string,
+  message: string,
+) => {
+  const { data: period } = await adminClient
+    .from("membership_financial_periods")
+    .select("membership_id,amount_due")
+    .eq("id", periodId)
+    .maybeSingle();
+  if (!period) return;
+  const { data: membership } = await adminClient
+    .from("club_memberships")
+    .select("user_id")
+    .eq("id", period.membership_id)
+    .maybeSingle();
+  if (!membership?.user_id) return;
+
+  const [{ data: primaryAdmins }, { data: roleAdmins }, { data: member }] =
+    await Promise.all([
+      adminClient.from("users").select("id").eq("role", "admin").eq(
+        "is_active",
+        true,
+      ),
+      adminClient.from("user_roles").select("user_id").eq("role", "admin"),
+      adminClient.from("users").select("name").eq("id", membership.user_id)
+        .maybeSingle(),
+    ]);
+  const adminIds = Array.from(
+    new Set([
+      ...(primaryAdmins || []).map((row: any) => clean(row.id)),
+      ...(roleAdmins || []).map((row: any) => clean(row.user_id)),
+    ].filter(Boolean)),
+  );
+  const memberName = clean(member?.name) || "A member";
+  const amount = money(period.amount_due).toFixed(2);
+  const metadata = {
+    membershipPeriodId: periodId,
+    path: "/membership",
+  };
+  await adminClient.from("notifications").insert([
+    {
+      user_id: membership.user_id,
+      type: "membership",
+      title: "Membership billing needs attention",
+      message:
+        "Your membership remains current, but the club could not complete the invoice or payment. We will retry automatically and staff have been notified.",
+      metadata,
+      is_read: false,
+    },
+    ...adminIds.filter((id) => id !== membership.user_id).map((userId) => ({
+      user_id: userId,
+      type: "membership",
+      title: "Membership billing failed",
+      message:
+        `${memberName}'s $${amount} membership billing needs attention: ${message}`,
+      metadata,
+      is_read: false,
+    })),
+  ]);
 };
 
 const queueStatusForEntity = async (
@@ -3872,6 +4181,46 @@ const queueStatusForEntity = async (
       ].filter(Boolean).join(" · ") || null,
       recordStatus: clean(data?.xero_sync_status) ||
         clean(data?.verified_status) || null,
+    };
+  }
+
+  if (item.entity_type === "membership_period") {
+    const { data } = await adminClient
+      .from("membership_financial_periods")
+      .select(`
+        id,
+        amount_due,
+        financial_year_start,
+        billing_sync_status,
+        xero_invoice_number,
+        membership:membership_id(
+          member:user_id(name,email),
+          membership_class:membership_class_id(name)
+        )
+      `)
+      .eq("id", item.entity_id)
+      .maybeSingle();
+    const membership = Array.isArray(data?.membership)
+      ? data?.membership[0]
+      : data?.membership;
+    const member = Array.isArray(membership?.member)
+      ? membership?.member[0]
+      : membership?.member;
+    const membershipClass = Array.isArray(membership?.membership_class)
+      ? membership?.membership_class[0]
+      : membership?.membership_class;
+    return {
+      entityLabel: clean(member?.name) || clean(member?.email) ||
+        "Membership billing",
+      entityDetail: [
+        clean(membershipClass?.name),
+        data?.financial_year_start
+          ? `FY ${String(data.financial_year_start).slice(0, 4)}`
+          : null,
+        `$${money(data?.amount_due).toFixed(2)}`,
+        clean(data?.xero_invoice_number),
+      ].filter(Boolean).join(" Â· ") || null,
+      recordStatus: clean(data?.billing_sync_status) || null,
     };
   }
 
@@ -3979,6 +4328,31 @@ const isTestModeQueueItem = async (
     return data?.is_test_mode === true || data?.stripe_mode === "test";
   }
 
+  if (item.entity_type === "membership_period") {
+    const { data: period, error: periodError } = await adminClient
+      .from("membership_financial_periods")
+      .select("membership_id")
+      .eq("id", item.entity_id)
+      .maybeSingle();
+    if (periodError) throw periodError;
+    if (!period) return false;
+    const { data: membership, error: membershipError } = await adminClient
+      .from("club_memberships")
+      .select("user_id")
+      .eq("id", period.membership_id)
+      .maybeSingle();
+    if (membershipError) throw membershipError;
+    if (!membership) return false;
+    const { data: preference, error: preferenceError } = await adminClient
+      .from("membership_payment_preferences")
+      .select("is_test_mode,stripe_mode")
+      .eq("user_id", membership.user_id)
+      .maybeSingle();
+    if (preferenceError) throw preferenceError;
+    return preference?.is_test_mode === true ||
+      preference?.stripe_mode === "test";
+  }
+
   return false;
 };
 
@@ -3988,12 +4362,21 @@ const processQueueRecord = async (
   item: any,
   processedBy: string | null,
 ) => {
+  const attempt = Number(item.attempts || 0) + 1;
   await adminClient.from("xero_sync_queue").update({
     status: "processing",
-    attempts: Number(item.attempts || 0) + 1,
+    attempts: attempt,
     processed_by: processedBy,
     updated_at: new Date().toISOString(),
   }).eq("id", item.id);
+  if (item.entity_type === "membership_period") {
+    await updateMembershipBillingState(adminClient, item.entity_id, {
+      status: "processing",
+      attempts: attempt,
+      nextAttemptAt: null,
+      error: null,
+    });
+  }
 
   try {
     if (await isTestModeQueueItem(adminClient, item)) {
@@ -4044,13 +4427,61 @@ const processQueueRecord = async (
         item.entity_id,
         item.id,
       );
+    } else if (item.action === "sync_membership") {
+      result = await createOrRefreshMembershipInvoice(
+        adminClient,
+        ctx,
+        item.entity_id,
+        item.payload?.sendEmail === true &&
+          item.payload?.invoiceEmailSent !== true,
+      );
+      const collection = (result as any)?.collection;
+      if ((result as any)?.emailSent === true) {
+        const nextPayload = {
+          ...(item.payload || {}),
+          invoiceEmailSent: true,
+        };
+        const { error: emailStateError } = await adminClient.from(
+          "xero_sync_queue",
+        ).update({
+          payload: nextPayload,
+          updated_at: new Date().toISOString(),
+        }).eq("id", item.id);
+        if (emailStateError) throw emailStateError;
+        item.payload = nextPayload;
+      }
+      if (clean(collection?.status).toLowerCase() === "failed") {
+        throw new Error(
+          clean(collection?.error) || "Automatic membership collection failed.",
+        );
+      }
+      const { error: completedQueueError } = await adminClient.from(
+        "xero_sync_queue",
+      ).update({
+        status: "synced",
+        last_error: null,
+        processed_by: processedBy,
+        processed_at: new Date().toISOString(),
+        result,
+        updated_at: new Date().toISOString(),
+      }).eq("id", item.id);
+      if (completedQueueError) throw completedQueueError;
+      await updateMembershipBillingState(adminClient, item.entity_id, {
+        status: ["pending", "processing"].includes(
+            clean(collection?.status).toLowerCase(),
+          )
+          ? "processing"
+          : "succeeded",
+        attempts: attempt,
+        nextAttemptAt: null,
+        error: null,
+      });
     } else {
       throw new Error(`Unsupported Xero queue action: ${item.action}`);
     }
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Xero sync failed";
-    const attempt = Number(item.attempts || 0) + 1;
     const queueStatus = (error as any)?.queueStatus;
     if (queueStatus === "needs_review") {
       await adminClient.from("xero_sync_queue").update({
@@ -4059,17 +4490,35 @@ const processQueueRecord = async (
         processed_by: processedBy,
         updated_at: new Date().toISOString(),
       }).eq("id", item.id);
+      if (item.entity_type === "membership_period") {
+        await updateMembershipBillingState(adminClient, item.entity_id, {
+          status: "needs_review",
+          attempts: attempt,
+          nextAttemptAt: null,
+          error: message,
+        });
+        await notifyMembershipBillingFailure(
+          adminClient,
+          item.entity_id,
+          message,
+        );
+      }
       return {
         needsReview: true,
         message,
       };
     }
 
-    if (isRetriableXeroError(error) && attempt < 5) {
+    const shouldRetry = item.entity_type === "membership_period" ||
+      isRetriableXeroError(error);
+    if (shouldRetry && attempt < 5) {
       const retryAfterSeconds = Number((error as any)?.retryAfterSeconds || 0);
-      const retryDelayMs = retryAfterSeconds > 0
-        ? Math.max(getRetryDelayMs(attempt), retryAfterSeconds * 1000)
+      const baseRetryDelay = item.entity_type === "membership_period"
+        ? membershipBillingRetryDelayMs(attempt)
         : getRetryDelayMs(attempt);
+      const retryDelayMs = retryAfterSeconds > 0
+        ? Math.max(baseRetryDelay, retryAfterSeconds * 1000)
+        : baseRetryDelay;
       const nextAttemptAt = new Date(Date.now() + retryDelayMs).toISOString();
       await adminClient.from("xero_sync_queue").update({
         status: "pending",
@@ -4078,6 +4527,14 @@ const processQueueRecord = async (
         next_attempt_at: nextAttemptAt,
         updated_at: new Date().toISOString(),
       }).eq("id", item.id);
+      if (item.entity_type === "membership_period") {
+        await updateMembershipBillingState(adminClient, item.entity_id, {
+          status: "queued",
+          attempts: attempt,
+          nextAttemptAt,
+          error: message,
+        });
+      }
       return {
         deferred: true,
         message,
@@ -4091,6 +4548,19 @@ const processQueueRecord = async (
       processed_by: processedBy,
       updated_at: new Date().toISOString(),
     }).eq("id", item.id);
+    if (item.entity_type === "membership_period") {
+      await updateMembershipBillingState(adminClient, item.entity_id, {
+        status: "failed",
+        attempts: attempt,
+        nextAttemptAt: null,
+        error: message,
+      });
+      await notifyMembershipBillingFailure(
+        adminClient,
+        item.entity_id,
+        message,
+      );
+    }
     throw error;
   }
 };
@@ -4248,7 +4718,9 @@ const collectMembershipInvoice = async (
     }
     return {
       attempted: true,
-      status: credit.remaining <= 0.005 ? "paid_from_prepaid_credit" : "partially_paid_from_prepaid_credit",
+      status: credit.remaining <= 0.005
+        ? "paid_from_prepaid_credit"
+        : "partially_paid_from_prepaid_credit",
       prepaidCreditApplied: credit.applied,
       remaining: credit.remaining,
       allocations: credit.allocations,
@@ -4272,7 +4744,7 @@ const collectMembershipInvoice = async (
     return { attempted: false, reason: "automatic_renewal_not_authorised" };
   }
 
-  const { data: existingPayment, error: existingError } = await adminClient
+  const { data: existingPaymentData, error: existingError } = await adminClient
     .from("xero_invoice_portal_payments")
     .select("id,status,stripe_payment_intent_id,xero_payment_id")
     .eq("xero_invoice_id", invoiceId)
@@ -4281,7 +4753,11 @@ const collectMembershipInvoice = async (
     .limit(1)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (existingPayment) {
+  let existingPayment = existingPaymentData;
+  if (
+    existingPayment &&
+    ["paid", "needs_review"].includes(clean(existingPayment.status))
+  ) {
     return {
       attempted: false,
       reason: "collection_already_recorded",
@@ -4296,6 +4772,81 @@ const collectMembershipInvoice = async (
   if (!connectedAccountId) {
     throw new Error("Stripe is not connected for this club.");
   }
+  if (
+    existingPayment &&
+    collectionWasSubmitted(existingPayment) &&
+    clean(existingPayment.stripe_payment_intent_id)
+  ) {
+    const intentResponse = await fetch(
+      `https://api.stripe.com/v1/payment_intents/${
+        encodeURIComponent(clean(existingPayment.stripe_payment_intent_id))
+      }`,
+      {
+        headers: stripeHeaders(stripeSecretKey, connectedAccountId),
+      },
+    );
+    const intent = await intentResponse.json().catch(() => ({}));
+    if (!intentResponse.ok) {
+      throw new Error(
+        clean(intent?.error?.message) ||
+          "The existing Stripe membership payment could not be checked.",
+      );
+    }
+    if (clean(intent.status) === "succeeded") {
+      let xeroPaymentId = clean(existingPayment.xero_payment_id);
+      if (!xeroPaymentId) {
+        xeroPaymentId = await createMembershipXeroPayment(
+          ctx,
+          invoiceId,
+          amountDue,
+          `Stripe membership payment ${clean(intent.id)}`,
+          clean(intent.id),
+        );
+      }
+      await adminClient.from("xero_invoice_portal_payments").update({
+        status: "paid",
+        xero_payment_id: xeroPaymentId,
+        error: null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", existingPayment.id);
+      const paidInvoice = await getXeroInvoice(ctx, invoiceId);
+      if (paidInvoice) {
+        await updateMembershipPeriodFromInvoice(
+          adminClient,
+          period.id,
+          paidInvoice,
+        );
+      }
+      await adminClient.from("membership_payment_preferences").update({
+        last_collection_status: "succeeded",
+        last_collection_error: null,
+        updated_at: new Date().toISOString(),
+      }).eq("user_id", membership.user_id);
+      return {
+        attempted: true,
+        status: "succeeded",
+        paymentRecordId: existingPayment.id,
+        xeroPaymentId,
+        reconciled: true,
+      };
+    }
+    if (clean(intent.status) === "processing") {
+      return {
+        attempted: false,
+        reason: "collection_already_recorded",
+        paymentRecordId: existingPayment.id,
+        status: "processing",
+      };
+    }
+    const failedIntentMessage = clean(intent?.last_payment_error?.message) ||
+      `Stripe returned ${clean(intent.status) || "an incomplete status"}.`;
+    await adminClient.from("xero_invoice_portal_payments").update({
+      status: "failed",
+      error: failedIntentMessage,
+      updated_at: new Date().toISOString(),
+    }).eq("id", existingPayment.id);
+    existingPayment = null;
+  }
   const { data: member, error: memberError } = await adminClient
     .from("users")
     .select("id,email,xero_contact_id")
@@ -4306,28 +4857,60 @@ const collectMembershipInvoice = async (
     throw new Error("The member is not linked to the Xero invoice contact.");
   }
 
-  const { data: paymentRecord, error: recordError } = await adminClient
-    .from("xero_invoice_portal_payments")
-    .insert({
-      user_id: membership.user_id,
-      xero_contact_id: clean(member.xero_contact_id),
-      xero_invoice_id: invoiceId,
-      xero_invoice_number: clean(invoice?.InvoiceNumber) || null,
-      amount: amountDue,
-      currency: clean(invoice?.CurrencyCode) || "AUD",
-      status: "pending",
-      stripe_mode: stripeMode,
-      is_test_mode: stripeMode === "test",
-    })
-    .select("id")
-    .single();
-  if (recordError) throw recordError;
+  let paymentRecord = existingPayment;
+  if (!paymentRecord) {
+    const { data: insertedRecord, error: recordError } = await adminClient
+      .from("xero_invoice_portal_payments")
+      .insert({
+        user_id: membership.user_id,
+        xero_contact_id: clean(member.xero_contact_id),
+        xero_invoice_id: invoiceId,
+        xero_invoice_number: clean(invoice?.InvoiceNumber) || null,
+        amount: amountDue,
+        currency: clean(invoice?.CurrencyCode) || "AUD",
+        status: "pending",
+        stripe_mode: stripeMode,
+        is_test_mode: stripeMode === "test",
+      })
+      .select("id,status,stripe_payment_intent_id,xero_payment_id")
+      .single();
+    if (recordError) {
+      if ((recordError as any)?.code !== "23505") throw recordError;
+      const { data: racedRecord, error: racedError } = await adminClient
+        .from("xero_invoice_portal_payments")
+        .select("id,status,stripe_payment_intent_id,xero_payment_id")
+        .eq("xero_invoice_id", invoiceId)
+        .in("status", ["pending", "paid", "needs_review"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (racedError) throw racedError;
+      if (clean(racedRecord?.stripe_payment_intent_id)) {
+        return {
+          attempted: false,
+          reason: "collection_already_recorded",
+          paymentRecordId: racedRecord.id,
+          status: racedRecord.status,
+        };
+      }
+      paymentRecord = racedRecord;
+    } else {
+      paymentRecord = insertedRecord;
+    }
+  }
+  if (!paymentRecord?.id) {
+    throw new Error("The membership payment attempt could not be reserved.");
+  }
 
   const form = new URLSearchParams();
   form.set("amount", String(Math.round(amountDue * 100)));
   form.set("currency", (clean(invoice?.CurrencyCode) || "AUD").toLowerCase());
   form.set("customer", clean(preference.stripe_customer_id));
   form.set("payment_method", clean(preference.stripe_payment_method_id));
+  form.append(
+    "payment_method_types[]",
+    preference.payment_method === "becs" ? "au_becs_debit" : "card",
+  );
   form.set("off_session", "true");
   form.set("confirm", "true");
   form.set(
@@ -4353,10 +4936,12 @@ const collectMembershipInvoice = async (
       headers: stripeHeaders(stripeSecretKey, connectedAccountId, {
         "Content-Type": "application/x-www-form-urlencoded",
         "Idempotency-Key": stripeIdempotencyKey(
-          "membership-invoice-collection",
-          stripeMode,
-          period.id,
-          invoiceId,
+          ...membershipCollectionIdempotencyParts({
+            stripeMode,
+            periodId: period.id,
+            invoiceId,
+            paymentRecordId: paymentRecord.id,
+          }),
         ),
       }),
       body: form,
@@ -4406,14 +4991,27 @@ const collectMembershipInvoice = async (
   await adminClient.from("membership_payment_preferences").update({
     last_collection_attempt_at: now,
     last_collection_status: clean(paymentIntent.status) || "pending",
-    last_collection_error: null,
+    last_collection_error: ["succeeded", "processing"].includes(
+        clean(paymentIntent.status),
+      )
+      ? null
+      : `Stripe returned ${
+        clean(paymentIntent.status) || "an incomplete status"
+      }.`,
     updated_at: now,
   }).eq("user_id", membership.user_id);
 
   if (paymentIntent.status !== "succeeded") {
+    const processing = paymentIntent.status === "processing";
     return {
       attempted: true,
-      status: clean(paymentIntent.status) || "pending",
+      status: processing ? "processing" : "failed",
+      stripeStatus: clean(paymentIntent.status) || "unknown",
+      error: processing
+        ? null
+        : `Stripe returned ${
+          clean(paymentIntent.status) || "an incomplete status"
+        }.`,
       paymentRecordId: paymentRecord.id,
     };
   }
@@ -4480,10 +5078,116 @@ const createOrRefreshMembershipInvoice = async (
     );
   }
 
+  const { data: membershipSettings, error: settingsError } = await adminClient
+    .from("membership_settings")
+    .select("xero_membership_item_code,xero_scholarship_item_code")
+    .eq("id", true)
+    .maybeSingle();
+  if (settingsError) throw settingsError;
+  const itemCode = clean(membershipSettings?.xero_membership_item_code) ||
+    DEFAULT_MEMBERSHIP_ITEM_CODE;
+  const scholarshipAmount = money(period.scholarship_contribution_amount);
+  const scholarshipItemCode = clean(
+    membershipSettings?.xero_scholarship_item_code,
+  ) || DEFAULT_SCHOLARSHIP_ITEM_CODE;
+  await ensureMembershipSalesItem(ctx, {
+    code: itemCode,
+    name: "BFC Membership",
+    description: "Bendigo Flying Club annual membership",
+  });
+  if (scholarshipAmount > 0) {
+    await ensureMembershipSalesItem(ctx, {
+      code: scholarshipItemCode,
+      name: "BFC Scholarship Contribution",
+      description: "Optional Bendigo Flying Club scholarship contribution",
+    });
+  }
+  if (
+    clean(membershipSettings?.xero_membership_item_code) !== itemCode ||
+    clean(membershipSettings?.xero_scholarship_item_code) !==
+      scholarshipItemCode
+  ) {
+    const { error: itemSettingsError } = await adminClient
+      .from("membership_settings")
+      .update({
+        xero_membership_item_code: itemCode,
+        xero_scholarship_item_code: scholarshipItemCode,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", true);
+    if (itemSettingsError) throw itemSettingsError;
+  }
+
+  const startYear = String(period.financial_year_start).slice(0, 4);
+  const endYear = String(period.financial_year_end).slice(2, 4);
+  const financialYearLabel = `${startYear}/${endYear}`;
+  const membershipFeeAmount = money(
+    period.membership_fee_amount ??
+      (money(period.amount_due) - scholarshipAmount),
+  );
+  const lineItems = [{
+    ItemCode: itemCode,
+    Description: truncateText(
+      `${membershipClass.name} Bendigo Flying Club membership ${financialYearLabel}`,
+      4000,
+    ),
+    Quantity: 1,
+    UnitAmount: membershipFeeAmount,
+  }];
+  if (scholarshipAmount > 0) {
+    lineItems.push({
+      ItemCode: scholarshipItemCode,
+      Description: truncateText(
+        `Optional Bendigo Flying Club scholarship contribution ${financialYearLabel}`,
+        4000,
+      ),
+      Quantity: 1,
+      UnitAmount: scholarshipAmount,
+    });
+  }
+
   if (clean(period.xero_invoice_id)) {
-    const invoice = await getXeroInvoice(ctx, clean(period.xero_invoice_id));
+    let invoice = await getXeroInvoice(ctx, clean(period.xero_invoice_id));
     if (!invoice) {
       throw new Error("The linked Xero membership invoice could not be found.");
+    }
+    const expectedTotal = money(period.amount_due);
+    const invoiceTotal = money(invoice.Total);
+    if (Math.abs(expectedTotal - invoiceTotal) > 0.005) {
+      if (money(invoice.AmountPaid) > 0.005) {
+        throw makeXeroNeedsReviewError(
+          `Xero invoice ${
+            clean(invoice.InvoiceNumber) || clean(invoice.InvoiceID)
+          } totals $${invoiceTotal.toFixed(2)}, but the CRM fee is $${
+            expectedTotal.toFixed(2)
+          } and a payment is already recorded.`,
+        );
+      }
+      const correction = await xeroRequest({
+        method: "POST",
+        path: "Invoices",
+        tenantId: ctx.connection.tenant_id,
+        accessToken: ctx.connection.access_token,
+        idempotencyKey: `membership-period-correction-${period.id}-${
+          Math.round(expectedTotal * 100)
+        }`,
+        body: {
+          Invoices: [{
+            InvoiceID: clean(invoice.InvoiceID),
+            LineAmountTypes: "Inclusive",
+            LineItems: lineItems,
+          }],
+        },
+      });
+      invoice = correction?.Invoices?.[0] ||
+        await getXeroInvoice(ctx, clean(period.xero_invoice_id));
+      if (!invoice || Math.abs(money(invoice.Total) - expectedTotal) > 0.005) {
+        throw new Error(
+          `Xero invoice correction did not produce the expected $${
+            expectedTotal.toFixed(2)
+          } total.`,
+        );
+      }
     }
     const synced = await updateMembershipPeriodFromInvoice(
       adminClient,
@@ -4515,28 +5219,6 @@ const createOrRefreshMembershipInvoice = async (
     return { ...synced, emailSent: sendEmail, collection };
   }
 
-  const { data: membershipSettings, error: settingsError } = await adminClient
-    .from("membership_settings")
-    .select("xero_membership_item_code,xero_scholarship_item_code")
-    .eq("id", true)
-    .maybeSingle();
-  if (settingsError) throw settingsError;
-  const itemCode = clean(membershipSettings?.xero_membership_item_code);
-  if (!itemCode) {
-    throw new Error(
-      "Set the Xero membership item code in Membership settings before issuing invoices.",
-    );
-  }
-  const scholarshipAmount = money(period.scholarship_contribution_amount);
-  const scholarshipItemCode = clean(
-    membershipSettings?.xero_scholarship_item_code,
-  );
-  if (scholarshipAmount > 0 && !scholarshipItemCode) {
-    throw new Error(
-      "Set the Xero scholarship item code in Membership settings before invoicing a scholarship contribution.",
-    );
-  }
-
   const member = await getMember(adminClient, membership.user_id);
   const contact = await syncMemberContact(adminClient, ctx, membership.user_id);
   const contactId = clean(contact?.contactId || member.xero_contact_id);
@@ -4544,33 +5226,6 @@ const createOrRefreshMembershipInvoice = async (
     throw new Error("The member could not be linked to a Xero contact.");
   }
 
-  const startYear = String(period.financial_year_start).slice(0, 4);
-  const endYear = String(period.financial_year_end).slice(2, 4);
-  const financialYearLabel = `${startYear}/${endYear}`;
-  const membershipFeeAmount = money(
-    period.membership_fee_amount ??
-      (money(period.amount_due) - scholarshipAmount),
-  );
-  const lineItems = [{
-    ItemCode: itemCode,
-    Description: truncateText(
-      `${membershipClass.name} Bendigo Flying Club membership ${financialYearLabel}`,
-      4000,
-    ),
-    Quantity: 1,
-    UnitAmount: membershipFeeAmount,
-  }];
-  if (scholarshipAmount > 0) {
-    lineItems.push({
-      ItemCode: scholarshipItemCode,
-      Description: truncateText(
-        `Optional Bendigo Flying Club scholarship contribution ${financialYearLabel}`,
-        4000,
-      ),
-      Quantity: 1,
-      UnitAmount: scholarshipAmount,
-    });
-  }
   const result = await xeroRequest({
     method: "POST",
     path: "Invoices",
@@ -4585,6 +5240,7 @@ const createOrRefreshMembershipInvoice = async (
         DueDate: isoDate(period.due_date),
         Status: "AUTHORISED",
         Reference: truncateText(`BFC membership ${financialYearLabel}`),
+        LineAmountTypes: "Inclusive",
         LineItems: lineItems,
       }],
     },
@@ -4623,9 +5279,10 @@ const createOrRefreshMembershipInvoice = async (
 
 const issueMembershipRenewals = async (
   adminClient: SupabaseAdminClient,
-  ctx: any,
+  _ctx: any,
   requestedPeriodIds: string[] = [],
   sendEmail = true,
+  requestedBy: string | null = null,
 ) => {
   let query = adminClient
     .from("membership_financial_periods")
@@ -4642,14 +5299,13 @@ const issueMembershipRenewals = async (
   const results: any[] = [];
   for (const period of periods || []) {
     try {
-      results.push(
-        await createOrRefreshMembershipInvoice(
-          adminClient,
-          ctx,
-          period.id,
-          sendEmail,
-        ),
+      const queue = await queueMembershipBilling(
+        adminClient,
+        period.id,
+        requestedBy,
+        { sendEmail, source: "membership_renewal_batch" },
       );
+      results.push({ periodId: period.id, queued: true, queueId: queue.id });
     } catch (error) {
       results.push({
         periodId: period.id,
@@ -4660,8 +5316,9 @@ const issueMembershipRenewals = async (
   }
   return {
     attempted: results.length,
-    issued: results.filter((item) => !item.error).length,
-    emailed: results.filter((item) => item.emailSent).length,
+    queued: results.filter((item) => item.queued).length,
+    issued: 0,
+    emailed: 0,
     failed: results.filter((item) => item.error).length,
     results,
   };
@@ -4713,6 +5370,7 @@ const issueMemberMembershipInvoice = async (
   ctx: any,
   userId: string,
   sendEmail = true,
+  requestedBy: string | null = null,
 ) => {
   const { data: membership, error: membershipError } = await adminClient
     .from("club_memberships")
@@ -4731,13 +5389,24 @@ const issueMemberMembershipInvoice = async (
     .maybeSingle();
   if (periodError) throw periodError;
   if (!period) return { issued: false, reason: "financial_period_not_ready" };
+  const queue = await queueMembershipBilling(
+    adminClient,
+    period.id,
+    requestedBy,
+    { sendEmail, source: "member_approval_or_payment_setup" },
+  );
+  if (queue.status === "processing") {
+    return { issued: true, queued: true, queueId: queue.id };
+  }
   return {
     issued: true,
-    result: await createOrRefreshMembershipInvoice(
+    queued: true,
+    queueId: queue.id,
+    result: await processQueueRecord(
       adminClient,
       ctx,
-      period.id,
-      sendEmail,
+      queue,
+      requestedBy,
     ),
   };
 };
@@ -5331,14 +6000,22 @@ Deno.serve(async (req: Request) => {
     if (action === "create-membership-invoice") {
       const periodId = clean(body.periodId);
       if (!periodId) return json({ error: "Missing periodId" }, 400);
-      return json(
-        await createOrRefreshMembershipInvoice(
-          adminClient,
-          ctx,
-          periodId,
-          body.sendEmail === true,
-        ),
+      const queue = await queueMembershipBilling(
+        adminClient,
+        periodId,
+        auth.userId,
+        {
+          sendEmail: body.sendEmail === true,
+          source: "admin_membership_billing",
+        },
       );
+      return json({
+        queued: true,
+        queueId: queue.id,
+        result: queue.status === "processing"
+          ? { processing: true }
+          : await processQueueRecord(adminClient, ctx, queue, auth.userId),
+      });
     }
 
     if (action === "issue-member-membership-invoice") {
@@ -5350,6 +6027,7 @@ Deno.serve(async (req: Request) => {
           ctx,
           userId,
           body.sendEmail !== false,
+          auth.userId,
         ),
       );
     }
@@ -5364,6 +6042,7 @@ Deno.serve(async (req: Request) => {
           ctx,
           periodIds,
           body.sendEmail !== false,
+          auth.userId,
         ),
       );
     }
@@ -5572,12 +6251,23 @@ Deno.serve(async (req: Request) => {
         .select("*")
         .single();
       if (error) throw error;
+      if (item.entity_type === "membership_period") {
+        await updateMembershipBillingState(adminClient, item.entity_id, {
+          status: "queued",
+          attempts: Number(item.attempts || 0),
+          nextAttemptAt: item.next_attempt_at,
+          error: null,
+        });
+      }
       return json({ queued: true, item });
     }
 
     return json({ error: "Unknown action" }, 400);
   } catch (error) {
     console.error("xero-sync error:", error);
-    return json({ error: "The accounting request could not be completed" }, 500);
+    return json(
+      { error: "The accounting request could not be completed" },
+      500,
+    );
   }
 });

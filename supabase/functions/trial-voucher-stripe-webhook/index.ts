@@ -1505,19 +1505,88 @@ const handleMembershipInvoicePaymentIntentEvent = async ({
       last_collection_error: message,
       updated_at: now,
     }).eq("user_id", userId);
-    await adminClient.from("notifications").insert({
-      user_id: userId,
-      type: "membership",
-      title: "Membership payment needs attention",
-      message:
-        "The automatic membership payment did not succeed. Your Xero invoice remains available for manual payment.",
-      metadata: { membershipPeriodId: periodId, xeroInvoiceId: invoiceId },
-      is_read: false,
-    });
+    const nextAttemptAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const { data: openRetry } = await adminClient
+      .from("xero_sync_queue")
+      .select("id")
+      .eq("entity_type", "membership_period")
+      .eq("entity_id", periodId)
+      .eq("action", "sync_membership")
+      .in("status", ["pending", "processing"])
+      .limit(1)
+      .maybeSingle();
+    if (!openRetry) {
+      const { error: queueError } = await adminClient.from("xero_sync_queue")
+        .insert({
+          entity_type: "membership_period",
+          entity_id: periodId,
+          action: "sync_membership",
+          status: "pending",
+          priority: 40,
+          next_attempt_at: nextAttemptAt,
+          payload: {
+            sendEmail: false,
+            source: "stripe_membership_payment_failure",
+          },
+          updated_at: now,
+        });
+      if (queueError && queueError.code !== "23505") throw queueError;
+    }
+    await adminClient.from("membership_financial_periods").update({
+      billing_sync_status: "queued",
+      billing_sync_next_attempt_at: nextAttemptAt,
+      billing_sync_error: message,
+      billing_sync_updated_at: now,
+      updated_at: now,
+    }).eq("id", periodId);
+
+    const [{ data: primaryAdmins }, { data: roleAdmins }, { data: member }] =
+      await Promise.all([
+        adminClient.from("users").select("id").eq("role", "admin").eq(
+          "is_active",
+          true,
+        ),
+        adminClient.from("user_roles").select("user_id").eq("role", "admin"),
+        adminClient.from("users").select("name").eq("id", userId).maybeSingle(),
+      ]);
+    const adminIds = Array.from(
+      new Set([
+        ...(primaryAdmins || []).map((row: any) => asString(row.id)),
+        ...(roleAdmins || []).map((row: any) => asString(row.user_id)),
+      ].filter(Boolean)),
+    );
+    const metadata = {
+      membershipPeriodId: periodId,
+      xeroInvoiceId: invoiceId,
+      path: "/membership",
+    };
+    await adminClient.from("notifications").insert([
+      {
+        user_id: userId,
+        type: "membership",
+        title: "Membership payment needs attention",
+        message:
+          "The automatic membership payment did not succeed. We will retry automatically; you can also pay the Xero invoice manually.",
+        metadata,
+        is_read: false,
+      },
+      ...adminIds.filter((id) => id !== userId).map((adminId) => ({
+        user_id: adminId,
+        type: "membership",
+        title: "Membership payment failed",
+        message: `${
+          asString(member?.name) || "A member"
+        }'s automatic membership payment failed and has been queued for retry: ${message}`,
+        metadata,
+        is_read: false,
+      })),
+    ]);
     return json({
       received: true,
       membershipPayment: "failed",
       paymentRecordId,
+      retryQueued: true,
+      nextAttemptAt,
     });
   }
 
@@ -1525,6 +1594,13 @@ const handleMembershipInvoicePaymentIntentEvent = async ({
     return json({ received: true, ignored: true });
   }
   if (record.xero_payment_id && record.status === "paid") {
+    await adminClient.from("membership_financial_periods").update({
+      billing_sync_status: "succeeded",
+      billing_sync_next_attempt_at: null,
+      billing_sync_error: null,
+      billing_sync_updated_at: now,
+      updated_at: now,
+    }).eq("id", periodId);
     return json({ received: true, duplicate: true, paymentRecordId });
   }
 
@@ -1559,6 +1635,14 @@ const handleMembershipInvoicePaymentIntentEvent = async ({
         "Stripe collected the membership payment but the Xero invoice has no amount due.",
       updated_at: now,
     }).eq("id", paymentRecordId);
+    await adminClient.from("membership_financial_periods").update({
+      billing_sync_status: "needs_review",
+      billing_sync_next_attempt_at: null,
+      billing_sync_error:
+        "Stripe collected the membership payment but the Xero invoice has no amount due.",
+      billing_sync_updated_at: now,
+      updated_at: now,
+    }).eq("id", periodId);
     return json({
       received: true,
       membershipPayment: "needs_review",
@@ -1609,6 +1693,16 @@ const handleMembershipInvoicePaymentIntentEvent = async ({
     xero_amount_due: Math.max(0, amountDue - amountToApply),
     xero_last_synced_at: now,
     xero_sync_error: null,
+    billing_sync_status: amountReceived > amountToApply + 0.005
+      ? "needs_review"
+      : "succeeded",
+    billing_sync_next_attempt_at: null,
+    billing_sync_error: amountReceived > amountToApply + 0.005
+      ? `Stripe collected ${amountReceived.toFixed(2)} but only ${
+        amountToApply.toFixed(2)
+      } was applied to Xero.`
+      : null,
+    billing_sync_updated_at: now,
     updated_at: now,
   }).eq("id", periodId);
   await adminClient.from("membership_payment_preferences").update({

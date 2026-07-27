@@ -78,6 +78,11 @@ interface MembershipFinancialPeriodRow {
   xero_amount_due: number | string | null;
   xero_last_synced_at: string | null;
   xero_sync_error: string | null;
+  billing_sync_status: MembershipFinancialPeriod['billingSyncStatus'];
+  billing_sync_attempts: number | string | null;
+  billing_sync_next_attempt_at: string | null;
+  billing_sync_error: string | null;
+  billing_sync_updated_at: string | null;
   waiver_reason: string | null;
   waiver_authorised_by: string | null;
   waiver_authorised_at: string | null;
@@ -172,6 +177,11 @@ const mapPeriod = (row: MembershipFinancialPeriodRow): MembershipFinancialPeriod
   xeroAmountDue: row.xero_amount_due === null ? null : Number(row.xero_amount_due),
   xeroLastSyncedAt: row.xero_last_synced_at,
   xeroSyncError: row.xero_sync_error,
+  billingSyncStatus: row.billing_sync_status,
+  billingSyncAttempts: Number(row.billing_sync_attempts || 0),
+  billingSyncNextAttemptAt: row.billing_sync_next_attempt_at,
+  billingSyncError: row.billing_sync_error,
+  billingSyncUpdatedAt: row.billing_sync_updated_at,
   waiverReason: row.waiver_reason,
   waiverAuthorisedBy: row.waiver_authorised_by,
   waiverAuthorisedAt: row.waiver_authorised_at,
@@ -421,10 +431,10 @@ export const useMembership = () => {
       if (data?.error) throw new Error(data.error);
       if (data?.failed) {
         await refetch();
-        throw new Error(`${data.issued} invoice(s) issued, but ${data.failed} failed. Check Xero links and member email addresses, then retry.`);
+        throw new Error(`${data.queued || 0} invoice(s) queued, but ${data.failed} could not be queued. Check the billing queue and retry.`);
       }
       return data;
-    }, 'Outstanding membership invoices issued and emailed from Xero');
+    }, 'Outstanding membership invoices queued for issue and email');
 
   const refreshOwnXeroInvoices = () =>
     runAction('xero:own', async () => {
