@@ -4,6 +4,10 @@ import { Plane, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DEFAULT_ENDORSEMENT_TYPES } from '../../utils/pilotStatus';
 import { MembershipDocumentLinks } from '../Membership/MembershipDocumentLinks';
+import { AddressAutocomplete } from '../common/AddressAutocomplete';
+import { useMembershipDocuments } from '../../hooks/useMembershipDocuments';
+import { membershipDocumentsAreReady } from '../../utils/membershipDocumentRules';
+import { PRIVACY_NOTICE_VERSION } from '../../utils/privacyNotice';
 
 interface SignUpFormProps {
   onBackToLogin: () => void;
@@ -25,6 +29,12 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
   const [sameServiceAddress, setSameServiceAddress] = useState(true);
   const [guardianConsent, setGuardianConsent] = useState(false);
   const [membershipDeclarationsAccepted, setMembershipDeclarationsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const {
+    documents: membershipDocuments,
+    loading: membershipDocumentsLoading,
+    error: membershipDocumentsError,
+  } = useMembershipDocuments({ currentOnly: true, acknowledgementOnly: true });
   const [endorsements, setEndorsements] = useState<Array<{
     id: string;
     type: string;
@@ -40,6 +50,11 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const membershipDocumentsReady = membershipDocumentsAreReady(
+    membershipDocuments,
+    membershipDocumentsLoading,
+    membershipDocumentsError,
+  );
 
   const addEndorsement = () => {
     if (!endorsementDraft.type.trim()) {
@@ -102,8 +117,12 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
       return;
     }
 
-    if (!membershipDeclarationsAccepted) {
+    if (!membershipDeclarationsAccepted || !membershipDocumentsReady) {
       toast.error('Accept the BFC membership declarations before continuing');
+      return;
+    }
+    if (!privacyAccepted) {
+      toast.error('Read and accept the portal privacy notice before continuing');
       return;
     }
 
@@ -142,6 +161,10 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
             agrees_to_members_manual: membershipDeclarationsAccepted,
             guardian_name: formData.guardianName.trim() || null,
             guardian_consent: guardianConsent,
+            privacy_notice_accepted: true,
+            privacy_notice_version: PRIVACY_NOTICE_VERSION,
+            privacy_notice_accepted_at: new Date().toISOString(),
+            membership_document_ids: membershipDocuments.map(document => document.id),
             endorsements: endorsements.map((endorsement) => ({
               type: endorsement.type,
               dateObtained: endorsement.dateObtained,
@@ -275,7 +298,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                   <input type="date" value={formData.dateOfBirth} onChange={event => setFormData({ ...formData, dateOfBirth: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
                 </label>
                 <label className="block text-sm font-medium text-gray-700 sm:col-span-2">Residential address
-                  <textarea required rows={2} value={formData.residentialAddress} onChange={event => setFormData({ ...formData, residentialAddress: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
+                  <AddressAutocomplete required value={formData.residentialAddress} onChange={residentialAddress => setFormData(current => ({ ...current, residentialAddress }))} className="mt-1" inputClassName="rounded-md" />
                 </label>
                 <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2"><input type="checkbox" checked={sameServiceAddress} onChange={event => setSameServiceAddress(event.target.checked)} className="h-4 w-4 rounded border-gray-300" />Use my residential address for formal notices</label>
                 {!sameServiceAddress && <label className="block text-sm font-medium text-gray-700 sm:col-span-2">Address for service
@@ -288,7 +311,8 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                   <label className="flex items-center gap-2 self-end pb-3 text-sm text-gray-700"><input type="checkbox" required checked={guardianConsent} onChange={event => setGuardianConsent(event.target.checked)} className="h-4 w-4 rounded border-gray-300" />Parent or guardian consent provided</label>
                 </>}
               </div>
-              <label className="mt-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-white p-3 text-sm text-gray-700"><input type="checkbox" required checked={membershipDeclarationsAccepted} onChange={event => setMembershipDeclarationsAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" /><span>I support the purposes of Bendigo Flying Club and agree to the Constitution, member guarantee, By-laws, Code of Conduct and Members Manual. These acknowledgements will be retained with my application.<MembershipDocumentLinks /></span></label>
+              <label className="mt-4 flex items-start gap-3 rounded-lg border border-blue-200 bg-white p-3 text-sm text-gray-700"><input type="checkbox" required disabled={!membershipDocumentsReady} checked={membershipDeclarationsAccepted} onChange={event => setMembershipDeclarationsAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 disabled:opacity-50" /><span>I support the purposes of Bendigo Flying Club, accept the member guarantee, and confirm I have read and agree to each current membership document below. These document versions and my acknowledgement will be retained with my application.<MembershipDocumentLinks documents={membershipDocuments} loading={membershipDocumentsLoading} error={membershipDocumentsError} /></span></label>
+              <label className="mt-3 flex items-start gap-3 rounded-lg border border-blue-200 bg-white p-3 text-sm text-gray-700"><input type="checkbox" required checked={privacyAccepted} onChange={event => setPrivacyAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" /><span>I have read the <a href="/privacy" target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">portal privacy notice</a> and understand how my information is used for membership, bookings, safety, training, accounting and portal security.</span></label>
               <p className="mt-3 text-xs text-blue-800">Membership commences when approved by the committee, or 30 days after this complete application is submitted. Aircraft self-booking requires the membership fee to be paid or waived.</p>
             </div>
 
@@ -463,7 +487,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !membershipDocumentsReady || !membershipDeclarationsAccepted || !privacyAccepted}
               className="flex w-full justify-center rounded-xl border border-transparent bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition-colors hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoading ? 'Creating Account...' : 'Create Account'}

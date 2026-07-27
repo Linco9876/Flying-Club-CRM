@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Building2, Globe, Phone, Mail, MapPin, X, Loader, Image as ImageIcon } from 'lucide-react';
+import { Building2, Globe, Phone, Mail, MapPin, Plus, Trash2, X, Loader, Image as ImageIcon } from 'lucide-react';
 import { useOrganisationSettings } from '../../hooks/useSettings';
+import {
+  OrganisationLocationDraft,
+  useOrganisationLocations,
+} from '../../hooks/useOrganisationLocations';
 import { safeImageSource } from '../../utils/imageSource';
+import { OrganisationDocumentsSettings } from './OrganisationDocumentsSettings';
 
 interface OrganisationSettingsProps {
   canEdit: boolean;
@@ -10,6 +15,11 @@ interface OrganisationSettingsProps {
 
 export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canEdit, onFormChange }) => {
   const { settings, loading, updateSettings } = useOrganisationSettings();
+  const {
+    locations,
+    loading: locationsLoading,
+    saveLocations,
+  } = useOrganisationLocations();
 
   const [formData, setFormData] = useState({
     clubName: '',
@@ -27,6 +37,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [locationDrafts, setLocationDrafts] = useState<OrganisationLocationDraft[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoImageSource = safeImageSource(logoPreview);
 
@@ -50,6 +61,13 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       }
     }
   }, [settings]);
+
+  useEffect(() => {
+    setLocationDrafts(locations.map((location) => ({
+      ...location,
+      key: location.id,
+    })));
+  }, [locations]);
 
   const handleChange = (field: string, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -75,9 +93,44 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const updateLocation = (key: string, patch: Partial<OrganisationLocationDraft>) => {
+    setLocationDrafts((current) => current.map((location) => {
+      if (location.key === key) {
+        return {
+          ...location,
+          ...patch,
+          ...(patch.isPrimary ? { isActive: true } : {}),
+        };
+      }
+      return patch.isPrimary ? { ...location, isPrimary: false } : location;
+    }));
+    onFormChange();
+  };
+
+  const addLocation = () => {
+    const primary = locationDrafts.find((location) => location.isPrimary) || locationDrafts[0];
+    setLocationDrafts((current) => [...current, {
+      key: `new-${crypto.randomUUID()}`,
+      name: '',
+      address: '',
+      latitude: primary?.latitude ?? -36.7391667,
+      longitude: primary?.longitude ?? 144.3297222,
+      radiusMetres: primary?.radiusMetres ?? 1200,
+      isPrimary: current.length === 0,
+      isActive: true,
+    }]);
+    onFormChange();
+  };
+
+  const removeUnsavedLocation = (key: string) => {
+    setLocationDrafts((current) => current.filter((location) => location.key !== key));
+    onFormChange();
+  };
+
   // Register save/discard handlers for the dashboard's global Save/Cancel bar
   useEffect(() => {
     (window as any).__organisationSettingsSave = async () => {
+      await saveLocations(locationDrafts);
       await updateSettings(
         {
           club_name: formData.clubName,
@@ -113,15 +166,16 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       });
       setLogoFile(null);
       setLogoPreview(settings?.logo_url ?? null);
+      setLocationDrafts(locations.map((location) => ({ ...location, key: location.id })));
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
     return () => {
       delete (window as any).__organisationSettingsSave;
       delete (window as any).__organisationSettingsCancel;
     };
-  }, [formData, logoFile, logoPreview, settings, updateSettings]);
+  }, [formData, locationDrafts, locations, logoFile, logoPreview, saveLocations, settings, updateSettings]);
 
-  if (loading) {
+  if (loading || locationsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader className="h-5 w-5 animate-spin text-blue-500 mr-2" />
@@ -217,6 +271,125 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
                 <p className="text-sm text-gray-400 italic">You don't have permission to change the logo.</p>
               )}
             </div>
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-2">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">Business Locations</h3>
+              <p className="mt-1 text-xs text-gray-500">
+                These locations are shared by bookings, instructor rosters, duty clock geofencing and supervision.
+              </p>
+            </div>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={addLocation}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                <Plus className="h-4 w-4" />
+                Add location
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {locationDrafts.map((location) => (
+              <div key={location.key} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 xl:col-span-2">
+                    Location name
+                    <input
+                      value={location.name}
+                      onChange={(event) => updateLocation(location.key, { name: event.target.value })}
+                      disabled={!canEdit}
+                      className={`mt-1.5 ${inputClass(!canEdit)}`}
+                      placeholder="e.g. Bendigo Airport"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 md:col-span-2 xl:col-span-4">
+                    Address
+                    <input
+                      value={location.address}
+                      onChange={(event) => updateLocation(location.key, { address: event.target.value })}
+                      disabled={!canEdit}
+                      className={`mt-1.5 ${inputClass(!canEdit)}`}
+                      placeholder="Street or airport address"
+                    />
+                  </label>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 xl:col-span-2">
+                    Latitude
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={location.latitude}
+                      onChange={(event) => updateLocation(location.key, { latitude: Number(event.target.value) })}
+                      disabled={!canEdit}
+                      className={`mt-1.5 ${inputClass(!canEdit)}`}
+                    />
+                  </label>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 xl:col-span-2">
+                    Longitude
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={location.longitude}
+                      onChange={(event) => updateLocation(location.key, { longitude: Number(event.target.value) })}
+                      disabled={!canEdit}
+                      className={`mt-1.5 ${inputClass(!canEdit)}`}
+                    />
+                  </label>
+                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 xl:col-span-2">
+                    Duty clock radius (m)
+                    <input
+                      type="number"
+                      min="50"
+                      max="10000"
+                      value={location.radiusMetres}
+                      onChange={(event) => updateLocation(location.key, { radiusMetres: Number(event.target.value) })}
+                      disabled={!canEdit}
+                      className={`mt-1.5 ${inputClass(!canEdit)}`}
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-5">
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={location.isPrimary}
+                      onChange={(event) => updateLocation(location.key, { isPrimary: event.target.checked })}
+                      disabled={!canEdit}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    />
+                    Primary location
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={location.isActive}
+                      onChange={(event) => updateLocation(location.key, {
+                        isActive: event.target.checked,
+                        ...(event.target.checked ? {} : { isPrimary: false }),
+                      })}
+                      disabled={!canEdit || location.isPrimary}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    />
+                    Active
+                  </label>
+                  {!location.id && canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => removeUnsavedLocation(location.key)}
+                      className="ml-auto inline-flex items-center gap-1.5 text-sm font-semibold text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -341,6 +514,8 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
             </div>
           </div>
         </section>
+
+        <OrganisationDocumentsSettings canEdit={canEdit} />
 
         {/* Operating Hours */}
         <section className="space-y-4">

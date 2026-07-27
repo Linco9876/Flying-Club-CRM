@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2, MapPin, Search } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, Mail, X, Clock, Plane, User, CreditCard, Repeat2, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
@@ -8,6 +8,7 @@ import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
+import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
 import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
 import { Booking, DutyAssessment, MembershipBookingAssessment } from '../../types';
 import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
@@ -40,6 +41,7 @@ interface BookingFormProps {
     guestPhone?: string;
     trialFlightVoucherId?: string;
     location?: string;
+    locationId?: string;
   };
 }
 
@@ -62,16 +64,6 @@ interface PublicInstructorOption {
   email: string;
 }
 
-interface AvailableSlot {
-  slot_start: string;
-  slot_end: string;
-  aircraft_id: string;
-  aircraft_registration: string;
-  aircraft_description: string;
-  instructor_id: string;
-  instructor_name: string;
-}
-
 const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, booking, isEdit, isKioskMode = false, prefilledData }) => {
   const { user } = useAuth();
   const { aircraft, loading: aircraftLoading } = useAircraft({ participateInPageLoad: false });
@@ -79,8 +71,13 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { students, loading: studentsLoading } = useStudents({ participateInPageLoad: false });
   const { flightLogs, loading: flightLogsLoading } = useFlightLogs(undefined, { participateInPageLoad: false });
   const { settings: safetySettings } = useSafetySettings({ participateInPageLoad: false });
-  const { isFieldRequired, isFieldVisible } = useBookingFieldSettings();
+  const { settings: bookingFieldSettings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes, paymentMethods } = useBillingSettings();
+  const {
+    activeLocations,
+    primaryLocation,
+    loading: locationsLoading,
+  } = useOrganisationLocations();
   const { settings: portalSettings } = usePortalUxSettings();
   const { settings: bookingRules } = useBookingRulesSettings();
   const { settings: organisationSettings } = useOrganisationSettings();
@@ -88,8 +85,13 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const isVoucherBookingEdit = Boolean(isEdit && booking?.trialFlightVoucherId);
   const buildInitialFormData = React.useCallback(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
+    const defaultLocation = primaryLocation || activeLocations[0];
 
     if (booking) {
+      const matchedLocation = activeLocations.find((location) =>
+        location.id === booking.locationId
+        || location.name.toLocaleLowerCase() === booking.location?.toLocaleLowerCase()
+      );
       return {
         bookingKind: booking.bookingKind || 'flight',
         studentId: booking.studentId || '',
@@ -107,10 +109,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         guestEmail: booking.guestEmail || '',
         guestPhone: booking.guestPhone || '',
         trialFlightVoucherId: booking.trialFlightVoucherId || '',
-        location: booking.location || 'Bendigo',
+        locationId: matchedLocation?.id || defaultLocation?.id || '',
+        location: matchedLocation?.name || booking.location || defaultLocation?.name || 'Bendigo Airport',
       };
     }
 
+    const matchedPrefillLocation = activeLocations.find((location) =>
+      location.id === prefilledData?.locationId
+      || location.name.toLocaleLowerCase() === prefilledData?.location?.toLocaleLowerCase()
+    );
     return {
       bookingKind: prefilledData?.bookingKind || 'flight',
       studentId: prefilledData?.studentId || (isKioskMode ? '' : user?.id) || '',
@@ -128,9 +135,11 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       guestEmail: prefilledData?.guestEmail || '',
       guestPhone: prefilledData?.guestPhone || '',
       trialFlightVoucherId: prefilledData?.trialFlightVoucherId || '',
-      location: prefilledData?.location || 'Bendigo',
+      locationId: matchedPrefillLocation?.id || defaultLocation?.id || '',
+      location: matchedPrefillLocation?.name || prefilledData?.location || defaultLocation?.name || 'Bendigo Airport',
     };
   }, [
+    activeLocations,
     booking?.id,
     booking?.studentId,
     booking?.aircraftId,
@@ -144,6 +153,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     booking?.guestPhone,
     booking?.trialFlightVoucherId,
     booking?.location,
+    booking?.locationId,
     booking?.startTime,
     booking?.endTime,
     prefilledData?.date,
@@ -162,6 +172,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     prefilledData?.guestPhone,
     prefilledData?.trialFlightVoucherId,
     prefilledData?.location,
+    prefilledData?.locationId,
+    primaryLocation,
     isKioskMode,
     user?.id,
   ]);
@@ -223,8 +235,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     reason: string;
   } | null>(null);
   const [sendVoucherUpdateEmail, setSendVoucherUpdateEmail] = useState<boolean | null>(null);
-  const [findingSlots, setFindingSlots] = useState(false);
-  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const roleBasedInstructors = getInstructors().map((instructor) => ({
     id: instructor.id,
     name: instructor.name,
@@ -239,7 +249,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
   const isLimitedCalendarUser = displayUserRoles.some(role => role === 'student' || role === 'pilot')
     && !displayUserRoles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
-  const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading;
+  const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading || locationsLoading;
   const showModalLoader = isLoading || isSubmitting;
   const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
   const voucherScheduleChanged = Boolean(
@@ -292,47 +302,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     flightType.active && (!formData.isGuestBooking || !isPrepaidLikeFlightType(flightType.name))
   );
 
-  const findNextAvailableSlots = async () => {
-    const proposedStart = new Date(`${formData.date}T${formData.startTime || '09:00'}:00`);
-    const proposedEnd = new Date(`${formData.endDate || formData.date}T${formData.endTime || '11:00'}:00`);
-    const durationMinutes = Math.max(15, Math.min(480, Math.round((proposedEnd.getTime() - proposedStart.getTime()) / 60000) || 120));
-    setFindingSlots(true);
-    try {
-      const { data, error } = await supabase.rpc('find_next_available_slots', {
-        p_after: Number.isNaN(proposedStart.getTime()) ? new Date().toISOString() : proposedStart.toISOString(),
-        p_duration_minutes: durationMinutes,
-        p_search_days: 30,
-        p_aircraft_ids: formData.aircraftId ? [formData.aircraftId] : null,
-        p_instructor_ids: formData.instructorId ? [formData.instructorId] : null,
-        p_limit: 8,
-      });
-      if (error) throw error;
-      const slots = (data || []) as AvailableSlot[];
-      setAvailableSlots(slots);
-      if (!slots.length) toast('No matching aircraft and instructor slot was found in the next 30 days.');
-    } catch (error) {
-      console.error('Available slot search failed:', error);
-      toast.error('Could not search availability. Please try again.');
-    } finally {
-      setFindingSlots(false);
-    }
-  };
-
-  const chooseAvailableSlot = (slot: AvailableSlot) => {
-    const start = new Date(slot.slot_start);
-    const end = new Date(slot.slot_end);
-    setFormData((current) => ({
-      ...current,
-      date: format(start, 'yyyy-MM-dd'),
-      endDate: format(end, 'yyyy-MM-dd'),
-      startTime: format(start, 'HH:mm'),
-      endTime: format(end, 'HH:mm'),
-      aircraftId: slot.aircraft_id,
-      instructorId: slot.instructor_id,
-    }));
-    setAvailableSlots([]);
-    toast.success('Available aircraft and instructor selected');
-  };
   const filteredGuestVoucherOptions = guestVoucherOptions.filter((option) => {
     const query = guestVoucherSearch.trim().toLowerCase();
     if (!query) return true;
@@ -613,6 +582,15 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     }
     if (!effectiveGroundSession && isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.paymentType) {
       toast.error('Payment type is required');
+      return;
+    }
+    if (
+      activeLocations.length > 1
+      && isFieldVisible('location', userRole)
+      && isFieldRequired('location', userRole)
+      && !formData.locationId
+    ) {
+      toast.error('Location is required');
       return;
     }
     const userRoles = user?.roles && user.roles.length > 0 ? user.roles : [userRole];
@@ -1288,45 +1266,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
             </div>
           )}
 
-          {!isLoading && !isGroundSessionBooking && (
-            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
-              <button
-                type="button"
-                onClick={() => void findNextAvailableSlots()}
-                disabled={findingSlots}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-blue-800 shadow-sm ring-1 ring-blue-200 hover:bg-blue-100 disabled:opacity-60"
-              >
-                {findingSlots ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                Find the next available slot
-              </button>
-              <p className="mt-2 text-xs leading-5 text-blue-900">
-                Searches serviceable aircraft and available instructors together. Selected aircraft or instructor filters are respected.
-              </p>
-              {availableSlots.length > 0 && (
-                <div className="mt-3 space-y-2" role="list" aria-label="Available aircraft and instructor times">
-                  {availableSlots.map((slot) => {
-                    const start = new Date(slot.slot_start);
-                    const end = new Date(slot.slot_end);
-                    return (
-                      <button
-                        key={`${slot.slot_start}:${slot.aircraft_id}:${slot.instructor_id}`}
-                        type="button"
-                        role="listitem"
-                        onClick={() => chooseAvailableSlot(slot)}
-                        className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-left text-xs hover:border-blue-500 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <span className="block font-bold text-slate-950">
-                          {start.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}, {format(start, 'HH:mm')}–{format(end, 'HH:mm')}
-                        </span>
-                        <span className="mt-0.5 block text-slate-600">{slot.aircraft_registration} · {slot.instructor_name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
           {!isLoading && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && !isGroundSessionBooking && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -1374,11 +1313,39 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           )}
 
-          {!isLoading && !isGroundSessionBooking && (
+          {!isLoading
+            && activeLocations.length > 1
+            && isFieldVisible('location', userRole)
+            && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600"><MapPin className="mr-1 inline h-3.5 w-3.5" />Location</label>
-              <input value={formData.location} onChange={event => setFormData(prev => ({ ...prev, location: event.target.value }))} className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Bendigo" />
-              <p className="mt-1 text-[11px] text-gray-500">Used to match authorised supervision coverage.</p>
+              <label className="mb-1 block text-xs font-medium text-gray-600">
+                <MapPin className="mr-1 inline h-3.5 w-3.5" />
+                {bookingFieldSettings.find((setting) => setting.fieldName === 'location')?.label || 'Location'}
+                {isFieldRequired('location', userRole) && <span className="text-red-500"> *</span>}
+              </label>
+              <select
+                value={formData.locationId}
+                onChange={(event) => {
+                  const selected = activeLocations.find((location) => location.id === event.target.value);
+                  setFormData((current) => ({
+                    ...current,
+                    locationId: selected?.id || '',
+                    location: selected?.name || '',
+                  }));
+                }}
+                required={isFieldRequired('location', userRole)}
+                className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select location</option>
+                {activeLocations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}{location.isPrimary ? ' (primary)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Instructor roster and supervision coverage are checked at this location.
+              </p>
             </div>
           )}
 
@@ -1731,13 +1698,13 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
           </div>
           <div className="space-y-3 px-5 py-4 text-sm text-gray-700">
             <p>
-              {endorsementWarningState.pilotName} does not appear to have the required licence or endorsement recorded in this CRM.
+              Your account does not appear to have the required licence or endorsement recorded in the portal.
             </p>
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
-              Go back and choose a different aircraft or add an instructor. Existing licences must be verified and added by an instructor or administrator; endorsements can be submitted with supporting proof.
+              To continue, go back and choose a different aircraft or add an instructor. An instructor or administrator must verify and add your existing licences. You can submit endorsements with supporting proof.
             </div>
             <p className="text-xs text-gray-500">
-              {endorsementWarningState.needsStaffLicence ? 'Contact staff to have your licence verified and added.' : 'Endorsements can be added from Settings > Update My Info.'}
+              {endorsementWarningState.needsStaffLicence ? 'Ask an instructor or administrator to verify and add your licence.' : 'You can add endorsements from Settings > Update My Info.'}
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">

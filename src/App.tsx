@@ -72,6 +72,8 @@ const buildCopiedBookingFormData = (booking: Booking) => ({
   guestEmail: booking.guestEmail || '',
   guestPhone: booking.guestPhone || '',
   trialFlightVoucherId: booking.trialFlightVoucherId || '',
+  location: booking.location || '',
+  locationId: booking.locationId || '',
   copiedFromBookingId: booking.id,
 });
 
@@ -537,7 +539,13 @@ const KioskAuthenticatedRoute: React.FC<{
     startTime: string,
     endTime?: string,
     resourceId?: string,
-    resourceType?: 'aircraft' | 'instructor'
+    resourceType?: 'aircraft' | 'instructor',
+    additionalData: {
+      aircraftId?: string;
+      instructorId?: string;
+      location?: string;
+      locationId?: string;
+    } = {}
   ) => {
     if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
       toast.error('Student self-booking is disabled. Please contact the club.');
@@ -548,6 +556,7 @@ const KioskAuthenticatedRoute: React.FC<{
       date: format(date, 'yyyy-MM-dd'),
       startTime,
       endTime,
+      ...additionalData,
     };
     if (resourceType === 'aircraft') {
       formData.aircraftId = resourceId;
@@ -582,6 +591,7 @@ const KioskAuthenticatedRoute: React.FC<{
           guestPhone: bookingData.guestPhone || undefined,
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
           location: bookingData.location || 'Bendigo',
+          locationId: bookingData.locationId || undefined,
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
           membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
         });
@@ -610,6 +620,7 @@ const KioskAuthenticatedRoute: React.FC<{
             guestPhone: bookingData.guestPhone || undefined,
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
             location: bookingData.location || 'Bendigo',
+            locationId: bookingData.locationId || undefined,
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
             membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
           }, { silent: occurrenceCount > 1 });
@@ -767,7 +778,13 @@ const AuthenticatedApp: React.FC<{
     startTime: string,
     endTime?: string,
     resourceId?: string,
-    resourceType?: 'aircraft' | 'instructor'
+    resourceType?: 'aircraft' | 'instructor',
+    additionalData: {
+      aircraftId?: string;
+      instructorId?: string;
+      location?: string;
+      locationId?: string;
+    } = {}
   ) => {
     if ((user.role === 'student' || user.role === 'pilot') && !portalSettings.allow_self_booking) {
       toast.error('Student self-booking is disabled. Please contact the club.');
@@ -778,6 +795,7 @@ const AuthenticatedApp: React.FC<{
       date: format(date, 'yyyy-MM-dd'),
       startTime,
       endTime,
+      ...additionalData,
     };
     if (resourceType === 'aircraft') {
       formData.aircraftId = resourceId;
@@ -813,6 +831,7 @@ const AuthenticatedApp: React.FC<{
           guestPhone: bookingData.guestPhone || undefined,
           trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
           location: bookingData.location || 'Bendigo',
+          locationId: bookingData.locationId || undefined,
           dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
           membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
         });
@@ -841,6 +860,7 @@ const AuthenticatedApp: React.FC<{
             guestPhone: bookingData.guestPhone || undefined,
             trialFlightVoucherId: bookingData.trialFlightVoucherId || undefined,
             location: bookingData.location || 'Bendigo',
+            locationId: bookingData.locationId || undefined,
             dutyOverrideReason: bookingData.dutyOverrideReason || undefined,
             membershipOverrideReason: bookingData.membershipOverrideReason || undefined,
           }, { silent: occurrenceCount > 1 });

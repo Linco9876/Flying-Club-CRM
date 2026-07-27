@@ -1,36 +1,90 @@
 import React from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useStudents } from '../../hooks/useStudents';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useSafetySettings } from '../../hooks/useSafetySettings';
-import { buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
+import {
+  buildSafetyComplianceSummary,
+  type SafetyComplianceSummary,
+} from '../../utils/safetyCompliance';
+import { shouldOpenSafetyWarning } from '../../utils/safetyWarningGate';
+
+const isDismissedForSession = (storageKey: string) => {
+  if (!storageKey) return false;
+
+  try {
+    return sessionStorage.getItem(storageKey) === 'true';
+  } catch {
+    return false;
+  }
+};
 
 export const SafetyLoginWarningModal: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { students } = useStudents();
-  const { flightLogs } = useFlightLogs(user?.id);
-  const { settings } = useSafetySettings();
-  const [dismissed, setDismissed] = React.useState(false);
+  const { students, loading: studentsLoading, error: studentsError } = useStudents();
+  const { flightLogs, loading: flightLogsLoading, error: flightLogsError } = useFlightLogs(user?.id);
+  const { settings, loading: safetySettingsLoading } = useSafetySettings();
+  const [dismissedUserId, setDismissedUserId] = React.useState<string | null>(null);
+  const [displayedWarning, setDisplayedWarning] = React.useState<{
+    userId: string;
+    summary: SafetyComplianceSummary;
+  } | null>(null);
 
   const student = user ? students.find((candidate) => candidate.id === user.id) : null;
-  const summary = student
-    ? buildSafetyComplianceSummary(student, settings, flightLogs, { perspective: 'firstPerson' })
+  const candidateSummary = React.useMemo(
+    () => student
+      ? buildSafetyComplianceSummary(student, settings, flightLogs, { perspective: 'firstPerson' })
+      : null,
+    [flightLogs, settings, student]
+  );
+  const storageKey = user ? `safety-login-warning-dismissed:${user.id}` : '';
+  const dismissed = Boolean(
+    user && (dismissedUserId === user.id || isDismissedForSession(storageKey))
+  );
+  const dataReady = !studentsLoading
+    && !flightLogsLoading
+    && !safetySettingsLoading
+    && !studentsError
+    && !flightLogsError;
+
+  React.useEffect(() => {
+    if (!user || !candidateSummary || !shouldOpenSafetyWarning({
+      userId: user?.id,
+      dataReady,
+      dismissed,
+      displayedUserId: displayedWarning?.userId,
+      concernCount: candidateSummary.concerns.length,
+    })) {
+      return;
+    }
+
+    // Once displayed, keep this complete-data snapshot visible until the user
+    // explicitly acknowledges it. Background refetches must not close the modal.
+    setDisplayedWarning({
+      userId: user.id,
+      summary: candidateSummary,
+    });
+  }, [candidateSummary, dataReady, dismissed, displayedWarning?.userId, user]);
+
+  const summary = displayedWarning && displayedWarning.userId === user?.id
+    ? displayedWarning.summary
     : null;
   const concerns = summary?.concerns ?? [];
   const hasRenewalRelatedConcern = concerns.some((concern) => ['medical', 'licence', 'bfr'].includes(concern.type));
-  const storageKey = user ? `safety-login-warning-dismissed:${user.id}` : '';
-
-  React.useEffect(() => {
-    if (!storageKey) return;
-    setDismissed(sessionStorage.getItem(storageKey) === 'true');
-  }, [storageKey]);
 
   const handleDismiss = () => {
-    if (storageKey) sessionStorage.setItem(storageKey, 'true');
-    setDismissed(true);
+    if (!user) return;
+
+    try {
+      sessionStorage.setItem(storageKey, 'true');
+    } catch {
+      // The in-memory acknowledgement still works when storage is unavailable.
+    }
+    setDismissedUserId(user.id);
+    setDisplayedWarning((current) => current?.userId === user.id ? null : current);
   };
 
   const handleUpdateInfo = () => {
@@ -53,9 +107,6 @@ export const SafetyLoginWarningModal: React.FC = () => {
               <p className="mt-1 text-sm text-gray-600">{settings.safetyLoginWarningMessage}</p>
             </div>
           </div>
-          <button type="button" onClick={handleDismiss} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-            <X className="h-5 w-5" />
-          </button>
         </div>
         <div className="space-y-2 px-5 py-4">
           {concerns.map((concern) => (

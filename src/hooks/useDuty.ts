@@ -19,6 +19,7 @@ export interface DutyPeriodInput {
   flightMinutes: number;
   notes?: string;
   amendmentReason?: string;
+  breakConfirmation?: 'taken' | 'not_taken';
   breaks: Array<Omit<DutyBreak, 'id' | 'dutyPeriodId'>>;
   declaration?: {
     fitForDuty: boolean;
@@ -102,6 +103,8 @@ export const useDuty = (selectedInstructorId?: string) => {
         entrySource: row.entry_source || 'manual',
         autoStartedForBookingId: row.auto_started_for_booking_id || undefined,
         autoClosedAtLimit: Boolean(row.auto_closed_at_limit),
+        breakConfirmation: row.break_confirmation || undefined,
+        breakConfirmedAt: row.break_confirmed_at ? new Date(row.break_confirmed_at) : undefined,
         breaks: breaksByPeriod.get(row.id) || [],
         createdAt: new Date(row.created_at),
         updatedAt: new Date(row.updated_at),
@@ -148,6 +151,10 @@ export const useDuty = (selectedInstructorId?: string) => {
       flight_minutes: Math.max(0, Math.round(input.flightMinutes || 0)),
       notes: input.notes?.trim() || null,
       amendment_reason: input.amendmentReason?.trim() || null,
+      ...(input.breakConfirmation ? {
+        break_confirmation: input.breakConfirmation,
+        break_confirmed_at: new Date().toISOString(),
+      } : {}),
       updated_by: user.id,
       updated_at: new Date().toISOString(),
       completed_at: input.status === 'completed' ? new Date().toISOString() : null,

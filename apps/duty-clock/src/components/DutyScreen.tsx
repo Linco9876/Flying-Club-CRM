@@ -115,7 +115,7 @@ export const DutyScreen = ({ user }: Props) => {
               <View style={styles.breakCopy}>
                 <Text style={styles.breakEyebrow}>{context.activeBreak ? 'BREAK IN PROGRESS' : 'BREAKS'}</Text>
                 <Text style={styles.breakTitle}>{context.activeBreak ? formatDuration(breakElapsed) : 'Take a break'}</Text>
-                <Text style={styles.breakDetail}>{context.activeBreak ? `Started ${formatClockTime(context.activeBreak.startedAt)}` : 'Record rest periods during your duty day.'}</Text>
+                <Text style={styles.breakDetail}>{context.activeBreak ? `Started ${formatClockTime(context.activeBreak.startedAt)}` : 'Start this when you are free of all duty.'}</Text>
               </View>
               <Pressable
                 disabled={working}

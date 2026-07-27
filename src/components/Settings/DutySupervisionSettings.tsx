@@ -7,7 +7,53 @@ import { useAuth } from '../../context/AuthContext';
 type StaffRow = { id: string; name: string; email: string; roles: string[] };
 type RequirementDraft = { enabled: boolean; locations: string; preflightMinutes: number; postflightMinutes: number; notes: string };
 type AuthorisationDraft = { enabled: boolean; priority: number; locations: string; maximumConcurrent: number; remoteAllowed: boolean; qualificationExpiresOn: string; notes: string };
-type DutyClockLocationDraft = { key: string; id?: string; name: string; latitude: number; longitude: number; radiusMetres: number; isPrimary: boolean; isActive: boolean };
+type DutyClockLocationDraft = { key: string; id?: string; name: string; address: string; latitude: number; longitude: number; radiusMetres: number; isPrimary: boolean; isActive: boolean };
+
+const LocationCoveragePicker: React.FC<{
+  value: string;
+  locations: DutyClockLocationDraft[];
+  disabled: boolean;
+  onChange: (value: string) => void;
+}> = ({ value, locations, disabled, onChange }) => {
+  const selected = value.split(',').map((item) => item.trim()).filter(Boolean);
+  const toggle = (name: string, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...selected, name]))
+      : selected.filter((item) => item !== name);
+    onChange(next.join(', '));
+  };
+
+  return (
+    <fieldset className="sm:col-span-2">
+      <legend className="text-xs font-bold uppercase tracking-wide text-gray-500">
+        <MapPin className="mr-1 inline h-3.5 w-3.5" />
+        Locations
+      </legend>
+      <div className="mt-1.5 flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5">
+        <label className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700">
+          <input
+            type="checkbox"
+            checked={selected.length === 0}
+            onChange={() => onChange('')}
+            disabled={disabled}
+          />
+          All active locations
+        </label>
+        {locations.filter((location) => location.isActive).map((location) => (
+          <label key={location.key} className="inline-flex items-center gap-1.5 rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700">
+            <input
+              type="checkbox"
+              checked={selected.includes(location.name)}
+              onChange={(event) => toggle(location.name, event.target.checked)}
+              disabled={disabled}
+            />
+            {location.name}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+};
 
 export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange?: () => void }> = ({ canEdit = false, onFormChange }) => {
   const { user } = useAuth();
@@ -65,6 +111,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
         key: row.id,
         id: row.id,
         name: row.name,
+        address: row.address || '',
         latitude: Number(row.latitude),
         longitude: Number(row.longitude),
         radiusMetres: Number(row.radius_metres),
@@ -100,27 +147,24 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
     if (!user?.id || !canEdit) return;
     setSaving(true);
     try {
-      const { error: clearPrimaryError } = await supabase.from('duty_clock_locations').update({ is_primary: false, updated_by: user.id, updated_at: new Date().toISOString() }).eq('is_primary', true);
-      if (clearPrimaryError) throw clearPrimaryError;
       for (const location of clockLocations) {
         if (!location.name.trim()) throw new Error('Every duty clock location needs a name');
         if (!Number.isFinite(location.latitude) || location.latitude < -90 || location.latitude > 90) throw new Error(`${location.name}: enter a valid latitude`);
         if (!Number.isFinite(location.longitude) || location.longitude < -180 || location.longitude > 180) throw new Error(`${location.name}: enter a valid longitude`);
-        const payload = {
+      }
+      const { error: locationSaveError } = await supabase.rpc('save_organisation_locations', {
+        p_locations: clockLocations.map((location) => ({
+          id: location.id || null,
           name: location.name.trim(),
+          address: location.address.trim(),
           latitude: location.latitude,
           longitude: location.longitude,
-          radius_metres: Math.max(50, Math.round(location.radiusMetres)),
-          is_primary: location.isPrimary,
-          is_active: location.isActive,
-          updated_by: user.id,
-          updated_at: new Date().toISOString(),
-        };
-        const response = location.id
-          ? await supabase.from('duty_clock_locations').update(payload).eq('id', location.id)
-          : await supabase.from('duty_clock_locations').insert(payload);
-        if (response.error) throw response.error;
-      }
+          radiusMetres: Math.max(50, Math.min(10000, Math.round(location.radiusMetres))),
+          isPrimary: location.isPrimary && location.isActive,
+          isActive: location.isActive,
+        })),
+      });
+      if (locationSaveError) throw locationSaveError;
       for (const person of staff) {
         const requirement = requirements[person.id];
         if (requirement?.enabled) {
@@ -162,6 +206,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
           if (error) throw error;
         }
       }
+      window.dispatchEvent(new Event('organisation-locations-updated'));
       toast.success('Duty and supervision settings saved');
       await load();
     } finally {
@@ -200,11 +245,12 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
       <section className="rounded-xl border border-gray-200 bg-gray-50 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-blue-600" /><div><h3 className="font-bold text-gray-950">Duty clock locations</h3><p className="text-xs text-gray-500">The mobile app asks for notes when GPS falls outside these radiuses.</p></div></div>
-          {canEdit && <button type="button" onClick={() => { setClockLocations(current => [...current, { key: `new-${Date.now()}`, name: '', latitude: -36.7391667, longitude: 144.3297222, radiusMetres: 1200, isPrimary: current.length === 0, isActive: true }]); markChanged(); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-700"><Plus className="h-4 w-4" /> Add location</button>}
+          {canEdit && <button type="button" onClick={() => { setClockLocations(current => [...current, { key: `new-${Date.now()}`, name: '', address: '', latitude: -36.7391667, longitude: 144.3297222, radiusMetres: 1200, isPrimary: current.length === 0, isActive: true }]); markChanged(); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-gray-700"><Plus className="h-4 w-4" /> Add location</button>}
         </div>
         <div className="mt-4 space-y-3">
-          {clockLocations.map(location => <div key={location.key} className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 sm:grid-cols-6">
+          {clockLocations.map(location => <div key={location.key} className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 sm:grid-cols-8">
             <label className="sm:col-span-2 text-xs font-bold uppercase tracking-wide text-gray-500">Name<input disabled={!canEdit} value={location.name} onChange={event => updateClockLocation(location.key, { name: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal" /></label>
+            <label className="sm:col-span-3 text-xs font-bold uppercase tracking-wide text-gray-500">Address<input disabled={!canEdit} value={location.address} onChange={event => updateClockLocation(location.key, { address: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal" /></label>
             <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Latitude<input disabled={!canEdit} type="number" step="0.000001" value={location.latitude} onChange={event => updateClockLocation(location.key, { latitude: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
             <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Longitude<input disabled={!canEdit} type="number" step="0.000001" value={location.longitude} onChange={event => updateClockLocation(location.key, { longitude: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
             <label className="text-xs font-bold uppercase tracking-wide text-gray-500">Radius (m)<input disabled={!canEdit} type="number" min="50" max="10000" value={location.radiusMetres} onChange={event => updateClockLocation(location.key, { radiusMetres: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label>
@@ -222,7 +268,24 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
             return (
               <div key={person.id} className="rounded-xl border border-gray-200 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-gray-950">{person.name}</p><p className="text-xs text-gray-500">{person.email}</p></div><label className="flex items-center gap-2 text-sm font-bold text-gray-700"><input type="checkbox" disabled={!canEdit} checked={value.enabled} onChange={event => updateRequirement(person.id, { enabled: event.target.checked })} className="h-4 w-4" /> Requires supervision</label></div>
-                {value.enabled && <div className="mt-4 grid gap-3 sm:grid-cols-4"><label className="sm:col-span-2 text-xs font-bold uppercase tracking-wide text-gray-500"><MapPin className="mr-1 inline h-3.5 w-3.5" /> Locations<input disabled={!canEdit} value={value.locations} onChange={event => updateRequirement(person.id, { locations: event.target.value })} placeholder="Blank = all; or Bendigo, Shepparton" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal" /></label><label className="text-xs font-bold uppercase tracking-wide text-gray-500">Pre-flight coverage<input disabled={!canEdit} type="number" min="0" value={value.preflightMinutes} onChange={event => updateRequirement(person.id, { preflightMinutes: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label><label className="text-xs font-bold uppercase tracking-wide text-gray-500">Post-flight coverage<input disabled={!canEdit} type="number" min="0" value={value.postflightMinutes} onChange={event => updateRequirement(person.id, { postflightMinutes: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label></div>}
+                {value.enabled && (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    <LocationCoveragePicker
+                      value={value.locations}
+                      locations={clockLocations}
+                      disabled={!canEdit}
+                      onChange={(locations) => updateRequirement(person.id, { locations })}
+                    />
+                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      Pre-flight coverage
+                      <input disabled={!canEdit} type="number" min="0" value={value.preflightMinutes} onChange={event => updateRequirement(person.id, { preflightMinutes: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" />
+                    </label>
+                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      Post-flight coverage
+                      <input disabled={!canEdit} type="number" min="0" value={value.postflightMinutes} onChange={event => updateRequirement(person.id, { postflightMinutes: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" />
+                    </label>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -238,7 +301,32 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
             return (
               <div key={person.id} className="rounded-xl border border-gray-200 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-gray-950">{person.name}</p><p className="text-xs text-gray-500">{person.roles.join(', ').replaceAll('_', ' ')}</p></div><label className="flex items-center gap-2 text-sm font-bold text-gray-700"><input type="checkbox" disabled={!canEdit} checked={value.enabled} onChange={event => updateAuthorisation(person.id, { enabled: event.target.checked })} className="h-4 w-4" /> Authorised to supervise</label></div>
-                {value.enabled && <div className="mt-4 grid gap-3 sm:grid-cols-6"><label className="text-xs font-bold uppercase tracking-wide text-gray-500">Priority<input disabled={!canEdit} type="number" min="1" value={value.priority} onChange={event => updateAuthorisation(person.id, { priority: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label><label className="text-xs font-bold uppercase tracking-wide text-gray-500">Capacity<input disabled={!canEdit} type="number" min="1" max="20" value={value.maximumConcurrent} onChange={event => updateAuthorisation(person.id, { maximumConcurrent: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label><label className="sm:col-span-2 text-xs font-bold uppercase tracking-wide text-gray-500">Locations<input disabled={!canEdit} value={value.locations} onChange={event => updateAuthorisation(person.id, { locations: event.target.value })} placeholder="Blank = all" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal normal-case tracking-normal" /></label><label className="sm:col-span-2 text-xs font-bold uppercase tracking-wide text-gray-500">Qualification expiry<input disabled={!canEdit} type="date" value={value.qualificationExpiresOn} onChange={event => updateAuthorisation(person.id, { qualificationExpiresOn: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" /></label><label className="sm:col-span-6 flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" disabled={!canEdit} checked={value.remoteAllowed} onChange={event => updateAuthorisation(person.id, { remoteAllowed: event.target.checked })} /> Remote supervision is permitted by club policy</label></div>}
+                {value.enabled && (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-6">
+                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      Priority
+                      <input disabled={!canEdit} type="number" min="1" value={value.priority} onChange={event => updateAuthorisation(person.id, { priority: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" />
+                    </label>
+                    <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                      Capacity
+                      <input disabled={!canEdit} type="number" min="1" max="20" value={value.maximumConcurrent} onChange={event => updateAuthorisation(person.id, { maximumConcurrent: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" />
+                    </label>
+                    <LocationCoveragePicker
+                      value={value.locations}
+                      locations={clockLocations}
+                      disabled={!canEdit}
+                      onChange={(locations) => updateAuthorisation(person.id, { locations })}
+                    />
+                    <label className="sm:col-span-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+                      Qualification expiry
+                      <input disabled={!canEdit} type="date" value={value.qualificationExpiresOn} onChange={event => updateAuthorisation(person.id, { qualificationExpiresOn: event.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" />
+                    </label>
+                    <label className="sm:col-span-6 flex items-center gap-2 text-sm text-gray-700">
+                      <input type="checkbox" disabled={!canEdit} checked={value.remoteAllowed} onChange={event => updateAuthorisation(person.id, { remoteAllowed: event.target.checked })} />
+                      Remote supervision is permitted by club policy
+                    </label>
+                  </div>
+                )}
               </div>
             );
           })}

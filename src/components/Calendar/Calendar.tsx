@@ -24,6 +24,7 @@ import {
   RefreshCw,
   CalendarDays,
   Loader2,
+  Search,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -34,6 +35,7 @@ import { useGuestBookingConversion } from '../../hooks/useGuestBookingConversion
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation';
 import { useCalendarSettings, useOrganisationSettings, useUserPreferences } from '../../hooks/useSettings';
 import { useInstructorAvailability } from '../../hooks/useInstructorAvailability';
+import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
 import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { ResourceManagerPanel, ManagedResource } from './ResourceManagerPanel';
@@ -48,6 +50,7 @@ import { GroundSessionLogModal } from '../Bookings/GroundSessionLogModal';
 import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
 import type { BookingCancellationInput } from '../../hooks/useBookings';
 import toast from 'react-hot-toast';
+import { NextAvailableSlotModal, type NextAvailableSlot } from './NextAvailableSlotModal';
 
 interface CalendarProps {
   bookings: Booking[];
@@ -57,7 +60,13 @@ interface CalendarProps {
     startTime: string,
     endTime?: string,
     resourceId?: string,
-    resourceType?: 'aircraft' | 'instructor'
+    resourceType?: 'aircraft' | 'instructor',
+    additionalData?: {
+      aircraftId?: string;
+      instructorId?: string;
+      location?: string;
+      locationId?: string;
+    }
   ) => void;
   onEditBooking?: (booking: Booking) => void;
   onCopyBooking?: (booking: Booking) => void;
@@ -265,6 +274,11 @@ export const Calendar: React.FC<CalendarProps> = ({
   const { preferences: userPreferences, loading: userPreferencesLoading, updatePreferencesSilent } = useUserPreferences(user?.id || '');
   const { settings: organisationSettings, loading: organisationSettingsLoading } = useOrganisationSettings();
   const {
+    activeLocations,
+    primaryLocation,
+    loading: organisationLocationsLoading,
+  } = useOrganisationLocations();
+  const {
     weeklySchedules,
     absences,
     scheduleChanges,
@@ -308,6 +322,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     calendarSettingsLoading ||
     userPreferencesLoading ||
     organisationSettingsLoading ||
+    organisationLocationsLoading ||
     (!hasAvailabilityData && availabilityLoading);
   usePageLoadState(
     initialCalendarLoading,
@@ -319,6 +334,7 @@ export const Calendar: React.FC<CalendarProps> = ({
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(() => parseCalendarDateParam(searchParams.get('date')) || new Date());
+  const [showNextAvailableSlot, setShowNextAvailableSlot] = useState(false);
   const [datePickerMonth, setDatePickerMonth] = useState(() => parseCalendarDateParam(searchParams.get('date')) || new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const datePickerRef = useRef<HTMLDivElement | null>(null);
@@ -4097,9 +4113,29 @@ export const Calendar: React.FC<CalendarProps> = ({
     );
   };
 
+  const handleNextAvailableSlotSelected = (slot: NextAvailableSlot) => {
+    const start = new Date(slot.slot_start);
+    const end = new Date(slot.slot_end);
+    onNewBookingWithTime?.(
+      start,
+      format(start, 'HH:mm'),
+      format(end, 'HH:mm'),
+      slot.aircraft_id,
+      'aircraft',
+      {
+        aircraftId: slot.aircraft_id,
+        instructorId: slot.instructor_id,
+        location: slot.location_name,
+        locationId: slot.location_id,
+      }
+    );
+    setCurrentDate(start);
+    setShowNextAvailableSlot(false);
+  };
+
   const renderStandardControls = () => (
     <div className="space-y-2 sm:space-y-3">
-      <div className="grid min-w-0 items-center gap-2 sm:gap-3 xl:grid-cols-[190px_minmax(360px,1fr)_300px] 2xl:grid-cols-[220px_minmax(460px,1fr)_340px]">
+      <div className="grid min-w-0 items-center gap-2 sm:gap-3 xl:grid-cols-[310px_minmax(360px,1fr)_300px] 2xl:grid-cols-[350px_minmax(460px,1fr)_340px]">
         <div className="grid min-w-0 gap-2 sm:flex sm:items-center">
           <h2 className="hidden text-xl font-bold tracking-tight text-gray-950 dark:text-gray-100 2xl:block">
             Calendar
@@ -4110,6 +4146,14 @@ export const Calendar: React.FC<CalendarProps> = ({
           >
             <Plus className="h-4 w-4 shrink-0" />
             <span className="whitespace-nowrap">New Booking</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowNextAvailableSlot(true)}
+            className="inline-flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-blue-200 bg-white px-3 text-sm font-bold text-blue-700 shadow-sm transition-colors hover:bg-blue-50 dark:border-blue-800 dark:bg-[#171a21] dark:text-blue-200 dark:hover:bg-blue-950/40 sm:w-auto"
+          >
+            <Search className="h-4 w-4 shrink-0" />
+            <span className="whitespace-nowrap">Find next slot</span>
           </button>
           <div className="min-w-0 sm:hidden">
             {renderViewModeGroup()}
@@ -4216,13 +4260,23 @@ export const Calendar: React.FC<CalendarProps> = ({
     <div className="space-y-3">
       <div className="grid items-center gap-4 md:grid-cols-[210px_minmax(420px,1fr)_300px] xl:grid-cols-[240px_minmax(520px,1fr)_360px]">
         <div className="flex justify-start">
-          <button
-            onClick={() => onNewBooking(currentDate)}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4 shrink-0" />
-            <span className="whitespace-nowrap">New Booking</span>
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onNewBooking(currentDate)}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-600 px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">New Booking</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNextAvailableSlot(true)}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-blue-200 bg-white px-4 text-sm font-bold text-blue-700 shadow-sm hover:bg-blue-50 dark:border-blue-800 dark:bg-[#171a21] dark:text-blue-200"
+            >
+              <Search className="h-4 w-4" />
+              Find next slot
+            </button>
+          </div>
         </div>
 
         <div className="flex min-w-0 items-center justify-center gap-2">
@@ -4517,6 +4571,17 @@ export const Calendar: React.FC<CalendarProps> = ({
           }}
         />
       )}
+
+      <NextAvailableSlotModal
+        isOpen={showNextAvailableSlot}
+        initialDate={currentDate}
+        aircraft={displayAircraft.filter((item) => item.status === 'serviceable')}
+        instructors={displayInstructors}
+        locations={activeLocations}
+        primaryLocation={primaryLocation}
+        onClose={() => setShowNextAvailableSlot(false)}
+        onSelect={handleNextAvailableSlotSelected}
+      />
 
       {downtimeChoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

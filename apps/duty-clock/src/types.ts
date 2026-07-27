@@ -28,9 +28,21 @@ export type DutyContext = {
   activeBreak: ActiveBreak | null;
   loggedFlightMinutes: number;
   loggedFlightCount: number;
+  recordedBreaks: Array<{ start: string; end: string }>;
+  fatiguePolicy: {
+    enabled: boolean;
+    breakRequiredAfterMinutes: number;
+    minimumBreakMinutes: number;
+  };
   locations: DutyLocation[];
   maximumBackdateMinutes: number;
   serverTime: string;
+};
+
+export type EndDutyBreakResponse = {
+  taken: boolean;
+  start?: Date;
+  end?: Date;
 };
 
 export type GeoResult = {

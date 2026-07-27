@@ -147,6 +147,7 @@ export interface Booking {
   guestEmail?: string;
   guestPhone?: string;
   location?: string;
+  locationId?: string;
   dutyOverrideReason?: string;
   dutyAssessment?: DutyAssessment;
   supervisionRequired?: boolean;
@@ -340,6 +341,8 @@ export interface DutyPeriod {
   entrySource: 'manual' | 'mobile' | 'automatic_booking';
   autoStartedForBookingId?: string;
   autoClosedAtLimit: boolean;
+  breakConfirmation?: 'taken' | 'not_taken';
+  breakConfirmedAt?: Date;
   breaks: DutyBreak[];
   createdAt: Date;
   updatedAt: Date;

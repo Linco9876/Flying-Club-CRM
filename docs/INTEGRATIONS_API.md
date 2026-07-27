@@ -29,9 +29,12 @@ Availability request example:
   "searchDays": 30,
   "aircraftIds": null,
   "instructorIds": null,
+  "locationId": null,
   "limit": 8
 }
 ```
+
+When `locationId` is supplied, availability results include only instructors rostered at that business location. Each result includes `location_id` and `location_name`.
 
 ## Webhooks
 

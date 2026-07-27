@@ -1,10 +1,11 @@
 import React from 'react';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { PRIVACY_NOTICE_VERSION } from '../../utils/privacyNotice';
 
 const sections = [
   ['What we collect', 'Account and contact details, date of birth, addresses, membership choices and acknowledgements, payment status and payment-provider references, bookings, flight and training records, duty records, safety and maintenance information, portal security events, and documents you choose to upload. Card and bank-account numbers are handled by Stripe and are not stored in the portal.'],
   ['Why we collect it', 'To administer club membership, provide the portal, manage aircraft and instructor bookings, keep operational and safety records, invoice and reconcile payments, communicate with you, secure accounts, meet legal obligations, and investigate incidents or misuse.'],
-  ['Who receives it', 'Authorised club officers and instructors receive only the access needed for their role. We use service providers including Supabase for hosted data and authentication, Cloudflare for delivery and security, Stripe for payment methods and payments, Xero for accounting, and email providers for club communications. We do not sell member information.'],
+  ['Who receives it', 'Authorised club officers and instructors receive only the access needed for their role. We use service providers including Supabase for hosted data and authentication, Cloudflare for delivery and security, Stripe for payment methods and payments, Xero for accounting, and email providers for club communications. When you use address suggestions, the address text you type is sent through our server to the configured address-search provider—Photon/OpenStreetMap by default or Google Places if enabled—only to return matching Australian addresses. You can enter the address manually instead. We do not sell member information.'],
   ['Storage and security', 'The portal uses role-based access, encrypted network connections, staff multi-factor authentication, audit records, security monitoring, encrypted backups and tested recovery procedures. No system is risk-free, so suspected privacy or security incidents should be reported promptly.'],
   ['Retention', 'Membership, financial, training, operational and safety records are retained for the period required for club administration, aviation or accounting obligations, dispute handling and legitimate historical records. Data that is no longer required is deleted, de-identified or access-restricted.'],
   ['Your choices and rights', 'You can review and correct most profile information in the portal. Contact the club to request access, correction, deletion where legally available, or an explanation of a decision. Optional scholarship contributions and marketing-style notifications are not preselected.'],
@@ -22,7 +23,7 @@ export const PrivacyNoticePage: React.FC = () => (
       </div>
       <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-blue-700">Bendigo Flying Club</p>
       <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Portal privacy notice</h1>
-      <p className="mt-2 text-sm text-slate-500">Version 2026-07-23 · applies to the membership application and members portal</p>
+      <p className="mt-2 text-sm text-slate-500">Version {PRIVACY_NOTICE_VERSION} · applies to the membership application and members portal</p>
       <p className="mt-6 text-base leading-7 text-slate-700">
         This notice explains how Bendigo Flying Club handles personal information in its membership and flight-management portal. It should be read with the club’s governing documents and any aviation or safety notices relevant to a particular activity.
       </p>

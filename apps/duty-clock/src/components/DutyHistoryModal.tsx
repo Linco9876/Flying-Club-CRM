@@ -19,6 +19,7 @@ type DutyPeriodRow = {
   flight_minutes: number;
   entry_source: 'manual' | 'mobile' | 'automatic_booking';
   auto_closed_at_limit: boolean;
+  break_confirmation: 'taken' | 'not_taken' | null;
 };
 
 const formatDutyDate = (value: string) => new Intl.DateTimeFormat('en-AU', {
@@ -56,7 +57,7 @@ export const DutyHistoryModal = ({ visible, userId, onClose }: Props) => {
 
     const { data, error: queryError } = await supabase
       .from('duty_periods')
-      .select('id,duty_date,actual_start,actual_end,location,flight_minutes,entry_source,auto_closed_at_limit')
+      .select('id,duty_date,actual_start,actual_end,location,flight_minutes,entry_source,auto_closed_at_limit,break_confirmation')
       .eq('instructor_id', userId)
       .eq('status', 'completed')
       .not('actual_start', 'is', null)
@@ -140,6 +141,7 @@ export const DutyHistoryModal = ({ visible, userId, onClose }: Props) => {
                     </View>
                     <View style={styles.badges}>
                       {period.auto_closed_at_limit ? <Text style={styles.warningBadge}>MAX ASSUMED</Text> : null}
+                      {period.break_confirmation === 'not_taken' ? <Text style={styles.warningBadge}>NO BREAK TAKEN</Text> : null}
                       <Text style={styles.sourceBadge}>{sourceLabel(period.entry_source)}</Text>
                     </View>
                   </View>

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, Trash2, AlertCircle, Save } from 'lucide-react';
+import { Calendar, Clock, MapPin, Plus, Trash2, AlertCircle, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
 import { useInstructorAvailability, WeeklySchedule } from '../../hooks/useInstructorAvailability';
+import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
 import { TimeSelect } from '../common/TimeSelect';
 
 interface RosterAvailabilitySettingsProps {
@@ -54,6 +55,11 @@ const getTodayDate = () => {
 export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProps> = ({ canEdit }) => {
   const { user } = useAuth();
   const { getInstructors } = useUsers();
+  const {
+    activeLocations,
+    primaryLocation,
+    loading: locationsLoading,
+  } = useOrganisationLocations();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : user?.role ? [user.role] : [];
   const isAdmin = userRoles.includes('admin');
   const isInstructorUser = userRoles.includes('instructor') || userRoles.includes('senior_instructor');
@@ -115,6 +121,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
       afternoonStartTime: saved?.afternoonStartTime,
       afternoonEndTime: saved?.afternoonEndTime,
       isAvailable: saved?.isAvailable ?? false,
+      locationId: saved?.locationId || primaryLocation?.id,
     };
   };
 
@@ -138,6 +145,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     for (const schedule of schedules) {
       if (!schedule.isAvailable) continue;
       const dayName = DAYS_OF_WEEK.find(day => day.value === schedule.dayOfWeek)?.label || 'Day';
+      if (activeLocations.length > 1 && !schedule.locationId) {
+        toast.error(`${dayName}: choose a working location`);
+        return;
+      }
       if (schedule.startTime >= schedule.endTime) {
         toast.error(`${dayName}: morning end time must be later than the start time`);
         return;
@@ -208,7 +219,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
         endTime: existing?.endTime || '17:00',
         afternoonStartTime: existing?.afternoonStartTime,
         afternoonEndTime: existing?.afternoonEndTime,
-        isAvailable: existing?.isAvailable ?? true
+        isAvailable: existing?.isAvailable ?? true,
+        locationId: existing?.locationId || primaryLocation?.id,
       };
     });
     setNewSchedule(currentSchedule);
@@ -235,6 +247,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     try {
       for (const dayOfWeek in newSchedule) {
         const schedule = newSchedule[dayOfWeek];
+        if (schedule.isAvailable && activeLocations.length > 1 && !schedule.locationId) {
+          const dayName = DAYS_OF_WEEK.find((day) => day.value === Number(dayOfWeek))?.label || 'Day';
+          throw new Error(`${dayName}: choose a working location`);
+        }
         await addScheduleChange({
           userId: selectedInstructorId,
           effectiveFrom: newScheduleEffectiveDate,
@@ -243,7 +259,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
           endTime: schedule.endTime,
           afternoonStartTime: schedule.afternoonStartTime,
           afternoonEndTime: schedule.afternoonEndTime,
-          isAvailable: schedule.isAvailable
+          isAvailable: schedule.isAvailable,
+          locationId: schedule.locationId || primaryLocation?.id,
         });
       }
       toast.success('Schedule change saved for all days');
@@ -255,7 +272,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
     }
   };
 
-  if (loading) {
+  if (loading || locationsLoading) {
     return (
       <div className="p-6 flex items-center justify-center">
         <div className="text-gray-500">Loading...</div>
@@ -348,6 +365,24 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
 
                         {draft.isAvailable && (
                           <div className="flex flex-col space-y-2 flex-1 min-w-0">
+                            {activeLocations.length > 1 && (
+                              <div className="flex items-center space-x-2">
+                                <MapPin className="h-4 w-4 shrink-0 text-gray-400" />
+                                <span className="w-16 shrink-0 text-xs text-gray-600">Location:</span>
+                                <select
+                                  value={draft.locationId || primaryLocation?.id || ''}
+                                  onChange={(event) => handleDraftChange(day.value, 'locationId', event.target.value)}
+                                  disabled={!canManageSelectedInstructor}
+                                  className="min-w-44 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm disabled:bg-gray-100"
+                                >
+                                  {activeLocations.map((location) => (
+                                    <option key={location.id} value={location.id}>
+                                      {location.name}{location.isPrimary ? ' (primary)' : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
                             <div className="flex items-center space-x-2">
                               <Clock className="h-4 w-4 text-gray-400 shrink-0" />
                               <span className="text-xs text-gray-600 w-16 shrink-0">Morning:</span>
@@ -596,6 +631,23 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
 
                             {schedule.isAvailable && (
                               <div className="flex flex-col space-y-2 flex-1">
+                                {activeLocations.length > 1 && (
+                                  <div className="flex items-center space-x-2">
+                                    <MapPin className="h-4 w-4 text-gray-400" />
+                                    <span className="w-16 text-xs text-gray-600">Location:</span>
+                                    <select
+                                      value={schedule.locationId || primaryLocation?.id || ''}
+                                      onChange={(event) => handleNewScheduleChange(day.value, 'locationId', event.target.value)}
+                                      className="min-w-44 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm"
+                                    >
+                                      {activeLocations.map((location) => (
+                                        <option key={location.id} value={location.id}>
+                                          {location.name}{location.isPrimary ? ' (primary)' : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
                                 <div className="flex items-center space-x-2">
                                   <Clock className="h-4 w-4 text-gray-400" />
                                   <span className="text-xs text-gray-600 w-16">Morning:</span>
@@ -707,6 +759,11 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                 {change.afternoonStartTime && change.afternoonEndTime && (
                                   <span className="ml-2 text-gray-500">
                                     | {formatRosterTime(change.afternoonStartTime)} - {formatRosterTime(change.afternoonEndTime)}
+                                  </span>
+                                )}
+                                {activeLocations.length > 1 && (
+                                  <span className="ml-2 text-gray-500">
+                                    · {activeLocations.find((location) => location.id === change.locationId)?.name || primaryLocation?.name}
                                   </span>
                                 )}
                               </div>
