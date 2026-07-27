@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import { fetchOwnXeroInvoices, openOwnXeroInvoicePdf, payOwnXeroInvoice, publishXeroMemberBalance, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
+import { getMemberBillingState } from '../../utils/memberBillingState';
 import toast from 'react-hot-toast';
 
 const TransactionsTab = lazy(() => import('./TransactionsTab').then(module => ({ default: module.TransactionsTab })));
@@ -342,14 +343,12 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       return <div className="p-3 text-sm text-gray-500 sm:p-6">Billing history is not available in the student portal.</div>;
     }
 
-    const account = billing.pilotAccounts.find(item => item.userId === user?.id);
     const transactions = billing.transactions.filter(item => item.userId === user?.id);
     const accountTopUpPaymentMethods = paymentMethods.filter(method => method.active && method.allowAccountTopup !== false);
     const selectedTopUpMethod = accountTopUpPaymentMethods.find(method => method.id === topUpPaymentMethodId);
     const isStripeTopUpSelected =
       selectedTopUpMethod?.systemKey === 'stripe_card' ||
       selectedTopUpMethod?.name.toLowerCase().includes('stripe');
-    const approvedBalance = account?.balance ?? 0;
     const pendingTopUpAmount = transactions
       .filter(transaction => transaction.type === 'topup' && transaction.verifiedStatus === 'pending')
       .reduce((total, transaction) => total + Math.abs(transaction.amount), 0);
@@ -363,9 +362,13 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     const currencyFormatter = (amount: number) =>
       `$${amount.toFixed(portalSettings.currency_decimals)}`;
     const dateLocale = portalSettings.date_format === 'MM/dd/yyyy' ? 'en-US' : 'en-AU';
-    const xeroConnectedForOwnBilling = ownXeroConnected ?? billing.xeroConnected;
-    const displayedCredit = xeroConnectedForOwnBilling ? xeroCredit.availableCredit : approvedBalance;
-    const prepaidEligible = xeroConnectedForOwnBilling ? xeroCredit.eligibleForPrepaid : approvedBalance > 0.005;
+    const memberBillingState = getMemberBillingState({
+      xeroConnected: ownXeroConnected,
+      memberLinked: xeroInvoicesLinked,
+    });
+    const xeroAccountLinked = memberBillingState === 'linked';
+    const displayedCredit = xeroCredit.availableCredit;
+    const prepaidEligible = xeroAccountLinked && xeroCredit.eligibleForPrepaid;
     const outstandingInvoiceTotal = xeroInvoices.reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0);
     const formatInvoiceDate = (value: string) => {
       if (!value) return '-';
@@ -531,11 +534,13 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
     const processingFundsTotal = pendingTopUpAmount + awaitingXeroTopUpAmount;
     const visibleTransactions = showAllTransactions ? transactions : transactions.slice(0, 8);
-    const prepaidStatusMessage = !xeroConnectedForOwnBilling
-      ? 'Access cannot be confirmed while your balance is unavailable.'
-      : prepaidEligible
-        ? 'Prepaid aircraft rates are available on your account.'
-        : 'A positive cleared balance is required to use prepaid aircraft rates.';
+    const prepaidStatusMessage = prepaidEligible
+      ? 'Prepaid aircraft rates are available on your account.'
+      : 'A positive cleared balance is required to use prepaid aircraft rates.';
+    const refreshXeroAccount = () => {
+      setXeroInvoicesChecked(false);
+      void Promise.all([billing.refetch(), loadXeroInvoices({ forceRefresh: true })]);
+    };
 
     return (
       <div className="space-y-5 p-3 sm:space-y-6 sm:p-6">
@@ -545,7 +550,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Your Bendigo Flying Club flying account.</p>
         </div>
 
-        {!xeroConnectedForOwnBilling && (
+        {memberBillingState === 'temporarily-unavailable' && (
           <section className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -554,27 +559,73 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">Try refreshing in a moment. Contact the club if this continues.</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setXeroInvoicesChecked(false);
-                void Promise.all([billing.refetch(), loadXeroInvoices({ forceRefresh: true })]);
-              }}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </button>
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <button
+                type="button"
+                ref={savedCardTriggerRef}
+                onClick={() => setShowSavedCardModal(true)}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                <CreditCard className="h-4 w-4" />
+                Manage payment card
+              </button>
+              <button
+                type="button"
+                onClick={refreshXeroAccount}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-[#171a21] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+            </div>
           </section>
         )}
 
+        {memberBillingState === 'setup-required' && (
+          <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20 sm:p-6" aria-labelledby="billing-setup-title">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200">
+                  <Wallet className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 id="billing-setup-title" className="font-semibold text-blue-950 dark:text-blue-100">Billing account setup required</h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-blue-800 dark:text-blue-200">
+                    Your portal account is not linked to a Xero contact, so no balance is available to display. Contact a club administrator to have your billing account set up.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <button
+                  type="button"
+                  ref={savedCardTriggerRef}
+                  onClick={() => setShowSavedCardModal(true)}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-800 dark:bg-[#171a21] dark:text-blue-100 dark:hover:bg-blue-950/40"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Manage payment card
+                </button>
+                <button
+                  type="button"
+                  onClick={refreshXeroAccount}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-700"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Check again
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {xeroAccountLinked && (
         <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]" aria-labelledby="account-balance-title">
           <div className="bg-gradient-to-br from-blue-700 to-blue-600 p-5 text-white sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p id="account-balance-title" className="text-sm font-medium text-blue-100">Available balance</p>
                 <p className="mt-1 text-4xl font-bold tracking-tight">
-                  {xeroConnectedForOwnBilling ? currencyFormatter(displayedCredit) : '—'}
+                  {currencyFormatter(displayedCredit)}
                 </p>
                 <p className="mt-2 max-w-xl text-sm text-blue-100">
                   Cleared funds available for flying and eligible account charges.
@@ -595,7 +646,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             <div className="p-4 sm:p-5">
               <p className="text-sm text-gray-500 dark:text-gray-400">Invoices owing</p>
               <p className="mt-1 text-xl font-bold text-gray-900 dark:text-gray-100">
-                {xeroConnectedForOwnBilling ? currencyFormatter(outstandingInvoiceTotal) : '—'}
+                {currencyFormatter(outstandingInvoiceTotal)}
               </p>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 {outstandingInvoiceTotal > 0.005 ? 'Payment is required on open invoices.' : 'Nothing currently due.'}
@@ -634,7 +685,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             </div>
           </div>
         </section>
+        )}
 
+        {xeroAccountLinked && (
         <form onSubmit={handleTopUpSubmit} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="mb-4 flex items-start gap-3">
             <div className="rounded-lg bg-blue-50 p-2 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
@@ -718,8 +771,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
             </button>
           </div>
         </form>
+        )}
 
-        {xeroConnectedForOwnBilling && (
+        {xeroAccountLinked && (
         <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36] sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
