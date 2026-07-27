@@ -315,7 +315,9 @@ export const MembershipJoinPage: React.FC = () => {
                   <AddressAutocomplete required value={form.residentialAddress} onChange={value => update('residentialAddress', value)} className="mt-1" />
                 </label>
                 <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} /> Use this address for formal notices</label>
-                {!sameAddress && <label className="text-sm font-medium sm:col-span-2">Address for formal notices *<textarea rows={2} value={form.serviceAddress} onChange={e => update('serviceAddress', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>}
+                {!sameAddress && <label className="text-sm font-medium sm:col-span-2">Address for formal notices *
+                  <AddressAutocomplete required value={form.serviceAddress} onChange={value => update('serviceAddress', value)} className="mt-1" placeholder="Start typing your address for formal notices" autoComplete="street-address" />
+                </label>}
                 {isUnder18 && <><label className="text-sm font-medium">Parent or guardian name *<input value={form.guardianName} onChange={e => update('guardianName', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label><label className="flex items-center gap-2 self-end pb-3 text-sm"><input type="checkbox" checked={guardianConsent} onChange={e => setGuardianConsent(e.target.checked)} /> Guardian consent provided</label></>}
               </div>
             </div>}
