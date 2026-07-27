@@ -26,9 +26,9 @@ test('a current legal membership never appears unestablished when its class labe
     getMembershipIdentityLabel({
       legalStatus: 'current',
       membershipClassName: null,
-      hasVotingRights: false,
+      hasVotingRights: null,
     }),
-    'Current BFC membership · Non-voting member',
+    'Current BFC membership',
   );
   assert.equal(
     getMembershipIdentityLabel({
@@ -42,7 +42,7 @@ test('a current legal membership never appears unestablished when its class labe
     getMembershipIdentityLabel({
       legalStatus: null,
       membershipClassName: null,
-      hasVotingRights: false,
+      hasVotingRights: null,
     }),
     'BFC membership not established',
   );

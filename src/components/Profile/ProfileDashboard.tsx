@@ -902,7 +902,9 @@ export const ProfileDashboard: React.FC = () => {
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400"><Vote className="h-3.5 w-3.5" />Voting</dt>
-                  <dd className="text-right font-semibold text-slate-900 dark:text-white">{membership.hasVotingRights ? 'Eligible' : 'Not eligible'}</dd>
+                  <dd className="text-right font-semibold text-slate-900 dark:text-white">
+                    {membership.hasVotingRights === null ? 'Not available' : membership.hasVotingRights ? 'Eligible' : 'Not eligible'}
+                  </dd>
                 </div>
               </dl>
               <button

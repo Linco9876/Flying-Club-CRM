@@ -6,7 +6,7 @@ export interface OwnMembershipSummary {
   automaticCommencementAt: string | null;
   legalStatus: string | null;
   membershipClassName: string | null;
-  hasVotingRights: boolean;
+  hasVotingRights: boolean | null;
   commencedAt: string | null;
   financialYearEnd: string | null;
   feeDisposition: string | null;
@@ -25,7 +25,7 @@ const EMPTY_SUMMARY: OwnMembershipSummary = {
   automaticCommencementAt: null,
   legalStatus: null,
   membershipClassName: null,
-  hasVotingRights: false,
+  hasVotingRights: null,
   commencedAt: null,
   financialYearEnd: null,
   feeDisposition: null,
@@ -112,7 +112,9 @@ export const useOwnMembershipSummary = (userId?: string) => {
           automaticCommencementAt: applicationResult.data?.automatic_commencement_at || null,
           legalStatus: membership?.legal_status || null,
           membershipClassName: membershipClass?.name || null,
-          hasVotingRights: Boolean(membershipClass?.has_voting_rights),
+          hasVotingRights: membershipClass?.has_voting_rights == null
+            ? null
+            : Boolean(membershipClass.has_voting_rights),
           commencedAt: membership?.commenced_at || null,
           financialYearEnd: period?.financial_year_end || null,
           feeDisposition: period?.fee_disposition || null,
