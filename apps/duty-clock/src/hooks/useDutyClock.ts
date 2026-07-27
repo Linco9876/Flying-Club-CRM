@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform } from 'react-native';
-import type { DutyContext, StartDutyInput } from '../types';
+import type { DutyContext, EndDutyBreakResponse, StartDutyInput } from '../types';
 import { supabase } from '../lib/supabase';
 
 const EMPTY_CONTEXT: DutyContext = {
@@ -9,6 +9,12 @@ const EMPTY_CONTEXT: DutyContext = {
   activeBreak: null,
   loggedFlightMinutes: 0,
   loggedFlightCount: 0,
+  recordedBreaks: [],
+  fatiguePolicy: {
+    enabled: true,
+    breakRequiredAfterMinutes: 300,
+    minimumBreakMinutes: 30,
+  },
   locations: [],
   maximumBackdateMinutes: 120,
   serverTime: new Date().toISOString(),
@@ -27,7 +33,16 @@ export const useDutyClock = (userId?: string) => {
     if (queryError) {
       setError(queryError.message);
     } else if (data) {
-      setContext(data as DutyContext);
+      const next = data as Partial<DutyContext>;
+      setContext({
+        ...EMPTY_CONTEXT,
+        ...next,
+        recordedBreaks: next.recordedBreaks || [],
+        fatiguePolicy: {
+          ...EMPTY_CONTEXT.fatiguePolicy,
+          ...next.fatiguePolicy,
+        },
+      });
     }
     setLoading(false);
   }, [userId]);
@@ -95,12 +110,20 @@ export const useDutyClock = (userId?: string) => {
     return { error: actionError };
   });
 
-  const endDuty = (actualEnd: Date, flightMinutes: number, notes: string) => perform(async () => {
+  const endDuty = (
+    actualEnd: Date,
+    flightMinutes: number,
+    notes: string,
+    breakResponse?: EndDutyBreakResponse,
+  ) => perform(async () => {
     const { error: actionError } = await supabase.rpc('mobile_end_duty', {
       p_actual_end: actualEnd.toISOString(),
       p_flight_minutes: flightMinutes,
       p_notes: notes || null,
       p_device_platform: Platform.OS,
+      p_break_taken: breakResponse?.taken ?? null,
+      p_break_start: breakResponse?.start?.toISOString() ?? null,
+      p_break_end: breakResponse?.end?.toISOString() ?? null,
     });
     return { error: actionError };
   });

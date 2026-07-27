@@ -21,7 +21,7 @@ const getMissingSchemaColumn = (error: unknown) => {
 };
 
 const OPTIONAL_BOOKING_COLUMNS = new Set([
-  'booking_kind', 'has_conflict', 'ground_session_logged', 'location',
+  'booking_kind', 'has_conflict', 'ground_session_logged', 'location', 'location_id',
   'duty_override_reason', 'duty_assessment', 'supervision_required',
   'supervision_status', 'supervising_instructor_id', 'membership_eligibility_status',
   'membership_warning_code', 'membership_override_reason', 'membership_overridden_by',
@@ -83,6 +83,7 @@ export const useBookings = (enabled = true) => {
         'waitlist_reason',
         'waitlisted_by_defect_id',
         'location',
+        'location_id',
         'duty_override_reason',
         'duty_assessment',
         'supervision_required',
@@ -147,6 +148,7 @@ export const useBookings = (enabled = true) => {
     waitlistReason: row.waitlist_reason || undefined,
     waitlistedByDefectId: row.waitlisted_by_defect_id || undefined,
     location: row.location || 'Bendigo',
+    locationId: row.location_id || undefined,
     dutyOverrideReason: row.duty_override_reason || undefined,
     dutyAssessment: row.duty_assessment || undefined,
     supervisionRequired: Boolean(row.supervision_required),
@@ -955,6 +957,7 @@ export const useBookings = (enabled = true) => {
         guest_email: bookingData.isGuestBooking ? resolvedGuestEmail || null : null,
         guest_phone: bookingData.isGuestBooking ? resolvedGuestPhone || null : null,
         location: bookingData.location?.trim() || 'Bendigo',
+        location_id: bookingData.locationId || null,
         duty_override_reason: dutyResult.overrideReason || null,
         membership_override_reason: bookingData.membershipOverrideReason?.trim() || null,
       };
@@ -1086,6 +1089,8 @@ export const useBookings = (enabled = true) => {
       if (bookingData.guestName !== undefined || bookingData.trialFlightVoucherId) updateData.guest_name = resolvedGuestName || null;
       if (bookingData.guestEmail !== undefined || bookingData.trialFlightVoucherId) updateData.guest_email = resolvedGuestEmail || null;
       if (bookingData.guestPhone !== undefined || bookingData.trialFlightVoucherId) updateData.guest_phone = resolvedGuestPhone || null;
+      if (bookingData.location !== undefined) updateData.location = bookingData.location?.trim() || null;
+      if (bookingData.locationId !== undefined) updateData.location_id = bookingData.locationId || null;
 
       if (effectiveKind === 'ground') {
         updateData.aircraft_id = null;

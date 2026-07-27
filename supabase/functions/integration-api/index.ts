@@ -69,6 +69,7 @@ Deno.serve(async (request: Request) => {
         p_search_days: Number(body.searchDays || 30),
         p_aircraft_ids: asUuidList(body.aircraftIds),
         p_instructor_ids: asUuidList(body.instructorIds),
+        p_location_id: typeof body.locationId === "string" ? body.locationId : null,
         p_limit: Number(body.limit || 8),
       });
       if (error) throw error;
@@ -77,7 +78,7 @@ Deno.serve(async (request: Request) => {
       requireScope("bookings:read");
       const changedSince = new URL(request.url).searchParams.get("changed_since") || new Date(Date.now() - 7 * 86400_000).toISOString();
       const { data, error } = await admin.from("bookings")
-        .select("id, aircraft_id, instructor_id, start_time, end_time, status, booking_kind, updated_at, deleted_at")
+        .select("id, aircraft_id, instructor_id, location_id, location, start_time, end_time, status, booking_kind, updated_at, deleted_at")
         .gte("updated_at", changedSince)
         .order("updated_at")
         .limit(500);

@@ -71,6 +71,8 @@ npm run supabase:functions:deploy
 
 Never place service-role, database, Stripe, Xero, or other secret keys in frontend `VITE_*` variables or commit them. Supabase Edge Function secrets belong in Supabase; CI secrets belong in GitHub repository secrets.
 
+Membership address suggestions use the no-key Photon/OpenStreetMap provider by default. For Google Places, configure `ADDRESS_AUTOCOMPLETE_PROVIDER=google` and `GOOGLE_MAPS_PLATFORM_API_KEY` as Supabase Edge Function secrets. Do not expose the Google key through a frontend `VITE_*` variable.
+
 ## Supabase Auth redirects
 
 Keep the Supabase production Site URL set to `https://portal.bendigoflyingclub.com.au` and allow `https://portal.bendigoflyingclub.com.au/reset-password` as a redirect URL. Local development can use `VITE_AUTH_REDIRECT_ORIGIN` in an ignored `.env.local` when needed.

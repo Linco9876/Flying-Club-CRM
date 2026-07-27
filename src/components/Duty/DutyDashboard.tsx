@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { DutyPeriod } from '../../types';
 import { DutyPeriodInput, useDuty } from '../../hooks/useDuty';
 import { DutyTimePicker } from './DutyTimePicker';
+import { useBookingRulesSettings } from '../../hooks/useSettings';
 
 type StaffOption = { id: string; name: string };
 type SupervisionBooking = { id: string; instructorId: string; instructorName: string; startTime: Date; endTime: Date; location: string; status: string; supervisionStatus: string };
@@ -43,6 +44,7 @@ type FormState = {
   kssScore: string;
   privateNote: string;
   breaks: BreakDraft[];
+  breakAnswer?: 'yes' | 'no';
 };
 
 const toLocalInput = (date?: Date) => date ? format(date, "yyyy-MM-dd'T'HH:mm") : '';
@@ -76,6 +78,7 @@ const emptyForm = (instructorId: string, mode: 'record' | 'start' = 'record'): F
     kssScore: '',
     privateNote: '',
     breaks: [],
+    breakAnswer: undefined,
   };
 };
 
@@ -85,7 +88,8 @@ export const DutyDashboard: React.FC = () => {
   const admin = roles.includes('admin');
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [selectedInstructorId, setSelectedInstructorId] = useState(user?.id || '');
-  const { periods, loading, savePeriod, endDuty } = useDuty(selectedInstructorId);
+  const { periods, loading, savePeriod } = useDuty(selectedInstructorId);
+  const { settings: fatigueSettings } = useBookingRulesSettings();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
   const [flightTimeTouched, setFlightTimeTouched] = useState(false);
@@ -146,19 +150,19 @@ export const DutyDashboard: React.FC = () => {
     setForm(emptyForm(selectedInstructorId, mode));
   };
 
-  const openEdit = (period: DutyPeriod) => {
-    setFlightTimeTouched(period.status !== 'active');
+  const openEdit = (period: DutyPeriod, endNow = false) => {
+    setFlightTimeTouched(period.status !== 'active' || endNow);
     setLoggedFlightSummary({ minutes: 0, count: 0, loading: true });
     setForm({
     id: period.id,
     instructorId: period.instructorId,
     dutyDate: period.dutyDate,
     actualStart: toLocalInput(period.actualStart),
-    actualEnd: toLocalInput(period.actualEnd),
+    actualEnd: toLocalInput(endNow ? new Date() : period.actualEnd),
     plannedStart: toLocalInput(period.plannedStart),
     plannedEnd: toLocalInput(period.plannedEnd),
     location: period.location,
-    status: period.status,
+    status: endNow ? 'completed' : period.status,
     isExternal: period.isExternal,
     externalOrganisation: period.externalOrganisation || '',
     flightHours: hoursFromMinutes(period.flightMinutes),
@@ -178,7 +182,45 @@ export const DutyDashboard: React.FC = () => {
       facility: item.facility || '',
       notes: item.notes || '',
     })),
+    breakAnswer: undefined,
     });
+  };
+
+  const breakCheck = useMemo(() => {
+    const minimumMinutes = Number(fatigueSettings?.fatigue_min_break_minutes ?? 30);
+    const requiredAfterMinutes = Number(fatigueSettings?.fatigue_break_required_after_hours ?? 5) * 60;
+    if (
+      !form
+      || form.status !== 'completed'
+      || !form.actualStart
+      || !form.actualEnd
+      || fatigueSettings?.fatigue_rules_enabled === false
+    ) {
+      return { required: false, satisfied: true, needsConfirmation: false, minimumMinutes, requiredAfterMinutes };
+    }
+    const start = new Date(form.actualStart);
+    const end = new Date(form.actualEnd);
+    const dutyMinutes = Math.max(0, (end.getTime() - start.getTime()) / 60_000);
+    const satisfied = form.breaks.some(item => {
+      if (!item.breakStart || !item.breakEnd) return false;
+      const breakStart = new Date(item.breakStart);
+      const breakEnd = new Date(item.breakEnd);
+      return breakStart >= start
+        && breakEnd <= end
+        && breakEnd.getTime() - breakStart.getTime() >= minimumMinutes * 60_000;
+    });
+    const required = dutyMinutes > requiredAfterMinutes;
+    return { required, satisfied, needsConfirmation: required && !satisfied, minimumMinutes, requiredAfterMinutes };
+  }, [fatigueSettings, form]);
+
+  const answerBreakQuestion = (answer: 'yes' | 'no') => {
+    if (!form) return;
+    const nextBreaks = answer === 'yes' && form.breakAnswer !== 'yes'
+      ? [...form.breaks, { breakStart: '', breakEnd: '', breakType: 'break' as const, freeOfDuty: true, affectsCalculation: false, facility: '', notes: 'Added during missing-break confirmation' }]
+      : answer === 'no'
+        ? form.breaks.filter(item => item.breakStart || item.breakEnd || item.notes !== 'Added during missing-break confirmation')
+        : form.breaks;
+    setForm({ ...form, breakAnswer: answer, breaks: nextBreaks });
   };
 
   useEffect(() => {
@@ -226,6 +268,14 @@ export const DutyDashboard: React.FC = () => {
       toast.error('Every break needs a valid start and end');
       return;
     }
+    if (breakCheck.needsConfirmation && !form.breakAnswer) {
+      toast.error('Confirm whether a break was taken');
+      return;
+    }
+    if (breakCheck.needsConfirmation && form.breakAnswer === 'yes') {
+      toast.error(`Enter a break of at least ${breakCheck.minimumMinutes} minutes`);
+      return;
+    }
     setSaving(true);
     try {
       const input: DutyPeriodInput = {
@@ -243,6 +293,7 @@ export const DutyDashboard: React.FC = () => {
         flightMinutes: Math.round(Math.max(0, Number(form.flightHours) || 0) * 60),
         notes: form.notes,
         amendmentReason: form.amendmentReason,
+        breakConfirmation: form.breakAnswer === 'yes' ? 'taken' : form.breakAnswer === 'no' ? 'not_taken' : undefined,
         breaks: form.breaks.map(item => ({
           breakStart: new Date(item.breakStart),
           breakEnd: new Date(item.breakEnd),
@@ -330,7 +381,7 @@ export const DutyDashboard: React.FC = () => {
         {activePeriod && (
           <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-bold text-blue-950">Duty is currently active</p><p className="text-sm text-blue-800">{activePeriod.entrySource === 'automatic_booking' ? 'Started automatically 30 minutes before your flight. Clock out when your duty finishes.' : 'Remember to add breaks and actual flight time before ending duty.'}</p></div>
-            <button type="button" onClick={() => void endDuty(activePeriod).catch(error => toast.error(error.message))} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800"><LogOut className="h-4 w-4" /> End duty now</button>
+            <button type="button" onClick={() => openEdit(activePeriod, true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800"><LogOut className="h-4 w-4" /> End duty now</button>
           </div>
         )}
 
@@ -366,6 +417,7 @@ export const DutyDashboard: React.FC = () => {
                         {period.entrySource === 'automatic_booking' && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Automatic start</span>}
                         {period.entrySource === 'mobile' && <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold text-cyan-800">Mobile clock</span>}
                         {period.autoClosedAtLimit && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Maximum assumed</span>}
+                        {period.breakConfirmation === 'not_taken' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">No break taken</span>}
                       </div>
                       <p className="mt-1 text-sm text-gray-700">{start ? format(start, 'HH:mm') : '—'} – {end ? format(end, 'HH:mm') : 'In progress'}{hours !== null ? ` · ${hours.toFixed(1)} h` : ''}</p>
                       <p className="mt-1 text-xs text-gray-500">{period.location} · {(period.flightMinutes / 60).toFixed(1)} flight h · {period.breaks.length} {period.breaks.length === 1 ? 'break' : 'breaks'}</p>
@@ -422,6 +474,38 @@ export const DutyDashboard: React.FC = () => {
                   {loggedFlightSummary.loading ? <><Clock3 className="h-3.5 w-3.5 animate-spin" /> Checking logged flights…</> : loggedFlightSummary.error ? <><AlertTriangle className="h-3.5 w-3.5" /> {loggedFlightSummary.error}</> : loggedFlightSummary.count > 0 ? <><CheckCircle2 className="h-3.5 w-3.5" /> Prefilled from {loggedFlightSummary.count} logged {loggedFlightSummary.count === 1 ? 'flight' : 'flights'} ({readableMinutes(loggedFlightSummary.minutes)}).</> : <>No flights have been logged for this date yet.</>}
                 </div>
               </div>
+
+              {breakCheck.needsConfirmation && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/40">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" />
+                    <div>
+                      <h3 className="font-bold text-amber-950 dark:text-amber-100">Did you take a break?</h3>
+                      <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">
+                        This duty exceeded {breakCheck.requiredAfterMinutes / 60} hours and no break of at least {breakCheck.minimumMinutes} minutes is recorded.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => answerBreakQuestion('yes')}
+                      className={`rounded-lg border px-3 py-2 text-sm font-bold ${form.breakAnswer === 'yes' ? 'border-amber-700 bg-amber-700 text-white' : 'border-amber-300 bg-white text-amber-900 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-100'}`}
+                    >
+                      Yes, add the times
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => answerBreakQuestion('no')}
+                      className={`rounded-lg border px-3 py-2 text-sm font-bold ${form.breakAnswer === 'no' ? 'border-amber-700 bg-amber-700 text-white' : 'border-amber-300 bg-white text-amber-900 dark:border-amber-700 dark:bg-gray-900 dark:text-amber-100'}`}
+                    >
+                      No break taken
+                    </button>
+                  </div>
+                  {form.breakAnswer === 'yes' && <p className="mt-2 text-xs font-semibold text-amber-900 dark:text-amber-200">Enter the actual start and finish in the Breaks section below.</p>}
+                  {form.breakAnswer === 'no' && <p className="mt-2 text-xs font-semibold text-amber-900 dark:text-amber-200">The duty will be saved with no break recorded.</p>}
+                </div>
+              )}
 
               <div className="rounded-xl border border-gray-200 p-4">
                 <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Coffee className="h-4 w-4 text-amber-600" /><div><h3 className="font-bold text-gray-900">Breaks</h3><p className="text-xs text-gray-500">Optional</p></div></div><button type="button" onClick={() => setForm({ ...form, breaks: [...form.breaks, { breakStart: '', breakEnd: '', breakType: 'break', freeOfDuty: false, affectsCalculation: false, facility: '', notes: '' }] })} className="text-sm font-bold text-blue-600 hover:text-blue-800">+ Add break</button></div>

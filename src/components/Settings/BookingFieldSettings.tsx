@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Save, Settings } from 'lucide-react';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
+import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
 import toast from 'react-hot-toast';
 
 interface BookingFieldSettingsProps {
@@ -11,6 +12,7 @@ interface BookingFieldSettingsProps {
 
 export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canEdit, onFormChange, embedded = false }) => {
   const { settings, loading, updateSetting } = useBookingFieldSettings();
+  const { activeLocations, loading: locationsLoading } = useOrganisationLocations();
   const [hasChanges, setHasChanges] = useState(false);
   const [localSettings, setLocalSettings] = useState(settings);
 
@@ -95,7 +97,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
     };
   }, [embedded, localSettings, settings]);
 
-  if (loading) {
+  if (loading || locationsLoading) {
     return (
       <div className="p-6 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -134,7 +136,9 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {localSettings.map(setting => (
+            {localSettings
+              .filter((setting) => setting.fieldName !== 'location' || activeLocations.length > 1)
+              .map(setting => (
               <tr key={setting.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4">
                   <div>

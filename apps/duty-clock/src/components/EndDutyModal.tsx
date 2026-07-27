@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { DutyContext } from '../types';
+import type { DutyContext, EndDutyBreakResponse } from '../types';
 import { type AppColours, useAppTheme } from '../theme';
 import { formatDateTime, formatDuration, hoursFromMinutes, minutesFromHours } from '../utils/time';
 import { PrimaryButton } from './PrimaryButton';
 import { DutyTimePicker } from './DutyTimePicker';
+import { evaluateDutyBreakRequirement } from '../utils/breakRequirement';
 
 type Props = {
   visible: boolean;
   context: DutyContext;
   working: boolean;
   onClose: () => void;
-  onEnd: (actualEnd: Date, flightMinutes: number, notes: string) => Promise<void>;
+  onEnd: (actualEnd: Date, flightMinutes: number, notes: string, breakResponse?: EndDutyBreakResponse) => Promise<void>;
 };
 
 export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Props) => {
@@ -21,14 +22,26 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
   const [flightHours, setFlightHours] = useState('0');
   const [notes, setNotes] = useState('');
   const [showPicker, setShowPicker] = useState(Platform.OS === 'ios');
+  const [breakAnswer, setBreakAnswer] = useState<'yes' | 'no'>();
+  const [breakStart, setBreakStart] = useState(new Date());
+  const [breakEnd, setBreakEnd] = useState(new Date());
+  const [breakTimesReviewed, setBreakTimesReviewed] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
-    setActualEnd(new Date());
+    const finish = new Date();
+    const dutyStart = new Date(context.activeDuty?.actualStart || finish);
+    const suggestedEnd = new Date(Math.min(finish.getTime(), dutyStart.getTime() + 5 * 60 * 60_000));
+    const suggestedStart = new Date(Math.max(dutyStart.getTime(), suggestedEnd.getTime() - 30 * 60_000));
+    setActualEnd(finish);
     setFlightHours(hoursFromMinutes(context.loggedFlightMinutes));
     setNotes('');
     setShowPicker(Platform.OS === 'ios');
-  }, [context.loggedFlightMinutes, visible]);
+    setBreakAnswer(undefined);
+    setBreakStart(suggestedStart);
+    setBreakEnd(suggestedEnd);
+    setBreakTimesReviewed(false);
+  }, [context.activeDuty?.actualStart, context.loggedFlightMinutes, visible]);
 
   const changeTime = (selected?: Date) => {
     if (Platform.OS !== 'ios') setShowPicker(false);
@@ -41,12 +54,37 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
 
   const submit = async () => {
     if (!context.activeDuty) return;
-    if (actualEnd <= new Date(context.activeDuty.actualStart)) {
+    const dutyStart = new Date(context.activeDuty.actualStart);
+    if (actualEnd <= dutyStart) {
       Alert.alert('Check finish time', 'Duty must finish after it started.');
       return;
     }
+    let breakResponse: EndDutyBreakResponse | undefined;
+    if (breakRequirement.needsConfirmation) {
+      if (!breakAnswer) {
+        Alert.alert('Break confirmation needed', 'Tell us whether you had the required break before ending duty.');
+        return;
+      }
+      if (breakAnswer === 'yes') {
+        const minimumBreakMs = context.fatiguePolicy.minimumBreakMinutes * 60_000;
+        if (breakStart < dutyStart || breakEnd > actualEnd || breakEnd.getTime() - breakStart.getTime() < minimumBreakMs) {
+          Alert.alert(
+            'Check break times',
+            `The break must be within this duty period and at least ${context.fatiguePolicy.minimumBreakMinutes} minutes long.`,
+          );
+          return;
+        }
+        if (!breakTimesReviewed) {
+          Alert.alert('Check break times', 'Confirm that the displayed break start and finish are the actual times.');
+          return;
+        }
+        breakResponse = { taken: true, start: breakStart, end: breakEnd };
+      } else {
+        breakResponse = { taken: false };
+      }
+    }
     try {
-      await onEnd(actualEnd, minutesFromHours(flightHours), notes.trim());
+      await onEnd(actualEnd, minutesFromHours(flightHours), notes.trim(), breakResponse);
       onClose();
     } catch (error) {
       Alert.alert('Duty could not end', error instanceof Error ? error.message : 'Please try again.');
@@ -54,6 +92,24 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
   };
 
   const dutyDuration = context.activeDuty ? actualEnd.getTime() - new Date(context.activeDuty.actualStart).getTime() : 0;
+  const breakRequirement = context.activeDuty
+    ? evaluateDutyBreakRequirement({
+      dutyStart: context.activeDuty.actualStart,
+      dutyEnd: actualEnd,
+      breaks: context.recordedBreaks,
+      activeBreakStart: context.activeBreak?.startedAt,
+      policy: {
+        enabled: context.fatiguePolicy.enabled,
+        requiredAfterMinutes: context.fatiguePolicy.breakRequiredAfterMinutes,
+        minimumBreakMinutes: context.fatiguePolicy.minimumBreakMinutes,
+      },
+    })
+    : { required: false, satisfied: true, needsConfirmation: false, dutyMinutes: 0 };
+
+  const chooseBreakAnswer = (answer: 'yes' | 'no') => {
+    setBreakAnswer(answer);
+    setBreakTimesReviewed(false);
+  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -107,6 +163,69 @@ export const EndDutyModal = ({ visible, context, working, onClose, onEnd }: Prop
             </View>
           ) : null}
 
+          {breakRequirement.needsConfirmation ? (
+            <View style={styles.requiredBreakCard}>
+              <Text style={styles.requiredBreakEyebrow}>BREAK CHECK</Text>
+              <Text style={styles.requiredBreakTitle}>Did you take a break?</Text>
+              <Text style={styles.requiredBreakText}>
+                This duty exceeded {context.fatiguePolicy.breakRequiredAfterMinutes / 60} hours and no break of at least {context.fatiguePolicy.minimumBreakMinutes} minutes is recorded.
+              </Text>
+              <View style={styles.answerRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: breakAnswer === 'yes' }}
+                  onPress={() => chooseBreakAnswer('yes')}
+                  style={[styles.answerButton, breakAnswer === 'yes' && styles.answerButtonSelected]}
+                >
+                  <Text style={[styles.answerButtonText, breakAnswer === 'yes' && styles.answerButtonTextSelected]}>Yes, I had a break</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: breakAnswer === 'no' }}
+                  onPress={() => chooseBreakAnswer('no')}
+                  style={[styles.answerButton, breakAnswer === 'no' && styles.answerButtonSelected]}
+                >
+                  <Text style={[styles.answerButtonText, breakAnswer === 'no' && styles.answerButtonTextSelected]}>No break taken</Text>
+                </Pressable>
+              </View>
+              {breakAnswer === 'yes' ? (
+                <View style={styles.breakTimeFields}>
+                  <View style={styles.breakTimeField}>
+                    <Text style={styles.breakTimeLabel}>BREAK STARTED</Text>
+                    <DutyTimePicker
+                      value={breakStart}
+                      minimumDate={context.activeDuty ? new Date(context.activeDuty.actualStart) : undefined}
+                      maximumDate={actualEnd}
+                      onChange={value => { setBreakStart(value); setBreakTimesReviewed(false); }}
+                    />
+                  </View>
+                  <View style={styles.breakTimeField}>
+                    <Text style={styles.breakTimeLabel}>BREAK FINISHED</Text>
+                    <DutyTimePicker
+                      value={breakEnd}
+                      minimumDate={breakStart}
+                      maximumDate={actualEnd}
+                      onChange={value => { setBreakEnd(value); setBreakTimesReviewed(false); }}
+                    />
+                  </View>
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: breakTimesReviewed }}
+                    onPress={() => setBreakTimesReviewed(value => !value)}
+                    style={styles.reviewRow}
+                  >
+                    <View style={[styles.checkbox, breakTimesReviewed && styles.checkboxChecked]}>
+                      <Text style={styles.checkboxMark}>{breakTimesReviewed ? '✓' : ''}</Text>
+                    </View>
+                    <Text style={styles.reviewText}>I checked these are the actual break times</Text>
+                  </Pressable>
+                </View>
+              ) : breakAnswer === 'no' ? (
+                <Text style={styles.noBreakText}>The duty will be saved with no break recorded.</Text>
+              ) : null}
+            </View>
+          ) : null}
+
           <Text style={styles.sectionLabel}>NOTES (OPTIONAL)</Text>
           <TextInput value={notes} onChangeText={setNotes} multiline placeholder="Anything operations should know?" placeholderTextColor={colours.placeholder} style={styles.notes} />
 
@@ -140,5 +259,23 @@ const createStyles = (colours: AppColours) => StyleSheet.create({
   breakNotice: { borderRadius: 16, backgroundColor: colours.amberLight, borderWidth: 1, borderColor: colours.amberBorder, padding: 14 },
   breakNoticeTitle: { color: colours.amber, fontSize: 14, fontWeight: '900' },
   breakNoticeText: { color: colours.ink, fontSize: 12, marginTop: 3 },
+  requiredBreakCard: { borderRadius: 18, backgroundColor: colours.amberLight, borderWidth: 1, borderColor: colours.amberBorder, padding: 16, gap: 9 },
+  requiredBreakEyebrow: { color: colours.amber, fontSize: 10, letterSpacing: 1.3, fontWeight: '900' },
+  requiredBreakTitle: { color: colours.navy, fontSize: 20, fontWeight: '900' },
+  requiredBreakText: { color: colours.ink, fontSize: 13, lineHeight: 19 },
+  answerRow: { flexDirection: 'row', gap: 8, marginTop: 3 },
+  answerButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 13, borderWidth: 1, borderColor: colours.amberBorder, backgroundColor: colours.input, paddingHorizontal: 10 },
+  answerButtonSelected: { backgroundColor: colours.amber, borderColor: colours.amber },
+  answerButtonText: { color: colours.ink, fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  answerButtonTextSelected: { color: '#FFFFFF' },
+  breakTimeFields: { gap: 10, marginTop: 4 },
+  breakTimeField: { gap: 5 },
+  breakTimeLabel: { color: colours.muted, fontSize: 10, letterSpacing: 1.1, fontWeight: '900' },
+  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 4 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: colours.inputBorder, backgroundColor: colours.input, alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { backgroundColor: colours.green, borderColor: colours.green },
+  checkboxMark: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  reviewText: { flex: 1, color: colours.ink, fontSize: 12, fontWeight: '700' },
+  noBreakText: { color: colours.amber, fontSize: 12, fontWeight: '700' },
   notes: { minHeight: 88, borderWidth: 1, borderColor: colours.inputBorder, borderRadius: 14, padding: 13, fontSize: 15, color: colours.ink, backgroundColor: colours.input, textAlignVertical: 'top' },
 });

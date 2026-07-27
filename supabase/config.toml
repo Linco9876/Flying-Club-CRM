@@ -42,3 +42,8 @@ verify_jwt = false
 [functions.integration-webhook-worker]
 # Authenticates scheduled calls with INTEGRATION_WORKER_SECRET.
 verify_jwt = false
+
+[functions.address-autocomplete]
+# Public membership applicants can search addresses before they have an account.
+# The function only returns address suggestions and keeps provider credentials server-side.
+verify_jwt = false

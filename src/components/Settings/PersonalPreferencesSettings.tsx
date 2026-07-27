@@ -1134,7 +1134,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
                 </select>
               </div>
             </div>
-            <p className="text-xs text-gray-500">Email changes are sent through Supabase verification before the login email changes.</p>
+            <p className="text-xs text-gray-500">The new email will need to be verified and will replace your login email once verified.</p>
           </section>
 
           {isStudentOrPilot && (

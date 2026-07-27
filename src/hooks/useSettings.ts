@@ -55,6 +55,8 @@ export interface BookingRulesSettings {
   fatigue_max_duty_hours_per_day: number;
   fatigue_max_flight_hours_per_day: number;
   fatigue_max_late_finishes_7_days: number;
+  fatigue_break_required_after_hours: number;
+  fatigue_min_break_minutes: number;
   fatigue_include_supervision: boolean;
   fatigue_block_on_breach: boolean;
 }
@@ -472,6 +474,8 @@ export const useBookingRulesSettings = () => {
         fatigue_max_duty_hours_per_day: updates.fatigue_max_duty_hours_per_day ?? settings?.fatigue_max_duty_hours_per_day ?? 11,
         fatigue_max_flight_hours_per_day: updates.fatigue_max_flight_hours_per_day ?? settings?.fatigue_max_flight_hours_per_day ?? 7,
         fatigue_max_late_finishes_7_days: updates.fatigue_max_late_finishes_7_days ?? settings?.fatigue_max_late_finishes_7_days ?? 3,
+        fatigue_break_required_after_hours: updates.fatigue_break_required_after_hours ?? settings?.fatigue_break_required_after_hours ?? 5,
+        fatigue_min_break_minutes: updates.fatigue_min_break_minutes ?? settings?.fatigue_min_break_minutes ?? 30,
         fatigue_include_supervision: updates.fatigue_include_supervision ?? settings?.fatigue_include_supervision ?? true,
         fatigue_block_on_breach: updates.fatigue_block_on_breach ?? settings?.fatigue_block_on_breach ?? true,
         updated_at: new Date().toISOString(),

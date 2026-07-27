@@ -83,7 +83,7 @@ export const SettingsDashboard: React.FC = () => {
   };
 
   const allSections: SettingsSection[] = [
-    { id: 'organisation', label: 'Organisation', category: 'Club Setup', keywords: ['business', 'logo', 'currency', 'timezone', 'operating hours'], icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
+    { id: 'organisation', label: 'Organisation', category: 'Club Setup', keywords: ['business', 'locations', 'airfields', 'documents', 'membership documents', 'logo', 'currency', 'timezone', 'operating hours'], icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
     { id: 'portal', label: 'Portal & UX', category: 'Club Setup', keywords: ['theme', 'student portal', 'date format', 'time format'], icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
     { id: 'resources', label: 'Resources (Aircraft & Rooms)', category: 'Club Setup', keywords: ['aircraft fields', 'rooms', 'documents', 'instructor roster'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
     { id: 'calendar', label: 'Calendar', category: 'Operations', keywords: ['default view', 'week starts', 'resource order', 'snap duration', 'conflicts'], icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },

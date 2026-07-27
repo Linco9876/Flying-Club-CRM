@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { PRIVACY_NOTICE_VERSION } from '../utils/privacyNotice';
 import { supabase } from '../lib/supabase';
 import {
   ClubMembership,
@@ -341,6 +342,7 @@ export const useMembership = () => {
     guardianName?: string;
     guardianConsent: boolean;
     privacyNoticeAccepted: boolean;
+    acknowledgedDocumentIds: string[];
   }) => runAction('application:submit', async () => {
     const { data, error: rpcError } = await supabase.rpc('submit_membership_application', {
       p_membership_class_code: input.membershipClassCode,
@@ -355,7 +357,8 @@ export const useMembership = () => {
       p_agrees_to_code_of_conduct: true,
       p_agrees_to_members_manual: true,
       p_privacy_notice_accepted: input.privacyNoticeAccepted,
-      p_privacy_notice_version: input.privacyNoticeAccepted ? '2026-07-23' : null,
+      p_privacy_notice_version: input.privacyNoticeAccepted ? PRIVACY_NOTICE_VERSION : null,
+      p_acknowledged_document_ids: input.acknowledgedDocumentIds,
     });
     if (rpcError) throw rpcError;
     return data;

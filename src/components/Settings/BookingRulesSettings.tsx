@@ -31,6 +31,8 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
     fatigueMaxDutyHoursPerDay: 11,
     fatigueMaxFlightHoursPerDay: 7,
     fatigueMaxLateFinishes7Days: 3,
+    fatigueBreakRequiredAfterHours: 5,
+    fatigueMinBreakMinutes: 30,
     fatigueIncludeSupervision: true,
     fatigueBlockOnBreach: true
   });
@@ -57,6 +59,8 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 11,
         fatigueMaxFlightHoursPerDay: settings.fatigue_max_flight_hours_per_day ?? 7,
         fatigueMaxLateFinishes7Days: settings.fatigue_max_late_finishes_7_days ?? 3,
+        fatigueBreakRequiredAfterHours: settings.fatigue_break_required_after_hours ?? 5,
+        fatigueMinBreakMinutes: settings.fatigue_min_break_minutes ?? 30,
         fatigueIncludeSupervision: settings.fatigue_include_supervision ?? true,
         fatigueBlockOnBreach: settings.fatigue_block_on_breach ?? true
       });
@@ -85,6 +89,8 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigue_max_duty_hours_per_day: formData.fatigueMaxDutyHoursPerDay,
         fatigue_max_flight_hours_per_day: formData.fatigueMaxFlightHoursPerDay,
         fatigue_max_late_finishes_7_days: formData.fatigueMaxLateFinishes7Days,
+        fatigue_break_required_after_hours: formData.fatigueBreakRequiredAfterHours,
+        fatigue_min_break_minutes: formData.fatigueMinBreakMinutes,
         fatigue_include_supervision: formData.fatigueIncludeSupervision,
         fatigue_block_on_breach: formData.fatigueBlockOnBreach
       });
@@ -112,6 +118,8 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
         fatigueMaxDutyHoursPerDay: settings.fatigue_max_duty_hours_per_day ?? 11,
         fatigueMaxFlightHoursPerDay: settings.fatigue_max_flight_hours_per_day ?? 7,
         fatigueMaxLateFinishes7Days: settings.fatigue_max_late_finishes_7_days ?? 3,
+        fatigueBreakRequiredAfterHours: settings.fatigue_break_required_after_hours ?? 5,
+        fatigueMinBreakMinutes: settings.fatigue_min_break_minutes ?? 30,
         fatigueIncludeSupervision: settings.fatigue_include_supervision ?? true,
         fatigueBlockOnBreach: settings.fatigue_block_on_breach ?? true
       });
@@ -421,6 +429,36 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ask about a missing break after (hours)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="16"
+                  step="0.5"
+                  value={formData.fatigueBreakRequiredAfterHours}
+                  onChange={(e) => handleInputChange('fatigueBreakRequiredAfterHours', parseFloat(e.target.value))}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="mt-1 text-xs text-gray-500">Default 5 hours reflects Pilots Award clause 17.1.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Minimum break that satisfies the check (minutes)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="240"
+                  step="5"
+                  value={formData.fatigueMinBreakMinutes}
+                  onChange={(e) => handleInputChange('fatigueMinBreakMinutes', parseInt(e.target.value))}
+                  disabled={!canEdit || !formData.fatigueRulesEnabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                />
+                <p className="mt-1 text-xs text-gray-500">Default 30 minutes. Confirm award coverage and any applicable exception.</p>
+              </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -454,7 +492,7 @@ export const BookingRulesSettings: React.FC<BookingRulesSettingsProps> = ({ canE
             </div>
 
             <div className="rounded-lg border border-blue-200 bg-white/70 p-3 text-xs leading-5 text-blue-950">
-              The booking validator applies CASA Appendix 6 flight-training planning checks for daily FDP by start time, 12 hours off-duty between CRM duties, 7 hours daily flight/supervision time, 60 hours duty in 7 days, 100 hours duty in 14 days, 100 hours flight time in 28 days, 1000 hours flight time in 365 days, a 36-hour off-duty gap in 7 days, and 6 off-duty days in 28 days. It can only assess bookings recorded in this CRM.
+              The booking validator applies CASA Appendix 6 flight-training planning checks for daily FDP by start time, 12 hours off-duty between CRM duties, 7 hours daily flight/supervision time, 60 hours duty in 7 days, 100 hours duty in 14 days, 100 hours flight time in 28 days, 1000 hours flight time in 365 days, a 36-hour off-duty gap in 7 days, and 6 off-duty days in 28 days. The separate missing-break prompt defaults to the Pilots Award clause 17.1 threshold. Confirm that award coverage and any exception apply to each engagement. The CRM can only assess activity recorded here.
             </div>
           </div>
         </div>

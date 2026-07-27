@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, CreditCard, Landmark, Mail, Plane, ReceiptText, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, CreditCard, Landmark, Loader2, Lock, Mail, Plane, ReceiptText, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { MembershipDocumentLinks } from '../Membership/MembershipDocumentLinks';
 import { TurnstileWidget } from './TurnstileWidget';
+import { AddressAutocomplete } from '../common/AddressAutocomplete';
+import { useMembershipDocuments } from '../../hooks/useMembershipDocuments';
+import { membershipDocumentsAreReady } from '../../utils/membershipDocumentRules';
+import { PRIVACY_NOTICE_VERSION } from '../../utils/privacyNotice';
+import { useAuth } from '../../context/AuthContext';
 
 type PaymentMethod = 'becs' | 'invoice' | 'card';
 const turnstileEnabled = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
@@ -19,6 +24,8 @@ const steps = ['Membership', 'Your details', 'Agreements', 'Payment'];
 
 export const MembershipJoinPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user, isLoading: authLoading, refreshUser } = useAuth();
+  const prefilledUserId = useRef<string | null>(null);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [complete, setComplete] = useState<'confirm-email' | 'submitted' | null>(null);
@@ -37,6 +44,33 @@ export const MembershipJoinPage: React.FC = () => {
     membershipClass: 'full', name: '', email: '', phone: '', password: '', confirmPassword: '',
     dateOfBirth: '', residentialAddress: '', serviceAddress: '', guardianName: '',
   });
+  const {
+    documents: membershipDocuments,
+    loading: membershipDocumentsLoading,
+    error: membershipDocumentsError,
+  } = useMembershipDocuments({ currentOnly: true, acknowledgementOnly: true });
+  const membershipDocumentsReady = membershipDocumentsAreReady(
+    membershipDocuments,
+    membershipDocumentsLoading,
+    membershipDocumentsError,
+  );
+
+  useEffect(() => {
+    if (!user || prefilledUserId.current === user.id) return;
+    setForm(current => ({
+      ...current,
+      name: user.name || '',
+      email: user.email || '',
+      phone: user.mobilePhone || user.phone || '',
+      password: '',
+      confirmPassword: '',
+      dateOfBirth: user.dateOfBirth ? new Date(user.dateOfBirth).toISOString().slice(0, 10) : '',
+      residentialAddress: user.address || '',
+      serviceAddress: user.address || '',
+    }));
+    setSameAddress(true);
+    prefilledUserId.current = user.id;
+  }, [user]);
 
   const isUnder18 = useMemo(() => {
     if (!form.dateOfBirth) return false;
@@ -72,15 +106,15 @@ export const MembershipJoinPage: React.FC = () => {
       }
     }
     if (step === 1) {
-      if (!form.name.trim() || !form.email.trim() || !form.password || !form.residentialAddress.trim() || (!sameAddress && !form.serviceAddress.trim())) {
+      if (!form.name.trim() || !form.email.trim() || !form.residentialAddress.trim() || (!sameAddress && !form.serviceAddress.trim())) {
         toast.error('Complete the required contact and account details');
         return false;
       }
-      if (form.password.length < 12) {
+      if (!user && form.password.length < 12) {
         toast.error('Password must be at least 12 characters');
         return false;
       }
-      if (form.password !== form.confirmPassword) {
+      if (!user && form.password !== form.confirmPassword) {
         toast.error('Passwords do not match');
         return false;
       }
@@ -89,7 +123,7 @@ export const MembershipJoinPage: React.FC = () => {
         return false;
       }
     }
-    if (step === 2 && (!accepted || !privacyAccepted)) {
+    if (step === 2 && (!accepted || !privacyAccepted || !membershipDocumentsReady)) {
       toast.error('Please accept the membership agreements and privacy notice');
       return false;
     }
@@ -126,12 +160,43 @@ export const MembershipJoinPage: React.FC = () => {
       toast.error('Accept the payment authority before continuing');
       return;
     }
-    if (turnstileEnabled && !captchaToken) {
+    if (!user && turnstileEnabled && !captchaToken) {
       toast.error('Complete the quick security check before submitting');
       return;
     }
     setBusy(true);
     try {
+      if (user) {
+        const { error: applicationError } = await supabase.rpc('submit_membership_application', {
+          p_membership_class_code: form.membershipClass,
+          p_residential_address: form.residentialAddress.trim(),
+          p_service_address: sameAddress ? form.residentialAddress.trim() : form.serviceAddress.trim(),
+          p_date_of_birth: form.dateOfBirth || null,
+          p_guardian_name: form.guardianName.trim() || null,
+          p_guardian_consent: guardianConsent,
+          p_supports_club_purposes: true,
+          p_agrees_to_constitution: true,
+          p_agrees_to_member_guarantee: true,
+          p_agrees_to_code_of_conduct: true,
+          p_agrees_to_members_manual: true,
+          p_privacy_notice_accepted: true,
+          p_privacy_notice_version: PRIVACY_NOTICE_VERSION,
+          p_acknowledged_document_ids: membershipDocuments.map(document => document.id),
+          p_applicant_name: form.name.trim(),
+          p_phone: form.phone.trim(),
+          p_update_profile: true,
+        });
+        if (applicationError) throw applicationError;
+        try {
+          await refreshUser();
+        } catch (refreshError) {
+          console.warn('Membership application saved, but the refreshed profile could not be loaded:', refreshError);
+        }
+        const redirected = await startPaymentSetup();
+        if (!redirected) setComplete('submitted');
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: form.email.trim().toLowerCase(),
         password: form.password,
@@ -150,8 +215,9 @@ export const MembershipJoinPage: React.FC = () => {
             membership_scholarship_enabled: scholarshipEnabled,
             membership_scholarship_amount: scholarshipEnabled ? scholarshipAmount : 5,
             privacy_notice_accepted: true,
-            privacy_notice_version: '2026-07-23',
+            privacy_notice_version: PRIVACY_NOTICE_VERSION,
             privacy_notice_accepted_at: new Date().toISOString(),
+            membership_document_ids: membershipDocuments.map(document => document.id),
           },
           emailRedirectTo: `${window.location.origin}/membership?continue=payment`,
         },
@@ -170,6 +236,14 @@ export const MembershipJoinPage: React.FC = () => {
       setBusy(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+        <div className="flex items-center gap-3 text-sm font-semibold"><Loader2 className="h-5 w-5 animate-spin" /> Loading your account…</div>
+      </main>
+    );
+  }
 
   if (complete) {
     return (
@@ -200,7 +274,7 @@ export const MembershipJoinPage: React.FC = () => {
           <Plane className="mx-auto h-9 w-9" />
           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.25em] text-sky-200">Bendigo Flying Club</p>
           <h1 className="mt-2 text-3xl font-bold">Join the club</h1>
-          <p className="mt-2 text-sm text-blue-100">One simple application. About five minutes.</p>
+          <p className="mt-2 text-sm text-blue-100">{user ? `Applying as ${user.name}` : 'One simple application. About five minutes.'}</p>
         </div>
 
         <section className="rounded-3xl bg-white p-5 shadow-2xl sm:p-8">
@@ -229,14 +303,17 @@ export const MembershipJoinPage: React.FC = () => {
 
             {step === 1 && <div>
               <h2 className="text-xl font-bold">Tell us about you</h2>
+              {user && <div className="mt-3 flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900"><Check className="mt-0.5 h-4 w-4 shrink-0" /><span>Your portal details are prefilled. Changes to your name, phone, date of birth or residential address will be saved to your profile when you submit this application.</span></div>}
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium sm:col-span-2">Full name *<input autoComplete="name" value={form.name} onChange={e => update('name', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
-                <label className="text-sm font-medium">Email *<input type="email" autoComplete="email" value={form.email} onChange={e => update('email', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
+                <label className="text-sm font-medium">Email *<span className="relative mt-1 block"><input type="email" autoComplete="email" value={form.email} readOnly={Boolean(user)} onChange={e => !user && update('email', e.target.value)} className={`w-full rounded-xl border border-slate-300 px-3 py-3 ${user ? 'bg-slate-100 pr-10 text-slate-600' : ''}`} />{user && <Lock aria-label="Login email cannot be changed here" className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />}</span>{user && <span className="mt-1 block text-xs font-normal text-slate-500">This is your verified login email and cannot be changed here.</span>}</label>
                 <label className="text-sm font-medium">Phone<input type="tel" autoComplete="tel" value={form.phone} onChange={e => update('phone', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
-                <label className="text-sm font-medium">Password *<input type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={12} value={form.password} onChange={e => update('password', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use at least 12 characters.</span></label>
+                {!user && <><label className="text-sm font-medium">Password *<input type={showPassword ? 'text' : 'password'} autoComplete="new-password" minLength={12} value={form.password} onChange={e => update('password', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /><span className="mt-1 block text-xs font-normal text-slate-500">Use at least 12 characters.</span></label>
                 <label className="text-sm font-medium">Confirm password *<input type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={form.confirmPassword} onChange={e => update('confirmPassword', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
-                <label className="flex items-center gap-2 text-xs sm:col-span-2"><input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} /> Show password</label>
-                <label className="text-sm font-medium sm:col-span-2">Residential address *<textarea rows={2} value={form.residentialAddress} onChange={e => update('residentialAddress', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>
+                <label className="flex items-center gap-2 text-xs sm:col-span-2"><input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} /> Show password</label></>}
+                <label className="text-sm font-medium sm:col-span-2">Residential address *
+                  <AddressAutocomplete required value={form.residentialAddress} onChange={value => update('residentialAddress', value)} className="mt-1" />
+                </label>
                 <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} /> Use this address for formal notices</label>
                 {!sameAddress && <label className="text-sm font-medium sm:col-span-2">Address for formal notices *<textarea rows={2} value={form.serviceAddress} onChange={e => update('serviceAddress', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label>}
                 {isUnder18 && <><label className="text-sm font-medium">Parent or guardian name *<input value={form.guardianName} onChange={e => update('guardianName', e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3" /></label><label className="flex items-center gap-2 self-end pb-3 text-sm"><input type="checkbox" checked={guardianConsent} onChange={e => setGuardianConsent(e.target.checked)} /> Guardian consent provided</label></>}
@@ -247,8 +324,8 @@ export const MembershipJoinPage: React.FC = () => {
               <ShieldCheck className="h-9 w-9 text-blue-600" />
               <h2 className="mt-3 text-xl font-bold">Membership agreements</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">Please read the club documents. Your acknowledgement is stored with the application.</p>
-              <div className="mt-4 rounded-2xl border border-slate-200 p-4"><MembershipDocumentLinks /></div>
-              <label className="mt-5 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><input type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1 h-4 w-4" /><span>I support the purposes of Bendigo Flying Club and agree to the Constitution, member guarantee, By-laws, Code of Conduct and Members Manual.</span></label>
+              <div className="mt-4 rounded-2xl border border-slate-200 p-4"><MembershipDocumentLinks documents={membershipDocuments} loading={membershipDocumentsLoading} error={membershipDocumentsError} /></div>
+              <label className="mt-5 flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><input type="checkbox" disabled={!membershipDocumentsReady} checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-1 h-4 w-4 disabled:opacity-50" /><span>I support the purposes of Bendigo Flying Club, accept the member guarantee, and confirm I have read and agree to each current membership document listed above. The document versions and my acknowledgement will be retained with my application.</span></label>
               <label className="mt-3 flex items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 text-slate-800"><input type="checkbox" checked={privacyAccepted} onChange={e => setPrivacyAccepted(e.target.checked)} className="mt-1 h-4 w-4" /><span>I have read the <a href="/privacy" target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">portal privacy notice</a> and understand how my information is used for membership, bookings, safety, training, accounting and portal security.</span></label>
               <p className="mt-4 text-xs leading-5 text-slate-600">Membership commences when approved at a committee meeting, or automatically 30 days after a complete application is submitted. Your portal account can be used as soon as it is activated.</p>
             </div>}
@@ -272,14 +349,14 @@ export const MembershipJoinPage: React.FC = () => {
                 <label className="flex items-center gap-3 text-sm font-semibold text-emerald-950"><input type="checkbox" checked={scholarshipEnabled} onChange={e => setScholarshipEnabled(e.target.checked)} /> Add an optional scholarship contribution</label>
                 {scholarshipEnabled && <label className="mt-3 block text-xs text-emerald-900">Annual contribution amount<input type="number" min="0.01" step="0.01" value={scholarshipAmount} onChange={e => setScholarshipAmount(Number(e.target.value))} className="mt-1 w-36 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm" /></label>}
               </div>
-              <div className="mt-4"><TurnstileWidget onToken={setCaptchaToken} /></div>
+              {!user && <div className="mt-4"><TurnstileWidget onToken={setCaptchaToken} /></div>}
             </div>}
           </div>
 
           <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-200 pt-5">
-            <button type="button" onClick={() => step === 0 ? navigate('/') : setStep(step - 1)} className="inline-flex items-center gap-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-4 w-4" />{step === 0 ? 'Sign in' : 'Back'}</button>
+            <button type="button" onClick={() => step === 0 ? navigate(user ? '/membership' : '/') : setStep(step - 1)} className="inline-flex items-center gap-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-4 w-4" />{step === 0 ? (user ? 'Back to portal' : 'Sign in') : 'Back'}</button>
             {step < 3 ? <button type="button" onClick={() => validateStep() && setStep(step + 1)} className="inline-flex items-center gap-1 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-950">Continue<ChevronRight className="h-4 w-4" /></button>
-              : <button type="button" disabled={busy} onClick={() => void submit()} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{busy ? 'Creating account…' : <><Mail className="h-4 w-4" /> Submit application</>}</button>}
+              : <button type="button" disabled={busy} onClick={() => void submit()} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{busy ? (user ? 'Submitting application…' : 'Creating account…') : <><Mail className="h-4 w-4" /> Submit application</>}</button>}
           </div>
         </section>
       </div>

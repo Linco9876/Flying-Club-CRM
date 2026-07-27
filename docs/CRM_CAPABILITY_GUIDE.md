@@ -115,6 +115,8 @@ A welcome email is sent only when legal membership actually commences, either af
 
 Both versions introduce the member portal and its calendar, profile/RAAus details, flight and training records, logbook, membership and payment features.
 
+The welcome email uses the organisation name, logo, contact email and portal URL from Organisation Settings, with safe Bendigo Flying Club defaults. Its responsive, email-client-safe layout puts the commenced membership status and portal action first, then presents portal capabilities and the selected payment journey in short cards. Automatic and invoice wording remains distinct, a matching plain-text version is always sent, and light/dark email-client styles maintain readable contrast.
+
 When a member cancels through the portal, the CRM withdraws a pending application or resigns a current membership and disables automatic renewal. Any in-flight Stripe collection must be stopped before cancellation continues. A linked unpaid Xero invoice is then deleted while still a draft, or voided after authorisation. Paid or part-paid invoices are retained for accounting history and are not automatically refunded.
 
 The 60-day lifecycle will not automatically cease a membership from a linked Xero invoice if the cached Xero result is missing or older than the configured staleness threshold. The administrator must refresh Xero and rerun the lifecycle; this prevents a false cessation when payment data is stale.
@@ -165,9 +167,14 @@ The July 2019 By-laws still list the old calendar-year fees ($140/$70/$40/$0) an
 
 ## Instructor duty and supervision
 
+- Administrators maintain one shared list of active business locations in **Settings → Organisation → Business Locations**. One location is primary; each entry carries its address, GPS coordinates and Duty Clock geofence radius.
+- When more than one location is active, every available instructor roster day and future roster version records the working location. Existing and single-site schedules default to the primary location.
+- Booking and supervision checks use stable location IDs while retaining the location name for existing emails, exports and calendar clients. A booking cannot assign an instructor at a location different from that instructor's roster day.
 - Instructors and administrators record duty start, rest periods and duty end in the Duty page.
 - Duty start, finish and break fields use a touch-friendly clock-face picker with high-contrast light and dark themes, large hour/minute controls, explicit AM/PM selection, exact-minute dial input, date selection and a typed-time accessibility fallback. Users can click, tap or drag continuously around the clock face; hovering over the hour or minute readout and using the scroll wheel adjusts that value, while arrow keys provide the same fine control. The Android Duty Clock app explicitly requests the matching native clock presentation.
 - Logged flight time pre-fills actual flight time in duty-period entry.
+- When a completed duty exceeds the configured break threshold and no sufficiently long break is recorded, the Duty Clock and portal ask whether a break was taken. A "yes" response requires the actual start and finish times; a "no" response closes the duty without inventing a break and is retained in the mobile duty audit event.
+- The default missing-break threshold is more than 5 hours with a minimum 30-minute free-of-duty break, reflecting clause 17.1 of the Pilots Award. Administrators can change both values in **Settings → Bookings & Rules → Fatigue Management**. The club must confirm award coverage and any applicable meal-provision or reimbursement exception; this prompt is an operational record, not legal advice.
 - If an instructor has not clocked in, duty is automatically inferred from 30 minutes before their first flight.
 - If they do not clock out, the system assumes the configured maximum allowed duty duration.
 - Booking checks forecast duty exposure from recorded duty, inferred duty and that day's bookings. Warnings may be overridden only with a reason; the source duty records remain unchanged.
@@ -276,8 +283,13 @@ Local full-database reset requires Docker Desktop. If Docker is unavailable, run
 ### Membership privacy and usability
 
 - Date of birth is required for every membership class, address-for-service validation is explicit, and guardian requirements remain age-based.
+- Residential address fields use an accessible Australian address dropdown with keyboard controls and retain manual entry when the lookup service is unavailable. The server-side `address-autocomplete` Edge Function defaults to the low-volume Photon/OpenStreetMap service and restricts results to Australia.
+- `/join` detects an existing portal session. Signed-in users receive prefilled name, verified login email, phone, date of birth and residential address; password controls are removed and the login email is read-only. Edited profile details and the membership application are committed together, then the active portal profile is refreshed.
+- To use Google Places instead, set the Supabase Edge Function secrets `ADDRESS_AUTOCOMPLETE_PROVIDER=google` and `GOOGLE_MAPS_PLATFORM_API_KEY`. The key remains server-side; no provider credential is included in the portal bundle. The Edge Function enforces a per-client request window; Google project quotas should also be set before enabling the paid provider.
 - The versioned `/privacy` notice explains collection, purposes, role access, Supabase/Cloudflare/Stripe/Xero processing, retention, security and member choices.
 - A separate, unchecked privacy acknowledgement is required. Its notice version and acceptance timestamp are stored with the application and enforced by the database.
+- Organisation Settings contains a versioned document library for PDF and Word files. Administrators identify which current documents require membership acknowledgement and publish an updated version without deleting the file previously accepted by applicants.
+- Membership applications submit the exact current document IDs shown to the applicant. The database rejects missing, stale or additional IDs and records each accepted title and version with the application. Anonymous access is limited to current signup documents; uploads and document administration require an administrator session.
 - The public login hero is delivered as a substantially smaller WebP asset. Progress contrast, semantic current-step state, password controls and public privacy navigation have been improved.
 - The scholarship contribution remains optional, unchecked by default and editable from the $5 suggestion.
 
@@ -291,16 +303,19 @@ Local full-database reset requires Docker Desktop. If Docker is unavailable, run
 
 ### Availability search
 
-The booking form's **Find the next available slot** action searches aircraft and instructors as a combined resource:
+The calendar header's **Find next slot** action opens a focused search before the new-booking form. It searches aircraft and instructors as a combined resource:
 
 - only serviceable, non-archived aircraft;
 - only active instructor, senior-instructor or administrator accounts;
 - weekly schedules, one-off changes and absences through the established availability rule;
+- the selected business location and each instructor's roster location;
 - no overlapping aircraft or instructor booking;
-- selected aircraft/instructor filters when the user has already made a choice;
+- optional aircraft and instructor filters;
 - 15-minute increments, bounded duration, range and result count.
 
-Choosing a result fills both resources and the start/end values. Final submission still applies membership, endorsements, aircraft state, duty, supervision and safety controls, so availability search can never bypass an operational rule.
+Choosing a result opens the new-booking form with aircraft, instructor, location and start/end values filled. The new-booking form itself does not contain the finder. Final submission still applies membership, endorsements, aircraft state, duty, supervision and safety controls, so availability search can never bypass an operational rule.
+
+When only one business location is active, bookings and roster days silently use the primary location. When more than one is active, **Settings → Bookings → Booking Form Field Configuration** exposes the Location field controls and the booking form shows the configured location selector.
 
 ### Integration API and webhooks
 
@@ -316,6 +331,7 @@ Before the first gated production release, configure or complete:
 
 - GitHub secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_RECOVERY_PROJECT_REF`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BROWSERSTACK_USERNAME`, `BROWSERSTACK_ACCESS_KEY`, `BACKUP_AGE_PUBLIC_KEY`, `BACKUP_AGE_PRIVATE_KEY`, `RCLONE_CONFIG`, `RCLONE_REMOTE`, `ONEDRIVE_BACKUP_PATH`, `INTEGRATION_WORKER_SECRET`, and optionally `VITE_TURNSTILE_SITE_KEY`.
 - Supabase Edge Function secret `INTEGRATION_WORKER_SECRET` with the same value used by GitHub Actions, plus a comma-separated `INTEGRATION_WEBHOOK_ALLOWED_HOSTS` allowlist. Leave the allowlist empty until a third-party integration is approved.
+- Optional Supabase Edge Function secrets `ADDRESS_AUTOCOMPLETE_PROVIDER=google` and `GOOGLE_MAPS_PLATFORM_API_KEY` switch address suggestions from the built-in low-volume OpenStreetMap provider to Google Places.
 - The Cloudflare Turnstile secret in Supabase Auth CAPTCHA settings when Turnstile is enabled.
 - A durable, scoped Cloudflare API token with Pages Write access in `CLOUDFLARE_API_TOKEN`. The local Wrangler OAuth token is intentionally not copied to CI because it expires.
 - Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The manual Quality Gates workflow provisions disposable recovery-project accounts and MFA factors, connects through BrowserStack Local, runs the matrix, and removes the test identities.
