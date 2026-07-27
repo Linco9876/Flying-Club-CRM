@@ -3,16 +3,24 @@ import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  BookOpen,
   Calendar,
-  Clock,
+  CalendarPlus,
+  CheckCircle2,
+  ChevronRight,
+  CreditCard,
+  GraduationCap,
+  Contact,
   Loader2,
   Mail,
+  MapPin,
   Pencil,
-  Plane,
   Phone,
+  Plane,
+  Settings,
   ShieldCheck,
-  X,
-  User as UserIcon
+  User as UserIcon,
+  Vote,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDashboardStats } from '../../hooks/useDashboardStats';
@@ -21,7 +29,15 @@ import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
+import { useOwnMembershipSummary } from '../../hooks/useOwnMembershipSummary';
 import { supabase } from '../../lib/supabase';
+import {
+  getDatedReadinessStatus,
+  getOverallReadiness,
+  type ProfileReadinessLevel,
+} from '../../utils/profileReadiness';
+import type { BrowserCalendarEvent } from '../../utils/calendar';
+import { AddToCalendarModal } from '../Bookings/AddToCalendarModal';
 import { InstructorComplianceProfilePanel } from './InstructorComplianceProfilePanel';
 
 interface ProfileStudentDetails {
@@ -38,28 +54,88 @@ interface ProfileStudentDetails {
   };
 }
 
+interface ProfileAction {
+  id: string;
+  title: string;
+  detail: string;
+  to: string;
+  level: 'warning' | 'action';
+}
+
 const formatCurrency = (amount: number, decimals: number) =>
   new Intl.NumberFormat('en-AU', {
     style: 'currency',
     currency: 'AUD',
     minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
+    maximumFractionDigits: decimals,
   }).format(amount);
 
 const formatHoursFromMinutes = (minutes: number) => (minutes / 60).toFixed(1);
 
+const formatStoredDate = (value: string | null, pattern: string) => {
+  if (!value) return 'Not recorded';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : format(parsed, pattern);
+};
+
+const levelStyles: Record<ProfileReadinessLevel, {
+  panel: string;
+  icon: string;
+  badge: string;
+  dot: string;
+}> = {
+  ready: {
+    panel: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20',
+    icon: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200',
+    badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-100',
+    dot: 'bg-emerald-500',
+  },
+  warning: {
+    panel: 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20',
+    icon: 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-200',
+    badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-100',
+    dot: 'bg-amber-500',
+  },
+  action: {
+    panel: 'border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20',
+    icon: 'bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-200',
+    badge: 'bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-100',
+    dot: 'bg-red-500',
+  },
+};
+
+const humaniseStatus = (value?: string | null) =>
+  (value || 'not recorded')
+    .replaceAll('_', ' ')
+    .replace(/^./, character => character.toUpperCase());
+
 export const ProfileDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { stats, loading } = useDashboardStats(user?.id, user?.role, 'user');
+  const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
+  const isInstructor = roles.includes('instructor') || roles.includes('senior_instructor');
+  const isStudentOnly = roles.includes('student') && !roles.some(role =>
+    ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role)
+  );
+  const isFlyingMember = roles.some(role => ['student', 'pilot', 'instructor', 'senior_instructor'].includes(role));
+  const operationalRole = isInstructor
+    ? 'instructor'
+    : roles.includes('pilot')
+      ? 'pilot'
+      : roles.includes('student')
+        ? 'student'
+        : user?.role;
+
+  const { stats, loading } = useDashboardStats(user?.id, operationalRole, 'user');
   const { settings: portalSettings } = usePortalUxSettings();
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords(user?.id);
   const { modules: trainingCourses, loading: trainingCoursesLoading } = useTrainingModules();
   const { enrolments: courseEnrolments, loading: courseEnrolmentsLoading } = useStudentCourseEnrolments(user?.id);
+  const { summary: membership, loading: membershipLoading } = useOwnMembershipSummary(user?.id);
   const [studentDetails, setStudentDetails] = useState<ProfileStudentDetails | null>(null);
   const [studentDetailsLoading, setStudentDetailsLoading] = useState(true);
-  const [profilePromptDismissed, setProfilePromptDismissed] = useState(false);
-  const [showFlightStatsModal, setShowFlightStatsModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+
   const timePattern = portalSettings.time_format === '12h' ? 'h:mm a' : 'HH:mm';
   const datePattern = portalSettings.date_format || 'dd/MM/yyyy';
   const studentTrainingRecords = useMemo(
@@ -67,86 +143,137 @@ export const ProfileDashboard: React.FC = () => {
     [trainingRecords, user?.id]
   );
   const activeCourseEnrolments = useMemo(
-    () => courseEnrolments.filter((enrolment) => enrolment.status === 'active'),
+    () => courseEnrolments.filter(enrolment => enrolment.status === 'active'),
     [courseEnrolments]
   );
-  const courseProgressSummaries = useMemo(() => {
-    return activeCourseEnrolments
-      .map((enrolment) => {
-        const course = trainingCourses.find((item) => item.id === enrolment.courseId);
-        if (!course) return null;
 
-        const courseRecords = studentTrainingRecords.filter((record) => record.courseId === course.id);
-        const completedLessonIds = new Set(courseRecords.map((record) => record.lessonId).filter(Boolean));
-        const totalLessons = course.lessons.length;
-        const percent = totalLessons > 0 ? Math.min(100, Math.round((completedLessonIds.size / totalLessons) * 100)) : 0;
-        const competentSequences = courseRecords.reduce(
-          (sum, record) => sum + (record.sequences || []).filter((sequence) => sequence.competence === 'C').length,
-          0
-        );
-        const recentRecords = [...courseRecords].sort((a, b) => {
-          const aTime = (a.bookingStartTime || a.date).getTime();
-          const bTime = (b.bookingStartTime || b.date).getTime();
-          return bTime - aTime;
-        }).slice(0, 3);
-        const latestRecord = [...courseRecords].sort((a, b) => {
-          const aTime = (a.bookingStartTime || a.date).getTime();
-          const bTime = (b.bookingStartTime || b.date).getTime();
-          return bTime - aTime;
-        })[0];
+  const courseProgressSummaries = useMemo(() => activeCourseEnrolments
+    .map(enrolment => {
+      const course = trainingCourses.find(item => item.id === enrolment.courseId);
+      if (!course) return null;
 
-        return {
-          enrolment,
-          course,
-          completedLessons: completedLessonIds.size,
-          totalLessons,
-          percent,
-          competentSequences,
-          recentRecords,
-          latestRecord,
-          isComplete: totalLessons > 0 && completedLessonIds.size >= totalLessons,
-        };
-      })
-      .filter((summary): summary is NonNullable<typeof summary> => Boolean(summary))
-      .filter((summary) => !summary.isComplete);
-  }, [activeCourseEnrolments, studentTrainingRecords, trainingCourses]);
-  const currentCourseSummary = useMemo(() => {
-    return [...courseProgressSummaries].sort((a, b) =>
-      b.percent - a.percent ||
-      b.completedLessons - a.completedLessons ||
-      a.course.title.localeCompare(b.course.title)
-    )[0] ?? null;
-  }, [courseProgressSummaries]);
-  const currentCourse = currentCourseSummary?.course ?? null;
+      const courseRecords = studentTrainingRecords.filter(record => record.courseId === course.id);
+      const completedLessonIds = new Set(courseRecords.map(record => record.lessonId).filter(Boolean));
+      const totalLessons = course.lessons.length;
+      const percent = totalLessons > 0
+        ? Math.min(100, Math.round((completedLessonIds.size / totalLessons) * 100))
+        : 0;
+      const latestRecord = [...courseRecords].sort((a, b) =>
+        (b.bookingStartTime || b.date).getTime() - (a.bookingStartTime || a.date).getTime()
+      )[0];
+      const competentSequences = courseRecords.reduce(
+        (sum, record) => sum + (record.sequences || []).filter(sequence => sequence.competence === 'C').length,
+        0
+      );
+
+      return {
+        course,
+        completedLessons: completedLessonIds.size,
+        totalLessons,
+        percent,
+        latestRecord,
+        competentSequences,
+        recentRecords: [...courseRecords]
+          .sort((a, b) => (b.bookingStartTime || b.date).getTime() - (a.bookingStartTime || a.date).getTime())
+          .slice(0, 3),
+        isComplete: totalLessons > 0 && completedLessonIds.size >= totalLessons,
+      };
+    })
+    .filter((summary): summary is NonNullable<typeof summary> => Boolean(summary))
+    .filter(summary => !summary.isComplete), [activeCourseEnrolments, studentTrainingRecords, trainingCourses]);
+
+  const currentCourseSummary = useMemo(() => [...courseProgressSummaries].sort((a, b) =>
+    b.percent - a.percent ||
+    b.completedLessons - a.completedLessons ||
+    a.course.title.localeCompare(b.course.title)
+  )[0] ?? null, [courseProgressSummaries]);
+
   const nextLessonLabel = useMemo(() => {
     if (!currentCourseSummary) return null;
-    if (currentCourseSummary.latestRecord?.nextLesson?.trim()) return currentCourseSummary.latestRecord.nextLesson.trim();
-    if (!currentCourseSummary.latestRecord?.lessonId) {
-      return currentCourseSummary.course.lessons[0]?.name || currentCourseSummary.course.lessons[0]?.sequenceTitle || null;
+    if (currentCourseSummary.latestRecord?.nextLesson?.trim()) {
+      return currentCourseSummary.latestRecord.nextLesson.trim();
     }
-    const currentIndex = currentCourseSummary.course.lessons.findIndex((lesson) => lesson.id === currentCourseSummary.latestRecord?.lessonId);
-    const nextLesson = currentIndex >= 0 ? currentCourseSummary.course.lessons[currentIndex + 1] : undefined;
+    const currentIndex = currentCourseSummary.course.lessons.findIndex(
+      lesson => lesson.id === currentCourseSummary.latestRecord?.lessonId
+    );
+    const nextLesson = currentIndex >= 0
+      ? currentCourseSummary.course.lessons[currentIndex + 1]
+      : currentCourseSummary.course.lessons[0];
     return nextLesson?.name || nextLesson?.sequenceTitle || null;
   }, [currentCourseSummary]);
-  const trainingOverview = currentCourseSummary
-    ? {
-        completedLessons: currentCourseSummary.completedLessons,
-        totalLessons: currentCourseSummary.totalLessons,
-        percent: currentCourseSummary.percent,
-        competentSequences: currentCourseSummary.competentSequences,
-        recentRecords: currentCourseSummary.recentRecords,
-      }
-    : null;
-  const totalDualMinutes = studentTrainingRecords.reduce((sum, record) => sum + Number(record.dualTimeMin || 0), 0);
-  const totalSoloMinutes = studentTrainingRecords.reduce((sum, record) => sum + Number(record.soloTimeMin || 0), 0);
+
+  const totalDualMinutes = studentTrainingRecords.reduce(
+    (sum, record) => sum + Number(record.dualTimeMin || 0),
+    0
+  );
+  const totalSoloMinutes = studentTrainingRecords.reduce(
+    (sum, record) => sum + Number(record.soloTimeMin || 0),
+    0
+  );
   const totalFlightMinutes = totalDualMinutes + totalSoloMinutes;
-  const lastFlightDate = useMemo(() => {
-    return [...studentTrainingRecords]
-      .map(record => record.bookingStartTime || record.date)
-      .filter((date): date is Date => date instanceof Date && !Number.isNaN(date.getTime()))
-      .sort((a, b) => b.getTime() - a.getTime())[0];
-  }, [studentTrainingRecords]);
-  const isStudentUser = user?.role === 'student';
+  const lastFlightDate = useMemo(() => [...studentTrainingRecords]
+    .map(record => record.bookingStartTime || record.date)
+    .filter((date): date is Date => date instanceof Date && !Number.isNaN(date.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime())[0], [studentTrainingRecords]);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchStudentDetails = async () => {
+      if (!user?.id) {
+        setStudentDetailsLoading(false);
+        return;
+      }
+
+      setStudentDetailsLoading(true);
+      const { data, error } = await supabase
+        .from('students')
+        .select('raaus_id, casa_id, medical_type, medical_expiry, licence_expiry, last_flight_review, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!mounted) return;
+      if (error) {
+        console.error('Failed to load profile student details:', error);
+        setStudentDetails(null);
+      } else {
+        setStudentDetails(data ? {
+          raausId: data.raaus_id,
+          casaId: data.casa_id,
+          medicalType: data.medical_type,
+          medicalExpiry: data.medical_expiry ? new Date(data.medical_expiry) : undefined,
+          licenceExpiry: data.licence_expiry ? new Date(data.licence_expiry) : undefined,
+          lastFlightReview: data.last_flight_review ? new Date(data.last_flight_review) : undefined,
+          emergencyContact: data.emergency_contact_name ? {
+            name: data.emergency_contact_name,
+            phone: data.emergency_contact_phone || '',
+            relationship: data.emergency_contact_relationship || '',
+          } : user.emergencyContact,
+        } : {
+          emergencyContact: user.emergencyContact,
+        });
+      }
+      setStudentDetailsLoading(false);
+    };
+
+    void fetchStudentDetails();
+    return () => {
+      mounted = false;
+    };
+  }, [user?.emergencyContact, user?.id]);
+
+  const pageLoading = loading ||
+    trainingRecordsLoading ||
+    trainingCoursesLoading ||
+    courseEnrolmentsLoading ||
+    studentDetailsLoading ||
+    membershipLoading;
+
+  usePageLoadState(
+    pageLoading,
+    'Loading your profile',
+    'Checking your next booking, membership, readiness and recent flying...'
+  );
+
   const missingProfileFields = useMemo(() => {
     if (!user) return [];
     const missing: string[] = [];
@@ -156,85 +283,223 @@ export const ProfileDashboard: React.FC = () => {
     if (!studentDetails?.emergencyContact?.name?.trim()) missing.push('emergency contact');
     return missing;
   }, [studentDetails?.emergencyContact?.name, user]);
-  const shouldShowProfilePrompt = Boolean(user && !profilePromptDismissed && missingProfileFields.length > 0);
 
-  useEffect(() => {
-    let mounted = true;
-
-    const fetchStudentDetails = async () => {
-      if (!user?.id) {
-        setStudentDetailsLoading(false);
-        return;
-      }
-      setStudentDetailsLoading(true);
-
-      const { data, error } = await supabase
-        .from('students')
-        .select('raaus_id, casa_id, medical_type, medical_expiry, licence_expiry, last_flight_review, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (!mounted) return;
-
-      if (error) {
-        console.error('Failed to load profile student details:', error);
-        setStudentDetails(null);
-        setStudentDetailsLoading(false);
-        return;
-      }
-
-      setStudentDetails(data ? {
-        raausId: data.raaus_id,
-        casaId: data.casa_id,
-        medicalType: data.medical_type,
-        medicalExpiry: data.medical_expiry ? new Date(data.medical_expiry) : undefined,
-        licenceExpiry: data.licence_expiry ? new Date(data.licence_expiry) : undefined,
-        lastFlightReview: data.last_flight_review ? new Date(data.last_flight_review) : undefined,
-        emergencyContact: data.emergency_contact_name ? {
-          name: data.emergency_contact_name,
-          phone: data.emergency_contact_phone || '',
-          relationship: data.emergency_contact_relationship || ''
-        } : user.emergencyContact
-      } : {
-        emergencyContact: user.emergencyContact
-      });
-      setStudentDetailsLoading(false);
-    };
-
-    fetchStudentDetails();
-    return () => {
-      mounted = false;
-    };
-  }, [user?.emergencyContact, user?.id]);
-
-  usePageLoadState(
-    loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading || courseEnrolmentsLoading,
-    'Loading your profile',
-    'Preparing your schedule, training progress, compliance details and reminders...'
+  const raausStatus = useMemo(
+    () => getDatedReadinessStatus(studentDetails?.licenceExpiry),
+    [studentDetails?.licenceExpiry]
+  );
+  const medicalStatus = useMemo(
+    () => getDatedReadinessStatus(studentDetails?.medicalExpiry),
+    [studentDetails?.medicalExpiry]
+  );
+  const flightReviewDue = useMemo(() => studentDetails?.lastFlightReview
+    ? new Date(
+        studentDetails.lastFlightReview.getFullYear() + 2,
+        studentDetails.lastFlightReview.getMonth(),
+        studentDetails.lastFlightReview.getDate()
+      )
+    : undefined, [studentDetails?.lastFlightReview]);
+  const flightReviewStatus = useMemo(
+    () => getDatedReadinessStatus(flightReviewDue),
+    [flightReviewDue]
   );
 
-  const complianceItems = useMemo(() => {
-    const statusForDate = (date?: Date) => {
-      if (!date) return { value: 'Not recorded', warn: true };
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const days = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      if (days < 0) return { value: `Expired ${format(date, datePattern)}`, warn: true };
-      if (days <= 60) return { value: `Due ${format(date, datePattern)}`, warn: true };
-      return { value: format(date, datePattern), warn: false };
+  const membershipLevel: ProfileReadinessLevel = membership.legalStatus === 'current'
+    ? membership.financiallyCleared ? 'ready' : 'action'
+    : membership.applicationStatus === 'pending' ? 'warning' : 'action';
+  const profileLevel: ProfileReadinessLevel = missingProfileFields.length > 0 ? 'warning' : 'ready';
+  const billingLevel: ProfileReadinessLevel = membership.xeroLinked ? 'ready' : 'warning';
+
+  const readinessItems = useMemo(() => [
+    {
+      id: 'club-membership',
+      label: 'BFC membership',
+      value: membership.legalStatus === 'current'
+        ? membership.financiallyCleared ? 'Active' : 'Payment required'
+        : membership.applicationStatus === 'pending' ? 'Pending approval' : humaniseStatus(membership.legalStatus),
+      level: membershipLevel,
+      to: '/membership',
+    },
+    ...(isFlyingMember ? [
+      {
+        id: 'raaus',
+        label: 'RAAus membership',
+        value: raausStatus.label,
+        level: raausStatus.level,
+        to: '/settings?tab=account-info',
+      },
+      {
+        id: 'medical',
+        label: 'Medical',
+        value: medicalStatus.label,
+        level: medicalStatus.level,
+        to: '/settings?tab=account-info',
+      },
+      ...(!isStudentOnly ? [{
+        id: 'flight-review',
+        label: 'Flight review',
+        value: flightReviewStatus.label,
+        level: flightReviewStatus.level,
+        to: '/pilot-file',
+      }] : []),
+    ] : []),
+    {
+      id: 'billing',
+      label: 'Billing setup',
+      value: membership.xeroLinked ? 'Linked' : 'Admin setup needed',
+      level: billingLevel,
+      to: '/billing',
+    },
+    {
+      id: 'profile',
+      label: 'Profile details',
+      value: missingProfileFields.length === 0 ? 'Complete' : `${missingProfileFields.length} missing`,
+      level: profileLevel,
+      to: '/settings?tab=account-info',
+    },
+  ], [
+    billingLevel,
+    flightReviewStatus.label,
+    flightReviewStatus.level,
+    isFlyingMember,
+    isStudentOnly,
+    medicalStatus.label,
+    medicalStatus.level,
+    membership.applicationStatus,
+    membership.financiallyCleared,
+    membership.legalStatus,
+    membership.xeroLinked,
+    membershipLevel,
+    missingProfileFields.length,
+    profileLevel,
+    raausStatus.label,
+    raausStatus.level,
+  ]);
+
+  const overallReadiness = useMemo(
+    () => getOverallReadiness(readinessItems.map(item => item.level)),
+    [readinessItems]
+  );
+
+  const actionItems = useMemo(() => {
+    const actions: ProfileAction[] = [];
+    if (missingProfileFields.length > 0) {
+      actions.push({
+        id: 'complete-profile',
+        title: 'Complete your profile',
+        detail: `Add ${missingProfileFields.join(', ')}.`,
+        to: '/settings?tab=account-info',
+        level: 'warning',
+      });
+    }
+    if (membership.legalStatus !== 'current') {
+      actions.push({
+        id: 'membership-status',
+        title: membership.applicationStatus === 'pending'
+          ? 'Membership application pending'
+          : 'Set up your BFC membership',
+        detail: membership.applicationStatus === 'pending' && membership.automaticCommencementAt
+          ? `Scheduled commencement ${formatStoredDate(membership.automaticCommencementAt, datePattern)} if not approved earlier.`
+          : 'Open Membership to review or begin the process.',
+        to: '/membership',
+        level: membership.applicationStatus === 'pending' ? 'warning' : 'action',
+      });
+    } else if (!membership.financiallyCleared) {
+      actions.push({
+        id: 'membership-payment',
+        title: 'Membership payment required',
+        detail: membership.graceExpiresAt
+          ? `Legal membership continues until ${formatStoredDate(membership.graceExpiresAt, datePattern)}, but aircraft self-booking is unavailable.`
+          : 'Pay or have the fee waived before using aircraft self-booking.',
+        to: '/membership',
+        level: 'action',
+      });
+    }
+    if (isFlyingMember && raausStatus.level !== 'ready') {
+      actions.push({
+        id: 'raaus-status',
+        title: raausStatus.level === 'action' ? 'RAAus membership has expired' : 'Check your RAAus membership',
+        detail: studentDetails?.licenceExpiry
+          ? `Recorded date: ${format(studentDetails.licenceExpiry, datePattern)}.`
+          : 'No RAAus membership expiry is recorded.',
+        to: '/settings?tab=account-info',
+        level: raausStatus.level === 'action' ? 'action' : 'warning',
+      });
+    }
+    if (isFlyingMember && medicalStatus.level !== 'ready') {
+      actions.push({
+        id: 'medical-status',
+        title: medicalStatus.level === 'action' ? 'Medical has expired' : 'Check your medical',
+        detail: studentDetails?.medicalExpiry
+          ? `Recorded date: ${format(studentDetails.medicalExpiry, datePattern)}.`
+          : 'No medical expiry is recorded.',
+        to: '/settings?tab=account-info',
+        level: medicalStatus.level === 'action' ? 'action' : 'warning',
+      });
+    }
+    if (isFlyingMember && !isStudentOnly && flightReviewStatus.level !== 'ready') {
+      actions.push({
+        id: 'flight-review-status',
+        title: flightReviewStatus.level === 'action' ? 'Flight review has expired' : 'Flight review due soon',
+        detail: flightReviewDue
+          ? `Recorded due date: ${format(flightReviewDue, datePattern)}.`
+          : 'No completed flight review is recorded.',
+        to: '/pilot-file',
+        level: flightReviewStatus.level === 'action' ? 'action' : 'warning',
+      });
+    }
+    if (!membership.xeroLinked) {
+      actions.push({
+        id: 'xero-link',
+        title: 'Billing account needs administrator setup',
+        detail: 'No balance will be shown until your account is linked to a Xero contact.',
+        to: '/billing',
+        level: 'warning',
+      });
+    }
+    return actions;
+  }, [
+    datePattern,
+    flightReviewDue,
+    flightReviewStatus.level,
+    isFlyingMember,
+    isStudentOnly,
+    medicalStatus.level,
+    membership.applicationStatus,
+    membership.automaticCommencementAt,
+    membership.financiallyCleared,
+    membership.graceExpiresAt,
+    membership.legalStatus,
+    membership.xeroLinked,
+    missingProfileFields,
+    raausStatus.level,
+    studentDetails?.licenceExpiry,
+    studentDetails?.medicalExpiry,
+  ]);
+
+  const calendarEvent = useMemo<BrowserCalendarEvent | null>(() => {
+    if (!stats.nextBooking) return null;
+    const booking = stats.nextBooking;
+    const status = booking.status === 'cancelled' || booking.status === 'no-show'
+      ? 'CANCELLED'
+      : booking.status.startsWith('pending_') ? 'TENTATIVE' : 'CONFIRMED';
+    return {
+      uid: `booking-${booking.id}@portal.bendigoflyingclub.com.au`,
+      title: `BFC booking – ${booking.aircraftRegistration}`,
+      description: [
+        `Status: ${humaniseStatus(booking.status)}`,
+        booking.instructorName ? `Instructor: ${booking.instructorName}` : '',
+        booking.supervisorName ? `Supervising senior instructor: ${booking.supervisorName}` : '',
+        'The BFC portal is the source of truth for this booking.',
+      ].filter(Boolean).join('\n'),
+      location: booking.location || 'Bendigo Flying Club',
+      start: booking.startTime,
+      end: booking.endTime,
+      status,
     };
-    const bfrDue = studentDetails?.lastFlightReview
-      ? new Date(studentDetails.lastFlightReview.getFullYear() + 2, studentDetails.lastFlightReview.getMonth(), studentDetails.lastFlightReview.getDate())
-      : undefined;
+  }, [stats.nextBooking]);
 
-    return [
-      { label: 'RAAus membership', ...statusForDate(studentDetails?.licenceExpiry) },
-      { label: 'Medical', ...statusForDate(studentDetails?.medicalExpiry) },
-      ...(isStudentUser ? [] : [{ label: 'Flight review', ...statusForDate(bfrDue) }])
-    ];
-  }, [datePattern, isStudentUser, studentDetails]);
-
-  if (loading || trainingRecordsLoading || trainingCoursesLoading || studentDetailsLoading || courseEnrolmentsLoading) {
+  if (pageLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
@@ -242,330 +507,498 @@ export const ProfileDashboard: React.FC = () => {
     );
   }
 
+  const readinessStyle = levelStyles[overallReadiness.level];
+  const roleLabel = isInstructor
+    ? roles.includes('senior_instructor') ? 'Senior instructor' : 'Instructor'
+    : roles.includes('pilot') ? 'Pilot'
+      : roles.includes('student') ? 'Student'
+        : humaniseStatus(user?.role);
+  const todayOtherBookings = stats.recentBookingsToday.filter(
+    booking => booking.id !== stats.nextBooking?.id
+  );
+
   return (
     <div className="min-h-full bg-transparent p-3 sm:p-6">
-      <div className="mx-auto max-w-6xl space-y-4">
-        {shouldShowProfilePrompt && (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-md shadow-blue-100/70 dark:border-blue-500/20 dark:bg-blue-500/10 dark:shadow-none">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-blue-950 dark:text-blue-100">Complete your profile</h2>
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  Fill in your contact and emergency details so your account is ready to use properly.
+      <div className="mx-auto max-w-6xl space-y-5">
+        <section className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-lg sm:p-6">
+          {user?.coverPhoto && (
+            <img src={user.coverPhoto} alt="" className="absolute inset-0 h-full w-full object-cover opacity-20" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-900/85 to-blue-950/70" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-blue-700 shadow-md sm:h-24 sm:w-24">
+                {user?.avatar ? (
+                  <img src={user.avatar} alt={`${user.name} profile`} className="h-full w-full object-cover object-top" />
+                ) : (
+                  <UserIcon className="h-10 w-10 text-white" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-2xl font-bold sm:text-3xl">{user?.name}</h1>
+                  <span className="rounded-full border border-blue-300/25 bg-blue-300/10 px-2.5 py-1 text-xs font-semibold text-blue-100">
+                    {roleLabel}
+                  </span>
+                </div>
+                <p className="mt-1 truncate text-sm text-slate-300">{user?.email}</p>
+                <p className="mt-2 text-sm font-medium text-blue-100">
+                  {membership.membershipClassName
+                    ? `${membership.membershipClassName} · ${membership.hasVotingRights ? 'Voting member' : 'Non-voting member'}`
+                    : 'BFC membership not established'}
                 </p>
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setProfilePromptDismissed(true)}
-                  className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-800 hover:bg-blue-100 dark:border-blue-400/30 dark:bg-transparent dark:text-blue-100 dark:hover:bg-blue-500/10"
-                >
-                  Later
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate('/settings?tab=account-info')}
-                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                  Update My Info
-                </button>
-              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <button
+                type="button"
+                onClick={() => navigate('/calendar')}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-white/70"
+              >
+                <Calendar className="h-4 w-4" />
+                Booking calendar
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/settings?tab=account-info')}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/70"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit profile
+              </button>
             </div>
           </div>
-        )}
-        <section className="relative h-[24rem] overflow-hidden rounded-2xl border border-gray-200 bg-[#dce8f6] shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#262b33] sm:h-[26rem] lg:h-[28rem]">
-          <div className="absolute inset-0">
-            {user?.coverPhoto && (
-              <img src={user.coverPhoto} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          <div className="relative mt-5 grid gap-2 sm:grid-cols-2 lg:max-w-xl">
+            <button
+              type="button"
+              onClick={() => navigate('/my-logbook')}
+              className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-left backdrop-blur-sm hover:bg-black/30"
+            >
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-300">Logged flying</span>
+              <span className="mt-1 block text-xl font-bold">{stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)} hours</span>
+            </button>
+            {stats.myCreditVisible ? (
+              <button
+                type="button"
+                onClick={() => navigate('/billing')}
+                className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-left backdrop-blur-sm hover:bg-black/30"
+              >
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-300">Xero account position</span>
+                <span className="mt-1 block text-xl font-bold">{formatCurrency(stats.myPrepaidBalance, portalSettings.currency_decimals)}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate('/billing')}
+                className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-left backdrop-blur-sm hover:bg-black/30"
+              >
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-300">Billing</span>
+                <span className="mt-1 block text-sm font-semibold">Account setup required</span>
+              </button>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/5" />
-          </div>
-
-          <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
-                <div className="h-28 w-28 flex-shrink-0 overflow-hidden rounded-full border-4 border-white bg-blue-600 shadow-lg dark:border-[#171a21] sm:h-32 sm:w-32 md:h-40 md:w-40 xl:h-48 xl:w-48">
-                  <div className="relative h-full w-full">
-                  {user?.avatar ? (
-                    <img src={user.avatar} alt={`${user.name} profile`} decoding="async" className="h-full w-full object-cover object-top" />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center pt-1">
-                      <UserIcon className="h-14 w-14 text-white sm:h-16 sm:w-16 md:h-20 md:w-20 xl:h-24 xl:w-24" />
-                    </div>
-                  )}
-                  </div>
-                </div>
-                <div className="min-w-0 pb-1 text-white">
-                  <h1 className="truncate text-2xl font-bold drop-shadow-sm sm:text-3xl">{user?.name}</h1>
-                  <p className="truncate text-sm text-white/85 drop-shadow-sm">{user?.email}</p>
-                </div>
-              </div>
-
-              <div className="flex w-full flex-col gap-2 sm:w-[21rem]">
-                <button
-                  type="button"
-                  onClick={() => navigate('/settings?tab=account-info')}
-                  className="inline-flex items-center justify-center gap-1.5 self-end rounded-lg border border-white/20 bg-black/25 px-2.5 py-1.5 text-xs font-medium text-white/85 backdrop-blur-sm transition hover:border-white/30 hover:bg-black/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70"
-                  title="Edit your personal details, aviation credentials and profile photos"
-                >
-                  <Pencil className="h-4 w-4" />
-                  Edit Profile
-                </button>
-                <div className={`grid w-full min-w-0 gap-2 rounded-xl border border-white/20 bg-black/35 p-2 shadow-lg backdrop-blur-sm ${stats.myCreditVisible ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  <button
-                    type="button"
-                    onClick={() => setShowFlightStatsModal(true)}
-                    className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
-                  >
-                    <p className="text-xs text-white/70">Hours</p>
-                    <p className="truncate text-base font-bold tabular-nums sm:text-lg">{stats.myFlightHours.toFixed(portalSettings.flight_time_decimals)}</p>
-                  </button>
-                  {stats.myCreditVisible && (
-                    <button
-                      type="button"
-                      onClick={() => navigate('/billing')}
-                      className="min-w-0 rounded-lg bg-white/15 px-3 py-2 text-center text-white transition hover:bg-white/20"
-                    >
-                      <p className="text-xs text-white/70">Credit</p>
-                      <p className="truncate text-base font-bold tabular-nums sm:text-lg">{formatCurrency(stats.myPrepaidBalance, portalSettings.currency_decimals)}</p>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <div className="space-y-4">
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-300" />
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Today's Schedule</h2>
+        <section className={`rounded-2xl border p-5 shadow-sm ${readinessStyle.panel}`} aria-labelledby="readiness-title">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-start gap-3">
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${readinessStyle.icon}`}>
+                {overallReadiness.level === 'ready'
+                  ? <CheckCircle2 className="h-5 w-5" />
+                  : <AlertTriangle className="h-5 w-5" />}
+              </span>
+              <div>
+                <h2 id="readiness-title" className="text-lg font-bold text-slate-950 dark:text-white">{overallReadiness.title}</h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{overallReadiness.description}</p>
               </div>
-              {stats.recentBookingsToday.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-[#363b45] dark:text-gray-400">
-                  <p className="text-center">No bookings scheduled for today.</p>
-                  {nextLessonLabel && (
-                    <p className="mt-3 text-center text-xs font-semibold text-blue-700 dark:text-blue-200">Next lesson: {nextLessonLabel}</p>
-                  )}
-                  {stats.nextBooking && (
-                    <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 dark:border-[#2c2f36] dark:bg-[#11141a]">
-                      <p className="text-sm font-semibold text-gray-950 dark:text-gray-100">
-                        Next booking: {format(stats.nextBooking.startTime, datePattern)} at {format(stats.nextBooking.startTime, timePattern)}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{stats.nextBooking.aircraftRegistration}</p>
-                      {nextLessonLabel && (
-                        <p className="mt-1 text-xs font-semibold text-blue-700 dark:text-blue-200">Next lesson: {nextLessonLabel}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {stats.recentBookingsToday.map(booking => (
-                    <div key={booking.id} className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 dark:border-[#2c2f36] dark:bg-[#11141a]">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-950 dark:text-gray-100">
-                          {format(booking.startTime, timePattern)} to {format(booking.endTime, timePattern)}
-                        </p>
-                        <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                          {booking.studentName} - {booking.aircraftRegistration}
-                          {booking.instructorName ? ` - ${booking.instructorName}` : ''}
-                        </p>
-                        {nextLessonLabel && (
-                          <p className="mt-1 text-xs font-semibold text-blue-700 dark:text-blue-200">
-                            Next lesson: {nextLessonLabel}
-                          </p>
-                        )}
-                      </div>
-                      <Plane className="h-4 w-4 flex-shrink-0 text-gray-400" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {user && <InstructorComplianceProfilePanel instructor={user} />}
-
-            {isStudentUser && currentCourse && trainingOverview && (
-              <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-                <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Training Progress Overview</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{currentCourse.title}</p>
-                  </div>
-                  <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200">
-                    {trainingOverview.percent}%
-                  </span>
-                </div>
-                <div className="mb-4 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-[#11141a]">
-                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${trainingOverview.percent}%` }} />
-                </div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <div className="rounded-xl bg-blue-50 p-3 dark:bg-blue-500/10">
-                    <p className="text-xs font-semibold text-blue-700 dark:text-blue-200">Lessons</p>
-                    <p className="text-xl font-bold text-blue-800 dark:text-blue-100">{trainingOverview.completedLessons}/{trainingOverview.totalLessons || '-'}</p>
-                  </div>
-                  <div className="rounded-xl bg-green-50 p-3 dark:bg-green-500/10">
-                    <p className="text-xs font-semibold text-green-700 dark:text-green-200">Competent Sequences</p>
-                    <p className="text-xl font-bold text-green-800 dark:text-green-100">{trainingOverview.competentSequences}</p>
-                  </div>
-                  <div className="rounded-xl bg-orange-50 p-3 dark:bg-orange-500/10">
-                    <p className="text-xs font-semibold text-orange-700 dark:text-orange-200">Next Lesson</p>
-                    <p className="truncate text-sm font-bold text-orange-800 dark:text-orange-100">{nextLessonLabel}</p>
-                  </div>
-                </div>
-                {trainingOverview.recentRecords.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {trainingOverview.recentRecords.map(record => (
-                      <div key={record.id} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a]">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {format(record.bookingStartTime || record.date, datePattern)} - {record.registration || 'Aircraft not recorded'}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {formatHoursFromMinutes((record.dualTimeMin || 0) + (record.soloTimeMin || 0))} hrs - {record.status}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/calendar')}
+              className="inline-flex min-h-10 items-center justify-center gap-2 self-start rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
+            >
+              Check booking eligibility
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
+          <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            {readinessItems.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => navigate(item.to)}
+                className="rounded-xl border border-white/70 bg-white/75 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-slate-950/35"
+              >
+                <span className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <span className={`h-2 w-2 rounded-full ${levelStyles[item.level].dot}`} />
+                  {item.label}
+                </span>
+                <span className="mt-1.5 block text-sm font-bold text-slate-900 dark:text-white">{item.value}</span>
+              </button>
+            ))}
+          </div>
+        </section>
 
-          <aside className="space-y-4">
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <Clock className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Next Booking</h2>
+        {actionItems.length > 0 && (
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-labelledby="action-centre-title">
+            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+              <h2 id="action-centre-title" className="font-bold text-slate-950 dark:text-white">Action required</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Items that may affect your account or flying readiness.</p>
+            </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {actionItems.map(action => (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={() => navigate(action.to)}
+                  className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                >
+                  <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                    action.level === 'action'
+                      ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                  }`}>
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-slate-900 dark:text-white">{action.title}</span>
+                    <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">{action.detail}</span>
+                  </span>
+                  <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
+          <div className="space-y-5">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-labelledby="next-booking-title">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-700">
+                <div className="flex items-start gap-3">
+                  <span className="rounded-xl bg-blue-100 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    <Plane className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 id="next-booking-title" className="font-bold text-slate-950 dark:text-white">Next booking</h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your next scheduled club activity.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/calendar')}
+                  className="text-sm font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300"
+                >
+                  Calendar
+                </button>
               </div>
               {stats.nextBooking ? (
                 <div>
-                  <p className="text-2xl font-bold text-gray-950 dark:text-gray-100">{format(stats.nextBooking.startTime, datePattern)}</p>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                    {format(stats.nextBooking.startTime, timePattern)} - {stats.nextBooking.aircraftRegistration}
-                  </p>
-                  {stats.nextBooking.instructorName && (
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{stats.nextBooking.instructorName}</p>
+                  <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-2xl font-bold text-slate-950 dark:text-white">
+                          {format(stats.nextBooking.startTime, datePattern)}
+                        </p>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          stats.nextBooking.status.startsWith('pending_')
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                        }`}>
+                          {humaniseStatus(stats.nextBooking.status)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-lg font-semibold text-slate-800 dark:text-slate-100">
+                        {format(stats.nextBooking.startTime, timePattern)}–{format(stats.nextBooking.endTime, timePattern)}
+                        {' · '}{stats.nextBooking.aircraftRegistration}
+                      </p>
+                      <div className="mt-3 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+                        {stats.nextBooking.location && (
+                          <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" />{stats.nextBooking.location}</p>
+                        )}
+                        {stats.nextBooking.instructorName && (
+                          <p>Instructor/student: <span className="font-semibold">{stats.nextBooking.instructorName}</span></p>
+                        )}
+                        {stats.nextBooking.supervisorName && (
+                          <p className="text-xs">Supervising senior instructor: {stats.nextBooking.supervisorName}</p>
+                        )}
+                        {isStudentOnly && nextLessonLabel && (
+                          <p className="font-semibold text-blue-700 dark:text-blue-300">Next lesson: {nextLessonLabel}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 sm:flex-col">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/calendar?date=${format(stats.nextBooking!.startTime, 'yyyy-MM-dd')}`)}
+                        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                      >
+                        View booking
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                      {calendarEvent && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCalendarModal(true)}
+                          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800"
+                        >
+                          <CalendarPlus className="h-4 w-4" />
+                          Add to calendar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {todayOtherBookings.length > 0 && (
+                    <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/40">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Also today</p>
+                      <div className="mt-2 space-y-2">
+                        {todayOtherBookings.slice(0, 3).map(booking => (
+                          <div key={booking.id} className="flex items-center justify-between gap-3 text-sm">
+                            <span className="font-semibold text-slate-800 dark:text-slate-100">
+                              {format(booking.startTime, timePattern)}–{format(booking.endTime, timePattern)}
+                            </span>
+                            <span className="truncate text-slate-500 dark:text-slate-400">{booking.aircraftRegistration}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 dark:text-gray-400">No upcoming booking.</p>
+                <div className="p-6 text-center">
+                  <Calendar className="mx-auto h-9 w-9 text-slate-300 dark:text-slate-600" />
+                  <p className="mt-3 font-semibold text-slate-800 dark:text-slate-100">No upcoming booking</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Open the calendar when you are ready to plan your next flight.</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/calendar')}
+                    className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    Open booking calendar
+                  </button>
+                </div>
               )}
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <UserIcon className="h-5 w-5 text-blue-600 dark:text-blue-300" />
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Personal Details</h2>
-              </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex gap-2 text-gray-600 dark:text-gray-300">
-                  <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
-                  <span className="min-w-0 break-all">{user?.email || 'Email not recorded'}</span>
-                </div>
-                <div className="flex gap-2 text-gray-600 dark:text-gray-300">
-                  <Phone className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
-                  <span>{user?.mobilePhone || user?.phone || user?.homePhone || 'Phone not recorded'}</span>
-                </div>
-                {user?.dateOfBirth && (
-                  <p className="text-gray-600 dark:text-gray-300">DOB: {format(user.dateOfBirth, datePattern)}</p>
-                )}
-                {user?.address && (
-                  <p className="rounded-xl bg-gray-50 px-3 py-2 text-gray-600 dark:bg-[#11141a] dark:text-gray-300">{user.address}</p>
-                )}
-                <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#11141a]">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Emergency Contact</p>
-                  {studentDetails?.emergencyContact ? (
-                    <div className="mt-1 text-gray-700 dark:text-gray-200">
-                      <p className="font-semibold">{studentDetails.emergencyContact.name}</p>
-                      <p>{studentDetails.emergencyContact.phone || 'Phone not recorded'}</p>
-                      {studentDetails.emergencyContact.relationship && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{studentDetails.emergencyContact.relationship}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="mt-1 text-gray-500 dark:text-gray-400">Not recorded</p>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Aviation Credentials</h2>
-              </div>
-              <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
-                <p>RAAus: <span className="font-semibold text-gray-900 dark:text-gray-100">{studentDetails?.raausId || 'Not recorded'}</span></p>
-                <p>CASA ARN: <span className="font-semibold text-gray-900 dark:text-gray-100">{studentDetails?.casaId || 'Not recorded'}</span></p>
-                <p>Medical: <span className="font-semibold text-gray-900 dark:text-gray-100">{studentDetails?.medicalType || 'Not recorded'}</span></p>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md shadow-gray-200/70 dark:border-[#2c2f36] dark:bg-[#171a21] sm:p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-300" />
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Compliance Snapshot</h2>
-              </div>
-              <div className="space-y-2">
-                {complianceItems.map(item => (
-                  <div key={item.label} className="flex justify-between gap-3 text-sm">
-                    <span className="text-gray-500 dark:text-gray-400">{item.label}</span>
-                    <span className={`text-right font-semibold ${item.warn ? 'text-amber-700 dark:text-amber-300' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {item.value}
+            {isStudentOnly && currentCourseSummary && (
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <span className="rounded-xl bg-violet-100 p-2 text-violet-700 dark:bg-violet-950 dark:text-violet-300">
+                      <GraduationCap className="h-5 w-5" />
                     </span>
+                    <div>
+                      <h2 className="font-bold text-slate-950 dark:text-white">Training progress</h2>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{currentCourseSummary.course.title}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/pilot-file')}
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700 dark:text-blue-300"
+                  >
+                    Pilot file <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-5 flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-600 dark:text-slate-300">
+                    {currentCourseSummary.completedLessons}/{currentCourseSummary.totalLessons || '-'} lessons
+                  </span>
+                  <span className="font-bold text-violet-700 dark:text-violet-300">{currentCourseSummary.percent}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                  <div className="h-full rounded-full bg-violet-600" style={{ width: `${currentCourseSummary.percent}%` }} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl bg-violet-50 p-3 dark:bg-violet-950/30">
+                    <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Next lesson</p>
+                    <p className="mt-1 font-bold text-violet-950 dark:text-violet-100">{nextLessonLabel || 'Ask your instructor'}</p>
+                  </div>
+                  <div className="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-950/30">
+                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Competent sequences</p>
+                    <p className="mt-1 text-xl font-bold text-emerald-950 dark:text-emerald-100">{currentCourseSummary.competentSequences}</p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {isInstructor && user && <InstructorComplianceProfilePanel instructor={user} />}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <span className="rounded-xl bg-sky-100 p-2 text-sky-700 dark:bg-sky-950 dark:text-sky-300">
+                    <BookOpen className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-bold text-slate-950 dark:text-white">Recent flying</h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your recorded experience at a glance.</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => navigate('/my-logbook')} className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                  Logbook
+                </button>
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  ['Total', formatHoursFromMinutes(totalFlightMinutes)],
+                  ['Dual', formatHoursFromMinutes(totalDualMinutes)],
+                  ['Solo', formatHoursFromMinutes(totalSoloMinutes)],
+                  ['Records', String(studentTrainingRecords.length)],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/50">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+                    <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{value}</p>
                   </div>
                 ))}
+              </div>
+              <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+                Last flight: <span className="font-semibold text-slate-800 dark:text-slate-100">{lastFlightDate ? format(lastFlightDate, datePattern) : 'No flight recorded'}</span>
+              </p>
+            </section>
+          </div>
+
+          <aside className="space-y-5">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <span className="rounded-xl bg-blue-100 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    <Contact className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="font-bold text-slate-950 dark:text-white">BFC membership</h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{membership.membershipClassName || 'Not established'}</p>
+                  </div>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${levelStyles[membershipLevel].badge}`}>
+                  {membership.legalStatus === 'current' ? membership.financiallyCleared ? 'Active' : 'Payment due' : humaniseStatus(membership.applicationStatus || membership.legalStatus)}
+                </span>
+              </div>
+              <dl className="mt-5 space-y-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500 dark:text-slate-400">Financial year ends</dt>
+                  <dd className="text-right font-semibold text-slate-900 dark:text-white">{formatStoredDate(membership.financialYearEnd, datePattern)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500 dark:text-slate-400">Financial status</dt>
+                  <dd className="text-right font-semibold text-slate-900 dark:text-white">{humaniseStatus(membership.feeDisposition)}</dd>
+                </div>
+                {membership.amountDue > 0 && (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500 dark:text-slate-400">Amount due</dt>
+                    <dd className="text-right font-semibold text-amber-700 dark:text-amber-300">{formatCurrency(membership.amountDue, portalSettings.currency_decimals)}</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500 dark:text-slate-400">Renewal</dt>
+                  <dd className="text-right font-semibold text-slate-900 dark:text-white">
+                    {membership.autoRenew ? 'Automatic' : membership.paymentMethod ? 'Manual' : 'Not selected'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400"><Vote className="h-3.5 w-3.5" />Voting</dt>
+                  <dd className="text-right font-semibold text-slate-900 dark:text-white">{membership.hasVotingRights ? 'Eligible' : 'Not eligible'}</dd>
+                </div>
+              </dl>
+              <button
+                type="button"
+                onClick={() => navigate('/membership')}
+                className="mt-5 inline-flex w-full min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:text-white dark:hover:bg-slate-800"
+              >
+                Manage membership
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </section>
+
+            <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5">
+                <span className="flex items-center gap-3">
+                  <span className="rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <UserIcon className="h-5 w-5" />
+                  </span>
+                  <span>
+                    <span className="block font-bold text-slate-950 dark:text-white">Personal details</span>
+                    <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">Contact and emergency information</span>
+                  </span>
+                </span>
+                <ChevronRight className="h-4 w-4 text-slate-400 transition group-open:rotate-90" />
+              </summary>
+              <div className="space-y-3 border-t border-slate-100 px-5 py-4 text-sm dark:border-slate-800">
+                <p className="flex gap-2 text-slate-600 dark:text-slate-300"><Mail className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /><span className="break-all">{user?.email || 'Not recorded'}</span></p>
+                <p className="flex gap-2 text-slate-600 dark:text-slate-300"><Phone className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />{user?.mobilePhone || user?.phone || user?.homePhone || 'Not recorded'}</p>
+                {user?.address && <p className="rounded-xl bg-slate-50 p-3 text-slate-600 dark:bg-slate-950/50 dark:text-slate-300">{user.address}</p>}
+                <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/50">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Emergency contact</p>
+                  <p className="mt-1 font-semibold text-slate-900 dark:text-white">{studentDetails?.emergencyContact?.name || 'Not recorded'}</p>
+                  {studentDetails?.emergencyContact?.phone && <p className="text-slate-600 dark:text-slate-300">{studentDetails.emergencyContact.phone}</p>}
+                </div>
+                <button type="button" onClick={() => navigate('/settings?tab=account-info')} className="font-semibold text-blue-700 dark:text-blue-300">Update personal details</button>
+              </div>
+            </details>
+
+            {isFlyingMember && (
+              <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5">
+                  <span className="flex items-center gap-3">
+                    <span className="rounded-xl bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                      <ShieldCheck className="h-5 w-5" />
+                    </span>
+                    <span>
+                      <span className="block font-bold text-slate-950 dark:text-white">Aviation credentials</span>
+                      <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">Identifiers and recorded dates</span>
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-slate-400 transition group-open:rotate-90" />
+                </summary>
+                <div className="space-y-3 border-t border-slate-100 px-5 py-4 text-sm dark:border-slate-800">
+                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">RAAus number</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.raausId || 'Not recorded'}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">CASA ARN</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.casaId || 'Not recorded'}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">RAAus expiry</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.licenceExpiry ? format(studentDetails.licenceExpiry, datePattern) : 'Not recorded'}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Medical</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.medicalType || 'Not recorded'}</span></div>
+                  <button type="button" onClick={() => navigate('/settings?tab=account-info')} className="font-semibold text-blue-700 dark:text-blue-300">Update credentials</button>
+                </div>
+              </details>
+            )}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <div className="flex items-start gap-3">
+                <span className="rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <Settings className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="font-bold text-slate-950 dark:text-white">Quick settings</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Personalise how the portal works for you.</p>
+                </div>
+              </div>
+              <div className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+                {[
+                  ['Calendar subscriptions', '/settings?tab=account-calendar', Calendar],
+                  ['Notifications', '/settings?tab=account-notifications', AlertTriangle],
+                  ['Appearance and PWA', '/settings?tab=account-appearance', Settings],
+                  ['Balance and payment card', '/billing', CreditCard],
+                ].map(([label, to, Icon]) => {
+                  const ItemIcon = Icon as typeof Calendar;
+                  return (
+                    <button
+                      key={label as string}
+                      type="button"
+                      onClick={() => navigate(to as string)}
+                      className="flex w-full items-center gap-3 py-3 text-left text-sm font-semibold text-slate-700 hover:text-blue-700 dark:text-slate-200 dark:hover:text-blue-300"
+                    >
+                      <ItemIcon className="h-4 w-4 text-slate-400" />
+                      <span className="flex-1">{label as string}</span>
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                    </button>
+                  );
+                })}
               </div>
             </section>
           </aside>
         </div>
       </div>
 
-      {showFlightStatsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
-          <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#2c2f36] dark:bg-[#171a21]">
-            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36]">
-              <div>
-                <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Flight Stats</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Your logged time and recent activity summary.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFlightStatsModal(false)}
-                className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-[#11141a] dark:hover:text-gray-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3 p-5 text-sm">
-              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
-                <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalFlightMinutes)}</p>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                <p className="text-xs text-gray-500 dark:text-gray-400">Dual</p>
-                <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalDualMinutes)}</p>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                <p className="text-xs text-gray-500 dark:text-gray-400">Solo</p>
-                <p className="font-bold text-gray-900 dark:text-gray-100">{formatHoursFromMinutes(totalSoloMinutes)}</p>
-              </div>
-              <div className="rounded-xl bg-gray-50 p-3 dark:bg-[#11141a]">
-                <p className="text-xs text-gray-500 dark:text-gray-400">Records</p>
-                <p className="font-bold text-gray-900 dark:text-gray-100">{studentTrainingRecords.length}</p>
-              </div>
-              {lastFlightDate && (
-                <div className="col-span-2 rounded-xl bg-blue-50 p-3 dark:bg-blue-500/10">
-                  <p className="text-xs text-blue-700 dark:text-blue-200">Last flight</p>
-                  <p className="font-bold text-blue-900 dark:text-blue-100">{format(lastFlightDate, datePattern)}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {showCalendarModal && calendarEvent && (
+        <AddToCalendarModal event={calendarEvent} onClose={() => setShowCalendarModal(false)} />
       )}
     </div>
   );

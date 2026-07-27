@@ -30,9 +30,14 @@ export interface DashboardStats {
   myBookingsToday: number;
   myFlightHours: number;
   nextBooking?: {
+    id: string;
     startTime: Date;
+    endTime: Date;
+    status: string;
+    location?: string;
     aircraftRegistration: string;
     instructorName?: string;
+    supervisorName?: string;
   };
   myPrepaidBalance: number;
   myCreditVisible: boolean;
@@ -215,12 +220,14 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         const nextBookingResult = await supabase
           .from('bookings')
           .select(`
-            start_time,
+            id, start_time, end_time, status, location,
             aircraft:aircraft_id (registration),
-            student:student_id (name)
+            student:student_id (name),
+            supervisor:supervising_instructor_id (name)
           `)
           .is('deleted_at', null)
           .eq('instructor_id', userId)
+          .not('status', 'in', '("cancelled","no-show")')
           .gte('start_time', now.toISOString())
           .order('start_time', { ascending: true })
           .limit(1)
@@ -229,9 +236,14 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         if (nextBookingResult.data) {
           const nb = nextBookingResult.data as any;
           nextBooking = {
+            id: nb.id,
             startTime: new Date(nb.start_time),
+            endTime: new Date(nb.end_time),
+            status: nb.status,
+            location: nb.location || undefined,
             aircraftRegistration: nb.aircraft?.registration || 'Unknown',
             instructorName: nb.student?.name,
+            supervisorName: nb.supervisor?.name,
           };
         }
       }
@@ -245,12 +257,14 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
           supabase
             .from('bookings')
             .select(`
-              start_time,
+              id, start_time, end_time, status, location,
               aircraft:aircraft_id (registration),
-              instructor:instructor_id (name)
+              instructor:instructor_id (name),
+              supervisor:supervising_instructor_id (name)
             `)
             .is('deleted_at', null)
             .eq('student_id', userId)
+            .not('status', 'in', '("cancelled","no-show")')
             .gte('start_time', now.toISOString())
             .order('start_time', { ascending: true })
             .limit(1)
@@ -274,9 +288,14 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         if (myNextBookingResult.data) {
           const nb = myNextBookingResult.data as any;
           nextBooking = {
+            id: nb.id,
             startTime: new Date(nb.start_time),
+            endTime: new Date(nb.end_time),
+            status: nb.status,
+            location: nb.location || undefined,
             aircraftRegistration: nb.aircraft?.registration || 'Unknown',
             instructorName: nb.instructor?.name,
+            supervisorName: nb.supervisor?.name,
           };
         }
 
