@@ -1,0 +1,62 @@
+import {
+  collectionWasSubmitted,
+  DEFAULT_MEMBERSHIP_ITEM_CODE,
+  membershipBillingRetryDelayMs,
+  membershipCollectionIdempotencyParts,
+} from "./membershipBilling.ts";
+
+const assert = (condition: boolean, message: string) => {
+  if (!condition) throw new Error(message);
+};
+
+Deno.test("membership billing uses bounded increasing retry delays", () => {
+  const delays = [1, 2, 3, 4, 5, 8].map(membershipBillingRetryDelayMs);
+  assert(delays[0] === 5 * 60 * 1000, "first retry should wait five minutes");
+  assert(delays[4] === 24 * 60 * 60 * 1000, "fifth retry should wait one day");
+  assert(
+    delays.every((delay, index) => index === 0 || delay >= delays[index - 1]),
+    "retry delays must never decrease",
+  );
+});
+
+Deno.test("an interrupted reservation can resume but a submitted collection cannot", () => {
+  assert(
+    !collectionWasSubmitted({
+      status: "pending",
+      stripe_payment_intent_id: null,
+    }),
+    "a reservation without a Stripe intent must be resumable",
+  );
+  assert(
+    collectionWasSubmitted({
+      status: "pending",
+      stripe_payment_intent_id: "pi_123",
+    }),
+    "a submitted Stripe intent must not be charged again",
+  );
+  assert(
+    collectionWasSubmitted({ status: "paid", stripe_payment_intent_id: null }),
+    "a paid record must never be retried",
+  );
+});
+
+Deno.test("collection idempotency is stable per reserved attempt", () => {
+  const base = {
+    stripeMode: "test",
+    periodId: "period-1",
+    invoiceId: "invoice-1",
+    paymentRecordId: "attempt-1",
+  };
+  const first = membershipCollectionIdempotencyParts(base).join(":");
+  const repeated = membershipCollectionIdempotencyParts(base).join(":");
+  const nextAttempt = membershipCollectionIdempotencyParts({
+    ...base,
+    paymentRecordId: "attempt-2",
+  }).join(":");
+  assert(first === repeated, "the same reserved attempt must reuse its key");
+  assert(first !== nextAttempt, "a definite failed attempt must get a new key");
+  assert(
+    DEFAULT_MEMBERSHIP_ITEM_CODE === "BFC-MEMBERSHIP",
+    "the fallback item code must remain explicit",
+  );
+});

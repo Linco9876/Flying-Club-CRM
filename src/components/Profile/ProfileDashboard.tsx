@@ -309,7 +309,14 @@ export const ProfileDashboard: React.FC = () => {
     ? membership.financiallyCleared ? 'ready' : 'action'
     : membership.applicationStatus === 'pending' ? 'warning' : 'action';
   const profileLevel: ProfileReadinessLevel = missingProfileFields.length > 0 ? 'warning' : 'ready';
-  const billingLevel: ProfileReadinessLevel = membership.xeroLinked ? 'ready' : 'warning';
+  const membershipBillingProblem = ['failed', 'needs_review'].includes(membership.billingSyncStatus || '') ||
+    membership.lastCollectionStatus === 'failed';
+  const membershipBillingPending = ['queued', 'processing'].includes(membership.billingSyncStatus || '');
+  const billingLevel: ProfileReadinessLevel = membershipBillingProblem
+    ? 'action'
+    : membership.xeroLinked
+      ? membershipBillingPending ? 'warning' : 'ready'
+      : 'warning';
 
   const readinessItems = useMemo(() => [
     {
@@ -347,9 +354,13 @@ export const ProfileDashboard: React.FC = () => {
     {
       id: 'billing',
       label: 'Billing setup',
-      value: membership.xeroLinked ? 'Linked' : 'Admin setup needed',
+      value: membershipBillingProblem
+        ? 'Payment needs attention'
+        : membershipBillingPending
+          ? 'Billing in progress'
+          : membership.xeroLinked ? 'Linked' : 'Admin setup needed',
       level: billingLevel,
-      to: '/billing',
+      to: membershipBillingProblem || membershipBillingPending ? '/membership' : '/billing',
     },
     {
       id: 'profile',
@@ -369,6 +380,8 @@ export const ProfileDashboard: React.FC = () => {
     membership.applicationStatus,
     membership.financiallyCleared,
     membership.legalStatus,
+    membershipBillingPending,
+    membershipBillingProblem,
     membership.xeroLinked,
     membershipLevel,
     missingProfileFields.length,

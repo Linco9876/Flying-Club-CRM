@@ -18,6 +18,12 @@ export interface OwnMembershipSummary {
   paymentMethodDisplay: string | null;
   autoRenew: boolean;
   xeroLinked: boolean;
+  billingSyncStatus: string | null;
+  billingSyncAttempts: number;
+  billingSyncNextAttemptAt: string | null;
+  billingSyncError: string | null;
+  lastCollectionStatus: string | null;
+  lastCollectionError: string | null;
 }
 
 const EMPTY_SUMMARY: OwnMembershipSummary = {
@@ -37,6 +43,12 @@ const EMPTY_SUMMARY: OwnMembershipSummary = {
   paymentMethodDisplay: null,
   autoRenew: false,
   xeroLinked: false,
+  billingSyncStatus: null,
+  billingSyncAttempts: 0,
+  billingSyncNextAttemptAt: null,
+  billingSyncError: null,
+  lastCollectionStatus: null,
+  lastCollectionError: null,
 };
 
 const firstRelation = <T,>(value: T | T[] | null | undefined): T | null =>
@@ -78,7 +90,7 @@ export const useOwnMembershipSummary = (userId?: string) => {
             .maybeSingle(),
           supabase
             .from('membership_payment_preferences')
-            .select('payment_method, payment_method_display, auto_renew')
+            .select('payment_method, payment_method_display, auto_renew, last_collection_status, last_collection_error')
             .eq('user_id', userId)
             .maybeSingle(),
           supabase
@@ -96,7 +108,7 @@ export const useOwnMembershipSummary = (userId?: string) => {
         if (membership?.id) {
           const periodResult = await supabase
             .from('membership_financial_periods')
-            .select('financial_year_end, fee_disposition, amount_due, due_date, grace_expires_at')
+            .select('financial_year_end, fee_disposition, amount_due, due_date, grace_expires_at, billing_sync_status, billing_sync_attempts, billing_sync_next_attempt_at, billing_sync_error')
             .eq('membership_id', membership.id)
             .order('financial_year_start', { ascending: false })
             .limit(1)
@@ -126,6 +138,12 @@ export const useOwnMembershipSummary = (userId?: string) => {
           paymentMethodDisplay: preferenceResult.data?.payment_method_display || null,
           autoRenew: Boolean(preferenceResult.data?.auto_renew),
           xeroLinked: Boolean(userResult.data?.xero_contact_id),
+          billingSyncStatus: period?.billing_sync_status || null,
+          billingSyncAttempts: Number(period?.billing_sync_attempts || 0),
+          billingSyncNextAttemptAt: period?.billing_sync_next_attempt_at || null,
+          billingSyncError: period?.billing_sync_error || null,
+          lastCollectionStatus: preferenceResult.data?.last_collection_status || null,
+          lastCollectionError: preferenceResult.data?.last_collection_error || null,
         });
       } catch (error) {
         console.error('Failed to load profile membership summary:', error);
