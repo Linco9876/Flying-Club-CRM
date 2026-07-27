@@ -13,12 +13,13 @@ export const getMembershipIdentityLabel = ({
 }: {
   legalStatus?: string | null;
   membershipClassName?: string | null;
-  hasVotingRights: boolean;
+  hasVotingRights: boolean | null;
 }) => {
   if (legalStatus === 'current') {
-    return `${membershipClassName || 'Current BFC membership'} · ${
-      hasVotingRights ? 'Voting member' : 'Non-voting member'
-    }`;
+    const votingLabel = hasVotingRights === null
+      ? ''
+      : ` · ${hasVotingRights ? 'Voting member' : 'Non-voting member'}`;
+    return `${membershipClassName || 'Current BFC membership'}${votingLabel}`;
   }
   return membershipClassName || 'BFC membership not established';
 };
