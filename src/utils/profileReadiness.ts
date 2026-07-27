@@ -6,6 +6,23 @@ export interface DatedReadinessStatus {
   daysRemaining: number | null;
 }
 
+export const getMembershipIdentityLabel = ({
+  legalStatus,
+  membershipClassName,
+  hasVotingRights,
+}: {
+  legalStatus?: string | null;
+  membershipClassName?: string | null;
+  hasVotingRights: boolean;
+}) => {
+  if (legalStatus === 'current') {
+    return `${membershipClassName || 'Current BFC membership'} · ${
+      hasVotingRights ? 'Voting member' : 'Non-voting member'
+    }`;
+  }
+  return membershipClassName || 'BFC membership not established';
+};
+
 const startOfLocalDay = (date: Date) => {
   const result = new Date(date);
   result.setHours(0, 0, 0, 0);

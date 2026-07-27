@@ -33,6 +33,7 @@ import { useOwnMembershipSummary } from '../../hooks/useOwnMembershipSummary';
 import { supabase } from '../../lib/supabase';
 import {
   getDatedReadinessStatus,
+  getMembershipIdentityLabel,
   getOverallReadiness,
   type ProfileReadinessLevel,
 } from '../../utils/profileReadiness';
@@ -543,9 +544,11 @@ export const ProfileDashboard: React.FC = () => {
                 </div>
                 <p className="mt-1 truncate text-sm text-slate-300">{user?.email}</p>
                 <p className="mt-2 text-sm font-medium text-blue-100">
-                  {membership.membershipClassName
-                    ? `${membership.membershipClassName} · ${membership.hasVotingRights ? 'Voting member' : 'Non-voting member'}`
-                    : 'BFC membership not established'}
+                  {getMembershipIdentityLabel({
+                    legalStatus: membership.legalStatus,
+                    membershipClassName: membership.membershipClassName,
+                    hasVotingRights: membership.hasVotingRights,
+                  })}
                 </p>
               </div>
             </div>
@@ -867,7 +870,9 @@ export const ProfileDashboard: React.FC = () => {
                   </span>
                   <div>
                     <h2 className="font-bold text-slate-950 dark:text-white">BFC membership</h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{membership.membershipClassName || 'Not established'}</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      {membership.membershipClassName || (membership.legalStatus === 'current' ? 'Current membership' : 'Not established')}
+                    </p>
                   </div>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${levelStyles[membershipLevel].badge}`}>
