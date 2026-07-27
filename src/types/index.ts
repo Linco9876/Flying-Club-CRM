@@ -803,7 +803,7 @@ export interface InvoiceItem {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record' | 'booking_approval' | 'duty_auto_started' | 'duty_auto_closed';
+  type: 'conflict' | 'cancellation' | 'reminder' | 'system' | 'training_record' | 'booking_approval' | 'licence_verification' | 'duty_auto_started' | 'duty_auto_closed';
   title: string;
   message: string;
   bookingId?: string;

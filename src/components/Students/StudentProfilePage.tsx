@@ -104,6 +104,22 @@ const MEDICAL_TYPE_OPTIONS = [
 
 const toDateInputValue = (date?: Date) => date ? date.toISOString().slice(0, 10) : '';
 
+const buildStudentInfoForm = (student: Student): StudentInfoForm => ({
+  name: student.name || '',
+  phone: student.phone || '',
+  dateOfBirth: toDateInputValue(student.dateOfBirth),
+  raausId: student.raausId || '',
+  membershipExpiry: toDateInputValue(student.licenceExpiry),
+  medicalType: student.medicalType || '',
+  medicalExpiry: toDateInputValue(student.medicalExpiry),
+  casaArn: student.casaId || '',
+  emergencyContactName: student.emergencyContact?.name || '',
+  emergencyContactPhone: student.emergencyContact?.phone || '',
+  emergencyContactRelationship: student.emergencyContact?.relationship || '',
+  endorsements: student.endorsements || [],
+  licences: student.licences || [],
+});
+
 const formatCourseRichText = (value?: string) => formatRichTextContent(value || '');
 
 const CourseRichText: React.FC<{ value?: string; fallback?: string }> = ({ value, fallback = 'Not recorded' }) => {
@@ -322,6 +338,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const studentId = routeStudentId || user?.id;
+  const requestedLicenceId = searchParams.get('action') === 'review-licence'
+    ? searchParams.get('licenceId')
+    : null;
   const [activeTab, setActiveTab] = useState(() => {
     if (portalSection === 'documents') return 'documents';
     if (portalSection === 'training') return 'training';
@@ -862,21 +881,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const openInfoEditor = () => {
     if (!student) return;
-    setInfoForm({
-      name: student.name || '',
-      phone: student.phone || '',
-      dateOfBirth: toDateInputValue(student.dateOfBirth),
-      raausId: student.raausId || '',
-      membershipExpiry: toDateInputValue(student.licenceExpiry),
-      medicalType: student.medicalType || '',
-      medicalExpiry: toDateInputValue(student.medicalExpiry),
-      casaArn: student.casaId || '',
-      emergencyContactName: student.emergencyContact?.name || '',
-      emergencyContactPhone: student.emergencyContact?.phone || '',
-      emergencyContactRelationship: student.emergencyContact?.relationship || '',
-      endorsements: student.endorsements || [],
-      licences: student.licences || [],
-    });
+    setInfoForm(buildStudentInfoForm(student));
     setInfoEndorsementDraft({
       type: '',
       dateObtained: '',
@@ -886,6 +891,42 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     setInfoLicenceDraft({ type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '' });
     setShowInfoEditor(true);
   };
+
+  const closeInfoEditor = () => {
+    setShowInfoEditor(false);
+    if (!requestedLicenceId) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('action');
+    nextParams.delete('licenceId');
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  useEffect(() => {
+    if (!requestedLicenceId || !student || !canManageLicences || showInfoEditor) return;
+
+    setInfoForm(buildStudentInfoForm(student));
+    setInfoEndorsementDraft({
+      type: '',
+      dateObtained: '',
+      expiryDate: '',
+      isActive: true,
+    });
+    setInfoLicenceDraft({ type: '', licenceNumber: '', dateObtained: '', expiryDate: '', issuingAuthority: '' });
+    setShowInfoEditor(true);
+  }, [canManageLicences, requestedLicenceId, showInfoEditor, student]);
+
+  useEffect(() => {
+    if (!showInfoEditor || !requestedLicenceId) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`licence-review-${requestedLicenceId}`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target?.querySelector<HTMLElement>('[data-licence-review-action]')?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [infoForm.licences, requestedLicenceId, showInfoEditor]);
 
   const updateInfoField = (field: keyof StudentInfoForm, value: string) => {
     setInfoForm(prev => ({ ...prev, [field]: value }));
@@ -1114,7 +1155,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       }
 
       await refetchStudents();
-      setShowInfoEditor(false);
+      closeInfoEditor();
       toast.success('Student information updated');
     } catch (error) {
       console.error('Failed to update student information:', error);
@@ -4339,7 +4380,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 <h2 className="text-xl font-semibold text-gray-900">Edit Student Information</h2>
                 <p className="text-sm text-gray-500 mt-1">Update contact, emergency and aviation credential details.</p>
               </div>
-              <button onClick={() => setShowInfoEditor(false)} className="p-1 text-gray-400 hover:text-gray-600">
+              <button onClick={closeInfoEditor} className="p-1 text-gray-400 hover:text-gray-600" aria-label="Close student information">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -4433,7 +4474,15 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     {infoForm.licences.length > 0 ? infoForm.licences.map(licence => {
                       const status = licence.verificationStatus || 'verified';
                       return (
-                        <div key={licence.id} className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div
+                          key={licence.id}
+                          id={licence.id === requestedLicenceId ? `licence-review-${licence.id}` : undefined}
+                          className={`flex flex-col gap-3 rounded-lg border bg-white p-3 sm:flex-row sm:items-center sm:justify-between ${
+                            licence.id === requestedLicenceId
+                              ? 'border-amber-400 ring-4 ring-amber-100'
+                              : 'border-emerald-200'
+                          }`}
+                        >
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-semibold text-gray-900">{licence.type}</p>
@@ -4449,7 +4498,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                             <div className="flex flex-wrap items-center gap-2">
                               {status === 'pending' && (
                                 <>
-                                  <button type="button" onClick={() => approveInfoLicence(licence.id)} className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">Approve</button>
+                                  <button
+                                    type="button"
+                                    data-licence-review-action={licence.id === requestedLicenceId ? 'primary' : undefined}
+                                    onClick={() => approveInfoLicence(licence.id)}
+                                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+                                  >
+                                    Approve
+                                  </button>
                                   <button type="button" onClick={() => rejectInfoLicence(licence.id)} className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>
                                 </>
                               )}
@@ -4569,7 +4625,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             </div>
 
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
-              <button onClick={() => setShowInfoEditor(false)} disabled={savingInfo} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+              <button onClick={closeInfoEditor} disabled={savingInfo} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50">
                 Cancel
               </button>
               <button onClick={saveStudentInfo} disabled={savingInfo} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
