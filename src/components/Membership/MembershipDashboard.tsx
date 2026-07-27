@@ -122,7 +122,7 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
           Use this address for formal notices
         </label>
         {!sameAddress && <label className="text-sm font-semibold text-slate-700 md:col-span-2">Address for service
-          <textarea required rows={2} value={form.serviceAddress} onChange={event => setForm(current => ({ ...current, serviceAddress: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
+          <AddressAutocomplete required value={form.serviceAddress} onChange={serviceAddress => setForm(current => ({ ...current, serviceAddress }))} className="mt-1" placeholder="Start typing your address for formal notices" autoComplete="street-address" />
         </label>}
         {isJunior && <div className="grid gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4 md:col-span-2 md:grid-cols-2">
           <label className="text-sm font-semibold text-amber-950">Parent or guardian name

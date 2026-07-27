@@ -18,6 +18,7 @@ interface AddressAutocompleteProps {
   inputClassName?: string;
   id?: string;
   name?: string;
+  autoComplete?: string;
 }
 
 export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
@@ -30,6 +31,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   inputClassName = '',
   id,
   name,
+  autoComplete = 'street-address',
 }) => {
   const generatedId = useId();
   const inputId = id || `address-${generatedId.replace(/:/g, '')}`;
@@ -136,7 +138,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           name={name}
           type="text"
           role="combobox"
-          autoComplete="street-address"
+          autoComplete={autoComplete}
           value={value}
           onChange={event => {
             setSelectedAddress('');

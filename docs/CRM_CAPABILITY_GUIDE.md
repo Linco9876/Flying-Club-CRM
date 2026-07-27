@@ -106,6 +106,8 @@ The permanent public entry point is `https://portal.bendigoflyingclub.com.au/joi
 
 The public journey uses four short steps: membership class and fee, applicant/account details, legal acknowledgements, then payment preference. It explains proration, the committee-or-30-day commencement rule, the separation between BFC and RAAus membership, and the distinction between saving a payment method and taking payment. BECS is presented as preferred; automatic renewal and the optional scholarship contribution both require a positive opt-in.
 
+Residential and address-for-service fields provide keyboard-accessible Australian address suggestions while retaining manual entry. OpenStreetMap results prefer the specific suburb or district over a broader regional city label, so addresses such as Strathfieldsaye are not relabelled as Bendigo.
+
 Submitting creates the portal account and membership application together. When email confirmation is enabled, the confirmation returns to the portal so the applicant can finish secure Stripe setup. Applicants can use the portal as soon as their account is active, while aircraft self-booking remains subject to financial clearance.
 
 A welcome email is sent only when legal membership actually commences, either after committee approval or the 30-day lifecycle. The delivery log prevents duplicate sends, approval attempts delivery immediately, and the daily membership job retries unsent messages. Two variants are selected from the saved preference:

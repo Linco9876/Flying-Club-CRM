@@ -302,7 +302,7 @@ export const SignUpForm: React.FC<SignUpFormProps> = ({ onBackToLogin }) => {
                 </label>
                 <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2"><input type="checkbox" checked={sameServiceAddress} onChange={event => setSameServiceAddress(event.target.checked)} className="h-4 w-4 rounded border-gray-300" />Use my residential address for formal notices</label>
                 {!sameServiceAddress && <label className="block text-sm font-medium text-gray-700 sm:col-span-2">Address for service
-                  <textarea required rows={2} value={formData.serviceAddress} onChange={event => setFormData({ ...formData, serviceAddress: event.target.value })} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-3" />
+                  <AddressAutocomplete required value={formData.serviceAddress} onChange={serviceAddress => setFormData(current => ({ ...current, serviceAddress }))} className="mt-1" inputClassName="rounded-md" placeholder="Start typing your address for formal notices" autoComplete="street-address" />
                 </label>}
                 {formData.dateOfBirth && new Date(formData.dateOfBirth) > new Date(new Date().setFullYear(new Date().getFullYear() - 18)) && <>
                   <label className="block text-sm font-medium text-gray-700">Parent or guardian name
