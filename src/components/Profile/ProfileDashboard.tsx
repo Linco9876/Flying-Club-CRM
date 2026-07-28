@@ -35,11 +35,13 @@ import {
   getDatedReadinessStatus,
   getMembershipIdentityLabel,
   getOverallReadiness,
+  isSelfDeclaredMedical,
+  requiresFlightReview,
   type ProfileReadinessLevel,
+  usesRaausCredentials,
 } from '../../utils/profileReadiness';
 import type { BrowserCalendarEvent } from '../../utils/calendar';
 import { AddToCalendarModal } from '../Bookings/AddToCalendarModal';
-import { InstructorComplianceProfilePanel } from './InstructorComplianceProfilePanel';
 
 interface ProfileStudentDetails {
   raausId?: string;
@@ -48,6 +50,14 @@ interface ProfileStudentDetails {
   medicalExpiry?: Date;
   licenceExpiry?: Date;
   lastFlightReview?: Date;
+  licences: Array<{
+    type?: string;
+    issuingAuthority?: string;
+  }>;
+  instructorCurrency?: {
+    nextSpCheckDue?: Date;
+    nextRenewalDue?: Date;
+  };
   emergencyContact?: {
     name: string;
     phone: string;
@@ -116,7 +126,7 @@ export const ProfileDashboard: React.FC = () => {
   const roles = user?.roles?.length ? user.roles : user?.role ? [user.role] : [];
   const isInstructor = roles.includes('instructor') || roles.includes('senior_instructor');
   const isStudentOnly = roles.includes('student') && !roles.some(role =>
-    ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role)
+    ['pilot', 'instructor', 'senior_instructor'].includes(role)
   );
   const isFlyingMember = roles.some(role => ['student', 'pilot', 'instructor', 'senior_instructor'].includes(role));
   const operationalRole = isInstructor
@@ -226,17 +236,40 @@ export const ProfileDashboard: React.FC = () => {
       }
 
       setStudentDetailsLoading(true);
-      const { data, error } = await supabase
+      const studentQuery = supabase
         .from('students')
         .select('raaus_id, casa_id, medical_type, medical_expiry, licence_expiry, last_flight_review, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship')
         .eq('id', user.id)
         .maybeSingle();
+      const licencesQuery = supabase
+        .from('licences')
+        .select('type, issuing_authority')
+        .eq('student_id', user.id)
+        .eq('is_active', true);
+      const instructorCurrencyQuery = isInstructor
+        ? supabase
+            .from('instructor_compliance_records')
+            .select('check_date, next_sp_check_due, next_renewal_due')
+            .eq('candidate_instructor_id', user.id)
+            .is('voided_at', null)
+            .neq('status', 'voided')
+            .order('check_date', { ascending: false })
+        : Promise.resolve({ data: [], error: null });
+      const [
+        { data, error },
+        { data: licenceRows, error: licencesError },
+        { data: currencyRows, error: instructorCurrencyError },
+      ] = await Promise.all([studentQuery, licencesQuery, instructorCurrencyQuery]);
 
       if (!mounted) return;
       if (error) {
         console.error('Failed to load profile student details:', error);
         setStudentDetails(null);
       } else {
+        if (licencesError) console.error('Failed to load profile licences:', licencesError);
+        if (instructorCurrencyError) console.error('Failed to load instructor currency:', instructorCurrencyError);
+        const latestCurrency = currencyRows?.[0];
+        const latestRenewal = currencyRows?.find(record => record.next_renewal_due);
         setStudentDetails(data ? {
           raausId: data.raaus_id,
           casaId: data.casa_id,
@@ -244,12 +277,36 @@ export const ProfileDashboard: React.FC = () => {
           medicalExpiry: data.medical_expiry ? new Date(data.medical_expiry) : undefined,
           licenceExpiry: data.licence_expiry ? new Date(data.licence_expiry) : undefined,
           lastFlightReview: data.last_flight_review ? new Date(data.last_flight_review) : undefined,
+          licences: (licenceRows || []).map(licence => ({
+            type: licence.type,
+            issuingAuthority: licence.issuing_authority || undefined,
+          })),
+          instructorCurrency: isInstructor ? {
+            nextSpCheckDue: latestCurrency?.next_sp_check_due
+              ? new Date(latestCurrency.next_sp_check_due)
+              : undefined,
+            nextRenewalDue: latestRenewal?.next_renewal_due
+              ? new Date(latestRenewal.next_renewal_due)
+              : undefined,
+          } : undefined,
           emergencyContact: data.emergency_contact_name ? {
             name: data.emergency_contact_name,
             phone: data.emergency_contact_phone || '',
             relationship: data.emergency_contact_relationship || '',
           } : user.emergencyContact,
         } : {
+          licences: (licenceRows || []).map(licence => ({
+            type: licence.type,
+            issuingAuthority: licence.issuing_authority || undefined,
+          })),
+          instructorCurrency: isInstructor ? {
+            nextSpCheckDue: latestCurrency?.next_sp_check_due
+              ? new Date(latestCurrency.next_sp_check_due)
+              : undefined,
+            nextRenewalDue: latestRenewal?.next_renewal_due
+              ? new Date(latestRenewal.next_renewal_due)
+              : undefined,
+          } : undefined,
           emergencyContact: user.emergencyContact,
         });
       }
@@ -260,7 +317,7 @@ export const ProfileDashboard: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [user?.emergencyContact, user?.id]);
+  }, [isInstructor, user?.emergencyContact, user?.id]);
 
   const pageLoading = loading ||
     trainingRecordsLoading ||
@@ -289,10 +346,17 @@ export const ProfileDashboard: React.FC = () => {
     () => getDatedReadinessStatus(studentDetails?.licenceExpiry),
     [studentDetails?.licenceExpiry]
   );
-  const medicalStatus = useMemo(
-    () => getDatedReadinessStatus(studentDetails?.medicalExpiry),
-    [studentDetails?.medicalExpiry]
-  );
+  const usesRaaus = useMemo(() => usesRaausCredentials({
+    raausId: studentDetails?.raausId,
+    licences: studentDetails?.licences || [],
+  }), [studentDetails?.licences, studentDetails?.raausId]);
+  const hasSelfDeclaredMedical = isSelfDeclaredMedical(studentDetails?.medicalType);
+  const hasRecordedMedical = Boolean(studentDetails?.medicalType || studentDetails?.medicalExpiry);
+  const medicalStatus = useMemo(() => hasSelfDeclaredMedical
+    ? { level: 'ready' as const, label: 'Self-declared', daysRemaining: null }
+    : getDatedReadinessStatus(studentDetails?.medicalExpiry),
+  [hasSelfDeclaredMedical, studentDetails?.medicalExpiry]);
+  const needsFlightReview = requiresFlightReview(roles);
   const flightReviewDue = useMemo(() => studentDetails?.lastFlightReview
     ? new Date(
         studentDetails.lastFlightReview.getFullYear() + 2,
@@ -304,6 +368,28 @@ export const ProfileDashboard: React.FC = () => {
     () => getDatedReadinessStatus(flightReviewDue),
     [flightReviewDue]
   );
+  const instructorSpStatus = useMemo(
+    () => getDatedReadinessStatus(studentDetails?.instructorCurrency?.nextSpCheckDue, new Date(), 30),
+    [studentDetails?.instructorCurrency?.nextSpCheckDue]
+  );
+  const instructorRenewalStatus = useMemo(
+    () => getDatedReadinessStatus(studentDetails?.instructorCurrency?.nextRenewalDue, new Date(), 60),
+    [studentDetails?.instructorCurrency?.nextRenewalDue]
+  );
+  const instructorCurrencyLevel: ProfileReadinessLevel = [instructorSpStatus.level, instructorRenewalStatus.level].includes('action')
+    ? 'action'
+    : [instructorSpStatus.level, instructorRenewalStatus.level].includes('warning')
+      ? 'warning'
+      : 'ready';
+  const instructorCurrencyLabel = instructorCurrencyLevel === 'ready'
+    ? 'Current'
+    : instructorCurrencyLevel === 'action'
+      ? 'Not current'
+      : !studentDetails?.instructorCurrency?.nextSpCheckDue && !studentDetails?.instructorCurrency?.nextRenewalDue
+        ? 'Not recorded'
+        : !studentDetails?.instructorCurrency?.nextSpCheckDue || !studentDetails?.instructorCurrency?.nextRenewalDue
+          ? 'Incomplete'
+          : 'Due soon';
 
   const membershipLevel: ProfileReadinessLevel = membership.legalStatus === 'current'
     ? membership.financiallyCleared ? 'ready' : 'action'
@@ -329,21 +415,21 @@ export const ProfileDashboard: React.FC = () => {
       to: '/membership',
     },
     ...(isFlyingMember ? [
-      {
+      ...(usesRaaus ? [{
         id: 'raaus',
         label: 'RAAus membership',
         value: raausStatus.label,
         level: raausStatus.level,
         to: '/settings?tab=account-info',
-      },
-      {
+      }] : []),
+      ...(hasRecordedMedical ? [{
         id: 'medical',
         label: 'Medical',
         value: medicalStatus.label,
         level: medicalStatus.level,
         to: '/settings?tab=account-info',
-      },
-      ...(!isStudentOnly ? [{
+      }] : []),
+      ...(needsFlightReview ? [{
         id: 'flight-review',
         label: 'Flight review',
         value: flightReviewStatus.label,
@@ -373,8 +459,8 @@ export const ProfileDashboard: React.FC = () => {
     billingLevel,
     flightReviewStatus.label,
     flightReviewStatus.level,
+    hasRecordedMedical,
     isFlyingMember,
-    isStudentOnly,
     medicalStatus.label,
     medicalStatus.level,
     membership.applicationStatus,
@@ -388,6 +474,8 @@ export const ProfileDashboard: React.FC = () => {
     profileLevel,
     raausStatus.label,
     raausStatus.level,
+    needsFlightReview,
+    usesRaaus,
   ]);
 
   const overallReadiness = useMemo(
@@ -429,7 +517,7 @@ export const ProfileDashboard: React.FC = () => {
         level: 'action',
       });
     }
-    if (isFlyingMember && raausStatus.level !== 'ready') {
+    if (isFlyingMember && usesRaaus && raausStatus.level !== 'ready') {
       actions.push({
         id: 'raaus-status',
         title: raausStatus.level === 'action' ? 'RAAus membership has expired' : 'Check your RAAus membership',
@@ -440,7 +528,7 @@ export const ProfileDashboard: React.FC = () => {
         level: raausStatus.level === 'action' ? 'action' : 'warning',
       });
     }
-    if (isFlyingMember && medicalStatus.level !== 'ready') {
+    if (isFlyingMember && hasRecordedMedical && medicalStatus.level !== 'ready') {
       actions.push({
         id: 'medical-status',
         title: medicalStatus.level === 'action' ? 'Medical has expired' : 'Check your medical',
@@ -451,7 +539,7 @@ export const ProfileDashboard: React.FC = () => {
         level: medicalStatus.level === 'action' ? 'action' : 'warning',
       });
     }
-    if (isFlyingMember && !isStudentOnly && flightReviewStatus.level !== 'ready') {
+    if (isFlyingMember && needsFlightReview && flightReviewStatus.level !== 'ready') {
       actions.push({
         id: 'flight-review-status',
         title: flightReviewStatus.level === 'action' ? 'Flight review has expired' : 'Flight review due soon',
@@ -476,8 +564,8 @@ export const ProfileDashboard: React.FC = () => {
     datePattern,
     flightReviewDue,
     flightReviewStatus.level,
+    hasRecordedMedical,
     isFlyingMember,
-    isStudentOnly,
     medicalStatus.level,
     membership.applicationStatus,
     membership.automaticCommencementAt,
@@ -489,6 +577,8 @@ export const ProfileDashboard: React.FC = () => {
     raausStatus.level,
     studentDetails?.licenceExpiry,
     studentDetails?.medicalExpiry,
+    needsFlightReview,
+    usesRaaus,
   ]);
 
   const calendarEvent = useMemo<BrowserCalendarEvent | null>(() => {
@@ -653,39 +743,37 @@ export const ProfileDashboard: React.FC = () => {
               </button>
             ))}
           </div>
+          {actionItems.length > 0 && (
+            <div className="mt-5 overflow-hidden rounded-xl border border-white/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-950/35" aria-label="Actions to complete">
+              <p className="border-b border-slate-200/80 px-4 py-3 text-sm font-bold text-slate-900 dark:border-slate-700 dark:text-white">
+                What to do next
+              </p>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {actionItems.map(action => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    onClick={() => navigate(action.to)}
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-white dark:hover:bg-slate-800/60"
+                  >
+                    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                      action.level === 'action'
+                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                    }`}>
+                      <AlertTriangle className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-slate-900 dark:text-white">{action.title}</span>
+                      <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{action.detail}</span>
+                    </span>
+                    <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
-
-        {actionItems.length > 0 && (
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900" aria-labelledby="action-centre-title">
-            <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-700">
-              <h2 id="action-centre-title" className="font-bold text-slate-950 dark:text-white">Action required</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Items that may affect your account or flying readiness.</p>
-            </div>
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {actionItems.map(action => (
-                <button
-                  key={action.id}
-                  type="button"
-                  onClick={() => navigate(action.to)}
-                  className="flex w-full items-start gap-3 px-5 py-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                >
-                  <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                    action.level === 'action'
-                      ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
-                      : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                  }`}>
-                    <AlertTriangle className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold text-slate-900 dark:text-white">{action.title}</span>
-                    <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">{action.detail}</span>
-                  </span>
-                  <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" />
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
           <div className="space-y-5">
@@ -838,8 +926,6 @@ export const ProfileDashboard: React.FC = () => {
               </section>
             )}
 
-            {isInstructor && user && <InstructorComplianceProfilePanel instructor={user} />}
-
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
@@ -971,10 +1057,37 @@ export const ProfileDashboard: React.FC = () => {
                   <ChevronRight className="h-4 w-4 text-slate-400 transition group-open:rotate-90" />
                 </summary>
                 <div className="space-y-3 border-t border-slate-100 px-5 py-4 text-sm dark:border-slate-800">
-                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">RAAus number</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.raausId || 'Not recorded'}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">CASA ARN</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.casaId || 'Not recorded'}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">RAAus expiry</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.licenceExpiry ? format(studentDetails.licenceExpiry, datePattern) : 'Not recorded'}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Medical</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.medicalType || 'Not recorded'}</span></div>
+                  {usesRaaus && (
+                    <>
+                      <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">RAAus number</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.raausId || 'Not recorded'}</span></div>
+                      <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">RAAus expiry</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.licenceExpiry ? format(studentDetails.licenceExpiry, datePattern) : 'Not recorded'}</span></div>
+                    </>
+                  )}
+                  {studentDetails?.casaId && (
+                    <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">CASA ARN</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails.casaId}</span></div>
+                  )}
+                  {hasRecordedMedical && (
+                    <div className="flex justify-between gap-3"><span className="text-slate-500 dark:text-slate-400">Medical</span><span className="text-right font-semibold text-slate-900 dark:text-white">{studentDetails?.medicalType || 'Expiry recorded'}</span></div>
+                  )}
+                  {isInstructor && (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500 dark:text-slate-400">Instructor currency</span>
+                        <span className={`rounded-full px-2.5 py-1 text-right text-xs font-bold ${levelStyles[instructorCurrencyLevel].badge}`}>
+                          {instructorCurrencyLabel}
+                        </span>
+                      </div>
+                      <p className="text-right text-xs text-slate-500 dark:text-slate-400">
+                        S&amp;P {studentDetails?.instructorCurrency?.nextSpCheckDue
+                          ? `due ${format(studentDetails.instructorCurrency.nextSpCheckDue, datePattern)}`
+                          : 'not recorded'}
+                        {' · '}
+                        rating renewal {studentDetails?.instructorCurrency?.nextRenewalDue
+                          ? `due ${format(studentDetails.instructorCurrency.nextRenewalDue, datePattern)}`
+                          : 'not recorded'}
+                      </p>
+                    </>
+                  )}
                   <button type="button" onClick={() => navigate('/settings?tab=account-info')} className="font-semibold text-blue-700 dark:text-blue-300">Update credentials</button>
                 </div>
               </details>

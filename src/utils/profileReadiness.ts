@@ -6,6 +6,34 @@ export interface DatedReadinessStatus {
   daysRemaining: number | null;
 }
 
+export interface AviationLicenceIdentity {
+  type?: string | null;
+  issuingAuthority?: string | null;
+}
+
+const RA_AUS_PATTERN = /\b(?:raa?aus|recreational aviation australia)\b/i;
+const SELF_DECLARED_MEDICAL_PATTERN = /\b(?:self[-\s]?declar\w*|medical declaration)\b/i;
+
+export const usesRaausCredentials = ({
+  raausId,
+  licences,
+}: {
+  raausId?: string | null;
+  licences: AviationLicenceIdentity[];
+}) => Boolean(
+  raausId?.trim() ||
+  licences.some(licence =>
+    RA_AUS_PATTERN.test(licence.type || '') ||
+    RA_AUS_PATTERN.test(licence.issuingAuthority || '')
+  )
+);
+
+export const isSelfDeclaredMedical = (medicalType?: string | null) =>
+  SELF_DECLARED_MEDICAL_PATTERN.test(medicalType || '');
+
+export const requiresFlightReview = (roles: string[]) =>
+  roles.some(role => ['pilot', 'instructor', 'senior_instructor'].includes(role));
+
 export const getMembershipIdentityLabel = ({
   legalStatus,
   membershipClassName,
