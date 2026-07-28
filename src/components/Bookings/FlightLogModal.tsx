@@ -139,7 +139,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const findPilotAccountPaymentMethod = () =>
     paymentMethods.find(method => isPrepaidPaymentMethod(method.name));
 
-  // Derive payment type from the pre-filled flight type (respects forced payment and free types)
+  // Derive the Payment Method from the pre-filled Payment Type.
   const derivePaymentType = (flightTypeId: string) => {
     if (isVoucherBooking) return voucherPaymentType;
     if (!flightTypeId) return '';
@@ -288,7 +288,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     };
   }, [topUpLinkResult]);
 
-  // Re-derive payment type when billing data loads (paymentMethods/flightTypes async) or flight type changes
+  // Re-derive the Payment Method when billing data loads or the Payment Type changes.
   useEffect(() => {
     if (!flightTypes.length) return;
 
@@ -502,9 +502,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (formData.flight_duration === '') return 'Please enter flight duration';
     if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
-    if (!isVoucherBooking && !formData.flight_type_id) return 'Please select a flight type';
+    if (!isVoucherBooking && !formData.flight_type_id) return 'Please select a Payment Type';
     if (showAdminChargeOverride && adminChargeOverride !== '' && (!Number.isFinite(adminChargeOverride) || adminChargeOverride < 0)) return 'Flight charge cannot be negative';
-    if (!isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a payment type';
+    if (!isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a Payment Method';
     if (isTakeoffsLandingsMandatory && (formData.takeoffs === undefined || formData.landings === undefined)) return 'Please enter takeoffs and landings';
     if (isFieldMandatory('comments') && !formData.comments.trim()) return 'Please enter debrief comments';
     if (isFieldMandatory('observations') && !formData.observations.trim()) return 'Please enter observations';
@@ -822,7 +822,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               <p className="font-medium text-gray-900">{otherPilot}</p>
             </div>
             <div>
-              <span className="text-xs font-medium text-gray-500 uppercase">Flight Type</span>
+              <span className="text-xs font-medium text-gray-500 uppercase">Flight Mode</span>
               <p className="font-medium text-gray-900">{isDualFlight ? 'Dual (with Instructor)' : 'Solo'}</p>
             </div>
           </div>
@@ -917,16 +917,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <p className="font-semibold">Covered by linked gift voucher</p>
               <p className="mt-1 text-xs text-amber-800">
-                Flight type and payment selection are not required because this booking is already voucher-paid.
+                Payment Type and Payment Method are not required because this booking is already voucher-paid.
               </p>
             </div>
           )}
 
-          {/* Flight Type + Payment Type */}
+          {/* Payment Type + Payment Method */}
           <div className={`${isVoucherBooking ? 'hidden' : 'grid'} grid-cols-1 md:grid-cols-2 gap-3`}>
             <div>
               <label className={labelClass}>
-                Flight Type <span className="text-red-500">*</span>
+                Payment Type <span className="text-red-500">*</span>
               </label>
               <select
                 value={formData.flight_type_id}
@@ -948,7 +948,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 required
                 disabled={isVoucherBooking}
               >
-                <option value="">Select flight type</option>
+                <option value="">Select payment type</option>
                 {flightTypes.filter(ft => ft.active).map(ft => (
                   <option key={ft.id} value={ft.id}>{ft.name}</option>
                 ))}
@@ -963,7 +963,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             {!isFree && isPaymentSelectorEnabled && (
               <div>
                 <label className={labelClass}>
-                  Payment Type {isFieldMandatory('payment_type') && <span className="text-red-500">*</span>}
+                  Payment Method {isFieldMandatory('payment_type') && <span className="text-red-500">*</span>}
                 </label>
                 <select
                   value={formData.payment_type}
@@ -978,7 +978,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                   required={isFieldMandatory('payment_type')}
                   disabled={isPaymentForced}
                 >
-                  <option value="">Select payment type</option>
+                  <option value="">Select payment method</option>
                   {isVoucherBooking && (
                     <option value={formData.payment_type || 'Gift Voucher'}>
                       {formData.payment_type || 'Gift Voucher'}
@@ -991,7 +991,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 {isPaymentForced && (
                   <p className="mt-1 inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
                     <Lock className="h-3 w-3" />
-                    {isVoucherBooking ? 'Covered by voucher' : isPrepaidSelectedFlightType ? 'Pilot Account required' : 'Required by flight type'}
+                    {isVoucherBooking ? 'Covered by voucher' : isPrepaidSelectedFlightType ? 'Pilot Account required' : 'Required by Payment Type'}
                   </p>
                 )}
               </div>

@@ -1085,21 +1085,21 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
             </div>
           </div>
 
-          {/* Cost Structure by Flight Type */}
+          {/* Cost Structure by Payment Type */}
           <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
             <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
               <DollarSign className="h-5 w-5 mr-2" />
-              Cost Structure by Flight Type
+              Cost Structure by Payment Type
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              Configure rates for each flight type. Flight types are managed in Settings &gt; Billing & Rates.
+              Configure rates for each Payment Type. Payment Types are managed in Settings &gt; Billing & Rates.
             </p>
 
             {billingLoading ? (
-              <div className="text-center py-4 text-gray-500">Loading flight types...</div>
+              <div className="text-center py-4 text-gray-500">Loading Payment Types...</div>
             ) : aircraftRates.length === 0 ? (
               <div className="text-center py-4 text-gray-500">
-                No flight types configured. Go to Settings &gt; Billing & Rates to add flight types.
+                No Payment Types configured. Go to Settings &gt; Billing & Rates to add Payment Types.
               </div>
             ) : (
               <div className="space-y-4">

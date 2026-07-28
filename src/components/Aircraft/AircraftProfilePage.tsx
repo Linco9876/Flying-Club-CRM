@@ -677,7 +677,7 @@ export const AircraftProfilePage: React.FC = () => {
           <div className="rounded-lg border border-gray-200 bg-white p-5">
             <h2 className="text-lg font-semibold text-gray-900">Aircraft Pricing</h2>
             <p className="text-sm text-gray-500">
-              {isAdmin ? 'Define the aircraft price per flight type.' : 'Current aircraft pricing by flight type.'}
+              {isAdmin ? 'Define the aircraft price per Payment Type.' : 'Current aircraft pricing by Payment Type.'}
             </p>
           </div>
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">

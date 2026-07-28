@@ -104,6 +104,16 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
+      const invalidGroundRate = draftFlightTypes.find(type =>
+        type.active
+        && type.groundSessionEnabled
+        && Number(type.groundSessionHourlyRate || 0) <= 0
+      );
+      if (invalidGroundRate) {
+        const message = `Enter an hourly ground-session price greater than $0 for ${invalidGroundRate.name}.`;
+        toast.error(message);
+        throw new Error(message);
+      }
       await saveBillingSettings(draftFlightTypes, draftPaymentMethods);
       await saveGroundSessionDescriptionOptions(draftGroundSessionDescriptions);
     };
@@ -158,13 +168,16 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       ...current,
       {
         id: newId('flight-type'),
-        name: 'New Flight Type',
+        name: 'New Payment Type',
         description: '',
         active: true,
         allowedRoles: ['student', 'pilot', 'instructor', 'admin'],
         displayOrder: current.length + 1,
         forcedPaymentMethodId: null,
+        groundSessionEnabled: false,
         groundSessionHourlyRate: 0,
+        xeroItemCode: null,
+        xeroAccountCode: null,
       },
     ]);
     onFormChange();
@@ -256,13 +269,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
           code,
           name: type.name,
           description: type.description || '',
+          accountCode: type.xeroAccountCode || '',
         },
       });
       if (error) throw error;
       updateFlightType(type.id, { xeroItemCode: data?.item?.code || code });
-      toast.success(data?.created ? 'Created the Xero sales item for this flight type' : 'Linked this flight type to the existing Xero sales item');
+      toast.success(data?.created ? 'Created the Xero sales item for this payment type' : 'Linked this payment type to the existing Xero sales item');
     } catch (error: any) {
-      console.error('Failed to link flight type item in Xero:', error);
+      console.error('Failed to link payment type item in Xero:', error);
       toast.error(await getSupabaseFunctionErrorMessage(error, 'Failed to create or link the Xero sales item'));
     } finally {
       setXeroItemSyncingId(null);
@@ -295,7 +309,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
           <DollarSign className="h-5 w-5 mr-2" />
           Billing & Rates
         </h2>
-        <p className="text-gray-600">Configure flight types, payment methods and the rate rules used when flights are logged.</p>
+        <p className="text-gray-600">Configure payment types, payment methods and the rate rules used when flights or ground sessions are logged.</p>
       </div>
 
       <section className="space-y-4">
@@ -445,14 +459,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
           <div>
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
               <Users className="h-5 w-5 mr-2 text-blue-600" />
-              Flight Types
+              Payment Types
             </h3>
-            <p className="text-sm text-gray-500 mt-1">Flight types control booking choices, forced payment methods and aircraft rate rows.</p>
+            <p className="text-sm text-gray-500 mt-1">Payment types control booking choices, payment-method rules, aircraft rates and Xero revenue coding.</p>
           </div>
           {canEdit && (
             <button onClick={addFlightType} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
               <Plus className="h-4 w-4" />
-              Add Flight Type
+              Add Payment Type
             </button>
           )}
         </div>
@@ -473,7 +487,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   onChange={event => updateFlightType(type.id, { name: event.target.value })}
                   disabled={!canEdit}
                   className={inputClass}
-                  placeholder="Flight type"
+                  placeholder="Payment type"
                 />
                 <input
                   value={type.description}
@@ -497,14 +511,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   <button
                     onClick={() => removeFlightType(type.id)}
                     className="p-2 text-red-600 hover:bg-red-50 rounded-md"
-                    title="Deactivate flight type"
+                    title="Deactivate payment type"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_auto_auto] gap-3 items-start">
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto_auto] xl:items-start">
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Accounting Item code
@@ -517,7 +531,22 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     placeholder={xeroConnected ? 'Example: DUAL_FLIGHT' : 'Connect Xero to use item codes'}
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    If set, Xero invoices for this flight type will use this sales item code.
+                    If set, Xero invoices for this payment type will use this sales item code.
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Accounting Code
+                  </label>
+                  <input
+                    value={type.xeroAccountCode ?? ''}
+                    onChange={event => updateFlightType(type.id, { xeroAccountCode: event.target.value.toUpperCase() })}
+                    disabled={!canEdit}
+                    className={inputClass}
+                    placeholder={xeroConnected ? 'Example: 200' : 'Connect Xero to use account codes'}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Xero revenue account for this payment type. Leave blank to use the integration default.
                   </p>
                 </div>
                 <button
@@ -532,27 +561,6 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                 <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600">
                   {(type.xeroItemCode || '').trim() ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Lock className="h-4 w-4 text-gray-400" />}
                   {(type.xeroItemCode || '').trim() ? 'Invoice item ready' : 'No item code set'}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-3 items-start">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Ground session hourly rate
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={type.groundSessionHourlyRate ?? 0}
-                    onChange={event => updateFlightType(type.id, { groundSessionHourlyRate: Number(event.target.value || 0) })}
-                    disabled={!canEdit}
-                    className={inputClass}
-                    placeholder="0.00"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Used when an instructor-only ground session is logged against this booking type.
-                  </p>
                 </div>
               </div>
 
@@ -618,6 +626,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     value={description.pricingMode}
                     onChange={event => updateGroundSessionDescription(index, {
                       pricingMode: event.target.value === 'fixed' ? 'fixed' : 'flight_type_hourly',
+                      flightTypeId: null,
                     })}
                     disabled={!canEdit}
                     className={inputClass}
@@ -641,30 +650,15 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     />
                   </label>
                 ) : (
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Hourly flight type</span>
-                    <select
-                      value={description.flightTypeId || ''}
-                      onChange={event => updateGroundSessionDescription(index, { flightTypeId: event.target.value || null })}
-                      disabled={!canEdit}
-                      className={inputClass}
-                    >
-                      <option value="">Use selected booking type</option>
-                      {draftFlightTypes.filter(type => type.active).map(type => (
-                        <option key={type.id} value={type.id}>
-                          {type.name} (${Number(type.groundSessionHourlyRate || 0).toFixed(2)}/hr)
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    Uses the Payment Type selected on the booking or ground-session log.
+                  </div>
                 )}
 
                 <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
                   {description.pricingMode === 'fixed'
                     ? `$${Number(description.fixedRate || 0).toFixed(2)} total`
-                    : description.flightTypeId
-                      ? 'Uses linked hourly rate'
-                      : 'Uses log booking type'}
+                    : 'Uses Payment Type hourly rate'}
                 </div>
 
                 {canEdit && (
@@ -686,6 +680,56 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
             </div>
           )}
         </div>
+
+        {draftGroundSessionDescriptions.some(description => description.pricingMode === 'flight_type_hourly') && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
+            <h4 className="font-semibold text-gray-900">Hourly ground-session Payment Types</h4>
+            <p className="mt-1 text-sm text-gray-600">
+              Choose which Payment Types instructors may use for hourly ground sessions and set the price per hour.
+            </p>
+            <div className="mt-4 space-y-2">
+              {activeFlightTypes.map(type => (
+                <div
+                  key={`ground-rate-${type.id}`}
+                  className="grid grid-cols-1 gap-3 rounded-lg border border-blue-100 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
+                >
+                  <label className="flex items-center gap-3 text-sm font-medium text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={type.groundSessionEnabled}
+                      disabled={!canEdit}
+                      onChange={event => updateFlightType(type.id, {
+                        groundSessionEnabled: event.target.checked,
+                      })}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>
+                      {type.name}
+                      <span className="mt-0.5 block text-xs font-normal text-gray-500">
+                        Allow this Payment Type on hourly ground-session logs
+                      </span>
+                    </span>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price / hour</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={type.groundSessionHourlyRate ?? 0}
+                      onChange={event => updateFlightType(type.id, {
+                        groundSessionHourlyRate: Number(event.target.value || 0),
+                      })}
+                      disabled={!canEdit || !type.groundSessionEnabled}
+                      className={inputClass}
+                      placeholder="0.00"
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="space-y-4">
@@ -698,7 +742,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Aircraft</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Flight Type</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Payment Type</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Charge</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Solo</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Dual</th>

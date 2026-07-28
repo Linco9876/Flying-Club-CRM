@@ -11,8 +11,10 @@ export interface FlightType {
   allowedRoles: UserRole[];
   displayOrder: number;
   forcedPaymentMethodId: string | null;
+  groundSessionEnabled: boolean;
   groundSessionHourlyRate: number;
   xeroItemCode?: string | null;
+  xeroAccountCode?: string | null;
 }
 
 export interface PaymentMethod {
@@ -77,13 +79,15 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
           allowedRoles: ft.allowed_roles || [],
           displayOrder: ft.display_order,
           forcedPaymentMethodId: ft.forced_payment_method_id ?? null,
+          groundSessionEnabled: ft.ground_session_enabled ?? Number(ft.ground_session_hourly_rate ?? 0) > 0,
           groundSessionHourlyRate: Number(ft.ground_session_hourly_rate ?? 0),
           xeroItemCode: ft.xero_item_code ?? null,
+          xeroAccountCode: ft.xero_account_code ?? null,
         })));
       }
     } catch (error) {
-      console.error('Error fetching flight types:', error);
-      toast.error('Failed to load flight types');
+      console.error('Error fetching payment types:', error);
+      toast.error('Failed to load Payment Types');
     }
   };
 
@@ -137,14 +141,16 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
           allowedRoles: data.allowed_roles || [],
           displayOrder: data.display_order,
           forcedPaymentMethodId: data.forced_payment_method_id ?? null,
+          groundSessionEnabled: data.ground_session_enabled ?? Number(data.ground_session_hourly_rate ?? 0) > 0,
           groundSessionHourlyRate: Number(data.ground_session_hourly_rate ?? 0),
           xeroItemCode: data.xero_item_code ?? null,
+          xeroAccountCode: data.xero_account_code ?? null,
         }]);
-        toast.success('Flight type added');
+        toast.success('Payment type added');
       }
     } catch (error) {
-      console.error('Error adding flight type:', error);
-      toast.error('Failed to add flight type');
+      console.error('Error adding payment type:', error);
+      toast.error('Failed to add payment type');
     }
   };
 
@@ -157,8 +163,10 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
       if (updates.allowedRoles !== undefined) dbUpdates.allowed_roles = updates.allowedRoles;
       if (updates.displayOrder !== undefined) dbUpdates.display_order = updates.displayOrder;
       if ('forcedPaymentMethodId' in updates) dbUpdates.forced_payment_method_id = updates.forcedPaymentMethodId ?? null;
+      if ('groundSessionEnabled' in updates) dbUpdates.ground_session_enabled = updates.groundSessionEnabled === true;
       if ('groundSessionHourlyRate' in updates) dbUpdates.ground_session_hourly_rate = Number(updates.groundSessionHourlyRate ?? 0);
       if ('xeroItemCode' in updates) dbUpdates.xero_item_code = updates.xeroItemCode?.trim() || null;
+      if ('xeroAccountCode' in updates) dbUpdates.xero_account_code = updates.xeroAccountCode?.trim() || null;
 
       const { error } = await supabase
         .from('flight_types')
@@ -170,10 +178,10 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
       setFlightTypes(flightTypes.map(ft =>
         ft.id === id ? { ...ft, ...updates } : ft
       ));
-      toast.success('Flight type updated');
+      toast.success('Payment type updated');
     } catch (error) {
-      console.error('Error updating flight type:', error);
-      toast.error('Failed to update flight type');
+      console.error('Error updating payment type:', error);
+      toast.error('Failed to update payment type');
     }
   };
 
@@ -187,10 +195,10 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
       if (error) throw error;
 
       setFlightTypes(flightTypes.filter(ft => ft.id !== id));
-      toast.success('Flight type deleted');
+      toast.success('Payment type deleted');
     } catch (error) {
-      console.error('Error deleting flight type:', error);
-      toast.error('Failed to delete flight type');
+      console.error('Error deleting payment type:', error);
+      toast.error('Failed to delete payment type');
     }
   };
 
@@ -324,8 +332,10 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
           allowed_roles: type.allowedRoles,
           display_order: index + 1,
           forced_payment_method_id: forcedPaymentMethodId,
+          ground_session_enabled: type.groundSessionEnabled === true,
           ground_session_hourly_rate: Number(type.groundSessionHourlyRate ?? 0),
           xero_item_code: type.xeroItemCode?.trim() || null,
+          xero_account_code: type.xeroAccountCode?.trim() || null,
           updated_at: new Date().toISOString(),
         };
         const { error } = originalFlightTypeIds.has(type.id)

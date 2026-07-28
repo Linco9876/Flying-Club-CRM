@@ -531,7 +531,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                       </td>
                       <td className="px-3 py-2 text-right align-top">
                         <div className="font-semibold text-gray-900">AUD{log.total_cost.toFixed(2)}</div>
-                        <div className="mt-0.5 text-xs text-gray-500">{log.payment_type || 'No payment type'}</div>
+                        <div className="mt-0.5 text-xs text-gray-500">{log.payment_type || 'No payment method'}</div>
                         <div className="mt-1 text-xs text-blue-600 opacity-0 transition-opacity group-hover:opacity-100">
                           Click for actions
                         </div>
@@ -687,7 +687,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                 />
               </label>
               <label className="text-sm font-medium text-gray-700">
-                Payment type
+                Payment Method
                 <input
                   type="text"
                   value={editForm.payment_type}
