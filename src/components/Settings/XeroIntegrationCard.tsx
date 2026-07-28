@@ -3,6 +3,10 @@ import { CheckCircle2, ExternalLink, FileText, Loader2, RefreshCw, Settings2, Sp
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import {
+  hasSelectedActiveXeroBankAccount,
+  isActiveXeroBankAccount,
+} from '../../utils/xeroAccountRules';
 
 interface XeroIntegrationCardProps {
   canEdit: boolean;
@@ -136,7 +140,6 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
   const [accounts, setAccounts] = useState<XeroAccountOption[]>([]);
   const [creatingStripeAccount, setCreatingStripeAccount] = useState(false);
   const [creatingPrepaidAccount, setCreatingPrepaidAccount] = useState(false);
-  const [creatingTopupReceiptAccount, setCreatingTopupReceiptAccount] = useState(false);
   const [creatingVoucherLiabilityAccount, setCreatingVoucherLiabilityAccount] = useState(false);
   const [creatingPrepaidLiabilityAccount, setCreatingPrepaidLiabilityAccount] = useState(false);
   const [creatingStripeFeeAccount, setCreatingStripeFeeAccount] = useState(false);
@@ -273,33 +276,6 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
     }
   };
 
-  const createTopupReceiptAccount = async () => {
-    if (!connected || !canEdit) return;
-    setCreatingTopupReceiptAccount(true);
-    try {
-      const { data, error } = await supabase.functions.invoke<{ created?: boolean; account?: XeroAccountOption }>('xero-sync', {
-        body: { action: 'ensure-topup-receipt-account' },
-      });
-      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to create member top-up receipt account'));
-
-      const account = data?.account;
-      if (account?.code) {
-        setAccounts(prev => {
-          const merged = [...prev.filter(existing => existing.code !== account.code), account];
-          return merged.sort((left, right) => left.name.localeCompare(right.name));
-        });
-        updateForm('topupReceiptAccountCode', account.code);
-      }
-
-      toast.success(data?.created ? 'Member top-up receipt account created in Xero' : 'Member top-up receipt account already exists in Xero');
-    } catch (error: any) {
-      console.error('Error creating member top-up receipt account:', error);
-      toast.error(error?.message || 'Failed to create member top-up receipt account');
-    } finally {
-      setCreatingTopupReceiptAccount(false);
-    }
-  };
-
   const createVoucherLiabilityAccount = async () => {
     if (!connected || !canEdit) return;
     setCreatingVoucherLiabilityAccount(true);
@@ -419,6 +395,13 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
   const saveSettings = async () => {
     if (!canEdit) return;
+    if (
+      form.syncAccountTopups &&
+      !hasSelectedActiveXeroBankAccount(accounts, form.topupReceiptAccountCode)
+    ) {
+      toast.error('Select an existing active Xero bank account for member top-up receipts.');
+      return;
+    }
     setSaving(true);
     try {
       const { data, error } = await supabase.functions.invoke<XeroStatus>('xero-connect', {
@@ -455,6 +438,10 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
   );
   const expenseAccounts = useMemo(
     () => accounts.filter(account => ['EXPENSE', 'DIRECTCOSTS', 'OVERHEADS'].includes(account.type)),
+    [accounts],
+  );
+  const bankAccounts = useMemo(
+    () => accounts.filter(isActiveXeroBankAccount),
     [accounts],
   );
   const paymentAccounts = useMemo(
@@ -831,13 +818,21 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 onChange={event => updateForm('topupReceiptAccountCode', event.target.value)}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
               >
-                <option value="">Select bank or clearing account</option>
-                {allActiveAccounts.map(account => (
+                <option value="">Select an existing bank account</option>
+                {bankAccounts.map(account => (
                   <option key={`${account.accountId}-receipt`} value={account.code}>
                     {account.code} · {account.name}
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-gray-500">
+                Required for top-up syncing. Choose an existing Xero bank account, such as 605 Operating Account.
+              </p>
+              {form.syncAccountTopups && !hasSelectedActiveXeroBankAccount(accounts, form.topupReceiptAccountCode) && (
+                <p className="mt-1 text-xs font-medium text-amber-700">
+                  Select an active bank account before saving.
+                </p>
+              )}
             </div>
 
             <div>
@@ -964,15 +959,6 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               >
                 {creatingPrepaidAccount ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Make Prepaid payment clearing account
-              </button>
-              <button
-                type="button"
-                onClick={createTopupReceiptAccount}
-                disabled={!connected || !canEdit || creatingTopupReceiptAccount}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {creatingTopupReceiptAccount ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Make Member top-up receipt account
               </button>
               <button
                 type="button"
