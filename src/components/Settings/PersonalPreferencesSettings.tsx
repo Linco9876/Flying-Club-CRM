@@ -185,9 +185,13 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const [medicalProofFile, setMedicalProofFile] = useState<File | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const personalDetailsSectionRef = useRef<HTMLElement | null>(null);
+  const aviationCredentialsSectionRef = useRef<HTMLElement | null>(null);
+  const contactDetailsSectionRef = useRef<HTMLElement | null>(null);
+  const emergencyContactSectionRef = useRef<HTMLElement | null>(null);
   const endorsementsSectionRef = useRef<HTMLElement | null>(null);
   const licencesSectionRef = useRef<HTMLElement | null>(null);
-  const hasHandledEndorsementDeepLinkRef = useRef(false);
+  const hasHandledInfoDeepLinkRef = useRef(false);
   const [preferenceForm, setPreferenceForm] = useState<PreferenceFormData>(() => {
     const { user_id, preferences: _preferences, ...defaults } = defaultUserPreferences(user?.id || '');
     return defaults;
@@ -196,8 +200,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const hasStaffRole = user?.roles?.some(role => ['admin', 'senior_instructor', 'instructor'].includes(role))
     || ['admin', 'senior_instructor', 'instructor'].includes(user?.role || '');
 
-  const isStudentOrPilot = user?.roles?.some(role => ['student', 'pilot'].includes(role))
-    || ['student', 'pilot'].includes(user?.role || '');
+  const hasFlyingRole = user?.roles?.some(role =>
+    ['student', 'pilot', 'instructor', 'senior_instructor'].includes(role)
+  ) || ['student', 'pilot', 'instructor', 'senior_instructor'].includes(user?.role || '');
 
   const tabs = useMemo(() => {
     const base: Array<{ id: AccountTab; label: string; icon: React.ReactNode }> = [
@@ -208,12 +213,12 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       { id: 'appearance', label: 'Appearance', icon: <Palette className="h-4 w-4" /> },
     ];
 
-    if (isStudentOrPilot) {
+    if (hasFlyingRole) {
       base.push({ id: 'dashboard', label: 'Portal Dashboard', icon: <Eye className="h-4 w-4" /> });
     }
 
     return base;
-  }, [isStudentOrPilot]);
+  }, [hasFlyingRole]);
 
   const fetchProfile = async () => {
     if (!user?.id) {
@@ -572,18 +577,27 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   };
 
   useEffect(() => {
-    if (hasHandledEndorsementDeepLinkRef.current || profileLoading || loading || selectedTab !== 'info') return;
+    if (hasHandledInfoDeepLinkRef.current || profileLoading || loading || selectedTab !== 'info') return;
     if (typeof window === 'undefined') return;
 
     const params = new URLSearchParams(window.location.search);
     const focus = params.get('focus');
-    if (focus !== 'endorsements' && focus !== 'licences') return;
+    const focusTargets: Record<string, HTMLElement | null> = {
+      'personal-details': personalDetailsSectionRef.current,
+      'aviation-credentials': aviationCredentialsSectionRef.current,
+      'contact-details': contactDetailsSectionRef.current,
+      'emergency-contact': emergencyContactSectionRef.current,
+      endorsements: endorsementsSectionRef.current,
+      licences: licencesSectionRef.current,
+    };
+    const focusTarget = focus ? focusTargets[focus] : null;
+    if (!focusTarget) return;
 
-    hasHandledEndorsementDeepLinkRef.current = true;
+    hasHandledInfoDeepLinkRef.current = true;
     const requestedEndorsement = (params.get('endorsement') || '').trim();
     const requestedLicence = (params.get('licence') || '').trim();
 
-    if (canEdit && isStudentOrPilot) {
+    if (canEdit && hasFlyingRole && (focus === 'endorsements' || focus === 'licences')) {
       if (focus === 'endorsements') {
         setPendingEndorsements(prev => {
           if (requestedEndorsement && prev.some(item => item.type.trim().toLowerCase() === requestedEndorsement.toLowerCase())) {
@@ -603,10 +617,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     }
 
     window.setTimeout(() => {
-      (focus === 'licences' ? licencesSectionRef.current : endorsementsSectionRef.current)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      focusTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      focusTarget.focus({ preventScroll: true });
     }, 120);
-  }, [canEdit, isStudentOrPilot, loading, onFormChange, profileLoading, selectedTab]);
+  }, [canEdit, hasFlyingRole, loading, onFormChange, profileLoading, selectedTab]);
 
   const updatePendingEndorsement = (
     localId: string,
@@ -777,7 +791,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
     if (updateUserError) throw updateUserError;
 
-    if (isStudentOrPilot) {
+    if (hasFlyingRole) {
       const { error: studentError } = await supabase
         .from('students')
         .upsert({
@@ -1113,7 +1127,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
       {selectedTab === 'info' && (
         <div className="space-y-6">
-          <section className="space-y-4">
+          <section ref={personalDetailsSectionRef} id="account-personal-details" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
             <h3 className="text-lg font-medium text-gray-900">Personal Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {renderProfileField({ label: 'Name', field: 'name' })}
@@ -1137,8 +1151,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             <p className="text-xs text-gray-500">The new email will need to be verified and will replace your login email once verified.</p>
           </section>
 
-          {isStudentOrPilot && (
-            <section ref={endorsementsSectionRef} id="account-endorsements" className="scroll-mt-24 space-y-4">
+          {hasFlyingRole && (
+            <section ref={aviationCredentialsSectionRef} id="account-aviation-credentials" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
               <h3 className="text-lg font-medium text-gray-900">Aviation Credentials</h3>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {renderProfileField({ label: 'RAAus Number', field: 'raausId' })}
@@ -1193,7 +1207,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </section>
           )}
 
-          <section className="space-y-4">
+          <section ref={contactDetailsSectionRef} id="account-contact-details" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
               <Phone className="h-5 w-5 mr-2 text-blue-600" />
               Contact Details
@@ -1215,7 +1229,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </div>
           </section>
 
-          <section className="space-y-4">
+          <section ref={emergencyContactSectionRef} id="account-emergency-contact" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
               <Shield className="h-5 w-5 mr-2 text-blue-600" />
               Emergency Contact
@@ -1227,8 +1241,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </div>
           </section>
 
-          {isStudentOrPilot && (
-            <section ref={licencesSectionRef} className="scroll-mt-24 space-y-4">
+          {hasFlyingRole && (
+            <section ref={licencesSectionRef} id="account-licences" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-lg font-medium text-gray-900">Pilot licences</h3>
@@ -1354,8 +1368,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </section>
           )}
 
-          {isStudentOrPilot && (
-            <section ref={endorsementsSectionRef} className="scroll-mt-24 space-y-4">
+          {hasFlyingRole && (
+            <section ref={endorsementsSectionRef} id="account-endorsements" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-lg font-medium text-gray-900">Endorsements</h3>
@@ -1650,7 +1664,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
         </section>
       )}
 
-      {selectedTab === 'dashboard' && isStudentOrPilot && (
+      {selectedTab === 'dashboard' && hasFlyingRole && (
         <section className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">Portal Dashboard</h3>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
