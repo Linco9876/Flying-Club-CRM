@@ -55,9 +55,25 @@ Deno.test("manual membership welcome email explains invoices and prepaid credit"
   assertStringIncludes(message.html, "Xero-verified prepaid credit");
   assertStringIncludes(
     message.text,
-    "renewal invoice will be raised before your membership is due to lapse",
+    "renewal invoice will be raised 30 days before the next financial year",
   );
   assertFalse(message.text.includes("automatic annual payment"));
+});
+
+Deno.test("welcome email follows configured renewal and grace settings", () => {
+  const message = renderMembershipWelcomeEmail({
+    name: "Configured Member",
+    membershipClass: "Full",
+    variant: "automatic",
+    policy: {
+      renewalDateLabel: "15 August",
+      nonPaymentGraceDays: 45,
+      renewalInvoiceLeadDays: 21,
+    },
+  });
+  assertStringIncludes(message.text, "automatically on 15 August");
+  assertStringIncludes(message.text, "45 days to pay");
+  assertFalse(message.text.includes("60 days"));
 });
 
 Deno.test("welcome email escapes member-controlled content and rejects unsafe URLs", () => {

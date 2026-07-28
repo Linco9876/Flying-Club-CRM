@@ -11,10 +11,13 @@ import {
 } from "../_shared/stripeMode.ts";
 import {
   collectionWasSubmitted,
+  configuredPaymentRetryDays,
+  configuredTechnicalRetryMinutes,
   DEFAULT_MEMBERSHIP_ITEM_CODE,
   DEFAULT_SCHOLARSHIP_ITEM_CODE,
   membershipBillingRetryDelayMs,
   membershipCollectionIdempotencyParts,
+  membershipPaymentRetryDelayMs,
 } from "../_shared/membershipBilling.ts";
 
 type SupabaseAdminClient = any;
@@ -4074,7 +4077,7 @@ const notifyMembershipBillingFailure = async (
       type: "membership",
       title: "Membership billing needs attention",
       message:
-        "Your membership remains current, but the club could not complete the invoice or payment. We will retry automatically and staff have been notified.",
+        "Your membership remains current, but the club could not complete the invoice or payment after its automatic attempts. Staff have been notified; review Club membership or contact the club.",
       metadata,
       is_read: false,
     },
@@ -4451,8 +4454,12 @@ const processQueueRecord = async (
         item.payload = nextPayload;
       }
       if (clean(collection?.status).toLowerCase() === "failed") {
-        throw new Error(
-          clean(collection?.error) || "Automatic membership collection failed.",
+        throw Object.assign(
+          new Error(
+            clean(collection?.error) ||
+              "Automatic membership collection failed.",
+          ),
+          { membershipPaymentDeclined: true },
         );
       }
       const { error: completedQueueError } = await adminClient.from(
@@ -4509,12 +4516,35 @@ const processQueueRecord = async (
       };
     }
 
+    let technicalRetryMinutes: number[] = [];
+    let paymentRetryDays: number[] = [];
+    if (item.entity_type === "membership_period") {
+      const { data: retrySettings } = await adminClient
+        .from("membership_settings")
+        .select("technical_retry_minutes,payment_retry_days")
+        .eq("id", true)
+        .maybeSingle();
+      technicalRetryMinutes = configuredTechnicalRetryMinutes(
+        retrySettings?.technical_retry_minutes,
+      );
+      paymentRetryDays = configuredPaymentRetryDays(
+        retrySettings?.payment_retry_days,
+      );
+    }
+    const paymentDeclined = (error as any)?.membershipPaymentDeclined === true;
+    const retryLimit = paymentDeclined
+      ? paymentRetryDays.length
+      : item.entity_type === "membership_period"
+      ? technicalRetryMinutes.length
+      : 4;
     const shouldRetry = item.entity_type === "membership_period" ||
       isRetriableXeroError(error);
-    if (shouldRetry && attempt < 5) {
+    if (shouldRetry && attempt <= retryLimit) {
       const retryAfterSeconds = Number((error as any)?.retryAfterSeconds || 0);
-      const baseRetryDelay = item.entity_type === "membership_period"
-        ? membershipBillingRetryDelayMs(attempt)
+      const baseRetryDelay = paymentDeclined
+        ? membershipPaymentRetryDelayMs(attempt, paymentRetryDays)
+        : item.entity_type === "membership_period"
+        ? membershipBillingRetryDelayMs(attempt, technicalRetryMinutes)
         : getRetryDelayMs(attempt);
       const retryDelayMs = retryAfterSeconds > 0
         ? Math.max(baseRetryDelay, retryAfterSeconds * 1000)
@@ -4681,6 +4711,15 @@ const collectMembershipInvoice = async (
   const amountDue = money(invoice?.AmountDue);
   if (!invoiceId || amountDue <= 0.005) {
     return { attempted: false, reason: "nothing_due" };
+  }
+  const dueDate = String(period.due_date || "").slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  if (dueDate && dueDate > today) {
+    return {
+      attempted: false,
+      reason: "payment_not_due",
+      dueDate,
+    };
   }
 
   const { data: preference, error: preferenceError } = await adminClient
@@ -5284,26 +5323,104 @@ const issueMembershipRenewals = async (
   sendEmail = true,
   requestedBy: string | null = null,
 ) => {
+  const { error: prepareError } = await adminClient.rpc(
+    "prepare_membership_renewals",
+    { p_as_of: new Date().toISOString().slice(0, 10) },
+  );
+  if (prepareError) throw prepareError;
+
+  const { data: settings, error: settingsError } = await adminClient
+    .from("membership_settings")
+    .select("renewal_invoice_lead_days")
+    .eq("id", true)
+    .maybeSingle();
+  if (settingsError) throw settingsError;
+  const today = new Date();
+  const todayIso = today.toISOString().slice(0, 10);
+  const issueThrough = new Date(today);
+  issueThrough.setUTCDate(
+    issueThrough.getUTCDate() +
+      Math.max(0, Number(settings?.renewal_invoice_lead_days || 30)),
+  );
+
   let query = adminClient
     .from("membership_financial_periods")
-    .select("id")
-    .in("fee_disposition", ["invoice_required", "overdue"])
-    .is("xero_invoice_id", null)
+    .select(
+      "id,membership_id,due_date,xero_invoice_id,billing_sync_status",
+    )
+    .in("fee_disposition", ["invoice_required", "invoiced", "overdue"])
     .gt("amount_due", 0)
+    .lte("due_date", issueThrough.toISOString().slice(0, 10))
     .order("due_date", { ascending: true })
     .limit(100);
   if (requestedPeriodIds.length > 0) query = query.in("id", requestedPeriodIds);
   const { data: periods, error } = await query;
   if (error) throw error;
 
+  const membershipIds = Array.from(
+    new Set((periods || []).map((period: any) => period.membership_id)),
+  );
+  const { data: memberships, error: membershipsError } = membershipIds.length
+    ? await adminClient
+      .from("club_memberships")
+      .select("id,user_id")
+      .in("id", membershipIds)
+    : { data: [], error: null };
+  if (membershipsError) throw membershipsError;
+  const membershipUserById = new Map<string, string>(
+    (memberships || []).map((membership: any) => [
+      membership.id,
+      membership.user_id,
+    ]),
+  );
+  const userIds = Array.from(
+    new Set((memberships || []).map((membership: any) => membership.user_id)),
+  );
+  const { data: preferences, error: preferencesError } = userIds.length
+    ? await adminClient
+      .from("membership_payment_preferences")
+      .select("user_id,payment_method,auto_renew,authority_status")
+      .in("user_id", userIds)
+    : { data: [], error: null };
+  if (preferencesError) throw preferencesError;
+  const preferenceByUserId = new Map<string, any>(
+    (preferences || []).map((preference: any) => [
+      preference.user_id,
+      preference,
+    ]),
+  );
+
   const results: any[] = [];
   for (const period of periods || []) {
+    if (["failed", "needs_review"].includes(period.billing_sync_status)) {
+      continue;
+    }
+    const alreadyIssued = Boolean(clean(period.xero_invoice_id));
+    if (alreadyIssued) {
+      if (String(period.due_date).slice(0, 10) > todayIso) continue;
+      const memberUserId = membershipUserById.get(period.membership_id);
+      const preference = memberUserId
+        ? preferenceByUserId.get(memberUserId)
+        : undefined;
+      if (
+        !preference?.auto_renew ||
+        !["card", "becs"].includes(clean(preference.payment_method)) ||
+        preference.authority_status !== "ready"
+      ) {
+        continue;
+      }
+    }
     try {
       const queue = await queueMembershipBilling(
         adminClient,
         period.id,
         requestedBy,
-        { sendEmail, source: "membership_renewal_batch" },
+        {
+          sendEmail: alreadyIssued ? false : sendEmail,
+          source: alreadyIssued
+            ? "membership_automatic_collection"
+            : "membership_renewal_batch",
+        },
       );
       results.push({ periodId: period.id, queued: true, queueId: queue.id });
     } catch (error) {

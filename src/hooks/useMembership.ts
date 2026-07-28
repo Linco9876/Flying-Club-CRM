@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { PRIVACY_NOTICE_VERSION } from '../utils/privacyNotice';
 import { supabase } from '../lib/supabase';
+import { statutoryRegisterCsv } from '../utils/membershipSettings';
 import {
   ClubMembership,
   MembershipApplication,
@@ -84,6 +85,8 @@ interface MembershipFinancialPeriodRow {
   billing_sync_error: string | null;
   billing_sync_updated_at: string | null;
   waiver_reason: string | null;
+  waiver_type: string | null;
+  waiver_authority_reference: string | null;
   waiver_authorised_by: string | null;
   waiver_authorised_at: string | null;
 }
@@ -183,6 +186,8 @@ const mapPeriod = (row: MembershipFinancialPeriodRow): MembershipFinancialPeriod
   billingSyncError: row.billing_sync_error,
   billingSyncUpdatedAt: row.billing_sync_updated_at,
   waiverReason: row.waiver_reason,
+  waiverType: row.waiver_type,
+  waiverAuthorityReference: row.waiver_authority_reference,
   waiverAuthorisedBy: row.waiver_authorised_by,
   waiverAuthorisedAt: row.waiver_authorised_at,
 });
@@ -212,12 +217,24 @@ export const useMembership = () => {
   const [paymentPreferences, setPaymentPreferences] = useState<MembershipPaymentPreference[]>([]);
   const [settings, setSettings] = useState<MembershipSettings>({
     rolloutMode: 'staff_warning',
+    financialYearStartMonth: 7,
+    financialYearStartDay: 1,
     automaticCommencementDays: 30,
     nonPaymentGraceDays: 60,
-    xeroStatusStaleHours: 24,
+    xeroStatusStaleHours: 12,
     xeroMembershipItemCode: null,
     xeroScholarshipItemCode: null,
     requireStaffOverrideReason: true,
+    prorationMethod: 'daily',
+    minimumProratedFee: 0,
+    renewalInvoiceLeadDays: 30,
+    renewalReminderDaysBeforeDue: [30, 7],
+    overdueReminderDays: [7, 30, 45, 55],
+    technicalRetryMinutes: [5, 30, 120, 720],
+    paymentRetryDays: [3, 7],
+    waiverTypes: ['Volunteer contribution', 'Hardship', 'Honorary', 'Promotional', 'Administrative correction'],
+    requireWaiverAuthorityReference: true,
+    statutoryRegisterCleanupDays: 14,
   });
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -254,12 +271,24 @@ export const useMembership = () => {
       if (settingsResult.data) {
         setSettings({
           rolloutMode: settingsResult.data.rollout_mode,
+          financialYearStartMonth: Number(settingsResult.data.financial_year_start_month || 7),
+          financialYearStartDay: Number(settingsResult.data.financial_year_start_day || 1),
           automaticCommencementDays: Number(settingsResult.data.automatic_commencement_days || 30),
           nonPaymentGraceDays: Number(settingsResult.data.non_payment_grace_days || 60),
-          xeroStatusStaleHours: Number(settingsResult.data.xero_status_stale_hours || 24),
+          xeroStatusStaleHours: Number(settingsResult.data.xero_status_stale_hours || 12),
           xeroMembershipItemCode: settingsResult.data.xero_membership_item_code,
           xeroScholarshipItemCode: settingsResult.data.xero_scholarship_item_code,
           requireStaffOverrideReason: Boolean(settingsResult.data.require_staff_override_reason),
+          prorationMethod: settingsResult.data.proration_method || 'daily',
+          minimumProratedFee: Number(settingsResult.data.minimum_prorated_fee || 0),
+          renewalInvoiceLeadDays: Number(settingsResult.data.renewal_invoice_lead_days || 30),
+          renewalReminderDaysBeforeDue: settingsResult.data.renewal_reminder_days_before_due || [30, 7],
+          overdueReminderDays: settingsResult.data.overdue_reminder_days || [7, 30, 45, 55],
+          technicalRetryMinutes: settingsResult.data.technical_retry_minutes || [5, 30, 120, 720],
+          paymentRetryDays: settingsResult.data.payment_retry_days || [3, 7],
+          waiverTypes: settingsResult.data.waiver_types || ['Volunteer contribution', 'Hardship', 'Honorary', 'Promotional', 'Administrative correction'],
+          requireWaiverAuthorityReference: Boolean(settingsResult.data.require_waiver_authority_reference),
+          statutoryRegisterCleanupDays: Number(settingsResult.data.statutory_register_cleanup_days || 14),
         });
       }
       setError(null);
@@ -384,6 +413,22 @@ export const useMembership = () => {
       if (rpcError) throw rpcError;
     }, disposition === 'waived' ? 'Membership fee waived' : 'Membership fee status updated');
 
+  const authorizeFeeWaiver = (
+    periodId: string,
+    waiverType: string,
+    reason: string,
+    authorityReference?: string,
+  ) =>
+    runAction(`period:${periodId}`, async () => {
+      const { error: rpcError } = await supabase.rpc('authorize_membership_fee_waiver', {
+        p_period_id: periodId,
+        p_waiver_type: waiverType,
+        p_reason: reason,
+        p_authority_reference: authorityReference?.trim() || null,
+      });
+      if (rpcError) throw rpcError;
+    }, 'Membership fee waiver authorised');
+
   const importLegacyMembership = (input: {
     userId: string;
     membershipClassCode: string;
@@ -505,15 +550,51 @@ export const useMembership = () => {
     runAction('settings', async () => {
       const payload: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: user?.id || null };
       if (updates.rolloutMode !== undefined) payload.rollout_mode = updates.rolloutMode;
+      if (updates.financialYearStartMonth !== undefined) payload.financial_year_start_month = updates.financialYearStartMonth;
+      if (updates.financialYearStartDay !== undefined) payload.financial_year_start_day = updates.financialYearStartDay;
       if (updates.automaticCommencementDays !== undefined) payload.automatic_commencement_days = updates.automaticCommencementDays;
       if (updates.nonPaymentGraceDays !== undefined) payload.non_payment_grace_days = updates.nonPaymentGraceDays;
       if (updates.xeroStatusStaleHours !== undefined) payload.xero_status_stale_hours = updates.xeroStatusStaleHours;
       if (updates.xeroMembershipItemCode !== undefined) payload.xero_membership_item_code = updates.xeroMembershipItemCode?.trim() || null;
       if (updates.xeroScholarshipItemCode !== undefined) payload.xero_scholarship_item_code = updates.xeroScholarshipItemCode?.trim() || null;
       if (updates.requireStaffOverrideReason !== undefined) payload.require_staff_override_reason = updates.requireStaffOverrideReason;
+      if (updates.prorationMethod !== undefined) payload.proration_method = updates.prorationMethod;
+      if (updates.minimumProratedFee !== undefined) payload.minimum_prorated_fee = updates.minimumProratedFee;
+      if (updates.renewalInvoiceLeadDays !== undefined) payload.renewal_invoice_lead_days = updates.renewalInvoiceLeadDays;
+      if (updates.renewalReminderDaysBeforeDue !== undefined) payload.renewal_reminder_days_before_due = updates.renewalReminderDaysBeforeDue;
+      if (updates.overdueReminderDays !== undefined) payload.overdue_reminder_days = updates.overdueReminderDays;
+      if (updates.technicalRetryMinutes !== undefined) payload.technical_retry_minutes = updates.technicalRetryMinutes;
+      if (updates.paymentRetryDays !== undefined) payload.payment_retry_days = updates.paymentRetryDays;
+      if (updates.waiverTypes !== undefined) payload.waiver_types = updates.waiverTypes.map(value => value.trim()).filter(Boolean);
+      if (updates.requireWaiverAuthorityReference !== undefined) payload.require_waiver_authority_reference = updates.requireWaiverAuthorityReference;
+      if (updates.statutoryRegisterCleanupDays !== undefined) payload.statutory_register_cleanup_days = updates.statutoryRegisterCleanupDays;
       const { error: updateError } = await supabase.from('membership_settings').update(payload).eq('id', true);
       if (updateError) throw updateError;
     }, 'Membership settings saved');
+
+  const exportStatutoryRegister = async () => {
+    setBusyAction('register:export');
+    try {
+      const { data, error: registerError } = await supabase
+        .from('membership_statutory_register')
+        .select('*')
+        .order('name');
+      if (registerError) throw registerError;
+      const csv = statutoryRegisterCsv((data || []) as Array<Record<string, unknown>>);
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `bfc-membership-register-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Privacy-minimised membership register exported');
+    } catch (exportError) {
+      toast.error(errorMessage(exportError, 'The membership register could not be exported.'));
+      throw exportError;
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   const ownApplication = useMemo(
     () => applications.find(application => application.userId === user?.id && application.status === 'pending'),
@@ -548,6 +629,7 @@ export const useMembership = () => {
     decideApplication,
     submitApplication,
     setFeeDisposition,
+    authorizeFeeWaiver,
     importLegacyMembership,
     createOrRefreshXeroInvoice,
     refreshAllXeroInvoices,
@@ -557,6 +639,7 @@ export const useMembership = () => {
     cancelMembership,
     runLifecycle,
     updateSettings,
+    exportStatutoryRegister,
   };
 };
 

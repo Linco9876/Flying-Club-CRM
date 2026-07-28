@@ -30,7 +30,7 @@ The portal labels this feature **BFC membership** or **Club membership**. Existi
 | Affiliate | $45 | No | Yes |
 | Life | $0 | No | No - assigned by an administrator after the relevant club decision |
 
-The financial year is 1 July to 30 June. A new member's first fee is prorated by the number of days remaining in that financial year. Life membership is fee exempt.
+The recommended financial year is 1 July to 30 June. Administrators can configure the start month/day and choose daily, whole-month or no proration for a new member's first fee, including an optional minimum prorated amount. The production default remains daily proration to 30 June with no minimum. Life membership is fee exempt.
 
 ### Application and commencement
 
@@ -123,9 +123,18 @@ When a member cancels through the portal, the CRM withdraws a pending applicatio
 
 The 60-day lifecycle will not automatically cease a membership from a linked Xero invoice if the cached Xero result is missing or older than the configured staleness threshold. The administrator must refresh Xero and rerun the lifecycle; this prevents a false cessation when payment data is stale.
 
-The `daily-membership-xero-refresh` GitHub workflow issues due membership renewals and then refreshes linked membership invoices at 01:00 AEST / 02:00 AEDT, ahead of the database lifecycle. It uses the same `ENABLE_XERO_SYNC_WORKER`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` configuration as the existing Xero queue worker. A failed issue or refresh operation fails visibly in GitHub Actions and the stale-data guard remains the safety backstop.
+The daily database preparation job creates the next financial-year period at the configured invoice lead time (30 days by default), snapshots the member's optional scholarship contribution and issues deduplicated in-portal reminders. The recommended reminder schedule is 30 and 7 days before renewal, then 7, 30, 45 and 55 days overdue.
 
-A fee waiver is annual, requires a reason of at least 10 characters, records the authorising administrator and does not create a fake Xero payment. This supports complimentary memberships for substantial volunteer work while preserving accurate accounts.
+The `daily-membership-xero-refresh` GitHub workflow prepares and issues membership renewals and then refreshes linked invoices at 01:00 AEST / 02:00 AEDT, ahead of the database lifecycle. A future renewal invoice can be created and emailed in advance, but automatic card or BECS collection is explicitly held until its due date. Manual-invoice members are never placed into automatic collection. It uses the same `ENABLE_XERO_SYNC_WORKER`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` configuration as the existing Xero queue worker. A failed issue or refresh operation fails visibly in GitHub Actions and the stale-data guard remains the safety backstop.
+
+A fee waiver is annual, requires an approved waiver type, a reason of at least 10 characters and—by default—a committee-minute or delegated-authority reference. It records the authorising administrator and does not create a fake Xero payment. The default categories are volunteer contribution, hardship, honorary, promotional and administrative correction.
+
+Membership billing has two independent retry schedules:
+
+- technical interruptions retry after 5 minutes, 30 minutes, 2 hours and 12 hours by default;
+- a rejected automatic card or bank debit retries after 3 and 7 days by default.
+
+Both schedules are configurable. Every collection attempt reserves its own stable idempotency key, an already-submitted Stripe intent is reconciled rather than resubmitted, and terminal failures are shown to both the member and administrators.
 
 ### Membership administration
 
@@ -134,7 +143,9 @@ The **Club Membership** page provides:
 - **My membership:** legal status, class, commencement, fee status, due/grace date, voting entitlement, payment preference, optional scholarship contribution, cancellation and a member-initiated Xero refresh.
 - **Applications:** pending applications, automatic-commencement countdown, approval and reasoned rejection.
 - **Membership register:** member search, current legal/fee state, Xero invoice actions, annual waivers and existing-member import.
-- **Settings:** Xero membership and scholarship item codes, 30-day commencement, 60-day non-payment grace, Xero staleness threshold and staged booking enforcement.
+- **Settings:** financial-year boundary, commencement, proration and minimum fee; renewal preparation and reminder schedules; separate technical/payment retry schedules; Xero item codes and staleness threshold; structured waiver governance; statutory-register cleanup target; staff override reasons; and staged booking enforcement.
+
+The register toolbar exports a privacy-minimised statutory CSV. Current entries contain the name, residential address, class and commencement date. A ceased entry exposes only the member name, cessation date and status, while accounting/audit history remains in its purpose-specific CRM records. The configurable cleanup target defaults to 14 days; the statutory projection suppresses the extra fields immediately.
 
 Existing members can be imported without reapplying. The import records the original commencement date, class and an opening financial state. Use `invoice required` unless a payment has already been verified; use `waived` only with documented authority.
 

@@ -167,6 +167,7 @@ export type MembershipApplicationStatus = 'pending' | 'approved' | 'rejected' | 
 export type MembershipLegalStatus = 'current' | 'ceased_non_payment' | 'resigned' | 'expelled' | 'deceased';
 export type MembershipFeeDisposition = 'invoice_required' | 'invoiced' | 'paid' | 'waived' | 'fee_exempt' | 'overdue' | 'ceased';
 export type MembershipRolloutMode = 'information_only' | 'staff_warning' | 'enforced';
+export type MembershipProrationMethod = 'daily' | 'monthly' | 'none';
 export type MembershipPaymentMethod = 'invoice' | 'becs' | 'card';
 export type MembershipPaymentAuthorityStatus = 'not_required' | 'pending' | 'ready' | 'failed' | 'cancelled';
 
@@ -244,6 +245,8 @@ export interface MembershipFinancialPeriod {
   billingSyncError?: string | null;
   billingSyncUpdatedAt?: string | null;
   waiverReason?: string | null;
+  waiverType?: string | null;
+  waiverAuthorityReference?: string | null;
   waiverAuthorisedBy?: string | null;
   waiverAuthorisedAt?: string | null;
 }
@@ -265,12 +268,24 @@ export interface MembershipPaymentPreference {
 
 export interface MembershipSettings {
   rolloutMode: MembershipRolloutMode;
+  financialYearStartMonth: number;
+  financialYearStartDay: number;
   automaticCommencementDays: number;
   nonPaymentGraceDays: number;
   xeroStatusStaleHours: number;
   xeroMembershipItemCode?: string | null;
   xeroScholarshipItemCode?: string | null;
   requireStaffOverrideReason: boolean;
+  prorationMethod: MembershipProrationMethod;
+  minimumProratedFee: number;
+  renewalInvoiceLeadDays: number;
+  renewalReminderDaysBeforeDue: number[];
+  overdueReminderDays: number[];
+  technicalRetryMinutes: number[];
+  paymentRetryDays: number[];
+  waiverTypes: string[];
+  requireWaiverAuthorityReference: boolean;
+  statutoryRegisterCleanupDays: number;
 }
 
 export interface MembershipBookingAssessment {

@@ -12,6 +12,11 @@ export interface MembershipWelcomeEmailInput {
   membershipClass: string;
   variant: MembershipWelcomeVariant;
   brand?: MembershipWelcomeBrand;
+  policy?: {
+    renewalDateLabel?: string | null;
+    nonPaymentGraceDays?: number | null;
+    renewalInvoiceLeadDays?: number | null;
+  };
   review?: boolean;
 }
 
@@ -60,7 +65,17 @@ const initialsFor = (clubName: string) => {
   return initials || "BFC";
 };
 
-const paymentCopy = (variant: MembershipWelcomeVariant) =>
+const paymentCopy = (
+  variant: MembershipWelcomeVariant,
+  policy: MembershipWelcomeEmailInput["policy"] = {},
+) => {
+  const renewalDateLabel = singleLine(policy?.renewalDateLabel) || "1 July";
+  const graceDays = Math.max(1, Number(policy?.nonPaymentGraceDays || 60));
+  const invoiceLeadDays = Math.max(
+    0,
+    Number(policy?.renewalInvoiceLeadDays ?? 30),
+  );
+  return (
   variant === "automatic"
     ? {
       badge: "Automatic annual payment",
@@ -74,19 +89,19 @@ const paymentCopy = (variant: MembershipWelcomeVariant) =>
         {
           title: "Future renewals",
           body:
-            "From the next financial year, payment will be attempted automatically on 1 July.",
+            `From the next financial year, payment will be attempted automatically on ${renewalDateLabel}.`,
         },
         {
           title: "If a renewal payment is unsuccessful",
           body:
-            "You will have 60 days to pay. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases if it is still unpaid after 60 days.",
+            `You will have ${graceDays} days to pay. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases if it is still unpaid after ${graceDays} days.`,
         },
       ],
       text: [
         "You chose automatic annual payment.",
         "Your saved payment method will be used for your initial prorated membership invoice.",
-        "From the next financial year, payment will be attempted automatically on 1 July.",
-        "If a renewal payment is unsuccessful, you will have 60 days to pay. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases if it is still unpaid after 60 days.",
+        `From the next financial year, payment will be attempted automatically on ${renewalDateLabel}.`,
+        `If a renewal payment is unsuccessful, you will have ${graceDays} days to pay. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases if it is still unpaid after ${graceDays} days.`,
       ].join("\n"),
     }
     : {
@@ -101,27 +116,30 @@ const paymentCopy = (variant: MembershipWelcomeVariant) =>
         {
           title: "Future renewals",
           body:
-            "A renewal invoice will be raised before your membership is due to lapse.",
+            `A renewal invoice will be raised ${invoiceLeadDays} days before the next financial year.`,
         },
         {
           title: "If an invoice remains unpaid",
           body:
-            "Available Xero-verified prepaid credit may be applied first. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases after the 60-day non-payment period.",
+            `Available Xero-verified prepaid credit may be applied first. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases after the ${graceDays}-day non-payment period.`,
         },
       ],
       text: [
         "You chose annual invoice payment.",
         "Your initial prorated membership invoice will be issued through Xero.",
-        "A renewal invoice will be raised before your membership is due to lapse.",
-        "If an invoice remains unpaid, available Xero-verified prepaid credit may be applied first. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases after the 60-day non-payment period.",
+        `A renewal invoice will be raised ${invoiceLeadDays} days before the next financial year.`,
+        `If an invoice remains unpaid, available Xero-verified prepaid credit may be applied first. Aircraft self-booking is unavailable while the fee is unpaid, and membership ceases after the ${graceDays}-day non-payment period.`,
       ].join("\n"),
-    };
+    }
+  );
+};
 
 export const renderMembershipWelcomeEmail = ({
   name,
   membershipClass,
   variant,
   brand = {},
+  policy = {},
   review = false,
 }: MembershipWelcomeEmailInput): MembershipWelcomeEmail => {
   const firstName = singleLine(name).split(" ")[0] || "there";
@@ -133,7 +151,7 @@ export const renderMembershipWelcomeEmail = ({
   );
   const logoUrl = safeUrl(brand.logoUrl);
   const contactEmail = safeEmail(brand.contactEmail);
-  const payment = paymentCopy(variant);
+  const payment = paymentCopy(variant, policy);
   const variantName = variant === "automatic"
     ? "Automatic renewal"
     : "Annual invoice";
