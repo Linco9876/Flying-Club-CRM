@@ -4,6 +4,9 @@ import {
   getDatedReadinessStatus,
   getMembershipIdentityLabel,
   getOverallReadiness,
+  isSelfDeclaredMedical,
+  requiresFlightReview,
+  usesRaausCredentials,
 } from './profileReadiness.ts';
 
 const now = new Date('2026-07-27T10:00:00+10:00');
@@ -19,6 +22,29 @@ test('uses the most urgent item for the overall readiness state', () => {
   assert.equal(getOverallReadiness(['ready', 'warning']).level, 'warning');
   assert.equal(getOverallReadiness(['ready', 'action', 'warning']).level, 'action');
   assert.equal(getOverallReadiness(['ready', 'ready']).level, 'ready');
+});
+
+test('only applies RAAus readiness to members with an RAAus identity or licence', () => {
+  assert.equal(usesRaausCredentials({ raausId: '123456', licences: [] }), true);
+  assert.equal(usesRaausCredentials({
+    licences: [{ type: 'RAAus Pilot Certificate', issuingAuthority: null }],
+  }), true);
+  assert.equal(usesRaausCredentials({
+    licences: [{ type: 'CASA Private Pilot Licence (PPL)', issuingAuthority: 'CASA' }],
+  }), false);
+});
+
+test('recognises self-declared medicals without demanding an expiry date', () => {
+  assert.equal(isSelfDeclaredMedical('RAAus Medical Declaration'), true);
+  assert.equal(isSelfDeclaredMedical('Self-declared medical'), true);
+  assert.equal(isSelfDeclaredMedical('Class 2 medical'), false);
+});
+
+test('requires a flight review for qualified flying roles but not students or administrators alone', () => {
+  assert.equal(requiresFlightReview(['student']), false);
+  assert.equal(requiresFlightReview(['admin']), false);
+  assert.equal(requiresFlightReview(['student', 'pilot']), true);
+  assert.equal(requiresFlightReview(['instructor']), true);
 });
 
 test('a current legal membership never appears unestablished when its class label is unavailable', () => {
