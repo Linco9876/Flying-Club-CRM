@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -26,6 +27,7 @@ import { Endorsement, Licence } from '../../types';
 import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../../hooks/useSettings';
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 import { safeImageSource } from '../../utils/imageSource';
+import { parseSettingsDeepLink, type SettingsFocus } from '../../utils/settingsDeepLink';
 import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 import { MfaSettings } from '../Auth/MfaSecurity';
 
@@ -163,6 +165,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   showInternalTabs = true,
 }) => {
   const { user, refreshUser } = useAuth();
+  const location = useLocation();
+  const requestedSettings = useMemo(
+    () => parseSettingsDeepLink(location.search, location.hash),
+    [location.hash, location.search],
+  );
   const { aircraft } = useAircraft();
   const { settings: trainingSettings } = useTrainingSettings();
   const { preferences, loading, error, updatePreferences } = useUserPreferences(user?.id || '');
@@ -191,7 +198,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const emergencyContactSectionRef = useRef<HTMLElement | null>(null);
   const endorsementsSectionRef = useRef<HTMLElement | null>(null);
   const licencesSectionRef = useRef<HTMLElement | null>(null);
-  const hasHandledInfoDeepLinkRef = useRef(false);
+  const handledInfoDeepLinkRef = useRef('');
+  const [highlightedInfoSection, setHighlightedInfoSection] = useState<SettingsFocus | null>(null);
   const [preferenceForm, setPreferenceForm] = useState<PreferenceFormData>(() => {
     const { user_id, preferences: _preferences, ...defaults } = defaultUserPreferences(user?.id || '');
     return defaults;
@@ -577,11 +585,11 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   };
 
   useEffect(() => {
-    if (hasHandledInfoDeepLinkRef.current || profileLoading || loading || selectedTab !== 'info') return;
-    if (typeof window === 'undefined') return;
+    const deepLinkKey = `${location.pathname}${location.search}${location.hash}`;
+    if (handledInfoDeepLinkRef.current === deepLinkKey || profileLoading || loading || selectedTab !== 'info') return;
 
-    const params = new URLSearchParams(window.location.search);
-    const focus = params.get('focus');
+    const params = new URLSearchParams(location.search);
+    const focus = requestedSettings.focus;
     const focusTargets: Record<string, HTMLElement | null> = {
       'personal-details': personalDetailsSectionRef.current,
       'aviation-credentials': aviationCredentialsSectionRef.current,
@@ -593,7 +601,8 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     const focusTarget = focus ? focusTargets[focus] : null;
     if (!focusTarget) return;
 
-    hasHandledInfoDeepLinkRef.current = true;
+    handledInfoDeepLinkRef.current = deepLinkKey;
+    setHighlightedInfoSection(focus);
     const requestedEndorsement = (params.get('endorsement') || '').trim();
     const requestedLicence = (params.get('licence') || '').trim();
 
@@ -620,7 +629,27 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       focusTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
       focusTarget.focus({ preventScroll: true });
     }, 120);
-  }, [canEdit, hasFlyingRole, loading, onFormChange, profileLoading, selectedTab]);
+    const highlightTimer = window.setTimeout(() => setHighlightedInfoSection(null), 4_000);
+    return () => window.clearTimeout(highlightTimer);
+  }, [
+    canEdit,
+    hasFlyingRole,
+    loading,
+    location.hash,
+    location.pathname,
+    location.search,
+    onFormChange,
+    profileLoading,
+    requestedSettings.focus,
+    selectedTab,
+  ]);
+
+  const infoSectionClass = (focus: SettingsFocus) =>
+    `scroll-mt-24 space-y-4 rounded-xl outline-none transition-shadow duration-300 ${
+      highlightedInfoSection === focus
+        ? 'ring-2 ring-blue-500 ring-offset-4'
+        : ''
+    }`;
 
   const updatePendingEndorsement = (
     localId: string,
@@ -1127,7 +1156,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
       {selectedTab === 'info' && (
         <div className="space-y-6">
-          <section ref={personalDetailsSectionRef} id="account-personal-details" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
+          <section ref={personalDetailsSectionRef} id="account-personal-details" tabIndex={-1} className={infoSectionClass('personal-details')}>
             <h3 className="text-lg font-medium text-gray-900">Personal Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {renderProfileField({ label: 'Name', field: 'name' })}
@@ -1152,7 +1181,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           </section>
 
           {hasFlyingRole && (
-            <section ref={aviationCredentialsSectionRef} id="account-aviation-credentials" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
+            <section ref={aviationCredentialsSectionRef} id="account-aviation-credentials" tabIndex={-1} className={infoSectionClass('aviation-credentials')}>
               <h3 className="text-lg font-medium text-gray-900">Aviation Credentials</h3>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {renderProfileField({ label: 'RAAus Number', field: 'raausId' })}
@@ -1207,7 +1236,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </section>
           )}
 
-          <section ref={contactDetailsSectionRef} id="account-contact-details" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
+          <section ref={contactDetailsSectionRef} id="account-contact-details" tabIndex={-1} className={infoSectionClass('contact-details')}>
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
               <Phone className="h-5 w-5 mr-2 text-blue-600" />
               Contact Details
@@ -1229,7 +1258,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </div>
           </section>
 
-          <section ref={emergencyContactSectionRef} id="account-emergency-contact" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
+          <section ref={emergencyContactSectionRef} id="account-emergency-contact" tabIndex={-1} className={infoSectionClass('emergency-contact')}>
             <h3 className="text-lg font-medium text-gray-900 flex items-center">
               <Shield className="h-5 w-5 mr-2 text-blue-600" />
               Emergency Contact
@@ -1242,7 +1271,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           </section>
 
           {hasFlyingRole && (
-            <section ref={licencesSectionRef} id="account-licences" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
+            <section ref={licencesSectionRef} id="account-licences" tabIndex={-1} className={infoSectionClass('licences')}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-lg font-medium text-gray-900">Pilot licences</h3>
@@ -1369,7 +1398,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           )}
 
           {hasFlyingRole && (
-            <section ref={endorsementsSectionRef} id="account-endorsements" tabIndex={-1} className="scroll-mt-24 space-y-4 outline-none">
+            <section ref={endorsementsSectionRef} id="account-endorsements" tabIndex={-1} className={infoSectionClass('endorsements')}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-lg font-medium text-gray-900">Endorsements</h3>

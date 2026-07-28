@@ -1,6 +1,8 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getAuthorizedSettingsSections } from '../../utils/rbac';
+import { parseSettingsDeepLink } from '../../utils/settingsDeepLink';
 import { 
   Search, 
   Save, 
@@ -71,18 +73,17 @@ interface SettingsSection {
 
 export const SettingsDashboard: React.FC = () => {
   const { user } = useAuth();
-  const [activeSection, setActiveSection] = useState('organisation');
+  const location = useLocation();
+  const requestedSettings = parseSettingsDeepLink(location.search, location.hash);
+  const requestedSectionId = requestedSettings.sectionId;
+  const [activeSection, setActiveSection] = useState(
+    () => requestedSectionId || 'organisation'
+  );
   const [searchTerm, setSearchTerm] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const getRequestedSectionId = () => {
-    if (typeof window === 'undefined') return null;
-    const params = new URLSearchParams(window.location.search);
-    return params.get('tab') || params.get('section');
-  };
-
-  const allSections: SettingsSection[] = [
+  const allSections = useMemo<SettingsSection[]>(() => [
     { id: 'organisation', label: 'Organisation', category: 'Club Setup', keywords: ['business', 'locations', 'airfields', 'documents', 'membership documents', 'logo', 'currency', 'timezone', 'operating hours'], icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
     { id: 'portal', label: 'Portal & UX', category: 'Club Setup', keywords: ['theme', 'student portal', 'date format', 'time format'], icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
     { id: 'resources', label: 'Resources (Aircraft & Rooms)', category: 'Club Setup', keywords: ['aircraft fields', 'rooms', 'documents', 'instructor roster'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
@@ -106,21 +107,26 @@ export const SettingsDashboard: React.FC = () => {
     { id: 'account-appearance', label: 'Appearance', category: 'Account & Preferences', keywords: ['appearance', 'theme', 'compact', 'display'], icon: <Palette className="h-4 w-4" />, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'], component: AccountAppearanceSettings },
     { id: 'account-dashboard', label: 'Portal Dashboard', category: 'Account & Preferences', keywords: ['dashboard', 'student portal', 'progress', 'upcoming bookings'], icon: <Eye className="h-4 w-4" />, roles: ['pilot', 'student'], component: AccountDashboardSettings },
     { id: 'account-timeline', label: 'Timeline', category: 'Account & Preferences', keywords: ['timeline', 'history', 'training history', 'exam history', 'activity'], icon: <Clock className="h-4 w-4" />, roles: ['pilot', 'student'], component: AccountTimelineSettings }
-  ];
+  ], []);
 
   // Get authorized sections using RBAC
-  const authorizedSections = getAuthorizedSettingsSections(user);
-  const sections = allSections.filter(section => 
-    authorizedSections.some(authSection => authSection.id === section.id)
+  const authorizedSections = useMemo(() => getAuthorizedSettingsSections(user), [user]);
+  const sections = useMemo(
+    () => allSections.filter(section =>
+      authorizedSections.some(authSection => authSection.id === section.id)
+    ),
+    [allSections, authorizedSections],
   );
 
-  const filteredSections = sections.filter(section => {
-    const query = searchTerm.toLowerCase();
-    const matchesSearch = section.label.toLowerCase().includes(query)
-      || section.category.toLowerCase().includes(query)
-      || section.keywords.some(keyword => keyword.includes(query));
-    return matchesSearch;
-  });
+  const filteredSections = useMemo(() => sections.filter(section => {
+      const query = searchTerm.toLowerCase();
+      const matchesSearch = section.label.toLowerCase().includes(query)
+        || section.category.toLowerCase().includes(query)
+        || section.keywords.some(keyword => keyword.includes(query));
+      return matchesSearch;
+    }),
+    [searchTerm, sections],
+  );
 
   const groupedSections = filteredSections.reduce<Record<string, SettingsSection[]>>((groups, section) => {
     groups[section.category] = groups[section.category] || [];
@@ -130,7 +136,6 @@ export const SettingsDashboard: React.FC = () => {
 
   // Set default section based on user role, while honouring deep links such as /settings?tab=integrations.
   useEffect(() => {
-    const requestedSectionId = getRequestedSectionId();
     if (requestedSectionId && sections.some(section => section.id === requestedSectionId)) {
       setActiveSection(requestedSectionId);
       return;
@@ -141,14 +146,20 @@ export const SettingsDashboard: React.FC = () => {
     } else {
       setActiveSection('organisation');
     }
-  }, [user?.role, authorizedSections.map(section => section.id).join('|')]);
+  }, [
+    requestedSectionId,
+    sections,
+    user?.role,
+  ]);
 
   // Ensure the active section is available to the user
   useEffect(() => {
     if (filteredSections.length > 0 && !filteredSections.find(s => s.id === activeSection)) {
       setActiveSection(filteredSections[0].id);
     }
-  }, [filteredSections]);
+  }, [activeSection, filteredSections]);
+
+  const handleFormChange = useCallback(() => setHasUnsavedChanges(true), []);
 
   const handleSave = async () => {
     setIsLoading(true);
@@ -271,12 +282,24 @@ export const SettingsDashboard: React.FC = () => {
         </div>
 
         {/* Right Content Pane */}
-        <div className="flex min-h-[60vh] min-w-0 flex-1 flex-col rounded-lg border border-gray-200 bg-white shadow-md">
+        <div
+          className="flex min-h-[60vh] min-w-0 flex-1 flex-col rounded-lg border border-gray-200 bg-white shadow-md"
+          data-active-settings-section={activeSection}
+          data-active-settings-focus={requestedSettings.focus || undefined}
+        >
+          {requestedSettings.focusLabel && activeSection === 'account-info' && (
+            <div className="border-b border-blue-200 bg-blue-50 px-5 py-3 text-sm text-blue-900" role="status">
+              Opened <span className="font-semibold">Update My Info</span>
+              <span aria-hidden="true"> · </span>
+              <span className="font-semibold">{requestedSettings.focusLabel}</span>
+            </div>
+          )}
           <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
             <Suspense fallback={<PortalSectionLoader message="Loading settings section" detail="Preparing this settings panel..." />}>
               <ActiveComponent
+                key={`${activeSection}:${location.search}:${location.hash}`}
                 canEdit={canEdit(activeSection)}
-                onFormChange={() => setHasUnsavedChanges(true)}
+                onFormChange={handleFormChange}
               />
             </Suspense>
           </div>

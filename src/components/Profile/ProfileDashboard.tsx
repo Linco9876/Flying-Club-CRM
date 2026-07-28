@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   BookOpen,
@@ -84,12 +84,6 @@ const formatCurrency = (amount: number, decimals: number) =>
   }).format(amount);
 
 const formatHoursFromMinutes = (minutes: number) => (minutes / 60).toFixed(1);
-
-const getAppHref = (to: string) => {
-  const baseUrl = import.meta.env.BASE_URL;
-  if (!baseUrl || baseUrl === '/') return to;
-  return `${baseUrl.replace(/\/$/, '')}/${to.replace(/^\//, '')}`;
-};
 
 const formatStoredDate = (value: string | null, pattern: string) => {
   if (!value) return 'Not recorded';
@@ -739,9 +733,9 @@ export const ProfileDashboard: React.FC = () => {
           </div>
           <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             {readinessItems.map(item => (
-              <a
+              <Link
                 key={item.id}
-                href={getAppHref(item.to)}
+                to={item.to}
                 className="rounded-xl border border-white/70 bg-white/75 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-slate-950/35"
               >
                 <span className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -749,7 +743,7 @@ export const ProfileDashboard: React.FC = () => {
                   {item.label}
                 </span>
                 <span className="mt-1.5 block text-sm font-bold text-slate-900 dark:text-white">{item.value}</span>
-              </a>
+              </Link>
             ))}
           </div>
           {actionItems.length > 0 && (
@@ -759,9 +753,9 @@ export const ProfileDashboard: React.FC = () => {
               </p>
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {actionItems.map(action => (
-                  <a
+                  <Link
                     key={action.id}
-                    href={getAppHref(action.to)}
+                    to={action.to}
                     className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-white dark:hover:bg-slate-800/60"
                   >
                     <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
@@ -776,7 +770,7 @@ export const ProfileDashboard: React.FC = () => {
                       <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{action.detail}</span>
                     </span>
                     <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" />
-                  </a>
+                  </Link>
                 ))}
               </div>
             </div>

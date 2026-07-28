@@ -109,6 +109,28 @@ for (const role of roles) {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible();
 
+    await page.goto('/settings?tab=account-info&focus=personal-details');
+    await expect(page.locator(
+      '[data-active-settings-section="account-info"][data-active-settings-focus="personal-details"]'
+    )).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Opened Update My Info' }))
+      .toContainText('Personal Details');
+    await expect(page.locator('#account-personal-details')).toBeVisible();
+    await expect(page.locator('#account-personal-details')).toBeFocused();
+
+    if (role === 'pilot') {
+      await page.goto(
+        '/settings?tab=account-info&accountTab=info&focus=aviation-credentials#account-aviation-credentials'
+      );
+      await expect(page.locator(
+        '[data-active-settings-section="account-info"][data-active-settings-focus="aviation-credentials"]'
+      )).toBeVisible();
+      await expect(page.getByRole('status').filter({ hasText: 'Opened Update My Info' }))
+        .toContainText('Aviation Credentials');
+      await expect(page.locator('#account-aviation-credentials')).toBeVisible();
+      await expect(page.locator('#account-aviation-credentials')).toBeFocused();
+    }
+
     const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
     expect(horizontalOverflow).toBe(false);
     expect(pageErrors).toEqual([]);
