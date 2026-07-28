@@ -85,6 +85,12 @@ const formatCurrency = (amount: number, decimals: number) =>
 
 const formatHoursFromMinutes = (minutes: number) => (minutes / 60).toFixed(1);
 
+const getAppHref = (to: string) => {
+  const baseUrl = import.meta.env.BASE_URL;
+  if (!baseUrl || baseUrl === '/') return to;
+  return `${baseUrl.replace(/\/$/, '')}/${to.replace(/^\//, '')}`;
+};
+
 const formatStoredDate = (value: string | null, pattern: string) => {
   if (!value) return 'Not recorded';
   const parsed = new Date(value);
@@ -735,7 +741,7 @@ export const ProfileDashboard: React.FC = () => {
             {readinessItems.map(item => (
               <a
                 key={item.id}
-                href={item.to}
+                href={getAppHref(item.to)}
                 className="rounded-xl border border-white/70 bg-white/75 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-slate-950/35"
               >
                 <span className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -755,7 +761,7 @@ export const ProfileDashboard: React.FC = () => {
                 {actionItems.map(action => (
                   <a
                     key={action.id}
-                    href={action.to}
+                    href={getAppHref(action.to)}
                     className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-white dark:hover:bg-slate-800/60"
                   >
                     <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
