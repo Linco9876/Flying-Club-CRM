@@ -14,10 +14,19 @@ import { useAuth } from '../../context/AuthContext';
 type PaymentMethod = 'becs' | 'invoice' | 'card';
 const turnstileEnabled = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
 
-const classes = [
-  { code: 'full', name: 'Full', fee: 150, note: 'Voting membership' },
-  { code: 'junior', name: 'Junior', fee: 75, note: 'For applicants under 18' },
-  { code: 'affiliate', name: 'Affiliate', fee: 45, note: 'Non-voting membership' },
+interface PublicMembershipClass {
+  code: string;
+  name: string;
+  description: string;
+  annualFee: number;
+  hasVotingRights: boolean;
+  canSelfBookAircraft: boolean;
+}
+
+const fallbackClasses: PublicMembershipClass[] = [
+  { code: 'full', name: 'Full', description: 'Voting membership', annualFee: 150, hasVotingRights: true, canSelfBookAircraft: true },
+  { code: 'junior', name: 'Junior', description: 'For applicants under 18', annualFee: 75, hasVotingRights: false, canSelfBookAircraft: true },
+  { code: 'affiliate', name: 'Affiliate', description: 'Non-voting affiliate membership', annualFee: 45, hasVotingRights: false, canSelfBookAircraft: true },
 ];
 
 const steps = ['Membership', 'Your details', 'Agreements', 'Payment'];
@@ -37,6 +46,12 @@ export const MembershipJoinPage: React.FC = () => {
   const [authorityAccepted, setAuthorityAccepted] = useState(false);
   const [scholarshipEnabled, setScholarshipEnabled] = useState(false);
   const [scholarshipAmount, setScholarshipAmount] = useState(5);
+  const [membershipClasses, setMembershipClasses] = useState<PublicMembershipClass[]>(fallbackClasses);
+  const [scholarshipSettings, setScholarshipSettings] = useState({
+    available: true,
+    defaultAmount: 5,
+    minimumAmount: 0.01,
+  });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('becs');
   const [autoRenew, setAutoRenew] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
@@ -54,6 +69,45 @@ export const MembershipJoinPage: React.FC = () => {
     membershipDocumentsLoading,
     membershipDocumentsError,
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadMembershipConfiguration = async () => {
+      const { data, error } = await supabase.rpc('get_public_membership_configuration');
+      if (cancelled) return;
+      if (error) {
+        console.error('Failed to load public membership configuration:', error);
+        return;
+      }
+      const configuration = data as {
+        classes?: PublicMembershipClass[];
+        scholarship?: { available?: boolean; defaultAmount?: number; minimumAmount?: number };
+      } | null;
+      const nextClasses = Array.isArray(configuration?.classes)
+        ? configuration.classes.map(item => ({
+            ...item,
+            annualFee: Number(item.annualFee || 0),
+          }))
+        : [];
+      if (nextClasses.length > 0) {
+        setMembershipClasses(nextClasses);
+        setForm(current => nextClasses.some(item => item.code === current.membershipClass)
+          ? current
+          : { ...current, membershipClass: nextClasses[0].code });
+      }
+      const defaultAmount = Math.max(0.01, Number(configuration?.scholarship?.defaultAmount ?? 5));
+      const minimumAmount = Math.max(0.01, Number(configuration?.scholarship?.minimumAmount ?? 0.01));
+      setScholarshipSettings({
+        available: configuration?.scholarship?.available !== false,
+        defaultAmount,
+        minimumAmount,
+      });
+      setScholarshipEnabled(current => configuration?.scholarship?.available === false ? false : current);
+      setScholarshipAmount(defaultAmount);
+    };
+    void loadMembershipConfiguration();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!user || prefilledUserId.current === user.id) return;
@@ -135,7 +189,7 @@ export const MembershipJoinPage: React.FC = () => {
       body: {
         action: 'save', paymentMethod, autoRenew: paymentMethod === 'invoice' ? false : autoRenew,
         scholarshipContributionEnabled: scholarshipEnabled,
-        scholarshipContributionAmount: scholarshipEnabled ? scholarshipAmount : 5,
+        scholarshipContributionAmount: scholarshipEnabled ? scholarshipAmount : scholarshipSettings.defaultAmount,
         authorityAccepted: paymentMethod === 'invoice' ? false : authorityAccepted,
         successUrl: `${window.location.origin}/join?payment_setup=success`,
         cancelUrl: `${window.location.origin}/join?payment_setup=cancelled`,
@@ -152,8 +206,11 @@ export const MembershipJoinPage: React.FC = () => {
 
   const submit = async () => {
     if (!validateStep()) return;
-    if (scholarshipEnabled && (!Number.isFinite(scholarshipAmount) || scholarshipAmount < 0.01)) {
-      toast.error('Enter a scholarship contribution of at least $0.01');
+    if (
+      scholarshipEnabled &&
+      (!Number.isFinite(scholarshipAmount) || scholarshipAmount < scholarshipSettings.minimumAmount)
+    ) {
+      toast.error(`Enter a scholarship contribution of at least $${scholarshipSettings.minimumAmount.toFixed(2)}`);
       return;
     }
     if (paymentMethod !== 'invoice' && !authorityAccepted) {
@@ -213,7 +270,7 @@ export const MembershipJoinPage: React.FC = () => {
             membership_payment_method: paymentMethod,
             membership_auto_renew: paymentMethod !== 'invoice' && autoRenew,
             membership_scholarship_enabled: scholarshipEnabled,
-            membership_scholarship_amount: scholarshipEnabled ? scholarshipAmount : 5,
+            membership_scholarship_amount: scholarshipEnabled ? scholarshipAmount : scholarshipSettings.defaultAmount,
             privacy_notice_accepted: true,
             privacy_notice_version: PRIVACY_NOTICE_VERSION,
             privacy_notice_accepted_at: new Date().toISOString(),
@@ -257,7 +314,7 @@ export const MembershipJoinPage: React.FC = () => {
               : 'Your portal account is ready. Membership commences when approved by the committee, or 30 days after your complete application was submitted.'}
           </p>
           <div className="mt-6 rounded-2xl bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-            You can use the portal now to manage your profile and follow your application. Aircraft self-booking becomes available only after your membership fee is paid or waived.
+            You can use the portal now to manage your profile and follow your application. Where your membership includes aircraft self-booking, it becomes available after the membership fee is paid or waived.
           </div>
           <button type="button" onClick={() => navigate(complete === 'submitted' ? '/membership' : '/')} className="mt-6 w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-950">
             {complete === 'submitted' ? 'Open the member portal' : 'Return to sign in'}
@@ -291,8 +348,8 @@ export const MembershipJoinPage: React.FC = () => {
               <h2 className="text-xl font-bold">Choose your membership</h2>
               <p className="mt-1 text-sm text-slate-600">Fees are annual and the first year is prorated to 30 June when membership commences.</p>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                {classes.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
-                  <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.fee}<span className="text-xs font-normal text-slate-600">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.note}</span>
+                {membershipClasses.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                  <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.annualFee}<span className="text-xs font-normal text-slate-600">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.description}</span><span className="mt-2 block text-[11px] font-semibold text-blue-800">{[item.hasVotingRights ? 'Voting rights' : 'Non-voting', item.canSelfBookAircraft ? 'Aircraft self-booking included' : 'No aircraft self-booking'].join(' · ')}</span>
                 </button>)}
               </div>
               <label className="mt-5 block text-sm font-medium">Date of birth <span className="text-red-600">*</span>
@@ -347,10 +404,10 @@ export const MembershipJoinPage: React.FC = () => {
                 <label className="mt-4 flex items-start gap-3 text-sm"><input type="checkbox" checked={authorityAccepted} onChange={e => setAuthorityAccepted(e.target.checked)} className="mt-1" /><span>I authorise the club to securely save this payment method with Stripe and collect the initial membership invoice{autoRenew ? ' and future annual renewals after advance notice' : ''}. No payment is taken during setup.</span></label>
               </div>}
               {paymentMethod === 'invoice' && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">A renewal invoice is raised before membership can cease. If it remains unpaid, available verified Xero prepaid credit may be applied first.</p>}
-              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              {scholarshipSettings.available && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <label className="flex items-center gap-3 text-sm font-semibold text-emerald-950"><input type="checkbox" checked={scholarshipEnabled} onChange={e => setScholarshipEnabled(e.target.checked)} /> Add an optional scholarship contribution</label>
-                {scholarshipEnabled && <label className="mt-3 block text-xs text-emerald-900">Annual contribution amount<input type="number" min="0.01" step="0.01" value={scholarshipAmount} onChange={e => setScholarshipAmount(Number(e.target.value))} className="mt-1 w-36 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm" /></label>}
-              </div>
+                {scholarshipEnabled && <label className="mt-3 block text-xs text-emerald-900">Annual contribution amount<input type="number" min={scholarshipSettings.minimumAmount} step="0.01" value={scholarshipAmount} onChange={e => setScholarshipAmount(Number(e.target.value))} className="mt-1 w-36 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm" /><span className="ml-2">Minimum ${scholarshipSettings.minimumAmount.toFixed(2)}</span></label>}
+              </div>}
               {!user && <div className="mt-4"><TurnstileWidget onToken={setCaptchaToken} /></div>}
             </div>}
           </div>

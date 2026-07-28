@@ -1,6 +1,49 @@
 export const DEFAULT_MEMBERSHIP_ITEM_CODE = "BFC-MEMBERSHIP";
 export const DEFAULT_SCHOLARSHIP_ITEM_CODE = "BFC-SCHOLARSHIP";
 
+const configuredCode = (...values: unknown[]) => {
+  for (const value of values) {
+    const code = String(value || "").trim();
+    if (code) return code;
+  }
+  return "";
+};
+
+export const resolveMembershipRevenueMapping = ({
+  membershipClass,
+  settings,
+  defaultRevenueAccountCode,
+}: {
+  membershipClass?: {
+    xero_item_code?: string | null;
+    xero_account_code?: string | null;
+  } | null;
+  settings?: {
+    xero_membership_item_code?: string | null;
+    xero_scholarship_item_code?: string | null;
+    xero_scholarship_account_code?: string | null;
+  } | null;
+  defaultRevenueAccountCode?: string | null;
+}) => ({
+  membershipItemCode: configuredCode(
+    membershipClass?.xero_item_code,
+    settings?.xero_membership_item_code,
+    DEFAULT_MEMBERSHIP_ITEM_CODE,
+  ).toUpperCase(),
+  membershipAccountCode: configuredCode(
+    membershipClass?.xero_account_code,
+    defaultRevenueAccountCode,
+  ).toUpperCase(),
+  scholarshipItemCode: configuredCode(
+    settings?.xero_scholarship_item_code,
+    DEFAULT_SCHOLARSHIP_ITEM_CODE,
+  ).toUpperCase(),
+  scholarshipAccountCode: configuredCode(
+    settings?.xero_scholarship_account_code,
+    defaultRevenueAccountCode,
+  ).toUpperCase(),
+});
+
 export const DEFAULT_TECHNICAL_RETRY_MINUTES = [5, 30, 120, 720] as const;
 export const DEFAULT_PAYMENT_RETRY_DAYS = [3, 7] as const;
 

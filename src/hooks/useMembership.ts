@@ -20,11 +20,15 @@ interface MembershipClassRow {
   id: string;
   code: MembershipClass['code'];
   name: string;
+  description: string | null;
   annual_fee: number | string | null;
   has_voting_rights: boolean | null;
+  can_self_book_aircraft: boolean | null;
   is_fee_exempt: boolean | null;
   is_active: boolean | null;
   sort_order: number | string | null;
+  xero_item_code: string | null;
+  xero_account_code: string | null;
 }
 
 interface MembershipApplicationRow {
@@ -57,7 +61,12 @@ interface ClubMembershipRow {
   ended_at: string | null;
   end_reason: string | null;
   member?: { name?: string; email?: string } | null;
-  membership_class?: { name?: string; code?: MembershipClass['code']; has_voting_rights?: boolean } | null;
+  membership_class?: {
+    name?: string;
+    code?: MembershipClass['code'];
+    has_voting_rights?: boolean;
+    can_self_book_aircraft?: boolean;
+  } | null;
 }
 
 interface MembershipFinancialPeriodRow {
@@ -116,11 +125,15 @@ const mapClass = (row: MembershipClassRow): MembershipClass => ({
   id: row.id,
   code: row.code,
   name: row.name,
+  description: row.description || '',
   annualFee: Number(row.annual_fee || 0),
   hasVotingRights: Boolean(row.has_voting_rights),
+  canSelfBookAircraft: row.can_self_book_aircraft !== false,
   isFeeExempt: Boolean(row.is_fee_exempt),
   isActive: Boolean(row.is_active),
   sortOrder: Number(row.sort_order || 0),
+  xeroItemCode: row.xero_item_code,
+  xeroAccountCode: row.xero_account_code,
 });
 
 const mapApplication = (row: MembershipApplicationRow): MembershipApplication => ({
@@ -159,6 +172,7 @@ const mapMembership = (row: ClubMembershipRow): ClubMembership => ({
   membershipClassName: row.membership_class?.name,
   membershipClassCode: row.membership_class?.code,
   hasVotingRights: Boolean(row.membership_class?.has_voting_rights),
+  canSelfBookAircraft: row.membership_class?.can_self_book_aircraft !== false,
 });
 
 const mapPeriod = (row: MembershipFinancialPeriodRow): MembershipFinancialPeriod => ({
@@ -224,6 +238,10 @@ export const useMembership = () => {
     xeroStatusStaleHours: 12,
     xeroMembershipItemCode: null,
     xeroScholarshipItemCode: null,
+    xeroScholarshipAccountCode: null,
+    scholarshipContributionAvailable: true,
+    scholarshipDefaultAmount: 5,
+    scholarshipMinimumAmount: 0.01,
     requireStaffOverrideReason: true,
     prorationMethod: 'daily',
     minimumProratedFee: 0,
@@ -255,7 +273,7 @@ export const useMembership = () => {
         supabase.from('club_memberships').select(`
           *,
           member:users!club_memberships_user_id_fkey(name,email),
-          membership_class:membership_classes!club_memberships_membership_class_id_fkey(name,code,has_voting_rights)
+          membership_class:membership_classes!club_memberships_membership_class_id_fkey(name,code,has_voting_rights,can_self_book_aircraft)
         `).order('commenced_at', { ascending: false }),
         supabase.from('membership_financial_periods').select('*').order('financial_year_start', { ascending: false }),
         supabase.from('membership_payment_preferences').select('*'),
@@ -278,6 +296,10 @@ export const useMembership = () => {
           xeroStatusStaleHours: Number(settingsResult.data.xero_status_stale_hours || 12),
           xeroMembershipItemCode: settingsResult.data.xero_membership_item_code,
           xeroScholarshipItemCode: settingsResult.data.xero_scholarship_item_code,
+          xeroScholarshipAccountCode: settingsResult.data.xero_scholarship_account_code,
+          scholarshipContributionAvailable: settingsResult.data.scholarship_contribution_available !== false,
+          scholarshipDefaultAmount: Number(settingsResult.data.scholarship_default_amount ?? 5),
+          scholarshipMinimumAmount: Number(settingsResult.data.scholarship_minimum_amount ?? 0.01),
           requireStaffOverrideReason: Boolean(settingsResult.data.require_staff_override_reason),
           prorationMethod: settingsResult.data.proration_method || 'daily',
           minimumProratedFee: Number(settingsResult.data.minimum_prorated_fee || 0),
@@ -546,7 +568,10 @@ export const useMembership = () => {
       return data;
     }, 'Membership lifecycle processed');
 
-  const updateSettings = (updates: Partial<MembershipSettings>) =>
+  const updateSettings = (
+    updates: Partial<MembershipSettings>,
+    updatedClasses: MembershipClass[] = classes,
+  ) =>
     runAction('settings', async () => {
       const payload: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: user?.id || null };
       if (updates.rolloutMode !== undefined) payload.rollout_mode = updates.rolloutMode;
@@ -557,6 +582,10 @@ export const useMembership = () => {
       if (updates.xeroStatusStaleHours !== undefined) payload.xero_status_stale_hours = updates.xeroStatusStaleHours;
       if (updates.xeroMembershipItemCode !== undefined) payload.xero_membership_item_code = updates.xeroMembershipItemCode?.trim() || null;
       if (updates.xeroScholarshipItemCode !== undefined) payload.xero_scholarship_item_code = updates.xeroScholarshipItemCode?.trim() || null;
+      if (updates.xeroScholarshipAccountCode !== undefined) payload.xero_scholarship_account_code = updates.xeroScholarshipAccountCode?.trim() || null;
+      if (updates.scholarshipContributionAvailable !== undefined) payload.scholarship_contribution_available = updates.scholarshipContributionAvailable;
+      if (updates.scholarshipDefaultAmount !== undefined) payload.scholarship_default_amount = updates.scholarshipDefaultAmount;
+      if (updates.scholarshipMinimumAmount !== undefined) payload.scholarship_minimum_amount = updates.scholarshipMinimumAmount;
       if (updates.requireStaffOverrideReason !== undefined) payload.require_staff_override_reason = updates.requireStaffOverrideReason;
       if (updates.prorationMethod !== undefined) payload.proration_method = updates.prorationMethod;
       if (updates.minimumProratedFee !== undefined) payload.minimum_prorated_fee = updates.minimumProratedFee;
@@ -570,6 +599,24 @@ export const useMembership = () => {
       if (updates.statutoryRegisterCleanupDays !== undefined) payload.statutory_register_cleanup_days = updates.statutoryRegisterCleanupDays;
       const { error: updateError } = await supabase.from('membership_settings').update(payload).eq('id', true);
       if (updateError) throw updateError;
+
+      const { error: classError } = await supabase.rpc('save_membership_products', {
+        p_products: updatedClasses.map((membershipClass, index) => ({
+          id: membershipClass.id,
+          code: membershipClass.code.trim().toLowerCase(),
+          name: membershipClass.name.trim(),
+          description: membershipClass.description.trim(),
+          annualFee: Number(membershipClass.annualFee || 0),
+          hasVotingRights: membershipClass.hasVotingRights,
+          canSelfBookAircraft: membershipClass.canSelfBookAircraft,
+          isFeeExempt: membershipClass.isFeeExempt,
+          isActive: membershipClass.isActive,
+          sortOrder: membershipClass.sortOrder || index + 1,
+          xeroItemCode: membershipClass.xeroItemCode?.trim().toUpperCase() || null,
+          xeroAccountCode: membershipClass.xeroAccountCode?.trim().toUpperCase() || null,
+        })),
+      });
+      if (classError) throw classError;
     }, 'Membership settings saved');
 
   const exportStatutoryRegister = async () => {

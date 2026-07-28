@@ -13,24 +13,32 @@ import {
   Heart,
   Landmark,
   Loader2,
+  Plus,
   RefreshCw,
   Repeat2,
   Settings2,
   ShieldCheck,
+  Trash2,
   UserCheck,
   Users,
   Vote,
   XCircle,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { isFinanciallyCleared, membershipStatusLabel, rolloutModeDescription, useMembership } from '../../hooks/useMembership';
 import { useUsers } from '../../hooks/useUsers';
-import { MembershipApplication, MembershipFinancialPeriod, MembershipPaymentMethod, MembershipProrationMethod, MembershipRolloutMode } from '../../types';
+import { MembershipApplication, MembershipClass, MembershipFinancialPeriod, MembershipPaymentMethod, MembershipProrationMethod, MembershipRolloutMode } from '../../types';
 import { MembershipDocumentLinks } from './MembershipDocumentLinks';
 import { AddressAutocomplete } from '../common/AddressAutocomplete';
 import { useMembershipDocuments } from '../../hooks/useMembershipDocuments';
 import { membershipDocumentsAreReady } from '../../utils/membershipDocumentRules';
-import { positiveIntegerList } from '../../utils/membershipSettings';
+import {
+  membershipProductCodeIsValid,
+  membershipProductsAreValid,
+  positiveIntegerList,
+  scholarshipSettingsAreValid,
+} from '../../utils/membershipSettings';
 
 const dateLabel = (value?: string | null) => value
   ? new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value))
@@ -185,7 +193,9 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
   const [paymentMethod, setPaymentMethod] = useState<MembershipPaymentMethod>(preference?.paymentMethod || 'becs');
   const [autoRenew, setAutoRenew] = useState(preference?.autoRenew || false);
   const [scholarshipEnabled, setScholarshipEnabled] = useState(preference?.scholarshipContributionEnabled || false);
-  const [scholarshipAmount, setScholarshipAmount] = useState(String(preference?.scholarshipContributionAmount || 5));
+  const [scholarshipAmount, setScholarshipAmount] = useState(String(
+    preference?.scholarshipContributionAmount || membershipApi.settings.scholarshipDefaultAmount,
+  ));
   const [authorityAccepted, setAuthorityAccepted] = useState(false);
   const [replacePaymentMethod, setReplacePaymentMethod] = useState(false);
 
@@ -193,10 +203,15 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
     if (!preference) return;
     setPaymentMethod(preference.paymentMethod);
     setAutoRenew(preference.autoRenew);
-    setScholarshipEnabled(preference.scholarshipContributionEnabled);
-    setScholarshipAmount(String(preference.scholarshipContributionAmount || 5));
+    setScholarshipEnabled(
+      membershipApi.settings.scholarshipContributionAvailable
+      && preference.scholarshipContributionEnabled
+    );
+    setScholarshipAmount(String(
+      preference.scholarshipContributionAmount || membershipApi.settings.scholarshipDefaultAmount,
+    ));
     setReplacePaymentMethod(false);
-  }, [preference]);
+  }, [membershipApi.settings.scholarshipContributionAvailable, membershipApi.settings.scholarshipDefaultAmount, preference]);
 
   const methods: Array<{ id: MembershipPaymentMethod; title: string; description: string; icon: typeof Landmark; recommended?: boolean }> = [
     { id: 'becs', title: 'BECS Direct Debit', description: 'Securely save an Australian bank account. Setup does not transfer any money.', icon: Landmark, recommended: true },
@@ -210,7 +225,10 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
     : preference?.authorityStatus === 'ready' && /ending\s+\d{4}$/i.test(preference.paymentMethodDisplay || '');
   const opensSecureSetup = needsAuthority && (replacePaymentMethod || !(preference?.paymentMethod === paymentMethod && preferenceIsReady));
   const saveDisabled = membershipApi.busyAction === 'payment-preference'
-    || (scholarshipEnabled && (!Number.isFinite(parsedScholarshipAmount) || parsedScholarshipAmount < 0.01))
+    || (scholarshipEnabled && (
+      !Number.isFinite(parsedScholarshipAmount)
+      || parsedScholarshipAmount < membershipApi.settings.scholarshipMinimumAmount
+    ))
     || (needsAuthority && !authorityAccepted);
 
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -228,18 +246,19 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
       <input type="checkbox" checked={autoRenew} disabled={paymentMethod === 'invoice'} onChange={event => setAutoRenew(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
       <span><span className="flex items-center gap-2 font-bold text-slate-900"><Repeat2 className="h-4 w-4" /> Automatically pay annual renewals</span><span className="mt-1 block text-sm text-slate-600">We will notify you before each annual debit. You can turn this off at any time. Manual Xero invoices cannot be auto-debited.</span></span>
     </label>
-    <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
+    {membershipApi.settings.scholarshipContributionAvailable && <div className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4">
       <label className="flex items-start gap-3">
         <input type="checkbox" checked={scholarshipEnabled} onChange={event => setScholarshipEnabled(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-violet-300" />
         <span><span className="flex items-center gap-2 font-bold text-violet-950"><Heart className="h-4 w-4" /> Add a scholarship contribution</span><span className="mt-1 block text-sm text-violet-800">Optional and unchecked by default. It is listed separately from your membership fee in Xero.</span></span>
       </label>
       {scholarshipEnabled && <label className="mt-3 block max-w-xs text-sm font-semibold text-violet-950">Contribution amount
-        <div className="mt-1 flex rounded-lg border border-violet-300 bg-white focus-within:ring-2 focus-within:ring-violet-200"><span className="px-3 py-2.5 text-slate-500">$</span><input type="number" min="0.01" step="0.01" inputMode="decimal" value={scholarshipAmount} onChange={event => setScholarshipAmount(event.target.value)} className="min-w-0 flex-1 rounded-r-lg border-0 px-2 py-2.5 outline-none" /></div>
+        <div className="mt-1 flex rounded-lg border border-violet-300 bg-white focus-within:ring-2 focus-within:ring-violet-200"><span className="px-3 py-2.5 text-slate-500">$</span><input type="number" min={membershipApi.settings.scholarshipMinimumAmount} step="0.01" inputMode="decimal" value={scholarshipAmount} onChange={event => setScholarshipAmount(event.target.value)} className="min-w-0 flex-1 rounded-r-lg border-0 px-2 py-2.5 outline-none" /></div>
+        <span className="mt-1 block text-xs font-normal text-violet-700">Minimum {moneyLabel(membershipApi.settings.scholarshipMinimumAmount)}</span>
       </label>}
-    </div>
+    </div>}
     {needsAuthority && <label className="mt-4 flex items-start gap-3 text-sm text-slate-700"><input type="checkbox" checked={authorityAccepted} onChange={event => setAuthorityAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span>I authorise the initial membership payment using this method. {autoRenew ? 'I also authorise future annual renewal payments after advance notice.' : 'I am not authorising future annual renewal payments.'}</span></label>}
     {preference && <div className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">Current: <span className="font-bold text-slate-800">{preference.paymentMethodDisplay || membershipStatusLabel(preference.paymentMethod)}</span>{preferenceIsReady ? <span className="ml-2 text-emerald-700">Ready</span> : preference.authorityStatus === 'ready' ? <span className="ml-2 font-semibold text-amber-700">Setup incomplete - save again</span> : <span className="ml-2 capitalize text-amber-700">{membershipStatusLabel(preference.authorityStatus)}</span>}{preferenceIsReady && preference.paymentMethod !== 'invoice' && <button type="button" onClick={() => { setReplacePaymentMethod(true); setAuthorityAccepted(false); }} className="ml-3 font-semibold text-blue-700 underline underline-offset-2">Use a different {preference.paymentMethod === 'card' ? 'card' : 'bank account'}</button>}{preference.lastCollectionError && <span className="mt-1 block text-red-700">{preference.lastCollectionError}</span>}</div>}
-    <button disabled={saveDisabled} onClick={() => void membershipApi.savePaymentPreference({ paymentMethod, autoRenew: paymentMethod === 'invoice' ? false : autoRenew, scholarshipContributionEnabled: scholarshipEnabled, scholarshipContributionAmount: parsedScholarshipAmount, authorityAccepted: needsAuthority ? authorityAccepted : false, forceSetup: replacePaymentMethod })} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
+    <button disabled={saveDisabled} onClick={() => void membershipApi.savePaymentPreference({ paymentMethod, autoRenew: paymentMethod === 'invoice' ? false : autoRenew, scholarshipContributionEnabled: membershipApi.settings.scholarshipContributionAvailable && scholarshipEnabled, scholarshipContributionAmount: parsedScholarshipAmount, authorityAccepted: needsAuthority ? authorityAccepted : false, forceSetup: replacePaymentMethod })} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">
       {membershipApi.busyAction === 'payment-preference' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} {opensSecureSetup ? `Continue to secure ${paymentMethod === 'card' ? 'card' : 'bank'} setup` : 'Save payment preference'}
     </button>
   </section>;
@@ -263,7 +282,7 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
   ) || ownPeriods[0];
   const upcomingPeriod = ownPeriods.find(period => period.financialYearStart > today);
   if (!ownApplication && !ownMembership) {
-    return <MembershipApplicationForm classes={classes.filter(item => item.code !== 'life')} busy={busyAction === 'application:submit'} onSubmit={submitApplication} />;
+    return <MembershipApplicationForm classes={classes.filter(item => item.code !== 'life' && item.isActive)} busy={busyAction === 'application:submit'} onSubmit={submitApplication} />;
   }
 
   return <div className="space-y-5">
@@ -274,6 +293,7 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
           <p className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-500">BFC membership</p>
           <p className="mt-1 text-xl font-extrabold text-slate-950">{ownMembership.membershipClassName}</p>
           <p className="mt-1 text-sm text-slate-600">Commenced {dateLabel(ownMembership.commencedAt)}</p>
+          <p className={`mt-2 text-xs font-semibold ${ownMembership.canSelfBookAircraft ? 'text-emerald-700' : 'text-amber-700'}`}>{ownMembership.canSelfBookAircraft ? 'Includes aircraft self-booking when financially cleared' : 'Does not include aircraft self-booking'}</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between"><CircleDollarSign className="h-5 w-5 text-blue-700" /><StatusPill value={currentPeriod?.feeDisposition} /></div>
@@ -286,7 +306,7 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
           <div className="flex items-center justify-between"><Vote className="h-5 w-5 text-blue-700" />{ownMembership.hasVotingRights ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <XCircle className="h-5 w-5 text-slate-400" />}</div>
           <p className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-500">Voting entitlement</p>
           <p className="mt-1 text-xl font-extrabold text-slate-950">{ownMembership.hasVotingRights ? 'Voting member' : 'Non-voting member'}</p>
-          <p className="mt-1 text-sm text-slate-600">Only Full membership carries voting rights.</p>
+          <p className="mt-1 text-sm text-slate-600">Voting rights are determined by the membership product configured by the club.</p>
         </div>
       </div>
       <MembershipBillingStatus period={currentPeriod} />
@@ -295,6 +315,7 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
         <div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><h3 className="font-bold">Aircraft self-booking is unavailable</h3><p className="mt-1 text-sm">Your legal membership continues until {dateLabel(currentPeriod.graceExpiresAt)}, but the fee must be paid or waived before you can book an aircraft yourself.</p></div></div>
         {currentPeriod.xeroInvoiceId && <button disabled={busyAction === 'xero:own'} onClick={() => void refreshOwnXeroInvoices()} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-bold hover:bg-amber-100"><RefreshCw className={`h-4 w-4 ${busyAction === 'xero:own' ? 'animate-spin' : ''}`} /> Refresh Xero payment</button>}
       </div>}
+      {ownMembership.canSelfBookAircraft === false && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950"><div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><h3 className="font-bold">Aircraft self-booking is not included</h3><p className="mt-1 text-sm">Your membership remains current, but this membership product requires an instructor or administrator to create aircraft bookings for you.</p></div></div></div>}
       {currentPeriod?.waiverReason && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><span className="font-bold">Fee waiver:</span> {currentPeriod.waiverReason}</div>}
       {ownMembership.legalStatus === 'current' && <MembershipPaymentPreferencesCard membershipApi={membershipApi} />}
       <MembershipCancellation membershipApi={membershipApi} />
@@ -362,11 +383,103 @@ const RegisterAdmin = ({ membershipApi }: { membershipApi: ReturnType<typeof use
 
 const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
   const [draft, setDraft] = useState(membershipApi.settings);
-  React.useEffect(() => setDraft(membershipApi.settings), [membershipApi.settings]);
+  const [classDrafts, setClassDrafts] = useState<MembershipClass[]>(membershipApi.classes);
+  const [xeroAccounts, setXeroAccounts] = useState<Array<{ code: string; name: string; type?: string }>>([]);
+  const [xeroAccountsLoading, setXeroAccountsLoading] = useState(true);
+  React.useEffect(() => {
+    setDraft(membershipApi.settings);
+    setClassDrafts(membershipApi.classes);
+  }, [membershipApi.classes, membershipApi.settings]);
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadXeroAccounts = async () => {
+      setXeroAccountsLoading(true);
+      const { data, error } = await supabase.functions.invoke<{
+        accounts?: Array<{ code: string; name: string; type?: string; status?: string }>;
+      }>('xero-sync', { body: { action: 'list-accounts' } });
+      if (!cancelled) {
+        if (error) {
+          console.warn('Xero account choices are unavailable; manual entry remains enabled:', error);
+          setXeroAccounts([]);
+        } else {
+          setXeroAccounts((data?.accounts || []).filter(account => account.status === 'ACTIVE' && account.code));
+        }
+        setXeroAccountsLoading(false);
+      }
+    };
+    void loadXeroAccounts();
+    return () => { cancelled = true; };
+  }, []);
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal';
+  const updateClass = (id: string, updates: Partial<MembershipClass>) => {
+    setClassDrafts(current => current.map(item => item.id === id ? { ...item, ...updates } : item));
+  };
+  const addClass = () => {
+    setClassDrafts(current => [...current, {
+      id: `new-${crypto.randomUUID()}`,
+      code: '',
+      name: 'New membership',
+      description: '',
+      annualFee: 0,
+      hasVotingRights: false,
+      canSelfBookAircraft: true,
+      isFeeExempt: false,
+      isActive: true,
+      sortOrder: current.length + 1,
+      xeroItemCode: null,
+      xeroAccountCode: null,
+    }]);
+  };
+  const normalisedCodes = classDrafts.map(item => item.code.trim().toLowerCase());
+  const duplicateCodes = new Set(normalisedCodes.filter((code, index) => code && normalisedCodes.indexOf(code) !== index));
+  const invalidMembershipProducts = !membershipProductsAreValid(classDrafts);
+  const invalidScholarshipSettings = !scholarshipSettingsAreValid({
+    defaultAmount: draft.scholarshipDefaultAmount,
+    minimumAmount: draft.scholarshipMinimumAmount,
+  });
+  const saveDisabled = membershipApi.busyAction === 'settings'
+    || draft.waiverTypes.length === 0
+    || classDrafts.length === 0
+    || invalidMembershipProducts
+    || invalidScholarshipSettings;
   return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
     <div className="space-y-5">
+      <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div><h2 className="text-lg font-bold text-slate-950">Membership products and permissions</h2><p className="mt-1 text-sm text-slate-600">Create membership options and control their fee, member permissions and Xero revenue mapping. Fee changes apply to newly created financial periods; existing product codes stay fixed so historical records remain reliable.</p></div>
+          <button type="button" onClick={addClass} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800"><Plus className="h-4 w-4" /> Add membership</button>
+        </div>
+        <div className="space-y-4">
+          {classDrafts.map((membershipClass, index) => {
+            const isExisting = membershipApi.classes.some(item => item.id === membershipClass.id);
+            const code = membershipClass.code.trim().toLowerCase();
+            const codeInvalid = !membershipProductCodeIsValid(code) || duplicateCodes.has(code);
+            return <article key={membershipClass.id} className={`rounded-xl border p-4 ${membershipClass.isActive ? 'border-slate-200' : 'border-slate-200 bg-slate-50 opacity-80'}`}>
+              <div className="mb-3 flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{isExisting ? 'Existing membership product' : 'New membership product'}</p>{!isExisting && <button type="button" onClick={() => setClassDrafts(current => current.filter(item => item.id !== membershipClass.id))} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-red-700 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Remove</button>}</div>
+              <div className="grid gap-4 lg:grid-cols-4">
+                <label className="text-sm font-semibold text-slate-700">Name<input value={membershipClass.name} onChange={event => updateClass(membershipClass.id, { name: event.target.value })} className={inputClass} placeholder="Full membership" /></label>
+                <label className="text-sm font-semibold text-slate-700">Code<input value={membershipClass.code} disabled={isExisting} onChange={event => updateClass(membershipClass.id, { code: event.target.value.toLowerCase().replace(/\s+/g, '-') })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} placeholder="full" /><span className={`mt-1 block text-xs font-normal ${codeInvalid ? 'text-red-700' : 'text-slate-500'}`}>{isExisting ? 'Fixed after creation' : codeInvalid ? 'Use 2–50 lowercase letters, numbers, hyphens or underscores' : 'Permanent identifier'}</span></label>
+                <label className="text-sm font-semibold text-slate-700">Annual fee (AUD)<input type="number" min={0} step="0.01" value={membershipClass.annualFee} disabled={membershipClass.isFeeExempt} onChange={event => updateClass(membershipClass.id, { annualFee: Number(event.target.value || 0) })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} /></label>
+                <label className="text-sm font-semibold text-slate-700">Display order<input type="number" min={1} value={membershipClass.sortOrder || index + 1} onChange={event => updateClass(membershipClass.id, { sortOrder: Number(event.target.value || index + 1) })} className={inputClass} /></label>
+              </div>
+              <label className="mt-4 block text-sm font-semibold text-slate-700">Description<input value={membershipClass.description} onChange={event => updateClass(membershipClass.id, { description: event.target.value })} className={inputClass} placeholder="Explain who this membership is for" /></label>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.hasVotingRights} onChange={event => updateClass(membershipClass.id, { hasVotingRights: event.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Voting rights</strong><span className="mt-1 block text-xs font-normal text-slate-500">Member is shown as eligible to vote.</span></span></label>
+                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.canSelfBookAircraft} onChange={event => updateClass(membershipClass.id, { canSelfBookAircraft: event.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Aircraft self-booking</strong><span className="mt-1 block text-xs font-normal text-slate-500">Still requires financial clearance and all safety rules.</span></span></label>
+                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.isFeeExempt} onChange={event => updateClass(membershipClass.id, { isFeeExempt: event.target.checked, annualFee: event.target.checked ? 0 : membershipClass.annualFee })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Fee exempt</strong><span className="mt-1 block text-xs font-normal text-slate-500">No annual membership invoice is required.</span></span></label>
+                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.isActive} onChange={event => updateClass(membershipClass.id, { isActive: event.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Available</strong><span className="mt-1 block text-xs font-normal text-slate-500">Can be selected for new applications.</span></span></label>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="text-sm font-semibold text-slate-700">Xero item code<input value={membershipClass.xeroItemCode || ''} onChange={event => updateClass(membershipClass.id, { xeroItemCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={`BFC-${code || 'MEMBERSHIP'}`} /><span className="mt-1 block text-xs font-normal text-slate-500">May be shared across membership products.</span></label>
+                <label className="text-sm font-semibold text-slate-700">Accounting Code{xeroAccounts.length > 0 ? <select value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value || null })} className={inputClass}><option value="">Use the default Xero revenue account</option>{membershipClass.xeroAccountCode && !xeroAccounts.some(account => account.code === membershipClass.xeroAccountCode) && <option value={membershipClass.xeroAccountCode}>{membershipClass.xeroAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 200'} />}<span className="mt-1 block text-xs font-normal text-slate-500">Xero revenue account; may be the same or different for each product.</span></label>
+              </div>
+            </article>;
+          })}
+        </div>
+        {invalidMembershipProducts && <p className="text-sm font-semibold text-red-700">Complete every membership name and valid unique code, and ensure fees are not negative.</p>}
+      </section>
+
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div><h2 className="text-lg font-bold text-slate-950">Membership year and commencement</h2><p className="mt-1 text-sm text-slate-600">These values affect legal commencement and future fee periods. Confirm governance changes before saving them.</p></div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -397,9 +510,16 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
           <label className="text-sm font-semibold text-slate-700">Payment retry days<input value={draft.paymentRetryDays.join(', ')} onChange={event => setDraft(current => ({ ...current, paymentRetryDays: positiveIntegerList(event.target.value, current.paymentRetryDays) }))} className={inputClass} /></label>
           <label className="text-sm font-semibold text-slate-700">Xero status stale after<input type="number" min={1} max={168} value={draft.xeroStatusStaleHours} onChange={event => setDraft(current => ({ ...current, xeroStatusStaleHours: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">hours; stale data prevents automatic cessation</span></label>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-semibold text-slate-700">Xero membership item code<input value={draft.xeroMembershipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroMembershipItemCode: event.target.value }))} className={inputClass} placeholder="BFC-MEMBERSHIP" /><span className="mt-1 block text-xs font-normal text-slate-500">Use the accountant-approved sales item.</span></label>
-          <label className="text-sm font-semibold text-slate-700">Xero scholarship item code<input value={draft.xeroScholarshipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipItemCode: event.target.value }))} className={inputClass} placeholder="BFC-SCHOLARSHIP" /></label>
+        <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+          <div><h3 className="font-bold text-violet-950">Scholarship contribution</h3><p className="mt-1 text-sm text-violet-800">This remains optional and unchecked for members. Configure the suggested amount and its separate Xero mapping.</p></div>
+          <label className="mt-4 flex items-start gap-3 rounded-lg border border-violet-200 bg-white p-3 text-sm text-slate-700"><input type="checkbox" checked={draft.scholarshipContributionAvailable} onChange={event => setDraft(current => ({ ...current, scholarshipContributionAvailable: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-violet-300" /><span><strong>Offer scholarship contributions</strong><span className="mt-1 block text-xs font-normal text-slate-500">Members must actively opt in.</span></span></label>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-sm font-semibold text-slate-700">Suggested amount<input type="number" min={0.01} step="0.01" value={draft.scholarshipDefaultAmount} onChange={event => setDraft(current => ({ ...current, scholarshipDefaultAmount: Number(event.target.value || 0) }))} className={inputClass} /></label>
+            <label className="text-sm font-semibold text-slate-700">Minimum amount<input type="number" min={0.01} step="0.01" value={draft.scholarshipMinimumAmount} onChange={event => setDraft(current => ({ ...current, scholarshipMinimumAmount: Number(event.target.value || 0) }))} className={inputClass} /></label>
+            <label className="text-sm font-semibold text-slate-700">Xero item code<input value={draft.xeroScholarshipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipItemCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder="BFC-SCHOLARSHIP" /></label>
+            <label className="text-sm font-semibold text-slate-700">Accounting Code{xeroAccounts.length > 0 ? <select value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value || null }))} className={inputClass}><option value="">Use the default Xero revenue account</option>{draft.xeroScholarshipAccountCode && !xeroAccounts.some(account => account.code === draft.xeroScholarshipAccountCode) && <option value={draft.xeroScholarshipAccountCode}>{draft.xeroScholarshipAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 210'} />}</label>
+          </div>
+          {invalidScholarshipSettings && <p className="mt-3 text-sm font-semibold text-red-700">The suggested contribution must be at least the minimum, and the minimum must be at least $0.01.</p>}
         </div>
       </section>
 
@@ -418,7 +538,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
         <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 text-sm text-slate-700"><input type="checkbox" checked={draft.requireStaffOverrideReason} onChange={event => setDraft(current => ({ ...current, requireStaffOverrideReason: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Require a staff override reason</strong><span className="mt-1 block text-xs font-normal text-slate-500">Recommended whenever staff proceed for an unpaid member or non-member.</span></span></label>
       </section>
 
-      <button disabled={membershipApi.busyAction === 'settings' || draft.waiverTypes.length === 0} onClick={() => void membershipApi.updateSettings(draft)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"><Settings2 className="h-4 w-4" /> Save membership settings</button>
+      <button disabled={saveDisabled} onClick={() => void membershipApi.updateSettings(draft, classDrafts)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"><Settings2 className="h-4 w-4" /> Save membership settings</button>
     </div>
     <aside className="space-y-4">
       <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5"><ShieldCheck className="h-6 w-6 text-blue-700" /><h3 className="mt-3 font-bold text-blue-950">Safeguards kept in place</h3><ul className="mt-2 space-y-2 text-sm text-blue-900"><li>Guests remain exempt from BFC membership.</li><li>Automatic payment waits until the due date.</li><li>Technical and payment retries remain idempotent.</li><li>Staff overrides are recorded per booking.</li><li>Safety, duty, grounding and supervision controls stay independent.</li></ul></div>
