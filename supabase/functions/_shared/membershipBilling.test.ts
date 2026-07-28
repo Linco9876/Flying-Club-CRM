@@ -1,8 +1,10 @@
 import {
   collectionWasSubmitted,
+  configuredPaymentRetryDays,
   DEFAULT_MEMBERSHIP_ITEM_CODE,
   membershipBillingRetryDelayMs,
   membershipCollectionIdempotencyParts,
+  membershipPaymentRetryDelayMs,
 } from "./membershipBilling.ts";
 
 const assert = (condition: boolean, message: string) => {
@@ -12,10 +14,25 @@ const assert = (condition: boolean, message: string) => {
 Deno.test("membership billing uses bounded increasing retry delays", () => {
   const delays = [1, 2, 3, 4, 5, 8].map(membershipBillingRetryDelayMs);
   assert(delays[0] === 5 * 60 * 1000, "first retry should wait five minutes");
-  assert(delays[4] === 24 * 60 * 60 * 1000, "fifth retry should wait one day");
+  assert(delays[4] === 12 * 60 * 60 * 1000, "later retries should remain bounded");
   assert(
     delays.every((delay, index) => index === 0 || delay >= delays[index - 1]),
     "retry delays must never decrease",
+  );
+});
+
+Deno.test("payment declines use a slower independently configurable schedule", () => {
+  assert(
+    membershipPaymentRetryDelayMs(1) === 3 * 24 * 60 * 60 * 1000,
+    "first payment retry should wait three days",
+  );
+  assert(
+    membershipPaymentRetryDelayMs(2, [2, 6]) === 6 * 24 * 60 * 60 * 1000,
+    "configured payment retry days should be honoured",
+  );
+  assert(
+    configuredPaymentRetryDays(["bad", 4, -1]).join(",") === "4",
+    "invalid configured delays should be ignored",
   );
 });
 

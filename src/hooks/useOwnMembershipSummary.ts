@@ -108,8 +108,10 @@ export const useOwnMembershipSummary = (userId?: string) => {
         if (membership?.id) {
           const periodResult = await supabase
             .from('membership_financial_periods')
-            .select('financial_year_end, fee_disposition, amount_due, due_date, grace_expires_at, billing_sync_status, billing_sync_attempts, billing_sync_next_attempt_at, billing_sync_error')
+            .select('financial_year_start, financial_year_end, fee_disposition, amount_due, due_date, grace_expires_at, billing_sync_status, billing_sync_attempts, billing_sync_next_attempt_at, billing_sync_error')
             .eq('membership_id', membership.id)
+            .lte('financial_year_start', new Date().toISOString().slice(0, 10))
+            .gte('financial_year_end', new Date().toISOString().slice(0, 10))
             .order('financial_year_start', { ascending: false })
             .limit(1)
             .maybeSingle();

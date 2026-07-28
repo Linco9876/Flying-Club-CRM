@@ -79,6 +79,34 @@ const loadWelcomeBrand = async (
   };
 };
 
+const loadWelcomePolicy = async (adminClient: any) => {
+  const { data, error } = await adminClient
+    .from("membership_settings")
+    .select(
+      "financial_year_start_month,financial_year_start_day,non_payment_grace_days,renewal_invoice_lead_days",
+    )
+    .eq("id", true)
+    .maybeSingle();
+  if (error) throw error;
+  const month = Math.min(
+    12,
+    Math.max(1, Number(data?.financial_year_start_month || 7)),
+  );
+  const day = Math.min(
+    28,
+    Math.max(1, Number(data?.financial_year_start_day || 1)),
+  );
+  return {
+    renewalDateLabel: new Intl.DateTimeFormat("en-AU", {
+      day: "numeric",
+      month: "long",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(2026, month - 1, day))),
+    nonPaymentGraceDays: Number(data?.non_payment_grace_days || 60),
+    renewalInvoiceLeadDays: Number(data?.renewal_invoice_lead_days || 30),
+  };
+};
+
 const requireServiceOrAdmin = async (
   adminClient: any,
   req: Request,
@@ -128,6 +156,7 @@ const deliver = async (
     membershipClass: string;
     variant: MembershipWelcomeVariant;
     brand: MembershipWelcomeBrand;
+    policy: Awaited<ReturnType<typeof loadWelcomePolicy>>;
     review?: boolean;
   },
 ) => {
@@ -189,6 +218,7 @@ const deliver = async (
       membershipClass: input.membershipClass,
       variant: input.variant,
       brand: input.brand,
+      policy: input.policy,
       review: input.review,
     });
     const messageId = await sendBrevo(input.recipient, message);
@@ -227,6 +257,7 @@ const sendForMembership = async (
   adminClient: any,
   membership: any,
   brand: MembershipWelcomeBrand,
+  policy: Awaited<ReturnType<typeof loadWelcomePolicy>>,
 ) => {
   const [
     { data: member, error: memberError },
@@ -269,6 +300,7 @@ const sendForMembership = async (
     membershipClass: clean(membershipClass?.name) || "BFC",
     variant,
     brand,
+    policy,
   });
 };
 
@@ -287,7 +319,10 @@ Deno.serve(async (req: Request) => {
     });
     const body = await req.json().catch(() => ({}));
     const action = clean(body.action || "send-pending");
-    const welcomeBrand = await loadWelcomeBrand(adminClient);
+    const [welcomeBrand, welcomePolicy] = await Promise.all([
+      loadWelcomeBrand(adminClient),
+      loadWelcomePolicy(adminClient),
+    ]);
 
     if (action === "send-review") {
       const recipient = "lincoln@bbkm.com.au";
@@ -306,6 +341,7 @@ Deno.serve(async (req: Request) => {
             membershipClass: "Full",
             variant,
             brand: welcomeBrand,
+            policy: welcomePolicy,
             review: true,
           }),
         );
@@ -333,6 +369,7 @@ Deno.serve(async (req: Request) => {
           adminClient,
           membership,
           welcomeBrand,
+          welcomePolicy,
         ),
       });
     }
@@ -350,7 +387,12 @@ Deno.serve(async (req: Request) => {
     for (const membership of memberships || []) {
       try {
         results.push(
-          await sendForMembership(adminClient, membership, welcomeBrand),
+          await sendForMembership(
+            adminClient,
+            membership,
+            welcomeBrand,
+            welcomePolicy,
+          ),
         );
       } catch (error) {
         results.push({
