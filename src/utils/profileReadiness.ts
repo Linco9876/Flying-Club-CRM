@@ -34,6 +34,41 @@ export const isSelfDeclaredMedical = (medicalType?: string | null) =>
 export const requiresFlightReview = (roles: string[]) =>
   roles.some(role => ['pilot', 'instructor', 'senior_instructor'].includes(role));
 
+export const shouldShowMembershipAmountDue = ({
+  amountDue,
+  financiallyCleared,
+}: {
+  amountDue: number;
+  financiallyCleared: boolean;
+}) => !financiallyCleared && amountDue > 0;
+
+export type ProfileReadinessDestination =
+  | 'membership'
+  | 'billing'
+  | 'profile'
+  | 'raaus'
+  | 'medical'
+  | 'flight-review';
+
+export const getProfileReadinessDestination = (
+  destination: ProfileReadinessDestination,
+  missingProfileFields: string[] = [],
+) => {
+  if (destination === 'membership') return '/membership';
+  if (destination === 'billing') return '/billing';
+  if (destination === 'flight-review') return '/pilot-file?subtab=reviews';
+  if (destination === 'raaus' || destination === 'medical') {
+    return '/settings?tab=account-info&focus=aviation-credentials';
+  }
+
+  const focus = missingProfileFields.includes('emergency contact')
+    ? 'emergency-contact'
+    : missingProfileFields.some(field => field === 'phone' || field === 'address')
+      ? 'contact-details'
+      : 'personal-details';
+  return `/settings?tab=account-info&focus=${focus}`;
+};
+
 export const getMembershipIdentityLabel = ({
   legalStatus,
   membershipClassName,

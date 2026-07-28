@@ -4,8 +4,10 @@ import {
   getDatedReadinessStatus,
   getMembershipIdentityLabel,
   getOverallReadiness,
+  getProfileReadinessDestination,
   isSelfDeclaredMedical,
   requiresFlightReview,
+  shouldShowMembershipAmountDue,
   usesRaausCredentials,
 } from './profileReadiness.ts';
 
@@ -45,6 +47,35 @@ test('requires a flight review for qualified flying roles but not students or ad
   assert.equal(requiresFlightReview(['admin']), false);
   assert.equal(requiresFlightReview(['student', 'pilot']), true);
   assert.equal(requiresFlightReview(['instructor']), true);
+});
+
+test('does not describe the annual membership fee as due after financial clearance', () => {
+  assert.equal(shouldShowMembershipAmountDue({ amountDue: 144.32, financiallyCleared: true }), false);
+  assert.equal(shouldShowMembershipAmountDue({ amountDue: 144.32, financiallyCleared: false }), true);
+  assert.equal(shouldShowMembershipAmountDue({ amountDue: 0, financiallyCleared: false }), false);
+});
+
+test('readiness destinations open the exact settings section or pilot-file tab', () => {
+  assert.equal(
+    getProfileReadinessDestination('raaus'),
+    '/settings?tab=account-info&focus=aviation-credentials',
+  );
+  assert.equal(
+    getProfileReadinessDestination('medical'),
+    '/settings?tab=account-info&focus=aviation-credentials',
+  );
+  assert.equal(
+    getProfileReadinessDestination('flight-review'),
+    '/pilot-file?subtab=reviews',
+  );
+  assert.equal(
+    getProfileReadinessDestination('profile', ['phone', 'address']),
+    '/settings?tab=account-info&focus=contact-details',
+  );
+  assert.equal(
+    getProfileReadinessDestination('profile', ['emergency contact']),
+    '/settings?tab=account-info&focus=emergency-contact',
+  );
 });
 
 test('a current legal membership never appears unestablished when its class label is unavailable', () => {

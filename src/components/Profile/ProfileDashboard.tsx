@@ -35,8 +35,10 @@ import {
   getDatedReadinessStatus,
   getMembershipIdentityLabel,
   getOverallReadiness,
+  getProfileReadinessDestination,
   isSelfDeclaredMedical,
   requiresFlightReview,
+  shouldShowMembershipAmountDue,
   type ProfileReadinessLevel,
   usesRaausCredentials,
 } from '../../utils/profileReadiness';
@@ -412,7 +414,7 @@ export const ProfileDashboard: React.FC = () => {
         ? membership.financiallyCleared ? 'Active' : 'Payment required'
         : membership.applicationStatus === 'pending' ? 'Pending approval' : humaniseStatus(membership.legalStatus),
       level: membershipLevel,
-      to: '/membership',
+      to: getProfileReadinessDestination('membership'),
     },
     ...(isFlyingMember ? [
       ...(usesRaaus ? [{
@@ -420,21 +422,21 @@ export const ProfileDashboard: React.FC = () => {
         label: 'RAAus membership',
         value: raausStatus.label,
         level: raausStatus.level,
-        to: '/settings?tab=account-info',
+        to: getProfileReadinessDestination('raaus'),
       }] : []),
       ...(hasRecordedMedical ? [{
         id: 'medical',
         label: 'Medical',
         value: medicalStatus.label,
         level: medicalStatus.level,
-        to: '/settings?tab=account-info',
+        to: getProfileReadinessDestination('medical'),
       }] : []),
       ...(needsFlightReview ? [{
         id: 'flight-review',
         label: 'Flight review',
         value: flightReviewStatus.label,
         level: flightReviewStatus.level,
-        to: '/pilot-file',
+        to: getProfileReadinessDestination('flight-review'),
       }] : []),
     ] : []),
     {
@@ -446,14 +448,16 @@ export const ProfileDashboard: React.FC = () => {
           ? 'Billing in progress'
           : membership.xeroLinked ? 'Linked' : 'Admin setup needed',
       level: billingLevel,
-      to: membershipBillingProblem || membershipBillingPending ? '/membership' : '/billing',
+      to: membershipBillingProblem || membershipBillingPending
+        ? getProfileReadinessDestination('membership')
+        : getProfileReadinessDestination('billing'),
     },
     {
       id: 'profile',
       label: 'Profile details',
       value: missingProfileFields.length === 0 ? 'Complete' : `${missingProfileFields.length} missing`,
       level: profileLevel,
-      to: '/settings?tab=account-info',
+      to: getProfileReadinessDestination('profile', missingProfileFields),
     },
   ], [
     billingLevel,
@@ -470,7 +474,7 @@ export const ProfileDashboard: React.FC = () => {
     membershipBillingProblem,
     membership.xeroLinked,
     membershipLevel,
-    missingProfileFields.length,
+    missingProfileFields,
     profileLevel,
     raausStatus.label,
     raausStatus.level,
@@ -490,7 +494,7 @@ export const ProfileDashboard: React.FC = () => {
         id: 'complete-profile',
         title: 'Complete your profile',
         detail: `Add ${missingProfileFields.join(', ')}.`,
-        to: '/settings?tab=account-info',
+        to: getProfileReadinessDestination('profile', missingProfileFields),
         level: 'warning',
       });
     }
@@ -503,7 +507,7 @@ export const ProfileDashboard: React.FC = () => {
         detail: membership.applicationStatus === 'pending' && membership.automaticCommencementAt
           ? `Scheduled commencement ${formatStoredDate(membership.automaticCommencementAt, datePattern)} if not approved earlier.`
           : 'Open Membership to review or begin the process.',
-        to: '/membership',
+        to: getProfileReadinessDestination('membership'),
         level: membership.applicationStatus === 'pending' ? 'warning' : 'action',
       });
     } else if (!membership.financiallyCleared) {
@@ -513,7 +517,7 @@ export const ProfileDashboard: React.FC = () => {
         detail: membership.graceExpiresAt
           ? `Legal membership continues until ${formatStoredDate(membership.graceExpiresAt, datePattern)}, but aircraft self-booking is unavailable.`
           : 'Pay or have the fee waived before using aircraft self-booking.',
-        to: '/membership',
+        to: getProfileReadinessDestination('membership'),
         level: 'action',
       });
     }
@@ -524,7 +528,7 @@ export const ProfileDashboard: React.FC = () => {
         detail: studentDetails?.licenceExpiry
           ? `Recorded date: ${format(studentDetails.licenceExpiry, datePattern)}.`
           : 'No RAAus membership expiry is recorded.',
-        to: '/settings?tab=account-info',
+        to: getProfileReadinessDestination('raaus'),
         level: raausStatus.level === 'action' ? 'action' : 'warning',
       });
     }
@@ -535,7 +539,7 @@ export const ProfileDashboard: React.FC = () => {
         detail: studentDetails?.medicalExpiry
           ? `Recorded date: ${format(studentDetails.medicalExpiry, datePattern)}.`
           : 'No medical expiry is recorded.',
-        to: '/settings?tab=account-info',
+        to: getProfileReadinessDestination('medical'),
         level: medicalStatus.level === 'action' ? 'action' : 'warning',
       });
     }
@@ -546,7 +550,7 @@ export const ProfileDashboard: React.FC = () => {
         detail: flightReviewDue
           ? `Recorded due date: ${format(flightReviewDue, datePattern)}.`
           : 'No completed flight review is recorded.',
-        to: '/pilot-file',
+        to: getProfileReadinessDestination('flight-review'),
         level: flightReviewStatus.level === 'action' ? 'action' : 'warning',
       });
     }
@@ -555,7 +559,7 @@ export const ProfileDashboard: React.FC = () => {
         id: 'xero-link',
         title: 'Billing account needs administrator setup',
         detail: 'No balance will be shown until your account is linked to a Xero contact.',
-        to: '/billing',
+        to: getProfileReadinessDestination('billing'),
         level: 'warning',
       });
     }
@@ -987,7 +991,7 @@ export const ProfileDashboard: React.FC = () => {
                   <dt className="text-slate-500 dark:text-slate-400">Financial status</dt>
                   <dd className="text-right font-semibold text-slate-900 dark:text-white">{humaniseStatus(membership.feeDisposition)}</dd>
                 </div>
-                {membership.amountDue > 0 && (
+                {shouldShowMembershipAmountDue(membership) && (
                   <div className="flex justify-between gap-3">
                     <dt className="text-slate-500 dark:text-slate-400">Amount due</dt>
                     <dd className="text-right font-semibold text-amber-700 dark:text-amber-300">{formatCurrency(membership.amountDue, portalSettings.currency_decimals)}</dd>
@@ -1038,7 +1042,7 @@ export const ProfileDashboard: React.FC = () => {
                   <p className="mt-1 font-semibold text-slate-900 dark:text-white">{studentDetails?.emergencyContact?.name || 'Not recorded'}</p>
                   {studentDetails?.emergencyContact?.phone && <p className="text-slate-600 dark:text-slate-300">{studentDetails.emergencyContact.phone}</p>}
                 </div>
-                <button type="button" onClick={() => navigate('/settings?tab=account-info')} className="font-semibold text-blue-700 dark:text-blue-300">Update personal details</button>
+                <button type="button" onClick={() => navigate(getProfileReadinessDestination('profile'))} className="font-semibold text-blue-700 dark:text-blue-300">Update personal details</button>
               </div>
             </details>
 
@@ -1088,7 +1092,7 @@ export const ProfileDashboard: React.FC = () => {
                       </p>
                     </>
                   )}
-                  <button type="button" onClick={() => navigate('/settings?tab=account-info')} className="font-semibold text-blue-700 dark:text-blue-300">Update credentials</button>
+                  <button type="button" onClick={() => navigate(getProfileReadinessDestination('medical'))} className="font-semibold text-blue-700 dark:text-blue-300">Update credentials</button>
                 </div>
               </details>
             )}
