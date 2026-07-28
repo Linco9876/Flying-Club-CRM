@@ -393,7 +393,7 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
           <div className="bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
               <Calculator className="h-5 w-5 mr-2" />
-              Cost Breakdown
+              Cost Breakdown (GST included)
             </h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">

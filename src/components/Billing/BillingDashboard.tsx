@@ -547,7 +547,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         <StripeTestModeBanner />
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Balance &amp; billing</h1>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Your Bendigo Flying Club flying account.</p>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Your Bendigo Flying Club flying account. All prices and charges include GST.</p>
         </div>
 
         {memberBillingState === 'temporarily-unavailable' && (

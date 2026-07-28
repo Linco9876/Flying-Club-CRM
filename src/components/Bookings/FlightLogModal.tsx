@@ -1002,7 +1002,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <div className="rounded-lg border border-gray-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
-                  {isVoucherBooking ? 'Voucher value used for this flight: ' : 'Estimated charge: '}
+                  {isVoucherBooking ? 'Voucher value used for this flight: ' : 'Estimated charge (incl. GST): '}
                   <span className="font-semibold">${estimatedCost.toFixed(2)}</span>
                   {selectedRate && (
                     <span className="ml-2 text-xs text-blue-700">
@@ -1014,7 +1014,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
                 </div>
                 {showAdminChargeOverride && (
                   <div className="flex flex-col gap-1 md:min-w-[220px]">
-                    <label className="text-xs font-semibold text-blue-900">Admin final charge</label>
+                    <label className="text-xs font-semibold text-blue-900">Admin final charge (incl. GST)</label>
                     <div className="flex items-center gap-2">
                       <div className="relative flex-1">
                         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-700">$</span>

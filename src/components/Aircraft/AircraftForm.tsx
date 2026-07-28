@@ -1092,7 +1092,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
               Cost Structure by Payment Type
             </h3>
             <p className="text-sm text-gray-600 mb-4">
-              Configure rates for each Payment Type. Payment Types are managed in Settings &gt; Billing & Rates.
+              Configure GST-inclusive rates for each Payment Type. Tax is never added on top. Payment Types are managed in Settings &gt; Billing & Rates.
             </p>
 
             {billingLoading ? (
@@ -1137,7 +1137,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                           <>
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Solo Rate ($)
+                                Solo Rate ($, incl. GST)
                               </label>
                               <input
                                 type="number"
@@ -1155,7 +1155,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
 
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Dual Rate ($)
+                                Dual Rate ($, incl. GST)
                               </label>
                               <input
                                 type="number"
@@ -1173,7 +1173,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
 
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Flat Surcharge ($)
+                                Flat Surcharge ($, incl. GST)
                               </label>
                               <input
                                 type="number"
@@ -1192,7 +1192,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
 
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Weekend/Holiday Surcharge ($)
+                                Weekend/Holiday Surcharge ($, incl. GST)
                               </label>
                               <input
                                 type="number"
@@ -1226,24 +1226,6 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
                                   <option key={pm.id} value={pm.id}>{pm.name}</option>
                                 ))}
                               </select>
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Included Taxes ($)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={rate.includedTaxes}
-                                onChange={(e) => {
-                                  const newRates = [...aircraftRates];
-                                  newRates[index] = { ...newRates[index], includedTaxes: parseFloat(e.target.value) || 0 };
-                                  setAircraftRates(newRates);
-                                }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
                             </div>
                           </>
                         )}

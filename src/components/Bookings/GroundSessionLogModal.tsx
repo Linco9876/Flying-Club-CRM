@@ -330,7 +330,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
               </label>
 
               <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Estimated Charge</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Estimated charge (incl. GST)</p>
                 <p className="mt-1 text-2xl font-bold text-blue-950">${estimatedCost.toFixed(2)}</p>
                 <p className="mt-1 text-xs text-blue-700">
                   {selectedDescription?.pricingMode === 'fixed'

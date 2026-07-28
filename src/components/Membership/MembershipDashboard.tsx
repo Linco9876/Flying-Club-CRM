@@ -447,7 +447,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
     <div className="space-y-5">
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div><h2 className="text-lg font-bold text-slate-950">Membership products and permissions</h2><p className="mt-1 text-sm text-slate-600">Create membership options and control their fee, member permissions and Xero revenue mapping. Fee changes apply to newly created financial periods; existing product codes stay fixed so historical records remain reliable.</p></div>
+          <div><h2 className="text-lg font-bold text-slate-950">Membership products and permissions</h2><p className="mt-1 text-sm text-slate-600">Create membership options and control their GST-inclusive fee, member permissions and Xero revenue mapping. Fee changes apply to newly created financial periods; existing product codes stay fixed so historical records remain reliable.</p></div>
           <button type="button" onClick={addClass} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800"><Plus className="h-4 w-4" /> Add membership</button>
         </div>
         <div className="space-y-4">
@@ -460,7 +460,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
               <div className="grid gap-4 lg:grid-cols-4">
                 <label className="text-sm font-semibold text-slate-700">Name<input value={membershipClass.name} onChange={event => updateClass(membershipClass.id, { name: event.target.value })} className={inputClass} placeholder="Full membership" /></label>
                 <label className="text-sm font-semibold text-slate-700">Code<input value={membershipClass.code} disabled={isExisting} onChange={event => updateClass(membershipClass.id, { code: event.target.value.toLowerCase().replace(/\s+/g, '-') })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} placeholder="full" /><span className={`mt-1 block text-xs font-normal ${codeInvalid ? 'text-red-700' : 'text-slate-500'}`}>{isExisting ? 'Fixed after creation' : codeInvalid ? 'Use 2–50 lowercase letters, numbers, hyphens or underscores' : 'Permanent identifier'}</span></label>
-                <label className="text-sm font-semibold text-slate-700">Annual fee (AUD)<input type="number" min={0} step="0.01" value={membershipClass.annualFee} disabled={membershipClass.isFeeExempt} onChange={event => updateClass(membershipClass.id, { annualFee: Number(event.target.value || 0) })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} /></label>
+                <label className="text-sm font-semibold text-slate-700">Annual fee (AUD, incl. GST)<input type="number" min={0} step="0.01" value={membershipClass.annualFee} disabled={membershipClass.isFeeExempt} onChange={event => updateClass(membershipClass.id, { annualFee: Number(event.target.value || 0) })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} /></label>
                 <label className="text-sm font-semibold text-slate-700">Display order<input type="number" min={1} value={membershipClass.sortOrder || index + 1} onChange={event => updateClass(membershipClass.id, { sortOrder: Number(event.target.value || index + 1) })} className={inputClass} /></label>
               </div>
               <label className="mt-4 block text-sm font-semibold text-slate-700">Description<input value={membershipClass.description} onChange={event => updateClass(membershipClass.id, { description: event.target.value })} className={inputClass} placeholder="Explain who this membership is for" /></label>
@@ -490,7 +490,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-semibold text-slate-700">New-member proration<select value={draft.prorationMethod} onChange={event => setDraft(current => ({ ...current, prorationMethod: event.target.value as MembershipProrationMethod }))} className={inputClass}><option value="daily">Daily to financial year end</option><option value="monthly">Whole months remaining</option><option value="none">No proration</option></select></label>
-          <label className="text-sm font-semibold text-slate-700">Minimum prorated fee<input type="number" min={0} step="0.01" value={draft.minimumProratedFee} onChange={event => setDraft(current => ({ ...current, minimumProratedFee: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">AUD; use $0 for no minimum</span></label>
+          <label className="text-sm font-semibold text-slate-700">Minimum prorated fee (incl. GST)<input type="number" min={0} step="0.01" value={draft.minimumProratedFee} onChange={event => setDraft(current => ({ ...current, minimumProratedFee: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">AUD; use $0 for no minimum</span></label>
         </div>
       </section>
 

@@ -1888,7 +1888,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-gray-950 dark:text-gray-100">Voucher products</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Create, price and publish the voucher products shown on the public sales page.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Create, price and publish the voucher products shown on the public sales page. All prices include GST.</p>
             </div>
             <button
               type="button"
@@ -2030,7 +2030,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
               <input type="number" min={15} value={productForm.durationMinutes} onChange={e => setProductForm(f => ({ ...f, durationMinutes: Number(e.target.value) }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
             </label>
             <label>
-              <span className="text-xs font-semibold uppercase text-gray-500">Price</span>
+              <span className="text-xs font-semibold uppercase text-gray-500">Price (incl. GST)</span>
               <input type="number" min={0} step="0.01" value={productForm.price} onChange={e => setProductForm(f => ({ ...f, price: Number(e.target.value) }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100" />
             </label>
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm dark:border-[#2c2f36] dark:bg-[#111827]">
@@ -2251,7 +2251,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
                   step="0.01"
                   value={addonForm.price}
                   onChange={event => setAddonForm(form => ({ ...form, price: Number(event.target.value) }))}
-                  placeholder="Price"
+                  placeholder="Price (incl. GST)"
                   className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-[#2c2f36] dark:bg-[#111827] dark:text-gray-100"
                 />
                 <textarea

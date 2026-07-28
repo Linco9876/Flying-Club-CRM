@@ -10,6 +10,10 @@ This guide describes the operational capabilities of the Bendigo Flying Club (BF
 - Aircraft bookings, flight records, training, instructor duty, senior-instructor supervision, maintenance, safety, billing, Xero and Stripe integrations.
 - A separate lightweight, installable Duty Clock PWA uses the same Supabase duty records. Native APK distribution has been retired.
 
+## GST-inclusive pricing
+
+All prices, rates, fees and surcharges configured or shown in the portal are GST/tax inclusive. The portal never adds tax on top of a displayed amount. Customer invoices and credit notes are sent to Xero with `LineAmountTypes: Inclusive`, so Xero extracts GST from the supplied amount using the configured tax type. Account top-ups, payments, credits, balances and liability transfers are financial movements rather than additional prices and must not have GST added merely because they appear in the billing area.
+
 ## BFC club membership
 
 Club membership is a distinct record from all of the following:
@@ -23,7 +27,7 @@ The portal labels this feature **BFC membership** or **Club membership**. Existi
 
 ### Membership classes
 
-| Class | Annual fee | Voting rights | Self-service signup |
+| Class | Annual fee (incl. GST) | Voting rights | Self-service signup |
 | --- | ---: | --- | --- |
 | Full | $150 | Yes | Yes |
 | Junior | $75 | No | Yes, with guardian details when under 18 |
