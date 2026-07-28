@@ -110,16 +110,19 @@ export const useGroundSessionLogs = (bookingId?: string) => {
       };
     }
 
-    const effectiveFlightTypeId = description?.flight_type_id || flightTypeId;
+    const effectiveFlightTypeId = flightTypeId || description?.flight_type_id;
     if (!effectiveFlightTypeId) return { calculatedCost: 0, effectiveFlightTypeId: undefined };
 
     const { data, error } = await supabase
       .from('flight_types')
-      .select('ground_session_hourly_rate')
+      .select('ground_session_enabled, ground_session_hourly_rate')
       .eq('id', effectiveFlightTypeId)
       .maybeSingle();
 
     if (error) throw error;
+    if (!data?.ground_session_enabled) {
+      throw new Error('This Payment Type is not enabled for hourly ground sessions.');
+    }
     return {
       calculatedCost: Math.round((Number(data?.ground_session_hourly_rate || 0) * billableHours + Number.EPSILON) * 100) / 100,
       effectiveFlightTypeId,

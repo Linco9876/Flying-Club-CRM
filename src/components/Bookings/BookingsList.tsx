@@ -426,7 +426,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
               </select>
             </label>
             <label className="block">
-              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Flight type</span>
+              <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Payment Type</span>
               <select
                 value={filters.flightMode}
                 onChange={event => setFilter('flightMode', event.target.value)}

@@ -61,7 +61,7 @@ const fieldMeta: FieldMeta[] = [
   },
   {
     fieldName: 'flight_type',
-    label: 'Flight Type',
+    label: 'Payment Type',
     description: 'Drives the aircraft rate and payment rules used for billing.',
     group: 'Billing',
     alwaysRequired: true,
@@ -69,8 +69,8 @@ const fieldMeta: FieldMeta[] = [
   },
   {
     fieldName: 'payment_type',
-    label: 'Payment Type',
-    description: 'Manual payment selector for non-free flights. Forced/default payment methods still apply.',
+    label: 'Payment Method',
+    description: 'Manual payment-method selector for non-free flights. Forced/default payment methods still apply.',
     group: 'Billing',
   },
   {

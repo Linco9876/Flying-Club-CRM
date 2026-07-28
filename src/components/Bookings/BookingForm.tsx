@@ -580,8 +580,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       toast.error('End time is required');
       return;
     }
-    if (!effectiveGroundSession && isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.paymentType) {
-      toast.error('Payment type is required');
+    if (isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.flightTypeId) {
+      toast.error('Payment Type is required');
       return;
     }
     if (
@@ -1261,16 +1261,16 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 ))}
               </select>
               <p className="mt-1 text-xs text-gray-500">
-                Ground sessions are scheduled against the instructor only. Booking type, payment method and description are chosen when the session is logged.
+                Ground sessions are scheduled against the instructor only. The selected Payment Type will pre-fill the ground-session log; its description and Payment Method can be confirmed when logging.
               </p>
             </div>
           )}
 
-          {!isLoading && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && !isGroundSessionBooking && (
+          {!isLoading && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               <CreditCard className="h-3.5 w-3.5 inline mr-1" />
-              Flight Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
+              Payment Type {isFieldRequired('paymentType', userRole) && <span className="text-red-500">*</span>}
             </label>
             <select
               value={formData.flightTypeId}
@@ -1285,7 +1285,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
               className="w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required={isFieldRequired('paymentType', userRole)}
             >
-              <option value="">Select flight type</option>
+              <option value="">Select payment type</option>
               {availableFlightTypes.map(ft => (
                 <option key={ft.id} value={ft.id}>{ft.name}</option>
               ))}

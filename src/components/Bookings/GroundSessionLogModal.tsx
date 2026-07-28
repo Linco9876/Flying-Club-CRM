@@ -6,6 +6,12 @@ import { useGroundSessionDescriptions } from '../../hooks/useGroundSessionDescri
 import { useGroundSessionLogs } from '../../hooks/useGroundSessionLogs';
 import { useUsers } from '../../hooks/useUsers';
 import { Booking } from '../../types';
+import {
+  buildGroundSessionBillingDefaults,
+  getAllowedGroundSessionPaymentTypes,
+  isPrepaidPaymentTypeName,
+  resolveGroundSessionPaymentMethod,
+} from '../../utils/groundSessionBilling';
 
 interface GroundSessionLogModalProps {
   booking: Booking;
@@ -38,23 +44,37 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
   const { logs, loading: logsLoading, createGroundSessionLog, updateGroundSessionLog } = useGroundSessionLogs(booking.id);
   const { users } = useUsers();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    start_time: new Date(booking.startTime).toISOString(),
-    end_time: new Date(booking.endTime).toISOString(),
-    duration_hours: roundUpToQuarterHour(hoursBetween(booking.startTime, booking.endTime)),
-    flight_type_id: booking.flightTypeId || '',
-    payment_type: booking.paymentType || '',
-    description_option_id: '',
-    description_text: '',
-    notes: booking.notes || '',
+  const [formData, setFormData] = useState(() => {
+    const billingDefaults = buildGroundSessionBillingDefaults(booking);
+    return {
+      start_time: new Date(booking.startTime).toISOString(),
+      end_time: new Date(booking.endTime).toISOString(),
+      duration_hours: roundUpToQuarterHour(hoursBetween(booking.startTime, booking.endTime)),
+      flight_type_id: billingDefaults.paymentTypeId,
+      payment_type: billingDefaults.paymentMethodName,
+      description_option_id: '',
+      description_text: '',
+      notes: booking.notes || '',
+    };
   });
 
   const activeDescriptions = descriptionOptions.filter(option => option.active);
   const activeFlightTypes = flightTypes.filter(type => type.active);
   const activePaymentMethods = paymentMethods.filter(method => method.active);
   const selectedFlightType = activeFlightTypes.find(type => type.id === formData.flight_type_id);
+  const forcedPaymentMethod = selectedFlightType?.forcedPaymentMethodId
+    ? activePaymentMethods.find(method => method.id === selectedFlightType.forcedPaymentMethodId)
+    : null;
+  const isPrepaidPaymentType = isPrepaidPaymentTypeName(selectedFlightType?.name);
+  const isPaymentMethodLocked = isPrepaidPaymentType || Boolean(forcedPaymentMethod);
   const selectedDescription = activeDescriptions.find(option => option.id === formData.description_option_id);
-  const pricingFlightType = activeFlightTypes.find(type => type.id === (selectedDescription?.flightTypeId || formData.flight_type_id));
+  const allowedPaymentTypes = getAllowedGroundSessionPaymentTypes(
+    activeFlightTypes,
+    selectedDescription?.pricingMode,
+  );
+  const pricingFlightType = activeFlightTypes.find(type =>
+    type.id === (formData.flight_type_id || selectedDescription?.flightTypeId)
+  );
   const memberName = users.find(user => user.id === booking.studentId)?.name || booking.hirerName || 'Member';
   const instructorName = users.find(user => user.id === booking.instructorId)?.name || booking.instructorName || 'Instructor';
   const estimatedCost = useMemo(() => {
@@ -83,13 +103,20 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
 
   useEffect(() => {
     if (!selectedFlightType) return;
-    const forcedMethod = selectedFlightType.forcedPaymentMethodId
-      ? activePaymentMethods.find(method => method.id === selectedFlightType.forcedPaymentMethodId)
-      : null;
-    if (forcedMethod && formData.payment_type !== forcedMethod.name) {
-      setFormData(current => ({ ...current, payment_type: forcedMethod.name }));
+    const pilotAccountMethod = activePaymentMethods.find(method =>
+      method.systemKey === 'pilot_account'
+      || method.name.toLowerCase().includes('pilot account')
+    );
+    const nextPaymentMethod = resolveGroundSessionPaymentMethod({
+      paymentTypeName: selectedFlightType.name,
+      forcedPaymentMethodName: forcedPaymentMethod?.name,
+      currentPaymentMethodName: formData.payment_type,
+      pilotAccountPaymentMethodName: pilotAccountMethod?.name,
+    });
+    if (nextPaymentMethod && formData.payment_type !== nextPaymentMethod) {
+      setFormData(current => ({ ...current, payment_type: nextPaymentMethod }));
     }
-  }, [activePaymentMethods, formData.payment_type, selectedFlightType]);
+  }, [activePaymentMethods, forcedPaymentMethod?.name, formData.payment_type, selectedFlightType]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -112,7 +139,14 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
       return;
     }
     if (selectedDescription?.pricingMode !== 'fixed' && !selectedDescription?.flightTypeId && !formData.flight_type_id) {
-      toast.error('Booking type is required for hourly ground-session charges');
+      toast.error('Payment Type is required for hourly ground-session charges');
+      return;
+    }
+    if (
+      selectedDescription?.pricingMode === 'flight_type_hourly'
+      && !allowedPaymentTypes.some(type => type.id === formData.flight_type_id)
+    ) {
+      toast.error('Select a Payment Type that is enabled for hourly ground sessions');
       return;
     }
     if (Number(formData.duration_hours || 0) <= 0) {
@@ -225,14 +259,14 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="space-y-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Booking Type</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Payment Type</span>
                 <select
                   value={formData.flight_type_id}
                   onChange={(event) => setFormData(current => ({ ...current, flight_type_id: event.target.value }))}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
-                  <option value="">Select booking type</option>
-                  {activeFlightTypes.map(type => (
+                  <option value="">Select payment type</option>
+                  {allowedPaymentTypes.map(type => (
                     <option key={type.id} value={type.id}>
                       {type.name}
                     </option>
@@ -245,6 +279,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                 <select
                   value={formData.payment_type}
                   onChange={(event) => setFormData(current => ({ ...current, payment_type: event.target.value }))}
+                  disabled={isPaymentMethodLocked}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">Select payment method</option>
@@ -254,6 +289,11 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                     </option>
                   ))}
                 </select>
+                {isPrepaidPaymentType && (
+                  <span className="block text-xs text-gray-500">
+                    Prepaid sessions are charged to the Pilot Account.
+                  </span>
+                )}
               </label>
             </div>
 
@@ -264,10 +304,18 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                   value={formData.description_option_id}
                   onChange={(event) => {
                     const option = activeDescriptions.find(item => item.id === event.target.value);
+                    const allowedTypes = getAllowedGroundSessionPaymentTypes(
+                      activeFlightTypes,
+                      option?.pricingMode,
+                    );
                     setFormData(current => ({
                       ...current,
                       description_option_id: event.target.value,
-                      flight_type_id: option?.flightTypeId || current.flight_type_id,
+                      flight_type_id: allowedTypes.some(type => type.id === current.flight_type_id)
+                        ? current.flight_type_id
+                        : option?.flightTypeId && allowedTypes.some(type => type.id === option.flightTypeId)
+                          ? option.flightTypeId
+                          : '',
                     }));
                   }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
@@ -289,7 +337,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                     ? `${selectedDescription.name} fixed price`
                     : pricingFlightType
                       ? `${pricingFlightType.name} at $${Number(pricingFlightType.groundSessionHourlyRate || 0).toFixed(2)} per hour`
-                      : 'Select a booking type to calculate the hourly charge'}
+                      : 'Select a Payment Type to calculate the hourly charge'}
                 </p>
               </div>
             </div>

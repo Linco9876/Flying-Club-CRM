@@ -626,20 +626,23 @@ const ensureFlightTypeSalesItem = async (
     code,
     name,
     description,
+    accountCode,
   }: {
     flightTypeId: string;
     code: string;
     name: string;
     description?: string;
+    accountCode?: string;
   },
 ) => {
   const itemCode = clean(code).toUpperCase();
   if (!itemCode) throw new Error("Missing sales item code.");
   const itemName = clean(name) || itemCode;
-  const revenueAccountCode = clean(ctx.settings?.revenue_account_code);
+  const revenueAccountCode = clean(accountCode) ||
+    clean(ctx.settings?.revenue_account_code);
   if (!revenueAccountCode) {
     throw new Error(
-      "Set a Xero flight revenue account code before creating flight type sales items.",
+      "Set an Accounting Code for this Payment Type or a default Xero revenue account before creating its sales item.",
     );
   }
 
@@ -677,6 +680,7 @@ const ensureFlightTypeSalesItem = async (
     .from("flight_types")
     .update({
       xero_item_code: resolvedCode,
+      xero_account_code: clean(accountCode) || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", flightTypeId);
@@ -2275,7 +2279,7 @@ const getFlightLog = async (
       ),
       student:student_id(id, name, email, xero_contact_id),
       instructor:instructor_id(name),
-      flight_types(name, xero_item_code)
+      flight_types(name, xero_item_code, xero_account_code)
     `)
     .eq("id", flightLogId)
     .maybeSingle();
@@ -2297,7 +2301,7 @@ const getGroundSessionLog = async (
       student:student_id(id, name, email, xero_contact_id),
       instructor:instructor_id(name),
       ground_session_description_options(name, pricing_mode),
-      flight_types(name, xero_item_code)
+      flight_types(name, xero_item_code, xero_account_code)
     `)
     .eq("id", groundSessionLogId)
     .maybeSingle();
@@ -2407,9 +2411,14 @@ const createFlightReversalCreditNote = async ({
   if (cost <= 0) {
     throw new Error("This flight has no billable amount to reverse.");
   }
-  if (!ctx.settings?.revenue_account_code) {
+  const flightType = Array.isArray(flight.flight_types)
+    ? flight.flight_types[0]
+    : flight.flight_types;
+  const revenueAccountCode = clean(flightType?.xero_account_code) ||
+    clean(ctx.settings?.revenue_account_code);
+  if (!revenueAccountCode) {
     throw new Error(
-      "Set a Xero flight revenue account code before reversing this flight.",
+      "Set an Accounting Code for this Payment Type or a default Xero revenue account before reversing this flight.",
     );
   }
 
@@ -2423,9 +2432,6 @@ const createFlightReversalCreditNote = async ({
   const aircraft = Array.isArray(flight.aircraft)
     ? flight.aircraft[0]
     : flight.aircraft;
-  const flightType = Array.isArray(flight.flight_types)
-    ? flight.flight_types[0]
-    : flight.flight_types;
   const instructor = Array.isArray(flight.instructor)
     ? flight.instructor[0]
     : flight.instructor;
@@ -2469,7 +2475,7 @@ const createFlightReversalCreditNote = async ({
           Description: description,
           Quantity: creditQuantity,
           UnitAmount: unitAmount,
-          AccountCode: clean(ctx.settings.revenue_account_code),
+          AccountCode: revenueAccountCode,
           ...(clean(ctx.settings.tax_type)
             ? { TaxType: clean(ctx.settings.tax_type) }
             : {}),
@@ -2761,9 +2767,14 @@ const createOrUpdateFlightInvoice = async (
   }
   const cost = money(flight.calculated_cost ?? flight.total_cost);
   if (cost <= 0) throw new Error("This flight has no billable amount.");
-  if (!ctx.settings?.revenue_account_code) {
+  const flightType = Array.isArray(flight.flight_types)
+    ? flight.flight_types[0]
+    : flight.flight_types;
+  const revenueAccountCode = clean(flightType?.xero_account_code) ||
+    clean(ctx.settings?.revenue_account_code);
+  if (!revenueAccountCode) {
     throw new Error(
-      "Set a Xero flight revenue account code before syncing invoices.",
+      "Set an Accounting Code for this Payment Type or a default Xero revenue account before syncing invoices.",
     );
   }
 
@@ -2777,9 +2788,6 @@ const createOrUpdateFlightInvoice = async (
   const aircraft = Array.isArray(flight.aircraft)
     ? flight.aircraft[0]
     : flight.aircraft;
-  const flightType = Array.isArray(flight.flight_types)
-    ? flight.flight_types[0]
-    : flight.flight_types;
   const instructor = Array.isArray(flight.instructor)
     ? flight.instructor[0]
     : flight.instructor;
@@ -2840,7 +2848,7 @@ const createOrUpdateFlightInvoice = async (
       ...(clean(flightType?.xero_item_code)
         ? { ItemCode: clean(flightType.xero_item_code).toUpperCase() }
         : {}),
-      AccountCode: clean(ctx.settings.revenue_account_code),
+      AccountCode: revenueAccountCode,
       ...(clean(ctx.settings.tax_type)
         ? { TaxType: clean(ctx.settings.tax_type) }
         : {}),
@@ -3240,9 +3248,14 @@ const createOrUpdateGroundSessionInvoice = async (
   const session = await getGroundSessionLog(adminClient, groundSessionLogId);
   const cost = money(session.calculated_cost);
   if (cost <= 0) throw new Error("This ground session has no billable amount.");
-  if (!ctx.settings?.revenue_account_code) {
+  const sessionType = Array.isArray(session.flight_types)
+    ? session.flight_types[0]
+    : session.flight_types;
+  const revenueAccountCode = clean(sessionType?.xero_account_code) ||
+    clean(ctx.settings?.revenue_account_code);
+  if (!revenueAccountCode) {
     throw new Error(
-      "Set a Xero flight revenue account code before syncing invoices.",
+      "Set an Accounting Code for this Payment Type or a default Xero revenue account before syncing invoices.",
     );
   }
 
@@ -3255,9 +3268,6 @@ const createOrUpdateGroundSessionInvoice = async (
     throw new Error("Could not link this member to a Xero contact.");
   }
 
-  const sessionType = Array.isArray(session.flight_types)
-    ? session.flight_types[0]
-    : session.flight_types;
   const sessionDescription =
     Array.isArray(session.ground_session_description_options)
       ? session.ground_session_description_options[0]
@@ -3327,7 +3337,7 @@ const createOrUpdateGroundSessionInvoice = async (
       ...(clean(sessionType?.xero_item_code)
         ? { ItemCode: clean(sessionType.xero_item_code).toUpperCase() }
         : {}),
-      AccountCode: clean(ctx.settings.revenue_account_code),
+      AccountCode: revenueAccountCode,
       ...(clean(ctx.settings.tax_type)
         ? { TaxType: clean(ctx.settings.tax_type) }
         : {}),
@@ -6013,6 +6023,7 @@ Deno.serve(async (req: Request) => {
       const code = clean(body.code);
       const name = clean(body.name);
       const description = clean(body.description);
+      const accountCode = clean(body.accountCode);
       if (!flightTypeId || !code || !name) {
         return json({ error: "Missing flightTypeId, code or name" }, 400);
       }
@@ -6022,6 +6033,7 @@ Deno.serve(async (req: Request) => {
           code,
           name,
           description,
+          accountCode,
         }),
       );
     }
