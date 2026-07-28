@@ -18,6 +18,7 @@ import {
   membershipPaymentRetryDelayMs,
   resolveMembershipRevenueMapping,
 } from "../_shared/membershipBilling.ts";
+import { findExistingActiveXeroBankAccountCode } from "../_shared/xeroAccountRules.ts";
 
 type SupabaseAdminClient = any;
 
@@ -1635,46 +1636,9 @@ const getTopupFundingAccountCode = (ctx: any, paymentMethod: any) => {
 const getXeroBankAccountCode = async (
   ctx: any,
   preferredCode: string,
-  fallbackCode: string,
-  fallbackName: string,
 ) => {
   const existingAccounts = await listXeroAccounts(ctx);
-  const preferred = existingAccounts.find((account: any) =>
-    account.status === "ACTIVE" &&
-    account.type === "BANK" &&
-    account.code.toUpperCase() === clean(preferredCode).toUpperCase()
-  );
-  if (preferred?.code) return preferred.code;
-
-  const fallback = existingAccounts.find((account: any) =>
-    account.status === "ACTIVE" &&
-    account.type === "BANK" &&
-    (
-      account.code.toUpperCase() === fallbackCode.toUpperCase() ||
-      account.name.toLowerCase() === fallbackName.toLowerCase()
-    )
-  );
-  if (fallback?.code) return fallback.code;
-
-  const result = await xeroRequest({
-    method: "PUT",
-    path: "Accounts",
-    tenantId: ctx.connection.tenant_id,
-    accessToken: ctx.connection.access_token,
-    bypassLocalPause: Boolean(ctx.priorityTopupSync),
-    body: {
-      Accounts: [{
-        Code: fallbackCode,
-        Name: fallbackName,
-        Type: "BANK",
-        BankAccountNumber: fallbackCode,
-        Description:
-          `${fallbackName} account created by the CRM for Xero bank transactions.`,
-      }],
-    },
-  });
-  const createdAccount = result?.Accounts?.[0];
-  return clean(createdAccount?.Code);
+  return findExistingActiveXeroBankAccountCode(existingAccounts, preferredCode);
 };
 
 const getXeroReceivablesAccountCode = async (ctx: any) => {
@@ -1842,19 +1806,11 @@ const syncTopupTransaction = async (
   const fundingAccountCode = await getXeroBankAccountCode(
     ctx,
     configuredFundingAccountCode,
-    "STRIPEBNK",
-    "Stripe Clearing Bank",
   );
   if (!fundingAccountCode) {
     throw makeXeroNeedsReviewError(
-      "Xero did not return a valid bank account for Stripe top-up receipts.",
+      "The selected member top-up receipt account is not an active Xero bank account. Choose an existing bank account in Xero settings.",
     );
-  }
-  if (fundingAccountCode !== configuredFundingAccountCode) {
-    await adminClient.from("xero_sync_settings").update({
-      stripe_payment_account_code: fundingAccountCode,
-      updated_at: new Date().toISOString(),
-    }).eq("id", true);
   }
 
   const reference = truncateText(
