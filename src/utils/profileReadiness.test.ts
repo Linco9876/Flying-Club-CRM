@@ -58,11 +58,11 @@ test('does not describe the annual membership fee as due after financial clearan
 test('readiness destinations open the exact settings section or pilot-file tab', () => {
   assert.equal(
     getProfileReadinessDestination('raaus'),
-    '/settings?tab=account-info&focus=aviation-credentials',
+    '/settings?tab=account-info&accountTab=info&focus=aviation-credentials#account-aviation-credentials',
   );
   assert.equal(
     getProfileReadinessDestination('medical'),
-    '/settings?tab=account-info&focus=aviation-credentials',
+    '/settings?tab=account-info&accountTab=info&focus=aviation-credentials#account-aviation-credentials',
   );
   assert.equal(
     getProfileReadinessDestination('flight-review'),

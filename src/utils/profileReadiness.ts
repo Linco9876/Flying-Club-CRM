@@ -58,7 +58,7 @@ export const getProfileReadinessDestination = (
   if (destination === 'billing') return '/billing';
   if (destination === 'flight-review') return '/pilot-file?subtab=reviews';
   if (destination === 'raaus' || destination === 'medical') {
-    return '/settings?tab=account-info&focus=aviation-credentials';
+    return '/settings?tab=account-info&accountTab=info&focus=aviation-credentials#account-aviation-credentials';
   }
 
   const focus = missingProfileFields.includes('emergency contact')
