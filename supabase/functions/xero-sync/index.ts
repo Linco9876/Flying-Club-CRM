@@ -954,57 +954,6 @@ const ensurePrepaidClearingAccount = async (ctx: any) => {
   };
 };
 
-const ensureTopupReceiptAccount = async (ctx: any) => {
-  const existingAccounts = await listXeroAccounts(ctx);
-  const existing = existingAccounts.find((account: any) =>
-    account.status === "ACTIVE" &&
-    (
-      account.code.toUpperCase() === "TOPUPRCPT" ||
-      account.name.toLowerCase() === "member top-up receipts" ||
-      account.name.toLowerCase() === "member top up receipts" ||
-      account.name.toLowerCase() === "member top-up receipt account"
-    )
-  );
-
-  if (existing) {
-    return { created: false, account: existing };
-  }
-
-  const result = await xeroRequest({
-    method: "PUT",
-    path: "Accounts",
-    tenantId: ctx.connection.tenant_id,
-    accessToken: ctx.connection.access_token,
-    body: {
-      Accounts: [{
-        Code: "TOPUPRCPT",
-        Name: "Member Top-up Receipts",
-        Type: "CURRENT",
-        Description:
-          "Receipt account for member top-ups collected through the CRM.",
-        EnablePaymentsToAccount: true,
-      }],
-    },
-  });
-
-  const createdAccount = result?.Accounts?.[0];
-  if (!createdAccount) {
-    throw new Error("Xero did not return the member top-up receipt account.");
-  }
-
-  return {
-    created: true,
-    account: {
-      accountId: clean(createdAccount.AccountID),
-      code: clean(createdAccount.Code),
-      name: clean(createdAccount.Name),
-      type: clean(createdAccount.Type),
-      status: clean(createdAccount.Status),
-      enablePaymentsToAccount: Boolean(createdAccount.EnablePaymentsToAccount),
-    },
-  };
-};
-
 const ensureStripeFeeExpenseAccount = async (ctx: any) => {
   const existingAccounts = await listXeroAccounts(ctx);
   const existing = existingAccounts.find((account: any) =>
@@ -6003,7 +5952,10 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "ensure-topup-receipt-account") {
-      return json(await ensureTopupReceiptAccount(ctx));
+      return json({
+        error:
+          "Member top-up receipts must use an existing active Xero bank account. Select one in Xero settings.",
+      }, 400);
     }
 
     if (action === "ensure-voucher-liability-account") {

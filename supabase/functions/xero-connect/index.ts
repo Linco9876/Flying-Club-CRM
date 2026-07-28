@@ -416,11 +416,27 @@ Deno.serve(async (req: Request) => {
 
     if (action === "save-settings") {
       const settings = body.settings || {};
+      const syncAccountTopups = Boolean((settings as any).syncAccountTopups);
+      const topupReceiptAccountCode = cleanString(
+        (settings as any).topupReceiptAccountCode,
+      );
+      if (
+        syncAccountTopups &&
+        (
+          !topupReceiptAccountCode ||
+          topupReceiptAccountCode.toUpperCase() === "TOPUPRCPT"
+        )
+      ) {
+        return json({
+          error:
+            "Select an existing active Xero bank account for member top-up receipts before enabling top-up sync.",
+        }, 400);
+      }
       const payload = {
         id: true,
         create_contacts: Boolean((settings as any).createContacts),
         sync_flight_charges: Boolean((settings as any).syncFlightCharges),
-        sync_account_topups: Boolean((settings as any).syncAccountTopups),
+        sync_account_topups: syncAccountTopups,
         sync_gift_vouchers: Boolean((settings as any).syncGiftVouchers),
         default_sync_mode: ["manual-review", "auto-draft", "auto-approved"].includes(String((settings as any).defaultSyncMode))
           ? String((settings as any).defaultSyncMode)
@@ -430,7 +446,7 @@ Deno.serve(async (req: Request) => {
           : "DRAFT",
         revenue_account_code: cleanString((settings as any).revenueAccountCode) || null,
         topup_account_code: cleanString((settings as any).topupAccountCode) || null,
-        topup_receipt_account_code: cleanString((settings as any).topupReceiptAccountCode) || null,
+        topup_receipt_account_code: topupReceiptAccountCode || null,
         voucher_account_code: cleanString((settings as any).voucherAccountCode) || null,
         tax_type: cleanString((settings as any).taxType) || null,
         stripe_payment_account_code: cleanString((settings as any).stripePaymentAccountCode) || null,
