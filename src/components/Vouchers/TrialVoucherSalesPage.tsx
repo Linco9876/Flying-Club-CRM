@@ -789,7 +789,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                 </div>
 
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">Price</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">Price (GST inclusive)</p>
                   <p className="mt-1 text-3xl font-black text-blue-950">{formatPrice(selectedCatalogProduct.price)}</p>
                   <p className="mt-2 text-sm leading-6 text-blue-900">{selectedCatalogProduct.description}</p>
                 </div>
@@ -855,7 +855,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                   {purchaseMode === 'manual' ? 'Manual voucher request' : purchaseMode === 'book-now' ? 'Choose time and pay' : 'Gift certificate checkout'}
                 </p>
                 <h3 className="mt-1 text-2xl font-bold">{selectedProduct.name}</h3>
-                <p className="mt-1 text-sm text-slate-600">{formatPrice(selectedCheckoutTotal)}</p>
+                <p className="mt-1 text-sm text-slate-600">{formatPrice(selectedCheckoutTotal)} · GST included</p>
               </div>
               <button
                 type="button"
@@ -902,6 +902,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                   <div key={addon.id} className="mt-1 flex justify-between text-slate-600"><span>{addon.name}</span><strong>{formatPrice(addon.price)}</strong></div>
                 ))}
                 <div className="mt-3 flex justify-between border-t border-slate-200 pt-3 text-base font-black"><span>Total</span><span>{formatPrice(selectedCheckoutTotal)}</span></div>
+                <p className="mt-1 text-right text-xs text-slate-500">GST included</p>
               </div>
               <input value={purchaseForm.purchaserName} onChange={e => setPurchaseForm(f => ({ ...f, purchaserName: e.target.value }))} placeholder="Purchaser full name" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />
               <input type="email" value={purchaseForm.purchaserEmail} onChange={e => setPurchaseForm(f => ({ ...f, purchaserEmail: e.target.value }))} placeholder="Purchaser email" className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" />

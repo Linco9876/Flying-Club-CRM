@@ -774,6 +774,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 placeholder="Example: OUTPUT"
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
               />
+              <p className="mt-1 text-xs text-gray-500">Portal prices are sent to Xero as tax inclusive. This tax type determines how Xero extracts GST; it does not add tax on top.</p>
             </div>
 
             <div>

@@ -19,6 +19,7 @@ import {
   resolveMembershipRevenueMapping,
 } from "../_shared/membershipBilling.ts";
 import { findExistingActiveXeroBankAccountCode } from "../_shared/xeroAccountRules.ts";
+import { XERO_SALES_LINE_AMOUNT_TYPE } from "../_shared/pricingPolicy.ts";
 
 type SupabaseAdminClient = any;
 
@@ -2377,7 +2378,7 @@ const createFlightReversalCreditNote = async ({
             clean(flight.xero_invoice_id) || buildFlightReference(flight),
           ].filter(Boolean).join(" - "),
         ),
-        LineAmountTypes: "Inclusive",
+        LineAmountTypes: XERO_SALES_LINE_AMOUNT_TYPE,
         LineItems: [{
           Description: description,
           Quantity: creditQuantity,
@@ -2745,7 +2746,7 @@ const createOrUpdateFlightInvoice = async (
     Contact: { ContactID: contactResult.contactId },
     Date: isoDate(flight.start_time),
     DueDate: isoDate(flight.start_time),
-    LineAmountTypes: "Inclusive",
+    LineAmountTypes: XERO_SALES_LINE_AMOUNT_TYPE,
     Status: ctx.settings?.default_invoice_status || "DRAFT",
     Reference: buildFlightReference(flight),
     LineItems: [{
@@ -3234,7 +3235,7 @@ const createOrUpdateGroundSessionInvoice = async (
     Contact: { ContactID: contactResult.contactId },
     Date: isoDate(session.start_time),
     DueDate: isoDate(session.start_time),
-    LineAmountTypes: "Inclusive",
+    LineAmountTypes: XERO_SALES_LINE_AMOUNT_TYPE,
     Status: ctx.settings?.default_invoice_status || "DRAFT",
     Reference: buildGroundSessionReference(session),
     LineItems: [{
@@ -5129,7 +5130,7 @@ const createOrRefreshMembershipInvoice = async (
         body: {
           Invoices: [{
             InvoiceID: clean(invoice.InvoiceID),
-            LineAmountTypes: "Inclusive",
+            LineAmountTypes: XERO_SALES_LINE_AMOUNT_TYPE,
             LineItems: lineItems,
           }],
         },
@@ -5210,7 +5211,7 @@ const createOrRefreshMembershipInvoice = async (
         DueDate: isoDate(period.due_date),
         Status: "AUTHORISED",
         Reference: truncateText(`BFC membership ${financialYearLabel}`),
-        LineAmountTypes: "Inclusive",
+        LineAmountTypes: XERO_SALES_LINE_AMOUNT_TYPE,
         LineItems: lineItems,
       }],
     },

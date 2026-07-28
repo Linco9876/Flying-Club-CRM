@@ -105,7 +105,7 @@ export const CancellationReasonsSettings = ({ canEdit }: CancellationReasonsSett
           </div>
           {draft.feeType !== 'none' && (
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Fee amount</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Fee amount (incl. GST)</label>
               <input type="number" min="0" step="0.01" value={draft.feeAmount} onChange={(e) => setDraft({ ...draft, feeAmount: Number(e.target.value) })} className="w-full rounded-md border border-gray-300 px-3 py-2" />
             </div>
           )}

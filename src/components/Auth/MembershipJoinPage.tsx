@@ -346,7 +346,7 @@ export const MembershipJoinPage: React.FC = () => {
           <div className="mt-7 min-h-[390px]">
             {step === 0 && <div>
               <h2 className="text-xl font-bold">Choose your membership</h2>
-              <p className="mt-1 text-sm text-slate-600">Fees are annual and the first year is prorated to 30 June when membership commences.</p>
+              <p className="mt-1 text-sm text-slate-600">Fees are annual, include GST and the first year is prorated to 30 June when membership commences.</p>
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 {membershipClasses.map(item => <button key={item.code} type="button" onClick={() => update('membershipClass', item.code)} className={`rounded-2xl border-2 p-4 text-left transition ${form.membershipClass === item.code ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`}>
                   <span className="block font-bold">{item.name}</span><span className="mt-1 block text-2xl font-bold">${item.annualFee}<span className="text-xs font-normal text-slate-600">/year</span></span><span className="mt-2 block text-xs text-slate-600">{item.description}</span><span className="mt-2 block text-[11px] font-semibold text-blue-800">{[item.hasVotingRights ? 'Voting rights' : 'Non-voting', item.canSelfBookAircraft ? 'Aircraft self-booking included' : 'No aircraft self-booking'].join(' · ')}</span>

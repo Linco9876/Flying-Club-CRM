@@ -677,7 +677,7 @@ export const AircraftProfilePage: React.FC = () => {
           <div className="rounded-lg border border-gray-200 bg-white p-5">
             <h2 className="text-lg font-semibold text-gray-900">Aircraft Pricing</h2>
             <p className="text-sm text-gray-500">
-              {isAdmin ? 'Define the aircraft price per Payment Type.' : 'Current aircraft pricing by Payment Type.'}
+              {isAdmin ? 'Define the aircraft price per Payment Type.' : 'Current aircraft pricing by Payment Type.'} All rates and surcharges include GST.
             </p>
           </div>
           <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
@@ -773,7 +773,7 @@ const RateRow: React.FC<RateRowProps> = ({ flightTypeName, rate, disabled, payme
   }
 
   return (
-    <div className="grid gap-3 p-4 xl:grid-cols-[180px_120px_repeat(5,1fr)_120px] xl:items-end">
+    <div className="grid gap-3 p-4 xl:grid-cols-[180px_120px_repeat(4,1fr)_120px] xl:items-end">
       <div>
         <p className="text-sm font-semibold text-gray-900">{flightTypeName}</p>
         <p className="text-xs text-gray-500">{rate ? 'Configured' : 'No rate yet'}</p>
@@ -793,7 +793,6 @@ const RateRow: React.FC<RateRowProps> = ({ flightTypeName, rate, disabled, payme
         ['Dual', 'dualRate'],
         ['Flat +', 'flatSurcharge'],
         ['Weekend +', 'weekendSurcharge'],
-        ['Tax %', 'includedTaxes'],
       ].map(([label, key]) => (
         <label key={key} className="block">
           <span className="mb-1 block text-xs font-medium text-gray-500">{label}</span>

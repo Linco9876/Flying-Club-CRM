@@ -6,6 +6,7 @@ import { useAircraft } from '../../hooks/useAircraft';
 import { GroundSessionDescriptionOption, UserRole } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { TAX_INCLUSIVE_NOTICE } from '../../utils/pricingPolicy';
 import toast from 'react-hot-toast';
 
 interface BillingRatesSettingsProps {
@@ -310,6 +311,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
           Billing & Rates
         </h2>
         <p className="text-gray-600">Configure payment types, payment methods and the rate rules used when flights or ground sessions are logged.</p>
+      </div>
+
+      <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
+        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" aria-hidden="true" />
+        <div>
+          <p className="font-semibold">GST-inclusive pricing</p>
+          <p className="mt-0.5 text-blue-800">{TAX_INCLUSIVE_NOTICE}</p>
+        </div>
       </div>
 
       <section className="space-y-4">
@@ -638,7 +647,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
                 {description.pricingMode === 'fixed' ? (
                   <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fixed price</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fixed price (incl. GST)</span>
                     <input
                       type="number"
                       min="0"
@@ -711,7 +720,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     </span>
                   </label>
                   <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price / hour</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price / hour (incl. GST)</span>
                     <input
                       type="number"
                       min="0"
@@ -735,7 +744,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       <section className="space-y-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">Aircraft Rate Matrix</h3>
-          <p className="text-sm text-gray-500 mt-1">Rates are edited on each aircraft record. This table shows the active rules currently feeding flight-log billing.</p>
+          <p className="text-sm text-gray-500 mt-1">Rates are edited on each aircraft record. This table shows the active, GST-inclusive rules currently feeding flight-log billing.</p>
         </div>
         <div className="overflow-hidden rounded-lg border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -744,9 +753,9 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Aircraft</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Payment Type</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Charge</th>
-                <th className="px-4 py-3 text-right font-medium text-gray-600">Solo</th>
-                <th className="px-4 py-3 text-right font-medium text-gray-600">Dual</th>
-                <th className="px-4 py-3 text-right font-medium text-gray-600">Surcharge</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">Solo (incl. GST)</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">Dual (incl. GST)</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">Surcharge (incl. GST)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
