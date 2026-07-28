@@ -13,11 +13,10 @@ import {
   collectionWasSubmitted,
   configuredPaymentRetryDays,
   configuredTechnicalRetryMinutes,
-  DEFAULT_MEMBERSHIP_ITEM_CODE,
-  DEFAULT_SCHOLARSHIP_ITEM_CODE,
   membershipBillingRetryDelayMs,
   membershipCollectionIdempotencyParts,
   membershipPaymentRetryDelayMs,
+  resolveMembershipRevenueMapping,
 } from "../_shared/membershipBilling.ts";
 
 type SupabaseAdminClient = any;
@@ -528,17 +527,20 @@ const ensureMembershipSalesItem = async (
     code,
     name,
     description,
+    accountCode,
   }: {
     code: string;
     name: string;
     description: string;
+    accountCode?: string;
   },
 ) => {
   const itemCode = clean(code).toUpperCase();
-  const revenueAccountCode = clean(ctx.settings?.revenue_account_code);
+  const revenueAccountCode = clean(accountCode) ||
+    clean(ctx.settings?.revenue_account_code);
   if (!revenueAccountCode) {
     throw makeXeroNeedsReviewError(
-      "Set the Xero revenue account code in Settings > Integrations, then retry membership billing.",
+      "Set an Accounting Code for this membership product or a default Xero revenue account, then retry membership billing.",
     );
   }
 
@@ -4663,7 +4665,9 @@ const getMembershipPeriod = async (
 
   const { data: membershipClass, error: classError } = await adminClient
     .from("membership_classes")
-    .select("id,code,name,annual_fee,is_fee_exempt")
+    .select(
+      "id,code,name,annual_fee,is_fee_exempt,xero_item_code,xero_account_code",
+    )
     .eq("id", membership.membership_class_id)
     .maybeSingle();
   if (classError) throw classError;
@@ -5129,42 +5133,45 @@ const createOrRefreshMembershipInvoice = async (
 
   const { data: membershipSettings, error: settingsError } = await adminClient
     .from("membership_settings")
-    .select("xero_membership_item_code,xero_scholarship_item_code")
+    .select(
+      "xero_membership_item_code,xero_scholarship_item_code,xero_scholarship_account_code",
+    )
     .eq("id", true)
     .maybeSingle();
   if (settingsError) throw settingsError;
-  const itemCode = clean(membershipSettings?.xero_membership_item_code) ||
-    DEFAULT_MEMBERSHIP_ITEM_CODE;
+  const revenueMapping = resolveMembershipRevenueMapping({
+    membershipClass,
+    settings: membershipSettings,
+    defaultRevenueAccountCode: ctx.settings?.revenue_account_code,
+  });
+  const itemCode = revenueMapping.membershipItemCode;
+  const membershipAccountCode = revenueMapping.membershipAccountCode;
+  if (!membershipAccountCode) {
+    throw makeXeroNeedsReviewError(
+      `Set an Accounting Code for ${membershipClass.name} membership or a default Xero revenue account, then retry membership billing.`,
+    );
+  }
   const scholarshipAmount = money(period.scholarship_contribution_amount);
-  const scholarshipItemCode = clean(
-    membershipSettings?.xero_scholarship_item_code,
-  ) || DEFAULT_SCHOLARSHIP_ITEM_CODE;
+  const scholarshipItemCode = revenueMapping.scholarshipItemCode;
+  const scholarshipAccountCode = revenueMapping.scholarshipAccountCode;
   await ensureMembershipSalesItem(ctx, {
     code: itemCode,
-    name: "BFC Membership",
-    description: "Bendigo Flying Club annual membership",
+    name: `${membershipClass.name} BFC Membership`,
+    description: `${membershipClass.name} Bendigo Flying Club annual membership`,
+    accountCode: membershipAccountCode,
   });
   if (scholarshipAmount > 0) {
+    if (!scholarshipAccountCode) {
+      throw makeXeroNeedsReviewError(
+        "Set the Scholarship Accounting Code or a default Xero revenue account, then retry membership billing.",
+      );
+    }
     await ensureMembershipSalesItem(ctx, {
       code: scholarshipItemCode,
       name: "BFC Scholarship Contribution",
       description: "Optional Bendigo Flying Club scholarship contribution",
+      accountCode: scholarshipAccountCode,
     });
-  }
-  if (
-    clean(membershipSettings?.xero_membership_item_code) !== itemCode ||
-    clean(membershipSettings?.xero_scholarship_item_code) !==
-      scholarshipItemCode
-  ) {
-    const { error: itemSettingsError } = await adminClient
-      .from("membership_settings")
-      .update({
-        xero_membership_item_code: itemCode,
-        xero_scholarship_item_code: scholarshipItemCode,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", true);
-    if (itemSettingsError) throw itemSettingsError;
   }
 
   const startYear = String(period.financial_year_start).slice(0, 4);
@@ -5182,6 +5189,7 @@ const createOrRefreshMembershipInvoice = async (
     ),
     Quantity: 1,
     UnitAmount: membershipFeeAmount,
+    AccountCode: membershipAccountCode,
   }];
   if (scholarshipAmount > 0) {
     lineItems.push({
@@ -5192,6 +5200,7 @@ const createOrRefreshMembershipInvoice = async (
       ),
       Quantity: 1,
       UnitAmount: scholarshipAmount,
+      AccountCode: scholarshipAccountCode,
     });
   }
 
@@ -5202,24 +5211,16 @@ const createOrRefreshMembershipInvoice = async (
     }
     const expectedTotal = money(period.amount_due);
     const invoiceTotal = money(invoice.Total);
-    if (Math.abs(expectedTotal - invoiceTotal) > 0.005) {
-      if (money(invoice.AmountPaid) > 0.005) {
-        throw makeXeroNeedsReviewError(
-          `Xero invoice ${
-            clean(invoice.InvoiceNumber) || clean(invoice.InvoiceID)
-          } totals $${invoiceTotal.toFixed(2)}, but the CRM fee is $${
-            expectedTotal.toFixed(2)
-          } and a payment is already recorded.`,
-        );
-      }
+    const totalDiffers = Math.abs(expectedTotal - invoiceTotal) > 0.005;
+    const invoiceStatus = clean(invoice.Status).toUpperCase();
+    const invoiceCanRefreshLines = money(invoice.AmountPaid) <= 0.005 &&
+      !["PAID", "VOIDED", "DELETED", "CANCELLED"].includes(invoiceStatus);
+    if (invoiceCanRefreshLines) {
       const correction = await xeroRequest({
         method: "POST",
         path: "Invoices",
         tenantId: ctx.connection.tenant_id,
         accessToken: ctx.connection.access_token,
-        idempotencyKey: `membership-period-correction-${period.id}-${
-          Math.round(expectedTotal * 100)
-        }`,
         body: {
           Invoices: [{
             InvoiceID: clean(invoice.InvoiceID),
@@ -5232,11 +5233,26 @@ const createOrRefreshMembershipInvoice = async (
         await getXeroInvoice(ctx, clean(period.xero_invoice_id));
       if (!invoice || Math.abs(money(invoice.Total) - expectedTotal) > 0.005) {
         throw new Error(
-          `Xero invoice correction did not produce the expected $${
+          `Xero invoice refresh did not produce the expected $${
             expectedTotal.toFixed(2)
           } total.`,
         );
       }
+    } else if (totalDiffers) {
+      if (money(invoice.AmountPaid) > 0.005 || invoiceStatus === "PAID") {
+        throw makeXeroNeedsReviewError(
+          `Xero invoice ${
+            clean(invoice.InvoiceNumber) || clean(invoice.InvoiceID)
+          } totals $${invoiceTotal.toFixed(2)}, but the CRM fee is $${
+            expectedTotal.toFixed(2)
+          } and a payment is already recorded.`,
+        );
+      }
+      throw makeXeroNeedsReviewError(
+        `Xero invoice ${
+          clean(invoice.InvoiceNumber) || clean(invoice.InvoiceID)
+        } cannot be updated automatically while it is ${invoiceStatus || "locked"}.`,
+      );
     }
     const synced = await updateMembershipPeriodFromInvoice(
       adminClient,

@@ -162,7 +162,7 @@ export interface Booking {
   membershipEligibilitySnapshot?: MembershipBookingAssessment;
 }
 
-export type MembershipClassCode = 'full' | 'junior' | 'affiliate' | 'life';
+export type MembershipClassCode = string;
 export type MembershipApplicationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'auto_commenced';
 export type MembershipLegalStatus = 'current' | 'ceased_non_payment' | 'resigned' | 'expelled' | 'deceased';
 export type MembershipFeeDisposition = 'invoice_required' | 'invoiced' | 'paid' | 'waived' | 'fee_exempt' | 'overdue' | 'ceased';
@@ -175,11 +175,15 @@ export interface MembershipClass {
   id: string;
   code: MembershipClassCode;
   name: string;
+  description: string;
   annualFee: number;
   hasVotingRights: boolean;
+  canSelfBookAircraft: boolean;
   isFeeExempt: boolean;
   isActive: boolean;
   sortOrder: number;
+  xeroItemCode?: string | null;
+  xeroAccountCode?: string | null;
 }
 
 export interface MembershipApplication {
@@ -218,6 +222,7 @@ export interface ClubMembership {
   membershipClassName?: string;
   membershipClassCode?: MembershipClassCode;
   hasVotingRights?: boolean;
+  canSelfBookAircraft?: boolean;
 }
 
 export interface MembershipFinancialPeriod {
@@ -275,6 +280,10 @@ export interface MembershipSettings {
   xeroStatusStaleHours: number;
   xeroMembershipItemCode?: string | null;
   xeroScholarshipItemCode?: string | null;
+  xeroScholarshipAccountCode?: string | null;
+  scholarshipContributionAvailable: boolean;
+  scholarshipDefaultAmount: number;
+  scholarshipMinimumAmount: number;
   requireStaffOverrideReason: boolean;
   prorationMethod: MembershipProrationMethod;
   minimumProratedFee: number;

@@ -292,20 +292,62 @@ Deno.serve(async (req: Request) => {
       );
     }
     const autoRenew = body.autoRenew === true;
-    const scholarshipEnabled = body.scholarshipContributionEnabled === true;
-    const scholarshipAmount =
-      Math.round(Number(body.scholarshipContributionAmount ?? 5) * 100) / 100;
+    const { data: membershipSettings, error: membershipSettingsError } =
+      await adminClient
+        .from("membership_settings")
+        .select(
+          "scholarship_contribution_available,scholarship_default_amount,scholarship_minimum_amount",
+        )
+        .eq("id", true)
+        .maybeSingle();
+    if (membershipSettingsError) throw membershipSettingsError;
+    const scholarshipAvailable =
+      membershipSettings?.scholarship_contribution_available !== false;
+    const scholarshipDefaultAmount = Math.max(
+      0.01,
+      Number(membershipSettings?.scholarship_default_amount ?? 5),
+    );
+    const scholarshipMinimumAmount = Math.max(
+      0.01,
+      Number(membershipSettings?.scholarship_minimum_amount ?? 0.01),
+    );
     if (
-      scholarshipEnabled &&
-      (!Number.isFinite(scholarshipAmount) || scholarshipAmount < 0.01)
+      body.scholarshipContributionEnabled === true &&
+      !scholarshipAvailable
     ) {
       return json({
-        error: "Enter a scholarship contribution of at least $0.01.",
+        error: "Scholarship contributions are not currently available.",
+      }, 400);
+    }
+    const scholarshipEnabled = scholarshipAvailable &&
+      body.scholarshipContributionEnabled === true;
+    const scholarshipAmount =
+      Math.round(
+        Number(
+          body.scholarshipContributionAmount ?? scholarshipDefaultAmount,
+        ) * 100,
+      ) / 100;
+    if (
+      scholarshipEnabled &&
+      (
+        !Number.isFinite(scholarshipAmount) ||
+        scholarshipAmount < scholarshipMinimumAmount
+      )
+    ) {
+      return json({
+        error: `Enter a scholarship contribution of at least $${
+          scholarshipMinimumAmount.toFixed(2)
+        }.`,
       }, 400);
     }
     const contributionAmount = scholarshipEnabled
       ? scholarshipAmount
-      : Math.max(0, Number.isFinite(scholarshipAmount) ? scholarshipAmount : 5);
+      : Math.max(
+        0,
+        Number.isFinite(scholarshipAmount)
+          ? scholarshipAmount
+          : scholarshipDefaultAmount,
+      );
     const now = new Date().toISOString();
 
     if (paymentMethod === "invoice") {
