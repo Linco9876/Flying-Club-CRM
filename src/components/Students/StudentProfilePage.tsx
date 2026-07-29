@@ -2,7 +2,7 @@
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { LessonStudyAsset, Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, ChevronUp, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -29,6 +29,8 @@ import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../util
 import { formatRichTextContent, richTextToPlainText } from '../../utils/richText';
 import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianceProfilePanel';
 import { FlightReviewsTab } from './FlightReviewsTab';
+import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
+import { shouldCompactAcknowledgedLesson } from '../../utils/lessonRecordPresentation';
 
 interface StudentInfoForm {
   name: string;
@@ -355,6 +357,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   });
   const [showMatrixView, setShowMatrixView] = useState(false);
   const [expandedRecordMatrixIds, setExpandedRecordMatrixIds] = useState<Set<string>>(new Set());
+  const [expandedAcknowledgedRecordIds, setExpandedAcknowledgedRecordIds] = useState<Set<string>>(new Set());
   const [selectedTrainingCourseId, setSelectedTrainingCourseId] = useState('');
   const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
   const [aircraftFilter, setAircraftFilter] = useState('');
@@ -1729,6 +1732,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       } else {
         next.add(recordId);
       }
+      return next;
+    });
+  }, []);
+  const setAcknowledgedRecordExpanded = useCallback((recordId: string, expanded: boolean) => {
+    setExpandedAcknowledgedRecordIds(current => {
+      const next = new Set(current);
+      if (expanded) next.add(recordId);
+      else next.delete(recordId);
       return next;
     });
   }, []);
@@ -3591,18 +3602,32 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 <div className="space-y-4">
                   {sortedRecords.map(record => {
                     const instructor = users.find(u => u.id === record.instructorId);
-                    const totalTime = (record.dualTimeMin + record.soloTimeMin) / 60;
-                    const recordCourse = trainingCourses.find(c => c.id === record.courseId);
                     const recordLessonDisplay = getRecordLessonDisplay(record);
                     const lessonTitle = recordLessonDisplay.title;
                     const lessonCode = recordLessonDisplay.code;
+                    const acknowledgedDetailsExpanded = expandedAcknowledgedRecordIds.has(record.id);
+
+                    if (shouldCompactAcknowledgedLesson(record, acknowledgedDetailsExpanded)) {
+                      return (
+                        <AcknowledgedLessonSummary
+                          key={record.id}
+                          record={record}
+                          instructorName={instructor?.name}
+                          lessonName={lessonTitle}
+                          onExpand={() => setAcknowledgedRecordExpanded(record.id, true)}
+                        />
+                      );
+                    }
+
+                    const totalTime = (record.dualTimeMin + record.soloTimeMin) / 60;
+                    const recordCourse = trainingCourses.find(c => c.id === record.courseId);
                     const matrixSummary = getRecordMatrixAssessmentSummary(record);
                     const isMatrixExpanded = expandedRecordMatrixIds.has(record.id);
                     const latestRevision = [...(record.auditLog || [])]
                       .reverse()
                       .find(entry => entry.changes?.studentAcknowledgementRequired && Array.isArray(entry.changes?.summary));
                     const revisionSummary = latestRevision?.changes?.summary as string[] | undefined;
-                    
+
                     return (
                       <div key={record.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                         <div className="border-b border-gray-100 p-5">
@@ -3644,6 +3669,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
+                              {record.studentAck && (
+                                <button
+                                  type="button"
+                                  onClick={() => setAcknowledgedRecordExpanded(record.id, false)}
+                                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                  <ChevronUp className="h-4 w-4" />
+                                  Minimise
+                                </button>
+                              )}
                               {record.status === 'locked' && record.studentAck && (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
                                   <CheckCircle className="h-3.5 w-3.5" />
