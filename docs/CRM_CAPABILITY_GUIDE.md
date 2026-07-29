@@ -270,6 +270,18 @@ Before release:
 6. Confirm a trial-voucher booking confirmation contains the calendar button and its link shows the current booking.
 7. Import the same event in Google, Outlook and an `.ics` client; then reschedule or cancel it and verify the live feed retains its UID and changes status or time.
 
+## Calendar kiosk access
+
+The `/kiosk` calendar uses a dedicated high-entropy kiosk key instead of an email address and password. An administrator manages the key in **Settings → Portal & UX → Kiosk access**.
+
+- Creating or viewing the key requires an administrator session with MFA.
+- The key is encrypted at rest and is never stored in plaintext on the kiosk device.
+- A successful entry exchanges the key for a separate revocable browser grant.
+- Rotating or disabling the key revokes all existing kiosk browser grants.
+- An active kiosk grant remains usable while the kiosk is regularly used and expires after 30 days of inactivity.
+- The kiosk retains its existing calendar, booking and flight-logging permissions; it does not add a new permission role.
+- Production requires a separate 32-byte `KIOSK_TOKEN_ENCRYPTION_KEY` stored only in Supabase Edge Function secrets.
+
 ## Deployment checklist for the membership change
 
 1. Review and push `supabase/migrations/20260721120000_add_club_membership_management.sql`.

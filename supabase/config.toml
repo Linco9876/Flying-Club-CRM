@@ -55,3 +55,8 @@ verify_jwt = false
 # Public membership applicants can search addresses before they have an account.
 # The function only returns address suggestions and keeps provider credentials server-side.
 verify_jwt = false
+
+[functions.kiosk-access]
+# Validates the high-entropy kiosk key itself for login. Admin management actions
+# independently require a valid AAL2 administrator session.
+verify_jwt = false
