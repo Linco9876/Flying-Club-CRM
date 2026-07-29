@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { addDays, differenceInMinutes, endOfDay, format, isWithinInterval, startOfDay } from 'date-fns';
 import { useReportsData } from '../../hooks/useReportsData';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 const CAPACITY_HOURS_PER_DAY = 8;
 
@@ -319,7 +320,9 @@ export const ReportsOverviewTab: React.FC = () => {
             {data.topPilots.length ? data.topPilots.map((pilot, index) => (
               <div key={pilot.id} className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">{index + 1}. {pilot.name}</p>
+                  <p className="truncate text-sm font-semibold text-gray-900">
+                    {index + 1}. <StudentFileLink studentId={pilot.id} name={pilot.name} />
+                  </p>
                   <ProgressBar value={(pilot.hours / Math.max(data.topPilots[0].hours, 1)) * 100} />
                 </div>
                 <p className="shrink-0 text-sm font-bold tabular-nums text-gray-950">{formatHours(pilot.hours)} h</p>

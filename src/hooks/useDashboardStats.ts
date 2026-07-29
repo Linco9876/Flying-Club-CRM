@@ -14,6 +14,7 @@ export interface DashboardStats {
   pendingApprovals: number;
   recentBookingsToday: Array<{
     id: string;
+    studentId?: string;
     studentName: string;
     aircraftRegistration: string;
     startTime: Date;
@@ -79,7 +80,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
         .from('bookings')
         .select(`
           id, start_time, end_time, status,
-          student:student_id (name),
+          student:student_id (id, name),
           instructor:instructor_id (name),
           aircraft:aircraft_id (registration)
         `)
@@ -148,6 +149,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
 
       const recentBookings = (allBookingsTodayResult.data || []).map((b: any) => ({
         id: b.id,
+        studentId: b.student?.id,
         studentName: b.student?.name || 'Unknown',
         aircraftRegistration: b.aircraft?.registration || 'Unknown',
         startTime: new Date(b.start_time),

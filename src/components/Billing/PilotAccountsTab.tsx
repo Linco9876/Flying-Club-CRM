@@ -3,6 +3,7 @@ import { User, ArrowUpDown, Eye, Plus, AlertCircle, CheckCircle } from 'lucide-r
 import { useBillingAccounts } from '../../hooks/useBillingAccounts';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { AccountHistoryModal } from './AccountHistoryModal';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 type BillingHook = ReturnType<typeof useBillingAccounts>;
 
@@ -14,7 +15,7 @@ interface TopUpModalProps {
   paymentMethods: { id: string; name: string; active: boolean; allowAccountTopup?: boolean }[];
 }
 
-const TopUpModal: React.FC<TopUpModalProps> = ({ userId: _userId, userName, onClose, onConfirm, paymentMethods }) => {
+const TopUpModal: React.FC<TopUpModalProps> = ({ userId, userName, onClose, onConfirm, paymentMethods }) => {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('Account top-up');
   const [paymentMethodId, setPaymentMethodId] = useState('');
@@ -39,7 +40,9 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ userId: _userId, userName, onCl
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
         <div className="p-6 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900">Add Top-up</h3>
-          <p className="text-sm text-gray-500 mt-0.5">{userName}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            <StudentFileLink studentId={userId} name={userName} />
+          </p>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
@@ -229,7 +232,11 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                         <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
                           <User className="h-4 w-4 text-blue-600" />
                         </div>
-                        <span className="text-sm font-medium text-gray-900">{account.name}</span>
+                        <StudentFileLink
+                          studentId={account.userId}
+                          name={account.name}
+                          className="text-sm font-medium text-gray-900"
+                        />
                       </div>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-500">{account.email}</td>

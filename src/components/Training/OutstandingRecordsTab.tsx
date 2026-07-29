@@ -27,6 +27,7 @@ import { InstructorComplianceRecordForm } from './InstructorComplianceRecordForm
 import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolments';
 import { useFlightReviews } from '../../hooks/useFlightReviews';
 import { FlightReviewRecordEditor } from './FlightReviewWorkspace';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 type RecordEntryType = 'lesson' | 'review_test' | 'instructor_review';
@@ -1496,14 +1497,25 @@ export const OutstandingRecordsTab: React.FC = () => {
                     key={record.id}
                     className="flex w-full items-stretch overflow-hidden rounded-lg border border-blue-200 bg-white text-xs text-blue-950 transition hover:border-blue-300 dark:border-blue-400/20 dark:bg-[#111827] dark:text-blue-100"
                   >
-                    <button
-                      type="button"
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => openDraftSession(record)}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openDraftSession(record);
+                        }
+                      }}
                       className="min-w-0 flex-1 px-3 py-2 text-left transition hover:bg-blue-100 dark:hover:bg-blue-950/40"
                     >
-                      <span className="block truncate font-semibold">{student?.name || 'Unknown member'}</span>
+                      <StudentFileLink
+                        studentId={student?.id}
+                        name={student?.name || 'Unknown member'}
+                        className="block truncate font-semibold"
+                      />
                       <span className="block truncate opacity-80">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
-                    </button>
+                    </div>
                     <button
                       type="button"
                       onClick={() => void handleDeleteDraftRecord(record)}
@@ -1573,9 +1585,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                       </div>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-gray-900 text-sm truncate dark:text-gray-100">
-                            {log.student_name ?? 'Unknown Student'}
-                          </p>
+                          <StudentFileLink
+                            studentId={log.student_id}
+                            name={log.student_name ?? 'Unknown Student'}
+                            className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100"
+                          />
                           <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
                             isMine
                               ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-200'
@@ -1716,9 +1730,11 @@ export const OutstandingRecordsTab: React.FC = () => {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {log.student_name ?? 'Unknown Student'}
-                        </p>
+                        <StudentFileLink
+                          studentId={log.student_id}
+                          name={log.student_name ?? 'Unknown Student'}
+                          className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100"
+                        />
                         {isAdmin && (
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                             isMine
@@ -1756,7 +1772,9 @@ export const OutstandingRecordsTab: React.FC = () => {
             <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Create record for</p>
-                <h3 className="mt-1 truncate text-xl font-bold text-gray-950 dark:text-white">{activeLog.student_name || 'Unknown member'}</h3>
+                <h3 className="mt-1 truncate text-xl font-bold text-gray-950 dark:text-white">
+                  <StudentFileLink studentId={activeLog.student_id} name={activeLog.student_name || 'Unknown member'} />
+                </h3>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   {format(new Date(activeLog.start_time), 'EEE d MMM yyyy, h:mm a')} &middot; {activeLog.aircraft_registration || 'No aircraft'}
                 </p>
@@ -1845,7 +1863,10 @@ export const OutstandingRecordsTab: React.FC = () => {
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-300">Review / Test</p>
-                <h3 className="mt-1 truncate text-lg font-bold text-gray-950 dark:text-white">Choose the correct form for {activeLog.student_name}</h3>
+                <h3 className="mt-1 truncate text-lg font-bold text-gray-950 dark:text-white">
+                  Choose the correct form for{' '}
+                  <StudentFileLink studentId={activeLog.student_id} name={activeLog.student_name || 'Unknown member'} />
+                </h3>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Only published forms you are authorised to conduct are shown.</p>
               </div>
               <button type="button" onClick={closePanel} aria-label="Close record workspace" className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-[#252b35] dark:hover:text-gray-100">
@@ -1916,7 +1937,8 @@ export const OutstandingRecordsTab: React.FC = () => {
                   {isDraftSession ? 'In-flight Draft Record' : activeDraftRecord ? 'Attach Draft Training Record' : 'Training Record'}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {activeLog.student_name} &middot; {isDraftSession ? 'Started' : 'Flight'} {format(new Date(activeLog.start_time), 'd MMM yyyy')}
+                  <StudentFileLink studentId={activeLog.student_id} name={activeLog.student_name || 'Unknown member'} />
+                  {' '}&middot; {isDraftSession ? 'Started' : 'Flight'} {format(new Date(activeLog.start_time), 'd MMM yyyy')}
                 </p>
               </div>
               <button
@@ -1953,7 +1975,9 @@ export const OutstandingRecordsTab: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6">
               <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/30 dark:text-blue-100 lg:hidden">
-                <p className="font-semibold">{activeLog.student_name ?? 'Unknown Student'}</p>
+                <p className="font-semibold">
+                  <StudentFileLink studentId={activeLog.student_id} name={activeLog.student_name ?? 'Unknown Student'} />
+                </p>
                 <p className="mt-1 text-xs text-blue-700 dark:text-blue-200">
                   {format(new Date(activeLog.start_time), 'EEE d MMM yyyy')} &middot; {format(new Date(activeLog.start_time), 'h:mm a')} &middot; {activeLog.aircraft_registration ?? '-'}
                 </p>

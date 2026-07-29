@@ -13,6 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { getAircraftIconSrc } from '../../utils/aircraftIcons';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 type AircraftProfileTab = 'documents' | 'defects' | 'flight-log' | 'milestones' | 'bookings' | 'pricing';
 
@@ -656,7 +657,12 @@ export const AircraftProfilePage: React.FC = () => {
                         <p className="mt-1 text-xs text-gray-500">to {booking.endTime.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}</p>
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">{hirerLabel}</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          <StudentFileLink
+                            studentId={!booking.isGuestBooking && !isStudentOrPilot ? booking.studentId : undefined}
+                            name={hirerLabel}
+                          />
+                        </p>
                         <p className="mt-1 text-xs text-gray-500">{bookingDetail}</p>
                       </div>
                       <div className="text-right">

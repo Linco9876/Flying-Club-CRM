@@ -9,6 +9,7 @@ import { useSafetySettings } from '../../hooks/useSafetySettings';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
 import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
+import { StudentFileLink } from '../Students/StudentFileLink';
 import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
 import { Booking, DutyAssessment, MembershipBookingAssessment } from '../../types';
 import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
@@ -1632,7 +1633,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 {safetyWarningState.blocking ? 'Booking requires an instructor' : 'Safety acknowledgement required'}
               </h3>
               <p className="mt-1 text-sm text-gray-600">
-                {safetyWarningState.pilotName} has safety or currency items that need attention before this booking.
+                <StudentFileLink studentId={formData.studentId} name={safetyWarningState.pilotName} /> has safety or currency items that need attention before this booking.
               </p>
             </div>
           </div>

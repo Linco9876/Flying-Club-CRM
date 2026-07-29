@@ -22,6 +22,7 @@ import {
   InstructorComplianceLevel,
   useInstructorCompliance,
 } from "../../hooks/useInstructorCompliance";
+import { StudentFileLink } from "../Students/StudentFileLink";
 
 interface InstructorComplianceRecordFormProps {
   flightLog: OutstandingFlightLog;
@@ -283,7 +284,7 @@ export const InstructorComplianceRecordForm: React.FC<
                 : "Instructor Standards & Proficiency Check"}
             </h2>
             <p className="mt-1 text-sm text-cyan-100">
-              {candidate.name} &middot;{" "}
+              <StudentFileLink studentId={candidate.id} name={candidate.name} /> &middot;{" "}
               {isSenior ? "Senior Instructor" : "Instructor"} &middot;{" "}
               {format(new Date(flightLog.start_time), "d MMM yyyy")}
             </p>
