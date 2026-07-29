@@ -2,8 +2,12 @@ export interface GroundSessionPaymentTypeOption {
   id: string;
   name: string;
   active: boolean;
-  groundSessionEnabled: boolean;
-  groundSessionHourlyRate: number;
+}
+
+export interface GroundSessionRateOption {
+  flightTypeId: string;
+  enabled: boolean;
+  hourlyRate: number;
 }
 
 export const buildGroundSessionBillingDefaults = (booking: {
@@ -48,10 +52,25 @@ export const isPrepaidPaymentTypeName = (value?: string | null) => {
 export const getAllowedGroundSessionPaymentTypes = <T extends GroundSessionPaymentTypeOption>(
   paymentTypes: T[],
   pricingMode?: 'fixed' | 'flight_type_hourly' | null,
+  rates: GroundSessionRateOption[] = [],
 ) => {
   const active = paymentTypes.filter(type => type.active);
   if (pricingMode !== 'flight_type_hourly') return active;
-  return active.filter(type => type.groundSessionEnabled);
+  const enabledIds = new Set(
+    rates
+      .filter(rate => rate.enabled && Number(rate.hourlyRate) > 0)
+      .map(rate => rate.flightTypeId),
+  );
+  return active.filter(type => enabledIds.has(type.id));
+};
+
+export const getGroundSessionHourlyRate = (
+  rates: GroundSessionRateOption[] = [],
+  flightTypeId?: string | null,
+) => {
+  if (!flightTypeId) return 0;
+  const rate = rates.find(item => item.flightTypeId === flightTypeId && item.enabled);
+  return Number(rate?.hourlyRate || 0);
 };
 
 export const resolveGroundSessionPaymentMethod = ({

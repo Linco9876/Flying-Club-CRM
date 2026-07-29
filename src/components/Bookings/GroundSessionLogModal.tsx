@@ -9,6 +9,7 @@ import { Booking } from '../../types';
 import {
   buildGroundSessionBillingDefaults,
   getAllowedGroundSessionPaymentTypes,
+  getGroundSessionHourlyRate,
   isPrepaidPaymentTypeName,
   resolveGroundSessionPaymentMethod,
 } from '../../utils/groundSessionBilling';
@@ -71,6 +72,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
   const allowedPaymentTypes = getAllowedGroundSessionPaymentTypes(
     activeFlightTypes,
     selectedDescription?.pricingMode,
+    selectedDescription?.rates,
   );
   const pricingFlightType = activeFlightTypes.find(type =>
     type.id === (formData.flight_type_id || selectedDescription?.flightTypeId)
@@ -81,9 +83,12 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
     if (selectedDescription?.pricingMode === 'fixed') {
       return Math.round((Number(selectedDescription.fixedRate || 0) + Number.EPSILON) * 100) / 100;
     }
-    const hourlyRate = Number(pricingFlightType?.groundSessionHourlyRate ?? 0);
+    const hourlyRate = getGroundSessionHourlyRate(
+      selectedDescription?.rates,
+      pricingFlightType?.id,
+    );
     return Math.round((hourlyRate * Number(formData.duration_hours || 0) + Number.EPSILON) * 100) / 100;
-  }, [formData.duration_hours, pricingFlightType?.groundSessionHourlyRate, selectedDescription?.fixedRate, selectedDescription?.pricingMode]);
+  }, [formData.duration_hours, pricingFlightType?.id, selectedDescription]);
 
   useEffect(() => {
     if (mode !== 'edit' || !groundSessionLogId || logsLoading) return;
@@ -146,7 +151,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
       selectedDescription?.pricingMode === 'flight_type_hourly'
       && !allowedPaymentTypes.some(type => type.id === formData.flight_type_id)
     ) {
-      toast.error('Select a Payment Type that is enabled for hourly ground sessions');
+      toast.error('Select a Payment Type with a rate configured for this Ground Session Type');
       return;
     }
     if (Number(formData.duration_hours || 0) <= 0) {
@@ -307,6 +312,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                     const allowedTypes = getAllowedGroundSessionPaymentTypes(
                       activeFlightTypes,
                       option?.pricingMode,
+                      option?.rates,
                     );
                     setFormData(current => ({
                       ...current,
@@ -336,7 +342,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
                   {selectedDescription?.pricingMode === 'fixed'
                     ? `${selectedDescription.name} fixed price`
                     : pricingFlightType
-                      ? `${pricingFlightType.name} at $${Number(pricingFlightType.groundSessionHourlyRate || 0).toFixed(2)} per hour`
+                      ? `${pricingFlightType.name} at $${getGroundSessionHourlyRate(selectedDescription?.rates, pricingFlightType.id).toFixed(2)} per hour`
                       : 'Select a Payment Type to calculate the hourly charge'}
                 </p>
               </div>
