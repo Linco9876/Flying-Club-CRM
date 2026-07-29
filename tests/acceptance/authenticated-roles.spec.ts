@@ -16,7 +16,7 @@ const staffRoles = new Set<PortalRole>(['admin', 'cfi', 'senior_instructor', 'in
 const expectedMenuItems: Record<PortalRole, string[]> = {
   admin: ['Members', 'Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Financial Dashboard', 'Settings'],
   cfi: ['Members', 'Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Outstanding Records', 'Safety', 'Settings'],
-  senior_instructor: ['Club Membership', 'Aircraft', 'Duty', 'Training Courses', 'Learning Centre', 'Pilot File', 'Settings'],
+  senior_instructor: ['Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Learning Centre', 'Pilot File', 'Settings'],
   instructor: ['Members', 'Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Outstanding Records', 'Safety', 'Settings'],
   pilot: ['Club Membership', 'Aircraft', 'Learning Centre', 'Pilot File', 'Documents', 'My Logbook', 'Settings'],
   student: ['Club Membership', 'Aircraft', 'Learning Centre', 'Pilot File', 'Documents', 'My Logbook', 'Safety', 'Settings'],
@@ -108,6 +108,15 @@ for (const role of roles) {
     await page.locator('header button[aria-label="Profile"]').click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible();
+
+    if (expectedMenuItems[role].includes('Maintenance')) {
+      await page.goto('/maintenance');
+      await expect(page.getByRole('heading', { name: 'Maintenance Board' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Report Defect' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Fixed', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Deferred', exact: true })).toBeVisible();
+    }
 
     await page.goto('/settings?tab=account-info&focus=personal-details');
     await expect(page.locator(

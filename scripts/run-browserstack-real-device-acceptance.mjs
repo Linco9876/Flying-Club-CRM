@@ -36,7 +36,7 @@ const withTimeout = async (promise, timeoutMs, description) => {
 const expectedMenuItems = {
   admin: ['Members', 'Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Financial Dashboard', 'Settings'],
   cfi: ['Members', 'Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Outstanding Records', 'Safety', 'Settings'],
-  senior_instructor: ['Club Membership', 'Aircraft', 'Duty', 'Training Courses', 'Learning Centre', 'Pilot File', 'Settings'],
+  senior_instructor: ['Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Learning Centre', 'Pilot File', 'Settings'],
   instructor: ['Members', 'Club Membership', 'Aircraft', 'Duty', 'Maintenance', 'Training Courses', 'Outstanding Records', 'Safety', 'Settings'],
   pilot: ['Club Membership', 'Aircraft', 'Learning Centre', 'Pilot File', 'Documents', 'My Logbook', 'Settings'],
   student: ['Club Membership', 'Aircraft', 'Learning Centre', 'Pilot File', 'Documents', 'My Logbook', 'Safety', 'Settings'],
@@ -333,6 +333,18 @@ const testRole = async (driver, deviceKey, role) => {
   await profile.click();
   await driver.wait(async () => new URL(await driver.getCurrentUrl()).pathname === '/', 20_000);
   await findVisible(driver, logoutLocator);
+
+  if (expectedMenuItems[role].includes('Maintenance')) {
+    await driver.get(`${baseUrl}/maintenance`);
+    await findVisible(
+      driver,
+      By.xpath('//*[self::h1 or self::h2][normalize-space(.)="Maintenance Board"]'),
+    );
+    await findVisible(driver, By.xpath('//button[normalize-space(.)="Report Defect"]'));
+    await findVisible(driver, By.xpath('//button[normalize-space(.)="Open"]'));
+    await findVisible(driver, By.xpath('//button[normalize-space(.)="Fixed"]'));
+    await findVisible(driver, By.xpath('//button[normalize-space(.)="Deferred"]'));
+  }
 
   const hasHorizontalOverflow = await driver.executeScript(
     'return document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;',
