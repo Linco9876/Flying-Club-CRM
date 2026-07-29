@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 
 type QueueStatus = 'all' | 'pending' | 'processing' | 'synced' | 'needs_review' | 'failed' | 'cancelled';
 
@@ -59,19 +60,25 @@ export const XeroSyncQueueCard: React.FC = () => {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [queue, setQueue] = useState<XeroQueueItem[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadQueue = useCallback(async (status: QueueStatus) => {
     setLoading(true);
+    setLoadError(null);
     try {
       const { data, error } = await supabase.functions.invoke<QueueResponse>('xero-sync', {
         body: { action: 'list-queue', status, limit: 60 },
       });
-      if (error) throw error;
+      if (error) {
+        throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero sync queue'));
+      }
       setQueue(data?.items || []);
       setCounts(data?.counts || {});
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to load Xero queue:', error);
-      toast.error(error?.message || 'Failed to load Xero sync queue');
+      const message = error instanceof Error ? error.message : 'Failed to load Xero sync queue';
+      setLoadError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -87,16 +94,18 @@ export const XeroSyncQueueCard: React.FC = () => {
       const { data, error } = await supabase.functions.invoke<{ processed?: boolean; message?: string }>('xero-sync', {
         body: { action: 'process-next' },
       });
-      if (error) throw error;
+      if (error) {
+        throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to process the next Xero queue item'));
+      }
       if (!data?.processed) {
         toast(data?.message || 'No pending Xero sync work');
       } else {
         toast.success('Processed the next Xero queue item');
       }
       await loadQueue(statusFilter);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to process next Xero queue item:', error);
-      toast.error(error?.message || 'Failed to process next Xero queue item');
+      toast.error(error instanceof Error ? error.message : 'Failed to process next Xero queue item');
       await loadQueue(statusFilter);
     } finally {
       setProcessingId(null);
@@ -109,12 +118,14 @@ export const XeroSyncQueueCard: React.FC = () => {
       const { error } = await supabase.functions.invoke('xero-sync', {
         body: { action: 'process-item', queueId },
       });
-      if (error) throw error;
+      if (error) {
+        throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to process Xero queue item'));
+      }
       toast.success('Xero queue item processed');
       await loadQueue(statusFilter);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to process Xero queue item:', error);
-      toast.error(error?.message || 'Failed to process Xero queue item');
+      toast.error(error instanceof Error ? error.message : 'Failed to process Xero queue item');
       await loadQueue(statusFilter);
     } finally {
       setProcessingId(null);
@@ -127,12 +138,14 @@ export const XeroSyncQueueCard: React.FC = () => {
       const { error } = await supabase.functions.invoke('xero-sync', {
         body: { action: 'retry-item', queueId },
       });
-      if (error) throw error;
+      if (error) {
+        throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to retry Xero queue item'));
+      }
       toast.success('Queue item returned to pending');
       await loadQueue(statusFilter);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to retry Xero queue item:', error);
-      toast.error(error?.message || 'Failed to retry Xero queue item');
+      toast.error(error instanceof Error ? error.message : 'Failed to retry Xero queue item');
     } finally {
       setRetryingId(null);
     }
@@ -213,7 +226,25 @@ export const XeroSyncQueueCard: React.FC = () => {
         </div>
 
         <div className="mt-4 space-y-3">
-          {queue.length === 0 ? (
+          {loadError ? (
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
+              <div className="flex min-w-0 items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+                <div>
+                  <p className="font-semibold">Xero sync queue could not be loaded</p>
+                  <p className="mt-1">{loadError}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadQueue(statusFilter)}
+                disabled={loading}
+                className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 font-semibold text-red-800 hover:bg-red-100 disabled:opacity-60"
+              >
+                Retry
+              </button>
+            </div>
+          ) : queue.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
               No Xero sync items match this filter.
             </div>

@@ -3,6 +3,11 @@ export const cleanXeroValue = (value: unknown) => String(value || "").trim();
 export const organisationConfirmationPhrase = (tenantName: unknown) =>
   `CONNECT ${cleanXeroValue(tenantName).toUpperCase()}`;
 
+const connectionIndependentActions = new Set(["list-queue"]);
+
+export const isConnectionIndependentXeroAction = (action: unknown) =>
+  connectionIndependentActions.has(cleanXeroValue(action).toLowerCase());
+
 export const assertTenantBoundConnection = (
   connection: any,
   options: { allowInventory?: boolean } = {},

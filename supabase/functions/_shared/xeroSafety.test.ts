@@ -2,6 +2,7 @@ import {
   assertTenantBoundConnection,
   assertTenantBoundQueueItem,
   gstInclusiveImpact,
+  isConnectionIndependentXeroAction,
   organisationConfirmationPhrase,
 } from "./xeroSafety.ts";
 
@@ -70,5 +71,14 @@ Deno.test("calculates Australian GST from tax-inclusive pricing", () => {
     impact.gstAmount !== 10
   ) {
     throw new Error(`Unexpected impact: ${JSON.stringify(impact)}`);
+  }
+});
+
+Deno.test("read-only queue inspection is connection-independent", () => {
+  if (!isConnectionIndependentXeroAction("list-queue")) {
+    throw new Error("Queue inspection should not require an active Xero connection");
+  }
+  if (isConnectionIndependentXeroAction("process-next")) {
+    throw new Error("Queue processing must retain active Xero connection checks");
   }
 });
