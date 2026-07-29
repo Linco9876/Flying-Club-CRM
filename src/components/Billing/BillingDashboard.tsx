@@ -12,6 +12,7 @@ import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionError
 import { fetchOwnXeroInvoices, openOwnXeroInvoicePdf, payOwnXeroInvoice, publishXeroMemberBalance, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import { canExposeMemberFinancialInformation, getMemberBillingState } from '../../utils/memberBillingState';
+import { formatBillingDescription } from '../../utils/billingDescription';
 import toast from 'react-hot-toast';
 
 const TransactionsTab = lazy(() => import('./TransactionsTab').then(module => ({ default: module.TransactionsTab })));
@@ -894,7 +895,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                   <div key={transaction.id} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{transaction.description || transaction.type}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {formatBillingDescription(transaction.description, transaction.type)}
+                        </p>
                         {transaction.verifiedStatus !== 'verified' && (
                           <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
                             transaction.verifiedStatus === 'pending'
