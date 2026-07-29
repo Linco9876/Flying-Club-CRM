@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildGroundSessionBillingDefaults,
   getAllowedGroundSessionPaymentTypes,
+  resolveBookingBillingSelection,
   resolveGroundSessionPaymentMethod,
 } from './groundSessionBilling.ts';
 
@@ -37,6 +38,29 @@ test('ground-session billing pre-fills the Payment Type and Payment Method from 
   }), {
     paymentTypeId: 'prepaid',
     paymentMethodName: 'Pilot Account',
+  });
+});
+
+test('ground-session bookings preserve the selected Payment Type when saved', () => {
+  assert.deepEqual(resolveBookingBillingSelection({
+    paymentTypeId: 'payg',
+    paymentTypeName: 'Pay As You Go',
+    derivedPaymentTypeName: 'Pay As You Go',
+  }), {
+    flightTypeId: 'payg',
+    paymentType: 'Pay As You Go',
+  });
+});
+
+test('voucher bookings keep their dedicated billing selection', () => {
+  assert.deepEqual(resolveBookingBillingSelection({
+    paymentTypeId: 'payg',
+    paymentTypeName: 'Pay As You Go',
+    derivedPaymentTypeName: 'Pay As You Go',
+    isVoucherBooking: true,
+  }), {
+    flightTypeId: '',
+    paymentType: 'Gift Voucher',
   });
 });
 

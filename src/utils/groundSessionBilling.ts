@@ -14,6 +14,30 @@ export const buildGroundSessionBillingDefaults = (booking: {
   paymentMethodName: booking.paymentType || '',
 });
 
+export const resolveBookingBillingSelection = ({
+  paymentTypeId,
+  paymentTypeName,
+  derivedPaymentTypeName,
+  isVoucherBooking = false,
+}: {
+  paymentTypeId?: string | null;
+  paymentTypeName?: string | null;
+  derivedPaymentTypeName?: string | null;
+  isVoucherBooking?: boolean;
+}) => {
+  if (isVoucherBooking) {
+    return {
+      flightTypeId: '',
+      paymentType: 'Gift Voucher',
+    };
+  }
+
+  return {
+    flightTypeId: paymentTypeId || '',
+    paymentType: derivedPaymentTypeName || paymentTypeName || '',
+  };
+};
+
 export const isPrepaidPaymentTypeName = (value?: string | null) => {
   const normalised = String(value || '').toLowerCase().replace(/[-_]/g, ' ');
   return normalised.includes('pilot account')
