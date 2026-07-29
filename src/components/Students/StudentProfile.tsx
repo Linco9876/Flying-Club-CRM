@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { User, Phone, Mail, Calendar, Award, CreditCard as Edit, Save, X, AlertCircle, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { StudentTrainingRecords } from './StudentTrainingRecords';
+import { fetchUserXeroBalance } from '../../lib/xeroMemberBalance';
 
 interface ProfileData {
   name: string;
@@ -49,6 +50,7 @@ export const StudentProfile: React.FC = () => {
   const [draft, setDraft] = useState<ProfileData>(empty);
   const [endorsements, setEndorsements] = useState<Endorsement[]>([]);
   const [accountBalance, setAccountBalance] = useState<number | null>(null);
+  const [xeroLinked, setXeroLinked] = useState(false);
   const [flightStats, setFlightStats] = useState({ total: 0, solo: 0, dual: 0 });
 
   useEffect(() => {
@@ -60,11 +62,10 @@ export const StudentProfile: React.FC = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [usersRes, studentsRes, endorsementsRes, balanceRes, flightRes] = await Promise.all([
+      const [usersRes, studentsRes, endorsementsRes, flightRes] = await Promise.all([
         supabase.from('users').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('students').select('*').eq('id', user.id).maybeSingle(),
         supabase.from('endorsements').select('*').eq('student_id', user.id),
-        supabase.from('account_transactions').select('type, amount, verified_status').eq('user_id', user.id),
         supabase.from('flight_logs').select('duration').eq('student_id', user.id),
       ]);
 
@@ -92,15 +93,14 @@ export const StudentProfile: React.FC = () => {
 
       setEndorsements(endorsementsRes.data || []);
 
-      if (balanceRes.data) {
-        const bal = balanceRes.data.reduce((sum: number, tx: any) => {
-          const amt = parseFloat(tx.amount ?? 0);
-          if (tx.type === 'topup' || tx.type === 'refund') {
-            return tx.verified_status === 'verified' ? sum + amt : sum;
-          }
-          return sum - amt;
-        }, 0);
-        setAccountBalance(bal);
+      const linked = Boolean(u?.xero_contact_id);
+      setXeroLinked(linked);
+      setAccountBalance(null);
+      if (linked) {
+        const xeroBalance = await fetchUserXeroBalance(user.id);
+        if (xeroBalance.connected && xeroBalance.linked !== false) {
+          setAccountBalance(Number(xeroBalance.availableCredit || 0));
+        }
       }
 
       if (flightRes.data) {
@@ -316,14 +316,14 @@ export const StudentProfile: React.FC = () => {
                 <span className="text-sm font-medium text-orange-900">Dual Time</span>
                 <span className="text-lg font-bold text-orange-600">{flightStats.dual.toFixed(1)}</span>
               </div>
-              <div className={`border rounded-lg p-3 flex justify-between items-center ${accountBalance !== null && accountBalance < 0 ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
+              {xeroLinked && <div className={`border rounded-lg p-3 flex justify-between items-center ${accountBalance !== null && accountBalance < 0 ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
                 <span className={`text-sm font-medium ${accountBalance !== null && accountBalance < 0 ? 'text-red-900' : 'text-green-900'}`}>
                   Account Balance
                 </span>
                 <span className={`text-lg font-bold ${accountBalance !== null && accountBalance < 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {accountBalance !== null ? `$${accountBalance.toFixed(2)}` : '—'}
                 </span>
-              </div>
+              </div>}
             </div>
           </div>
 

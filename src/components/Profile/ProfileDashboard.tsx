@@ -394,12 +394,15 @@ export const ProfileDashboard: React.FC = () => {
           : 'Due soon';
 
   const membershipLevel: ProfileReadinessLevel = membership.legalStatus === 'current'
-    ? membership.financiallyCleared ? 'ready' : 'action'
+    ? !membership.xeroLinked ? 'warning' : membership.financiallyCleared ? 'ready' : 'action'
     : membership.applicationStatus === 'pending' ? 'warning' : 'action';
   const profileLevel: ProfileReadinessLevel = missingProfileFields.length > 0 ? 'warning' : 'ready';
-  const membershipBillingProblem = ['failed', 'needs_review'].includes(membership.billingSyncStatus || '') ||
-    membership.lastCollectionStatus === 'failed';
-  const membershipBillingPending = ['queued', 'processing'].includes(membership.billingSyncStatus || '');
+  const membershipBillingProblem = membership.xeroLinked && (
+    ['failed', 'needs_review'].includes(membership.billingSyncStatus || '') ||
+    membership.lastCollectionStatus === 'failed'
+  );
+  const membershipBillingPending = membership.xeroLinked &&
+    ['queued', 'processing'].includes(membership.billingSyncStatus || '');
   const billingLevel: ProfileReadinessLevel = membershipBillingProblem
     ? 'action'
     : membership.xeroLinked
@@ -411,7 +414,7 @@ export const ProfileDashboard: React.FC = () => {
       id: 'club-membership',
       label: 'BFC membership',
       value: membership.legalStatus === 'current'
-        ? membership.financiallyCleared ? 'Active' : 'Payment required'
+        ? !membership.xeroLinked ? 'Current' : membership.financiallyCleared ? 'Active' : 'Payment required'
         : membership.applicationStatus === 'pending' ? 'Pending approval' : humaniseStatus(membership.legalStatus),
       level: membershipLevel,
       to: getProfileReadinessDestination('membership'),
@@ -510,7 +513,7 @@ export const ProfileDashboard: React.FC = () => {
         to: getProfileReadinessDestination('membership'),
         level: membership.applicationStatus === 'pending' ? 'warning' : 'action',
       });
-    } else if (!membership.financiallyCleared) {
+    } else if (membership.xeroLinked && !membership.financiallyCleared) {
       actions.push({
         id: 'membership-payment',
         title: 'Membership payment required',
@@ -977,30 +980,38 @@ export const ProfileDashboard: React.FC = () => {
                   </div>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${levelStyles[membershipLevel].badge}`}>
-                  {membership.legalStatus === 'current' ? membership.financiallyCleared ? 'Active' : 'Payment due' : humaniseStatus(membership.applicationStatus || membership.legalStatus)}
+                  {membership.legalStatus === 'current'
+                    ? !membership.xeroLinked ? 'Current' : membership.financiallyCleared ? 'Active' : 'Payment due'
+                    : humaniseStatus(membership.applicationStatus || membership.legalStatus)}
                 </span>
               </div>
               <dl className="mt-5 space-y-3 text-sm">
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500 dark:text-slate-400">Financial year ends</dt>
-                  <dd className="text-right font-semibold text-slate-900 dark:text-white">{formatStoredDate(membership.financialYearEnd, datePattern)}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500 dark:text-slate-400">Financial status</dt>
-                  <dd className="text-right font-semibold text-slate-900 dark:text-white">{humaniseStatus(membership.feeDisposition)}</dd>
-                </div>
-                {shouldShowMembershipAmountDue(membership) && (
+                {membership.xeroLinked ? <>
                   <div className="flex justify-between gap-3">
-                    <dt className="text-slate-500 dark:text-slate-400">Amount due</dt>
-                    <dd className="text-right font-semibold text-amber-700 dark:text-amber-300">{formatCurrency(membership.amountDue, portalSettings.currency_decimals)}</dd>
+                    <dt className="text-slate-500 dark:text-slate-400">Financial year ends</dt>
+                    <dd className="text-right font-semibold text-slate-900 dark:text-white">{formatStoredDate(membership.financialYearEnd, datePattern)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500 dark:text-slate-400">Financial status</dt>
+                    <dd className="text-right font-semibold text-slate-900 dark:text-white">{humaniseStatus(membership.feeDisposition)}</dd>
+                  </div>
+                  {shouldShowMembershipAmountDue(membership) && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-slate-500 dark:text-slate-400">Amount due</dt>
+                      <dd className="text-right font-semibold text-amber-700 dark:text-amber-300">{formatCurrency(membership.amountDue, portalSettings.currency_decimals)}</dd>
+                    </div>
+                  )}
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-slate-500 dark:text-slate-400">Renewal</dt>
+                    <dd className="text-right font-semibold text-slate-900 dark:text-white">
+                      {membership.autoRenew ? 'Automatic' : membership.paymentMethod ? 'Manual' : 'Not selected'}
+                    </dd>
+                  </div>
+                </> : (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+                    Financial information is hidden until an administrator links this account to Xero.
                   </div>
                 )}
-                <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500 dark:text-slate-400">Renewal</dt>
-                  <dd className="text-right font-semibold text-slate-900 dark:text-white">
-                    {membership.autoRenew ? 'Automatic' : membership.paymentMethod ? 'Manual' : 'Not selected'}
-                  </dd>
-                </div>
                 <div className="flex justify-between gap-3">
                   <dt className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400"><Vote className="h-3.5 w-3.5" />Voting</dt>
                   <dd className="text-right font-semibold text-slate-900 dark:text-white">

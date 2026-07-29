@@ -11,7 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import { fetchOwnXeroInvoices, openOwnXeroInvoicePdf, payOwnXeroInvoice, publishXeroMemberBalance, XeroPortalInvoice } from '../../lib/xeroMemberBalance';
 import { writeStripeLoadingPage } from '../../utils/stripePopup';
-import { getMemberBillingState } from '../../utils/memberBillingState';
+import { canExposeMemberFinancialInformation, getMemberBillingState } from '../../utils/memberBillingState';
 import toast from 'react-hot-toast';
 
 const TransactionsTab = lazy(() => import('./TransactionsTab').then(module => ({ default: module.TransactionsTab })));
@@ -366,7 +366,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       xeroConnected: ownXeroConnected,
       memberLinked: xeroInvoicesLinked,
     });
-    const xeroAccountLinked = memberBillingState === 'linked';
+    const xeroAccountLinked = canExposeMemberFinancialInformation(memberBillingState);
     const displayedCredit = xeroCredit.availableCredit;
     const prepaidEligible = xeroAccountLinked && xeroCredit.eligibleForPrepaid;
     const outstandingInvoiceTotal = xeroInvoices.reduce((total, invoice) => total + Math.max(0, Number(invoice.amountDue || 0)), 0);
@@ -596,15 +596,6 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 sm:justify-end">
-                <button
-                  type="button"
-                  ref={savedCardTriggerRef}
-                  onClick={() => setShowSavedCardModal(true)}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-800 dark:bg-[#171a21] dark:text-blue-100 dark:hover:bg-blue-950/40"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Manage payment card
-                </button>
                 <button
                   type="button"
                   onClick={refreshXeroAccount}
@@ -885,7 +876,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         </section>
         )}
 
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+        {xeroAccountLinked && <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="flex flex-col gap-1 border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36] sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-semibold text-gray-900 dark:text-gray-100">Recent activity</h2>
@@ -938,9 +929,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
               )}
             </div>
           )}
-        </div>
+        </div>}
 
-        {showSavedCardModal && (
+        {xeroAccountLinked && showSavedCardModal && (
           <div
             className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/80 p-3 sm:p-6"
             role="presentation"

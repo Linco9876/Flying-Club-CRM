@@ -211,6 +211,11 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (memberError) throw memberError;
     if (!member) return json({ error: "Member not found." }, 404);
+    if (!cleanText(member.xero_contact_id)) {
+      return json({
+        error: "This account must be linked to a Xero contact before financial information or top-up actions are available.",
+      }, 409);
+    }
 
     const memberName = cleanText(member.name) || cleanText(member.email) || "Member";
     const memberEmail = cleanText(member.email);

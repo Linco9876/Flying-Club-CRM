@@ -50,10 +50,11 @@ export interface PilotAccount {
   userId: string;
   name: string;
   email: string;
-  balance: number;
+  xeroLinked: boolean;
+  balance: number | null;
   lastTransactionDate: string | null;
-  totalTransactions: number;
-  unpaidFlightCount: number;
+  totalTransactions: number | null;
+  unpaidFlightCount: number | null;
 }
 
 interface UseBillingAccountsOptions {
@@ -72,6 +73,7 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
   const [loading, setLoading] = useState(true);
   const [pilotAccountsLoading, setPilotAccountsLoading] = useState(true);
   const [xeroConnected, setXeroConnected] = useState(false);
+  const [accountXeroLinked, setAccountXeroLinked] = useState<boolean | null>(null);
   const [minimumPrepaidPack, setMinimumPrepaidPack] = useState(1000);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
 
@@ -140,11 +142,30 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
     setPilotAccountsLoading(true);
     setLoadWarning(null);
     const memberId = scope === 'member' ? scopedUserId : null;
+    const { data: linkedUsers, error: linkedUsersError } = await supabase
+      .from('users')
+      .select('id')
+      .not('xero_contact_id', 'is', null)
+      .neq('portal_access_scope', 'guest_placeholder');
+    if (linkedUsersError) {
+      console.error('Error checking Xero account links:', linkedUsersError);
+      setTransactions([]);
+      setUnpaidFlights([]);
+      setPilotAccounts([]);
+      setAccountXeroLinked(null);
+      setLoadWarning('Xero account links could not be confirmed.');
+      setLoading(false);
+      setPilotAccountsLoading(false);
+      return;
+    }
+    const linkedUserIds = new Set((linkedUsers || []).map(row => row.id));
+    const memberLinked = memberId ? linkedUserIds.has(memberId) : null;
+    setAccountXeroLinked(memberLinked);
     const coreRequest = Promise.all([
-      fetchTransactions(memberId),
-      fetchUnpaidFlights(false, memberId),
+      memberLinked === false ? Promise.resolve(setTransactions([])) : fetchTransactions(memberId, linkedUserIds),
+      memberLinked === false ? Promise.resolve(setUnpaidFlights([])) : fetchUnpaidFlights(false, memberId, linkedUserIds),
     ]);
-    const pilotAccountsRequest = fetchPilotAccounts(memberId)
+    const pilotAccountsRequest = fetchPilotAccounts(memberId, linkedUserIds)
       .finally(() => setPilotAccountsLoading(false));
 
     if (fetchOptions.deferPilotAccounts) {
@@ -158,8 +179,13 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
     setLoading(false);
   };
 
-  const fetchTransactions = async (memberUserId?: string | null) => {
+  const fetchTransactions = async (memberUserId?: string | null, linkedUserIds?: Set<string>) => {
     try {
+      const allowedUserIds = [...(linkedUserIds || [])];
+      if (!memberUserId && allowedUserIds.length === 0) {
+        setTransactions([]);
+        return;
+      }
       let query = supabase
         .from('account_transactions')
         .select(`
@@ -183,6 +209,7 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
         .order('created_at', { ascending: false });
 
       if (memberUserId) query = query.eq('user_id', memberUserId);
+      else query = query.in('user_id', allowedUserIds);
       const { data, error } = await query;
       if (error) throw error;
 
@@ -212,8 +239,17 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
     }
   };
 
-const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string | null) => {
+const fetchUnpaidFlights = async (
+    skipXeroRefresh = false,
+    memberUserId?: string | null,
+    linkedUserIds?: Set<string>,
+  ) => {
     try {
+      const allowedUserIds = [...(linkedUserIds || [])];
+      if (!memberUserId && allowedUserIds.length === 0) {
+        setUnpaidFlights([]);
+        return;
+      }
       let query = supabase
         .from('flight_logs')
         .select(`
@@ -243,6 +279,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
         .order('start_time', { ascending: false });
 
       if (memberUserId) query = query.eq('student_id', memberUserId);
+      else query = query.in('student_id', allowedUserIds);
       const { data, error } = await query;
       if (error) throw error;
 
@@ -304,8 +341,8 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
             });
             if (refreshError) throw refreshError;
             if ((refreshData as any)?.paidCount > 0) {
-              await fetchUnpaidFlights(true, memberUserId);
-              await fetchTransactions(memberUserId);
+              await fetchUnpaidFlights(true, memberUserId, linkedUserIds);
+              await fetchTransactions(memberUserId, linkedUserIds);
             }
           } catch (refreshErr) {
             console.warn('Unable to refresh Xero invoice payment statuses:', refreshErr);
@@ -317,17 +354,33 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
     }
   };
 
-  const fetchPilotAccounts = async (memberUserId?: string | null) => {
+  const fetchPilotAccounts = async (memberUserId?: string | null, linkedUserIds?: Set<string>) => {
     try {
       if (memberUserId) {
         const { data: userRow, error: userError } = await supabase
           .from('users')
-          .select('id, name, email')
+          .select('id, name, email, xero_contact_id')
           .eq('id', memberUserId)
           .maybeSingle();
         if (userError) throw userError;
         if (!userRow) {
           setPilotAccounts([]);
+          return;
+        }
+
+        const xeroLinked = Boolean(userRow.xero_contact_id) && Boolean(linkedUserIds?.has(memberUserId));
+        if (!xeroLinked) {
+          setXeroConnected(false);
+          setPilotAccounts([{
+            userId: userRow.id,
+            name: userRow.name,
+            email: userRow.email,
+            xeroLinked: false,
+            balance: null,
+            lastTransactionDate: null,
+            totalTransactions: null,
+            unpaidFlightCount: null,
+          }]);
           return;
         }
 
@@ -340,7 +393,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
             6_000,
             'Xero took too long to return this member balance.'
           );
-          useXeroBalances = Boolean(xeroData.connected);
+          useXeroBalances = Boolean(xeroData.connected && xeroData.linked !== false);
           setXeroConnected(useXeroBalances);
           setMinimumPrepaidPack(Number(xeroData.minimumPrepaidPack ?? 1000));
           xeroBalance = Number(xeroData.availableCredit ?? 0);
@@ -361,7 +414,8 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
           userId: userRow.id,
           name: userRow.name,
           email: userRow.email,
-          balance: useXeroBalances ? xeroBalance : ledger.verifiedBalance,
+          xeroLinked: true,
+          balance: useXeroBalances ? xeroBalance : null,
           lastTransactionDate: ledger.lastTransactionDate,
           totalTransactions: ledger.totalTransactions,
           unpaidFlightCount: (unpaid || []).length,
@@ -372,7 +426,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
       // Get all users
       const { data: users, error: usersError } = await supabase
         .from('users')
-        .select('id, name, email')
+        .select('id, name, email, xero_contact_id')
         .neq('portal_access_scope', 'guest_placeholder')
         .order('name');
 
@@ -411,10 +465,15 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
       }
 
       // Get unpaid flight counts per user
-      const { data: unpaid, error: unpaidError } = await supabase
-        .from('flight_logs')
-        .select('student_id')
-        .or('payment_status.is.null,payment_status.eq.unpaid,payment_status.eq.pending');
+      const allowedUserIds = [...(linkedUserIds || [])];
+      const unpaidResult = allowedUserIds.length > 0
+        ? await supabase
+            .from('flight_logs')
+            .select('student_id')
+            .in('student_id', allowedUserIds)
+            .or('payment_status.is.null,payment_status.eq.unpaid,payment_status.eq.pending')
+        : { data: [], error: null };
+      const { data: unpaid, error: unpaidError } = unpaidResult;
 
       if (unpaidError) throw unpaidError;
 
@@ -424,15 +483,19 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
       });
 
       setPilotAccounts(
-        (users || []).map((u: any) => ({
-          userId: u.id,
-          name: u.name,
-          email: u.email,
-          balance: useXeroBalances ? (xeroBalanceByUser[u.id] ?? 0) : (ledgerByUser[u.id]?.verifiedBalance ?? 0),
-          lastTransactionDate: ledgerByUser[u.id]?.lastTransactionDate ?? null,
-          totalTransactions: ledgerByUser[u.id]?.totalTransactions ?? 0,
-          unpaidFlightCount: unpaidByUser[u.id] ?? 0,
-        }))
+        (users || []).map((u: any) => {
+          const xeroLinked = Boolean(u.xero_contact_id) && Boolean(linkedUserIds?.has(u.id));
+          return {
+            userId: u.id,
+            name: u.name,
+            email: u.email,
+            xeroLinked,
+            balance: xeroLinked && useXeroBalances ? (xeroBalanceByUser[u.id] ?? 0) : null,
+            lastTransactionDate: xeroLinked ? (ledgerByUser[u.id]?.lastTransactionDate ?? null) : null,
+            totalTransactions: xeroLinked ? (ledgerByUser[u.id]?.totalTransactions ?? 0) : null,
+            unpaidFlightCount: xeroLinked ? (unpaidByUser[u.id] ?? 0) : null,
+          };
+        })
       );
     } catch (err) {
       console.error('Error fetching pilot accounts:', err);
@@ -866,6 +929,7 @@ const fetchUnpaidFlights = async (skipXeroRefresh = false, memberUserId?: string
     loading,
     pilotAccountsLoading,
     xeroConnected,
+    accountXeroLinked,
     loadWarning,
     minimumPrepaidPack,
     addTopUp,

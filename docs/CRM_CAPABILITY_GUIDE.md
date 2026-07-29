@@ -402,3 +402,14 @@ Posting remains disabled after connection and after mapping approval. Before BFC
 7. only then introduce a separately reviewed change that enables posting. Authorised invoices remain a later, separately approved stage.
 
 `xero-read-only-inventory.yml` is manual-only. Its default operation is a read-only inventory; its cleanup operation is restricted to the unpinned, inventory-only legacy tenant and requires both the exact tenant ID and a phrase containing the tenant name. It can delete/void only locally linked payments, bank transactions, unpaid invoices and journals; paid/part-paid invoices become review items, while contacts and configuration records are retained. Both scheduled Xero workflows also require the repository variable `ENABLE_XERO_SYNC_WORKER=true`, including manual dispatch, so a dispatch cannot bypass containment.
+
+### Financial privacy for accounts not linked to Xero
+
+An account without a Xero contact link has no personal financial information available through the portal. Member and staff screens show a single Xero setup message instead of substituting zeroes or exposing stale CRM records. This covers balances, amounts due, financial clearance, renewal amounts, transaction counts and history, invoices, flight charges, top-ups, saved flight-payment cards and related billing actions. Public membership prices and administrator rate settings remain visible because they describe the organisation's products rather than an individual's financial record.
+
+The protection is enforced twice:
+
+- the interface does not request or render personal financial fields for an unlinked account, including in profiles, the membership register, pilot accounts and aircraft flight logs; and
+- restrictive PostgreSQL read policies prevent authenticated users and staff from reading unlinked account ledgers, invoices and line items, membership financial periods, saved flight cards or Xero portal payment records through the normal client API.
+
+The service role retains access for controlled reconciliation and account repair. A pending membership applicant may still read and establish their own membership payment preference so the signup workflow can be completed before committee approval; this exception does not expose a balance, invoice, transaction or charge history. Once a current member is unlinked, financial display and billing actions remain unavailable until an administrator establishes the Xero contact link.

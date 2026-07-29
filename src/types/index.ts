@@ -219,6 +219,7 @@ export interface ClubMembership {
   endReason?: string | null;
   userName?: string;
   userEmail?: string;
+  xeroLinked?: boolean;
   membershipClassName?: string;
   membershipClassCode?: MembershipClassCode;
   hasVotingRights?: boolean;

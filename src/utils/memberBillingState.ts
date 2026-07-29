@@ -10,3 +10,6 @@ export const getMemberBillingState = ({
   if (xeroConnected !== true) return 'temporarily-unavailable';
   return memberLinked ? 'linked' : 'setup-required';
 };
+
+export const canExposeMemberFinancialInformation = (state: MemberBillingState) =>
+  state === 'linked';

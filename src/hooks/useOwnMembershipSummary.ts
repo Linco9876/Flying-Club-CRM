@@ -73,7 +73,7 @@ export const useOwnMembershipSummary = (userId?: string) => {
 
       setLoading(true);
       try {
-        const [membershipResult, applicationResult, preferenceResult, userResult] = await Promise.all([
+        const [membershipResult, applicationResult, userResult] = await Promise.all([
           supabase
             .from('club_memberships')
             .select('id, legal_status, commenced_at, membership_class:membership_class_id(name, has_voting_rights)')
@@ -89,23 +89,29 @@ export const useOwnMembershipSummary = (userId?: string) => {
             .limit(1)
             .maybeSingle(),
           supabase
-            .from('membership_payment_preferences')
-            .select('payment_method, payment_method_display, auto_renew, last_collection_status, last_collection_error')
-            .eq('user_id', userId)
-            .maybeSingle(),
-          supabase
             .from('users')
             .select('xero_contact_id')
             .eq('id', userId)
             .maybeSingle(),
         ]);
 
-        const firstError = membershipResult.error || applicationResult.error || preferenceResult.error || userResult.error;
+        const firstError = membershipResult.error || applicationResult.error || userResult.error;
         if (firstError) throw firstError;
 
         const membership = membershipResult.data as any;
+        const xeroLinked = Boolean(userResult.data?.xero_contact_id);
         let period: any = null;
-        if (membership?.id) {
+        let preference: any = null;
+        if (xeroLinked) {
+          const preferenceResult = await supabase
+            .from('membership_payment_preferences')
+            .select('payment_method, payment_method_display, auto_renew, last_collection_status, last_collection_error')
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (preferenceResult.error) throw preferenceResult.error;
+          preference = preferenceResult.data;
+        }
+        if (membership?.id && xeroLinked) {
           const periodResult = await supabase
             .from('membership_financial_periods')
             .select('financial_year_start, financial_year_end, fee_disposition, amount_due, due_date, grace_expires_at, billing_sync_status, billing_sync_attempts, billing_sync_next_attempt_at, billing_sync_error')
@@ -136,16 +142,16 @@ export const useOwnMembershipSummary = (userId?: string) => {
           dueDate: period?.due_date || null,
           graceExpiresAt: period?.grace_expires_at || null,
           financiallyCleared: isFinanciallyCleared(period?.fee_disposition),
-          paymentMethod: preferenceResult.data?.payment_method || null,
-          paymentMethodDisplay: preferenceResult.data?.payment_method_display || null,
-          autoRenew: Boolean(preferenceResult.data?.auto_renew),
-          xeroLinked: Boolean(userResult.data?.xero_contact_id),
+          paymentMethod: preference?.payment_method || null,
+          paymentMethodDisplay: preference?.payment_method_display || null,
+          autoRenew: Boolean(preference?.auto_renew),
+          xeroLinked,
           billingSyncStatus: period?.billing_sync_status || null,
           billingSyncAttempts: Number(period?.billing_sync_attempts || 0),
           billingSyncNextAttemptAt: period?.billing_sync_next_attempt_at || null,
           billingSyncError: period?.billing_sync_error || null,
-          lastCollectionStatus: preferenceResult.data?.last_collection_status || null,
-          lastCollectionError: preferenceResult.data?.last_collection_error || null,
+          lastCollectionStatus: preference?.last_collection_status || null,
+          lastCollectionError: preference?.last_collection_error || null,
         });
       } catch (error) {
         console.error('Failed to load profile membership summary:', error);

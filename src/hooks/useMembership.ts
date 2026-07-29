@@ -60,7 +60,7 @@ interface ClubMembershipRow {
   commencement_method: ClubMembership['commencementMethod'];
   ended_at: string | null;
   end_reason: string | null;
-  member?: { name?: string; email?: string } | null;
+  member?: { name?: string; email?: string; xero_contact_id?: string | null } | null;
   membership_class?: {
     name?: string;
     code?: MembershipClass['code'];
@@ -169,6 +169,7 @@ const mapMembership = (row: ClubMembershipRow): ClubMembership => ({
   endReason: row.end_reason,
   userName: row.member?.name,
   userEmail: row.member?.email,
+  xeroLinked: Boolean(row.member?.xero_contact_id),
   membershipClassName: row.membership_class?.name,
   membershipClassCode: row.membership_class?.code,
   hasVotingRights: Boolean(row.membership_class?.has_voting_rights),
@@ -272,7 +273,7 @@ export const useMembership = () => {
         `).order('submitted_at', { ascending: false }),
         supabase.from('club_memberships').select(`
           *,
-          member:users!club_memberships_user_id_fkey(name,email),
+          member:users!club_memberships_user_id_fkey(name,email,xero_contact_id),
           membership_class:membership_classes!club_memberships_membership_class_id_fkey(name,code,has_voting_rights,can_self_book_aircraft)
         `).order('commenced_at', { ascending: false }),
         supabase.from('membership_financial_periods').select('*').order('financial_year_start', { ascending: false }),

@@ -136,14 +136,18 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
     let av: any = a[sortField];
     let bv: any = b[sortField];
     if (sortField === 'name') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    if (av == null) av = Number.POSITIVE_INFINITY;
+    if (bv == null) bv = Number.POSITIVE_INFINITY;
     const cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return sortDir === 'asc' ? cmp : -cmp;
   });
 
-  const totalBalance = pilotAccounts.reduce((s, a) => s + a.balance, 0);
-  const lowBalanceCount = pilotAccounts.filter(a => a.balance < 100 && a.balance >= 0).length;
-  const negativeCount = pilotAccounts.filter(a => a.balance < 0).length;
-  const totalUnpaidFlights = pilotAccounts.reduce((s, a) => s + a.unpaidFlightCount, 0);
+  const linkedAccounts = pilotAccounts.filter(account => account.xeroLinked);
+  const unlinkedCount = pilotAccounts.length - linkedAccounts.length;
+  const totalBalance = linkedAccounts.reduce((sum, account) => sum + (account.balance ?? 0), 0);
+  const lowBalanceCount = linkedAccounts.filter(account => account.balance !== null && account.balance < 100 && account.balance >= 0).length;
+  const negativeCount = linkedAccounts.filter(account => account.balance !== null && account.balance < 0).length;
+  const totalUnpaidFlights = linkedAccounts.reduce((sum, account) => sum + (account.unpaidFlightCount ?? 0), 0);
 
   const SortIcon = ({ field }: { field: typeof sortField }) => (
     <ArrowUpDown className={`h-3.5 w-3.5 ml-1 ${sortField === field ? 'text-blue-500' : 'text-gray-300'}`} />
@@ -165,8 +169,9 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Pilots</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{pilotAccounts.length}</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Xero-linked accounts</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{linkedAccounts.length}</p>
+          {unlinkedCount > 0 && <p className="mt-1 text-xs font-medium text-amber-700">{unlinkedCount} need setup</p>}
         </div>
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{xeroConnected ? 'Xero Credit Held' : 'Xero Credit Unavailable'}</p>
@@ -241,24 +246,36 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-500">{account.email}</td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      <span className={`text-sm font-semibold ${
-                        account.balance < 0 ? 'text-red-600' :
-                        account.balance <= 0 ? 'text-amber-600' :
-                        'text-green-600'
-                      }`}>
-                        ${account.balance.toFixed(2)}
-                      </span>
-                      {account.balance < 0 && (
-                        <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-red-500">
-                          <AlertCircle className="h-3 w-3" /> Overdrawn
+                      {!account.xeroLinked ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                          <AlertCircle className="h-3.5 w-3.5" /> Xero setup required
                         </span>
-                      )}
-                      {account.balance <= 0 && (
-                        <span className="ml-2 text-xs text-amber-500">{xeroConnected ? 'Needs positive Xero credit' : 'Xero credit unavailable'}</span>
+                      ) : account.balance === null ? (
+                        <span className="text-xs font-medium text-gray-500">Temporarily unavailable</span>
+                      ) : (
+                        <>
+                          <span className={`text-sm font-semibold ${
+                            account.balance < 0 ? 'text-red-600' :
+                            account.balance <= 0 ? 'text-amber-600' :
+                            'text-green-600'
+                          }`}>
+                            ${account.balance.toFixed(2)}
+                          </span>
+                          {account.balance < 0 && (
+                            <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-red-500">
+                              <AlertCircle className="h-3 w-3" /> Overdrawn
+                            </span>
+                          )}
+                          {account.balance <= 0 && (
+                            <span className="ml-2 text-xs text-amber-500">{xeroConnected ? 'Needs positive Xero credit' : 'Xero credit unavailable'}</span>
+                          )}
+                        </>
                       )}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      {account.unpaidFlightCount > 0 ? (
+                      {!account.xeroLinked ? (
+                        <span className="text-xs text-gray-400">Not shown</span>
+                      ) : (account.unpaidFlightCount ?? 0) > 0 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                           <AlertCircle className="h-3 w-3" />
                           {account.unpaidFlightCount} unpaid
@@ -270,15 +287,15 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                       )}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-sm text-gray-600">
-                      {account.totalTransactions}
-                      {account.lastTransactionDate && (
+                      {account.xeroLinked ? account.totalTransactions : <span className="text-xs text-gray-400">Not shown</span>}
+                      {account.xeroLinked && account.lastTransactionDate && (
                         <div className="text-xs text-gray-400">
                           Last: {new Date(account.lastTransactionDate).toLocaleDateString()}
                         </div>
                       )}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                      {account.xeroLinked ? <div className="flex items-center gap-2">
                         <button
                           onClick={() => setTopUpUserId(account.userId)}
                           className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -293,7 +310,9 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
                           <Eye className="h-3.5 w-3.5" />
                           History
                         </button>
-                      </div>
+                      </div> : (
+                        <span className="text-xs text-gray-500">Link this person in Xero settings before using billing actions.</span>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -304,7 +323,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
       </div>
 
       {/* Top-up modal */}
-      {topUpUserId && topUpAccount && (
+      {topUpUserId && topUpAccount?.xeroLinked && (
         <TopUpModal
           userId={topUpUserId}
           userName={topUpAccount.name}
@@ -315,7 +334,7 @@ export const PilotAccountsTab: React.FC<{ billing: BillingHook }> = ({ billing }
       )}
 
       {/* Account history modal */}
-      {selectedUserId && selectedAccount && (
+      {selectedUserId && selectedAccount?.xeroLinked && selectedAccount.balance !== null && (
         <AccountHistoryModal
           isOpen
           userId={selectedUserId}
