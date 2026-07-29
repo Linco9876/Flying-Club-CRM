@@ -10,8 +10,8 @@ export const MyLogbookPage: React.FC = () => {
   const isInstructor = user.role === 'instructor' || user.role === 'admin';
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
+    <div className="pilot-logbook-page p-6">
+      <div className="logbook-page-heading mb-6">
         <h1 className="text-2xl font-bold text-gray-900">My Logbook</h1>
         <p className="text-gray-600 mt-1">Personal flight history and totals</p>
       </div>
