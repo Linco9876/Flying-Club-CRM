@@ -13,7 +13,6 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { getAircraftIconSrc } from '../../utils/aircraftIcons';
-import { StudentFileLink } from '../Students/StudentFileLink';
 
 type AircraftProfileTab = 'documents' | 'defects' | 'flight-log' | 'milestones' | 'bookings' | 'pricing';
 
@@ -658,10 +657,7 @@ export const AircraftProfilePage: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-gray-900">
-                          <StudentFileLink
-                            studentId={!booking.isGuestBooking && !isStudentOrPilot ? booking.studentId : undefined}
-                            name={hirerLabel}
-                          />
+                          {hirerLabel}
                         </p>
                         <p className="mt-1 text-xs text-gray-500">{bookingDetail}</p>
                       </div>

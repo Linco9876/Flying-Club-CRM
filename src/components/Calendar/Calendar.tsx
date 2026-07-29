@@ -51,7 +51,6 @@ import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
 import type { BookingCancellationInput } from '../../hooks/useBookings';
 import toast from 'react-hot-toast';
 import { NextAvailableSlotModal, type NextAvailableSlot } from './NextAvailableSlotModal';
-import { StudentFileLink } from '../Students/StudentFileLink';
 
 interface CalendarProps {
   bookings: Booking[];
@@ -767,12 +766,8 @@ export const Calendar: React.FC<CalendarProps> = ({
 
   const getBookingHirerId = (booking: Booking) => booking.studentId || booking.pilotId || '';
 
-  const renderHirerFileLink = (booking: Booking, className?: string) => (
-    <StudentFileLink
-      studentId={booking.isGuestBooking ? undefined : getBookingHirerId(booking)}
-      name={getHirerName(booking)}
-      className={className}
-    />
+  const renderHirerName = (booking: Booking, className?: string) => (
+    <span className={className}>{getHirerName(booking)}</span>
   );
 
   const isOwnBooking = (booking: Booking) => Boolean(user?.id && getBookingHirerId(booking) === user.id);
@@ -1007,7 +1002,7 @@ export const Calendar: React.FC<CalendarProps> = ({
       return (
         <div className="relative z-10 flex h-full min-h-0 items-center">
           <div className="text-[11px] font-bold leading-none truncate">
-            {renderHirerFileLink(booking)}
+            {renderHirerName(booking)}
           </div>
         </div>
       );
@@ -1022,7 +1017,7 @@ export const Calendar: React.FC<CalendarProps> = ({
             {formatBookingTimeRange(booking)}
           </div>
           <div className="text-sm font-bold leading-tight truncate">
-            {renderHirerFileLink(booking)}
+            {renderHirerName(booking)}
           </div>
           {showSecondaryResource && instructorName && (
             <div className="text-[11px] leading-tight opacity-90 truncate">
@@ -1047,7 +1042,7 @@ export const Calendar: React.FC<CalendarProps> = ({
           {formatBookingTimeRange(booking)}
         </div>
         <div className="text-xs font-bold leading-tight truncate">
-          {renderHirerFileLink(booking)}
+          {renderHirerName(booking)}
         </div>
         {showSecondaryResource && (
           <div className="text-[11px] leading-tight opacity-90 truncate">
@@ -1108,7 +1103,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               {formatBookingTimeRange(booking)}
             </div>
             <div className="mt-1 truncate text-base font-extrabold leading-tight">
-              {renderHirerFileLink(booking)}
+              {renderHirerName(booking)}
             </div>
           </div>
           <span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-[11px] font-bold leading-none text-gray-800 ring-1 ring-black/5">
@@ -3953,7 +3948,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  {renderHirerFileLink(booking, 'font-semibold text-gray-900')}
+                  {renderHirerName(booking, 'font-semibold text-gray-900')}
                   <span className="text-gray-400">|</span>
                   <span className="text-gray-700">{getAircraftName(booking)}</span>
                   {instructorName && (

@@ -19,14 +19,10 @@ test('student file links are permission-aware, accessible, and interaction-safe'
 test('student names link to files throughout operational workflows', () => {
   const requiredSurfaces = [
     '../components/Aircraft/AircraftFlightLogs.tsx',
-    '../components/Aircraft/AircraftProfilePage.tsx',
     '../components/Billing/AccountHistoryModal.tsx',
     '../components/Billing/PilotAccountsTab.tsx',
     '../components/Billing/TransactionsTab.tsx',
     '../components/Bookings/BookingForm.tsx',
-    '../components/Bookings/GroundSessionLogModal.tsx',
-    '../components/Calendar/Calendar.tsx',
-    '../components/Dashboard/Dashboard.tsx',
     '../components/Membership/MembershipDashboard.tsx',
     '../components/Reports/ReportsOverviewTab.tsx',
     '../components/Safety/PilotCurrencyTab.tsx',
@@ -44,10 +40,20 @@ test('student names link to files throughout operational workflows', () => {
   }
 });
 
-test('dashboard bookings retain the student id needed by their name link', () => {
-  const source = readSource('../hooks/useDashboardStats.ts');
+test('names displayed on bookings do not navigate to student files', () => {
+  const bookingSurfaces = [
+    '../components/Aircraft/AircraftProfilePage.tsx',
+    '../components/Bookings/GroundSessionLogModal.tsx',
+    '../components/Calendar/Calendar.tsx',
+    '../components/Dashboard/Dashboard.tsx',
+  ];
 
-  assert.match(source, /studentId\?: string/);
-  assert.match(source, /student:student_id \(id, name\)/);
-  assert.match(source, /studentId: b\.student\?\.id/);
+  for (const relativePath of bookingSurfaces) {
+    const source = readSource(relativePath);
+    assert.doesNotMatch(
+      source,
+      /StudentFileLink/,
+      `${relativePath} must render booking names as plain text`,
+    );
+  }
 });
