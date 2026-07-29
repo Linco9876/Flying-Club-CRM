@@ -84,6 +84,8 @@ export interface LearningProgram {
   videoWatchRequired: boolean;
   videoRequiredPercent: number;
   autoplayNextVideo: boolean;
+  autoEnrolFromLessonLinks: boolean;
+  sourceMetadata: Record<string, unknown>;
   createdBy?: string | null;
   updatedBy?: string | null;
   publishedAt?: string | null;
@@ -179,6 +181,8 @@ const mapProgram = (row: any): LearningProgram => ({
   videoWatchRequired: row.video_watch_required ?? false,
   videoRequiredPercent: Number(row.video_required_percent ?? 90),
   autoplayNextVideo: row.autoplay_next_video ?? false,
+  autoEnrolFromLessonLinks: row.auto_enrol_from_lesson_links ?? false,
+  sourceMetadata: row.source_metadata ?? {},
   createdBy: row.created_by,
   updatedBy: row.updated_by,
   publishedAt: row.published_at,
@@ -270,6 +274,8 @@ const programToDb = (program: Partial<LearningProgram>, userId?: string) => ({
   video_watch_required: program.videoWatchRequired,
   video_required_percent: program.videoRequiredPercent,
   autoplay_next_video: program.autoplayNextVideo,
+  auto_enrol_from_lesson_links: program.autoEnrolFromLessonLinks ?? false,
+  source_metadata: program.sourceMetadata ?? {},
   updated_by: userId || null,
   published_at: program.status === 'published' ? new Date().toISOString() : null,
   updated_at: new Date().toISOString(),
@@ -296,6 +302,8 @@ export const createBlankLearningProgram = (): Partial<LearningProgram> => ({
   videoWatchRequired: false,
   videoRequiredPercent: 90,
   autoplayNextVideo: false,
+  autoEnrolFromLessonLinks: false,
+  sourceMetadata: {},
 });
 
 export const useLearningCentre = () => {
@@ -493,28 +501,33 @@ export const useLearningCentre = () => {
     toast.success(status === 'active' ? 'Joined program' : 'Enrolment request sent');
   }, [fetchPrograms, user?.id]);
 
-  const updateStepProgress = useCallback(async (
-    programId: string,
-    stepId: string,
-    update: Partial<LearningStepProgress>
-  ) => {
+  const completeLearningStep = useCallback(async (stepId: string) => {
     if (!user) throw new Error('Not signed in');
-    const payload = {
-      program_id: programId,
-      step_id: stepId,
-      user_id: user.id,
-      status: update.status ?? 'completed',
-      video_watch_percent: update.videoWatchPercent ?? 100,
-      quiz_score_percent: update.quizScorePercent ?? null,
-      quiz_answers: update.quizAnswers ?? {},
-      completed_at: update.status === 'completed' || update.status === undefined ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    };
-    const { error } = await supabase
-      .from('learning_step_progress')
-      .upsert(payload, { onConflict: 'step_id,user_id' });
+    const { error } = await supabase.rpc('complete_learning_step', {
+      p_step_id: stepId,
+    });
     if (error) throw error;
     await fetchPrograms();
+  }, [fetchPrograms, user?.id]);
+
+  const submitLearningQuiz = useCallback(async (
+    stepId: string,
+    answers: Record<string, string | number | string[]>
+  ) => {
+    if (!user) throw new Error('Not signed in');
+    const { data, error } = await supabase.rpc('submit_learning_quiz', {
+      p_step_id: stepId,
+      p_answers: answers,
+    });
+    if (error) throw error;
+    await fetchPrograms();
+    return data as {
+      scorePercent: number;
+      passingScorePercent: number;
+      passed: boolean;
+      correctCount: number;
+      questionCount: number;
+    };
   }, [fetchPrograms, user?.id]);
 
   const approveEnrolment = useCallback(async (enrolmentId: string) => {
@@ -561,7 +574,8 @@ export const useLearningCentre = () => {
     saveSteps,
     saveLessonLinks,
     enrolInProgram,
-    updateStepProgress,
+    completeLearningStep,
+    submitLearningQuiz,
     approveEnrolment,
   };
 };

@@ -1,16 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
   BookOpen,
   CheckCircle,
+  ExternalLink,
   FileQuestion,
   Film,
   GraduationCap,
+  Lock,
   Plus,
   Save,
+  Search,
   Settings,
   Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
 import {
   createBlankLearningProgram,
@@ -20,9 +25,17 @@ import {
   LearningProgram,
   LearningQuestion,
   LearningStep,
+  LearningStepProgress,
   LearningStepType,
   useLearningCentre,
 } from '../../hooks/useLearningCentre';
+import {
+  gradeLearningQuiz,
+  isLearningStepUnlocked,
+  isQuestionAnswered,
+  LearningQuizAnswers,
+  LearningQuizGrade,
+} from '../../utils/learningQuiz';
 
 type BuilderTab = 'basic' | 'schedule' | 'enrolment' | 'settings' | 'content' | 'links' | 'preview';
 
@@ -96,9 +109,11 @@ export const LearningCentreDashboard: React.FC = () => {
     saveSteps,
     saveLessonLinks,
     enrolInProgram,
-    updateStepProgress,
+    completeLearningStep,
+    submitLearningQuiz,
     approveEnrolment,
   } = useLearningCentre();
+  const { user } = useAuth();
   const { modules } = useTrainingModules();
   const [selectedProgramId, setSelectedProgramId] = useState<string>('');
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -109,6 +124,8 @@ export const LearningCentreDashboard: React.FC = () => {
   const [draftLinks, setDraftLinks] = useState<LearningLessonLink[]>([]);
   const [activeStepId, setActiveStepId] = useState<string>('');
   const [learnerProgramId, setLearnerProgramId] = useState<string>('');
+  const [programSearch, setProgramSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   const selectedProgram = programs.find(program => program.id === selectedProgramId) || programs[0];
   const learnerProgram = programs.find(program => program.id === learnerProgramId) || selectedProgram;
@@ -167,19 +184,25 @@ export const LearningCentreDashboard: React.FC = () => {
   const activeStep = draftSteps.find(step => step.id === activeStepId) || draftSteps[0];
 
   const visiblePrograms = useMemo(() => {
-    if (isStaff) return programs;
-    return programs.filter(program => program.status === 'published');
-  }, [isStaff, programs]);
+    const available = isStaff ? programs : programs.filter(program => program.status === 'published');
+    const search = programSearch.trim().toLocaleLowerCase();
+    return available
+      .filter(program => categoryFilter === 'all' || program.category === categoryFilter)
+      .filter(program => !search || `${program.name} ${program.category} ${program.description}`.toLocaleLowerCase().includes(search))
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true }));
+  }, [categoryFilter, isStaff, programSearch, programs]);
 
-  const isEnrolled = (program: LearningProgram) => program.enrolments.some(enrolment => enrolment.userId && enrolment.status !== 'cancelled');
+  const categories = useMemo(
+    () => [...new Set(programs.filter(program => isStaff || program.status === 'published').map(program => program.category))].sort(),
+    [isStaff, programs],
+  );
+  const isEnrolled = (program: LearningProgram) => program.enrolments.some(
+    enrolment => enrolment.userId === user?.id && ['active', 'completed'].includes(enrolment.status),
+  );
   const getProgress = (program: LearningProgram) => programProgress.get(program.id) || { completed: 0, total: program.steps.filter(step => step.isRequired).length, percent: 0 };
 
   const markStepDone = async (program: LearningProgram, step: LearningStep) => {
-    await updateStepProgress(program.id, step.id, {
-      status: 'completed',
-      videoWatchPercent: step.stepType === 'video' ? Math.max(program.videoWatchRequired ? program.videoRequiredPercent : 100, 100) : 100,
-      quizScorePercent: step.stepType === 'quiz' ? 100 : null,
-    });
+    await completeLearningStep(step.id);
   };
 
   if (loading) {
@@ -218,6 +241,29 @@ export const LearningCentreDashboard: React.FC = () => {
 
       <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="space-y-3">
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <span className="sr-only">Search online programs</span>
+              <input
+                value={programSearch}
+                onChange={event => setProgramSearch(event.target.value)}
+                className="input pl-9"
+                placeholder="Search lessons"
+              />
+            </label>
+            {categories.length > 1 && (
+              <select
+                aria-label="Filter programs by category"
+                value={categoryFilter}
+                onChange={event => setCategoryFilter(event.target.value)}
+                className="input mt-2"
+              >
+                <option value="all">All categories</option>
+                {categories.map(category => <option key={category} value={category}>{category}</option>)}
+              </select>
+            )}
+          </div>
           {visiblePrograms.map(program => {
             const stats = getProgress(program);
             return (
@@ -256,10 +302,14 @@ export const LearningCentreDashboard: React.FC = () => {
             <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-center">
               <BookOpen className="mx-auto h-9 w-9 text-gray-300" />
               <p className="mt-3 font-semibold text-gray-900">
-                {isStaff ? 'No online programs yet' : 'No programs available'}
+                {programSearch || categoryFilter !== 'all'
+                  ? 'No matching lessons'
+                  : isStaff ? 'No online programs yet' : 'No programs available'}
               </p>
               <p className="mt-1 text-sm text-gray-500">
-                {isStaff
+                {programSearch || categoryFilter !== 'all'
+                  ? 'Try a different search or category.'
+                  : isStaff
                   ? 'Create the first program to start building the Learning Centre.'
                   : 'Programs assigned or made available to you will appear here.'}
               </p>
@@ -278,6 +328,7 @@ export const LearningCentreDashboard: React.FC = () => {
               onEdit={() => openBuilder(learnerProgram || selectedProgram)}
               onEnrol={() => enrolInProgram(learnerProgram || selectedProgram)}
               onMarkStepDone={markStepDone}
+              onSubmitQuiz={async (_program, step, answers) => submitLearningQuiz(step.id, answers)}
               onApproveEnrolment={approveEnrolment}
             />
           ) : null}
@@ -359,6 +410,20 @@ export const LearningCentreDashboard: React.FC = () => {
                       <Field label="Participant limit"><input type="number" value={draftProgram.participantLimit || ''} onChange={event => updateDraft({ participantLimit: event.target.value ? Number(event.target.value) : null })} className="input" placeholder="Blank = unlimited" /></Field>
                     </div>
                     <Field label="Payment notes"><textarea rows={3} value={draftProgram.paymentNotes || ''} onChange={event => updateDraft({ paymentNotes: event.target.value })} className="input" /></Field>
+                    <label className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={draftProgram.autoEnrolFromLessonLinks ?? false}
+                        onChange={event => updateDraft({ autoEnrolFromLessonLinks: event.target.checked })}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="block font-semibold text-blue-950">Automatically enrol students from linked flying lessons</span>
+                        <span className="mt-1 block text-blue-800">
+                          Students enrolled in a linked training course receive this online program automatically. Use the Flying Lesson Links tab to choose the course lesson.
+                        </span>
+                      </span>
+                    </label>
                   </BuilderPanel>
                 )}
 
@@ -537,100 +602,162 @@ const ProgramViewer = ({
   onEdit,
   onEnrol,
   onMarkStepDone,
+  onSubmitQuiz,
   onApproveEnrolment,
 }: {
   program: LearningProgram;
   isStaff: boolean;
   isEnrolled: boolean;
-  progress: any[];
+  progress: LearningStepProgress[];
   progressSummary: { completed: number; total: number; percent: number };
   onEdit: () => void;
   onEnrol: () => void;
-  onMarkStepDone: (program: LearningProgram, step: LearningStep) => void;
+  onMarkStepDone: (program: LearningProgram, step: LearningStep) => Promise<void> | void;
+  onSubmitQuiz: (program: LearningProgram, step: LearningStep, answers: LearningQuizAnswers) => Promise<LearningQuizGrade>;
   onApproveEnrolment: (enrolmentId: string) => void;
-}) => (
-  <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-    <div className="relative min-h-[220px] bg-slate-950 p-5 text-white sm:p-7">
-      {program.coverPhotoUrl && <img src={program.coverPhotoUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35" />}
-      <div className="relative z-10">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{program.category}</span>
-            <h2 className="mt-4 text-3xl font-bold">{program.name}</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-50">{program.description}</p>
-          </div>
-          {isStaff && <button onClick={onEdit} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950"><Settings className="h-4 w-4" />Edit</button>}
-        </div>
-        <div className="mt-6 grid gap-3 sm:grid-cols-4">
-          <InfoCard label="Steps" value={String(program.steps.length)} />
-          <InfoCard label="Price" value={formatMoney(program.priceCents)} />
-          <InfoCard label="Visibility" value={program.visibility} />
-          <InfoCard label="Progress" value={`${progressSummary.percent}%`} />
-        </div>
-      </div>
-    </div>
+}) => {
+  const canViewContent = isStaff || isEnrolled;
+  const canTrackProgress = isEnrolled;
+  const orderedSteps = [...program.steps].sort((left, right) => left.sortOrder - right.sortOrder);
+  const contentVersion = String(program.sourceMetadata?.contentVersion || '');
+  const aircraftFamily = String(program.sourceMetadata?.aircraftFamily || '');
 
-    <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_300px] sm:p-6">
-      <div className="space-y-5">
-        {!isStaff && !isEnrolled && (
-          <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-            <p className="font-semibold text-blue-950">{program.visibility === 'private' ? 'Request approval to join this program' : 'Join this program to track your progress'}</p>
-            <button onClick={onEnrol} className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Join Program</button>
-          </div>
-        )}
-        {program.sections.map(section => (
-          <div key={section.id} className="space-y-3">
+  return (
+    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="relative min-h-[220px] bg-slate-950 p-5 text-white sm:p-7">
+        {program.coverPhotoUrl && <img src={program.coverPhotoUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
+        <div className="relative z-10">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="text-lg font-bold text-gray-950">{section.title}</h3>
-              {section.description && <p className="text-sm text-gray-500">{section.description}</p>}
+              <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{program.category}</span>
+              <h2 className="mt-4 text-2xl font-bold sm:text-3xl">{program.name}</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-50">{program.description}</p>
             </div>
-            {program.steps.filter(step => step.sectionId === section.id).map(step => {
-              const done = progress.some(item => item.stepId === step.id && item.status === 'completed');
-              return (
-                <article key={step.id} className="rounded-2xl border border-gray-200 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${stepTypeMeta[step.stepType].color}`}>{stepTypeMeta[step.stepType].icon}{stepTypeMeta[step.stepType].label}</span>
-                      <h4 className="mt-2 text-lg font-semibold text-gray-950">{step.title}</h4>
-                      {step.description && <p className="mt-1 text-sm text-gray-600">{step.description}</p>}
-                    </div>
-                    <button onClick={() => onMarkStepDone(program, step)} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${done ? 'bg-green-50 text-green-700' : 'bg-blue-600 text-white'}`}>
-                      <CheckCircle className="h-4 w-4" />
-                      {done ? 'Completed' : 'Mark complete'}
-                    </button>
-                  </div>
-                  <StepPreview step={step} compact />
-                </article>
-              );
-            })}
+            {isStaff && <button onClick={onEdit} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-950"><Settings className="h-4 w-4" />Edit</button>}
           </div>
-        ))}
-      </div>
-      <aside className="space-y-4">
-        <div className="rounded-2xl border border-gray-200 p-4">
-          <h3 className="font-semibold text-gray-950">Completion</h3>
-          <div className="mt-3 h-3 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${progressSummary.percent}%` }} /></div>
-          <p className="mt-2 text-sm text-gray-500">{progressSummary.completed} of {progressSummary.total} required steps complete</p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-4">
+            <InfoCard label="Steps" value={String(program.steps.length)} />
+            <InfoCard label="Price" value={formatMoney(program.priceCents)} />
+            <InfoCard label="Aircraft" value={aircraftFamily || 'As briefed'} />
+            <InfoCard label="Progress" value={`${progressSummary.percent}%`} />
+          </div>
         </div>
-        {isStaff && (
-          <div className="rounded-2xl border border-gray-200 p-4">
-            <h3 className="font-semibold text-gray-950">Enrolments</h3>
-            <div className="mt-3 space-y-2">
-              {program.enrolments.map(enrolment => (
-                <div key={enrolment.id} className="rounded-lg bg-gray-50 p-3 text-sm">
-                  <p className="font-semibold">{enrolment.invitedEmail || enrolment.userId || 'Participant'}</p>
-                  <p className="text-xs text-gray-500">{enrolment.status} - {enrolment.paymentStatus}</p>
-                  {enrolment.status === 'pending_approval' && <button onClick={() => onApproveEnrolment(enrolment.id)} className="mt-2 text-xs font-semibold text-blue-700">Approve</button>}
-                </div>
-              ))}
-              {program.enrolments.length === 0 && <p className="text-sm text-gray-500">No enrolments yet.</p>}
+      </div>
+
+      <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_300px] sm:p-6">
+        <div className="space-y-5">
+          {!isEnrolled && !isStaff && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+              <p className="font-semibold text-blue-950">{program.visibility === 'private' ? 'Request approval to join this program' : 'Join this program to begin'}</p>
+              <p className="mt-1 text-sm text-blue-800">The lesson content and assessment become available after enrolment.</p>
+              {program.visibility !== 'secret' && <button onClick={onEnrol} className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Join Program</button>}
             </div>
+          )}
+          {canViewContent && program.sections.map(section => {
+            const sectionSteps = orderedSteps.filter(step => step.sectionId === section.id);
+            if (sectionSteps.length === 0) return null;
+            return (
+              <div key={section.id} className="space-y-3">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-950">{section.title}</h3>
+                  {section.description && <p className="text-sm text-gray-500">{section.description}</p>}
+                </div>
+                {sectionSteps.map(step => {
+                  const stepProgress = progress.find(item => item.stepId === step.id);
+                  const done = stepProgress?.status === 'completed';
+                  const unlocked = program.stepOrderMode === 'any_order'
+                    || isLearningStepUnlocked(orderedSteps, progress, step);
+                  if (!unlocked && !program.futureStepsVisible && !isStaff) return null;
+                  return (
+                    <article key={step.id} className={`rounded-2xl border p-4 ${unlocked ? 'border-gray-200' : 'border-gray-200 bg-gray-50/70'}`}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${stepTypeMeta[step.stepType].color}`}>{stepTypeMeta[step.stepType].icon}{stepTypeMeta[step.stepType].label}</span>
+                          <h4 className="mt-2 text-lg font-semibold text-gray-950">{step.title}</h4>
+                          {step.description && <p className="mt-1 text-sm text-gray-600">{step.description}</p>}
+                        </div>
+                        {done && (
+                          <span className="inline-flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm font-semibold text-green-700">
+                            <CheckCircle className="h-4 w-4" />
+                            Completed
+                          </span>
+                        )}
+                      </div>
+                      {!unlocked ? (
+                        <div className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 text-sm text-gray-600">
+                          <Lock className="h-4 w-4" />
+                          Complete the earlier required steps first.
+                        </div>
+                      ) : (
+                        <>
+                          <StepPreview step={step} compact={false} hideQuizQuestions={step.stepType === 'quiz'} />
+                          {step.stepType === 'quiz' ? (
+                            <QuizPlayer
+                              step={step}
+                              existingProgress={stepProgress}
+                              unlocked={unlocked}
+                              canInteract={canTrackProgress}
+                              onSubmit={answers => onSubmitQuiz(program, step, answers)}
+                            />
+                          ) : canTrackProgress && !done ? (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await onMarkStepDone(program, step);
+                                  toast.success('Step completed');
+                                } catch (error) {
+                                  toast.error(error instanceof Error ? error.message : 'Unable to complete this step');
+                                }
+                              }}
+                              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                              Mark complete
+                            </button>
+                          ) : null}
+                        </>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+        <aside className="space-y-4">
+          <div className="rounded-2xl border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-950">Completion</h3>
+            <div className="mt-3 h-3 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${progressSummary.percent}%` }} /></div>
+            <p className="mt-2 text-sm text-gray-500">{progressSummary.completed} of {progressSummary.total} required steps complete</p>
           </div>
-        )}
-      </aside>
-    </div>
-  </section>
-);
+          {(aircraftFamily || contentVersion) && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              <h3 className="font-semibold">Operational source check</h3>
+              {aircraftFamily && <p className="mt-2">Aircraft family: {aircraftFamily}</p>}
+              {contentVersion && <p className="mt-1">Content version: {contentVersion}</p>}
+              <p className="mt-2 leading-5">Always use the current flight manual, cockpit placards, aircraft checklist, club procedures and your instructor’s direction for the aircraft booked today.</p>
+            </div>
+          )}
+          {isStaff && (
+            <div className="rounded-2xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-950">Enrolments</h3>
+              <div className="mt-3 space-y-2">
+                {program.enrolments.map(enrolment => (
+                  <div key={enrolment.id} className="rounded-lg bg-gray-50 p-3 text-sm">
+                    <p className="font-semibold">{enrolment.invitedEmail || enrolment.userId || 'Participant'}</p>
+                    <p className="text-xs text-gray-500">{enrolment.status} - {enrolment.paymentStatus}</p>
+                    {enrolment.status === 'pending_approval' && <button onClick={() => onApproveEnrolment(enrolment.id)} className="mt-2 text-xs font-semibold text-blue-700">Approve</button>}
+                  </div>
+                ))}
+                {program.enrolments.length === 0 && <p className="text-sm text-gray-500">No enrolments yet.</p>}
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+};
 
 const InfoCard = ({ label, value }: { label: string; value: string }) => (
   <div className="rounded-xl border border-white/10 bg-white/10 p-3">
@@ -650,21 +777,76 @@ const ProgramPreview = ({ program }: { program: LearningProgram }) => (
       onEdit={() => undefined}
       onEnrol={() => undefined}
       onMarkStepDone={() => undefined}
+      onSubmitQuiz={async (_program, step, answers) => gradeLearningQuiz(step.quizQuestions, answers, step.passingScorePercent || 80)}
       onApproveEnrolment={() => undefined}
     />
   </BuilderPanel>
 );
 
-const StepPreview = ({ step, compact = false }: { step: LearningStep; compact?: boolean }) => (
+const ContentBlockView = ({ block }: { block: LearningContentBlock }) => {
+  if (block.type === 'divider') return <hr className="my-2 border-gray-200" />;
+  if (block.type === 'button' || block.type === 'file') {
+    return block.url ? (
+      <a
+        href={block.url}
+        target={/^https?:/i.test(block.url) ? '_blank' : undefined}
+        rel={/^https?:/i.test(block.url) ? 'noreferrer' : undefined}
+        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 font-semibold text-white hover:bg-blue-700"
+      >
+        {block.label || block.title || 'Open resource'}
+        <ExternalLink className="h-4 w-4" />
+      </a>
+    ) : null;
+  }
+  if (block.type === 'image' || block.type === 'gif') {
+    return block.url ? <img src={block.url} alt={block.title || ''} className="max-h-[480px] w-auto rounded-xl object-contain" loading="lazy" /> : null;
+  }
+  if (block.type === 'audio') {
+    return block.url ? <audio controls src={block.url} className="w-full">Your browser cannot play this audio.</audio> : null;
+  }
+  if (block.type === 'video') {
+    return block.url ? <video controls src={block.url} className="w-full rounded-xl">Your browser cannot play this video.</video> : null;
+  }
+  if (block.type === 'table' && block.rows?.length) {
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-sm">
+          <tbody>
+            {block.rows.map((row, rowIndex) => (
+              <tr key={`${block.id}-${rowIndex}`} className="border-b border-gray-200">
+                {row.map((cell, cellIndex) => <td key={`${block.id}-${rowIndex}-${cellIndex}`} className="px-2 py-2 align-top">{cell}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+  return <p className="whitespace-pre-wrap leading-6 text-gray-700">{block.text || block.url || ''}</p>;
+};
+
+const StepPreview = ({
+  step,
+  compact = false,
+  hideQuizQuestions = false,
+}: {
+  step: LearningStep;
+  compact?: boolean;
+  hideQuizQuestions?: boolean;
+}) => (
   <div className={compact ? 'mt-4 space-y-3 text-sm' : 'space-y-3'}>
-    {step.videoUrl && <div className="rounded-xl border border-purple-100 bg-purple-50 p-3 text-purple-900">Video: {step.videoUrl}</div>}
+    {step.videoUrl && (
+      <a href={step.videoUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-purple-100 bg-purple-50 p-3 font-semibold text-purple-900">
+        Open lesson video <ExternalLink className="h-4 w-4" />
+      </a>
+    )}
     {step.contentBlocks.slice(0, compact ? 3 : undefined).map(block => (
       <div key={block.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
         {block.title && <p className="font-semibold text-gray-900">{block.title}</p>}
-        {block.type === 'divider' ? <hr className="my-2" /> : <p className="whitespace-pre-wrap text-gray-600">{block.text || block.url || block.type}</p>}
+        <div className={block.title ? 'mt-2' : ''}><ContentBlockView block={block} /></div>
       </div>
     ))}
-    {step.quizQuestions.slice(0, compact ? 3 : undefined).map(question => (
+    {!hideQuizQuestions && step.quizQuestions.slice(0, compact ? 3 : undefined).map(question => (
       <div key={question.id} className="rounded-xl border border-amber-100 bg-amber-50 p-3">
         <p className="font-semibold text-amber-950">{question.prompt}</p>
         {question.hint && <p className="mt-1 text-xs text-amber-700">Hint: {question.hint}</p>}
@@ -672,3 +854,143 @@ const StepPreview = ({ step, compact = false }: { step: LearningStep; compact?: 
     ))}
   </div>
 );
+
+const QuizPlayer = ({
+  step,
+  existingProgress,
+  unlocked,
+  canInteract,
+  onSubmit,
+}: {
+  step: LearningStep;
+  existingProgress?: LearningStepProgress;
+  unlocked: boolean;
+  canInteract: boolean;
+  onSubmit: (answers: LearningQuizAnswers) => Promise<LearningQuizGrade>;
+}) => {
+  const [answers, setAnswers] = useState<LearningQuizAnswers>(
+    (existingProgress?.quizAnswers || {}) as LearningQuizAnswers,
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [grade, setGrade] = useState<LearningQuizGrade | null>(
+    existingProgress?.quizScorePercent === null || existingProgress?.quizScorePercent === undefined
+      ? null
+      : {
+        ...gradeLearningQuiz(step.quizQuestions, answers, step.passingScorePercent || 80),
+        scorePercent: existingProgress.quizScorePercent,
+        passed: existingProgress.status === 'completed',
+      },
+  );
+
+  useEffect(() => {
+    setAnswers((existingProgress?.quizAnswers || {}) as LearningQuizAnswers);
+    setGrade(
+      existingProgress?.quizScorePercent === null || existingProgress?.quizScorePercent === undefined
+        ? null
+        : {
+          ...gradeLearningQuiz(step.quizQuestions, (existingProgress.quizAnswers || {}) as LearningQuizAnswers, step.passingScorePercent || 80),
+          scorePercent: existingProgress.quizScorePercent,
+          passed: existingProgress.status === 'completed',
+        },
+    );
+  }, [existingProgress?.quizScorePercent, existingProgress?.status, step.id]);
+
+  const setAnswer = (questionId: string, answer: string | number | string[]) => {
+    setAnswers(current => ({ ...current, [questionId]: answer }));
+    setGrade(null);
+  };
+
+  const submit = async () => {
+    const unanswered = step.quizQuestions.find(question => !isQuestionAnswered(question, answers[question.id]));
+    if (unanswered) {
+      toast.error('Answer each required question before submitting.');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const result = await onSubmit(answers);
+      setGrade(result);
+      if (result.passed) toast.success(`Quiz passed: ${result.scorePercent}%`);
+      else toast.error(`Score ${result.scorePercent}%. Review the lesson and try again.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to submit this quiz');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-4">
+      {step.quizQuestions.map((question, questionIndex) => {
+        const answer = answers[question.id];
+        return (
+          <fieldset key={question.id} className="rounded-xl border border-amber-100 bg-amber-50 p-4" disabled={!canInteract || !unlocked || submitting}>
+            <legend className="px-1 font-semibold text-amber-950">{questionIndex + 1}. {question.prompt}</legend>
+            {question.hint && <p className="mt-1 text-xs text-amber-800">Hint: {question.hint}</p>}
+            {['single_choice', 'image_choice'].includes(question.type) && (
+              <div className="mt-3 space-y-2">
+                {(question.options || []).map(option => (
+                  <label key={option.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-200 bg-white p-3 text-sm text-gray-800">
+                    <input type="radio" name={question.id} value={option.id} checked={answer === option.id} onChange={() => setAnswer(question.id, option.id)} className="mt-0.5" />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {question.type === 'multiple_choice' && (
+              <div className="mt-3 space-y-2">
+                {(question.options || []).map(option => {
+                  const selected = Array.isArray(answer) && answer.includes(option.id);
+                  return (
+                    <label key={option.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-200 bg-white p-3 text-sm text-gray-800">
+                      <input
+                        type="checkbox"
+                        value={option.id}
+                        checked={selected}
+                        onChange={() => {
+                          const current = Array.isArray(answer) ? answer : [];
+                          setAnswer(question.id, selected ? current.filter(value => value !== option.id) : [...current, option.id]);
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            {['short_answer', 'long_answer', 'number'].includes(question.type) && (
+              <input
+                type={question.type === 'number' ? 'number' : 'text'}
+                value={typeof answer === 'string' || typeof answer === 'number' ? answer : ''}
+                onChange={event => setAnswer(question.id, question.type === 'number' ? Number(event.target.value) : event.target.value)}
+                className="input mt-3 bg-white"
+              />
+            )}
+          </fieldset>
+        );
+      })}
+      {!canInteract && (
+        <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          Enrol in this program to submit the assessment and record your progress.
+        </div>
+      )}
+      {grade && (
+        <div role="status" className={`rounded-xl border p-4 ${grade.passed ? 'border-green-200 bg-green-50 text-green-900' : 'border-amber-200 bg-amber-50 text-amber-950'}`}>
+          <p className="font-semibold">{grade.passed ? 'Assessment passed' : 'Review and try again'} — {grade.scorePercent}%</p>
+          <p className="mt-1 text-sm">Passing score: {grade.passingScorePercent}%.</p>
+        </div>
+      )}
+      {canInteract && (
+        <button
+          onClick={submit}
+          disabled={!unlocked || submitting}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {submitting ? 'Checking answers...' : grade?.passed ? 'Submit again' : 'Submit assessment'}
+        </button>
+      )}
+    </div>
+  );
+};
