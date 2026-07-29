@@ -712,7 +712,11 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   </label>
                 ) : (
                   <div className="flex h-10 items-center rounded-md border border-blue-100 bg-blue-50 px-3 text-xs font-medium text-blue-800">
-                    {description.rates.filter(rate => rate.enabled && Number(rate.hourlyRate) > 0).length} of {activeFlightTypes.length} rates enabled
+                    {description.rates.filter(rate =>
+                      rate.enabled
+                      && Number(rate.hourlyRate) > 0
+                      && activeFlightTypes.some(type => type.id === rate.flightTypeId)
+                    ).length} of {activeFlightTypes.length} rates enabled
                   </div>
                 )}
 
