@@ -500,7 +500,6 @@ const inventoryCurrentTenant = async (
         remote_status: clean(row.Status) || null,
         origin_confidence: "xero_api_verified",
         quarantined: true,
-        reconciliation_status: "unreviewed",
         remote_snapshot: row,
         last_seen_at: new Date().toISOString(),
       })).filter((row: any) => row.xero_object_id);
@@ -515,6 +514,39 @@ const inventoryCurrentTenant = async (
       if (rows.length < 100) break;
     }
     summary[resource.type] = seen;
+  }
+  const [{ data: localInvoices }, { data: tenantPayments }] = await Promise.all([
+    adminClient.from("xero_external_object_inventory")
+      .select("id,xero_object_id")
+      .eq("tenant_id", tenantId)
+      .eq("object_type", "invoice")
+      .not("local_table", "is", null),
+    adminClient.from("xero_external_object_inventory")
+      .select("id,remote_snapshot")
+      .eq("tenant_id", tenantId)
+      .eq("object_type", "payment")
+      .is("local_table", null)
+      .eq("origin_confidence", "xero_api_verified"),
+  ]);
+  const invoiceInventoryByXeroId = new Map(
+    (localInvoices || []).map((invoice: any) => [
+      clean(invoice.xero_object_id),
+      clean(invoice.id),
+    ]),
+  );
+  for (const payment of tenantPayments || []) {
+    const invoiceId = clean(payment.remote_snapshot?.Invoice?.InvoiceID);
+    const parentInventoryId = invoiceInventoryByXeroId.get(invoiceId);
+    if (!parentInventoryId) continue;
+    const { error: linkError } = await adminClient
+      .from("xero_external_object_inventory").update({
+        local_table: "xero_external_object_inventory",
+        local_record_id: parentInventoryId,
+        source_field: "dependent_invoice_payment",
+        reconciliation_note:
+          "Payment is linked to a locally linked test invoice and must be removed before that invoice can be voided.",
+      }).eq("id", payment.id);
+    if (linkError) throw linkError;
   }
   const now = new Date().toISOString();
   await adminClient.from("xero_external_object_inventory").update({
@@ -649,6 +681,17 @@ const cleanupLegacyTestArtifacts = async (
           "Paid or part-paid invoices must be reconciled with their payments before voiding.",
         );
       }
+      const bankTransactionType = clean(
+        artefact.remote_snapshot?.Type,
+      ).toUpperCase();
+      if (
+        type === "bank_transaction" &&
+        !["RECEIVE", "SPEND"].includes(bankTransactionType)
+      ) {
+        throw makeXeroNeedsReviewError(
+          `${bankTransactionType || "This bank transaction subtype"} cannot be deleted through the standard Xero bank-transaction update. Review the linked overpayment/prepayment manually in the contained Xero organisation.`,
+        );
+      }
       const spec = type === "payment"
         ? { path: `Payments/${objectId}`, collection: "Payments", id: "PaymentID", target: "DELETED" }
         : type === "bank_transaction"
@@ -667,7 +710,7 @@ const cleanupLegacyTestArtifacts = async (
             [spec.id]: objectId,
             Status: spec.target,
             ...(type === "bank_transaction"
-              ? { Type: clean(artefact.remote_snapshot?.Type) }
+              ? { Type: bankTransactionType }
               : {}),
           }],
         },
