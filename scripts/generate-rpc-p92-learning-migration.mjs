@@ -1,0 +1,1467 @@
+import { writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const caaBase = 'https://www.aviation.govt.nz/licensing-and-certification/pilots/flight-training/flight-instructor-guide';
+const raausSyllabus = 'https://raaus.com.au/wp-content/uploads/2023/10/1-syllabus-of-flight-training-issue-7-v2-single-pages-1.pdf';
+const raausOperations = 'https://raaus.com.au/wp-content/uploads/2024/07/RAAus-Flight-Operations-Manual.pdf';
+const tecnamOverview = 'https://tecnam.com/aircraft/p92-echo-mkii/';
+
+const guide = (slug) => `${caaBase}/${slug}/`;
+const q = (prompt, correct, ...distractors) => ({ prompt, correct, distractors });
+
+const lessons = [
+  {
+    code: 'TIF',
+    title: 'Trial Instruction Flight',
+    sources: [
+      ['CAA briefing framework', `${caaBase}/briefings-introduction/`],
+      ['CAA taxiing briefing', guide('taxiing')],
+      ['CAA effects of controls', guide('effects-of-controls')],
+    ],
+    outcomes: [
+      'Describe how the first flight will be conducted and how to speak up at any time.',
+      'Identify the P92 cockpit safety items, primary controls and outside attitude references.',
+      'Follow the instructor on the controls and make gentle, coordinated attitude changes.',
+    ],
+    p92: [
+      'Use the high-wing view, low instrument panel and side-by-side seating to establish a clear horizon reference.',
+      'Locate the control stick, rudder pedals, wheel brakes, throttle, trim and electric flap controls in the booked aircraft.',
+      'Practise positive exchange of control: “You have control” - “I have control” - “You have control”.',
+      'Treat every speed, RPM, flap setting and limitation as aircraft-specific: confirm it from the cockpit checklist or current flight manual.',
+    ],
+    sequence: [
+      'Passenger and propeller-area safety brief; enter and secure the cockpit.',
+      'Point out controls, instruments, restraint release and emergency exit method.',
+      'Follow through on taxi, take-off and the first climb as directed.',
+      'Use the horizon to try gentle pitch and roll inputs, then return to a nominated attitude.',
+      'Finish with the instructor flying the arrival, followed by an honest comfort-and-goals debrief.',
+    ],
+    threats: [
+      'New sensations or airsickness: tell the instructor early; do not try to hide discomfort.',
+      'Control guarding or freezing: keep a light grip and immediately release when the instructor takes control.',
+      'Propeller and movement-area hazards: move only when directed and maintain awareness outside the cockpit.',
+    ],
+    readiness: [
+      'I know how control is transferred and will acknowledge every transfer.',
+      'I can identify the main P92 controls without operating them uncommanded.',
+      'I understand this online preparation never replaces the instructor’s passenger and aircraft briefing.',
+    ],
+    questions: [
+      q('What is the correct response when the instructor says “You have control”?', 'Take control and reply “I have control”.', 'Move the controls silently.', 'Wait until the instructor lets go completely.', 'Reply “standby” and keep watching.'),
+      q('If you begin to feel unwell during the flight, what should you do?', 'Tell the instructor promptly.', 'Wait until landing so the lesson is not interrupted.', 'Close your eyes and hold the controls tightly.', 'Remove the headset without warning.'),
+      q('What should guide your first pitch and roll changes?', 'Small inputs referenced to the natural horizon.', 'Large inputs referenced only to the instruments.', 'The position of the control stick alone.', 'Engine sound without an outside reference.'),
+    ],
+  },
+  {
+    code: '1.01-3',
+    title: 'Effects of Controls',
+    sources: [
+      ['CAA effects of controls', guide('effects-of-controls')],
+      ['CAA taxiing briefing', guide('taxiing')],
+    ],
+    outcomes: [
+      'Demonstrate the primary and secondary effects of elevator, aileron and rudder.',
+      'Coordinate roll and yaw while maintaining an effective lookout.',
+      'Use P92 power, trim and flap controls without chasing the aircraft.',
+    ],
+    p92: [
+      'Identify how the P92 responds to stick and rudder inputs from its normal cruise attitude.',
+      'Observe adverse yaw during aileron input, then coordinate with rudder rather than using rudder as a steering control in flight.',
+      'Use trim to remove sustained control pressure only after attitude and power are established.',
+      'Operate electric flap only when directed, within the booked aircraft’s placarded speed range, and confirm the indication.',
+    ],
+    sequence: [
+      'Complete clearing lookout and nominate a reference point.',
+      'Isolate pitch, roll and yaw inputs to identify each primary effect.',
+      'Allow each input to continue briefly to observe secondary and further effects.',
+      'Combine aileron and rudder for balanced roll entry and exit.',
+      'Change power and configuration, re-establish attitude, then trim.',
+    ],
+    threats: [
+      'Fixation inside: use short instrument checks between long outside scans.',
+      'Overcontrolling: use fingertip pressure and wait for the aircraft response.',
+      'Uncommanded flap or trim: point, identify, operate, and confirm.',
+    ],
+    readiness: [
+      'I can state the primary effect of each flight control.',
+      'I can explain adverse yaw and how coordinated rudder counters it.',
+      'I will establish attitude and power before trimming.',
+    ],
+    questions: [
+      q('What is the primary effect of moving the control stick left?', 'The aircraft rolls left.', 'The nose yaws right with no roll.', 'The aircraft pitches down.', 'Engine RPM reduces.'),
+      q('What is trim used for?', 'Removing sustained control pressure after attitude and power are set.', 'Changing attitude without using the flight controls.', 'Correcting an out-of-balance turn with no rudder.', 'Increasing the maximum permitted airspeed.'),
+      q('How should adverse yaw during roll entry be managed?', 'Use coordinated rudder in the direction of roll.', 'Use opposite rudder throughout the turn.', 'Add back pressure only.', 'Retract flap regardless of configuration.'),
+    ],
+  },
+  {
+    code: '1.01-4',
+    title: 'Straight and Level',
+    sources: [['CAA straight and level', guide('straight-and-level')]],
+    outcomes: [
+      'Set and maintain straight-and-level flight using attitude, power and trim.',
+      'Recognise and correct small altitude, heading and airspeed trends.',
+      'Use a disciplined outside scan with short instrument cross-checks.',
+    ],
+    p92: [
+      'Use the P92 cowling-to-horizon picture and wing symmetry as primary attitude references.',
+      'Select a suitable power setting from the aircraft checklist and confirm the resulting performance rather than forcing a memorised number.',
+      'Trim only after the desired attitude, power and balance are stable.',
+      'Apply small corrections, pause, assess the trend, and remove the correction.',
+    ],
+    sequence: [
+      'Lookout, select a distant heading reference and set the normal attitude.',
+      'Set power, allow airspeed to stabilise, then trim.',
+      'Scan outside for attitude and traffic; cross-check altitude, heading, airspeed and engine indications.',
+      'Correct one developing trend with a small coordinated input.',
+      'Re-establish straight and level after a climb, descent and turn.',
+    ],
+    threats: [
+      'Instrument chasing: fly the outside attitude and use instruments to confirm the trend.',
+      'Poor seating position: set the seat and sight picture before engine start.',
+      'Unnoticed drift or traffic: keep the scan moving through the full field of view.',
+    ],
+    readiness: [
+      'I can describe attitude-power-trim in the correct order.',
+      'I know the difference between a trend and a momentary instrument movement.',
+      'I can identify the P92 outside references I will use.',
+    ],
+    questions: [
+      q('What is the best order for establishing straight-and-level flight?', 'Attitude, power, balance, then trim.', 'Trim, power, attitude, then lookout.', 'Power, trim, then choose any attitude.', 'Instrument scan, flap, then attitude.'),
+      q('How should a small altitude trend normally be corrected?', 'Make a small attitude correction, pause and reassess.', 'Make a large correction and hold it until the altimeter reverses.', 'Use trim as the primary elevator control.', 'Look only at the altimeter.'),
+      q('Where should most visual attention be in normal VFR straight-and-level flight?', 'Outside, with brief instrument cross-checks.', 'On the altimeter continuously.', 'On the airspeed indicator continuously.', 'On the engine instruments continuously.'),
+    ],
+  },
+  {
+    code: '1.01-5',
+    title: 'Climbing and Descending',
+    sources: [['CAA climbing and descending', guide('climbing-and-descending')]],
+    outcomes: [
+      'Enter, maintain and leave normal climbs and descents using a repeatable sequence.',
+      'Manage lookout, balance, engine indications and configuration throughout.',
+      'Anticipate level-off and stabilise without large altitude or airspeed excursions.',
+    ],
+    p92: [
+      'Confirm the booked P92’s climb, glide and configuration figures from its current checklist.',
+      'Use attitude for the nominated airspeed, power appropriate to the phase, rudder for balance, then trim.',
+      'Monitor the Rotax engine indications and comply with any temperature-management guidance in the aircraft checklist.',
+      'Treat carburettor-heat use, if fitted, as aircraft-specific and follow the installed-aircraft checklist.',
+    ],
+    sequence: [
+      'Clear the area above, ahead and around the aircraft.',
+      'Enter the climb with attitude and power in the aircraft-specific order; balance and trim.',
+      'Maintain reference, airspeed and engine scan; clear the blind area as instructed.',
+      'Lead the level-off, accelerate, set cruise power and trim.',
+      'Enter a powered descent and a glide, then lead each level-off.',
+    ],
+    threats: [
+      'Reduced forward visibility in climb: use the instructor-approved clearing technique.',
+      'Airspeed decay after level-off: allow acceleration before selecting final cruise power.',
+      'Engine mishandling: use the checklist sequence and monitor limitations.',
+    ],
+    readiness: [
+      'I can state the entry and level-off sequence for a climb and descent.',
+      'I know where the booked aircraft’s climb and glide figures are found.',
+      'I can explain why lookout changes during pitch changes.',
+    ],
+    questions: [
+      q('What should be confirmed before raising the nose into a climb?', 'The flight path and surrounding airspace are clear.', 'The trim is fully nose-up.', 'The flaps are extended regardless of procedure.', 'The altimeter is ignored.'),
+      q('Why is level-off started before reaching the nominated altitude?', 'The aircraft needs time and distance to change flight path and accelerate.', 'The altimeter always reads high.', 'The engine must be stopped from climbing.', 'It prevents the need to trim.'),
+      q('During a glide, what primarily controls airspeed?', 'Attitude.', 'Trim alone.', 'Rudder position.', 'Radio volume.'),
+    ],
+  },
+  {
+    code: '1.01-6',
+    title: 'Medium, Climbing and Descending Turns',
+    sources: [['CAA medium, climbing and descending turns', guide('medium-climbing-and-descending-turns')]],
+    outcomes: [
+      'Enter, maintain and exit coordinated level turns up to the lesson bank limit.',
+      'Adapt the turn for climbing and descending performance.',
+      'Apply lookout, balance and roll-out anticipation consistently.',
+    ],
+    p92: [
+      'Use the P92 wing and horizon picture to judge bank while cross-checking balance and altitude.',
+      'Coordinate aileron and rudder during roll, then centralise them as the required bank is reached.',
+      'Use the appropriate attitude and power for climbing or descending turns; do not attempt to hold level-flight performance.',
+      'Anticipate roll-out using an outside reference and remove back pressure as the wings level.',
+    ],
+    sequence: [
+      'Complete lookout in the intended direction and clear the turn.',
+      'Roll with coordinated aileron and rudder; set bank and adjust back pressure.',
+      'Maintain bank, balance, altitude or nominated climb/descent performance.',
+      'Look through the turn and identify traffic and the roll-out reference.',
+      'Lead the roll-out with coordinated controls and re-establish the required flight condition.',
+    ],
+    threats: [
+      'Looking only into the turn: scan across, above and below the flight path.',
+      'Overbanking or altitude loss: recognise the trend early and correct smoothly.',
+      'Skid or slip: use the balance indication as confirmation, not as a substitute for feel and outside references.',
+    ],
+    readiness: [
+      'I can explain why back pressure normally increases as bank is established.',
+      'I know how a climbing turn’s performance differs from a level turn.',
+      'I can describe a complete lookout before and during the turn.',
+    ],
+    questions: [
+      q('What control combination should initiate a normal turn?', 'Coordinated aileron and rudder in the direction of turn.', 'Rudder alone.', 'Elevator alone.', 'Opposite aileron and rudder.'),
+      q('What tendency normally appears if bank increases without enough lift being redirected upward?', 'Altitude decreases.', 'Airspeed becomes zero.', 'The aircraft climbs automatically.', 'The engine stops.'),
+      q('When should the pilot begin looking toward the roll-out reference?', 'Before reaching the required heading.', 'Only after the wings are level.', 'After closing the throttle.', 'Only when the instructor calls the heading.'),
+    ],
+  },
+  {
+    code: '1.01-7',
+    title: 'Slow Flight and Basic Stalls',
+    sources: [
+      ['CAA slow flight', guide('slow-flight')],
+      ['CAA basic stalling', guide('basic-stalling')],
+    ],
+    outcomes: [
+      'Recognise the changing control response and handling cues as speed reduces.',
+      'Identify an approaching stall and recover promptly using the approved sequence.',
+      'Maintain height discipline, lookout and configuration awareness.',
+    ],
+    p92: [
+      'Use only P92 configurations, speeds and minimum heights authorised by the CFI and the booked aircraft’s flight manual.',
+      'Expect reduced control effectiveness, increased adverse yaw and the need for disciplined balance at low speed.',
+      'Recover by reducing angle of attack first, applying power as authorised, controlling yaw and returning to the required flight path.',
+      'Do not practise spins; discontinue any exercise that does not develop as briefed.',
+    ],
+    sequence: [
+      'HASELL-style safety checks and clearing turns as directed by the instructor.',
+      'Reduce power, maintain height and configure while observing attitude and control feel.',
+      'Maintain slow flight straight and in shallow turns with coordinated inputs.',
+      'Approach the stall, identify cues, then recover at the nominated cue.',
+      'Re-establish a safe flight path, complete after-take-off style checks as applicable, and review height loss.',
+    ],
+    threats: [
+      'Excess rudder or crossed controls: keep balance and use coordinated recovery inputs.',
+      'Fixation on airspeed: recognise attitude, buffet, sound and control feel as a combined picture.',
+      'Secondary stall: avoid an abrupt pull-up during flight-path recovery.',
+    ],
+    readiness: [
+      'I can explain that a stall is caused by critical angle of attack, not a particular airspeed.',
+      'I can state why angle-of-attack reduction is the first recovery requirement.',
+      'I know the exercise will stop if height, configuration or aircraft behaviour is outside the brief.',
+    ],
+    questions: [
+      q('What causes an aerodynamic stall?', 'The wing exceeds its critical angle of attack.', 'The airspeed indicator reaches one fixed number in every condition.', 'Engine RPM falls below cruise.', 'The flaps are selected.'),
+      q('What is the first aerodynamic requirement in stall recovery?', 'Reduce the angle of attack.', 'Raise the nose.', 'Apply full rudder.', 'Retrim before moving the controls.'),
+      q('Why must yaw be controlled near the stall?', 'Yaw can promote wing drop and an incipient spin.', 'Yaw always increases lift equally on both wings.', 'Yaw prevents any loss of height.', 'Yaw retracts the flaps.'),
+    ],
+  },
+  {
+    code: '1.01-8.1/8.3',
+    title: 'Circuit - Introduction',
+    sources: [
+      ['CAA circuit introduction', guide('circuit-introduction')],
+      ['CAA circuit considerations', guide('circuit-considerations')],
+    ],
+    outcomes: [
+      'Fly the normal circuit sequence with correct spacing, checks and radio awareness.',
+      'Conduct a normal take-off, stabilised approach and landing under instruction.',
+      'Recognise early when a go-around is the safer outcome.',
+    ],
+    p92: [
+      'Use the booked P92 checklist for take-off power, flap, climb and approach configurations.',
+      'Account for the high-wing sight picture when judging runway position, circuit spacing and flare attitude.',
+      'Use coordinated rudder during take-off and climb, particularly as power and airspeed change.',
+      'Protect the nosewheel after touchdown and maintain directional control while decelerating.',
+    ],
+    sequence: [
+      'Confirm runway, wind, traffic, take-off brief and abort plan.',
+      'Line up, set power, verify indications, maintain centreline and rotate as briefed.',
+      'Track upwind, crosswind and downwind with lookout, calls and checks.',
+      'Select base and final using picture, wind and energy; confirm a stabilised approach.',
+      'Flare, land, maintain directional control, or go around without delay if criteria are not met.',
+    ],
+    threats: [
+      'Task saturation: use standard circuit gates and verbalise the next priority.',
+      'Unstable approach: go around early; do not try to rescue the landing.',
+      'Traffic conflict: listen, look, communicate and adjust spacing while maintaining aircraft control.',
+    ],
+    readiness: [
+      'I can draw and brief the local circuit including standard calls.',
+      'I know the instructor’s stabilised-approach and go-around gates.',
+      'I can find the P92 take-off and approach configuration in the cockpit checklist.',
+    ],
+    questions: [
+      q('What is the best response to an approach outside the agreed stabilised criteria?', 'Go around promptly.', 'Continue because every approach can be recovered.', 'Use large control inputs near the ground.', 'Turn off the radio.'),
+      q('What should be checked immediately after take-off power is applied?', 'Expected engine indications and acceleration while maintaining centreline.', 'Only the altimeter.', 'The landing light switch position only.', 'The passenger’s phone.'),
+      q('Why is circuit spacing adjusted for wind?', 'Wind changes groundspeed and the aircraft’s position relative to the runway.', 'Wind changes the runway length.', 'Wind removes the need for lookout.', 'Wind makes radio calls optional.'),
+    ],
+  },
+  {
+    code: '1.01-8.6',
+    title: 'Circuits - Flapless and Missed Approaches',
+    sources: [
+      ['CAA flapless landings', guide('flapless-landings')],
+      ['CAA circuit considerations', guide('circuit-considerations')],
+    ],
+    outcomes: [
+      'Plan and fly a flapless circuit using the changed attitude, speed and spacing.',
+      'Initiate a go-around from approach or landing without hesitation.',
+      'Manage P92 power, flap and trim changes without losing directional control.',
+    ],
+    p92: [
+      'Expect a different P92 nose attitude, approach speed and landing distance when flap is unavailable; use the aircraft checklist values.',
+      'For a go-around, prioritise power, attitude, balance and flight path before configuration changes.',
+      'Retract electric flap in approved stages while confirming the indication and maintaining the nominated speed.',
+      'Anticipate trim-force changes; hold attitude with the flight controls and retrim only when stable.',
+    ],
+    sequence: [
+      'Brief the flapless pattern, runway requirement, wind and go-around plan.',
+      'Adjust circuit spacing and configure for the approved flapless approach.',
+      'Confirm stabilisation at the agreed gate and continue or go around.',
+      'Practise a go-around: power, attitude, balance, configuration, track and communicate.',
+      'Rejoin the circuit, identify the cause and avoid repeating an unstable setup.',
+    ],
+    threats: [
+      'Premature flap retraction: configuration must not compromise climb performance or control.',
+      'Pitch change with power: hold the required attitude and coordinate rudder.',
+      'Plan-continuation bias: a go-around is a normal manoeuvre, not a failed landing.',
+    ],
+    readiness: [
+      'I can explain how flapless spacing and landing distance differ.',
+      'I know the P92 go-around priorities and where its configuration limits are found.',
+      'I will call and execute a go-around when any agreed gate is missed.',
+    ],
+    questions: [
+      q('What is the first priority when initiating a go-around?', 'Establish power, attitude and control for a safe flight path.', 'Retract all flap immediately.', 'Make the radio call before flying the aircraft.', 'Retrim before changing power.'),
+      q('Compared with a normal flap approach, a flapless approach generally requires what?', 'Different attitude, speed, spacing and landing-distance planning.', 'No change to planning or performance.', 'A steeper flare with the engine stopped.', 'No wind correction.'),
+      q('When should flap be changed during a go-around?', 'In the approved sequence while flight path and speed remain controlled.', 'All at once before power is applied.', 'Only after leaving the circuit.', 'Whenever the trim force becomes noticeable.'),
+    ],
+  },
+  {
+    code: '1.01-8.5',
+    title: 'Circuits - Circuit Emergencies',
+    sources: [
+      ['CAA engine failure after take-off', guide('engine-failure-after-take-off')],
+      ['CAA radio failure', guide('radio-failure')],
+    ],
+    outcomes: [
+      'Respond immediately to a simulated engine failure after take-off or in the circuit.',
+      'Select a survivable flight path before attempting checks or communication.',
+      'Manage circuit abnormalities using aircraft-control, analyse, action and communicate priorities.',
+    ],
+    p92: [
+      'Use the exact P92 emergency checklist memory actions and follow-up checks approved for the booked aircraft.',
+      'Lower the nose promptly to preserve flying speed; do not attempt an unsafe turn-back.',
+      'Use only landing areas within the attainable forward sector unless the instructor’s scenario explicitly establishes otherwise.',
+      'Treat door, radio, flap and engine abnormalities according to the cockpit checklist and instructor brief.',
+    ],
+    sequence: [
+      'Brief decision points, instructor simulation method, minimum heights and who will discontinue.',
+      'At the simulated failure: attitude for safe speed and choose the landing flight path.',
+      'Complete only the checks time and height permit; communicate if capacity remains.',
+      'Execute the instructor-directed recovery or go-around at the pre-briefed point.',
+      'Review the first three seconds: attitude, flight path and decision quality.',
+    ],
+    threats: [
+      'Turn-back impulse: accept the area ahead and preserve control margins.',
+      'Checklist fixation: fly the aircraft and landing path before troubleshooting.',
+      'Startle and silence: use a rehearsed first-action sequence and clear verbal callouts.',
+    ],
+    readiness: [
+      'I can state the first P92 actions from the current emergency checklist.',
+      'I understand the local take-off emergency brief and turn-back prohibition/criteria.',
+      'I know the instructor’s simulation and recovery call.',
+    ],
+    questions: [
+      q('Following an engine failure after take-off, what is the immediate priority?', 'Set an attitude that preserves safe flying speed and select the landing path.', 'Attempt a turn back regardless of height.', 'Troubleshoot every possible cause before lowering the nose.', 'Make a radio call before controlling airspeed.'),
+      q('Why are checks deliberately limited in a low-height emergency?', 'Time and height must be protected for aircraft control and landing.', 'The P92 has no checklists.', 'Radio calls replace all checks.', 'Engine failures always correct themselves.'),
+      q('What should determine whether a simulated emergency continues?', 'The pre-briefed limits, aircraft state and instructor direction.', 'A desire to complete the exercise at any cost.', 'The student’s willingness to descend below the limit.', 'Whether another lesson is booked.'),
+    ],
+  },
+  {
+    code: 'SOLO-1',
+    title: 'Circuit Consolidation - Supervised Circuits',
+    sources: [
+      ['CAA circuit considerations', guide('circuit-considerations')],
+      ['CAA crosswind circuit', guide('crosswind-circuit')],
+    ],
+    outcomes: [
+      'Apply the authorised solo limits and make conservative command decisions.',
+      'Fly repeatable circuits, go around when required and report any abnormality.',
+      'Complete pre-flight, radio and post-flight duties without instructor prompting.',
+    ],
+    p92: [
+      'Confirm the specific aircraft, fuel, loading, defects and cockpit checklist before accepting the flight.',
+      'Set the seat, restraints, controls and sight picture exactly as practised dual.',
+      'Use the authorised P92 circuit speeds and flap schedule; do not improvise.',
+      'After landing, taxi conservatively and report any hard landing, exceedance, defect or uncertainty.',
+    ],
+    sequence: [
+      'Receive and repeat the instructor’s runway, wind, circuit, time and go-around limits.',
+      'Complete aircraft inspection, documents, fuel and cockpit preparation.',
+      'Fly the authorised number of circuits while maintaining listening watch and lookout.',
+      'Stop or go around whenever conditions, traffic or aircraft performance fall outside the brief.',
+      'Secure the aircraft and conduct an immediate instructor debrief and record update.',
+    ],
+    threats: [
+      'Pressure to continue: the solo authorisation is conditional and may be declined or ended.',
+      'Changing wind or traffic: reassess on every circuit, not only before take-off.',
+      'Overconfidence after one good landing: use the same gates every time.',
+    ],
+    readiness: [
+      'I can repeat every solo limitation and explain how I will monitor it.',
+      'I will go around or stop if I am uncertain.',
+      'I know how to contact the supervising instructor and report an abnormal event.',
+    ],
+    questions: [
+      q('What happens if conditions move outside the instructor’s solo limits?', 'Go around, land or do not depart as appropriate, and contact the instructor.', 'Continue because the original authorisation cannot change.', 'Change the limits yourself.', 'Turn off the radio and remain in circuit.'),
+      q('What should a solo student do after a suspected hard landing?', 'Stop as appropriate and report it before further flight.', 'Continue without telling anyone if the aircraft taxies normally.', 'Delete the flight record.', 'Inspect only the tyres and depart again.'),
+      q('What is the purpose of repeating the solo brief back to the instructor?', 'To confirm shared understanding of the authority and limits.', 'To replace the cockpit checklist.', 'To avoid checking the weather.', 'To authorise flight at any aerodrome.'),
+    ],
+  },
+  {
+    code: '1.01-6A',
+    title: 'Advanced Turns',
+    sources: [
+      ['CAA steep turns', guide('steep-turns')],
+      ['CAA maximum rate turns', guide('maximum-rate-turns')],
+    ],
+    outcomes: [
+      'Fly steep turns within the aircraft, CFI and lesson limits.',
+      'Manage the increased lift, drag, load factor and energy requirements.',
+      'Recognise and recover from developing spiral, climb, descent or coordination errors.',
+    ],
+    p92: [
+      'Confirm the P92 manoeuvring and speed limitations before the exercise; remain within the permitted category and loading envelope.',
+      'Use coordinated roll entry, progressively adjust back pressure and power, and keep a strong horizon reference.',
+      'Avoid abrupt control inputs and do not chase altitude with excessive pitch near the speed margin.',
+      'Recover by reducing bank, managing pitch and power, and returning to a stable attitude.',
+    ],
+    sequence: [
+      'Complete height, airspace, security, engine and lookout checks.',
+      'Establish entry speed and an outside reference.',
+      'Roll smoothly to the nominated bank, coordinate, adjust lift and power.',
+      'Maintain lookout through the turn and recognise performance trends early.',
+      'Lead recovery, level the wings, remove extra back pressure and stabilise.',
+    ],
+    threats: [
+      'Load-factor and stall-speed increase: respect bank, speed and manoeuvre limits.',
+      'Spiral tendency: reduce bank before attempting a large pitch correction.',
+      'Lookout breakdown: use clearing turns and keep the scan moving through the turn.',
+    ],
+    readiness: [
+      'I can explain why stall speed rises as load factor rises.',
+      'I know the approved P92 bank and speed limits for today’s exercise.',
+      'I can state the safe recovery priorities from a descending steep turn.',
+    ],
+    questions: [
+      q('As load factor increases in a level turn, what happens to stall speed?', 'It increases.', 'It decreases to zero.', 'It is unaffected in every case.', 'It becomes the maximum cruise speed.'),
+      q('If a steep turn develops into a descending spiral, what is the first control priority?', 'Reduce the bank before making a large pitch recovery.', 'Pull back harder while maintaining bank.', 'Apply full rudder into the turn.', 'Extend flap at any speed.'),
+      q('Why may power be adjusted in a sustained steep level turn?', 'To offset increased drag while the required lift is maintained.', 'To control radio volume.', 'To replace coordinated rudder.', 'To lower load factor without changing bank.'),
+    ],
+  },
+  {
+    code: '1.01-7S',
+    title: 'Scenario-Based Stalls',
+    sources: [
+      ['CAA advanced stalling', guide('advanced-stalling')],
+      ['CAA wing-drop stalling', guide('wing-drop-stalling')],
+    ],
+    outcomes: [
+      'Recognise stall precursors inside realistic circuit and operational scenarios.',
+      'Prevent the stall where possible and recover at the earliest cue.',
+      'Control yaw, avoid secondary stall and make a sound post-recovery decision.',
+    ],
+    p92: [
+      'Use only configurations and profiles approved for the P92 Echo Super by the current flight manual and CFI.',
+      'Emphasise base-to-final overshoot, distraction, go-around configuration and power-change scenarios without creating an unsafe state.',
+      'Reduce angle of attack and control yaw; use aileron only as appropriate to the aircraft state and instructor brief.',
+      'After recovery, choose whether to go around, discontinue or reconfigure instead of automatically resuming the scenario.',
+    ],
+    sequence: [
+      'Brief the scenario, expected cues, recovery gate and minimum height.',
+      'Establish the approved configuration and introduce one operational threat.',
+      'Identify trend toward excessive angle of attack or poor coordination.',
+      'Prevent or recover using unload, yaw control, power and flight-path recovery.',
+      'Stabilise, check height and aircraft state, then make the next operational decision.',
+    ],
+    threats: [
+      'Base-to-final skid: never use excess inside rudder to force the aircraft around.',
+      'Secondary stall: recover the flight path progressively after angle-of-attack reduction.',
+      'Scenario fixation: discontinue immediately if the aircraft response differs from the brief.',
+    ],
+    readiness: [
+      'I can identify the control error that makes a base-to-final skid hazardous.',
+      'I know the difference between stall prevention and recovery.',
+      'I understand the exercise is not spin training.',
+    ],
+    questions: [
+      q('Why is excess inside rudder during a base-to-final overshoot dangerous near the stall?', 'It can create a skid, yaw and rapid wing drop toward an incipient spin.', 'It always improves turn performance safely.', 'It prevents the critical angle of attack.', 'It automatically levels the wings.'),
+      q('After the wing is unstalled, what should prevent a secondary stall?', 'Progressive flight-path recovery without excessive back pressure.', 'An immediate abrupt pull-up.', 'Full opposite rudder held indefinitely.', 'Ignoring airspeed and attitude.'),
+      q('If the scenario develops differently from the brief, what should happen?', 'Discontinue or recover immediately as directed.', 'Continue until the planned cue appears.', 'Descend below the minimum height.', 'Add more control input to force the expected result.'),
+    ],
+  },
+  {
+    code: '1.01-10 / 2.04',
+    title: 'Training Area Operations and Radio Procedures',
+    sources: [
+      ['CAA vacating and joining at aerodromes', guide('vacating-and-joining-at-aerodromes')],
+      ['CAA radio failure', guide('radio-failure')],
+    ],
+    outcomes: [
+      'Depart, orientate in and return from the local training area using approved routes.',
+      'Make concise radio calls, maintain listening watch and integrate with traffic.',
+      'Maintain airspace, weather, fuel and position awareness throughout.',
+    ],
+    p92: [
+      'Configure the P92 avionics, intercom, transponder and radio from the installed-equipment checklist; panels may differ between club aircraft.',
+      'Set frequencies and transponder codes before high-workload phases where practical.',
+      'Use the high-wing view deliberately: clear around wing and door-frame blind areas during turns and joins.',
+      'Cross-check fuel selection/quantity and engine indications at planned gates.',
+    ],
+    sequence: [
+      'Brief runway, departure route, airspace, training area boundaries and return points.',
+      'Set radio and transponder, make departure calls and maintain traffic separation.',
+      'Identify landmarks and continuously update position, altitude, weather and fuel.',
+      'Plan the return early, obtain traffic information and make the required inbound call.',
+      'Join using the approved local procedure and integrate predictably with other traffic.',
+    ],
+    threats: [
+      'Head-down radio work: aviate and look out; delay nonessential setup.',
+      'Confirmation bias in landmark identification: use more than one distinguishing feature.',
+      'Frequency or call error: pause, correct clearly and continue listening.',
+    ],
+    readiness: [
+      'I can draw the BFC training area boundaries and local departure/arrival routes.',
+      'I can make the expected calls in plain, concise standard phraseology.',
+      'I know the radio-failure actions and local non-towered procedure.',
+    ],
+    questions: [
+      q('What is the first priority if radio setup begins to compromise lookout or control?', 'Fly the aircraft and restore situational awareness.', 'Keep programming until complete.', 'Descend to improve reception.', 'Stop listening for traffic.'),
+      q('How should a landmark be positively identified?', 'By matching multiple distinguishing features and expected position.', 'By choosing the first feature that resembles the map.', 'By ignoring elapsed time.', 'By relying only on GPS track colour.'),
+      q('What makes a useful non-towered radio call?', 'Correct location, aircraft identity, position/level and intentions, stated concisely.', 'A long explanation of the entire flight.', 'Only the aircraft registration.', 'A call transmitted without first listening.'),
+    ],
+  },
+  {
+    code: '1.01-9.2/9.3',
+    title: 'Forced Landing, Glide Approaches and Sideslip Awareness',
+    sources: [
+      ['CAA forced landing pattern', guide('forced-landing-without-power-pattern')],
+      ['CAA forced landing considerations', guide('forced-landing-without-power-considerations')],
+      ['CAA glide approach', guide('glide-approach')],
+    ],
+    outcomes: [
+      'Select a suitable landing area and plan a controllable glide pattern.',
+      'Prioritise attitude and flight path before checks, communication and preparation.',
+      'Use sideslip only when approved, briefed and appropriate to the P92 configuration.',
+    ],
+    p92: [
+      'Use the current P92 best-glide figure and emergency checklist; do not rely on a figure from another club aircraft.',
+      'Maintain coordinated flight unless a deliberate, approved sideslip is being demonstrated.',
+      'Confirm any P92 limitations on prolonged sideslip, flap combination and fuel state before the exercise.',
+      'Recover at the instructor’s nominated minimum height; the objective is judgement and procedure, not landing off-field.',
+    ],
+    sequence: [
+      'At simulated power loss: set glide attitude, choose field and plan the pattern.',
+      'Assess wind, surface, slope, obstacles, sun and overshoot/undershoot options.',
+      'Position using key points or the CFI-approved pattern while maintaining lookout.',
+      'Complete restart checks, mayday, passenger brief and shutdown items only as time permits.',
+      'At the recovery gate, go around smoothly and review whether the field remained reachable.',
+    ],
+    threats: [
+      'Best-field fixation: choose early, then change only for a clearly better and reachable option.',
+      'Checklist tunnelling: maintain glide attitude, field position and lookout.',
+      'Excessive sideslip or low recovery: remain within aircraft and instructor limits.',
+    ],
+    readiness: [
+      'I know where to find the booked aircraft’s glide figure and restart checks.',
+      'I can state the field-selection factors and the planned pattern.',
+      'I know the minimum recovery height and who calls the go-around.',
+    ],
+    questions: [
+      q('Immediately after a simulated engine failure away from the circuit, what should be established first?', 'The glide attitude and a reachable landing plan.', 'A complete mayday call.', 'Every restart checklist item.', 'A sideslip.'),
+      q('What is the purpose of the forced-landing pattern?', 'To manage position and energy so the selected area remains reachable.', 'To guarantee a landing in any field.', 'To eliminate the need to assess wind.', 'To keep the aircraft directly above the field.'),
+      q('When is sideslip acceptable in this lesson?', 'Only when aircraft-approved, instructor-briefed and operationally appropriate.', 'At any speed and flap setting.', 'Whenever the aircraft is high, without checking limitations.', 'As a replacement for a go-around.'),
+    ],
+  },
+  {
+    code: '1.01-9.4',
+    title: 'Precautionary Search and Landing',
+    sources: [
+      ['CAA precautionary landing', guide('precautionary-landing')],
+      ['CAA terrain and weather awareness', guide('terrain-and-weather-awareness')],
+    ],
+    outcomes: [
+      'Recognise when deteriorating conditions justify diversion or precautionary landing.',
+      'Assess a candidate area systematically without allowing low-level task saturation.',
+      'Make an early continue, divert, land or abandon decision.',
+    ],
+    p92: [
+      'Use current P92 performance data with actual weight, wind, surface and obstacle factors; brochure figures are not planning data.',
+      'Configure only as authorised for each inspection stage and protect airspeed, bank and escape options.',
+      'Use the high-wing visibility while deliberately clearing the wing-obscured side before every turn.',
+      'This lesson is not a low-flying endorsement and does not authorise flight below applicable limits.',
+    ],
+    sequence: [
+      'Identify the trigger for precautionary action and compare safer alternatives first.',
+      'Select a candidate area using wind, length, slope, surface, obstacles and go-around path.',
+      'Plan inspection passes only at CFI-approved heights and configuration.',
+      'Maintain a stable track, lookout and escape option while gathering only useful information.',
+      'Decide early: land, divert, choose another area or abandon the inspection.',
+    ],
+    threats: [
+      'Get-there-itis: diversion or landing is successful risk management, not failure.',
+      'Low-level fixation: fly the aircraft and escape path before examining details.',
+      'Repeated passes: each pass adds exposure; set a decision limit before starting.',
+    ],
+    readiness: [
+      'I can list the reasons for a precautionary landing and safer alternatives.',
+      'I can brief inspection objectives, heights and go-around path.',
+      'I understand no online lesson authorises low flying.',
+    ],
+    questions: [
+      q('What should be considered before beginning a precautionary inspection?', 'Whether an earlier diversion or known aerodrome is safer.', 'How many low passes can be flown.', 'Whether radio calls can be avoided.', 'How to continue regardless of weather.'),
+      q('What must every inspection pass preserve?', 'Airspeed, lookout, obstacle clearance and a viable escape path.', 'The lowest possible height.', 'A steep bank around the field.', 'A fixed plan to land.'),
+      q('Why should the number of inspection passes be limited?', 'Repeated low-level exposure increases workload and risk.', 'The P92 can only turn twice.', 'The radio stops working after three passes.', 'Wind cannot be assessed twice.'),
+    ],
+  },
+  {
+    code: '1.01-11',
+    title: 'Abnormal Situations and Emergency Management',
+    sources: [
+      ['CAA radio failure', guide('radio-failure')],
+      ['CAA unusual attitudes', guide('unusual-attitudes')],
+    ],
+    outcomes: [
+      'Recognise abnormal indications and apply a disciplined response.',
+      'Prioritise aircraft control, suitable landing options and checklist use.',
+      'Communicate, divert and report according to the situation.',
+    ],
+    p92: [
+      'Locate the booked P92’s engine, fuel, electrical, fire, door and radio abnormal checklists; equipment differs across the fleet.',
+      'Know which indications require immediate action and which permit time for diagnosis.',
+      'For Rotax engine abnormalities, use the aircraft checklist and limitations rather than habits from conventional aero engines.',
+      'After any exceedance or suspected defect, stop further operation and report it through the portal and to staff.',
+    ],
+    sequence: [
+      'Recognise the cue, maintain control and state the immediate threat.',
+      'Choose a safe flight path and landing/diversion option.',
+      'Apply memory actions only where authorised, then use the checklist.',
+      'Communicate with ATS/traffic and passengers as workload permits.',
+      'Land or continue only when justified, then secure, report and record.',
+    ],
+    threats: [
+      'Startle response: use “aviate, navigate, communicate” to restore priorities.',
+      'Confirmation bias: verify the indication using independent cues before unnecessary action.',
+      'Reset-and-forget behaviour: do not repeatedly reset protection devices or conceal an intermittent fault.',
+    ],
+    readiness: [
+      'I can locate the P92 emergency checklist without searching through unrelated pages.',
+      'I can explain when to land as soon as possible versus as soon as practical.',
+      'I know how to report a defect and safety occurrence after landing.',
+    ],
+    questions: [
+      q('What is the correct first response to an unexpected abnormal indication?', 'Maintain aircraft control, assess the immediate threat and protect the flight path.', 'Reset every switch immediately.', 'Continue without cross-checking.', 'Make a long radio call before flying the aircraft.'),
+      q('Why should a tripped circuit protection device not be repeatedly reset?', 'The underlying fault may create overheating or fire risk.', 'It will improve radio range.', 'It always drains fuel.', 'It changes flap angle.'),
+      q('What should happen after a suspected aircraft exceedance or defect?', 'Stop further operation as appropriate and report it accurately.', 'Fly again to see if it repeats.', 'Remove the evidence from the log.', 'Tell only another student.'),
+    ],
+  },
+  {
+    code: 'RPC-CONSOL',
+    title: 'RPC Consolidation - Flight Test Profile Practice',
+    sources: [
+      ['CAA briefing framework', `${caaBase}/briefings-introduction/`],
+      ['RAAus syllabus', raausSyllabus],
+    ],
+    outcomes: [
+      'Plan and fly a representative RPC profile with minimal instructor prompting.',
+      'Integrate normal handling, circuits, stalls, forced landing and abnormal scenarios.',
+      'Self-assess against Pilot Certificate command and consistency standards.',
+    ],
+    p92: [
+      'Prepare one complete P92 operating-data set for the booked registration: loading, fuel, performance, limitations and defects.',
+      'Use one consistent cockpit flow backed by the current checklist; never substitute memorised figures from another P92.',
+      'Manage energy and configuration early enough that each manoeuvre begins stable.',
+      'Treat every instructor intervention as evidence to analyse, not merely a mark to hide.',
+    ],
+    sequence: [
+      'Complete weather, NOTAM, airspace, fuel, loading and aircraft status planning.',
+      'Brief departure and demonstrate normal handling and advanced turns.',
+      'Complete scenario stall, forced landing and abnormal-event exercises.',
+      'Return for normal, flapless or emergency circuit elements as directed.',
+      'Secure the aircraft, complete records and lead an evidence-based self-debrief.',
+    ],
+    threats: [
+      'Test-profile memorisation: respond to actual conditions and instructor scenarios.',
+      'Cumulative workload: reset priorities and stabilise between exercises.',
+      'Hiding uncertainty: verbalise decisions so gaps can be corrected before test.',
+    ],
+    readiness: [
+      'I can complete the full planning package without missing an operational item.',
+      'I can recover from an imperfect manoeuvre without losing command judgement.',
+      'I can identify three specific remaining gaps and a plan for each.',
+    ],
+    questions: [
+      q('What best demonstrates readiness during a consolidation flight?', 'Consistent command decisions and recovery from changing conditions without instructional assistance.', 'Memorising a fixed sequence regardless of conditions.', 'Completing every manoeuvre once with no self-critique.', 'Avoiding all verbal decision making.'),
+      q('How should an error between exercises be managed?', 'Stabilise, identify the cause, correct priorities and continue only when ready.', 'Rush directly into the next exercise.', 'Ignore it if altitude was regained.', 'Change the aircraft checklist.'),
+      q('Why is the self-debrief part of command readiness?', 'It shows the pilot can recognise evidence, risk and targeted improvement needs.', 'It replaces instructor assessment.', 'It guarantees a flight-test pass.', 'It removes the need for records.'),
+    ],
+  },
+  {
+    code: 'RPC-REVIEW',
+    title: 'CFI Recommendation and Pilot Certificate Readiness Review',
+    sources: [
+      ['RAAus syllabus', raausSyllabus],
+      ['RAAus Flight Operations Manual', raausOperations],
+    ],
+    outcomes: [
+      'Present complete training, exam, membership and aeronautical-experience evidence.',
+      'Explain RPC privileges, limitations and local operating responsibilities.',
+      'Agree on recommendation, targeted remediation or a documented hold point.',
+    ],
+    p92: [
+      'Confirm the aircraft group and P92 type training recorded in the student file.',
+      'Demonstrate knowledge of the booked P92’s documents, limitations, loading and emergency references.',
+      'Distinguish club fleet procedures from regulatory privileges and aircraft limitations.',
+      'Bring uncertainties to the CFI; the review is a safety gate, not an administrative formality.',
+    ],
+    sequence: [
+      'Audit training records, dual/PIC experience, solo authorisations and required exams.',
+      'Review membership, medical declaration, radio and identity evidence.',
+      'Discuss RPC privileges, passenger/cross-country limits and local procedures.',
+      'Review aircraft-specific knowledge and any remaining practical evidence.',
+      'Record recommendation, conditions, remedial work or reasons for deferral.',
+    ],
+    threats: [
+      'Incomplete records mistaken for incomplete competence: reconcile evidence before deciding.',
+      'Minimum-hours fixation: competence and consistency remain required.',
+      'Pressure to recommend: the CFI must record a genuine readiness decision.',
+    ],
+    readiness: [
+      'My logbook, exams and training record agree.',
+      'I can explain what an RPC does and does not authorise.',
+      'I can locate every current P92 limitation rather than relying on memory alone.',
+    ],
+    questions: [
+      q('Does reaching the minimum flight time automatically establish RPC readiness?', 'No. Required experience, examinations and demonstrated competency must all be satisfied.', 'Yes, regardless of competency.', 'Yes, if every flight used a P92.', 'Only the student decides.'),
+      q('What should happen if the logbook and CRM training record differ?', 'Reconcile and verify the evidence before recommendation.', 'Use whichever total is higher.', 'Delete the older record.', 'Proceed and correct it after certificate issue.'),
+      q('Why must club procedures be distinguished from certificate privileges?', 'Both apply, but they come from different authorities and may impose different limits.', 'Club procedures replace all regulations.', 'Certificate privileges replace aircraft limitations.', 'There is no difference.'),
+    ],
+  },
+  {
+    code: 'RPC-FLT-TEST',
+    title: 'Pilot Certificate Flight Test',
+    sources: [
+      ['RAAus syllabus', raausSyllabus],
+      ['RAAus Flight Operations Manual', raausOperations],
+    ],
+    outcomes: [
+      'Arrive with the eligibility, records and aircraft preparation required for the RPC flight test.',
+      'Demonstrate Pilot Certificate command standard across the examiner-selected profile.',
+      'Understand the result, limitations, record completion and next actions.',
+    ],
+    p92: [
+      'Prepare the actual test aircraft’s status, documents, loading, fuel, performance and limitations.',
+      'Use normal BFC P92 procedures; do not invent “test technique” that differs from trained safe practice.',
+      'Correct small deviations early and state decisions when operational judgement is being exercised.',
+      'If safety requires examiner intervention or a go-around, respond immediately and professionally.',
+    ],
+    sequence: [
+      'Present membership, identity, exams, logbook, training and recommendation evidence.',
+      'Complete planning and explain aircraft, weather, airspace and operational decisions.',
+      'Conduct the examiner-selected ground and flight profile.',
+      'Secure the aircraft and participate in the result and evidence debrief.',
+      'Complete required records and clarify privileges, limitations or retraining.',
+    ],
+    threats: [
+      'Performance anxiety: use normal flows, prioritise safety and ask for clarification when appropriate.',
+      'Perceived pressure to continue: a go-around or conservative decision can demonstrate command judgement.',
+      'Post-result misunderstanding: repeat back limitations and next administrative steps.',
+    ],
+    readiness: [
+      'I have every required document and can explain the plan without instructor prompts.',
+      'I will fly the aircraft I have been trained to fly, not a memorised script.',
+      'I understand that only the authorised examiner and RAAus process determine the official result.',
+    ],
+    questions: [
+      q('What is the best technique for the RPC flight test?', 'Use the same disciplined P92 procedures and command judgement used in training.', 'Adopt unpractised manoeuvre techniques to impress the examiner.', 'Memorise a fixed profile and ignore changed conditions.', 'Avoid making conservative decisions.'),
+      q('Can a go-around be appropriate during a flight test?', 'Yes. A timely go-around can demonstrate sound command judgement.', 'No. Every approach must end in a landing.', 'Only if the radio fails.', 'Only after touchdown.'),
+      q('Who determines the official RPC flight-test result and certificate processing?', 'The authorised examiner records the result and RAAus completes the applicable process.', 'The online quiz.', 'The aircraft owner.', 'Any instructor who observes the landing.'),
+    ],
+  },
+];
+
+if (lessons.length !== 19) {
+  throw new Error(`Expected 19 RPC lessons, found ${lessons.length}.`);
+}
+
+const uniqueCodes = new Set(lessons.map((lesson) => lesson.code));
+if (uniqueCodes.size !== lessons.length) throw new Error('RPC lesson codes must be unique.');
+
+for (const lesson of lessons) {
+  if (lesson.outcomes.length < 3 || lesson.p92.length < 4 || lesson.sequence.length < 5) {
+    throw new Error(`${lesson.code} does not meet the minimum content depth.`);
+  }
+  if (lesson.threats.length < 3 || lesson.readiness.length < 3 || lesson.questions.length < 3) {
+    throw new Error(`${lesson.code} does not meet the minimum assessment depth.`);
+  }
+}
+
+const rotate = (items, offset) => {
+  const normalized = offset % items.length;
+  return [...items.slice(normalized), ...items.slice(0, normalized)];
+};
+
+const toQuiz = (lesson) => {
+  const questions = [
+    ...lesson.questions,
+    q(
+      'Before using a P92 speed, RPM, flap setting, limitation or emergency action, which source controls?',
+      'The current flight manual, cockpit placard/checklist and instructor brief for the booked aircraft.',
+      'A figure remembered from another aircraft.',
+      'An online forum post.',
+      'The current Tecnam marketing page.',
+    ),
+  ];
+  return questions.map((question, index) => {
+    const labels = rotate([question.correct, ...question.distractors], index + lesson.code.length);
+    const options = labels.map((label, optionIndex) => ({
+      id: `${lesson.code.replace(/[^a-z0-9]/gi, '').toLowerCase()}-q${index + 1}-o${optionIndex + 1}`,
+      label,
+    }));
+    return {
+      id: `${lesson.code.replace(/[^a-z0-9]/gi, '').toLowerCase()}-q${index + 1}`,
+      type: 'single_choice',
+      prompt: question.prompt,
+      options,
+      correctAnswer: options.find((option) => option.label === question.correct)?.id,
+      required: true,
+      incorrectExplanation: 'Review the lesson briefing, the current aircraft documents and the instructor-approved sequence before trying again.',
+      successMessage: 'Correct - relate the answer to the booked aircraft and the conditions on the day.',
+    };
+  });
+};
+
+const manifest = lessons.map((lesson, index) => ({
+  ...lesson,
+  programIndex: index,
+  name: `RPC ${String(index).padStart(2, '0')} - ${lesson.title}`,
+  quiz: toQuiz(lesson),
+  commonSources: [
+    ['NZ CAA Flight Instructor Guide briefing framework', `${caaBase}/briefings-introduction/`],
+    ['RAAus RPC syllabus', raausSyllabus],
+    ['RAAus Flight Operations Manual', raausOperations],
+    ['Tecnam P92 family overview - general information only', tecnamOverview],
+  ],
+}));
+
+const json = JSON.stringify(manifest).replaceAll('$rpc$', '$ rpc $');
+const migration = `-- Generated by scripts/generate-rpc-p92-learning-migration.mjs.
+-- Creates a source-linked online preparation program for every lesson in the
+-- Bendigo Flying Club RAAus Ab-Initio RPC course.
+
+alter table public.learning_programs
+  add column if not exists auto_enrol_from_lesson_links boolean not null default false,
+  add column if not exists source_metadata jsonb not null default '{}'::jsonb;
+
+comment on column public.learning_programs.auto_enrol_from_lesson_links is
+  'Automatically enrols students who are active in a linked training course.';
+comment on column public.learning_programs.source_metadata is
+  'Content provenance, review date and aircraft applicability for governed learning material.';
+
+create or replace function public.learning_seed_uuid(value text)
+returns uuid
+language sql
+immutable
+strict
+set search_path = public
+as $$
+  select (
+    substr(md5(value), 1, 8) || '-' ||
+    substr(md5(value), 9, 4) || '-' ||
+    substr(md5(value), 13, 4) || '-' ||
+    substr(md5(value), 17, 4) || '-' ||
+    substr(md5(value), 21, 12)
+  )::uuid
+$$;
+
+create or replace function public.sync_linked_learning_enrolments_for_course()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.learning_program_enrolments(
+    program_id,
+    user_id,
+    status,
+    payment_status,
+    started_at,
+    completed_at,
+    due_at
+  )
+  select
+    link.program_id,
+    new.student_id,
+    case when new.status in ('active', 'completed') then 'active' else 'cancelled' end,
+    'not_required',
+    case when new.status in ('active', 'completed') then coalesce(new.enrolled_at, now()) else null end,
+    null,
+    null
+  from public.learning_program_lesson_links link
+  join public.learning_programs program on program.id = link.program_id
+  where link.training_course_id = new.course_id
+    and program.auto_enrol_from_lesson_links
+  on conflict (program_id, user_id) do update
+  set
+    status = case
+      when public.learning_program_enrolments.status = 'completed' then 'completed'
+      else excluded.status
+    end,
+    payment_status = 'not_required',
+    started_at = coalesce(public.learning_program_enrolments.started_at, excluded.started_at),
+    completed_at = case
+      when public.learning_program_enrolments.status = 'completed'
+        then public.learning_program_enrolments.completed_at
+      else excluded.completed_at
+    end,
+    updated_at = now();
+  return new;
+end;
+$$;
+
+create or replace function public.sync_linked_learning_enrolments_for_link()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from public.learning_programs
+    where id = new.program_id and auto_enrol_from_lesson_links
+  ) then
+    return new;
+  end if;
+
+  insert into public.learning_program_enrolments(
+    program_id,
+    user_id,
+    status,
+    payment_status,
+    started_at,
+    completed_at
+  )
+  select
+    new.program_id,
+    enrolment.student_id,
+    case when enrolment.status in ('active', 'completed') then 'active' else 'cancelled' end,
+    'not_required',
+    case when enrolment.status in ('active', 'completed') then coalesce(enrolment.enrolled_at, now()) else null end,
+    null
+  from public.student_course_enrolments enrolment
+  where enrolment.course_id = new.training_course_id
+  on conflict (program_id, user_id) do update
+  set
+    status = case
+      when public.learning_program_enrolments.status = 'completed' then 'completed'
+      else excluded.status
+    end,
+    payment_status = 'not_required',
+    started_at = coalesce(public.learning_program_enrolments.started_at, excluded.started_at),
+    completed_at = case
+      when public.learning_program_enrolments.status = 'completed'
+        then public.learning_program_enrolments.completed_at
+      else excluded.completed_at
+    end,
+    updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_linked_learning_enrolments_course_trigger
+  on public.student_course_enrolments;
+create trigger sync_linked_learning_enrolments_course_trigger
+after insert or update of status, course_id, student_id
+on public.student_course_enrolments
+for each row execute function public.sync_linked_learning_enrolments_for_course();
+
+drop trigger if exists sync_linked_learning_enrolments_link_trigger
+  on public.learning_program_lesson_links;
+create trigger sync_linked_learning_enrolments_link_trigger
+after insert or update of program_id, training_course_id
+on public.learning_program_lesson_links
+for each row execute function public.sync_linked_learning_enrolments_for_link();
+
+create or replace function public.assert_learning_step_access(
+  p_step_id uuid,
+  p_require_previous boolean default true
+)
+returns public.learning_program_steps
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_step public.learning_program_steps;
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then
+    raise exception 'You must be signed in';
+  end if;
+
+  select * into v_step
+  from public.learning_program_steps
+  where id = p_step_id;
+  if v_step.id is null then
+    raise exception 'Learning step was not found';
+  end if;
+
+  if not public.current_user_has_staff_role()
+    and not exists (
+      select 1 from public.learning_program_enrolments enrolment
+      where enrolment.program_id = v_step.program_id
+        and enrolment.user_id = v_user_id
+        and enrolment.status in ('active', 'completed')
+    )
+  then
+    raise exception 'An active enrolment is required';
+  end if;
+
+  if p_require_previous
+    and not public.current_user_has_staff_role()
+    and exists (
+      select 1
+      from public.learning_program_steps earlier
+      where earlier.program_id = v_step.program_id
+        and earlier.is_required
+        and earlier.sort_order < v_step.sort_order
+        and not exists (
+          select 1 from public.learning_step_progress progress
+          where progress.step_id = earlier.id
+            and progress.user_id = v_user_id
+            and progress.status = 'completed'
+        )
+    )
+  then
+    raise exception 'Complete the earlier required steps first';
+  end if;
+
+  return v_step;
+end;
+$$;
+
+create or replace function public.refresh_learning_program_completion(
+  p_program_id uuid,
+  p_user_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1
+    from public.learning_program_steps step
+    where step.program_id = p_program_id
+      and step.is_required
+      and not exists (
+        select 1 from public.learning_step_progress progress
+        where progress.step_id = step.id
+          and progress.user_id = p_user_id
+          and progress.status = 'completed'
+      )
+  ) then
+    update public.learning_program_enrolments
+    set status = 'completed',
+        completed_at = coalesce(completed_at, now()),
+        updated_at = now()
+    where program_id = p_program_id
+      and user_id = p_user_id
+      and status = 'active';
+  end if;
+end;
+$$;
+
+create or replace function public.complete_learning_step(p_step_id uuid)
+returns public.learning_step_progress
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_step public.learning_program_steps;
+  v_progress public.learning_step_progress;
+  v_user_id uuid := auth.uid();
+begin
+  v_step := public.assert_learning_step_access(p_step_id, true);
+  if v_step.step_type = 'quiz' then
+    raise exception 'Submit the knowledge check to complete a quiz';
+  end if;
+
+  insert into public.learning_step_progress(
+    program_id, step_id, user_id, status, video_watch_percent,
+    quiz_score_percent, quiz_answers, completed_at, updated_at
+  ) values (
+    v_step.program_id, v_step.id, v_user_id, 'completed',
+    case when v_step.step_type = 'video' then 100 else 0 end,
+    null, '{}'::jsonb, now(), now()
+  )
+  on conflict (step_id, user_id) do update
+  set status = 'completed',
+      video_watch_percent = excluded.video_watch_percent,
+      completed_at = coalesce(public.learning_step_progress.completed_at, now()),
+      updated_at = now()
+  returning * into v_progress;
+
+  perform public.refresh_learning_program_completion(v_step.program_id, v_user_id);
+  return v_progress;
+end;
+$$;
+
+create or replace function public.submit_learning_quiz(
+  p_step_id uuid,
+  p_answers jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_step public.learning_program_steps;
+  v_question jsonb;
+  v_expected text;
+  v_answer text;
+  v_total integer := 0;
+  v_correct integer := 0;
+  v_score integer;
+  v_passed boolean;
+  v_user_id uuid := auth.uid();
+begin
+  v_step := public.assert_learning_step_access(p_step_id, true);
+  if v_step.step_type <> 'quiz' then
+    raise exception 'This learning step is not a quiz';
+  end if;
+  if jsonb_typeof(coalesce(p_answers, '{}'::jsonb)) <> 'object' then
+    raise exception 'Quiz answers must be an object';
+  end if;
+
+  for v_question in
+    select value from jsonb_array_elements(v_step.quiz_questions)
+  loop
+    if v_question ? 'correctAnswer'
+      and coalesce(v_question ->> 'type', '') in ('single_choice', 'short_answer', 'number')
+    then
+      v_total := v_total + 1;
+      v_expected := lower(btrim(v_question ->> 'correctAnswer'));
+      v_answer := lower(btrim(coalesce(p_answers ->> (v_question ->> 'id'), '')));
+      if v_answer = v_expected then
+        v_correct := v_correct + 1;
+      end if;
+    end if;
+  end loop;
+
+  if v_total = 0 then
+    raise exception 'This quiz has no automatically gradable questions';
+  end if;
+  v_score := round((v_correct::numeric / v_total::numeric) * 100);
+  v_passed := v_score >= coalesce(v_step.passing_score_percent, 80);
+
+  insert into public.learning_step_progress(
+    program_id, step_id, user_id, status, video_watch_percent,
+    quiz_score_percent, quiz_answers, completed_at, updated_at
+  ) values (
+    v_step.program_id, v_step.id, v_user_id,
+    case when v_passed then 'completed' else 'in_progress' end,
+    0, v_score, p_answers,
+    case when v_passed then now() else null end,
+    now()
+  )
+  on conflict (step_id, user_id) do update
+  set status = excluded.status,
+      quiz_score_percent = excluded.quiz_score_percent,
+      quiz_answers = excluded.quiz_answers,
+      completed_at = case
+        when excluded.status = 'completed'
+          then coalesce(public.learning_step_progress.completed_at, now())
+        else null
+      end,
+      updated_at = now();
+
+  if v_passed then
+    perform public.refresh_learning_program_completion(v_step.program_id, v_user_id);
+  end if;
+
+  return jsonb_build_object(
+    'scorePercent', v_score,
+    'passingScorePercent', coalesce(v_step.passing_score_percent, 80),
+    'passed', v_passed,
+    'correctCount', v_correct,
+    'questionCount', v_total
+  );
+end;
+$$;
+
+drop policy if exists "Members can update own learning progress"
+  on public.learning_step_progress;
+drop policy if exists "Members can read own learning progress"
+  on public.learning_step_progress;
+create policy "Members can read own learning progress"
+on public.learning_step_progress
+for select to authenticated
+using (user_id = auth.uid() or public.current_user_has_staff_role());
+
+revoke insert, update, delete on public.learning_step_progress from anon, authenticated;
+revoke all on function public.assert_learning_step_access(uuid, boolean) from public, anon, authenticated;
+revoke all on function public.refresh_learning_program_completion(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.complete_learning_step(uuid) from public, anon;
+revoke all on function public.submit_learning_quiz(uuid, jsonb) from public, anon;
+grant execute on function public.complete_learning_step(uuid) to authenticated, service_role;
+grant execute on function public.submit_learning_quiz(uuid, jsonb) to authenticated, service_role;
+
+do $seed$
+declare
+  v_course_id uuid;
+  v_lesson_id uuid;
+  v_program_id uuid;
+  v_prepare_section_id uuid;
+  v_apply_section_id uuid;
+  v_check_section_id uuid;
+  v_item jsonb;
+  v_source jsonb;
+  v_blocks jsonb;
+  v_sort integer;
+  v_sources jsonb;
+begin
+  select id into v_course_id
+  from public.training_courses
+  where title = 'RAAus Ab-Initio'
+  order by created_at
+  limit 1;
+  if v_course_id is null then
+    raise exception 'RAAus Ab-Initio training course was not found';
+  end if;
+
+  for v_item in
+    select value from jsonb_array_elements($rpc$${json}$rpc$::jsonb)
+  loop
+    select id into v_lesson_id
+    from public.training_lessons
+    where course_id = v_course_id
+      and sequence_code = v_item ->> 'code';
+    if v_lesson_id is null then
+      raise exception 'RPC lesson % was not found', v_item ->> 'code';
+    end if;
+
+    v_program_id := public.learning_seed_uuid('bfc-rpc-p92-program:' || (v_item ->> 'code'));
+    v_prepare_section_id := public.learning_seed_uuid('bfc-rpc-p92-prepare:' || (v_item ->> 'code'));
+    v_apply_section_id := public.learning_seed_uuid('bfc-rpc-p92-apply:' || (v_item ->> 'code'));
+    v_check_section_id := public.learning_seed_uuid('bfc-rpc-p92-check:' || (v_item ->> 'code'));
+
+    insert into public.learning_programs(
+      id, name, category, description, cover_photo_url, status,
+      schedule_type, self_paced_limit_type, price_type, price_cents,
+      visibility, step_order_mode, future_steps_visible,
+      video_watch_required, auto_enrol_from_lesson_links,
+      source_metadata, published_at, updated_at
+    ) values (
+      v_program_id,
+      v_item ->> 'name',
+      'RAAus RPC - Tecnam P92',
+      'Online preparation for ' || (v_item ->> 'title') ||
+        '. Complete this before the linked flight lesson. Training aid only: the current aircraft flight manual, cockpit placards/checklist, BFC procedures and instructor directions take precedence.',
+      '/aircraft-icons/tecnam.png',
+      'published',
+      'self_paced',
+      'none',
+      'free',
+      0,
+      'secret',
+      'in_order',
+      true,
+      false,
+      true,
+      jsonb_build_object(
+        'contentVersion', '2026.07',
+        'reviewedAt', '2026-07-29',
+        'aircraftFamily', 'Tecnam P92 Echo Super',
+        'jurisdiction', 'Australia - RAAus',
+        'sourceFramework', 'New Zealand CAA Flight Instructor Guide revised 2023',
+        'authoritativeFigures', 'Current aircraft flight manual, cockpit placards/checklist and BFC procedures'
+      ),
+      now(),
+      now()
+    )
+    on conflict (id) do update
+    set name = excluded.name,
+        category = excluded.category,
+        description = excluded.description,
+        cover_photo_url = excluded.cover_photo_url,
+        status = excluded.status,
+        visibility = excluded.visibility,
+        step_order_mode = excluded.step_order_mode,
+        future_steps_visible = excluded.future_steps_visible,
+        auto_enrol_from_lesson_links = excluded.auto_enrol_from_lesson_links,
+        source_metadata = excluded.source_metadata,
+        updated_at = now();
+
+    delete from public.learning_program_sections where program_id = v_program_id;
+
+    insert into public.learning_program_sections(id, program_id, title, description, sort_order)
+    values
+      (v_prepare_section_id, v_program_id, 'Prepare', 'Understand the lesson and the aircraft-specific considerations before flight.', 0),
+      (v_apply_section_id, v_program_id, 'Apply', 'Chair-fly the sequence and identify threats, controls and decision points.', 1),
+      (v_check_section_id, v_program_id, 'Check', 'Demonstrate preparation before the flight lesson.', 2);
+
+    v_sources := coalesce(v_item -> 'sources', '[]'::jsonb) ||
+      coalesce(v_item -> 'commonSources', '[]'::jsonb);
+    v_blocks := jsonb_build_array(
+      jsonb_build_object(
+        'id', 'outcomes',
+        'type', 'rich_text',
+        'title', 'Observable lesson outcomes',
+        'text', (select string_agg('• ' || value, E'\\n') from jsonb_array_elements_text(v_item -> 'outcomes'))
+      ),
+      jsonb_build_object(
+        'id', 'authority',
+        'type', 'rich_text',
+        'title', 'Authority and aircraft rule',
+        'text', 'This program adapts an instructor-training framework to the BFC RAAus course. It is not an operating checklist and does not authorise solo flight or a manoeuvre. Use the current documents and instructor brief for the exact P92 registration booked.'
+      )
+    );
+    v_sort := 0;
+    for v_source in select value from jsonb_array_elements(v_sources)
+    loop
+      v_blocks := v_blocks || jsonb_build_array(jsonb_build_object(
+        'id', 'source-' || v_sort,
+        'type', 'button',
+        'title', v_source ->> 0,
+        'label', 'Open official reference',
+        'url', v_source ->> 1
+      ));
+      v_sort := v_sort + 1;
+    end loop;
+
+    insert into public.learning_program_steps(
+      id, program_id, section_id, step_type, title, description,
+      content_blocks, quiz_questions, passing_score_percent,
+      sort_order, is_required
+    ) values (
+      public.learning_seed_uuid('bfc-rpc-p92-outcomes:' || (v_item ->> 'code')),
+      v_program_id,
+      v_prepare_section_id,
+      'article',
+      'Lesson outcomes and official references',
+      'Know what you should be able to demonstrate and which documents control.',
+      v_blocks,
+      '[]'::jsonb,
+      null,
+      0,
+      true
+    );
+
+    insert into public.learning_program_steps(
+      id, program_id, section_id, step_type, title, description,
+      content_blocks, quiz_questions, passing_score_percent,
+      sort_order, is_required
+    ) values (
+      public.learning_seed_uuid('bfc-rpc-p92-aircraft:' || (v_item ->> 'code')),
+      v_program_id,
+      v_prepare_section_id,
+      'article',
+      'Tecnam P92 Echo Super application',
+      'Relate the lesson to the BFC P92 fleet without substituting generic figures for the booked aircraft.',
+      jsonb_build_array(
+        jsonb_build_object(
+          'id', 'p92-focus',
+          'type', 'rich_text',
+          'title', 'P92 focus',
+          'text', (select string_agg('• ' || value, E'\\n') from jsonb_array_elements_text(v_item -> 'p92'))
+        ),
+        jsonb_build_object(
+          'id', 'booked-aircraft',
+          'type', 'button',
+          'title', 'BFC aircraft documents',
+          'label', 'Open the aircraft list and select the booked P92',
+          'url', '/aircraft'
+        )
+      ),
+      '[]'::jsonb,
+      null,
+      1,
+      true
+    );
+
+    insert into public.learning_program_steps(
+      id, program_id, section_id, step_type, title, description,
+      content_blocks, quiz_questions, passing_score_percent,
+      sort_order, is_required
+    ) values (
+      public.learning_seed_uuid('bfc-rpc-p92-chairfly:' || (v_item ->> 'code')),
+      v_program_id,
+      v_apply_section_id,
+      'article',
+      'Chair-fly the lesson',
+      'Rehearse the sequence, verbal calls, threats and readiness gates before entering the aircraft.',
+      jsonb_build_array(
+        jsonb_build_object(
+          'id', 'sequence',
+          'type', 'rich_text',
+          'title', 'Instructor-approved sequence',
+          'text', (select string_agg((ordinality::text || '. ' || value), E'\\n') from jsonb_array_elements_text(v_item -> 'sequence') with ordinality)
+        ),
+        jsonb_build_object(
+          'id', 'threats',
+          'type', 'rich_text',
+          'title', 'Threat and error management',
+          'text', (select string_agg('• ' || value, E'\\n') from jsonb_array_elements_text(v_item -> 'threats'))
+        ),
+        jsonb_build_object(
+          'id', 'readiness',
+          'type', 'rich_text',
+          'title', 'Ready for the instructor brief when...',
+          'text', (select string_agg('□ ' || value, E'\\n') from jsonb_array_elements_text(v_item -> 'readiness'))
+        )
+      ),
+      '[]'::jsonb,
+      null,
+      2,
+      true
+    );
+
+    insert into public.learning_program_steps(
+      id, program_id, section_id, step_type, title, description,
+      content_blocks, quiz_questions, passing_score_percent,
+      sort_order, is_required
+    ) values (
+      public.learning_seed_uuid('bfc-rpc-p92-quiz:' || (v_item ->> 'code')),
+      v_program_id,
+      v_check_section_id,
+      'quiz',
+      'Knowledge check',
+      'Answer every question. A score of at least 80% is required; review the briefing before another attempt.',
+      '[]'::jsonb,
+      v_item -> 'quiz',
+      80,
+      3,
+      true
+    );
+
+    insert into public.learning_program_lesson_links(
+      program_id, training_course_id, training_lesson_id, visibility_timing
+    ) values (
+      v_program_id, v_course_id, v_lesson_id, 'at_or_before_lesson'
+    )
+    on conflict (program_id, training_course_id, training_lesson_id) do update
+    set visibility_timing = excluded.visibility_timing;
+  end loop;
+end;
+$seed$;
+
+drop function public.learning_seed_uuid(text);
+`;
+
+export { lessons, manifest, migration };
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const outputPath = resolve('supabase/migrations/20260729230000_add_rpc_p92_learning_programs.sql');
+  writeFileSync(outputPath, migration, 'utf8');
+  console.log(`Generated ${outputPath} with ${manifest.length} programs.`);
+}
