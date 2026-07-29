@@ -85,7 +85,7 @@ export const SettingsDashboard: React.FC = () => {
 
   const allSections = useMemo<SettingsSection[]>(() => [
     { id: 'organisation', label: 'Organisation', category: 'Club Setup', keywords: ['business', 'locations', 'airfields', 'documents', 'membership documents', 'logo', 'currency', 'timezone', 'operating hours'], icon: <Building2 className="h-4 w-4" />, roles: ['admin'], component: OrganisationSettings },
-    { id: 'portal', label: 'Portal & UX', category: 'Club Setup', keywords: ['theme', 'student portal', 'date format', 'time format'], icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
+    { id: 'portal', label: 'Portal & UX', category: 'Club Setup', keywords: ['theme', 'student portal', 'date format', 'time format', 'kiosk', 'kiosk access key', 'kiosk token'], icon: <Monitor className="h-4 w-4" />, roles: ['admin'], component: PortalUxSettings },
     { id: 'resources', label: 'Resources (Aircraft & Rooms)', category: 'Club Setup', keywords: ['aircraft fields', 'rooms', 'documents', 'instructor roster'], icon: <Plane className="h-4 w-4" />, roles: ['admin'], component: ResourcesSettings },
     { id: 'calendar', label: 'Calendar', category: 'Operations', keywords: ['default view', 'week starts', 'resource order', 'snap duration', 'conflicts'], icon: <Calendar className="h-4 w-4" />, roles: ['admin'], component: CalendarSettings },
     { id: 'booking-rules', label: 'Bookings & Rules', category: 'Operations', keywords: ['advance booking', 'notice', 'cancellation', 'solo approval', 'double booking', 'booking form', 'required fields'], icon: <Clock className="h-4 w-4" />, roles: ['admin'], component: BookingRulesSettings },

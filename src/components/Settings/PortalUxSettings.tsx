@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Globe, Loader, Monitor, Palette } from 'lucide-react';
 import { usePortalUxSettings } from '../../hooks/useSettings';
+import { KioskAccessSettings } from './KioskAccessSettings';
 
 interface PortalUxSettingsProps {
   canEdit: boolean;
@@ -114,6 +115,8 @@ export const PortalUxSettings: React.FC<PortalUxSettingsProps> = ({ canEdit, onF
           </label>
         </div>
       </section>
+
+      <KioskAccessSettings canEdit={canEdit} />
 
       <section>
         <h3 className="mb-4 flex items-center text-lg font-medium text-gray-900">

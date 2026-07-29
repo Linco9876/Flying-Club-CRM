@@ -27,7 +27,7 @@ export const LoginForm: React.FC = () => {
         toast.error(result.error || 'Unable to sign in. Please check your details and try again.');
       } else {
         sessionStorage.removeItem('lastPasswordResetEmail');
-        localStorage.removeItem('bfc_kiosk_mode');
+        localStorage.removeItem('bfc_kiosk_access_grant');
       }
     } catch (error) {
       console.error('Login error:', error);

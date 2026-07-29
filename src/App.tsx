@@ -18,6 +18,7 @@ import { applyPortalTheme, getStoredPortalTheme, storePortalTheme } from './util
 import { KioskLoginForm } from './components/Kiosk/KioskLoginForm';
 import { KioskCalendarShell } from './components/Kiosk/KioskCalendarShell';
 import { supabase } from './lib/supabase';
+import { getSupabaseFunctionErrorMessage } from './lib/supabaseFunctionErrors';
 import { Plane } from 'lucide-react';
 import { MfaGate } from './components/Auth/MfaSecurity';
 
@@ -53,7 +54,7 @@ const TrialFlightVouchersPage = lazy(() => import('./components/Vouchers/TrialFl
 const TrialVoucherRedeemPage = lazy(() => import('./components/Vouchers/TrialVoucherRedeemPage').then(module => ({ default: module.TrialVoucherRedeemPage })));
 const TrialVoucherSalesPage = lazy(() => import('./components/Vouchers/TrialVoucherSalesPage').then(module => ({ default: module.TrialVoucherSalesPage })));
 const CalendarBookingPage = lazy(() => import('./components/Calendar/CalendarBookingPage').then(module => ({ default: module.CalendarBookingPage })));
-const KIOSK_SESSION_KEY = 'bfc_kiosk_mode';
+const KIOSK_SESSION_KEY = 'bfc_kiosk_access_grant';
 
 const buildCopiedBookingFormData = (booking: Booking) => ({
   bookingKind: booking.bookingKind || 'flight',
@@ -441,7 +442,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (user && localStorage.getItem(KIOSK_SESSION_KEY) === 'true') {
+  if (user && localStorage.getItem(KIOSK_SESSION_KEY)) {
     const userRoles = user.roles && user.roles.length > 0 ? user.roles : [user.role];
     if (userRoles.includes('admin')) {
       return <Navigate to="/kiosk" replace />;
@@ -481,8 +482,84 @@ const KioskRoute: React.FC<{
   bookingFormData: any;
   setBookingFormData: (data: any) => void;
 }> = (props) => {
-  if (!props.user) {
+  const sessionGrant = localStorage.getItem(KIOSK_SESSION_KEY) || '';
+  const [validationState, setValidationState] = React.useState<'missing' | 'checking' | 'valid' | 'error'>(
+    props.user && sessionGrant ? 'checking' : 'missing',
+  );
+  const [validationError, setValidationError] = React.useState('');
+  const [retryCount, setRetryCount] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!props.user?.id || !sessionGrant) {
+      setValidationState('missing');
+      return undefined;
+    }
+
+    let disposed = false;
+    const validate = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('kiosk-access', {
+          body: { action: 'validate-session', sessionGrant },
+        });
+        if (error) {
+          const message = await getSupabaseFunctionErrorMessage(error, 'The kiosk session could not be checked');
+          if (/expired|not valid|no longer active|rotated|disabled/i.test(message)) {
+            localStorage.removeItem(KIOSK_SESSION_KEY);
+            if (!disposed) setValidationState('missing');
+            return;
+          }
+          throw new Error(message);
+        }
+        if (!data?.valid || data.userId !== props.user.id) {
+          localStorage.removeItem(KIOSK_SESSION_KEY);
+          if (!disposed) setValidationState('missing');
+          return;
+        }
+        if (!disposed) {
+          setValidationError('');
+          setValidationState('valid');
+        }
+      } catch (error) {
+        if (!disposed) {
+          setValidationError(error instanceof Error ? error.message : 'The kiosk session could not be checked');
+          setValidationState('error');
+        }
+      }
+    };
+
+    setValidationState('checking');
+    void validate();
+    const validationInterval = window.setInterval(() => void validate(), 5 * 60 * 1000);
+    return () => {
+      disposed = true;
+      window.clearInterval(validationInterval);
+    };
+  }, [props.user?.id, retryCount, sessionGrant]);
+
+  if (!props.user || validationState === 'missing') {
     return <KioskLoginForm sessionKey={KIOSK_SESSION_KEY} />;
+  }
+
+  if (validationState === 'checking') {
+    return <PortalBootScreen message="Checking kiosk access" detail="Confirming this device's kiosk session…" />;
+  }
+
+  if (validationState === 'error') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 dark:bg-[#0f1117]">
+        <div className="w-full max-w-md rounded-2xl border border-red-200 bg-white p-6 text-center shadow-xl dark:border-red-900/70 dark:bg-[#171a21]">
+          <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Kiosk access could not be checked</h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{validationError}</p>
+          <button
+            type="button"
+            onClick={() => setRetryCount((value) => value + 1)}
+            className="mt-5 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return <KioskAuthenticatedRoute {...props} user={props.user} />;
@@ -512,12 +589,10 @@ const KioskAuthenticatedRoute: React.FC<{
   const isAdminUser = userRoles.includes('admin');
 
   React.useEffect(() => {
-    if (isAdminUser) {
-      localStorage.setItem(KIOSK_SESSION_KEY, 'true');
-      return;
+    if (!isAdminUser) {
+      localStorage.removeItem(KIOSK_SESSION_KEY);
+      toast.error('Kiosk mode is restricted to admin users.');
     }
-    localStorage.removeItem(KIOSK_SESSION_KEY);
-    toast.error('Kiosk mode is restricted to admin users.');
   }, [isAdminUser]);
 
   if (!isAdminUser) {
@@ -633,6 +708,12 @@ const KioskAuthenticatedRoute: React.FC<{
   };
 
   const handleExit = async () => {
+    const sessionGrant = localStorage.getItem(KIOSK_SESSION_KEY);
+    if (sessionGrant) {
+      await supabase.functions.invoke('kiosk-access', {
+        body: { action: 'close-session', sessionGrant },
+      }).catch(() => undefined);
+    }
     localStorage.removeItem(KIOSK_SESSION_KEY);
     await logout();
   };

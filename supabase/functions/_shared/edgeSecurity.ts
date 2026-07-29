@@ -77,12 +77,14 @@ export const authenticateAal2AdminOrWorker = async ({
   anonKey,
   adminClient,
   allowWorker = false,
+  mfaPurpose = "Xero administration",
 }: {
   req: Request;
   supabaseUrl: string;
   anonKey: string;
   adminClient: any;
   allowWorker?: boolean;
+  mfaPurpose?: string;
 }): Promise<IntegrationAuthResult> => {
   if (allowWorker) {
     const configuredWorkerSecret = clean(
@@ -108,7 +110,7 @@ export const authenticateAal2AdminOrWorker = async ({
   if (clean(claims?.aal).toLowerCase() !== "aal2") {
     return {
       ok: false,
-      error: "Multi-factor authentication is required for Xero administration.",
+      error: `Multi-factor authentication is required for ${mfaPurpose}.`,
       status: 403,
     };
   }
