@@ -8,6 +8,7 @@ import { DutyPeriod } from '../../types';
 import { DutyPeriodInput, useDuty } from '../../hooks/useDuty';
 import { DutyTimePicker } from './DutyTimePicker';
 import { useBookingRulesSettings } from '../../hooks/useSettings';
+import { groupDutyHistoryByWeek } from '../../utils/dutyWeekSummary';
 
 type StaffOption = { id: string; name: string };
 type SupervisionBooking = { id: string; instructorId: string; instructorName: string; startTime: Date; endTime: Date; location: string; status: string; supervisionStatus: string };
@@ -143,6 +144,7 @@ export const DutyDashboard: React.FC = () => {
     const end = period.actualEnd || period.plannedEnd;
     return total + (start && end ? Math.max(0, end.getTime() - start.getTime()) / 3_600_000 : 0);
   }, 0);
+  const dutyHistoryWeeks = useMemo(() => groupDutyHistoryByWeek(periods), [periods]);
 
   const openNew = (mode: 'record' | 'start') => {
     setFlightTimeTouched(false);
@@ -402,30 +404,48 @@ export const DutyDashboard: React.FC = () => {
           {loading ? <div className="p-8 text-center text-sm text-gray-500">Loading duty records…</div> : periods.length === 0 ? (
             <div className="p-10 text-center"><Clock3 className="mx-auto h-8 w-8 text-gray-300" /><p className="mt-3 font-semibold text-gray-700">No duty periods recorded</p><p className="mt-1 text-sm text-gray-500">Start duty or add a previous duty record.</p></div>
           ) : (
-            <div className="divide-y divide-gray-100">
-              {periods.map(period => {
-                const start = period.actualStart || period.plannedStart;
-                const end = period.actualEnd || period.plannedEnd;
-                const hours = start && end ? (end.getTime() - start.getTime()) / 3_600_000 : null;
-                return (
-                  <article key={period.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-bold text-gray-950">{format(new Date(`${period.dutyDate}T12:00:00`), 'EEE, dd MMM yyyy')}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${period.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : period.status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>{period.status}</span>
-                        {period.isExternal && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800">External duty</span>}
-                        {period.entrySource === 'automatic_booking' && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Automatic start</span>}
-                        {period.entrySource === 'mobile' && <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold text-cyan-800">Mobile clock</span>}
-                        {period.autoClosedAtLimit && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Maximum assumed</span>}
-                        {period.breakConfirmation === 'not_taken' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">No break taken</span>}
-                      </div>
-                      <p className="mt-1 text-sm text-gray-700">{start ? format(start, 'HH:mm') : '—'} – {end ? format(end, 'HH:mm') : 'In progress'}{hours !== null ? ` · ${hours.toFixed(1)} h` : ''}</p>
-                      <p className="mt-1 text-xs text-gray-500">{period.location} · {(period.flightMinutes / 60).toFixed(1)} flight h · {period.breaks.length} {period.breaks.length === 1 ? 'break' : 'breaks'}</p>
+            <div>
+              {dutyHistoryWeeks.map((week, weekIndex) => (
+                <React.Fragment key={week.key}>
+                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {week.periods.map(period => {
+                      const start = period.actualStart || period.plannedStart;
+                      const end = period.actualEnd || period.plannedEnd;
+                      const hours = start && end ? (end.getTime() - start.getTime()) / 3_600_000 : null;
+                      return (
+                        <article key={period.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-bold text-gray-950">{format(new Date(`${period.dutyDate}T12:00:00`), 'EEE, dd MMM yyyy')}</p>
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${period.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : period.status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>{period.status}</span>
+                              {period.isExternal && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800">External duty</span>}
+                              {period.entrySource === 'automatic_booking' && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Automatic start</span>}
+                              {period.entrySource === 'mobile' && <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold text-cyan-800">Mobile clock</span>}
+                              {period.autoClosedAtLimit && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Maximum assumed</span>}
+                              {period.breakConfirmation === 'not_taken' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">No break taken</span>}
+                            </div>
+                            <p className="mt-1 text-sm text-gray-700">{start ? format(start, 'HH:mm') : '—'} – {end ? format(end, 'HH:mm') : 'In progress'}{hours !== null ? ` · ${hours.toFixed(1)} h` : ''}</p>
+                            <p className="mt-1 text-xs text-gray-500">{period.location} · {(period.flightMinutes / 60).toFixed(1)} flight h · {period.breaks.length} {period.breaks.length === 1 ? 'break' : 'breaks'}</p>
+                          </div>
+                          <button type="button" onClick={() => openEdit(period)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><Edit3 className="h-4 w-4" /> Edit</button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  <div className={`flex flex-col gap-2 border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between ${weekIndex === dutyHistoryWeeks.length - 1 ? 'border-t' : 'border-y'}`}>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                        Week {format(new Date(`${week.weekStart}T12:00:00`), 'dd MMM')} – {format(new Date(`${week.weekEnd}T12:00:00`), 'dd MMM yyyy')}
+                      </p>
+                      {week.openPeriods > 0 && <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{week.openPeriods} open duty {week.openPeriods === 1 ? 'period is' : 'periods are'} not included in duty hours.</p>}
                     </div>
-                    <button type="button" onClick={() => openEdit(period)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><Edit3 className="h-4 w-4" /> Edit</button>
-                  </article>
-                );
-              })}
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                      <span className="font-semibold text-slate-700 dark:text-slate-200"><strong className="text-slate-950 dark:text-white">{(week.dutyMinutes / 60).toFixed(1)}</strong> duty h</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200"><strong className="text-slate-950 dark:text-white">{(week.flightMinutes / 60).toFixed(1)}</strong> flying h</span>
+                    </div>
+                  </div>
+                </React.Fragment>
+              ))}
             </div>
           )}
         </section>
