@@ -666,6 +666,9 @@ const cleanupLegacyTestArtifacts = async (
           [spec.collection]: [{
             [spec.id]: objectId,
             Status: spec.target,
+            ...(type === "bank_transaction"
+              ? { Type: clean(artefact.remote_snapshot?.Type) }
+              : {}),
           }],
         },
       });
