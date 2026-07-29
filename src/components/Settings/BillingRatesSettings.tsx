@@ -91,7 +91,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     setDraftGroundSessionDescriptions(
       groundSessionDescriptionOptions
         .filter(option => option.active)
-        .map(option => ({ ...option }))
+        .map(option => ({ ...option, rates: option.rates.map(rate => ({ ...rate })) }))
     );
   }, [groundSessionDescriptionOptions]);
 
@@ -105,18 +105,36 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
-      const invalidGroundRate = draftFlightTypes.find(type =>
-        type.active
-        && type.groundSessionEnabled
-        && Number(type.groundSessionHourlyRate || 0) <= 0
-      );
-      if (invalidGroundRate) {
-        const message = `Enter an hourly ground-session price greater than $0 for ${invalidGroundRate.name}.`;
+      const invalidEnabledGroundRate = draftGroundSessionDescriptions
+        .filter(description => description.pricingMode === 'flight_type_hourly')
+        .flatMap(description => description.rates.map(rate => ({ description, rate })))
+        .find(({ rate }) => rate.enabled && Number(rate.hourlyRate || 0) <= 0);
+      if (invalidEnabledGroundRate) {
+        const paymentTypeName = draftFlightTypes.find(
+          type => type.id === invalidEnabledGroundRate.rate.flightTypeId,
+        )?.name || 'the selected Payment Type';
+        const message = `Enter an hourly price greater than $0 for ${invalidEnabledGroundRate.description.name} – ${paymentTypeName}.`;
         toast.error(message);
         throw new Error(message);
       }
-      await saveBillingSettings(draftFlightTypes, draftPaymentMethods);
-      await saveGroundSessionDescriptionOptions(draftGroundSessionDescriptions);
+      const hourlyDescriptionWithoutRates = draftGroundSessionDescriptions.find(description =>
+        description.pricingMode === 'flight_type_hourly'
+        && !description.rates.some(rate => rate.enabled && Number(rate.hourlyRate || 0) > 0)
+      );
+      if (hourlyDescriptionWithoutRates) {
+        const message = `Enable at least one Payment Type rate for ${hourlyDescriptionWithoutRates.name}.`;
+        toast.error(message);
+        throw new Error(message);
+      }
+      const billingResult = await saveBillingSettings(draftFlightTypes, draftPaymentMethods);
+      const descriptionsWithSavedPaymentTypes = draftGroundSessionDescriptions.map(description => ({
+        ...description,
+        rates: description.rates.map(rate => ({
+          ...rate,
+          flightTypeId: billingResult?.flightTypeIdMap.get(rate.flightTypeId) || rate.flightTypeId,
+        })),
+      }));
+      await saveGroundSessionDescriptionOptions(descriptionsWithSavedPaymentTypes);
     };
     (window as any).__billingSettingsCancel = () => {
       setDraftFlightTypes(flightTypes);
@@ -124,7 +142,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       setDraftGroundSessionDescriptions(
         groundSessionDescriptionOptions
           .filter(option => option.active)
-          .map(option => ({ ...option }))
+          .map(option => ({ ...option, rates: option.rates.map(rate => ({ ...rate })) }))
       );
     };
     return () => {
@@ -189,6 +207,32 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     onFormChange();
   };
 
+  const updateGroundSessionRate = (
+    descriptionIndex: number,
+    flightTypeId: string,
+    updates: { enabled?: boolean; hourlyRate?: number },
+  ) => {
+    setDraftGroundSessionDescriptions(current => current.map((description, index) => {
+      if (index !== descriptionIndex) return description;
+      const existingRate = description.rates.find(rate => rate.flightTypeId === flightTypeId);
+      const nextRate = {
+        id: existingRate?.id,
+        descriptionOptionId: description.id,
+        flightTypeId,
+        enabled: existingRate?.enabled ?? false,
+        hourlyRate: existingRate?.hourlyRate ?? 0,
+        ...updates,
+      };
+      return {
+        ...description,
+        rates: existingRate
+          ? description.rates.map(rate => rate.flightTypeId === flightTypeId ? nextRate : rate)
+          : [...description.rates, nextRate],
+      };
+    }));
+    onFormChange();
+  };
+
   const addGroundSessionDescription = () => {
     setDraftGroundSessionDescriptions(current => [
       ...current,
@@ -201,6 +245,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         pricingMode: 'flight_type_hourly',
         fixedRate: 0,
         flightTypeId: null,
+        rates: draftFlightTypes
+          .filter(type => type.active)
+          .map(type => ({
+            descriptionOptionId: '',
+            flightTypeId: type.id,
+            enabled: false,
+            hourlyRate: 0,
+          })),
       },
     ]);
     onFormChange();
@@ -603,8 +655,8 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium text-gray-900">Ground Session Descriptions</h3>
-            <p className="text-sm text-gray-500 mt-1">These appear in the ground-session logging dropdown for instructors and admins.</p>
+            <h3 className="text-lg font-medium text-gray-900">Ground Session Types & Rates</h3>
+            <p className="text-sm text-gray-500 mt-1">Set a separate GST-inclusive hourly rate for each Ground Session Type and Payment Type combination.</p>
           </div>
           {canEdit && (
             <button onClick={addGroundSessionDescription} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
@@ -616,7 +668,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
         <div className="space-y-3">
           {draftGroundSessionDescriptions.map((description, index) => (
-            <div key={description.id || `ground-description-${index}`} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div key={description.id || `ground-description-${index}`} className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(180px,1fr)_170px_180px_140px_auto] lg:items-end">
                 <label className="space-y-1">
                   <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</span>
@@ -660,14 +712,14 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   </label>
                 ) : (
                   <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                    Uses the Payment Type selected on the booking or ground-session log.
+                    Each Payment Type has its own hourly rate below.
                   </div>
                 )}
 
                 <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
                   {description.pricingMode === 'fixed'
                     ? `$${Number(description.fixedRate || 0).toFixed(2)} total`
-                    : 'Uses Payment Type hourly rate'}
+                    : `${description.rates.filter(rate => rate.enabled && Number(rate.hourlyRate) > 0).length} Payment Type rate${description.rates.filter(rate => rate.enabled && Number(rate.hourlyRate) > 0).length === 1 ? '' : 's'}`}
                 </div>
 
                 {canEdit && (
@@ -681,6 +733,60 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                   </button>
                 )}
               </div>
+
+              {description.pricingMode === 'flight_type_hourly' && (
+                <div className="overflow-hidden rounded-lg border border-blue-100 bg-white">
+                  <div className="border-b border-blue-100 bg-blue-50 px-3 py-2">
+                    <p className="text-sm font-semibold text-blue-950">Hourly rates by Payment Type</p>
+                    <p className="mt-0.5 text-xs text-blue-700">Only enabled Payment Types will be available when this Ground Session Type is logged.</p>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {activeFlightTypes.map(type => {
+                      const rate = description.rates.find(item => item.flightTypeId === type.id);
+                      const enabled = rate?.enabled === true;
+                      return (
+                        <div
+                          key={`${description.id}-${type.id}`}
+                          className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
+                        >
+                          <label className="flex items-center gap-3 text-sm font-medium text-gray-800">
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              disabled={!canEdit}
+                              onChange={event => updateGroundSessionRate(index, type.id, {
+                                enabled: event.target.checked,
+                              })}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span>
+                              {type.name}
+                              <span className="mt-0.5 block text-xs font-normal text-gray-500">
+                                Allow this Payment Type for {description.name || 'this session type'}
+                              </span>
+                            </span>
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price / hour (incl. GST)</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={rate?.hourlyRate ?? 0}
+                              onChange={event => updateGroundSessionRate(index, type.id, {
+                                hourlyRate: Number(event.target.value || 0),
+                              })}
+                              disabled={!canEdit || !enabled}
+                              className={inputClass}
+                              placeholder="0.00"
+                            />
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           {draftGroundSessionDescriptions.length === 0 && (
@@ -690,55 +796,6 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
           )}
         </div>
 
-        {draftGroundSessionDescriptions.some(description => description.pricingMode === 'flight_type_hourly') && (
-          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
-            <h4 className="font-semibold text-gray-900">Hourly ground-session Payment Types</h4>
-            <p className="mt-1 text-sm text-gray-600">
-              Choose which Payment Types instructors may use for hourly ground sessions and set the price per hour.
-            </p>
-            <div className="mt-4 space-y-2">
-              {activeFlightTypes.map(type => (
-                <div
-                  key={`ground-rate-${type.id}`}
-                  className="grid grid-cols-1 gap-3 rounded-lg border border-blue-100 bg-white p-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
-                >
-                  <label className="flex items-center gap-3 text-sm font-medium text-gray-800">
-                    <input
-                      type="checkbox"
-                      checked={type.groundSessionEnabled}
-                      disabled={!canEdit}
-                      onChange={event => updateFlightType(type.id, {
-                        groundSessionEnabled: event.target.checked,
-                      })}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>
-                      {type.name}
-                      <span className="mt-0.5 block text-xs font-normal text-gray-500">
-                        Allow this Payment Type on hourly ground-session logs
-                      </span>
-                    </span>
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price / hour (incl. GST)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={type.groundSessionHourlyRate ?? 0}
-                      onChange={event => updateFlightType(type.id, {
-                        groundSessionHourlyRate: Number(event.target.value || 0),
-                      })}
-                      disabled={!canEdit || !type.groundSessionEnabled}
-                      className={inputClass}
-                      placeholder="0.00"
-                    />
-                  </label>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </section>
 
       <section className="space-y-4">

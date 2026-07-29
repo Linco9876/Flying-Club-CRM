@@ -320,6 +320,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
       }
 
       const validFlightTypes = nextFlightTypes.filter(type => type.name.trim());
+      const flightTypeIdMap = new Map<string, string>();
 
       for (const [index, type] of validFlightTypes.entries()) {
         const forcedPaymentMethodId = type.forcedPaymentMethodId
@@ -338,10 +339,11 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
           xero_account_code: type.xeroAccountCode?.trim() || null,
           updated_at: new Date().toISOString(),
         };
-        const { error } = originalFlightTypeIds.has(type.id)
-          ? await supabase.from('flight_types').update(dbType).eq('id', type.id)
-          : await supabase.from('flight_types').insert(dbType);
+        const { data, error } = originalFlightTypeIds.has(type.id)
+          ? await supabase.from('flight_types').update(dbType).eq('id', type.id).select('id').single()
+          : await supabase.from('flight_types').insert(dbType).select('id').single();
         if (error) throw error;
+        if (data?.id) flightTypeIdMap.set(type.id, data.id);
       }
 
       const activeFlightTypeIds = new Set(validFlightTypes.map(type => originalFlightTypeIds.has(type.id) ? type.id : null).filter(Boolean));
@@ -356,6 +358,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
 
       await refetch();
       toast.success('Billing settings saved');
+      return { flightTypeIdMap, paymentMethodIdMap };
     } catch (error) {
       console.error('Error saving billing settings:', error);
       toast.error('Failed to save billing settings');

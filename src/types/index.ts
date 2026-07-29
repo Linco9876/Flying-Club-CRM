@@ -606,6 +606,15 @@ export interface GroundSessionDescriptionOption {
   pricingMode: 'fixed' | 'flight_type_hourly';
   fixedRate: number;
   flightTypeId?: string | null;
+  rates: GroundSessionRate[];
+}
+
+export interface GroundSessionRate {
+  id?: string;
+  descriptionOptionId: string;
+  flightTypeId: string;
+  enabled: boolean;
+  hourlyRate: number;
 }
 // CFI is an additive authority role; the primary portal role remains admin/instructor.
 export interface Licence {
