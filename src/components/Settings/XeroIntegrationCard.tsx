@@ -866,7 +866,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
                 {accountsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {accounts.length > 0 ? 'Refresh Xero accounts' : 'Load Xero accounts'}
               </button>
-              {canEdit && connected && (
+              {canEdit && connected && !xeroStatus?.contained && (
                 <button
                   type="button"
                   onClick={() => setShowAccountTools(true)}
@@ -889,7 +889,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <input
                 type="checkbox"
                 checked={form.createContacts}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('createContacts', event.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
@@ -903,7 +903,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <input
                 type="checkbox"
                 checked={form.syncFlightCharges}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('syncFlightCharges', event.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
@@ -917,7 +917,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <input
                 type="checkbox"
                 checked={form.syncAccountTopups}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('syncAccountTopups', event.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
@@ -931,7 +931,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <input
                 type="checkbox"
                 checked={form.syncGiftVouchers}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('syncGiftVouchers', event.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
@@ -945,7 +945,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <input
                 type="checkbox"
                 checked={form.autoQueueFlightInvoices}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('autoQueueFlightInvoices', event.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
@@ -959,7 +959,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <input
                 type="checkbox"
                 checked={form.autoApplyVerifiedPayments}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('autoApplyVerifiedPayments', event.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
               />
@@ -975,7 +975,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Default sync mode</label>
               <select
                 value={form.defaultSyncMode}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('defaultSyncMode', event.target.value)}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
               >
@@ -989,7 +989,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Default Xero invoice status</label>
               <select
                 value={form.defaultInvoiceStatus}
-                disabled={!canEdit}
+                disabled={!canEdit || xeroStatus?.contained}
                 onChange={event => updateForm('defaultInvoiceStatus', event.target.value)}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
               >
