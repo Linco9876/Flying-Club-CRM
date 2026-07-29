@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { formatLocalDateInput } from '../utils/maintenanceRules';
 
 export interface MaintenanceMilestone {
   id: string;
@@ -40,6 +41,7 @@ export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptio
   const enabled = options?.enabled ?? true;
   const [milestones, setMilestones] = useState<MaintenanceMilestone[]>([]);
   const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (enabled) {
@@ -85,8 +87,10 @@ export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptio
           status: m.status || 'upcoming'
         })));
       }
+      setError(null);
     } catch (error) {
       console.error('Error fetching maintenance milestones:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load maintenance milestones');
       toast.error('Failed to load maintenance milestones');
     } finally {
       setLoading(false);
@@ -104,14 +108,14 @@ export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptio
           interval_hours: milestone.intervalHours,
           interval_months: milestone.intervalMonths,
           next_due_hours: milestone.nextDueHours,
-          next_due_date: milestone.nextDueDate,
+          next_due_date: milestone.nextDueDate ? formatLocalDateInput(milestone.nextDueDate) : null,
           description: milestone.description,
           is_one_time: milestone.isOneTime || false,
           status: milestone.status || 'upcoming',
           due_condition: milestone.dueCondition || (milestone.type === 'calendar' ? 'date' : 'hours'),
           due_value: milestone.dueValue || (
             milestone.type === 'calendar'
-              ? String(milestone.nextDueDate?.toISOString().split('T')[0] || '')
+              ? String(milestone.nextDueDate ? formatLocalDateInput(milestone.nextDueDate) : '')
               : String(milestone.nextDueHours || 0)
           )
         }, {
@@ -147,8 +151,8 @@ export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptio
         updateData.due_value = String(updates.nextDueHours);
       }
       if (updates.nextDueDate !== undefined) {
-        updateData.next_due_date = updates.nextDueDate;
-        updateData.due_value = updates.nextDueDate.toISOString().split('T')[0];
+        updateData.next_due_date = formatLocalDateInput(updates.nextDueDate);
+        updateData.due_value = formatLocalDateInput(updates.nextDueDate);
       }
       if (updates.description !== undefined) updateData.description = updates.description;
       if (updates.status !== undefined) updateData.status = updates.status;
@@ -191,45 +195,17 @@ export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptio
 
   const completeMaintenance = async (completion: Omit<MaintenanceCompletion, 'id'>) => {
     try {
-      const milestone = milestones.find(m => m.id === completion.milestoneId);
-      const isOneTime = milestone?.isOneTime;
+      const { error } = await supabase.rpc('complete_maintenance_milestone', {
+        p_milestone_id: completion.milestoneId,
+        p_completed_date: formatLocalDateInput(completion.completedDate),
+        p_completed_tach: completion.completedTach,
+        p_next_due_hours: completion.nextDueHours ?? null,
+        p_next_due_date: completion.nextDueDate ? formatLocalDateInput(completion.nextDueDate) : null,
+        p_notes: completion.notes ?? null,
+        p_operation_id: crypto.randomUUID()
+      });
 
-      const { error: completionError } = await supabase
-        .from('maintenance_completions')
-        .insert({
-          milestone_id: completion.milestoneId,
-          aircraft_id: completion.aircraftId,
-          completed_date: completion.completedDate,
-          completed_at: completion.completedDate,
-          completed_tach: completion.completedTach,
-          tach_hours: completion.completedTach,
-          completed_by: completion.completedBy,
-          next_due_hours: completion.nextDueHours,
-          next_due_date: completion.nextDueDate,
-          notes: completion.notes
-        });
-
-      if (completionError) throw completionError;
-
-      const milestoneUpdates: any = {
-        last_completed_date: completion.completedDate,
-        last_completed_tach: completion.completedTach,
-        next_due_hours: isOneTime ? null : completion.nextDueHours,
-        next_due_date: isOneTime ? null : completion.nextDueDate,
-        status: isOneTime ? 'completed' : 'upcoming',
-        updated_at: new Date().toISOString()
-      };
-
-      if (isOneTime) {
-        milestoneUpdates.due_value = '';
-      }
-
-      const { error: updateError } = await supabase
-        .from('maintenance_milestones')
-        .update(milestoneUpdates)
-        .eq('id', completion.milestoneId);
-
-      if (updateError) throw updateError;
+      if (error) throw error;
 
       await fetchMilestones();
       toast.success('Maintenance completed');
@@ -243,6 +219,7 @@ export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptio
   return {
     milestones,
     loading,
+    error,
     createMilestone,
     updateMilestone,
     deleteMilestone,

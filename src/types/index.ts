@@ -821,6 +821,8 @@ export interface Defect {
   location?: string;
   tachHours?: number;
   hobbsHours?: number;
+  groundedAircraft?: boolean;
+  groundingSource?: 'manual' | 'automatic' | null;
 }
 
 export interface Invoice {

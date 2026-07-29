@@ -44,7 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     { id: 'membership', label: 'Club Membership', icon: BadgeCheck, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'duty', label: 'Duty', icon: Clock3, roles: ['admin', 'senior_instructor', 'instructor'] },
-    { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor'] },
+    { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'senior_instructor', 'instructor'] },
     ...(isStaffUser ? [{ id: 'training', label: 'Training Courses', icon: BookOpen, roles: ['admin', 'senior_instructor', 'instructor'] }] : []),
     { id: 'learning-centre', label: 'Learning Centre', icon: GraduationCap, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'pilot-file', label: 'Pilot File', icon: FileText, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },

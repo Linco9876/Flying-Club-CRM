@@ -21,11 +21,11 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
     summary: '',
     description: '',
     severity: 'Minor' as 'Minor' | 'Major' | 'Critical',
-    status: 'open' as Defect['status'],
     location: '',
     tachHours: '',
     hobbsHours: ''
   });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (defect && isOpen) {
@@ -33,7 +33,6 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
         summary: defect.summary || '',
         description: defect.description || '',
         severity: defect.severity || 'Minor',
-        status: defect.status || 'open',
         location: defect.location || '',
         tachHours: defect.tachHours?.toString() || '',
         hobbsHours: defect.hobbsHours?.toString() || ''
@@ -55,14 +54,18 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
       summary: formData.summary,
       description: formData.description,
       severity: formData.severity,
-      status: formData.status,
       location: formData.location.trim() || undefined,
       tachHours: parseOptionalNumber(formData.tachHours),
       hobbsHours: parseOptionalNumber(formData.hobbsHours)
     };
 
-    await onSubmit(defect.id, updates);
-    onClose();
+    setSaving(true);
+    try {
+      await onSubmit(defect.id, updates);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const getSeverityColor = (severity: string) => {
@@ -82,10 +85,10 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div role="dialog" aria-modal="true" aria-labelledby="edit-defect-title" className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+            <h2 id="edit-defect-title" className="text-xl font-semibold text-gray-900 flex items-center">
               <AlertTriangle className="h-5 w-5 mr-2 text-orange-600" />
               Edit Defect Report
             </h2>
@@ -95,6 +98,7 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close defect editor"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
@@ -130,7 +134,7 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="max-w-sm">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Severity *
@@ -151,22 +155,8 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status *
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="open">Open</option>
-                <option value="in_progress">In Progress</option>
-                <option value="deferred">Deferred</option>
-                <option value="resolved">Resolved</option>
-              </select>
-            </div>
           </div>
+          <p className="text-xs text-gray-500">Use Change Status from the defect details to defer, apply MEL limitations, or record a fix.</p>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -189,6 +179,7 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
               <input
                 type="number"
                 step="0.1"
+                min="0"
                 value={formData.tachHours}
                 onChange={(e) => setFormData(prev => ({ ...prev, tachHours: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -203,6 +194,7 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
               <input
                 type="number"
                 step="0.1"
+                min="0"
                 value={formData.hobbsHours}
                 onChange={(e) => setFormData(prev => ({ ...prev, hobbsHours: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -216,15 +208,17 @@ export const DefectEditForm: React.FC<DefectEditFormProps> = ({
               type="button"
               onClick={onClose}
               className="px-6 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              disabled={saving}
             >
               Cancel
             </button>
             <button
               type="submit"
               className="flex items-center space-x-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={saving}
             >
               <Save className="h-4 w-4" />
-              <span>Save Changes</span>
+              <span>{saving ? 'Saving…' : 'Save Changes'}</span>
             </button>
           </div>
         </form>
