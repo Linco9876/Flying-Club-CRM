@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useBillingSettings } from '../../hooks/useBillingSettings';
-import { StudentFileLink } from '../Students/StudentFileLink';
 import { useGroundSessionDescriptions } from '../../hooks/useGroundSessionDescriptions';
 import { useGroundSessionLogs } from '../../hooks/useGroundSessionLogs';
 import { useUsers } from '../../hooks/useUsers';
@@ -208,7 +207,7 @@ export const GroundSessionLogModal: React.FC<GroundSessionLogModalProps> = ({
               {mode === 'edit' ? 'Edit Ground Session Log' : 'Log Ground Session'}
             </h2>
             <p className="text-sm text-gray-500">
-              <StudentFileLink studentId={booking.studentId} name={memberName} /> with {instructorName}
+              {memberName} with {instructorName}
             </p>
           </div>
           <button

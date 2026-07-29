@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { usePortalUxSettings } from '../../hooks/useSettings';
-import { StudentFileLink } from '../Students/StudentFileLink';
 
 const StatCard: React.FC<{
   title: string;
@@ -194,7 +193,7 @@ export const Dashboard: React.FC = () => {
                           {format(booking.startTime, timePattern)} – {format(booking.endTime, timePattern)}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          <StudentFileLink studentId={booking.studentId} name={booking.studentName} /> · {booking.aircraftRegistration}
+                          {booking.studentName || 'Unknown student'} · {booking.aircraftRegistration}
                           {booking.instructorName && ` · ${booking.instructorName}`}
                         </p>
                       </div>
@@ -282,7 +281,7 @@ export const Dashboard: React.FC = () => {
                           {format(booking.startTime, timePattern)} – {format(booking.endTime, timePattern)}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          <StudentFileLink studentId={booking.studentId} name={booking.studentName} /> · {booking.aircraftRegistration}
+                          {booking.studentName || 'Unknown student'} · {booking.aircraftRegistration}
                         </p>
                       </div>
                       <span className={`text-xs font-medium px-2 py-1 rounded-full ${statusColors[booking.status] || 'bg-gray-100 text-gray-700'}`}>
