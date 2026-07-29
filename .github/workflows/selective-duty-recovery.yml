@@ -1,0 +1,102 @@
+name: Selective duty backup recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Daily CRM backup workflow run ID
+        required: true
+        type: string
+      mode:
+        description: Inspect the backup or restore missing duty periods
+        required: true
+        default: inspect
+        type: choice
+        options:
+          - inspect
+          - restore
+      confirmation:
+        description: For restore mode, type RESTORE DUTY PERIODS
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  recover-duty:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install age
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age
+
+      - name: Download encrypted recovery point
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/duty-recovery/artifact"
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "crm-backup-$SOURCE_RUN_ID" \
+            --dir "$RUNNER_TEMP/duty-recovery/artifact"
+
+      - name: Verify, decrypt and unpack recovery point
+        env:
+          BACKUP_AGE_PRIVATE_KEY: ${{ secrets.BACKUP_AGE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${BACKUP_AGE_PRIVATE_KEY:-}"
+          cd "$RUNNER_TEMP/duty-recovery/artifact"
+          encrypted="$(find . -maxdepth 1 -type f -name '*.tar.gz.age' -print -quit)"
+          test -n "$encrypted"
+          sha256sum -c "$(basename "$encrypted").sha256"
+          printf '%s\n' "$BACKUP_AGE_PRIVATE_KEY" > "$RUNNER_TEMP/duty-recovery/identity.txt"
+          chmod 600 "$RUNNER_TEMP/duty-recovery/identity.txt"
+          age -d \
+            -i "$RUNNER_TEMP/duty-recovery/identity.txt" \
+            -o "$RUNNER_TEMP/duty-recovery/backup.tar.gz" \
+            "$encrypted"
+          tar -C "$RUNNER_TEMP/duty-recovery" -xzf "$RUNNER_TEMP/duty-recovery/backup.tar.gz"
+          backup_dir="$(find "$RUNNER_TEMP/duty-recovery" -mindepth 1 -maxdepth 1 -type d -name 'backup-*' -print -quit)"
+          test -n "$backup_dir"
+          node "$GITHUB_WORKSPACE/scripts/verify-crm-backup.mjs" "$backup_dir"
+          echo "BACKUP_DIR=$backup_dir" >> "$GITHUB_ENV"
+
+      - name: Inspect or restore selected duty records
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESTORE_CONFIRMATION: ${{ inputs.confirmation }}
+          RECOVERY_MODE: ${{ inputs.mode }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$RECOVERY_MODE" = "restore" ] && [ "$RESTORE_CONFIRMATION" != "RESTORE DUTY PERIODS" ]; then
+            echo "::error::Restore mode requires the exact confirmation RESTORE DUTY PERIODS."
+            exit 1
+          fi
+          result="$(node ./scripts/recover-duty-from-backup.mjs \
+            --backup-dir="$BACKUP_DIR" \
+            --emails="aimeegatford@gmail.com,lincoln@bbkm.com.au" \
+            --mode="$RECOVERY_MODE" \
+            --source-run-id="$SOURCE_RUN_ID")"
+          printf '%s\n' "$result"
+          {
+            echo "## Selective duty recovery"
+            echo
+            echo '```json'
+            printf '%s\n' "$result"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove decrypted recovery data
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/duty-recovery"
