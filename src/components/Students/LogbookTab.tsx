@@ -150,26 +150,26 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="pilot-logbook space-y-4">
         <div className="animate-pulse">
           <div className="grid grid-cols-4 gap-4 mb-6">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="bg-gray-200 rounded-lg h-20"></div>
+              <div key={i} className="logbook-skeleton bg-gray-200 rounded-lg h-20"></div>
             ))}
           </div>
-          <div className="bg-gray-200 rounded-lg h-64"></div>
+          <div className="logbook-skeleton bg-gray-200 rounded-lg h-64"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="pilot-logbook space-y-6">
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+        <div className="logbook-summary-card logbook-summary-card--blue bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
+            <div className="logbook-stat-icon p-2 bg-blue-100 rounded-lg">
               <Clock className="h-5 w-5 text-blue-600" />
             </div>
             <div>
@@ -179,9 +179,9 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+        <div className="logbook-summary-card logbook-summary-card--green bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-100 rounded-lg">
+            <div className="logbook-stat-icon p-2 bg-green-100 rounded-lg">
               <TrendingUp className="h-5 w-5 text-green-600" />
             </div>
             <div>
@@ -193,9 +193,9 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+        <div className="logbook-summary-card logbook-summary-card--orange bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
+            <div className="logbook-stat-icon p-2 bg-orange-100 rounded-lg">
               <BookOpen className="h-5 w-5 text-orange-600" />
             </div>
             <div>
@@ -205,9 +205,9 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+        <div className="logbook-summary-card logbook-summary-card--sky bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-sky-100 rounded-lg">
+            <div className="logbook-stat-icon p-2 bg-sky-100 rounded-lg">
               <Navigation className="h-5 w-5 text-sky-600" />
             </div>
             <div>
@@ -219,8 +219,8 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       </div>
 
       {/* Logbook Table */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="logbook-panel bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <div className="logbook-panel-header p-4 border-b border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
           <h3 className="text-base font-semibold text-gray-900 flex items-center space-x-2">
             <BookOpen className="h-5 w-5 text-gray-600" />
@@ -236,7 +236,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
             type="button"
             onClick={exportCsv}
             disabled={visibleLogs.length === 0}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="logbook-export-button inline-flex items-center justify-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
             Export CSV
@@ -244,13 +244,13 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
         </div>
 
         {enrichedLogs.length > 0 && (
-          <div className="space-y-3 border-b border-gray-200 bg-gray-50/80 p-4">
+          <div className="logbook-filters space-y-3 border-b border-gray-200 bg-gray-50/80 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-gray-500" aria-hidden="true" />
                 <p className="text-sm font-semibold text-gray-800">Filter flights</p>
                 {filtersActive && (
-                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                  <span className="logbook-filter-count rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
                     {visibleLogs.length} matching
                   </span>
                 )}
@@ -277,7 +277,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                     value={filters.search}
                     onChange={event => updateFilter('search', event.target.value)}
                     placeholder="Aircraft, pilot, crew or comments"
-                    className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    className="logbook-control w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   />
                 </span>
               </label>
@@ -287,7 +287,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                 <select
                   value={filters.aircraftKey}
                   onChange={event => updateFilter('aircraftKey', event.target.value)}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="logbook-control w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">All aircraft</option>
                   {aircraftOptions.map(option => (
@@ -301,7 +301,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                 <select
                   value={filters.flightMode}
                   onChange={event => updateFilter('flightMode', event.target.value as LogbookFilterState['flightMode'])}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="logbook-control w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="all">All flight time</option>
                   <option value="dual">{isInstructor ? 'Instructed' : 'Dual'}</option>
@@ -316,7 +316,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                   value={filters.dateFrom}
                   max={filters.dateTo || undefined}
                   onChange={event => updateFilter('dateFrom', event.target.value)}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="logbook-control w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 />
               </label>
 
@@ -327,7 +327,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                   value={filters.dateTo}
                   min={filters.dateFrom || undefined}
                   onChange={event => updateFilter('dateTo', event.target.value)}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="logbook-control w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 />
               </label>
 
@@ -339,7 +339,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                 <select
                   value={filters.sortBy}
                   onChange={event => updateFilter('sortBy', event.target.value as LogbookFilterState['sortBy'])}
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  className="logbook-control w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="date_desc">Date — newest first</option>
                   <option value="date_asc">Date — oldest first</option>
@@ -355,14 +355,14 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
         )}
 
         {enrichedLogs.length === 0 ? (
-          <div className="text-center py-16">
-            <BookOpen className="h-14 w-14 text-gray-300 mx-auto mb-4" />
+          <div className="logbook-empty-state text-center py-16">
+            <BookOpen className="logbook-empty-icon h-14 w-14 text-gray-300 mx-auto mb-4" />
             <h4 className="text-lg font-medium text-gray-900 mb-1">No logbook entries yet</h4>
             <p className="text-gray-500 text-sm">Entries will appear here after flights are logged.</p>
           </div>
         ) : visibleLogs.length === 0 ? (
-          <div className="px-4 py-14 text-center">
-            <Search className="mx-auto mb-3 h-10 w-10 text-gray-300" aria-hidden="true" />
+          <div className="logbook-empty-state px-4 py-14 text-center">
+            <Search className="logbook-empty-icon mx-auto mb-3 h-10 w-10 text-gray-300" aria-hidden="true" />
             <h4 className="text-base font-semibold text-gray-900">No flights match these filters</h4>
             <p className="mt-1 text-sm text-gray-500">Try changing the dates, aircraft or search terms.</p>
             <button
@@ -374,9 +374,9 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+          <div className="logbook-table-scroll overflow-x-auto">
+            <table className="logbook-table min-w-full text-sm">
+              <thead className="logbook-table-head bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide whitespace-nowrap">
                     Date
@@ -414,7 +414,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                 {visibleLogs.map((log, index) => (
                   <tr
                     key={log.id}
-                    className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}
+                    className={`logbook-table-row hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}
                   >
                     <td className="px-4 py-3 text-gray-900 whitespace-nowrap font-medium">
                       {formatDate(log.start_time)}
@@ -423,7 +423,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                       {log.aircraft ? `${log.aircraft.make} ${log.aircraft.model}` : '–'}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="logbook-registration inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
                         {log.aircraft?.registration || '–'}
                       </span>
                     </td>
@@ -435,7 +435,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                     </td>
                     <td className="px-4 py-3 text-center">
                       {(log.dual_time || 0) > 0 ? (
-                        <span className="inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+                        <span className="logbook-hours-badge logbook-hours-badge--dual inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
                           {formatHours(log.dual_time || 0)}
                         </span>
                       ) : (
@@ -444,7 +444,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                     </td>
                     <td className="px-4 py-3 text-center">
                       {(log.solo_time || 0) > 0 ? (
-                        <span className="inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                        <span className="logbook-hours-badge logbook-hours-badge--solo inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
                           {formatHours(log.solo_time || 0)}
                         </span>
                       ) : (
@@ -466,18 +466,18 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                 ))}
               </tbody>
               {/* Totals Row */}
-              <tfoot className="bg-gray-100 border-t-2 border-gray-300">
+              <tfoot className="logbook-table-footer bg-gray-100 border-t-2 border-gray-300">
                 <tr>
                   <td colSpan={5} className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide">
                     Totals ({visibleLogs.length} flights)
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className="inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
+                    <span className="logbook-hours-badge logbook-hours-badge--dual inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
                       {formatHours(totals.dualHours)}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className="inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-bold bg-orange-100 text-orange-800 border border-orange-300">
+                    <span className="logbook-hours-badge logbook-hours-badge--solo inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-bold bg-orange-100 text-orange-800 border border-orange-300">
                       {formatHours(totals.soloHours)}
                     </span>
                   </td>

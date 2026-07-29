@@ -1336,3 +1336,201 @@ html[data-portal-theme='dark'] .duty-time-picker-confirm {
 html[data-portal-theme='dark'] .duty-time-picker-confirm:hover {
   background-color: rgb(30 64 175) !important;
 }
+
+/* Pilot logbook: retain a clear visual hierarchy on dark and semi-dark themes. */
+html[data-portal-theme='dark'] .logbook-page-heading {
+  border-left: 3px solid rgb(96 165 250);
+  padding-left: 1rem;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-summary-card {
+  --logbook-accent: 96 165 250;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-color: rgb(var(--logbook-accent) / 0.34) !important;
+  background:
+    linear-gradient(135deg, rgb(var(--logbook-accent) / 0.12), transparent 62%),
+    var(--dark-panel) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 12px 28px rgb(0 0 0 / 0.22);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-summary-card::after {
+  position: absolute;
+  z-index: -1;
+  width: 5rem;
+  height: 5rem;
+  right: -2rem;
+  bottom: -2.25rem;
+  border-radius: 9999px;
+  background: rgb(var(--logbook-accent) / 0.14);
+  content: '';
+  filter: blur(2px);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-summary-card--green {
+  --logbook-accent: 74 222 128;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-summary-card--orange {
+  --logbook-accent: 251 191 36;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-summary-card--sky {
+  --logbook-accent: 56 189 248;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-stat-icon {
+  border: 1px solid rgb(var(--logbook-accent) / 0.3);
+  background-color: rgb(var(--logbook-accent) / 0.14) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-stat-icon svg {
+  color: rgb(var(--logbook-accent)) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-panel {
+  border-color: rgb(71 85 105 / 0.9) !important;
+  background:
+    linear-gradient(180deg, rgb(30 41 59 / 0.98), rgb(15 23 42 / 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 18px 42px rgb(0 0 0 / 0.3);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-panel-header {
+  border-color: rgb(71 85 105 / 0.82) !important;
+  background:
+    linear-gradient(90deg, rgb(30 41 59), rgb(24 38 63)) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-export-button {
+  border: 1px solid rgb(74 222 128 / 0.42);
+  background-color: rgb(21 128 61) !important;
+  box-shadow: 0 8px 20px rgb(5 46 22 / 0.32);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-export-button:hover {
+  background-color: rgb(22 101 52) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-filters {
+  border-color: rgb(71 85 105 / 0.82) !important;
+  background:
+    radial-gradient(30rem 14rem at 12% 0%, rgb(37 99 235 / 0.12), transparent 72%),
+    rgb(15 23 42 / 0.76) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-filter-count {
+  border: 1px solid rgb(96 165 250 / 0.42);
+  background-color: rgb(30 64 175 / 0.32) !important;
+  color: rgb(219 234 254) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-control {
+  color-scheme: dark;
+  border-color: rgb(71 85 105) !important;
+  background-color: rgb(2 6 23 / 0.72) !important;
+  color: rgb(248 250 252) !important;
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.2);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-control:hover {
+  border-color: rgb(100 116 139) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-control:focus {
+  border-color: rgb(96 165 250) !important;
+  box-shadow:
+    0 0 0 3px rgb(59 130 246 / 0.24),
+    inset 0 1px 2px rgb(0 0 0 / 0.18) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-scroll {
+  scrollbar-color: rgb(71 85 105) rgb(15 23 42);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-scroll::-webkit-scrollbar {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-scroll::-webkit-scrollbar-track {
+  background: rgb(15 23 42);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid rgb(15 23 42);
+  border-radius: 9999px;
+  background: rgb(71 85 105);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-head {
+  border-color: rgb(71 85 105) !important;
+  background:
+    linear-gradient(180deg, rgb(24 38 63), rgb(15 23 42)) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-head th {
+  color: rgb(191 219 254) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table tbody {
+  background-color: rgb(15 23 42);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-row:nth-child(odd) {
+  background-color: rgb(15 23 42) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-row:nth-child(even) {
+  background-color: rgb(24 36 58) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-row:hover {
+  background-color: rgb(30 64 175 / 0.2) !important;
+  box-shadow: inset 3px 0 0 rgb(96 165 250 / 0.86);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-registration {
+  border-color: rgb(96 165 250 / 0.45) !important;
+  background-color: rgb(30 64 175 / 0.3) !important;
+  color: rgb(219 234 254) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-hours-badge--dual {
+  border-color: rgb(74 222 128 / 0.38) !important;
+  background-color: rgb(21 128 61 / 0.26) !important;
+  color: rgb(187 247 208) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-hours-badge--solo {
+  border-color: rgb(251 191 36 / 0.4) !important;
+  background-color: rgb(180 83 9 / 0.28) !important;
+  color: rgb(253 230 138) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-table-footer {
+  border-color: rgb(96 165 250 / 0.42) !important;
+  background:
+    linear-gradient(90deg, rgb(30 41 59), rgb(30 58 138 / 0.42)) !important;
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-empty-state {
+  background:
+    radial-gradient(18rem 10rem at 50% 40%, rgb(37 99 235 / 0.1), transparent 72%);
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-empty-icon {
+  color: rgb(100 116 139) !important;
+  filter: drop-shadow(0 8px 16px rgb(0 0 0 / 0.22));
+}
+
+html[data-portal-theme='dark'] .pilot-logbook .logbook-skeleton {
+  background:
+    linear-gradient(90deg, rgb(30 41 59), rgb(51 65 85), rgb(30 41 59)) !important;
+  background-size: 200% 100% !important;
+}
