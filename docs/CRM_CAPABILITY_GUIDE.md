@@ -129,7 +129,7 @@ The 60-day lifecycle will not automatically cease a membership from a linked Xer
 
 The daily database preparation job creates the next financial-year period at the configured invoice lead time (30 days by default), snapshots the member's optional scholarship contribution and issues deduplicated in-portal reminders. The recommended reminder schedule is 30 and 7 days before renewal, then 7, 30, 45 and 55 days overdue.
 
-The `daily-membership-xero-refresh` GitHub workflow prepares and issues membership renewals and then refreshes linked invoices at 01:00 AEST / 02:00 AEDT, ahead of the database lifecycle. A future renewal invoice can be created and emailed in advance, but automatic card or BECS collection is explicitly held until its due date. Manual-invoice members are never placed into automatic collection. It uses the same `ENABLE_XERO_SYNC_WORKER`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` configuration as the existing Xero queue worker. A failed issue or refresh operation fails visibly in GitHub Actions and the stale-data guard remains the safety backstop.
+The `daily-membership-xero-refresh` GitHub workflow prepares and issues membership renewals and then refreshes linked invoices at 01:00 AEST / 02:00 AEDT, ahead of the database lifecycle. A future renewal invoice can be created and emailed in advance, but automatic card or BECS collection is explicitly held until its due date. Manual-invoice members are never placed into automatic collection. It uses the same `ENABLE_XERO_SYNC_WORKER`, `SUPABASE_URL` and restricted `INTEGRATION_WORKER_SECRET` configuration as the Xero queue worker. A failed issue or refresh operation fails visibly in GitHub Actions and the stale-data guard remains the safety backstop.
 
 A fee waiver is annual, requires an approved waiver type, a reason of at least 10 characters and—by default—a committee-minute or delegated-authority reference. It records the authorising administrator and does not create a fake Xero payment. The default categories are volunteer contribution, hardship, honorary, promotional and administrative correction.
 
@@ -363,3 +363,42 @@ Before the first gated production release, configure or complete:
 - Portal/PWA production build, dependency audits, migration audit, 25 Edge Function type checks and 12 Edge Function unit tests pass.
 - ESLint: 0 errors. TypeScript: 0 errors. React hook/refresh warnings: 69 and ratcheted after the ESLint 10/React Hooks 7 upgrade.
 - Stripe remains explicitly in Test Mode.
+
+## Tenant-safe Xero rollout (29 July 2026)
+
+Xero is deliberately contained while the portal remains in Test Mode. `ENABLE_XERO_SYNC_WORKER` is false, Stripe Test Mode records are never eligible for Xero sync, the connected Horizon Aviation tenant is inventory-only, and every locally known Xero identifier is recorded in a tenant-scoped quarantine. Historical IDs are not trusted merely because they existed before this control was introduced.
+
+### Connection and credential controls
+
+- Connecting Xero requires an administrator session at AAL2, typed `CONNECT XERO` confirmation, Xero authorisation, explicit selection from the returned organisations, and a second phrase containing the exact selected organisation name.
+- The first approved BFC selection pins an immutable expected tenant ID. A later OAuth result cannot switch that tenant in place.
+- Access, refresh and ID tokens are AES-256-GCM encrypted with `XERO_TOKEN_ENCRYPTION_KEY`, which is stored separately as a Supabase Function secret. Plaintext token columns are cleared during lazy migration.
+- Token refresh is centralised behind a leased database lock so concurrent requests cannot rotate the same refresh token.
+- Browser CORS is restricted to configured portal origins. Xero administration is server-enforced at AAL2.
+- GitHub Xero jobs use only `INTEGRATION_WORKER_SECRET`; the Supabase service-role credential is not sent to either Xero workflow.
+- Connection and configuration changes create append-only audit records without token values.
+
+### Tenant-bound processing and reconciliation
+
+- Contacts, invoices, payments, bank transactions, journals, tracking options and related queue jobs carry their originating tenant.
+- New external IDs cannot be stored unless posting is enabled and the active tenant equals the immutable expected tenant. Existing IDs remain unverified and quarantined until reconciled.
+- Queue workers lease atomically with `FOR UPDATE SKIP LOCKED`. A job must have a verified tenant snapshot, persistent operation ID and approved/effective mapping version.
+- Local operation history and Xero idempotency keys prevent duplicate submission. Xero correlation IDs, minute/day rate-limit headers, retry advice and response summaries are retained.
+- The signed `xero-webhook` endpoint validates the raw request body with `XERO_WEBHOOK_KEY`, stores tenant-bound events and quarantines mismatched tenants. The read-only inventory action uses `If-Modified-Since` as a recovery fallback.
+- Terminal failures and review items create deduplicated administrator notifications. Ordinary successful or skipped runs do not generate failure alerts.
+
+### Accountant mapping and release gates
+
+Settings → Integrations includes a mapping wizard backed by the live Xero chart of accounts. It stores account IDs and codes, shows GST-inclusive debit/credit impact using a sample amount, versions each mapping and requires a written approval note plus typed approval. Approved versions are immutable; changes require a new version.
+
+Posting remains disabled after connection and after mapping approval. Before BFC posting can be introduced, the club must:
+
+1. finish the read-only Horizon inventory and mark each artefact matched, retained, voided/deleted or needing review;
+2. explicitly reconnect to Bendigo Flying Club and verify the immutable tenant ID;
+3. remap contacts, aircraft tracking, items, account IDs/codes and tax types against the live BFC chart;
+4. run each contact, draft invoice, payment, credit, cancellation and reconciliation lifecycle in a Xero demo organisation;
+5. obtain written treasurer/accountant approval for the mapping and dry-run evidence;
+6. reconcile one controlled BFC draft batch; and
+7. only then introduce a separately reviewed change that enables posting. Authorised invoices remain a later, separately approved stage.
+
+`xero-read-only-inventory.yml` is manual-only. Its default operation is a read-only inventory; its cleanup operation is restricted to the unpinned, inventory-only legacy tenant and requires both the exact tenant ID and a phrase containing the tenant name. It can delete/void only locally linked payments, bank transactions, unpaid invoices and journals; paid/part-paid invoices become review items, while contacts and configuration records are retained. Both scheduled Xero workflows also require the repository variable `ENABLE_XERO_SYNC_WORKER=true`, including manual dispatch, so a dispatch cannot bypass containment.

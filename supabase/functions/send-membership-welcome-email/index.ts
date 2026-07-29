@@ -5,9 +5,14 @@ import {
   type MembershipWelcomeVariant,
   renderMembershipWelcomeEmail,
 } from "../_shared/membershipWelcomeEmail.ts";
+import {
+  authenticateAal2AdminOrWorker,
+  corsHeadersForRequest,
+  isAllowedBrowserOrigin,
+} from "../_shared/edgeSecurity.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+let corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "https://portal.bendigoflyingclub.com.au",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers":
     "Content-Type, Authorization, X-Client-Info, Apikey",
@@ -105,44 +110,6 @@ const loadWelcomePolicy = async (adminClient: any) => {
     nonPaymentGraceDays: Number(data?.non_payment_grace_days || 60),
     renewalInvoiceLeadDays: Number(data?.renewal_invoice_lead_days || 30),
   };
-};
-
-const requireServiceOrAdmin = async (
-  adminClient: any,
-  req: Request,
-  serviceRoleKey: string,
-) => {
-  const token = clean(req.headers.get("Authorization")).replace(
-    /^Bearer\s+/i,
-    "",
-  );
-  if (token && token === serviceRoleKey) return;
-  if (!token) {
-    throw Object.assign(new Error("Authentication is required."), {
-      status: 401,
-    });
-  }
-  const { data, error } = await adminClient.auth.getUser(token);
-  if (error || !data?.user?.id) {
-    throw Object.assign(new Error("Invalid session."), { status: 401 });
-  }
-  const { data: profile } = await adminClient
-    .from("users")
-    .select("role")
-    .eq("id", data.user.id)
-    .maybeSingle();
-  const { data: roles } = await adminClient
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", data.user.id);
-  if (
-    profile?.role !== "admin" &&
-    !(roles || []).some((item: any) => item.role === "admin")
-  ) {
-    throw Object.assign(new Error("Admin access is required."), {
-      status: 403,
-    });
-  }
 };
 
 const deliver = async (
@@ -305,9 +272,11 @@ const sendForMembership = async (
 };
 
 Deno.serve(async (req: Request) => {
+  corsHeaders = corsHeadersForRequest(req);
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
+  if (!isAllowedBrowserOrigin(req)) return json({ error: "Origin is not allowed." }, 403);
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405);
   }
@@ -317,6 +286,14 @@ Deno.serve(async (req: Request) => {
     const adminClient = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    const auth = await authenticateAal2AdminOrWorker({
+      req,
+      supabaseUrl,
+      anonKey: Deno.env.get("SUPABASE_ANON_KEY")!,
+      adminClient,
+      allowWorker: true,
+    });
+    if (!auth.ok) return json({ error: auth.error }, auth.status);
     const body = await req.json().catch(() => ({}));
     const action = clean(body.action || "send-pending");
     const [welcomeBrand, welcomePolicy] = await Promise.all([
@@ -349,7 +326,6 @@ Deno.serve(async (req: Request) => {
       return json({ recipient, results });
     }
 
-    await requireServiceOrAdmin(adminClient, req, serviceRoleKey);
     if (action === "send-for-user") {
       const userId = clean(body.userId);
       if (!userId) return json({ error: "Missing userId" }, 400);

@@ -46,6 +46,20 @@ interface XeroStatus {
   hasClientSecret: boolean;
   callbackUrl: string;
   scopes: string;
+  expectedTenantId: string | null;
+  connectionMode: 'disconnected' | 'inventory_only' | 'draft_only' | 'posting';
+  postingEnabled: boolean;
+  contained: boolean;
+  hasEncryptionKey: boolean;
+  pendingConnection?: {
+    id: string;
+    organisations: Array<{
+      tenantId: string;
+      tenantName: string;
+      tenantType: string;
+    }>;
+    expiresAt: string;
+  } | null;
   syncSettings: XeroSyncSettings;
 }
 
@@ -76,6 +90,34 @@ interface XeroSettingsForm {
   autoQueueFlightInvoices: boolean;
   autoApplyVerifiedPayments: boolean;
 }
+
+interface XeroMappingVersion {
+  id: string;
+  version: number;
+  status: 'draft' | 'approved' | 'retired';
+  effective_from: string | null;
+  approval_note: string | null;
+  xero_mapping_entries?: Array<{
+    purpose: string;
+    xero_object_id: string;
+    xero_code: string | null;
+    xero_name: string | null;
+    tax_type: string | null;
+    impact_preview: {
+      grossAmount?: number;
+      netAmount?: number;
+      gstAmount?: number;
+    };
+  }>;
+}
+
+const mappingPurposes = [
+  { key: 'flight_revenue', label: 'Flight and ground-session revenue' },
+  { key: 'membership_revenue', label: 'Membership revenue' },
+  { key: 'scholarship_contribution', label: 'Scholarship contributions' },
+  { key: 'account_topup_receipt', label: 'Member account top-up receipts' },
+  { key: 'voucher_liability', label: 'Gift voucher liability' },
+] as const;
 
 const defaultForm: XeroSettingsForm = {
   createContacts: true,
@@ -144,6 +186,16 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
   const [creatingPrepaidLiabilityAccount, setCreatingPrepaidLiabilityAccount] = useState(false);
   const [creatingStripeFeeAccount, setCreatingStripeFeeAccount] = useState(false);
   const [showAccountTools, setShowAccountTools] = useState(false);
+  const [selectedTenantId, setSelectedTenantId] = useState('');
+  const [tenantConfirmation, setTenantConfirmation] = useState('');
+  const [confirmingTenant, setConfirmingTenant] = useState(false);
+  const [mappingVersions, setMappingVersions] = useState<XeroMappingVersion[]>([]);
+  const [mappingSelections, setMappingSelections] = useState<Record<string, string>>({});
+  const [mappingSampleAmount, setMappingSampleAmount] = useState('110');
+  const [mappingTaxType, setMappingTaxType] = useState('OUTPUT');
+  const [mappingApprovalNote, setMappingApprovalNote] = useState('');
+  const [mappingConfirmation, setMappingConfirmation] = useState('');
+  const [mappingBusy, setMappingBusy] = useState(false);
   const [form, setForm] = useState<XeroSettingsForm>(defaultForm);
   const connected = Boolean(xeroStatus?.connected);
   const configured = Boolean(xeroStatus?.configured);
@@ -181,6 +233,9 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
     if (result === 'success') {
       toast.success('Xero organisation linked');
+      loadXeroStatus();
+    } else if (result === 'select') {
+      toast('Select and confirm the exact Xero organisation below. Posting will remain disabled.');
       loadXeroStatus();
     } else {
       toast.error(params.get('xero_error') || 'Xero could not be linked');
@@ -221,6 +276,23 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
     }
     loadAccounts();
   }, [connected, loadAccounts]);
+
+  const loadMappingVersions = useCallback(async () => {
+    if (!connected) return;
+    const { data, error } = await supabase.functions.invoke<{ versions?: XeroMappingVersion[] }>('xero-sync', {
+      body: { action: 'list-mapping-versions' },
+    });
+    if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to load Xero mappings'));
+    setMappingVersions(data?.versions || []);
+  }, [connected]);
+
+  useEffect(() => {
+    if (connected) {
+      loadMappingVersions().catch(error => console.error('Error loading Xero mappings:', error));
+    } else {
+      setMappingVersions([]);
+    }
+  }, [connected, loadMappingVersions]);
 
   const createStripeClearingAccount = async () => {
     if (!connected || !canEdit) return;
@@ -359,10 +431,14 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
   const connectXero = async () => {
     if (!canEdit) return;
+    const confirmation = window.prompt(
+      'For safety, type CONNECT XERO to continue. You will explicitly select the organisation after signing in.',
+    );
+    if (confirmation !== 'CONNECT XERO') return;
     setXeroLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke<{ url?: string; error?: string; callbackUrl?: string }>('xero-connect', {
-        body: { action: 'start' },
+        body: { action: 'start', confirmation },
       });
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to start Xero connection'));
       if (!data?.url) throw new Error(data?.error || 'Xero did not return a link URL');
@@ -377,10 +453,12 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
 
   const disconnectXero = async () => {
     if (!canEdit || !window.confirm('Disconnect Xero from the CRM? Existing CRM billing records remain, but syncing to Xero will stop.')) return;
+    const confirmation = window.prompt('Type DISCONNECT XERO to confirm.');
+    if (confirmation !== 'DISCONNECT XERO') return;
     setXeroLoading(true);
     try {
       const { error } = await supabase.functions.invoke('xero-connect', {
-        body: { action: 'disconnect' },
+        body: { action: 'disconnect', confirmation },
       });
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to disconnect Xero'));
       toast.success('Xero disconnected');
@@ -390,6 +468,100 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       toast.error(error?.message || 'Failed to disconnect Xero');
     } finally {
       setXeroLoading(false);
+    }
+  };
+
+  const pendingConnection = xeroStatus?.pendingConnection;
+  const selectedOrganisation = pendingConnection?.organisations.find(
+    organisation => organisation.tenantId === selectedTenantId,
+  );
+  const requiredTenantConfirmation = selectedOrganisation
+    ? `CONNECT ${selectedOrganisation.tenantName.toUpperCase()}`
+    : '';
+
+  const confirmXeroOrganisation = async () => {
+    if (!pendingConnection || !selectedOrganisation || !canEdit) return;
+    setConfirmingTenant(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<XeroStatus>('xero-connect', {
+        body: {
+          action: 'confirm-organisation',
+          pendingConnectionId: pendingConnection.id,
+          tenantId: selectedOrganisation.tenantId,
+          confirmation: tenantConfirmation,
+        },
+      });
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to confirm Xero organisation'));
+      setXeroStatus(data ?? null);
+      setForm(fromStatus(data ?? null));
+      setSelectedTenantId('');
+      setTenantConfirmation('');
+      toast.success(`${selectedOrganisation.tenantName} selected. Posting remains disabled.`);
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to confirm Xero organisation');
+    } finally {
+      setConfirmingTenant(false);
+    }
+  };
+
+  const saveMappingDraft = async () => {
+    const missing = mappingPurposes.filter(purpose => !mappingSelections[purpose.key]);
+    if (missing.length) {
+      toast.error(`Select an account for ${missing[0].label}.`);
+      return;
+    }
+    setMappingBusy(true);
+    try {
+      const entries = mappingPurposes.map(purpose => {
+        const account = accounts.find(item => item.accountId === mappingSelections[purpose.key])!;
+        return {
+          resourceType: 'account',
+          purpose: purpose.key,
+          xeroObjectId: account.accountId,
+          xeroCode: account.code,
+          xeroName: account.name,
+          accountType: account.type,
+          taxType: mappingTaxType,
+          sampleAmount: Number(mappingSampleAmount),
+        };
+      });
+      const { error } = await supabase.functions.invoke('xero-sync', {
+        body: { action: 'save-mapping-draft', entries },
+      });
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to save mapping draft'));
+      await loadMappingVersions();
+      setMappingApprovalNote('');
+      setMappingConfirmation('');
+      toast.success('Draft mapping saved for accountant review');
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to save mapping draft');
+    } finally {
+      setMappingBusy(false);
+    }
+  };
+
+  const latestDraftMapping = mappingVersions.find(version => version.status === 'draft');
+  const approveMapping = async () => {
+    if (!latestDraftMapping) return;
+    setMappingBusy(true);
+    try {
+      const { error } = await supabase.functions.invoke('xero-sync', {
+        body: {
+          action: 'approve-mapping-version',
+          mappingVersionId: latestDraftMapping.id,
+          confirmation: mappingConfirmation,
+          approvalNote: mappingApprovalNote,
+        },
+      });
+      if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to approve mapping'));
+      await loadMappingVersions();
+      setMappingApprovalNote('');
+      setMappingConfirmation('');
+      toast.success('Mapping approved and made immutable. Xero posting remains disabled.');
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to approve mapping');
+    } finally {
+      setMappingBusy(false);
     }
   };
 
@@ -602,6 +774,68 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
             <p className="font-semibold">Xero status could not be confirmed.</p>
             <p className="mt-1">{statusLoadError}</p>
             <p className="mt-2 text-xs text-rose-700">This does not automatically mean the Xero app is missing. It usually means the live status check failed and should be retried.</p>
+          </div>
+        )}
+
+        {pendingConnection && (
+          <div className="mt-5 rounded-xl border-2 border-blue-300 bg-blue-50 p-4 text-sm text-blue-950">
+            <p className="font-semibold">Choose the exact Xero organisation</p>
+            <p className="mt-1 text-blue-800">
+              Nothing is connected until you select an organisation and type its full confirmation phrase.
+              Automatic posting stays off after connection.
+            </p>
+            <label className="mt-4 block font-medium" htmlFor="xero-tenant-selection">
+              Xero organisation
+            </label>
+            <select
+              id="xero-tenant-selection"
+              value={selectedTenantId}
+              onChange={event => {
+                setSelectedTenantId(event.target.value);
+                setTenantConfirmation('');
+              }}
+              className="mt-1 w-full rounded-md border border-blue-300 bg-white px-3 py-2 text-gray-950"
+            >
+              <option value="">Select an organisation</option>
+              {pendingConnection.organisations.map(organisation => (
+                <option key={organisation.tenantId} value={organisation.tenantId}>
+                  {organisation.tenantName} ({organisation.tenantType})
+                </option>
+              ))}
+            </select>
+            {selectedOrganisation && (
+              <>
+                <label className="mt-3 block font-medium" htmlFor="xero-tenant-confirmation">
+                  Type <span className="font-mono">{requiredTenantConfirmation}</span>
+                </label>
+                <input
+                  id="xero-tenant-confirmation"
+                  value={tenantConfirmation}
+                  onChange={event => setTenantConfirmation(event.target.value)}
+                  autoComplete="off"
+                  className="mt-1 w-full rounded-md border border-blue-300 bg-white px-3 py-2 text-gray-950"
+                />
+                <button
+                  type="button"
+                  onClick={confirmXeroOrganisation}
+                  disabled={confirmingTenant || tenantConfirmation.toUpperCase() !== requiredTenantConfirmation}
+                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {confirmingTenant && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Confirm organisation
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {connected && xeroStatus?.contained && (
+          <div className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            <p className="font-semibold">Xero posting is contained</p>
+            <p className="mt-1">
+              The connection can only be used for inventory or draft preparation. Automatic invoices,
+              payments, journals and contact changes are disabled while the integration is tested.
+            </p>
           </div>
         )}
 
@@ -905,6 +1139,163 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
             </div>
           </div>
         </div>
+
+        {connected && (
+          <div className="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-950">Accountant-reviewed mapping</h4>
+                <p className="mt-1 max-w-2xl text-xs text-gray-600">
+                  Choose accounts from the connected Xero chart. Each saved version records both the immutable
+                  Xero account ID and its code. Approval does not enable posting while the portal is in test mode.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => loadMappingVersions().catch(error => toast.error(error.message))}
+                disabled={mappingBusy}
+                className="inline-flex items-center gap-2 rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${mappingBusy ? 'animate-spin' : ''}`} />
+                Refresh mappings
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {mappingPurposes.map(purpose => (
+                <label key={purpose.key} className="block rounded-lg border border-gray-200 bg-white p-3">
+                  <span className="text-xs font-semibold text-gray-800">{purpose.label}</span>
+                  <select
+                    value={mappingSelections[purpose.key] || ''}
+                    onChange={event => setMappingSelections(previous => ({
+                      ...previous,
+                      [purpose.key]: event.target.value,
+                    }))}
+                    disabled={!canEdit || mappingBusy}
+                    className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 disabled:bg-gray-100"
+                  >
+                    <option value="">Select Xero account</option>
+                    {(purpose.key === 'account_topup_receipt' ? bankAccounts : allActiveAccounts).map(account => (
+                      <option key={`${purpose.key}-${account.accountId}`} value={account.accountId}>
+                        {account.code} · {account.name} ({account.type})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs font-semibold text-gray-800">
+                GST tax type
+                <input
+                  value={mappingTaxType}
+                  onChange={event => setMappingTaxType(event.target.value)}
+                  disabled={!canEdit || mappingBusy}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950"
+                />
+              </label>
+              <label className="block text-xs font-semibold text-gray-800">
+                Sample GST-inclusive amount
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={mappingSampleAmount}
+                  onChange={event => setMappingSampleAmount(event.target.value)}
+                  disabled={!canEdit || mappingBusy}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-950"
+                />
+              </label>
+            </div>
+
+            <div className="mt-3 rounded-lg border border-indigo-200 bg-white p-3 text-xs text-gray-700">
+              <p className="font-semibold text-gray-900">Posting preview (GST inclusive)</p>
+              <p className="mt-1">
+                Gross ${Number(mappingSampleAmount || 0).toFixed(2)} · Net $
+                {(Number(mappingSampleAmount || 0) * 10 / 11).toFixed(2)} · GST $
+                {(Number(mappingSampleAmount || 0) / 11).toFixed(2)}.
+                Revenue entries debit Accounts Receivable and credit the selected revenue account plus GST payable.
+                Receipt entries debit the selected bank/clearing account and credit the corresponding liability.
+              </p>
+            </div>
+
+            {canEdit && (
+              <button
+                type="button"
+                onClick={saveMappingDraft}
+                disabled={mappingBusy || accounts.length === 0}
+                className="mt-3 inline-flex items-center gap-2 rounded-md bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {mappingBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save new draft version
+              </button>
+            )}
+
+            {mappingVersions.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {mappingVersions.map(version => (
+                  <div key={version.id} className="rounded-lg border border-gray-200 bg-white p-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-semibold text-gray-900">Mapping version {version.version}</p>
+                      <span className={`rounded-full px-2 py-1 font-semibold ${
+                        version.status === 'approved'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {version.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-gray-600">
+                      {version.xero_mapping_entries?.length || 0} mapped transaction types
+                      {version.effective_from ? ` · effective ${new Date(version.effective_from).toLocaleDateString()}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {latestDraftMapping && canEdit && (
+              <div className="mt-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-xs text-amber-950">
+                <p className="font-semibold">Approve version {latestDraftMapping.version}</p>
+                <p className="mt-1">
+                  Only do this after the treasurer or accountant checks every debit, credit and GST preview.
+                  Approval makes this version immutable.
+                </p>
+                <label className="mt-3 block font-semibold">
+                  Written approval record
+                  <textarea
+                    value={mappingApprovalNote}
+                    onChange={event => setMappingApprovalNote(event.target.value)}
+                    rows={2}
+                    placeholder="Name, date and approval reference"
+                    className="mt-1 w-full rounded-md border border-amber-300 bg-white px-3 py-2 font-normal text-gray-950"
+                  />
+                </label>
+                <label className="mt-3 block font-semibold">
+                  Type APPROVE XERO MAPPING {latestDraftMapping.version}
+                  <input
+                    value={mappingConfirmation}
+                    onChange={event => setMappingConfirmation(event.target.value)}
+                    className="mt-1 w-full rounded-md border border-amber-300 bg-white px-3 py-2 font-normal text-gray-950"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={approveMapping}
+                  disabled={
+                    mappingBusy ||
+                    mappingApprovalNote.trim().length < 10 ||
+                    mappingConfirmation.toUpperCase() !== `APPROVE XERO MAPPING ${latestDraftMapping.version}`
+                  }
+                  className="mt-3 rounded-md bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Approve immutable mapping
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
           <p className="text-xs text-gray-500">

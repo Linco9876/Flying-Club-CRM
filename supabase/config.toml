@@ -22,6 +22,14 @@ verify_jwt = false
 [functions.xero-connect]
 verify_jwt = false
 
+[functions.xero-sync]
+# Enforces AAL2 for administrators or the restricted integration worker secret internally.
+verify_jwt = false
+
+[functions.xero-webhook]
+# Xero signs the exact raw request body with the separately stored webhook key.
+verify_jwt = false
+
 [functions.send-membership-welcome-email]
 verify_jwt = false
 
