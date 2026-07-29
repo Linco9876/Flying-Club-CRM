@@ -83,7 +83,7 @@ const MembershipSettingHelpButton = ({
       aria-expanded={active}
       aria-controls={active ? 'membership-setting-help-panel' : undefined}
       title={`Explain ${help.title}`}
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:text-slate-400 dark:hover:bg-blue-950/60 dark:hover:text-blue-200 dark:focus:ring-offset-slate-900"
     >
       <HelpCircle className="h-4 w-4" aria-hidden="true" />
     </button>
@@ -129,6 +129,7 @@ const MembershipToggleSetting = ({
   checked,
   onChange,
   className = 'border-slate-200',
+  descriptionClassName = 'text-xs text-slate-500',
 }: {
   inputId: string;
   title: string;
@@ -139,6 +140,7 @@ const MembershipToggleSetting = ({
   checked: boolean;
   onChange: (checked: boolean) => void;
   className?: string;
+  descriptionClassName?: string;
 }) => (
   <div className={`flex items-start gap-3 rounded-lg border p-3 text-sm text-slate-700 ${className}`}>
     <input
@@ -153,7 +155,7 @@ const MembershipToggleSetting = ({
         <label htmlFor={inputId} className="font-bold text-slate-800">{title}</label>
         <MembershipSettingHelpButton setting={setting} active={activeHelp === setting} onOpen={onHelp} />
       </div>
-      <p className="mt-1 text-xs text-slate-500">{description}</p>
+      <p className={`mt-1 leading-5 ${descriptionClassName}`}>{description}</p>
     </div>
   </div>
 );
@@ -707,9 +709,9 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
             <input id="membership-xero-stale" type="number" min={1} max={168} value={draft.xeroStatusStaleHours} onChange={event => setDraft(current => ({ ...current, xeroStatusStaleHours: Number(event.target.value) }))} className={inputClass} />
           </MembershipSettingField>
         </div>
-        <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
-          <div><h3 className="font-bold text-violet-950">Scholarship contribution</h3><p className="mt-1 text-sm text-violet-800">This remains optional and unchecked for members. Configure the suggested amount and its separate Xero mapping.</p></div>
-          <MembershipToggleSetting inputId="membership-scholarship-available" title="Offer scholarship contributions" description="Members must actively opt in." setting="scholarshipAvailable" activeHelp={activeHelp} onHelp={openHelp} checked={draft.scholarshipContributionAvailable} onChange={checked => setDraft(current => ({ ...current, scholarshipContributionAvailable: checked }))} className="mt-4 border-violet-200 bg-white" />
+        <div data-testid="membership-scholarship-settings" className="rounded-xl border border-violet-300 bg-violet-50 p-4 dark:border-violet-700 dark:bg-violet-950">
+          <div><h3 className="text-base font-bold text-violet-950 dark:text-violet-100">Scholarship contribution</h3><p className="mt-1 text-sm font-medium leading-6 text-violet-800 dark:text-violet-200">This remains optional and unchecked for members. Configure the suggested amount and its separate Xero mapping.</p></div>
+          <MembershipToggleSetting inputId="membership-scholarship-available" title="Offer scholarship contributions" description="Members must actively opt in." setting="scholarshipAvailable" activeHelp={activeHelp} onHelp={openHelp} checked={draft.scholarshipContributionAvailable} onChange={checked => setDraft(current => ({ ...current, scholarshipContributionAvailable: checked }))} className="mt-4 border-violet-300 bg-white dark:border-violet-700 dark:bg-slate-950" descriptionClassName="text-sm text-slate-700 dark:text-slate-300" />
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <MembershipSettingField inputId="membership-scholarship-suggested" label="Suggested amount" setting="scholarshipSuggested" activeHelp={activeHelp} onHelp={openHelp}>
               <input id="membership-scholarship-suggested" type="number" min={0.01} step="0.01" value={draft.scholarshipDefaultAmount} onChange={event => setDraft(current => ({ ...current, scholarshipDefaultAmount: Number(event.target.value || 0) }))} className={inputClass} />
@@ -724,7 +726,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
               {xeroAccounts.length > 0 ? <select id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value || null }))} className={inputClass}><option value="">Use the default Xero revenue account</option>{draft.xeroScholarshipAccountCode && !xeroAccounts.some(account => account.code === draft.xeroScholarshipAccountCode) && <option value={draft.xeroScholarshipAccountCode}>{draft.xeroScholarshipAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 210'} />}
             </MembershipSettingField>
           </div>
-          {invalidScholarshipSettings && <p className="mt-3 text-sm font-semibold text-red-700">The suggested contribution must be at least the minimum, and the minimum must be at least $0.01.</p>}
+          {invalidScholarshipSettings && <p className="mt-3 text-sm font-semibold text-red-700 dark:text-red-300">The suggested contribution must be at least the minimum, and the minimum must be at least $0.01.</p>}
         </div>
       </section>
 
