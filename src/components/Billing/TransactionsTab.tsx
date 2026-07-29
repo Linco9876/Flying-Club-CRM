@@ -5,6 +5,7 @@ import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import { openOwnXeroInvoicePdf } from '../../lib/xeroMemberBalance';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 type BillingHook = ReturnType<typeof useBillingAccounts>;
 
@@ -61,6 +62,7 @@ const makeInvoiceNumber = (rowId: string, index: number) => {
 const SplitPaymentModal: React.FC<{
   flightId: string;
   description: string;
+  userId: string;
   userName: string;
   totalAmount: number;
   amountPaid: number;
@@ -73,6 +75,7 @@ const SplitPaymentModal: React.FC<{
 }> = ({
   flightId,
   description,
+  userId,
   userName,
   totalAmount,
   amountPaid,
@@ -148,7 +151,9 @@ const SplitPaymentModal: React.FC<{
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
         <div className="p-5 border-b border-gray-100">
           <h3 className="text-base font-semibold text-gray-900">Split Payment</h3>
-          <p className="text-sm text-gray-500 mt-0.5">{userName}</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            <StudentFileLink studentId={userId} name={userName} />
+          </p>
           <p className="text-sm text-gray-600 mt-2 line-clamp-2">{description}</p>
           <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="grid grid-cols-3 gap-3 text-center">
@@ -288,7 +293,9 @@ const PaymentChoiceModal: React.FC<{
       <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
         <div className="border-b border-gray-100 p-5">
           <h3 className="text-base font-semibold text-gray-900">Take payment</h3>
-          <p className="mt-1 text-sm text-gray-500">{row.userName}</p>
+          <p className="mt-1 text-sm text-gray-500">
+            <StudentFileLink studentId={row.userId} name={row.userName} />
+          </p>
           <p className="mt-2 line-clamp-2 text-sm text-gray-600">{row.description}</p>
           <p className="mt-3 text-sm font-semibold text-amber-700">Remaining ${remaining.toFixed(2)}</p>
         </div>
@@ -341,12 +348,13 @@ const PaymentChoiceModal: React.FC<{
 
 const RejectModal: React.FC<{
   transactionId: string;
+  userId: string;
   userName: string;
   amount: number;
   description: string;
   onClose: () => void;
   onConfirm: (transactionId: string, notes: string) => Promise<void>;
-}> = ({ transactionId, userName, amount, description, onClose, onConfirm }) => {
+}> = ({ transactionId, userId, userName, amount, description, onClose, onConfirm }) => {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -372,7 +380,9 @@ const RejectModal: React.FC<{
             </div>
             <div>
               <h3 className="text-base font-semibold text-gray-900">Reject Payment</h3>
-              <p className="text-sm text-gray-500 mt-0.5">{userName} · ${amount.toFixed(2)}</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                <StudentFileLink studentId={userId} name={userName} /> · ${amount.toFixed(2)}
+              </p>
             </div>
           </div>
           <p className="text-sm text-gray-500 mt-3 bg-gray-50 rounded-lg px-3 py-2">{description}</p>
@@ -414,6 +424,7 @@ const RejectModal: React.FC<{
 const XeroMatchModal: React.FC<{
   row: {
     id: string;
+    userId: string;
     userName: string;
     amount: number | null;
     description: string;
@@ -429,7 +440,9 @@ const XeroMatchModal: React.FC<{
       <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl">
         <div className="border-b border-gray-100 p-5">
           <h3 className="text-base font-semibold text-gray-900">Match top-up to Xero credit</h3>
-          <p className="mt-1 text-sm text-gray-500">{row.userName}</p>
+          <p className="mt-1 text-sm text-gray-500">
+            <StudentFileLink studentId={row.userId} name={row.userName} />
+          </p>
           <p className="mt-2 text-sm text-gray-600">{row.description}</p>
           <p className="mt-1 text-sm font-semibold text-emerald-700">Amount ${Math.abs(row.amount ?? 0).toFixed(2)}</p>
         </div>
@@ -1082,7 +1095,9 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
                     <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                       {format(parseISO(row.date), 'dd MMM yyyy')} - {format(parseISO(row.date), 'HH:mm')}
                     </p>
-                    <h4 className="mt-1 truncate text-base font-semibold text-gray-900">{row.userName}</h4>
+                    <h4 className="mt-1 truncate text-base font-semibold text-gray-900">
+                      <StudentFileLink studentId={row.userId} name={row.userName} />
+                    </h4>
                     <p className="truncate text-xs text-gray-500">{row.userEmail}</p>
                   </div>
                   <div className="shrink-0 text-right">
@@ -1174,7 +1189,9 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
                       <div className="text-xs text-gray-400">{format(parseISO(row.date), 'HH:mm')}</div>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{row.userName}</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        <StudentFileLink studentId={row.userId} name={row.userName} />
+                      </div>
                       <div className="text-xs text-gray-400">{row.userEmail}</div>
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-700 max-w-xs">
@@ -1289,6 +1306,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         <SplitPaymentModal
           flightId={splitPayment.flightId}
           description={splitPayment.description}
+          userId={splitPayment.userId}
           userName={splitPayment.userName}
           totalAmount={splitPayment.totalAmount}
           amountPaid={splitPayment.amountPaid}
@@ -1322,6 +1340,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
       {rejectingId && rejectingRow && (
         <RejectModal
           transactionId={rejectingId}
+          userId={rejectingRow.userId}
           userName={rejectingRow.userName}
           amount={Math.abs(rejectingRow.amount ?? 0)}
           description={rejectingRow.description}

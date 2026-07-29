@@ -9,6 +9,7 @@ import { TrialFlightVoucher, TrialFlightVoucherAddon, TrialFlightVoucherAircraft
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 const defaultEmailBody =
   'This voucher includes a pre-flight welcome, a trial instructional flight with a qualified instructor, and time to ask questions about learning to fly at Bendigo Flying Club.';
@@ -2781,7 +2782,9 @@ export const TrialFlightVouchersPage: React.FC = () => {
                       {voucher.redeemedByName && (
                         <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 leading-5 text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-950/20 dark:text-emerald-100">
                           <p className="font-bold uppercase tracking-wide">Redeemed account</p>
-                          <p className="mt-0.5 truncate">{voucher.redeemedByName}</p>
+                          <p className="mt-0.5 truncate">
+                            <StudentFileLink studentId={voucher.redeemedByUserId} name={voucher.redeemedByName} />
+                          </p>
                           {voucher.redeemedByEmail && (
                             <p className="truncate text-emerald-700 dark:text-emerald-200">{voucher.redeemedByEmail}</p>
                           )}

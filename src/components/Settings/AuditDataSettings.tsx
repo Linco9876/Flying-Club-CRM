@@ -3,6 +3,7 @@ import { AlertTriangle, Database, Download, FileJson, Loader2, RefreshCw, Search
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 interface AuditDataSettingsProps {
   canEdit: boolean;
@@ -13,6 +14,7 @@ interface AuditLogEntry {
   id: string;
   timestamp: Date;
   userName: string;
+  userId?: string;
   action: string;
   resource: string;
   details: string;
@@ -223,6 +225,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         id: `maintenance-${row.id}`,
         timestamp: new Date(row.created_at),
         userName: userMap.get(row.performed_by) || row.performed_by || 'Unknown user',
+        userId: row.performed_by || undefined,
         action: row.action || 'MAINTENANCE',
         resource: row.defect_report_id ? 'Defect report' : row.aircraft_id ? 'Aircraft maintenance' : 'Maintenance',
         details: row.notes || JSON.stringify({ oldValues: row.old_values, newValues: row.new_values }),
@@ -233,6 +236,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
         id: `admin-audit-${row.id}`,
         timestamp: new Date(row.occurred_at),
         userName: row.actor_id ? userMap.get(row.actor_id) || row.actor_id : 'System / service role',
+        userId: row.actor_id || undefined,
         action: row.action === 'DELETE' ? 'DELETE' : 'UPDATE',
         resource: row.record_label || `${row.table_name} ${row.record_id}`,
         details: summarizeChanges(row),
@@ -248,6 +252,7 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
           id: `training-${row.id}-${entry.id || index}`,
           timestamp: new Date(entry.timestamp || row.updated_at || row.date),
           userName: entry.userName || userMap.get(entry.userId) || entry.userId || 'Unknown user',
+          userId: entry.userId || undefined,
           action: entry.action || 'TRAINING_RECORD',
           resource: 'Training record',
           details: entry.changes ? JSON.stringify(entry.changes) : `Training record ${row.id}`,
@@ -693,7 +698,9 @@ export const AuditDataSettings: React.FC<AuditDataSettingsProps> = () => {
                   {filteredAuditLog.map(entry => (
                     <tr key={entry.id} className="hover:bg-gray-50">
                       <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{formatDateTime(entry.timestamp)}</td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{entry.userName}</td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <StudentFileLink studentId={entry.userId} name={entry.userName} />
+                      </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${actionClass(entry.action)}`}>{entry.action}</span>
                       </td>

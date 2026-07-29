@@ -7,6 +7,7 @@ import { buildSafetyComplianceSummary, getBfrDueDate, isStudentOnly } from '../.
 import { Download, Search, AlertTriangle, CheckCircle, Clock, CalendarDays, ShieldCheck, Loader2 } from 'lucide-react';
 import { hasAnyRole } from '../../utils/rbac';
 import { supabase } from '../../lib/supabase';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 interface PilotCurrency {
   id: string;
@@ -427,7 +428,9 @@ export const PilotCurrencyTab: React.FC = () => {
             <article key={pilot.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="truncate text-base font-semibold text-gray-900">{pilot.name}</h3>
+                  <h3 className="truncate text-base font-semibold text-gray-900">
+                    <StudentFileLink studentId={pilot.id} name={pilot.name} />
+                  </h3>
                   <p className="mt-1 text-xs text-gray-500">
                     {pilot.isStudentOnly ? 'Student - no solo recency requirement' : `Last flight: ${formatDate(pilot.lastFlightDate)}`}
                   </p>
@@ -508,7 +511,7 @@ export const PilotCurrencyTab: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {pilot.name}
+                    <StudentFileLink studentId={pilot.id} name={pilot.name} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatDate(pilot.lastFlightDate)}

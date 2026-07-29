@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
 import { Action, Resource, rolePermissions } from '../../utils/rbac';
 import { UserRole } from '../../types';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 interface RolesPermissionsSettingsProps {
   canEdit: boolean;
@@ -223,7 +224,9 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
                     return (
                       <tr key={user.id} className="hover:bg-gray-50">
                         <td className="px-4 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                          <div className="text-sm font-medium text-gray-900">
+                            <StudentFileLink studentId={user.id} name={user.name} />
+                          </div>
                           <div className="text-sm text-gray-500">{user.email}</div>
                           {user.phone && <div className="text-xs text-gray-400">{user.phone}</div>}
                         </td>

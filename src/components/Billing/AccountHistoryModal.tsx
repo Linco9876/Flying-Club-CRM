@@ -3,6 +3,7 @@ import { X, Download, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 interface AccountHistoryModalProps {
   isOpen: boolean;
@@ -132,7 +133,9 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Account History</h2>
-            <p className="text-sm text-gray-500 mt-0.5">{userName} · {userEmail}</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              <StudentFileLink studentId={userId} name={userName} /> · {userEmail}
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <X className="h-5 w-5 text-gray-500" />

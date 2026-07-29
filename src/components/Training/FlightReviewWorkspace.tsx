@@ -29,6 +29,7 @@ import {
 } from "../../hooks/useFlightReviews";
 import type { CoursePurpose, FlightReviewConfiguration } from "../../types";
 import { hasAnyRole } from "../../utils/rbac";
+import { StudentFileLink } from "../Students/StudentFileLink";
 
 type TemplateStep = "basic" | "rules" | "checklist" | "publish";
 
@@ -351,7 +352,9 @@ export const FlightReviewRecordEditor: React.FC<
             <p className="text-xs font-bold uppercase text-blue-200">
               {record.templateSnapshot.title || record.reviewType}
             </p>
-            <h2 className="mt-1 text-xl font-bold">{candidateName}</h2>
+            <h2 className="mt-1 text-xl font-bold">
+              <StudentFileLink studentId={record.candidateId} name={candidateName} />
+            </h2>
             <p className="mt-1 text-sm text-blue-100">
               {format(parseISO(record.reviewDate), "d MMM yyyy")} |{" "}
               {reviewerName}

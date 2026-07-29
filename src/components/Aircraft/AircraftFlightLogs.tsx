@@ -7,6 +7,7 @@ import { useFlightLogs } from '../../hooks/useFlightLogs';
 import toast from 'react-hot-toast';
 import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../../utils/billing';
 import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
+import { StudentFileLink } from '../Students/StudentFileLink';
 
 interface FlightLog {
   id: string;
@@ -493,7 +494,9 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                         )}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <div className="font-medium text-gray-900">{log.student_name}</div>
+                        <div className="font-medium text-gray-900">
+                          <StudentFileLink studentId={log.student_id} name={log.student_name} />
+                        </div>
                         <div className="mt-0.5 text-xs text-gray-500">
                           {log.instructor_name ? log.instructor_name : 'Solo / no instructor'}
                         </div>
@@ -576,7 +579,8 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                 {new Date(actionLog.start_time).toLocaleDateString('en-GB')} flight log
               </p>
               <p className="text-xs text-gray-500">
-                {actionLog.student_name}{actionLog.instructor_name ? ` / ${actionLog.instructor_name}` : ''}
+                <StudentFileLink studentId={actionLog.student_id} name={actionLog.student_name} />
+                {actionLog.instructor_name ? ` / ${actionLog.instructor_name}` : ''}
               </p>
             </div>
             <button
@@ -608,7 +612,9 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Edit Flight Log</h2>
-                <p className="text-sm text-gray-500">{aircraft.registration} · {editingLog.student_name}</p>
+                <p className="text-sm text-gray-500">
+                  {aircraft.registration} · <StudentFileLink studentId={editingLog.student_id} name={editingLog.student_name} />
+                </p>
               </div>
               <button
                 type="button"
