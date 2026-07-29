@@ -1,8 +1,15 @@
-import React, { useMemo } from 'react';
-import { BookOpen, Clock, Download, TrendingUp, Navigation } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ArrowUpDown, BookOpen, Clock, Download, Filter, Navigation, Search, TrendingUp, X } from 'lucide-react';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useUsers } from '../../hooks/useUsers';
+import {
+  DEFAULT_LOGBOOK_FILTERS,
+  filterAndSortLogbookEntries,
+  getLogbookAircraftKey,
+  hasActiveLogbookFilters,
+  type LogbookFilterState,
+} from '../../utils/logbookFilters';
 
 interface LogbookTabProps {
   userId: string;
@@ -14,6 +21,14 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
   const { flightLogs, loading } = useFlightLogs(userId);
   const { aircraft: aircraftList } = useAircraft();
   const { users } = useUsers();
+  const [filters, setFilters] = useState<LogbookFilterState>(DEFAULT_LOGBOOK_FILTERS);
+
+  const updateFilter = <Key extends keyof LogbookFilterState>(
+    key: Key,
+    value: LogbookFilterState[Key],
+  ) => {
+    setFilters(current => ({ ...current, [key]: value }));
+  };
 
   const enrichedLogs = useMemo(() => {
     return flightLogs.map(log => {
@@ -46,8 +61,30 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
     });
   }, [flightLogs, aircraftList, users, isInstructor]);
 
+  const aircraftOptions = useMemo(() => {
+    const unique = new Map<string, string>();
+    for (const log of enrichedLogs) {
+      const key = getLogbookAircraftKey(log);
+      if (!key || !log.aircraft) continue;
+      const label = [
+        log.aircraft.registration,
+        [log.aircraft.make, log.aircraft.model].filter(Boolean).join(' '),
+      ].filter(Boolean).join(' — ');
+      unique.set(key, label || key);
+    }
+    return [...unique.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: 'base' }));
+  }, [enrichedLogs]);
+
+  const visibleLogs = useMemo(
+    () => filterAndSortLogbookEntries(enrichedLogs, filters),
+    [enrichedLogs, filters],
+  );
+  const filtersActive = hasActiveLogbookFilters(filters);
+
   const totals = useMemo(() => {
-    return enrichedLogs.reduce(
+    return visibleLogs.reduce(
       (acc, log) => ({
         totalHours: acc.totalHours + (log.flight_duration || 0),
         dualHours: acc.dualHours + (log.dual_time || 0),
@@ -57,7 +94,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
       }),
       { totalHours: 0, dualHours: 0, soloHours: 0, takeoffs: 0, landings: 0 }
     );
-  }, [enrichedLogs]);
+  }, [visibleLogs]);
 
   const formatHours = (hours: number) => hours.toFixed(1);
 
@@ -71,7 +108,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
   };
 
   const exportCsv = () => {
-    const rows = enrichedLogs.map(log => ({
+    const rows = visibleLogs.map(log => ({
       Date: formatDate(log.start_time),
       'Aircraft Type': log.aircraft ? `${log.aircraft.make} ${log.aircraft.model}` : '',
       'Aircraft Registration': log.aircraft?.registration || '',
@@ -85,7 +122,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
     }));
 
     rows.push({
-      Date: `Totals (${enrichedLogs.length} flights)`,
+      Date: `Totals (${visibleLogs.length} flights)`,
       'Aircraft Type': '',
       'Aircraft Registration': '',
       'Pilot in Command': '',
@@ -189,12 +226,16 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
             <BookOpen className="h-5 w-5 text-gray-600" />
             <span>Flight Logbook — {userName}</span>
           </h3>
-          <p className="text-sm text-gray-500 mt-1">{enrichedLogs.length} entries</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {visibleLogs.length === enrichedLogs.length
+              ? `${enrichedLogs.length} entries`
+              : `Showing ${visibleLogs.length} of ${enrichedLogs.length} entries`}
+          </p>
           </div>
           <button
             type="button"
             onClick={exportCsv}
-            disabled={enrichedLogs.length === 0}
+            disabled={visibleLogs.length === 0}
             className="inline-flex items-center justify-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
@@ -202,11 +243,135 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
           </button>
         </div>
 
+        {enrichedLogs.length > 0 && (
+          <div className="space-y-3 border-b border-gray-200 bg-gray-50/80 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-gray-500" aria-hidden="true" />
+                <p className="text-sm font-semibold text-gray-800">Filter flights</p>
+                {filtersActive && (
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                    {visibleLogs.length} matching
+                  </span>
+                )}
+              </div>
+              {filtersActive && (
+                <button
+                  type="button"
+                  onClick={() => setFilters(DEFAULT_LOGBOOK_FILTERS)}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label className="space-y-1 xl:col-span-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Search</span>
+                <span className="relative block">
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={filters.search}
+                    onChange={event => updateFilter('search', event.target.value)}
+                    placeholder="Aircraft, pilot, crew or comments"
+                    className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </span>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Aircraft</span>
+                <select
+                  value={filters.aircraftKey}
+                  onChange={event => updateFilter('aircraftKey', event.target.value)}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">All aircraft</option>
+                  {aircraftOptions.map(option => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Flight time</span>
+                <select
+                  value={filters.flightMode}
+                  onChange={event => updateFilter('flightMode', event.target.value as LogbookFilterState['flightMode'])}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="all">All flight time</option>
+                  <option value="dual">{isInstructor ? 'Instructed' : 'Dual'}</option>
+                  <option value="solo">{isInstructor ? 'Command' : 'Solo / PIC'}</option>
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">From</span>
+                <input
+                  type="date"
+                  value={filters.dateFrom}
+                  max={filters.dateTo || undefined}
+                  onChange={event => updateFilter('dateFrom', event.target.value)}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">To</span>
+                <input
+                  type="date"
+                  value={filters.dateTo}
+                  min={filters.dateFrom || undefined}
+                  onChange={event => updateFilter('dateTo', event.target.value)}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+
+              <label className="space-y-1 md:col-span-2">
+                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  Sort by
+                </span>
+                <select
+                  value={filters.sortBy}
+                  onChange={event => updateFilter('sortBy', event.target.value as LogbookFilterState['sortBy'])}
+                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="date_desc">Date — newest first</option>
+                  <option value="date_asc">Date — oldest first</option>
+                  <option value="duration_desc">Flight time — longest first</option>
+                  <option value="duration_asc">Flight time — shortest first</option>
+                  <option value="aircraft_asc">Aircraft — A to Z</option>
+                  <option value="aircraft_desc">Aircraft — Z to A</option>
+                  <option value="pic_asc">Pilot in Command — A to Z</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        )}
+
         {enrichedLogs.length === 0 ? (
           <div className="text-center py-16">
             <BookOpen className="h-14 w-14 text-gray-300 mx-auto mb-4" />
             <h4 className="text-lg font-medium text-gray-900 mb-1">No logbook entries yet</h4>
             <p className="text-gray-500 text-sm">Entries will appear here after flights are logged.</p>
+          </div>
+        ) : visibleLogs.length === 0 ? (
+          <div className="px-4 py-14 text-center">
+            <Search className="mx-auto mb-3 h-10 w-10 text-gray-300" aria-hidden="true" />
+            <h4 className="text-base font-semibold text-gray-900">No flights match these filters</h4>
+            <p className="mt-1 text-sm text-gray-500">Try changing the dates, aircraft or search terms.</p>
+            <button
+              type="button"
+              onClick={() => setFilters(DEFAULT_LOGBOOK_FILTERS)}
+              className="mt-4 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              Clear filters
+            </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -246,7 +411,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {enrichedLogs.map((log, index) => (
+                {visibleLogs.map((log, index) => (
                   <tr
                     key={log.id}
                     className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}
@@ -304,7 +469,7 @@ export const LogbookTab: React.FC<LogbookTabProps> = ({ userId, userName, isInst
               <tfoot className="bg-gray-100 border-t-2 border-gray-300">
                 <tr>
                   <td colSpan={5} className="px-4 py-3 text-xs font-bold text-gray-700 uppercase tracking-wide">
-                    Totals ({enrichedLogs.length} flights)
+                    Totals ({visibleLogs.length} flights)
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className="inline-flex items-center justify-center w-14 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-300">
