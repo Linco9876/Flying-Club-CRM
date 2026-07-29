@@ -712,6 +712,7 @@ export const ProfileDashboard: React.FC = () => {
           </div>
         </section>
 
+        {actionItems.length > 0 && (
         <section className={`rounded-2xl border p-5 shadow-sm ${readinessStyle.panel}`} aria-labelledby="readiness-title">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
@@ -749,36 +750,35 @@ export const ProfileDashboard: React.FC = () => {
               </Link>
             ))}
           </div>
-          {actionItems.length > 0 && (
-            <div className="mt-5 overflow-hidden rounded-xl border border-white/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-950/35" aria-label="Actions to complete">
-              <p className="border-b border-slate-200/80 px-4 py-3 text-sm font-bold text-slate-900 dark:border-slate-700 dark:text-white">
-                What to do next
-              </p>
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                {actionItems.map(action => (
-                  <Link
-                    key={action.id}
-                    to={action.to}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-white dark:hover:bg-slate-800/60"
-                  >
-                    <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                      action.level === 'action'
-                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
-                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                    }`}>
-                      <AlertTriangle className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-bold text-slate-900 dark:text-white">{action.title}</span>
-                      <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{action.detail}</span>
-                    </span>
-                    <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" />
-                  </Link>
-                ))}
-              </div>
+          <div className="mt-5 overflow-hidden rounded-xl border border-white/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-950/35" aria-label="Actions to complete">
+            <p className="border-b border-slate-200/80 px-4 py-3 text-sm font-bold text-slate-900 dark:border-slate-700 dark:text-white">
+              What to do next
+            </p>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {actionItems.map(action => (
+                <Link
+                  key={action.id}
+                  to={action.to}
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-white dark:hover:bg-slate-800/60"
+                >
+                  <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                    action.level === 'action'
+                      ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                  }`}>
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-slate-900 dark:text-white">{action.title}</span>
+                    <span className="mt-0.5 block text-sm text-slate-600 dark:text-slate-300">{action.detail}</span>
+                  </span>
+                  <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-slate-400" />
+                </Link>
+              ))}
             </div>
-          )}
+          </div>
         </section>
+        )}
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
           <div className="space-y-5">
