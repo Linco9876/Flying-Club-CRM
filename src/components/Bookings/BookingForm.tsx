@@ -13,6 +13,7 @@ import { StudentFileLink } from '../Students/StudentFileLink';
 import { useBookingRulesSettings, useOrganisationSettings, usePortalUxSettings } from '../../hooks/useSettings';
 import { Booking, DutyAssessment, MembershipBookingAssessment } from '../../types';
 import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyCompliance';
+import { resolveBookingBillingSelection } from '../../utils/groundSessionBilling';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 
@@ -497,8 +498,6 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       guestPhone: '',
       trialFlightVoucherId: '',
       aircraftId: '',
-      paymentType: '',
-      flightTypeId: '',
     }));
   }, [formData.aircraftId, formData.isGuestBooking, formData.trialFlightVoucherId, isGroundSessionBooking]);
 
@@ -644,20 +643,25 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setIsSubmitting(true);
     try {
       const effectiveBookingKind = data.bookingKind === 'ground' || (!data.aircraftId && !data.trialFlightVoucherId) ? 'ground' : 'flight';
+      const billingSelection = resolveBookingBillingSelection({
+        paymentTypeId: data.flightTypeId,
+        paymentTypeName: data.paymentType,
+        derivedPaymentTypeName: derivePaymentTypeForFlightType(data.flightTypeId),
+        isVoucherBooking: Boolean(data.trialFlightVoucherId),
+      });
       const normalisedBookingData = effectiveBookingKind === 'ground'
         ? {
             ...data,
             bookingKind: 'ground' as const,
             aircraftId: '',
-            paymentType: '',
-            flightTypeId: '',
             trialFlightVoucherId: '',
+            ...billingSelection,
           }
         : data.trialFlightVoucherId
-        ? { ...data, flightTypeId: '', paymentType: 'Gift Voucher' }
+        ? { ...data, ...billingSelection }
           : {
             ...data,
-            paymentType: derivePaymentTypeForFlightType(data.flightTypeId) || data.paymentType,
+            ...billingSelection,
           };
       if (!normalisedBookingData.isGuestBooking && effectiveBookingKind === 'flight' && normalisedBookingData.aircraftId) {
         const bookingStart = new Date(`${normalisedBookingData.date}T${normalisedBookingData.startTime}:00`);
