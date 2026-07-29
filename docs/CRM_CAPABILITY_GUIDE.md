@@ -148,6 +148,7 @@ The **Club Membership** page provides:
 - **Applications:** pending applications, automatic-commencement countdown, approval and reasoned rejection.
 - **Membership register:** member search, current legal/fee state, Xero invoice actions, annual waivers and existing-member import.
 - **Settings:** financial-year boundary, commencement, proration and minimum fee; renewal preparation and reminder schedules; separate technical/payment retry schedules; Xero item codes and staleness threshold; structured waiver governance; statutory-register cleanup target; staff override reasons; and staged booking enforcement.
+- Every membership setting has a keyboard- and touch-accessible help icon. Its detailed explanation distinguishes display-only choices from legal, booking, billing, privacy and Xero consequences; Escape or the close control returns focus to the setting that opened it.
 
 The register toolbar exports a privacy-minimised statutory CSV. Current entries contain the name, residential address, class and commencement date. A ceased entry exposes only the member name, cessation date and status, while accounting/audit history remains in its purpose-specific CRM records. The configurable cleanup target defaults to 14 days; the statutory projection suppresses the extra fields immediately.
 

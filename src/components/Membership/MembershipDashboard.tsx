@@ -11,6 +11,7 @@ import {
   Clock3,
   FileCheck2,
   Heart,
+  HelpCircle,
   Landmark,
   Loader2,
   Plus,
@@ -39,6 +40,12 @@ import {
   positiveIntegerList,
   scholarshipSettingsAreValid,
 } from '../../utils/membershipSettings';
+import { membershipSettingHelp, type MembershipSettingHelpKey } from '../../utils/membershipSettingHelp';
+
+type MembershipSettingHelpHandler = (
+  setting: MembershipSettingHelpKey,
+  trigger?: HTMLButtonElement,
+) => void;
 
 const dateLabel = (value?: string | null) => value
   ? new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value))
@@ -57,6 +64,145 @@ const StatusPill = ({ value }: { value?: string | null }) => (
     {membershipStatusLabel(value)}
   </span>
 );
+
+const MembershipSettingHelpButton = ({
+  setting,
+  active,
+  onOpen,
+}: {
+  setting: MembershipSettingHelpKey;
+  active: boolean;
+  onOpen: MembershipSettingHelpHandler;
+}) => {
+  const help = membershipSettingHelp[setting];
+  return (
+    <button
+      type="button"
+      onClick={event => onOpen(setting, event.currentTarget)}
+      aria-label={`Help: ${help.title}`}
+      aria-expanded={active}
+      aria-controls={active ? 'membership-setting-help-panel' : undefined}
+      title={`Explain ${help.title}`}
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+    >
+      <HelpCircle className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
+};
+
+const MembershipSettingField = ({
+  inputId,
+  label,
+  setting,
+  activeHelp,
+  onHelp,
+  children,
+  hint,
+  className = '',
+}: {
+  inputId: string;
+  label: string;
+  setting: MembershipSettingHelpKey;
+  activeHelp: MembershipSettingHelpKey | null;
+  onHelp: MembershipSettingHelpHandler;
+  children: React.ReactNode;
+  hint?: React.ReactNode;
+  className?: string;
+}) => (
+  <div className={className}>
+    <div className="flex min-h-7 items-center gap-1">
+      <label htmlFor={inputId} className="text-sm font-semibold text-slate-700">{label}</label>
+      <MembershipSettingHelpButton setting={setting} active={activeHelp === setting} onOpen={onHelp} />
+    </div>
+    {children}
+    {hint}
+  </div>
+);
+
+const MembershipToggleSetting = ({
+  inputId,
+  title,
+  description,
+  setting,
+  activeHelp,
+  onHelp,
+  checked,
+  onChange,
+  className = 'border-slate-200',
+}: {
+  inputId: string;
+  title: string;
+  description: string;
+  setting: MembershipSettingHelpKey;
+  activeHelp: MembershipSettingHelpKey | null;
+  onHelp: MembershipSettingHelpHandler;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  className?: string;
+}) => (
+  <div className={`flex items-start gap-3 rounded-lg border p-3 text-sm text-slate-700 ${className}`}>
+    <input
+      id={inputId}
+      type="checkbox"
+      checked={checked}
+      onChange={event => onChange(event.target.checked)}
+      className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300"
+    />
+    <div className="min-w-0 flex-1">
+      <div className="flex items-start justify-between gap-2">
+        <label htmlFor={inputId} className="font-bold text-slate-800">{title}</label>
+        <MembershipSettingHelpButton setting={setting} active={activeHelp === setting} onOpen={onHelp} />
+      </div>
+      <p className="mt-1 text-xs text-slate-500">{description}</p>
+    </div>
+  </div>
+);
+
+const MembershipSettingHelpPanel = ({
+  setting,
+  onClose,
+}: {
+  setting: MembershipSettingHelpKey;
+  onClose: () => void;
+}) => {
+  const help = membershipSettingHelp[setting];
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <aside
+      id="membership-setting-help-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="membership-setting-help-title"
+      className="fixed inset-x-4 bottom-4 z-[110] rounded-2xl border border-blue-200 bg-white p-4 shadow-2xl sm:left-auto sm:w-96"
+    >
+      <div className="flex items-start gap-3">
+        <HelpCircle className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <h3 id="membership-setting-help-title" className="font-bold text-slate-950">{help.title}</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{help.description}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          autoFocus
+          aria-label="Close setting help"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <XCircle className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </div>
+      <p className="mt-3 text-xs text-slate-400">Press Escape to close</p>
+    </aside>
+  );
+};
 
 const MembershipBillingStatus = ({ period }: { period?: MembershipFinancialPeriod }) => {
   const status = period?.billingSyncStatus;
@@ -386,6 +532,19 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
   const [classDrafts, setClassDrafts] = useState<MembershipClass[]>(membershipApi.classes);
   const [xeroAccounts, setXeroAccounts] = useState<Array<{ code: string; name: string; type?: string }>>([]);
   const [xeroAccountsLoading, setXeroAccountsLoading] = useState(true);
+  const [activeHelp, setActiveHelp] = useState<MembershipSettingHelpKey | null>(null);
+  const helpTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const openHelp = React.useCallback<MembershipSettingHelpHandler>((setting, trigger) => {
+    setActiveHelp(current => {
+      if (current === setting) return null;
+      helpTriggerRef.current = trigger || null;
+      return setting;
+    });
+  }, []);
+  const closeHelp = React.useCallback(() => {
+    setActiveHelp(null);
+    window.requestAnimationFrame(() => helpTriggerRef.current?.focus());
+  }, []);
   React.useEffect(() => {
     setDraft(membershipApi.settings);
     setClassDrafts(membershipApi.classes);
@@ -458,21 +617,35 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
             return <article key={membershipClass.id} className={`rounded-xl border p-4 ${membershipClass.isActive ? 'border-slate-200' : 'border-slate-200 bg-slate-50 opacity-80'}`}>
               <div className="mb-3 flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{isExisting ? 'Existing membership product' : 'New membership product'}</p>{!isExisting && <button type="button" onClick={() => setClassDrafts(current => current.filter(item => item.id !== membershipClass.id))} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-red-700 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Remove</button>}</div>
               <div className="grid gap-4 lg:grid-cols-4">
-                <label className="text-sm font-semibold text-slate-700">Name<input value={membershipClass.name} onChange={event => updateClass(membershipClass.id, { name: event.target.value })} className={inputClass} placeholder="Full membership" /></label>
-                <label className="text-sm font-semibold text-slate-700">Code<input value={membershipClass.code} disabled={isExisting} onChange={event => updateClass(membershipClass.id, { code: event.target.value.toLowerCase().replace(/\s+/g, '-') })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} placeholder="full" /><span className={`mt-1 block text-xs font-normal ${codeInvalid ? 'text-red-700' : 'text-slate-500'}`}>{isExisting ? 'Fixed after creation' : codeInvalid ? 'Use 2–50 lowercase letters, numbers, hyphens or underscores' : 'Permanent identifier'}</span></label>
-                <label className="text-sm font-semibold text-slate-700">Annual fee (AUD, incl. GST)<input type="number" min={0} step="0.01" value={membershipClass.annualFee} disabled={membershipClass.isFeeExempt} onChange={event => updateClass(membershipClass.id, { annualFee: Number(event.target.value || 0) })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} /></label>
-                <label className="text-sm font-semibold text-slate-700">Display order<input type="number" min={1} value={membershipClass.sortOrder || index + 1} onChange={event => updateClass(membershipClass.id, { sortOrder: Number(event.target.value || index + 1) })} className={inputClass} /></label>
+                <MembershipSettingField inputId={`membership-${membershipClass.id}-name`} label="Name" setting="productName" activeHelp={activeHelp} onHelp={openHelp}>
+                  <input id={`membership-${membershipClass.id}-name`} value={membershipClass.name} onChange={event => updateClass(membershipClass.id, { name: event.target.value })} className={inputClass} placeholder="Full membership" />
+                </MembershipSettingField>
+                <MembershipSettingField inputId={`membership-${membershipClass.id}-code`} label="Code" setting="productCode" activeHelp={activeHelp} onHelp={openHelp} hint={<span className={`mt-1 block text-xs ${codeInvalid ? 'text-red-700' : 'text-slate-500'}`}>{isExisting ? 'Fixed after creation' : codeInvalid ? 'Use 2–50 lowercase letters, numbers, hyphens or underscores' : 'Permanent identifier'}</span>}>
+                  <input id={`membership-${membershipClass.id}-code`} value={membershipClass.code} disabled={isExisting} onChange={event => updateClass(membershipClass.id, { code: event.target.value.toLowerCase().replace(/\s+/g, '-') })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} placeholder="full" />
+                </MembershipSettingField>
+                <MembershipSettingField inputId={`membership-${membershipClass.id}-fee`} label="Annual fee (AUD, incl. GST)" setting="annualFee" activeHelp={activeHelp} onHelp={openHelp}>
+                  <input id={`membership-${membershipClass.id}-fee`} type="number" min={0} step="0.01" value={membershipClass.annualFee} disabled={membershipClass.isFeeExempt} onChange={event => updateClass(membershipClass.id, { annualFee: Number(event.target.value || 0) })} className={`${inputClass} disabled:bg-slate-100 disabled:text-slate-500`} />
+                </MembershipSettingField>
+                <MembershipSettingField inputId={`membership-${membershipClass.id}-order`} label="Display order" setting="displayOrder" activeHelp={activeHelp} onHelp={openHelp}>
+                  <input id={`membership-${membershipClass.id}-order`} type="number" min={1} value={membershipClass.sortOrder || index + 1} onChange={event => updateClass(membershipClass.id, { sortOrder: Number(event.target.value || index + 1) })} className={inputClass} />
+                </MembershipSettingField>
               </div>
-              <label className="mt-4 block text-sm font-semibold text-slate-700">Description<input value={membershipClass.description} onChange={event => updateClass(membershipClass.id, { description: event.target.value })} className={inputClass} placeholder="Explain who this membership is for" /></label>
+              <MembershipSettingField inputId={`membership-${membershipClass.id}-description`} label="Description" setting="productDescription" activeHelp={activeHelp} onHelp={openHelp} className="mt-4">
+                <input id={`membership-${membershipClass.id}-description`} value={membershipClass.description} onChange={event => updateClass(membershipClass.id, { description: event.target.value })} className={inputClass} placeholder="Explain who this membership is for" />
+              </MembershipSettingField>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.hasVotingRights} onChange={event => updateClass(membershipClass.id, { hasVotingRights: event.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Voting rights</strong><span className="mt-1 block text-xs font-normal text-slate-500">Member is shown as eligible to vote.</span></span></label>
-                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.canSelfBookAircraft} onChange={event => updateClass(membershipClass.id, { canSelfBookAircraft: event.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Aircraft self-booking</strong><span className="mt-1 block text-xs font-normal text-slate-500">Still requires financial clearance and all safety rules.</span></span></label>
-                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.isFeeExempt} onChange={event => updateClass(membershipClass.id, { isFeeExempt: event.target.checked, annualFee: event.target.checked ? 0 : membershipClass.annualFee })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Fee exempt</strong><span className="mt-1 block text-xs font-normal text-slate-500">No annual membership invoice is required.</span></span></label>
-                <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700"><input type="checkbox" checked={membershipClass.isActive} onChange={event => updateClass(membershipClass.id, { isActive: event.target.checked })} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Available</strong><span className="mt-1 block text-xs font-normal text-slate-500">Can be selected for new applications.</span></span></label>
+                <MembershipToggleSetting inputId={`membership-${membershipClass.id}-voting`} title="Voting rights" description="Member is shown as eligible to vote." setting="votingRights" activeHelp={activeHelp} onHelp={openHelp} checked={membershipClass.hasVotingRights} onChange={checked => updateClass(membershipClass.id, { hasVotingRights: checked })} />
+                <MembershipToggleSetting inputId={`membership-${membershipClass.id}-self-booking`} title="Aircraft self-booking" description="Still requires financial clearance and all safety rules." setting="selfBooking" activeHelp={activeHelp} onHelp={openHelp} checked={membershipClass.canSelfBookAircraft} onChange={checked => updateClass(membershipClass.id, { canSelfBookAircraft: checked })} />
+                <MembershipToggleSetting inputId={`membership-${membershipClass.id}-fee-exempt`} title="Fee exempt" description="No annual membership invoice is required." setting="feeExempt" activeHelp={activeHelp} onHelp={openHelp} checked={membershipClass.isFeeExempt} onChange={checked => updateClass(membershipClass.id, { isFeeExempt: checked, annualFee: checked ? 0 : membershipClass.annualFee })} />
+                <MembershipToggleSetting inputId={`membership-${membershipClass.id}-available`} title="Available" description="Can be selected for new applications." setting="productAvailable" activeHelp={activeHelp} onHelp={openHelp} checked={membershipClass.isActive} onChange={checked => updateClass(membershipClass.id, { isActive: checked })} />
               </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="text-sm font-semibold text-slate-700">Xero item code<input value={membershipClass.xeroItemCode || ''} onChange={event => updateClass(membershipClass.id, { xeroItemCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={`BFC-${code || 'MEMBERSHIP'}`} /><span className="mt-1 block text-xs font-normal text-slate-500">May be shared across membership products.</span></label>
-                <label className="text-sm font-semibold text-slate-700">Accounting Code{xeroAccounts.length > 0 ? <select value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value || null })} className={inputClass}><option value="">Use the default Xero revenue account</option>{membershipClass.xeroAccountCode && !xeroAccounts.some(account => account.code === membershipClass.xeroAccountCode) && <option value={membershipClass.xeroAccountCode}>{membershipClass.xeroAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 200'} />}<span className="mt-1 block text-xs font-normal text-slate-500">Xero revenue account; may be the same or different for each product.</span></label>
+                <MembershipSettingField inputId={`membership-${membershipClass.id}-xero-item`} label="Xero item code" setting="productXeroItem" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">May be shared across membership products.</span>}>
+                  <input id={`membership-${membershipClass.id}-xero-item`} value={membershipClass.xeroItemCode || ''} onChange={event => updateClass(membershipClass.id, { xeroItemCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={`BFC-${code || 'MEMBERSHIP'}`} />
+                </MembershipSettingField>
+                <MembershipSettingField inputId={`membership-${membershipClass.id}-xero-account`} label="Accounting code" setting="productXeroAccount" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">Xero revenue account; may be the same or different for each product.</span>}>
+                  {xeroAccounts.length > 0 ? <select id={`membership-${membershipClass.id}-xero-account`} value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value || null })} className={inputClass}><option value="">Use the default Xero revenue account</option>{membershipClass.xeroAccountCode && !xeroAccounts.some(account => account.code === membershipClass.xeroAccountCode) && <option value={membershipClass.xeroAccountCode}>{membershipClass.xeroAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input id={`membership-${membershipClass.id}-xero-account`} value={membershipClass.xeroAccountCode || ''} onChange={event => updateClass(membershipClass.id, { xeroAccountCode: event.target.value.toUpperCase() })} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 200'} />}
+                </MembershipSettingField>
               </div>
             </article>;
           })}
@@ -483,41 +656,73 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div><h2 className="text-lg font-bold text-slate-950">Membership year and commencement</h2><p className="mt-1 text-sm text-slate-600">These values affect legal commencement and future fee periods. Confirm governance changes before saving them.</p></div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="text-sm font-semibold text-slate-700">Financial year starts<select value={draft.financialYearStartMonth} onChange={event => setDraft(current => ({ ...current, financialYearStartMonth: Number(event.target.value) }))} className={inputClass}>{months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select></label>
-          <label className="text-sm font-semibold text-slate-700">Start day<input type="number" min={1} max={28} value={draft.financialYearStartDay} onChange={event => setDraft(current => ({ ...current, financialYearStartDay: Number(event.target.value) }))} className={inputClass} /></label>
-          <label className="text-sm font-semibold text-slate-700">Automatic commencement<input type="number" min={1} max={90} value={draft.automaticCommencementDays} onChange={event => setDraft(current => ({ ...current, automaticCommencementDays: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">days after application</span></label>
-          <label className="text-sm font-semibold text-slate-700">Non-payment grace<input type="number" min={1} max={180} value={draft.nonPaymentGraceDays} onChange={event => setDraft(current => ({ ...current, nonPaymentGraceDays: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">days after the due date</span></label>
+          <MembershipSettingField inputId="membership-financial-year-month" label="Financial year starts" setting="financialYearStartMonth" activeHelp={activeHelp} onHelp={openHelp}>
+            <select id="membership-financial-year-month" value={draft.financialYearStartMonth} onChange={event => setDraft(current => ({ ...current, financialYearStartMonth: Number(event.target.value) }))} className={inputClass}>{months.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select>
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-financial-year-day" label="Start day" setting="financialYearStartDay" activeHelp={activeHelp} onHelp={openHelp}>
+            <input id="membership-financial-year-day" type="number" min={1} max={28} value={draft.financialYearStartDay} onChange={event => setDraft(current => ({ ...current, financialYearStartDay: Number(event.target.value) }))} className={inputClass} />
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-auto-commencement" label="Automatic commencement" setting="automaticCommencement" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">days after application</span>}>
+            <input id="membership-auto-commencement" type="number" min={1} max={90} value={draft.automaticCommencementDays} onChange={event => setDraft(current => ({ ...current, automaticCommencementDays: Number(event.target.value) }))} className={inputClass} />
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-nonpayment-grace" label="Non-payment grace" setting="nonPaymentGrace" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">days after the due date</span>}>
+            <input id="membership-nonpayment-grace" type="number" min={1} max={180} value={draft.nonPaymentGraceDays} onChange={event => setDraft(current => ({ ...current, nonPaymentGraceDays: Number(event.target.value) }))} className={inputClass} />
+          </MembershipSettingField>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-semibold text-slate-700">New-member proration<select value={draft.prorationMethod} onChange={event => setDraft(current => ({ ...current, prorationMethod: event.target.value as MembershipProrationMethod }))} className={inputClass}><option value="daily">Daily to financial year end</option><option value="monthly">Whole months remaining</option><option value="none">No proration</option></select></label>
-          <label className="text-sm font-semibold text-slate-700">Minimum prorated fee (incl. GST)<input type="number" min={0} step="0.01" value={draft.minimumProratedFee} onChange={event => setDraft(current => ({ ...current, minimumProratedFee: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">AUD; use $0 for no minimum</span></label>
+          <MembershipSettingField inputId="membership-proration" label="New-member proration" setting="prorationMethod" activeHelp={activeHelp} onHelp={openHelp}>
+            <select id="membership-proration" value={draft.prorationMethod} onChange={event => setDraft(current => ({ ...current, prorationMethod: event.target.value as MembershipProrationMethod }))} className={inputClass}><option value="daily">Daily to financial year end</option><option value="monthly">Whole months remaining</option><option value="none">No proration</option></select>
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-minimum-prorated-fee" label="Minimum prorated fee (incl. GST)" setting="minimumProratedFee" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">AUD; use $0 for no minimum</span>}>
+            <input id="membership-minimum-prorated-fee" type="number" min={0} step="0.01" value={draft.minimumProratedFee} onChange={event => setDraft(current => ({ ...current, minimumProratedFee: Number(event.target.value) }))} className={inputClass} />
+          </MembershipSettingField>
         </div>
       </section>
 
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div><h2 className="text-lg font-bold text-slate-950">Renewals and reminders</h2><p className="mt-1 text-sm text-slate-600">Renewal invoices are prepared in advance. Automatic payment is never attempted before the due date.</p></div>
         <div className="grid gap-4 sm:grid-cols-3">
-          <label className="text-sm font-semibold text-slate-700">Prepare invoices<input type="number" min={0} max={120} value={draft.renewalInvoiceLeadDays} onChange={event => setDraft(current => ({ ...current, renewalInvoiceLeadDays: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">days before renewal</span></label>
-          <label className="text-sm font-semibold text-slate-700">Upcoming reminders<input value={draft.renewalReminderDaysBeforeDue.join(', ')} onChange={event => setDraft(current => ({ ...current, renewalReminderDaysBeforeDue: positiveIntegerList(event.target.value, current.renewalReminderDaysBeforeDue) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">days before due, comma separated</span></label>
-          <label className="text-sm font-semibold text-slate-700">Overdue reminders<input value={draft.overdueReminderDays.join(', ')} onChange={event => setDraft(current => ({ ...current, overdueReminderDays: positiveIntegerList(event.target.value, current.overdueReminderDays) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">days overdue, comma separated</span></label>
+          <MembershipSettingField inputId="membership-renewal-lead" label="Prepare invoices" setting="renewalInvoiceLead" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">days before renewal</span>}>
+            <input id="membership-renewal-lead" type="number" min={0} max={120} value={draft.renewalInvoiceLeadDays} onChange={event => setDraft(current => ({ ...current, renewalInvoiceLeadDays: Number(event.target.value) }))} className={inputClass} />
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-upcoming-reminders" label="Upcoming reminders" setting="upcomingReminders" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">days before due, comma separated</span>}>
+            <input id="membership-upcoming-reminders" value={draft.renewalReminderDaysBeforeDue.join(', ')} onChange={event => setDraft(current => ({ ...current, renewalReminderDaysBeforeDue: positiveIntegerList(event.target.value, current.renewalReminderDaysBeforeDue) }))} className={inputClass} />
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-overdue-reminders" label="Overdue reminders" setting="overdueReminders" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">days overdue, comma separated</span>}>
+            <input id="membership-overdue-reminders" value={draft.overdueReminderDays.join(', ')} onChange={event => setDraft(current => ({ ...current, overdueReminderDays: positiveIntegerList(event.target.value, current.overdueReminderDays) }))} className={inputClass} />
+          </MembershipSettingField>
         </div>
       </section>
 
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div><h2 className="text-lg font-bold text-slate-950">Billing recovery and Xero</h2><p className="mt-1 text-sm text-slate-600">Technical interruptions retry quickly. A rejected card or bank debit uses the slower day-based schedule.</p></div>
         <div className="grid gap-4 sm:grid-cols-3">
-          <label className="text-sm font-semibold text-slate-700">Technical retry minutes<input value={draft.technicalRetryMinutes.join(', ')} onChange={event => setDraft(current => ({ ...current, technicalRetryMinutes: positiveIntegerList(event.target.value, current.technicalRetryMinutes) }))} className={inputClass} /></label>
-          <label className="text-sm font-semibold text-slate-700">Payment retry days<input value={draft.paymentRetryDays.join(', ')} onChange={event => setDraft(current => ({ ...current, paymentRetryDays: positiveIntegerList(event.target.value, current.paymentRetryDays) }))} className={inputClass} /></label>
-          <label className="text-sm font-semibold text-slate-700">Xero status stale after<input type="number" min={1} max={168} value={draft.xeroStatusStaleHours} onChange={event => setDraft(current => ({ ...current, xeroStatusStaleHours: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">hours; stale data prevents automatic cessation</span></label>
+          <MembershipSettingField inputId="membership-technical-retries" label="Technical retry minutes" setting="technicalRetries" activeHelp={activeHelp} onHelp={openHelp}>
+            <input id="membership-technical-retries" value={draft.technicalRetryMinutes.join(', ')} onChange={event => setDraft(current => ({ ...current, technicalRetryMinutes: positiveIntegerList(event.target.value, current.technicalRetryMinutes) }))} className={inputClass} />
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-payment-retries" label="Payment retry days" setting="paymentRetries" activeHelp={activeHelp} onHelp={openHelp}>
+            <input id="membership-payment-retries" value={draft.paymentRetryDays.join(', ')} onChange={event => setDraft(current => ({ ...current, paymentRetryDays: positiveIntegerList(event.target.value, current.paymentRetryDays) }))} className={inputClass} />
+          </MembershipSettingField>
+          <MembershipSettingField inputId="membership-xero-stale" label="Xero status stale after" setting="xeroStaleAfter" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">hours; stale data prevents automatic cessation</span>}>
+            <input id="membership-xero-stale" type="number" min={1} max={168} value={draft.xeroStatusStaleHours} onChange={event => setDraft(current => ({ ...current, xeroStatusStaleHours: Number(event.target.value) }))} className={inputClass} />
+          </MembershipSettingField>
         </div>
         <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
           <div><h3 className="font-bold text-violet-950">Scholarship contribution</h3><p className="mt-1 text-sm text-violet-800">This remains optional and unchecked for members. Configure the suggested amount and its separate Xero mapping.</p></div>
-          <label className="mt-4 flex items-start gap-3 rounded-lg border border-violet-200 bg-white p-3 text-sm text-slate-700"><input type="checkbox" checked={draft.scholarshipContributionAvailable} onChange={event => setDraft(current => ({ ...current, scholarshipContributionAvailable: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-violet-300" /><span><strong>Offer scholarship contributions</strong><span className="mt-1 block text-xs font-normal text-slate-500">Members must actively opt in.</span></span></label>
+          <MembershipToggleSetting inputId="membership-scholarship-available" title="Offer scholarship contributions" description="Members must actively opt in." setting="scholarshipAvailable" activeHelp={activeHelp} onHelp={openHelp} checked={draft.scholarshipContributionAvailable} onChange={checked => setDraft(current => ({ ...current, scholarshipContributionAvailable: checked }))} className="mt-4 border-violet-200 bg-white" />
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-sm font-semibold text-slate-700">Suggested amount<input type="number" min={0.01} step="0.01" value={draft.scholarshipDefaultAmount} onChange={event => setDraft(current => ({ ...current, scholarshipDefaultAmount: Number(event.target.value || 0) }))} className={inputClass} /></label>
-            <label className="text-sm font-semibold text-slate-700">Minimum amount<input type="number" min={0.01} step="0.01" value={draft.scholarshipMinimumAmount} onChange={event => setDraft(current => ({ ...current, scholarshipMinimumAmount: Number(event.target.value || 0) }))} className={inputClass} /></label>
-            <label className="text-sm font-semibold text-slate-700">Xero item code<input value={draft.xeroScholarshipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipItemCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder="BFC-SCHOLARSHIP" /></label>
-            <label className="text-sm font-semibold text-slate-700">Accounting Code{xeroAccounts.length > 0 ? <select value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value || null }))} className={inputClass}><option value="">Use the default Xero revenue account</option>{draft.xeroScholarshipAccountCode && !xeroAccounts.some(account => account.code === draft.xeroScholarshipAccountCode) && <option value={draft.xeroScholarshipAccountCode}>{draft.xeroScholarshipAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 210'} />}</label>
+            <MembershipSettingField inputId="membership-scholarship-suggested" label="Suggested amount" setting="scholarshipSuggested" activeHelp={activeHelp} onHelp={openHelp}>
+              <input id="membership-scholarship-suggested" type="number" min={0.01} step="0.01" value={draft.scholarshipDefaultAmount} onChange={event => setDraft(current => ({ ...current, scholarshipDefaultAmount: Number(event.target.value || 0) }))} className={inputClass} />
+            </MembershipSettingField>
+            <MembershipSettingField inputId="membership-scholarship-minimum" label="Minimum amount" setting="scholarshipMinimum" activeHelp={activeHelp} onHelp={openHelp}>
+              <input id="membership-scholarship-minimum" type="number" min={0.01} step="0.01" value={draft.scholarshipMinimumAmount} onChange={event => setDraft(current => ({ ...current, scholarshipMinimumAmount: Number(event.target.value || 0) }))} className={inputClass} />
+            </MembershipSettingField>
+            <MembershipSettingField inputId="membership-scholarship-item" label="Xero item code" setting="scholarshipXeroItem" activeHelp={activeHelp} onHelp={openHelp}>
+              <input id="membership-scholarship-item" value={draft.xeroScholarshipItemCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipItemCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder="BFC-SCHOLARSHIP" />
+            </MembershipSettingField>
+            <MembershipSettingField inputId="membership-scholarship-account" label="Accounting code" setting="scholarshipXeroAccount" activeHelp={activeHelp} onHelp={openHelp}>
+              {xeroAccounts.length > 0 ? <select id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value || null }))} className={inputClass}><option value="">Use the default Xero revenue account</option>{draft.xeroScholarshipAccountCode && !xeroAccounts.some(account => account.code === draft.xeroScholarshipAccountCode) && <option value={draft.xeroScholarshipAccountCode}>{draft.xeroScholarshipAccountCode} — saved code</option>}{xeroAccounts.map(account => <option key={account.code} value={account.code}>{account.code} — {account.name}</option>)}</select> : <input id="membership-scholarship-account" value={draft.xeroScholarshipAccountCode || ''} onChange={event => setDraft(current => ({ ...current, xeroScholarshipAccountCode: event.target.value.toUpperCase() }))} className={inputClass} placeholder={xeroAccountsLoading ? 'Loading Xero accounts…' : 'Example: 210'} />}
+            </MembershipSettingField>
           </div>
           {invalidScholarshipSettings && <p className="mt-3 text-sm font-semibold text-red-700">The suggested contribution must be at least the minimum, and the minimum must be at least $0.01.</p>}
         </div>
@@ -525,17 +730,21 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
 
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div><h2 className="text-lg font-bold text-slate-950">Waivers and register privacy</h2><p className="mt-1 text-sm text-slate-600">Complimentary memberships remain annual, authorised decisions—not fake payments.</p></div>
-        <label className="block text-sm font-semibold text-slate-700">Approved waiver types<textarea rows={4} value={draft.waiverTypes.join('\n')} onChange={event => setDraft(current => ({ ...current, waiverTypes: event.target.value.split('\n').map(value => value.trim()).filter(Boolean).slice(0, 20) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">One type per line</span></label>
+        <MembershipSettingField inputId="membership-waiver-types" label="Approved waiver types" setting="waiverTypes" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">One type per line</span>}>
+          <textarea id="membership-waiver-types" rows={4} value={draft.waiverTypes.join('\n')} onChange={event => setDraft(current => ({ ...current, waiverTypes: event.target.value.split('\n').map(value => value.trim()).filter(Boolean).slice(0, 20) }))} className={inputClass} />
+        </MembershipSettingField>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 text-sm text-slate-700"><input type="checkbox" checked={draft.requireWaiverAuthorityReference} onChange={event => setDraft(current => ({ ...current, requireWaiverAuthorityReference: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Require waiver authority reference</strong><span className="mt-1 block text-xs font-normal text-slate-500">Records the committee minute or delegated approval.</span></span></label>
-          <label className="text-sm font-semibold text-slate-700">Register cleanup target<input type="number" min={1} max={90} value={draft.statutoryRegisterCleanupDays} onChange={event => setDraft(current => ({ ...current, statutoryRegisterCleanupDays: Number(event.target.value) }))} className={inputClass} /><span className="mt-1 block text-xs font-normal text-slate-500">days; exported ceased records are privacy-minimised immediately</span></label>
+          <MembershipToggleSetting inputId="membership-waiver-authority" title="Require waiver authority reference" description="Records the committee minute or delegated approval." setting="waiverAuthority" activeHelp={activeHelp} onHelp={openHelp} checked={draft.requireWaiverAuthorityReference} onChange={checked => setDraft(current => ({ ...current, requireWaiverAuthorityReference: checked }))} className="border-slate-200 p-4" />
+          <MembershipSettingField inputId="membership-register-cleanup" label="Register cleanup target" setting="registerCleanup" activeHelp={activeHelp} onHelp={openHelp} hint={<span className="mt-1 block text-xs text-slate-500">days; exported ceased records are privacy-minimised immediately</span>}>
+            <input id="membership-register-cleanup" type="number" min={1} max={90} value={draft.statutoryRegisterCleanupDays} onChange={event => setDraft(current => ({ ...current, statutoryRegisterCleanupDays: Number(event.target.value) }))} className={inputClass} />
+          </MembershipSettingField>
         </div>
       </section>
 
       <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div><h2 className="text-lg font-bold text-slate-950">Booking enforcement</h2><p className="mt-1 text-sm text-slate-600">Use warning mode while the member register and Xero links are checked, then enable enforcement.</p></div>
+        <div><div className="flex items-center gap-1"><h2 className="text-lg font-bold text-slate-950">Booking enforcement</h2><MembershipSettingHelpButton setting="rolloutMode" active={activeHelp === 'rolloutMode'} onOpen={openHelp} /></div><p className="mt-1 text-sm text-slate-600">Use warning mode while the member register and Xero links are checked, then enable enforcement.</p></div>
         <div className="space-y-3">{(['information_only', 'staff_warning', 'enforced'] as MembershipRolloutMode[]).map(mode => <label key={mode} className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${draft.rolloutMode === mode ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`}><input type="radio" name="rollout" checked={draft.rolloutMode === mode} onChange={() => setDraft(current => ({ ...current, rolloutMode: mode }))} className="mt-1" /><span><span className="block font-bold text-slate-900">{membershipStatusLabel(mode)}</span><span className="mt-1 block text-sm text-slate-600">{rolloutModeDescription[mode]}</span></span></label>)}</div>
-        <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 text-sm text-slate-700"><input type="checkbox" checked={draft.requireStaffOverrideReason} onChange={event => setDraft(current => ({ ...current, requireStaffOverrideReason: event.target.checked }))} className="mt-0.5 h-4 w-4 rounded border-slate-300" /><span><strong>Require a staff override reason</strong><span className="mt-1 block text-xs font-normal text-slate-500">Recommended whenever staff proceed for an unpaid member or non-member.</span></span></label>
+        <MembershipToggleSetting inputId="membership-staff-override-reason" title="Require a staff override reason" description="Recommended whenever staff proceed for an unpaid member or non-member." setting="staffOverrideReason" activeHelp={activeHelp} onHelp={openHelp} checked={draft.requireStaffOverrideReason} onChange={checked => setDraft(current => ({ ...current, requireStaffOverrideReason: checked }))} className="border-slate-200 p-4" />
       </section>
 
       <button disabled={saveDisabled} onClick={() => void membershipApi.updateSettings(draft, classDrafts)} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"><Settings2 className="h-4 w-4" /> Save membership settings</button>
@@ -545,6 +754,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
       <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5 text-sm text-violet-950"><h3 className="font-bold">Current recommended defaults</h3><p className="mt-2">1 July year start · daily proration · invoices 30 days early · 60-day grace · Xero stale after 12 hours · payment retries after 3 and 7 days.</p></div>
       <button disabled={membershipApi.busyAction === 'lifecycle'} onClick={() => void membershipApi.runLifecycle()} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-50"><CalendarClock className="h-4 w-4" /> Run lifecycle now</button>
     </aside>
+    {activeHelp && <MembershipSettingHelpPanel setting={activeHelp} onClose={closeHelp} />}
   </div>;
 };
 
