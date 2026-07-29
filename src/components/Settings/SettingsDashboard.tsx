@@ -304,34 +304,31 @@ export const SettingsDashboard: React.FC = () => {
             </Suspense>
           </div>
 
-          {/* Sticky Save/Cancel Bar */}
-          <div
-            className={`border-t border-gray-200 bg-gray-50 px-6 py-4 transition-all duration-150 ${
-              hasUnsavedChanges ? 'opacity-100' : 'pointer-events-none opacity-0'
-            }`}
-            aria-hidden={!hasUnsavedChanges}
-          >
-            <div className="flex min-h-[4rem] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-gray-600">You have unsaved changes</p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:space-x-3">
-                <button
-                  onClick={handleCancel}
-                  disabled={isLoading || !hasUnsavedChanges}
-                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={isLoading || !hasUnsavedChanges}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  <Save className="h-4 w-4" />
-                  <span>{isLoading ? 'Saving...' : 'Save Changes'}</span>
-                </button>
+          {/* Save/Cancel Bar */}
+          {hasUnsavedChanges && (
+            <div className="border-t border-gray-200 bg-gray-50 px-6 py-4">
+              <div className="flex min-h-[4rem] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-600">You have unsaved changes</p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:space-x-3">
+                  <button
+                    onClick={handleCancel}
+                    disabled={isLoading}
+                    className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={isLoading}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    <Save className="h-4 w-4" />
+                    <span>{isLoading ? 'Saving...' : 'Save Changes'}</span>
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
