@@ -222,6 +222,7 @@ The July 2019 By-laws still list the old calendar-year fees ($140/$70/$40/$0) an
 - If they do not clock out, the system assumes the configured maximum allowed duty duration.
 - Booking checks forecast duty exposure from recorded duty, inferred duty and that day's bookings. Warnings may be overridden only with a reason; the source duty records remain unchanged.
 - Administrators designate authorised senior instructors and their supervision priority.
+- An account with the Instructor role automatically requires supervision for every flight unless it also has Senior Instructor or CFI authority. This role-based safeguard cannot be disabled in settings; additional manual requirements remain available for other staff.
 - Instructor bookings requiring supervision remain pending unless an authorised senior instructor is available.
 - The assigned supervisor appears in small print on the booking. If that person becomes unavailable, the booking moves to the next available authorised supervisor; if none remains, senior instructors are warned and the booking returns to pending.
 

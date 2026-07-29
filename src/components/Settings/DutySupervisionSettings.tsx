@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, MapPin, Plus, ShieldCheck, Users } from 'l
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import { requiresAutomaticInstructorSupervision } from '../../utils/supervisionRoles';
 
 type StaffRow = { id: string; name: string; email: string; roles: string[] };
 type RequirementDraft = { enabled: boolean; locations: string; preflightMinutes: number; postflightMinutes: number; notes: string };
@@ -68,7 +69,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
     setLoading(true);
     try {
       const [{ data: roleRows, error: roleError }, { data: requirementRows, error: requirementError }, { data: authorisationRows, error: authorisationError }, { data: clockLocationRows, error: clockLocationError }] = await Promise.all([
-        supabase.from('user_roles').select('user_id,role').in('role', ['admin', 'senior_instructor', 'instructor']),
+        supabase.from('user_roles').select('user_id,role').in('role', ['admin', 'cfi', 'senior_instructor', 'instructor']),
         supabase.from('instructor_supervision_requirements').select('*'),
         supabase.from('senior_instructor_authorisations').select('*'),
         supabase.from('duty_clock_locations').select('*').order('is_primary', { ascending: false }).order('name'),
@@ -87,8 +88,9 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
       setStaff((users || []).map(row => ({ ...row, roles: rolesByUser.get(row.id) || [] })));
       setRequirements(Object.fromEntries((users || []).map(row => {
         const saved = (requirementRows || []).find(value => value.instructor_id === row.id);
+        const automatic = requiresAutomaticInstructorSupervision(rolesByUser.get(row.id) || []);
         return [row.id, {
-          enabled: Boolean(saved?.supervision_required),
+          enabled: automatic || Boolean(saved?.supervision_required),
           locations: (saved?.locations || []).join(', '),
           preflightMinutes: Number(saved?.preflight_minutes ?? 30),
           postflightMinutes: Number(saved?.postflight_minutes ?? 30),
@@ -167,12 +169,14 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
       if (locationSaveError) throw locationSaveError;
       for (const person of staff) {
         const requirement = requirements[person.id];
-        if (requirement?.enabled) {
+        const automatic = requiresAutomaticInstructorSupervision(person.roles);
+        if (automatic || requirement?.enabled) {
           const { error } = await supabase.from('instructor_supervision_requirements').upsert({
             instructor_id: person.id,
             supervision_required: true,
             activity_types: ['flight'],
-            locations: parseLocations(requirement.locations),
+            locations: automatic ? [] : parseLocations(requirement.locations),
+            role_mandated: automatic,
             preflight_minutes: Math.max(0, requirement.preflightMinutes),
             postflight_minutes: Math.max(0, requirement.postflightMinutes),
             notes: requirement.notes.trim() || null,
@@ -233,7 +237,7 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
     <div className="space-y-6 p-4 sm:p-6">
       <div>
         <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-blue-600" /><h2 className="text-lg font-bold text-gray-950">Duty and supervision</h2></div>
-        <p className="mt-1 text-sm text-gray-600">Designate instructors who require supervision and rank the senior instructors authorised to provide it.</p>
+        <p className="mt-1 text-sm text-gray-600">Ordinary instructors automatically require supervision. Configure any additional requirements and rank the senior instructors authorised to provide it.</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -260,22 +264,46 @@ export const DutySupervisionSettings: React.FC<{ canEdit?: boolean; onFormChange
       </section>
 
       <section>
-        <div className="mb-3 flex items-center gap-2"><Users className="h-5 w-5 text-indigo-600" /><div><h3 className="font-bold text-gray-950">Instructor supervision requirements</h3><p className="text-xs text-gray-500">Only flight bookings are included. Blank locations mean all locations.</p></div></div>
+        <div className="mb-3 flex items-center gap-2"><Users className="h-5 w-5 text-indigo-600" /><div><h3 className="font-bold text-gray-950">Instructor supervision requirements</h3><p className="text-xs text-gray-500">Instructors without Senior Instructor or CFI authority always require supervision for flight bookings. Additional requirements can still be configured.</p></div></div>
         <div className="space-y-3">
           {staff.map(person => {
             const value = requirements[person.id];
             if (!value) return null;
+            const automatic = requiresAutomaticInstructorSupervision(person.roles);
             return (
               <div key={person.id} className="rounded-xl border border-gray-200 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-bold text-gray-950">{person.name}</p><p className="text-xs text-gray-500">{person.email}</p></div><label className="flex items-center gap-2 text-sm font-bold text-gray-700"><input type="checkbox" disabled={!canEdit} checked={value.enabled} onChange={event => updateRequirement(person.id, { enabled: event.target.checked })} className="h-4 w-4" /> Requires supervision</label></div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-bold text-gray-950">{person.name}</p>
+                    <p className="text-xs text-gray-500">{person.email}</p>
+                  </div>
+                  {automatic ? (
+                    <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800 sm:self-auto">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Required by instructor role
+                    </span>
+                  ) : (
+                    <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                      <input type="checkbox" disabled={!canEdit} checked={value.enabled} onChange={event => updateRequirement(person.id, { enabled: event.target.checked })} className="h-4 w-4" />
+                      Requires supervision
+                    </label>
+                  )}
+                </div>
                 {value.enabled && (
                   <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                    <LocationCoveragePicker
-                      value={value.locations}
-                      locations={clockLocations}
-                      disabled={!canEdit}
-                      onChange={(locations) => updateRequirement(person.id, { locations })}
-                    />
+                    {automatic ? (
+                      <div className="sm:col-span-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                        <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">Applies at</p>
+                        <p className="mt-1 text-sm font-semibold text-indigo-950">All active locations</p>
+                      </div>
+                    ) : (
+                      <LocationCoveragePicker
+                        value={value.locations}
+                        locations={clockLocations}
+                        disabled={!canEdit}
+                        onChange={(locations) => updateRequirement(person.id, { locations })}
+                      />
+                    )}
                     <label className="text-xs font-bold uppercase tracking-wide text-gray-500">
                       Pre-flight coverage
                       <input disabled={!canEdit} type="number" min="0" value={value.preflightMinutes} onChange={event => updateRequirement(person.id, { preflightMinutes: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal" />
