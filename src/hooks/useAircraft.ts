@@ -459,12 +459,18 @@ export const useAircraft = (options?: UseAircraftOptions) => {
           aircraftData.milestones.map(m => ({
             aircraft_id: newAircraft.id,
             title: m.title,
+            type: m.dueCondition === 'date' ? 'calendar' : 'hours',
             due_condition: m.dueCondition,
-            due_value: m.dueValue
+            due_value: m.dueValue,
+            next_due_hours: m.dueCondition === 'hours' ? Number(m.dueValue) : null,
+            next_due_date: m.dueCondition === 'date' ? m.dueValue : null,
+            interval_hours: 0,
+            interval_months: 0,
+            is_one_time: true
           }))
         );
         if (milestonesError) {
-          console.error('Error saving milestones:', milestonesError);
+          throw milestonesError;
         }
       }
 
@@ -587,11 +593,17 @@ export const useAircraft = (options?: UseAircraftOptions) => {
           aircraftData.milestones.map(m => ({
             aircraft_id: id,
             title: m.title,
+            type: m.dueCondition === 'date' ? 'calendar' : 'hours',
             due_condition: m.dueCondition,
             due_value: m.dueValue,
+            next_due_hours: m.dueCondition === 'hours' ? Number(m.dueValue) : null,
+            next_due_date: m.dueCondition === 'date' ? m.dueValue : null,
+            interval_hours: 0,
+            interval_months: 0,
+            is_one_time: true
           }))
         );
-        if (milestonesError) console.error('Error saving milestones:', milestonesError);
+        if (milestonesError) throw milestonesError;
       }
 
       if (aircraftData.documents && aircraftData.documents.length > 0) {
