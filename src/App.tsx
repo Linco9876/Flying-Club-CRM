@@ -21,6 +21,7 @@ import { supabase } from './lib/supabase';
 import { getSupabaseFunctionErrorMessage } from './lib/supabaseFunctionErrors';
 import { Plane } from 'lucide-react';
 import { MfaGate } from './components/Auth/MfaSecurity';
+import { FinancialProviderProvider } from './context/FinancialProviderContext';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
 const MembershipJoinPage = lazy(() => import('./components/Auth/MembershipJoinPage').then(module => ({ default: module.MembershipJoinPage })));
@@ -1260,10 +1261,12 @@ function App() {
   return (
     <Router basename={basename}>
       <AuthProvider>
-        <TrainingModulesProvider>
-          <AppContent />
-          <AppNotifications />
-        </TrainingModulesProvider>
+        <FinancialProviderProvider>
+          <TrainingModulesProvider>
+            <AppContent />
+            <AppNotifications />
+          </TrainingModulesProvider>
+        </FinancialProviderProvider>
       </AuthProvider>
     </Router>
   );

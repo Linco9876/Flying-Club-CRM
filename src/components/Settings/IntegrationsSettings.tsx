@@ -3,6 +3,7 @@ import { Plug } from 'lucide-react';
 import { StripeIntegrationCard } from './StripeIntegrationCard';
 import { XeroIntegrationCard } from './XeroIntegrationCard';
 import { DeveloperIntegrationsCard } from './DeveloperIntegrationsCard';
+import { FinancialProviderStatus } from '../Billing/FinancialProviderStatus';
 
 interface IntegrationsSettingsProps {
   canEdit: boolean;
@@ -20,6 +21,7 @@ export const IntegrationsSettings: React.FC<IntegrationsSettingsProps> = ({ canE
         <p className="text-gray-600">Prepare external services for accounting, notifications and operational data sync.</p>
       </div>
 
+      <FinancialProviderStatus showRefresh />
       <StripeIntegrationCard canEdit={canEdit} />
       <XeroIntegrationCard canEdit={canEdit} onFormChange={onFormChange} />
       <DeveloperIntegrationsCard canEdit={canEdit} />

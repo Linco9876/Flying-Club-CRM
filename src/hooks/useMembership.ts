@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { useFinancialProviders } from '../context/financialProviderState';
 import { PRIVACY_NOTICE_VERSION } from '../utils/privacyNotice';
 import { supabase } from '../lib/supabase';
 import { statutoryRegisterCsv } from '../utils/membershipSettings';
@@ -224,6 +225,7 @@ const mapPaymentPreference = (row: MembershipPaymentPreferenceRow): MembershipPa
 
 export const useMembership = () => {
   const { user } = useAuth();
+  const { capabilities: financialProviders } = useFinancialProviders();
   const isAdmin = Boolean(user?.role === 'admin' || user?.roles?.includes('admin'));
   const [classes, setClasses] = useState<MembershipClass[]>([]);
   const [applications, setApplications] = useState<MembershipApplication[]>([]);
@@ -384,12 +386,29 @@ export const useMembership = () => {
             console.warn('Membership approved; welcome email deferred:', welcomeError || welcomeData?.error);
             toast('Membership approved. The welcome email will be retried by the daily job.', { icon: 'ℹ️' });
           }
-          const { data: invoiceData, error: invoiceError } = await supabase.functions.invoke('xero-sync', {
-            body: { action: 'issue-member-membership-invoice', userId: applicantUserId, sendEmail: true },
-          });
-          if (invoiceError || invoiceData?.error) {
-            console.warn('Membership approved; Xero invoice issue deferred:', invoiceError || invoiceData?.error);
-            toast('Membership approved. The Xero invoice will be retried by the daily billing job.', { icon: 'ℹ️' });
+          if (financialProviders.xero.postingAvailable) {
+            const { data: invoiceData, error: invoiceError } = await supabase.functions.invoke('xero-sync', {
+              body: { action: 'issue-member-membership-invoice', userId: applicantUserId, sendEmail: true },
+            });
+            if (invoiceError || invoiceData?.error) {
+              console.warn('Membership approved; Xero invoice issue deferred:', invoiceError || invoiceData?.error);
+              toast('Membership approved. The Xero invoice will be retried by the daily billing job.', { icon: 'ℹ️' });
+            }
+          } else if (financialProviders.stripe.paymentsAvailable) {
+            const { data: collection, error: collectionError } = await supabase.functions.invoke(
+              'membership-payment-setup',
+              { body: { action: 'collect-approved-membership', userId: applicantUserId } },
+            );
+            if (collectionError || collection?.error) {
+              console.warn('Membership approved; direct Stripe collection needs attention:', collectionError || collection?.error);
+              toast('Membership approved. Stripe collection needs administrator review.', { icon: 'ℹ️' });
+            } else if (collection?.status === 'processing') {
+              toast('Membership approved. The bank debit is processing.', { icon: 'ℹ️' });
+            } else if (collection?.reason === 'payment_authority_required') {
+              toast('Membership approved. The member still needs to choose a payment method.', { icon: 'ℹ️' });
+            }
+          } else {
+            toast('Membership approved. Financial services are disconnected, so no invoice or debit was created.', { icon: 'ℹ️' });
           }
         }
       }
@@ -513,6 +532,29 @@ export const useMembership = () => {
       if (data?.error) throw new Error(data.error);
       return data;
     }, 'Xero membership payment refreshed');
+
+  const collectApprovedMembership = (targetUserId: string) =>
+    runAction(`stripe:membership:${targetUserId}`, async () => {
+      const { data, error: functionError } = await supabase.functions.invoke(
+        'membership-payment-setup',
+        {
+          body: {
+            action: 'collect-approved-membership',
+            userId: targetUserId,
+          },
+        },
+      );
+      if (functionError) throw functionError;
+      if (data?.error) throw new Error(data.error);
+      if (data?.attempted === false) {
+        const reason = String(data?.reason || '').replace(/_/g, ' ');
+        throw new Error(reason || 'The membership payment was not collected.');
+      }
+      if (data?.status === 'failed') {
+        throw new Error(data?.error || 'The membership payment failed.');
+      }
+      return data;
+    }, 'Membership payment submitted');
 
   const savePaymentPreference = async (input: {
     paymentMethod: MembershipPaymentMethod;
@@ -683,6 +725,7 @@ export const useMembership = () => {
     refreshAllXeroInvoices,
     issueMembershipRenewals,
     refreshOwnXeroInvoices,
+    collectApprovedMembership,
     savePaymentPreference,
     cancelMembership,
     runLifecycle,

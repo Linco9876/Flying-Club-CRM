@@ -8,6 +8,7 @@ import {
 import {
   addStripeModeMetadata,
   getActiveStripeMode,
+  getStripeWebhookSecretForMode,
   stripeModeColumns,
 } from "../_shared/stripeMode.ts";
 
@@ -233,6 +234,239 @@ const invokeMembershipBilling = async (
   return payload;
 };
 
+const userIsAdmin = async (adminClient: any, userId: string) => {
+  const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] =
+    await Promise.all([
+      adminClient.from("users").select("role").eq("id", userId).maybeSingle(),
+      adminClient.from("user_roles").select("role").eq("user_id", userId)
+        .eq("role", "admin"),
+    ]);
+  if (profileError) throw profileError;
+  if (rolesError) throw rolesError;
+  return profile?.role === "admin" || (roles || []).length > 0;
+};
+
+const xeroPostingIsAvailable = async (adminClient: any) => {
+  const { data, error } = await adminClient
+    .from("xero_connection_settings")
+    .select("tenant_id,expected_tenant_id,refresh_token,refresh_token_ciphertext,disconnected_at,posting_enabled,connection_mode")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(
+    data?.tenant_id &&
+      data?.expected_tenant_id &&
+      data.tenant_id === data.expected_tenant_id &&
+      (data.refresh_token_ciphertext || data.refresh_token) &&
+      !data.disconnected_at &&
+      data.posting_enabled === true &&
+      ["draft_only", "posting"].includes(clean(data.connection_mode)) &&
+      Deno.env.get("XERO_CLIENT_ID") &&
+      Deno.env.get("XERO_CLIENT_SECRET") &&
+      Deno.env.get("XERO_TOKEN_ENCRYPTION_KEY"),
+  );
+};
+
+const collectMembershipWithoutXero = async ({
+  adminClient,
+  requestedBy,
+  targetUserId,
+}: {
+  adminClient: any;
+  requestedBy: string;
+  targetUserId: string;
+}) => {
+  if (!(await userIsAdmin(adminClient, requestedBy))) {
+    throw Object.assign(
+      new Error("Only administrators can collect an approved membership."),
+      { status: 403 },
+    );
+  }
+
+  const { data: periods, error: periodError } = await adminClient
+    .from("membership_financial_periods")
+    .select("*,club_memberships!inner(user_id)")
+    .eq("club_memberships.user_id", targetUserId)
+    .in("fee_disposition", ["invoice_required", "overdue"])
+    .order("financial_year_start", { ascending: false })
+    .limit(1);
+  if (periodError) throw periodError;
+  const period = periods?.[0];
+  if (!period) {
+    return { attempted: false, reason: "no_collectable_period" };
+  }
+
+  const amount = Math.round(Number(period.amount_due || 0) * 100) / 100;
+  if (amount <= 0.005) {
+    return { attempted: false, reason: "nothing_due", periodId: period.id };
+  }
+
+  const preference = await currentPreference(adminClient, targetUserId);
+  if (
+    !preference ||
+    !["card", "becs"].includes(clean(preference.payment_method)) ||
+    preference.authority_status !== "ready" ||
+    !clean(preference.stripe_customer_id) ||
+    !clean(preference.stripe_payment_method_id)
+  ) {
+    return {
+      attempted: false,
+      reason: "payment_authority_required",
+      periodId: period.id,
+    };
+  }
+
+  const stripeMode = await getActiveStripeMode(adminClient);
+  if (!getStripeWebhookSecretForMode(stripeMode.mode)) {
+    throw Object.assign(
+      new Error(
+        "Stripe is linked, but its active webhook secret is not configured.",
+      ),
+      { status: 503 },
+    );
+  }
+  if (
+    clean(preference.stripe_mode) &&
+    clean(preference.stripe_mode) !== stripeMode.mode
+  ) {
+    return {
+      attempted: false,
+      reason: "payment_authority_mode_mismatch",
+      periodId: period.id,
+    };
+  }
+  const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+  if (!connectedAccountId) {
+    throw Object.assign(
+      new Error("Stripe is disconnected. Membership collection is unavailable."),
+      { status: 503 },
+    );
+  }
+
+  const { data: activePayment, error: activePaymentError } = await adminClient
+    .from("membership_provider_payments")
+    .select("*")
+    .eq("membership_period_id", period.id)
+    .in("status", ["pending", "processing", "succeeded", "needs_review"])
+    .maybeSingle();
+  if (activePaymentError) throw activePaymentError;
+  if (activePayment) {
+    return {
+      attempted: false,
+      reason: "collection_already_recorded",
+      status: activePayment.status,
+      paymentRecordId: activePayment.id,
+      periodId: period.id,
+    };
+  }
+
+  const { count: previousAttemptCount, error: attemptCountError } =
+    await adminClient
+      .from("membership_provider_payments")
+      .select("id", { count: "exact", head: true })
+      .eq("membership_period_id", period.id);
+  if (attemptCountError) throw attemptCountError;
+  const attemptNumber = Number(previousAttemptCount || 0) + 1;
+  const idempotencyKey =
+    `membership-direct:${stripeMode.mode}:${period.id}:attempt-${attemptNumber}`;
+  const { data: paymentRecord, error: paymentRecordError } = await adminClient
+    .from("membership_provider_payments")
+    .insert({
+      membership_period_id: period.id,
+      user_id: targetUserId,
+      amount,
+      status: "pending",
+      idempotency_key: idempotencyKey,
+      ...stripeModeColumns(stripeMode.mode),
+    })
+    .select("*")
+    .single();
+  if (paymentRecordError) throw paymentRecordError;
+
+  const form = new URLSearchParams();
+  form.set("amount", String(Math.round(amount * 100)));
+  form.set("currency", "aud");
+  form.set("customer", clean(preference.stripe_customer_id));
+  form.set("payment_method", clean(preference.stripe_payment_method_id));
+  form.append(
+    "payment_method_types[]",
+    preference.payment_method === "becs" ? "au_becs_debit" : "card",
+  );
+  form.set("off_session", "true");
+  form.set("confirm", "true");
+  form.set("description", "Bendigo Flying Club membership");
+  form.set("metadata[crm_payment_type]", "membership_direct_payment");
+  form.set("metadata[payment_record_id]", paymentRecord.id);
+  form.set("metadata[membership_period_id]", period.id);
+  form.set("metadata[user_id]", targetUserId);
+  addStripeModeMetadata(form, stripeMode.mode);
+
+  const response = await fetch("https://api.stripe.com/v1/payment_intents", {
+    method: "POST",
+    headers: stripeHeaders(stripeMode.secretKey, connectedAccountId, {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Idempotency-Key": stripeIdempotencyKey(
+        "membership-direct",
+        stripeMode.mode,
+        paymentRecord.id,
+      ),
+    }),
+    body: form,
+  });
+  const paymentIntent = await response.json().catch(() => ({}));
+  const now = new Date().toISOString();
+  const succeeded = response.ok && paymentIntent.status === "succeeded";
+  const processing = response.ok && paymentIntent.status === "processing";
+  const failure = clean(paymentIntent?.error?.message) ||
+    (!response.ok
+      ? "Stripe membership collection failed."
+      : succeeded || processing
+      ? null
+      : `Stripe returned ${clean(paymentIntent.status) || "an incomplete status"}.`);
+
+  await adminClient.from("membership_provider_payments").update({
+    external_payment_id: clean(
+      paymentIntent.id || paymentIntent?.error?.payment_intent?.id,
+    ) || null,
+    status: succeeded ? "succeeded" : processing ? "processing" : "failed",
+    error: failure,
+    updated_at: now,
+  }).eq("id", paymentRecord.id);
+  await adminClient.from("membership_payment_preferences").update({
+    last_collection_attempt_at: now,
+    last_collection_status: succeeded
+      ? "succeeded"
+      : processing
+      ? "processing"
+      : "failed",
+    last_collection_error: failure,
+    updated_at: now,
+  }).eq("user_id", targetUserId);
+  await adminClient.from("membership_financial_periods").update({
+    ...(succeeded
+      ? {
+        fee_disposition: "paid",
+        financially_cleared_at: now,
+        billing_sync_status: "succeeded",
+        billing_sync_error: null,
+      }
+      : {
+        billing_sync_status: processing ? "processing" : "failed",
+        billing_sync_error: failure,
+      }),
+    billing_sync_updated_at: now,
+    updated_at: now,
+  }).eq("id", period.id);
+
+  return {
+    attempted: true,
+    status: succeeded ? "succeeded" : processing ? "processing" : "failed",
+    error: failure,
+    paymentRecordId: paymentRecord.id,
+    periodId: period.id,
+  };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -255,6 +489,16 @@ Deno.serve(async (req: Request) => {
           await currentPreference(adminClient, user.id),
         ),
       });
+    }
+
+    if (action === "collect-approved-membership") {
+      const targetUserId = clean(body.userId);
+      if (!targetUserId) return json({ error: "Member user ID is required." }, 400);
+      return json(await collectMembershipWithoutXero({
+        adminClient,
+        requestedBy: user.id,
+        targetUserId,
+      }));
     }
 
     if (!(await memberHasApplicationOrMembership(adminClient, user.id))) {
@@ -351,6 +595,12 @@ Deno.serve(async (req: Request) => {
     const now = new Date().toISOString();
 
     if (paymentMethod === "invoice") {
+      if (!(await xeroPostingIsAvailable(adminClient))) {
+        return json({
+          error:
+            "Xero invoice payments are unavailable while Xero is disconnected or posting is contained.",
+        }, 503);
+      }
       const { data, error } = await adminClient.from(
         "membership_payment_preferences",
       ).upsert({
@@ -397,6 +647,12 @@ Deno.serve(async (req: Request) => {
       scholarshipAmount: contributionAmount,
     });
     const stripeMode = await getActiveStripeMode(adminClient);
+    if (!getStripeWebhookSecretForMode(stripeMode.mode)) {
+      return json({
+        error:
+          "Stripe is linked, but its active webhook secret is not configured.",
+      }, 503);
+    }
     const connectedAccountId = await getConnectedStripeAccountId(adminClient);
     if (!connectedAccountId) {
       return json({ error: "Stripe is not connected for this club." }, 503);

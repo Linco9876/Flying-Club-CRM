@@ -14,6 +14,8 @@ import { writeStripeLoadingPage } from '../../utils/stripePopup';
 import { canExposeMemberFinancialInformation, getMemberBillingState } from '../../utils/memberBillingState';
 import { formatBillingDescription } from '../../utils/billingDescription';
 import toast from 'react-hot-toast';
+import { useFinancialProviders } from '../../context/financialProviderState';
+import { FinancialFeaturesDisabled, FinancialProviderStatus } from './FinancialProviderStatus';
 
 const TransactionsTab = lazy(() => import('./TransactionsTab').then(module => ({ default: module.TransactionsTab })));
 const PilotAccountsTab = lazy(() => import('./PilotAccountsTab').then(module => ({ default: module.PilotAccountsTab })));
@@ -85,6 +87,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const savedCardTriggerRef = useRef<HTMLButtonElement>(null);
   const savedCardDialogRef = useRef<HTMLElement>(null);
   const { user } = useAuth();
+  const {
+    capabilities: financialProviders,
+    loading: financialProvidersLoading,
+  } = useFinancialProviders();
   const { settings: portalSettings } = usePortalUxSettings();
   const userRoles = user?.roles && user.roles.length > 0 ? user.roles : (user?.role ? [user.role] : []);
   const isAdminBilling = userRoles.includes('admin');
@@ -95,7 +101,9 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   const billing = useBillingAccounts({
     scope: showOwnBillingOnly ? 'member' : 'admin',
     userId: showOwnBillingOnly ? user?.id : null,
-    enabled: !showOwnBillingOnly || Boolean(user?.id),
+    enabled: financialProviders.financeEnabled && (!showOwnBillingOnly || Boolean(user?.id)),
+    stripeAvailable: financialProviders.stripe.paymentsAvailable,
+    xeroAvailable: financialProviders.xero.accountingAvailable,
   });
   const stripeCardReady = Boolean(
     stripeCardStatus?.card?.id &&
@@ -144,7 +152,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   }, [showSavedCardModal]);
 
   const loadStripeCardStatus = useCallback(async () => {
-    if (!user?.id) {
+    if (!user?.id || !financialProviders.stripe.paymentsAvailable) {
+      setStripeCardStatus(null);
       setStripeCardLoading(false);
       return;
     }
@@ -161,7 +170,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     } finally {
       setStripeCardLoading(false);
     }
-  }, [user?.id]);
+  }, [financialProviders.stripe.paymentsAvailable, user?.id]);
 
   useEffect(() => {
     if (!showOwnBillingOnly) {
@@ -172,7 +181,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
   }, [loadStripeCardStatus, showOwnBillingOnly]);
 
   const loadXeroInvoices = useCallback(async (options: { forceRefresh?: boolean } = {}) => {
-    if (!showOwnBillingOnly || !user?.id) {
+    if (!showOwnBillingOnly || !user?.id || !financialProviders.xero.accountingAvailable) {
+      setOwnXeroConnected(false);
+      setXeroInvoices([]);
+      setXeroInvoicesLinked(false);
       setXeroInvoicesLoading(false);
       setXeroInvoicesChecked(true);
       return;
@@ -206,7 +218,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
       setXeroInvoicesChecked(true);
       setXeroInvoicesLoading(false);
     }
-  }, [showOwnBillingOnly, user?.id]);
+  }, [financialProviders.xero.accountingAvailable, showOwnBillingOnly, user?.id]);
 
   useEffect(() => {
     void loadXeroInvoices();
@@ -318,7 +330,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     }
   };
 
-  const pageLoading = billing.loading || paymentMethodsLoading || (showOwnBillingOnly && (xeroInvoicesLoading || !xeroInvoicesChecked));
+  const pageLoading = financialProvidersLoading ||
+    billing.loading ||
+    paymentMethodsLoading ||
+    (showOwnBillingOnly && financialProviders.xero.accountingAvailable && (xeroInvoicesLoading || !xeroInvoicesChecked));
   usePageLoadState(
     pageLoading,
     showOwnBillingOnly ? 'Loading your balance' : 'Loading financial dashboard',
@@ -339,13 +354,23 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
     );
   }
 
+  if (!financialProviders.financeEnabled) {
+    return <FinancialFeaturesDisabled />;
+  }
+
   if (showOwnBillingOnly) {
     if (isStudentOrPilotOnly && !portalSettings.show_invoices_in_portal) {
       return <div className="p-3 text-sm text-gray-500 sm:p-6">Billing history is not available in the student portal.</div>;
     }
 
     const transactions = billing.transactions.filter(item => item.userId === user?.id);
-    const accountTopUpPaymentMethods = paymentMethods.filter(method => method.active && method.allowAccountTopup !== false);
+    const accountTopUpPaymentMethods = paymentMethods.filter(method => {
+      if (!method.active || method.allowAccountTopup === false) return false;
+      const isStripeMethod =
+        method.systemKey === 'stripe_card' ||
+        method.name.toLowerCase().includes('stripe');
+      return !isStripeMethod || financialProviders.stripe.paymentsAvailable;
+    });
     const selectedTopUpMethod = accountTopUpPaymentMethods.find(method => method.id === topUpPaymentMethodId);
     const isStripeTopUpSelected =
       selectedTopUpMethod?.systemKey === 'stripe_card' ||
@@ -545,13 +570,14 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
     return (
       <div className="space-y-5 p-3 sm:space-y-6 sm:p-6">
-        <StripeTestModeBanner />
+        {financialProviders.stripe.paymentsAvailable && <StripeTestModeBanner />}
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Balance &amp; billing</h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Your Bendigo Flying Club flying account. All prices and charges include GST.</p>
         </div>
+        <FinancialProviderStatus compact />
 
-        {memberBillingState === 'temporarily-unavailable' && (
+        {financialProviders.xero.accountingAvailable && memberBillingState === 'temporarily-unavailable' && (
           <section className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -582,7 +608,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
           </section>
         )}
 
-        {memberBillingState === 'setup-required' && (
+        {financialProviders.xero.accountingAvailable && memberBillingState === 'setup-required' && (
           <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20 sm:p-6" aria-labelledby="billing-setup-title">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start gap-3">
@@ -606,6 +632,28 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                   Check again
                 </button>
               </div>
+            </div>
+          </section>
+        )}
+
+        {!financialProviders.xero.accountingAvailable && financialProviders.stripe.paymentsAvailable && (
+          <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-950 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-100">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-semibold">Online payments are available</h2>
+                <p className="mt-1 text-sm leading-6 text-blue-800 dark:text-blue-200">
+                  Xero is disconnected, so balances, prepaid credit, and invoices are hidden. You can still manage your saved card and view Stripe payment activity.
+                </p>
+              </div>
+              <button
+                type="button"
+                ref={savedCardTriggerRef}
+                onClick={() => setShowSavedCardModal(true)}
+                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+              >
+                <CreditCard className="h-4 w-4" />
+                Manage payment card
+              </button>
             </div>
           </section>
         )}
@@ -652,7 +700,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
               </p>
             </div>
             <div className="p-4 sm:p-5">
-              <button
+              {financialProviders.stripe.paymentsAvailable && <button
                 type="button"
                 ref={savedCardTriggerRef}
                 onClick={() => setShowSavedCardModal(true)}
@@ -673,13 +721,13 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                         : 'No saved card'}
                   </span>
                 </span>
-              </button>
+              </button>}
             </div>
           </div>
         </section>
         )}
 
-        {xeroAccountLinked && (
+        {xeroAccountLinked && financialProviders.xero.accountingAvailable && (
         <form onSubmit={handleTopUpSubmit} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="mb-4 flex items-start gap-3">
             <div className="rounded-lg bg-blue-50 p-2 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200">
@@ -846,7 +894,8 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                         {invoiceViewingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                         Invoice
                       </button>
-                      {amountDue > 0.005 && (
+                      {amountDue > 0.005 &&
+                        (financialProviders.stripe.paymentsAvailable || xeroCredit.availableCredit + 0.005 >= amountDue) && (
                         <button
                           type="button"
                           onClick={() => handlePayXeroInvoice(invoice, 'checkout')}
@@ -854,10 +903,10 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
                           className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
                         >
                            {invoicePaymentLoadingId === invoice.invoiceId ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                           Pay now
+                           {financialProviders.stripe.paymentsAvailable ? 'Pay now' : 'Apply available credit'}
                         </button>
                       )}
-                      {amountDue > 0.005 && stripeCardStatus?.card && (
+                      {amountDue > 0.005 && financialProviders.stripe.paymentsAvailable && stripeCardStatus?.card && (
                         <button
                           type="button"
                           onClick={() => handlePayXeroInvoice(invoice, 'saved_card')}
@@ -877,7 +926,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
         </section>
         )}
 
-        {xeroAccountLinked && <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
+        {(xeroAccountLinked || financialProviders.stripe.paymentsAvailable) && <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
           <div className="flex flex-col gap-1 border-b border-gray-200 px-5 py-4 dark:border-[#2c2f36] sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-semibold text-gray-900 dark:text-gray-100">Recent activity</h2>
@@ -934,7 +983,7 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
           )}
         </div>}
 
-        {xeroAccountLinked && showSavedCardModal && (
+        {financialProviders.stripe.paymentsAvailable && showSavedCardModal && (
           <div
             className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/80 p-3 sm:p-6"
             role="presentation"
@@ -1069,20 +1118,23 @@ export const BillingDashboard: React.FC<BillingDashboardProps> = ({ mode = 'auto
 
   const tabs = [
     { id: 'transactions', label: 'Transactions', icon: <CreditCard className="h-4 w-4" /> },
-    { id: 'accounts', label: 'Pilot Accounts', icon: <Users className="h-4 w-4" /> },
-    ...(isAdminBilling && !showOwnBillingOnly
+    ...(financialProviders.xero.accountingAvailable
+      ? [{ id: 'accounts', label: 'Pilot Accounts', icon: <Users className="h-4 w-4" /> }]
+      : []),
+    ...(isAdminBilling && !showOwnBillingOnly && financialProviders.xero.accountingAvailable
       ? [{ id: 'xero-sync', label: 'Xero Sync', icon: <GitBranch className="h-4 w-4" /> }]
       : []),
   ];
 
   return (
       <div className="p-3 sm:p-6">
-      <div className="mb-4">
-        <StripeTestModeBanner />
-      </div>
+      {financialProviders.stripe.paymentsAvailable && <div className="mb-4"><StripeTestModeBanner /></div>}
       <div className="mb-4 sm:mb-6">
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">Financial Dashboard</h1>
         <p className="text-gray-600">Manage organisation transactions and pilot accounts</p>
+      </div>
+      <div className="mb-4">
+        <FinancialProviderStatus compact />
       </div>
 
       {billing.loadWarning && (

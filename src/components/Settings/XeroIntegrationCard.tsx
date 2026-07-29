@@ -7,6 +7,7 @@ import {
   hasSelectedActiveXeroBankAccount,
   isActiveXeroBankAccount,
 } from '../../utils/xeroAccountRules';
+import { requestFinancialProviderRefresh } from '../../context/financialProviderState';
 
 interface XeroIntegrationCardProps {
   canEdit: boolean;
@@ -234,6 +235,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
     if (result === 'success') {
       toast.success('Xero organisation linked');
       loadXeroStatus();
+      requestFinancialProviderRefresh();
     } else if (result === 'select') {
       toast('Select and confirm the exact Xero organisation below. Posting will remain disabled.');
       loadXeroStatus();
@@ -463,6 +465,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to disconnect Xero'));
       toast.success('Xero disconnected');
       await loadXeroStatus();
+      requestFinancialProviderRefresh();
     } catch (error: any) {
       console.error('Error disconnecting Xero:', error);
       toast.error(error?.message || 'Failed to disconnect Xero');
@@ -497,6 +500,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       setSelectedTenantId('');
       setTenantConfirmation('');
       toast.success(`${selectedOrganisation.tenantName} selected. Posting remains disabled.`);
+      requestFinancialProviderRefresh();
     } catch (error: any) {
       toast.error(error?.message || 'Failed to confirm Xero organisation');
     } finally {
@@ -583,6 +587,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
       setXeroStatus(data ?? null);
       setForm(fromStatus(data ?? null));
       toast.success('Xero sync settings saved');
+      requestFinancialProviderRefresh();
     } catch (error: any) {
       console.error('Error saving Xero settings:', error);
       toast.error(error?.message || 'Failed to save Xero settings');

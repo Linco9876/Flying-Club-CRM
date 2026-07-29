@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, CreditCard, ExternalLink, Loader2, Refresh
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { requestFinancialProviderRefresh } from '../../context/financialProviderState';
 
 interface StripeIntegrationCardProps {
   canEdit: boolean;
@@ -63,6 +64,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
     if (result === 'success') {
       toast.success('Stripe account linked');
       loadStripeStatus();
+      requestFinancialProviderRefresh();
     } else {
       toast.error(params.get('stripe_error') || 'Stripe account could not be linked');
     }
@@ -101,6 +103,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to disconnect Stripe'));
       toast.success('Stripe disconnected');
       await loadStripeStatus();
+      requestFinancialProviderRefresh();
     } catch (error: any) {
       console.error('Error disconnecting Stripe:', error);
       toast.error(error?.message || 'Failed to disconnect Stripe');
@@ -128,6 +131,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       });
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to update Stripe mode'));
       setStripeStatus(data ?? null);
+      requestFinancialProviderRefresh();
       toast.success(mode === 'test' ? 'Stripe Test Mode enabled' : 'Stripe Live Mode enabled');
     } catch (error: any) {
       console.error('Error updating Stripe mode:', error);
@@ -151,6 +155,7 @@ export const StripeIntegrationCard: React.FC<StripeIntegrationCardProps> = ({ ca
       });
       if (error) throw new Error(await getSupabaseFunctionErrorMessage(error, 'Failed to update Stripe test sync setting'));
       setStripeStatus(data ?? null);
+      requestFinancialProviderRefresh();
       toast.success('Stripe/Xero test sync setting saved');
     } catch (error: any) {
       console.error('Error updating Stripe test Xero sync:', error);

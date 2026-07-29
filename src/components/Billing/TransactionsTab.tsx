@@ -69,6 +69,8 @@ const SplitPaymentModal: React.FC<{
   amountPaid: number;
   amountRemaining: number;
   pilotBalance: number;
+  stripeAvailable: boolean;
+  xeroAvailable: boolean;
   onClose: () => void;
   onPilotAccountPayment: (flightLogId: string, amount: number) => Promise<void>;
   onStripeCheckout: (flightLogId: string, amount: number) => Promise<{ checkoutUrl: string }>;
@@ -82,6 +84,8 @@ const SplitPaymentModal: React.FC<{
   amountPaid,
   amountRemaining,
   pilotBalance,
+  stripeAvailable,
+  xeroAvailable,
   onClose,
   onPilotAccountPayment,
   onStripeCheckout,
@@ -178,7 +182,7 @@ const SplitPaymentModal: React.FC<{
         </div>
 
         <div className="p-5 space-y-4">
-          <section className="rounded-xl border border-gray-200 p-4">
+          {xeroAvailable && <section className="rounded-xl border border-gray-200 p-4">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h4 className="text-sm font-semibold text-gray-900">Prepaid credit</h4>
@@ -211,9 +215,9 @@ const SplitPaymentModal: React.FC<{
                 {busyAction === 'pilot' ? 'Applying...' : 'Apply'}
               </button>
             </div>
-          </section>
+          </section>}
 
-          <section className="rounded-xl border border-gray-200 p-4">
+          {stripeAvailable && <section className="rounded-xl border border-gray-200 p-4">
             <h4 className="text-sm font-semibold text-gray-900">Stripe checkout link</h4>
             <p className="text-xs text-gray-500">Use this for one card now, or repeat it later for a second card.</p>
             <div className="mt-3 flex gap-2">
@@ -234,9 +238,9 @@ const SplitPaymentModal: React.FC<{
                 {busyAction === 'checkout' ? 'Opening...' : 'Open Stripe'}
               </button>
             </div>
-          </section>
+          </section>}
 
-          <section className="rounded-xl border border-gray-200 p-4">
+          {stripeAvailable && <section className="rounded-xl border border-gray-200 p-4">
             <h4 className="text-sm font-semibold text-gray-900">Saved Stripe card</h4>
             <p className="text-xs text-gray-500">Only works if the member has saved a card and accepted the card-on-file authority.</p>
             <div className="mt-3 flex gap-2">
@@ -257,7 +261,7 @@ const SplitPaymentModal: React.FC<{
                 {busyAction === 'card' ? 'Charging...' : 'Charge'}
               </button>
             </div>
-          </section>
+          </section>}
         </div>
 
         <div className="flex justify-end border-t border-gray-100 p-5">
@@ -283,11 +287,13 @@ const PaymentChoiceModal: React.FC<{
   };
   charging: boolean;
   creatingLink: boolean;
+  stripeAvailable: boolean;
+  xeroAvailable: boolean;
   onClose: () => void;
   onChargeCard: () => Promise<void>;
   onStripeLink: () => Promise<void>;
   onSplitPayment: () => void;
-}> = ({ row, charging, creatingLink, onClose, onChargeCard, onStripeLink, onSplitPayment }) => {
+}> = ({ row, charging, creatingLink, stripeAvailable, xeroAvailable, onClose, onChargeCard, onStripeLink, onSplitPayment }) => {
   const remaining = row.amountRemaining ?? Math.abs(row.amount ?? 0);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -301,7 +307,7 @@ const PaymentChoiceModal: React.FC<{
           <p className="mt-3 text-sm font-semibold text-amber-700">Remaining ${remaining.toFixed(2)}</p>
         </div>
         <div className="space-y-3 p-5">
-          <button
+          {stripeAvailable && <button
             type="button"
             onClick={onChargeCard}
             disabled={charging}
@@ -312,8 +318,8 @@ const PaymentChoiceModal: React.FC<{
               <span className="block text-xs text-gray-500">Uses the member's stored Stripe card authority.</span>
             </span>
             {charging ? <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> : <CreditCard className="h-4 w-4 text-indigo-600" />}
-          </button>
-          <button
+          </button>}
+          {stripeAvailable && <button
             type="button"
             onClick={onStripeLink}
             disabled={creatingLink}
@@ -324,8 +330,8 @@ const PaymentChoiceModal: React.FC<{
               <span className="block text-xs text-gray-500">Pay now by card, including a different card.</span>
             </span>
             {creatingLink ? <Loader2 className="h-4 w-4 animate-spin text-blue-600" /> : <ExternalLink className="h-4 w-4 text-blue-600" />}
-          </button>
-          <button
+          </button>}
+          {(stripeAvailable || xeroAvailable) && <button
             type="button"
             onClick={onSplitPayment}
             className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-left hover:bg-gray-50"
@@ -335,7 +341,7 @@ const PaymentChoiceModal: React.FC<{
               <span className="block text-xs text-gray-500">Use prepaid credit plus one or more card payments.</span>
             </span>
             <CreditCard className="h-4 w-4 text-slate-700" />
-          </button>
+          </button>}
         </div>
         <div className="flex justify-end border-t border-gray-100 p-5">
           <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50">
@@ -518,6 +524,8 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     unpaidFlights,
     pilotAccounts,
     loading,
+    stripeAvailable,
+    xeroAvailable,
     createFlightPaymentCheckout,
     chargeFlightSavedCard,
     applyPilotAccountPayment,
@@ -868,7 +876,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
     <>
       {row.rowType === 'unpaid' && row.flightLogId && (
         <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
-          {row.xeroInvoiceId && (
+          {xeroAvailable && row.xeroInvoiceId && (
             <button
               type="button"
               onClick={() => handleViewInvoice(row.xeroInvoiceId!, row.xeroInvoiceNumber)}
@@ -882,7 +890,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
               View Invoice
             </button>
           )}
-          {row.paymentType?.toLowerCase().includes('stripe') && (
+          {stripeAvailable && row.paymentType?.toLowerCase().includes('stripe') && (
             <button
               onClick={() => setPaymentChoice(row)}
               className={`flex items-center justify-center gap-1 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors ${
@@ -893,7 +901,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
               Take Payment
             </button>
           )}
-          {!row.xeroInvoiceId && (
+          {xeroAvailable && !row.xeroInvoiceId && (
             <span className={`flex items-center justify-center gap-1 text-xs font-medium text-gray-500 ${
               compact ? 'flex-1 px-3 py-2' : 'px-2.5 py-1.5'
             }`}>
@@ -904,7 +912,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
       )}
       {row.isTopup && row.verifiedStatus === 'pending' && (
         <div className={`flex items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
-          <button
+          {xeroAvailable && <button
             onClick={() => handleVerify(row.id)}
             disabled={verifyingId === row.id}
             className={`flex items-center justify-center gap-1 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors ${
@@ -913,7 +921,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           >
             <ShieldCheck className="h-3.5 w-3.5" />
             {verifyingId === row.id ? '...' : 'Confirm'}
-          </button>
+          </button>}
           <button
             onClick={() => setRejectingId(row.id)}
             className={`flex items-center justify-center gap-1 text-xs font-medium bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors ${
@@ -925,7 +933,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           </button>
         </div>
       )}
-      {row.isTopup && row.verifiedStatus === 'verified' && (
+      {xeroAvailable && row.isTopup && row.verifiedStatus === 'verified' && (
         <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'w-full' : ''}`}>
           {(row.xeroSyncStatus === 'awaiting_match' || row.xeroSyncStatus === 'needs_review' || row.xeroSyncStatus === 'queued' || !row.xeroSyncStatus) && (
             <>
@@ -1065,13 +1073,13 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
         </div>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-500">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</p>
-          <button
+          {xeroAvailable && <button
             onClick={handleExport}
             className="flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-medium bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors sm:w-auto sm:py-1.5"
           >
             <Download className="h-3.5 w-3.5" />
             Export Xero CSV
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -1278,6 +1286,8 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           row={paymentChoice}
           charging={chargingSavedCardId === paymentChoice.flightLogId}
           creatingLink={creatingStripeCheckoutId === paymentChoice.flightLogId}
+          stripeAvailable={stripeAvailable}
+          xeroAvailable={xeroAvailable}
           onClose={() => setPaymentChoice(null)}
           onChargeCard={async () => {
             if (!paymentChoice.flightLogId) return;
@@ -1315,6 +1325,8 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
           amountPaid={splitPayment.amountPaid}
           amountRemaining={splitPayment.amountRemaining}
           pilotBalance={pilotAccounts.find(account => account.userId === splitPayment.userId)?.balance ?? 0}
+          stripeAvailable={stripeAvailable}
+          xeroAvailable={xeroAvailable}
           onClose={() => setSplitPayment(null)}
           onPilotAccountPayment={applyPilotAccountPayment}
           onStripeCheckout={handleCreateSplitStripeCheckout}

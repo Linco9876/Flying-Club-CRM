@@ -1732,6 +1732,103 @@ const handleMembershipInvoicePaymentIntentEvent = async ({
   });
 };
 
+const handleDirectMembershipPaymentIntentEvent = async ({
+  adminClient,
+  event,
+  paymentIntent,
+}: {
+  adminClient: SupabaseAdminClient;
+  event: any;
+  paymentIntent: any;
+}) => {
+  const paymentRecordId = asString(paymentIntent.metadata?.payment_record_id);
+  const periodId = asString(paymentIntent.metadata?.membership_period_id);
+  const userId = asString(paymentIntent.metadata?.user_id);
+  if (!paymentRecordId || !periodId || !userId) {
+    throw new Error("Direct membership payment is missing CRM metadata");
+  }
+
+  const { data: record, error: recordError } = await adminClient
+    .from("membership_provider_payments")
+    .select("id,status,external_payment_id")
+    .eq("id", paymentRecordId)
+    .eq("membership_period_id", periodId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (recordError) throw recordError;
+  if (!record) throw new Error("Direct membership payment record was not found");
+
+  const now = new Date().toISOString();
+  if (event.type === "payment_intent.payment_failed") {
+    const message = asString(paymentIntent.last_payment_error?.message) ||
+      "Automatic membership payment failed.";
+    await Promise.all([
+      adminClient.from("membership_provider_payments").update({
+        external_payment_id: asString(paymentIntent.id),
+        status: "failed",
+        error: message,
+        updated_at: now,
+        ...stripeModeColumns(stripeModeFromEvent(event)),
+      }).eq("id", paymentRecordId).neq("status", "succeeded"),
+      adminClient.from("membership_payment_preferences").update({
+        last_collection_attempt_at: now,
+        last_collection_status: "failed",
+        last_collection_error: message,
+        updated_at: now,
+      }).eq("user_id", userId),
+      adminClient.from("membership_financial_periods").update({
+        billing_sync_status: "failed",
+        billing_sync_error: message,
+        billing_sync_next_attempt_at: null,
+        billing_sync_updated_at: now,
+        updated_at: now,
+      }).eq("id", periodId).neq("fee_disposition", "paid"),
+    ]);
+    return json({
+      received: true,
+      directMembershipPayment: "failed",
+      paymentRecordId,
+    });
+  }
+
+  if (event.type !== "payment_intent.succeeded") {
+    return json({ received: true, ignored: true });
+  }
+  if (record.status === "succeeded") {
+    return json({ received: true, duplicate: true, paymentRecordId });
+  }
+
+  await Promise.all([
+    adminClient.from("membership_provider_payments").update({
+      external_payment_id: asString(paymentIntent.id),
+      status: "succeeded",
+      error: null,
+      updated_at: now,
+      ...stripeModeColumns(stripeModeFromEvent(event)),
+    }).eq("id", paymentRecordId),
+    adminClient.from("membership_payment_preferences").update({
+      last_collection_attempt_at: now,
+      last_collection_status: "succeeded",
+      last_collection_error: null,
+      updated_at: now,
+    }).eq("user_id", userId),
+    adminClient.from("membership_financial_periods").update({
+      fee_disposition: "paid",
+      financially_cleared_at: now,
+      billing_sync_status: "succeeded",
+      billing_sync_error: null,
+      billing_sync_next_attempt_at: null,
+      billing_sync_updated_at: now,
+      updated_at: now,
+    }).eq("id", periodId),
+  ]);
+  return json({
+    received: true,
+    directMembershipPayment: "succeeded",
+    paymentRecordId,
+  });
+};
+
 const handleFlightLogPaymentIntentEvent = async ({
   adminClient,
   event,
@@ -2536,6 +2633,16 @@ Deno.serve(async (req: Request) => {
           "membership_invoice_auto_payment"
       ) {
         return await handleMembershipInvoicePaymentIntentEvent({
+          adminClient,
+          event,
+          paymentIntent: session,
+        });
+      }
+      if (
+        asString(session.metadata?.crm_payment_type) ===
+          "membership_direct_payment"
+      ) {
+        return await handleDirectMembershipPaymentIntentEvent({
           adminClient,
           event,
           paymentIntent: session,

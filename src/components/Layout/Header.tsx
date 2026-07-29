@@ -10,6 +10,7 @@ import {
   XERO_MEMBER_BALANCE_UPDATED_EVENT,
   XeroMemberBalance,
 } from '../../lib/xeroMemberBalance';
+import { useFinancialProviders } from '../../context/financialProviderState';
 
 const formatCurrency = (amount: number, decimals: number) =>
   new Intl.NumberFormat('en-AU', {
@@ -23,6 +24,7 @@ export const Header: React.FC = () => {
   const { user, logout } = useAuth();
   const { settings } = useOrganisationSettings();
   const { settings: portalSettings } = usePortalUxSettings();
+  const { capabilities: financialProviders } = useFinancialProviders();
   const [balance, setBalance] = React.useState<number | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -45,7 +47,7 @@ export const Header: React.FC = () => {
     };
 
     const fetchBalance = async () => {
-      if (!user?.id) {
+      if (!user?.id || !financialProviders.xero.accountingAvailable) {
         if (mounted) {
           setBalance(null);
         }
@@ -68,12 +70,14 @@ export const Header: React.FC = () => {
       mounted = false;
       window.removeEventListener(XERO_MEMBER_BALANCE_UPDATED_EVENT, handleBalanceUpdate);
     };
-  }, [user?.id]);
+  }, [financialProviders.xero.accountingAvailable, user?.id]);
 
   const topNavItems = [
     { label: 'Profile', path: '/', icon: User, active: location.pathname === '/' || location.pathname === '/profile' },
     { label: 'Calendar', path: '/calendar', icon: Calendar, active: location.pathname.startsWith('/calendar') },
-    { label: 'Balance', value: balanceLabel, path: '/billing', icon: CreditCard, active: location.pathname.startsWith('/billing') },
+    ...(financialProviders.financeEnabled
+      ? [{ label: 'Balance', value: balanceLabel, path: '/billing', icon: CreditCard, active: location.pathname.startsWith('/billing') }]
+      : []),
   ];
 
   return (

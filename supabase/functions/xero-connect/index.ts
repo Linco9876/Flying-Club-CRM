@@ -119,7 +119,7 @@ const getStatus = async (
   const [{ data: connection, error: connectionError }, { data: settings, error: settingsError }, { data: pending }] =
     await Promise.all([
       adminClient.from("xero_connection_settings")
-        .select("tenant_id,tenant_name,tenant_type,expected_tenant_id,connection_mode,posting_enabled,scope,expires_at,connected_at,updated_at,disconnected_at,last_inventory_at,last_inventory_summary")
+        .select("tenant_id,tenant_name,tenant_type,expected_tenant_id,refresh_token,refresh_token_ciphertext,connection_mode,posting_enabled,scope,expires_at,connected_at,updated_at,disconnected_at,last_inventory_at,last_inventory_summary")
         .eq("id", true).maybeSingle(),
       adminClient.from("xero_sync_settings").select("*").eq("id", true).maybeSingle(),
       adminClient.from("xero_pending_connections")
@@ -130,8 +130,26 @@ const getStatus = async (
     ]);
   if (connectionError) throw connectionError;
   if (settingsError) throw settingsError;
+  const configured = Boolean(
+    Deno.env.get("XERO_CLIENT_ID") &&
+      Deno.env.get("XERO_CLIENT_SECRET") &&
+      Deno.env.get("XERO_TOKEN_ENCRYPTION_KEY"),
+  );
+  const tenantMatches = Boolean(
+    connection?.tenant_id &&
+      connection?.expected_tenant_id &&
+      connection.tenant_id === connection.expected_tenant_id,
+  );
+  const hasRefreshToken = Boolean(
+    connection?.refresh_token_ciphertext || connection?.refresh_token,
+  );
   return {
-    connected: Boolean(connection?.tenant_id && !connection?.disconnected_at),
+    connected: Boolean(
+      tenantMatches &&
+        hasRefreshToken &&
+        !connection?.disconnected_at &&
+        configured,
+    ),
     tenantId: connection?.tenant_id || null,
     tenantName: connection?.tenant_name || null,
     tenantType: connection?.tenant_type || null,
@@ -146,8 +164,7 @@ const getStatus = async (
     updatedAt: connection?.updated_at || null,
     lastInventoryAt: connection?.last_inventory_at || null,
     lastInventorySummary: connection?.last_inventory_summary || {},
-    configured: Boolean(Deno.env.get("XERO_CLIENT_ID") && Deno.env.get("XERO_CLIENT_SECRET") &&
-      Deno.env.get("XERO_TOKEN_ENCRYPTION_KEY")),
+    configured,
     hasClientId: Boolean(Deno.env.get("XERO_CLIENT_ID")),
     hasClientSecret: Boolean(Deno.env.get("XERO_CLIENT_SECRET")),
     hasEncryptionKey: Boolean(Deno.env.get("XERO_TOKEN_ENCRYPTION_KEY")),

@@ -42,6 +42,8 @@ import {
   scholarshipSettingsAreValid,
 } from '../../utils/membershipSettings';
 import { membershipSettingHelp, type MembershipSettingHelpKey } from '../../utils/membershipSettingHelp';
+import { useFinancialProviders } from '../../context/financialProviderState';
+import { FinancialProviderStatus } from '../Billing/FinancialProviderStatus';
 
 type MembershipSettingHelpHandler = (
   setting: MembershipSettingHelpKey,
@@ -338,6 +340,7 @@ const MembershipApplicationForm = ({ onSubmit, busy, classes }: {
 };
 
 const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
   const preference = membershipApi.ownPaymentPreference;
   const [paymentMethod, setPaymentMethod] = useState<MembershipPaymentMethod>(preference?.paymentMethod || 'becs');
   const [autoRenew, setAutoRenew] = useState(preference?.autoRenew || false);
@@ -362,11 +365,25 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
     setReplacePaymentMethod(false);
   }, [membershipApi.settings.scholarshipContributionAvailable, membershipApi.settings.scholarshipDefaultAmount, preference]);
 
-  const methods: Array<{ id: MembershipPaymentMethod; title: string; description: string; icon: typeof Landmark; recommended?: boolean }> = [
+  const methods = useMemo(() => ([
     { id: 'becs', title: 'BECS Direct Debit', description: 'Securely save an Australian bank account. Setup does not transfer any money.', icon: Landmark, recommended: true },
     { id: 'invoice', title: 'Xero invoice', description: 'Receive an invoice and choose when to pay it.', icon: Banknote },
     { id: 'card', title: 'Card', description: 'Use a securely stored card. The club absorbs card fees.', icon: CreditCard },
-  ];
+  ] satisfies Array<{ id: MembershipPaymentMethod; title: string; description: string; icon: typeof Landmark; recommended?: boolean }>).filter(method =>
+    method.id === 'invoice'
+      ? financialProviders.xero.postingAvailable
+      : financialProviders.stripe.paymentsAvailable
+  ), [
+    financialProviders.stripe.paymentsAvailable,
+    financialProviders.xero.postingAvailable,
+  ]);
+  React.useEffect(() => {
+    if (methods.length > 0 && !methods.some(method => method.id === paymentMethod)) {
+      setPaymentMethod(methods[0].id);
+      setAutoRenew(false);
+      setAuthorityAccepted(false);
+    }
+  }, [methods, paymentMethod]);
   const needsAuthority = paymentMethod !== 'invoice';
   const parsedScholarshipAmount = Number(scholarshipAmount);
   const preferenceIsReady = preference?.paymentMethod === 'invoice'
@@ -380,10 +397,26 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
     ))
     || (needsAuthority && !authorityAccepted);
 
+  if (!financialProviders.financeEnabled) {
+    return <FinancialProviderStatus />;
+  }
+  if (methods.length === 0) {
+    return <section className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm">
+      <FinancialProviderStatus compact />
+      <div>
+        <h2 className="font-bold">Payment setup is not available</h2>
+        <p className="mt-1 text-sm">
+          Xero is connected in a contained, read-only mode and Stripe payments are unavailable.
+          Your membership record remains available, but no invoice or automatic debit can be created.
+        </p>
+      </div>
+    </section>;
+  }
+
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-start gap-3">
       <CircleDollarSign className="mt-0.5 h-5 w-5 text-blue-700" />
-      <div><h2 className="font-bold text-slate-950">Payment preference</h2><p className="mt-1 text-sm text-slate-600">The setup screen only saves your payment method. Nothing is charged or transferred until membership commences. Xero remains the payment record.</p></div>
+      <div><h2 className="font-bold text-slate-950">Payment preference</h2><p className="mt-1 text-sm text-slate-600">The setup screen only saves your payment method. Nothing is charged or transferred until membership commences. {financialProviders.xero.postingAvailable ? 'Xero records the invoice and payment.' : 'Stripe records the payment while Xero posting is unavailable.'}</p></div>
     </div>
     <div className="mt-4 grid gap-3 md:grid-cols-3">
       {methods.map(method => { const Icon = method.icon; const selected = paymentMethod === method.id; return <button key={method.id} type="button" onClick={() => { setPaymentMethod(method.id); setAuthorityAccepted(false); setReplacePaymentMethod(false); }} className={`relative rounded-xl border p-4 text-left transition ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 hover:border-slate-300'}`}>
@@ -414,18 +447,20 @@ const MembershipPaymentPreferencesCard = ({ membershipApi }: { membershipApi: Re
 };
 
 const MembershipCancellation = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   if (!membershipApi.ownApplication && !membershipApi.ownMembership) return null;
   if (membershipApi.ownApplication?.status === 'withdrawn' || membershipApi.ownMembership?.legalStatus === 'resigned') return null;
   return <div className="rounded-2xl border border-slate-200 bg-white p-5">
-    {!open ? <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-bold text-slate-900">Cancel membership</h3><p className="mt-1 text-sm text-slate-600">Unpaid Xero membership invoices will be voided. Paid invoices remain as accounting records.</p></div><button onClick={() => setOpen(true)} className="self-start rounded-lg border border-red-300 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50">{membershipApi.ownMembership ? 'Cancel membership' : 'Withdraw application'}</button></div> : <div><h3 className="font-bold text-red-900">Confirm cancellation</h3><p className="mt-1 text-sm text-slate-600">This stops automatic renewal and cancels any unpaid membership invoice.</p><textarea autoFocus rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="Reason for cancellation (minimum 10 characters)" className="mt-3 w-full rounded-lg border border-red-200 px-3 py-2" /><div className="mt-3 flex justify-end gap-2"><button onClick={() => { setOpen(false); setReason(''); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Keep membership</button><button disabled={reason.trim().length < 10 || membershipApi.busyAction === 'membership-cancel'} onClick={async () => { await membershipApi.cancelMembership(reason); setOpen(false); }} className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">{membershipApi.busyAction === 'membership-cancel' && <Loader2 className="h-4 w-4 animate-spin" />} Confirm cancellation</button></div></div>}
+    {!open ? <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-bold text-slate-900">Cancel membership</h3><p className="mt-1 text-sm text-slate-600">{financialProviders.xero.accountingAvailable ? 'Unpaid Xero membership invoices will be voided. Paid invoices remain as accounting records.' : 'Automatic Stripe collection will stop. Completed payments remain as permanent records.'}</p></div><button onClick={() => setOpen(true)} className="self-start rounded-lg border border-red-300 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50">{membershipApi.ownMembership ? 'Cancel membership' : 'Withdraw application'}</button></div> : <div><h3 className="font-bold text-red-900">Confirm cancellation</h3><p className="mt-1 text-sm text-slate-600">This stops automatic renewal{financialProviders.xero.accountingAvailable ? ' and cancels any unpaid membership invoice' : ''}.</p><textarea autoFocus rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="Reason for cancellation (minimum 10 characters)" className="mt-3 w-full rounded-lg border border-red-200 px-3 py-2" /><div className="mt-3 flex justify-end gap-2"><button onClick={() => { setOpen(false); setReason(''); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Keep membership</button><button disabled={reason.trim().length < 10 || membershipApi.busyAction === 'membership-cancel'} onClick={async () => { await membershipApi.cancelMembership(reason); setOpen(false); }} className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">{membershipApi.busyAction === 'membership-cancel' && <Loader2 className="h-4 w-4 animate-spin" />} Confirm cancellation</button></div></div>}
   </div>;
 };
 
 const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
   const { ownApplication, ownMembership, ownPeriods, classes, busyAction, submitApplication, refreshOwnXeroInvoices } = membershipApi;
-  const xeroLinked = Boolean(ownMembership?.xeroLinked);
+  const xeroLinked = financialProviders.xero.accountingAvailable && Boolean(ownMembership?.xeroLinked);
   const today = new Date().toISOString().slice(0, 10);
   const currentPeriod = ownPeriods.find(period =>
     period.financialYearStart <= today && period.financialYearEnd >= today
@@ -451,11 +486,16 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
           <p className="mt-1 text-xl font-extrabold text-slate-950">{currentPeriod ? moneyLabel(currentPeriod.amountDue) : 'Awaiting fee record'}</p>
           <p className="mt-1 text-sm text-slate-600">{currentPeriod ? `Due ${dateLabel(currentPeriod.dueDate)}` : 'Contact the club'}</p>
           {currentPeriod && currentPeriod.scholarshipContributionAmount > 0 && <p className="mt-2 text-xs text-violet-700">Includes {moneyLabel(currentPeriod.scholarshipContributionAmount)} scholarship contribution</p>}
+        </div> : financialProviders.stripe.paymentsAvailable ? <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm text-blue-950">
+          <div className="flex items-center justify-between"><CircleDollarSign className="h-5 w-5 text-blue-700" /><StatusPill value={currentPeriod?.feeDisposition} /></div>
+          <p className="mt-4 text-xs font-bold uppercase tracking-wide text-blue-700">Membership payment</p>
+          <p className="mt-1 text-lg font-extrabold">{currentPeriod ? membershipStatusLabel(currentPeriod.feeDisposition) : 'Awaiting fee record'}</p>
+          <p className="mt-1 text-sm">Stripe payments remain available. Xero balances and invoices are hidden while Xero is disconnected.</p>
         </div> : <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm text-amber-950">
           <div className="flex items-center justify-between"><CircleDollarSign className="h-5 w-5 text-amber-700" /><AlertTriangle className="h-5 w-5 text-amber-700" /></div>
-          <p className="mt-4 text-xs font-bold uppercase tracking-wide text-amber-700">Billing account</p>
-          <p className="mt-1 text-lg font-extrabold">Xero setup required</p>
-          <p className="mt-1 text-sm">Financial information is hidden until an administrator links your account to Xero.</p>
+          <p className="mt-4 text-xs font-bold uppercase tracking-wide text-amber-700">Financial services</p>
+          <p className="mt-1 text-lg font-extrabold">Payments unavailable</p>
+          <p className="mt-1 text-sm">Stripe and Xero are disconnected, so financial information and payment controls are disabled.</p>
         </div>}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between"><Vote className="h-5 w-5 text-blue-700" />{ownMembership.hasVotingRights ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <XCircle className="h-5 w-5 text-slate-400" />}</div>
@@ -464,15 +504,15 @@ const MyMembership = ({ membershipApi }: { membershipApi: ReturnType<typeof useM
           <p className="mt-1 text-sm text-slate-600">Voting rights are determined by the membership product configured by the club.</p>
         </div>
       </div>
-      {xeroLinked && <MembershipBillingStatus period={currentPeriod} />}
+      {financialProviders.financeEnabled && <MembershipBillingStatus period={currentPeriod} />}
       {xeroLinked && upcomingPeriod && <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-blue-950"><div className="flex items-start gap-3"><CalendarClock className="mt-0.5 h-5 w-5 shrink-0" /><div><h3 className="font-bold">Next renewal prepared</h3><p className="mt-1 text-sm">{moneyLabel(upcomingPeriod.amountDue)} is due {dateLabel(upcomingPeriod.dueDate)}. This future invoice does not affect your current-year booking access.</p></div></div></div>}
-      {xeroLinked && currentPeriod && !isFinanciallyCleared(currentPeriod.feeDisposition) && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950">
+      {financialProviders.financeEnabled && currentPeriod && !isFinanciallyCleared(currentPeriod.feeDisposition) && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950">
         <div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><h3 className="font-bold">Aircraft self-booking is unavailable</h3><p className="mt-1 text-sm">Your legal membership continues until {dateLabel(currentPeriod.graceExpiresAt)}, but the fee must be paid or waived before you can book an aircraft yourself.</p></div></div>
-        {currentPeriod.xeroInvoiceId && <button disabled={busyAction === 'xero:own'} onClick={() => void refreshOwnXeroInvoices()} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-bold hover:bg-amber-100"><RefreshCw className={`h-4 w-4 ${busyAction === 'xero:own' ? 'animate-spin' : ''}`} /> Refresh Xero payment</button>}
+        {financialProviders.xero.accountingAvailable && currentPeriod.xeroInvoiceId && <button disabled={busyAction === 'xero:own'} onClick={() => void refreshOwnXeroInvoices()} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-bold hover:bg-amber-100"><RefreshCw className={`h-4 w-4 ${busyAction === 'xero:own' ? 'animate-spin' : ''}`} /> Refresh Xero payment</button>}
       </div>}
       {ownMembership.canSelfBookAircraft === false && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950"><div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><h3 className="font-bold">Aircraft self-booking is not included</h3><p className="mt-1 text-sm">Your membership remains current, but this membership product requires an instructor or administrator to create aircraft bookings for you.</p></div></div></div>}
-      {xeroLinked && currentPeriod?.waiverReason && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><span className="font-bold">Fee waiver:</span> {currentPeriod.waiverReason}</div>}
-      {xeroLinked && ownMembership.legalStatus === 'current' && <MembershipPaymentPreferencesCard membershipApi={membershipApi} />}
+      {currentPeriod?.waiverReason && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><span className="font-bold">Fee waiver:</span> {currentPeriod.waiverReason}</div>}
+      {financialProviders.financeEnabled && ownMembership.legalStatus === 'current' && <MembershipPaymentPreferencesCard membershipApi={membershipApi} />}
       <MembershipCancellation membershipApi={membershipApi} />
     </> : <>
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
@@ -504,49 +544,565 @@ const ApplicationsAdmin = ({ membershipApi }: { membershipApi: ReturnType<typeof
   </div>;
 };
 
-const RegisterAdmin = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+const RegisterAdmin = ({
+  membershipApi,
+}: {
+  membershipApi: ReturnType<typeof useMembership>;
+}) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
   const { users } = useUsers();
-  const [query, setQuery] = useState('');
-  const [waiverPeriod, setWaiverPeriod] = useState<MembershipFinancialPeriod | null>(null);
-  const [waiverType, setWaiverType] = useState(membershipApi.settings.waiverTypes[0] || '');
-  const [waiverReason, setWaiverReason] = useState('');
-  const [waiverAuthorityReference, setWaiverAuthorityReference] = useState('');
+  const [query, setQuery] = useState("");
+  const [waiverPeriod, setWaiverPeriod] =
+    useState<MembershipFinancialPeriod | null>(null);
+  const [waiverType, setWaiverType] = useState(
+    membershipApi.settings.waiverTypes[0] || "",
+  );
+  const [waiverReason, setWaiverReason] = useState("");
+  const [waiverAuthorityReference, setWaiverAuthorityReference] = useState("");
   const [showImport, setShowImport] = useState(false);
-  const [importForm, setImportForm] = useState({ userId: '', membershipClassCode: 'full', commencedAt: new Date().toISOString().slice(0, 10), feeDisposition: 'paid' as 'paid' | 'invoice_required' | 'waived', reason: '' });
+  const [importForm, setImportForm] = useState({
+    userId: "",
+    membershipClassCode: "full",
+    commencedAt: new Date().toISOString().slice(0, 10),
+    feeDisposition: "paid" as "paid" | "invoice_required" | "waived",
+    reason: "",
+  });
   const periodByMembership = useMemo(() => {
     const latest = new Map<string, MembershipFinancialPeriod>();
     const today = new Date().toISOString().slice(0, 10);
-    membershipApi.periods.forEach(period => {
+    membershipApi.periods.forEach((period) => {
       const existing = latest.get(period.membershipId);
-      const isCurrent = period.financialYearStart <= today && period.financialYearEnd >= today;
-      const existingIsCurrent = Boolean(existing && existing.financialYearStart <= today && existing.financialYearEnd >= today);
-      if (!existing || (isCurrent && !existingIsCurrent)) latest.set(period.membershipId, period);
+      const isCurrent =
+        period.financialYearStart <= today && period.financialYearEnd >= today;
+      const existingIsCurrent = Boolean(
+        existing &&
+        existing.financialYearStart <= today &&
+        existing.financialYearEnd >= today,
+      );
+      if (!existing || (isCurrent && !existingIsCurrent))
+        latest.set(period.membershipId, period);
     });
     return latest;
   }, [membershipApi.periods]);
-  const filtered = membershipApi.memberships.filter(item => `${item.userName} ${item.userEmail} ${item.membershipClassName}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return <div className="space-y-4">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search membership records" className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2.5" /><div className="flex flex-wrap gap-2"><button disabled={membershipApi.busyAction === 'register:export'} onClick={() => void membershipApi.exportStatutoryRegister()} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Download className="h-4 w-4" /> Export register</button><button onClick={() => setShowImport(true)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-bold text-white hover:bg-blue-800"><UserCheck className="h-4 w-4" /> Add existing member</button><button disabled={membershipApi.busyAction === 'xero:issue-renewals'} onClick={() => { if (window.confirm('Prepare renewals and queue the next batch of up to 100 due invoices or authorised automatic collections?')) void membershipApi.issueMembershipRenewals(); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300 px-3 py-2.5 text-sm font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"><CircleDollarSign className="h-4 w-4" /> Prepare renewals</button><button disabled={membershipApi.busyAction === 'xero:all'} onClick={() => void membershipApi.refreshAllXeroInvoices()} className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 px-3 py-2.5 text-sm font-bold text-blue-800 hover:bg-blue-50 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${membershipApi.busyAction === 'xero:all' ? 'animate-spin' : ''}`} /> Refresh Xero payments</button></div></div>
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm"><table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Member</th><th className="px-4 py-3">Class</th><th className="px-4 py-3">Legal status</th><th className="px-4 py-3">Fee status</th><th className="px-4 py-3">Invoice / due</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map(membership => {
-      const period = periodByMembership.get(membership.id);
-      if (!membership.xeroLinked) {
-        return <tr key={membership.id}>
-          <td className="px-4 py-3"><p className="font-bold text-slate-900"><StudentFileLink studentId={membership.userId} name={membership.userName} /></p><p className="text-xs text-slate-500">{membership.userEmail}</p></td>
-          <td className="px-4 py-3"><p>{membership.membershipClassName}</p>{membership.hasVotingRights && <p className="text-xs font-semibold text-blue-700">Voting</p>}</td>
-          <td className="px-4 py-3"><StatusPill value={membership.legalStatus} /></td>
-          <td className="px-4 py-3"><span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">Xero setup required</span></td>
-          <td className="px-4 py-3 text-xs text-slate-500">Financial information hidden</td>
-          <td className="px-4 py-3 text-right text-xs text-slate-500">Link in Xero settings first</td>
-        </tr>;
-      }
-      return <tr key={membership.id}><td className="px-4 py-3"><p className="font-bold text-slate-900"><StudentFileLink studentId={membership.userId} name={membership.userName} /></p><p className="text-xs text-slate-500">{membership.userEmail}</p></td><td className="px-4 py-3"><p>{membership.membershipClassName}</p>{membership.hasVotingRights && <p className="text-xs font-semibold text-blue-700">Voting</p>}</td><td className="px-4 py-3"><StatusPill value={membership.legalStatus} /></td><td className="px-4 py-3"><StatusPill value={period?.feeDisposition} />{period?.billingSyncStatus && period.billingSyncStatus !== 'succeeded' && <p className={`mt-1 text-xs font-semibold ${['failed', 'needs_review'].includes(period.billingSyncStatus) ? 'text-red-700' : 'text-amber-700'}`}>Billing: {membershipStatusLabel(period.billingSyncStatus)}{period.billingSyncAttempts ? ` · attempt ${period.billingSyncAttempts}` : ''}</p>}{period?.billingSyncError && <p className="mt-1 max-w-xs text-xs text-red-700">{period.billingSyncError}</p>}{period?.waiverReason && <p className="mt-1 max-w-xs text-xs text-slate-500">{period.waiverType ? `${period.waiverType}: ` : ''}{period.waiverReason}</p>}</td><td className="px-4 py-3"><p>{period?.xeroInvoiceNumber || (period ? moneyLabel(period.amountDue) : 'No period')}</p><p className="text-xs text-slate-500">{period ? `Due ${dateLabel(period.dueDate)}` : ''}</p>{period?.billingSyncNextAttemptAt && <p className="mt-1 text-xs text-amber-700">Retry {dateLabel(period.billingSyncNextAttemptAt)}</p>}</td><td className="px-4 py-3"><div className="flex justify-end gap-2">{period && !['waived', 'fee_exempt'].includes(period.feeDisposition) && <button disabled={membershipApi.busyAction === `xero:${period.id}`} onClick={() => void membershipApi.createOrRefreshXeroInvoice(period.id)} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50">{['failed', 'needs_review'].includes(period.billingSyncStatus || '') ? 'Retry billing' : period.xeroInvoiceId ? 'Refresh' : 'Issue invoice'}</button>}{period && !isFinanciallyCleared(period.feeDisposition) && <button onClick={() => { setWaiverPeriod(period); setWaiverType(membershipApi.settings.waiverTypes[0] || ''); setWaiverReason(''); setWaiverAuthorityReference(''); }} className="rounded-lg border border-emerald-300 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50">Waive fee</button>}</div></td></tr>;
-    })}</tbody></table></div>
-    {waiverPeriod && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h3 className="text-lg font-bold text-slate-950">Authorise a membership fee waiver</h3><p className="mt-1 text-sm text-slate-600">The waiver applies only to this financial year and does not create a fake Xero payment.</p><label className="mt-4 block text-sm font-semibold text-slate-700">Waiver type<select value={waiverType} onChange={event => setWaiverType(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal">{membershipApi.settings.waiverTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></label><label className="mt-3 block text-sm font-semibold text-slate-700">Reason<textarea rows={3} value={waiverReason} onChange={event => setWaiverReason(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" placeholder="Why this annual fee is being waived (minimum 10 characters)" /></label><label className="mt-3 block text-sm font-semibold text-slate-700">Authority reference{!membershipApi.settings.requireWaiverAuthorityReference && <span className="font-normal"> (optional)</span>}<input value={waiverAuthorityReference} onChange={event => setWaiverAuthorityReference(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" placeholder="e.g. Committee minutes 28 July 2026" /></label><div className="mt-4 flex justify-end gap-2"><button onClick={() => setWaiverPeriod(null)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Cancel</button><button disabled={!waiverType || waiverReason.trim().length < 10 || (membershipApi.settings.requireWaiverAuthorityReference && waiverAuthorityReference.trim().length < 3)} onClick={async () => { await membershipApi.authorizeFeeWaiver(waiverPeriod.id, waiverType, waiverReason, waiverAuthorityReference); setWaiverPeriod(null); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">Authorise waiver</button></div></div></div>}
-    {showImport && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"><h3 className="text-lg font-bold text-slate-950">Add an existing club member</h3><p className="mt-1 text-sm text-slate-600">Use this to establish the opening register without asking an existing member to reapply.</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold text-slate-700 sm:col-span-2">Portal user<select value={importForm.userId} onChange={event => setImportForm(current => ({ ...current, userId: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"><option value="">Select a person</option>{users.filter(item => !membershipApi.memberships.some(membership => membership.userId === item.id)).map(item => <option key={item.id} value={item.id}>{item.name} — {item.email}</option>)}</select></label><label className="text-sm font-semibold text-slate-700">Membership class<select value={importForm.membershipClassCode} onChange={event => setImportForm(current => ({ ...current, membershipClassCode: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal">{membershipApi.classes.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select></label><label className="text-sm font-semibold text-slate-700">Original commencement<input type="date" value={importForm.commencedAt} onChange={event => setImportForm(current => ({ ...current, commencedAt: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" /></label><label className="text-sm font-semibold text-slate-700 sm:col-span-2">Current financial status<select value={importForm.feeDisposition} onChange={event => setImportForm(current => ({ ...current, feeDisposition: event.target.value as typeof importForm.feeDisposition }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"><option value="paid">Already paid</option><option value="invoice_required">Invoice required</option><option value="waived">Fee waived</option></select></label>{importForm.feeDisposition === 'waived' && <label className="text-sm font-semibold text-slate-700 sm:col-span-2">Waiver reason<textarea rows={3} value={importForm.reason} onChange={event => setImportForm(current => ({ ...current, reason: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal" /></label>}</div><div className="mt-5 flex justify-end gap-2"><button onClick={() => setShowImport(false)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Cancel</button><button disabled={!importForm.userId || membershipApi.busyAction === 'membership:import' || (importForm.feeDisposition === 'waived' && importForm.reason.trim().length < 10)} onClick={async () => { await membershipApi.importLegacyMembership(importForm); setShowImport(false); }} className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">Add to register</button></div></div></div>}
-  </div>;
+  const filtered = membershipApi.memberships.filter((item) =>
+    `${item.userName} ${item.userEmail} ${item.membershipClassName}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search membership records"
+          className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2.5"
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            disabled={membershipApi.busyAction === "register:export"}
+            onClick={() => void membershipApi.exportStatutoryRegister()}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" /> Export register
+          </button>
+          <button
+            onClick={() => setShowImport(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-bold text-white hover:bg-blue-800"
+          >
+            <UserCheck className="h-4 w-4" /> Add existing member
+          </button>
+          {financialProviders.xero.postingAvailable && (
+            <>
+              <button
+                disabled={membershipApi.busyAction === "xero:issue-renewals"}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Prepare renewals and queue the next batch of up to 100 due invoices or authorised automatic collections?",
+                    )
+                  )
+                    void membershipApi.issueMembershipRenewals();
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300 px-3 py-2.5 text-sm font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                <CircleDollarSign className="h-4 w-4" /> Prepare renewals
+              </button>
+              <button
+                disabled={membershipApi.busyAction === "xero:all"}
+                onClick={() => void membershipApi.refreshAllXeroInvoices()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 px-3 py-2.5 text-sm font-bold text-blue-800 hover:bg-blue-50 disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${membershipApi.busyAction === "xero:all" ? "animate-spin" : ""}`}
+                />{" "}
+                Refresh Xero payments
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      {!financialProviders.financeEnabled && (
+        <FinancialProviderStatus compact />
+      )}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Member</th>
+              <th className="px-4 py-3">Class</th>
+              <th className="px-4 py-3">Legal status</th>
+              <th className="px-4 py-3">Fee status</th>
+              <th className="px-4 py-3">Invoice / due</th>
+              <th className="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filtered.map((membership) => {
+              const period = periodByMembership.get(membership.id);
+              if (!financialProviders.financeEnabled) {
+                return (
+                  <tr key={membership.id}>
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-slate-900">
+                        <StudentFileLink
+                          studentId={membership.userId}
+                          name={membership.userName}
+                        />
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {membership.userEmail}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p>{membership.membershipClassName}</p>
+                      {membership.hasVotingRights && (
+                        <p className="text-xs font-semibold text-blue-700">
+                          Voting
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill value={membership.legalStatus} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                        Financial features disabled
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      Stripe and Xero disconnected
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs text-slate-500">
+                      No financial actions
+                    </td>
+                  </tr>
+                );
+              }
+              const xeroSetupRequired =
+                financialProviders.xero.accountingAvailable &&
+                !membership.xeroLinked &&
+                !financialProviders.stripe.paymentsAvailable;
+              if (xeroSetupRequired) {
+                return (
+                  <tr key={membership.id}>
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-slate-900">
+                        <StudentFileLink
+                          studentId={membership.userId}
+                          name={membership.userName}
+                        />
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {membership.userEmail}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p>{membership.membershipClassName}</p>
+                      {membership.hasVotingRights && (
+                        <p className="text-xs font-semibold text-blue-700">
+                          Voting
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill value={membership.legalStatus} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800">
+                        Xero setup required
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      Financial information hidden
+                    </td>
+                    <td className="px-4 py-3 text-right text-xs text-slate-500">
+                      Link in Xero settings first
+                    </td>
+                  </tr>
+                );
+              }
+              const canUseXero =
+                financialProviders.xero.postingAvailable &&
+                membership.xeroLinked;
+              const canUseStripe = financialProviders.stripe.paymentsAvailable;
+              return (
+                <tr key={membership.id}>
+                  <td className="px-4 py-3">
+                    <p className="font-bold text-slate-900">
+                      <StudentFileLink
+                        studentId={membership.userId}
+                        name={membership.userName}
+                      />
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {membership.userEmail}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p>{membership.membershipClassName}</p>
+                    {membership.hasVotingRights && (
+                      <p className="text-xs font-semibold text-blue-700">
+                        Voting
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill value={membership.legalStatus} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill value={period?.feeDisposition} />
+                    {financialProviders.xero.accountingAvailable &&
+                      !membership.xeroLinked &&
+                      financialProviders.stripe.paymentsAvailable && (
+                        <p className="mt-1 text-xs font-semibold text-amber-700">
+                          Xero contact not linked; Stripe remains available
+                        </p>
+                      )}
+                    {period?.billingSyncStatus &&
+                      period.billingSyncStatus !== "succeeded" && (
+                        <p
+                          className={`mt-1 text-xs font-semibold ${["failed", "needs_review"].includes(period.billingSyncStatus) ? "text-red-700" : "text-amber-700"}`}
+                        >
+                          Billing:{" "}
+                          {membershipStatusLabel(period.billingSyncStatus)}
+                          {period.billingSyncAttempts
+                            ? ` · attempt ${period.billingSyncAttempts}`
+                            : ""}
+                        </p>
+                      )}
+                    {period?.billingSyncError && (
+                      <p className="mt-1 max-w-xs text-xs text-red-700">
+                        {period.billingSyncError}
+                      </p>
+                    )}
+                    {period?.waiverReason && (
+                      <p className="mt-1 max-w-xs text-xs text-slate-500">
+                        {period.waiverType ? `${period.waiverType}: ` : ""}
+                        {period.waiverReason}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p>
+                      {period?.xeroInvoiceNumber ||
+                        (period ? moneyLabel(period.amountDue) : "No period")}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {period ? `Due ${dateLabel(period.dueDate)}` : ""}
+                    </p>
+                    {period?.billingSyncNextAttemptAt && (
+                      <p className="mt-1 text-xs text-amber-700">
+                        Retry {dateLabel(period.billingSyncNextAttemptAt)}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      {period &&
+                        canUseXero &&
+                        !["waived", "fee_exempt"].includes(
+                          period.feeDisposition,
+                        ) && (
+                          <button
+                            disabled={
+                              membershipApi.busyAction === `xero:${period.id}`
+                            }
+                            onClick={() =>
+                              void membershipApi.createOrRefreshXeroInvoice(
+                                period.id,
+                              )
+                            }
+                            className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-50"
+                          >
+                            {["failed", "needs_review"].includes(
+                              period.billingSyncStatus || "",
+                            )
+                              ? "Retry Xero billing"
+                              : period.xeroInvoiceId
+                                ? "Refresh"
+                                : "Issue invoice"}
+                          </button>
+                        )}
+                      {period &&
+                        canUseStripe &&
+                        !isFinanciallyCleared(period.feeDisposition) && (
+                          <button
+                            disabled={
+                              membershipApi.busyAction ===
+                              `stripe:membership:${membership.userId}`
+                            }
+                            onClick={() =>
+                              void membershipApi.collectApprovedMembership(
+                                membership.userId,
+                              )
+                            }
+                            className="rounded-lg border border-violet-300 px-2.5 py-1.5 text-xs font-bold text-violet-800 hover:bg-violet-50 disabled:opacity-50"
+                          >
+                            Collect with Stripe
+                          </button>
+                        )}
+                      {period &&
+                        !isFinanciallyCleared(period.feeDisposition) && (
+                          <button
+                            onClick={() => {
+                              setWaiverPeriod(period);
+                              setWaiverType(
+                                membershipApi.settings.waiverTypes[0] || "",
+                              );
+                              setWaiverReason("");
+                              setWaiverAuthorityReference("");
+                            }}
+                            className="rounded-lg border border-emerald-300 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50"
+                          >
+                            Waive fee
+                          </button>
+                        )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {waiverPeriod && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-950">
+              Authorise a membership fee waiver
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              The waiver applies only to this financial year and does not create
+              a fake Xero payment.
+            </p>
+            <label className="mt-4 block text-sm font-semibold text-slate-700">
+              Waiver type
+              <select
+                value={waiverType}
+                onChange={(event) => setWaiverType(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
+              >
+                {membershipApi.settings.waiverTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block text-sm font-semibold text-slate-700">
+              Reason
+              <textarea
+                rows={3}
+                value={waiverReason}
+                onChange={(event) => setWaiverReason(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal"
+                placeholder="Why this annual fee is being waived (minimum 10 characters)"
+              />
+            </label>
+            <label className="mt-3 block text-sm font-semibold text-slate-700">
+              Authority reference
+              {!membershipApi.settings.requireWaiverAuthorityReference && (
+                <span className="font-normal"> (optional)</span>
+              )}
+              <input
+                value={waiverAuthorityReference}
+                onChange={(event) =>
+                  setWaiverAuthorityReference(event.target.value)
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal"
+                placeholder="e.g. Committee minutes 28 July 2026"
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setWaiverPeriod(null)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={
+                  !waiverType ||
+                  waiverReason.trim().length < 10 ||
+                  (membershipApi.settings.requireWaiverAuthorityReference &&
+                    waiverAuthorityReference.trim().length < 3)
+                }
+                onClick={async () => {
+                  await membershipApi.authorizeFeeWaiver(
+                    waiverPeriod.id,
+                    waiverType,
+                    waiverReason,
+                    waiverAuthorityReference,
+                  );
+                  setWaiverPeriod(null);
+                }}
+                className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+              >
+                Authorise waiver
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showImport && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-950">
+              Add an existing club member
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Use this to establish the opening register without asking an
+              existing member to reapply.
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
+                Portal user
+                <select
+                  value={importForm.userId}
+                  onChange={(event) =>
+                    setImportForm((current) => ({
+                      ...current,
+                      userId: event.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
+                >
+                  <option value="">Select a person</option>
+                  {users
+                    .filter(
+                      (item) =>
+                        !membershipApi.memberships.some(
+                          (membership) => membership.userId === item.id,
+                        ),
+                    )
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} — {item.email}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Membership class
+                <select
+                  value={importForm.membershipClassCode}
+                  onChange={(event) =>
+                    setImportForm((current) => ({
+                      ...current,
+                      membershipClassCode: event.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
+                >
+                  {membershipApi.classes.map((item) => (
+                    <option key={item.code} value={item.code}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Original commencement
+                <input
+                  type="date"
+                  value={importForm.commencedAt}
+                  onChange={(event) =>
+                    setImportForm((current) => ({
+                      ...current,
+                      commencedAt: event.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
+                Current financial status
+                <select
+                  value={importForm.feeDisposition}
+                  onChange={(event) =>
+                    setImportForm((current) => ({
+                      ...current,
+                      feeDisposition: event.target
+                        .value as typeof importForm.feeDisposition,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
+                >
+                  <option value="paid">Already paid</option>
+                  <option value="invoice_required">Invoice required</option>
+                  <option value="waived">Fee waived</option>
+                </select>
+              </label>
+              {importForm.feeDisposition === "waived" && (
+                <label className="text-sm font-semibold text-slate-700 sm:col-span-2">
+                  Waiver reason
+                  <textarea
+                    rows={3}
+                    value={importForm.reason}
+                    onChange={(event) =>
+                      setImportForm((current) => ({
+                        ...current,
+                        reason: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal"
+                  />
+                </label>
+              )}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowImport(false)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={
+                  !importForm.userId ||
+                  membershipApi.busyAction === "membership:import" ||
+                  (importForm.feeDisposition === "waived" &&
+                    importForm.reason.trim().length < 10)
+                }
+                onClick={async () => {
+                  await membershipApi.importLegacyMembership(importForm);
+                  setShowImport(false);
+                }}
+                className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+              >
+                Add to register
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<typeof useMembership> }) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
   const [draft, setDraft] = useState(membershipApi.settings);
   const [classDrafts, setClassDrafts] = useState<MembershipClass[]>(membershipApi.classes);
   const [xeroAccounts, setXeroAccounts] = useState<Array<{ code: string; name: string; type?: string }>>([]);
@@ -571,6 +1127,11 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
   React.useEffect(() => {
     let cancelled = false;
     const loadXeroAccounts = async () => {
+      if (!financialProviders.xero.accountingAvailable) {
+        setXeroAccounts([]);
+        setXeroAccountsLoading(false);
+        return;
+      }
       setXeroAccountsLoading(true);
       const { data, error } = await supabase.functions.invoke<{
         accounts?: Array<{ code: string; name: string; type?: string; status?: string }>;
@@ -587,7 +1148,7 @@ const MembershipSettingsPanel = ({ membershipApi }: { membershipApi: ReturnType<
     };
     void loadXeroAccounts();
     return () => { cancelled = true; };
-  }, []);
+  }, [financialProviders.xero.accountingAvailable]);
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal';
   const updateClass = (id: string, updates: Partial<MembershipClass>) => {

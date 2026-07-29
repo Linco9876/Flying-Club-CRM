@@ -130,8 +130,14 @@ const getStatus = async (adminClient: SupabaseAdminClient, supabaseUrl: string) 
   const modeSettings = await getStripeModeSettings(adminClient);
   const secrets = getStripeSecretStatus();
   const activeSecrets = secrets[modeSettings.mode];
+  const linked = /^acct_[A-Za-z0-9_]+$/.test(
+    String(data?.stripe_user_id || "").trim(),
+  );
+  const configured = Boolean(
+    activeSecrets.secretKey && activeSecrets.webhookSecret,
+  );
   return {
-    connected: Boolean(data?.stripe_user_id),
+    connected: linked && configured,
     accountId: data?.stripe_user_id || null,
     scope: data?.scope || null,
     livemode: Boolean(data?.livemode),
@@ -144,7 +150,7 @@ const getStatus = async (adminClient: SupabaseAdminClient, supabaseUrl: string) 
     activeModeConfigured: activeSecrets.secretKey,
     activePublishableKeyConfigured: activeSecrets.publishableKey,
     activeWebhookConfigured: activeSecrets.webhookSecret,
-    configured: activeSecrets.secretKey,
+    configured,
     hasClientId: Boolean(Deno.env.get("STRIPE_CONNECT_CLIENT_ID")),
     hasSecretKey: activeSecrets.secretKey,
     callbackUrl: callbackUrl(supabaseUrl),

@@ -393,28 +393,42 @@ export const ProfileDashboard: React.FC = () => {
           ? 'Incomplete'
           : 'Due soon';
 
+  const membershipNeedsXeroSetup = membership.xeroAvailable
+    && !membership.xeroLinked
+    && !membership.stripeAvailable;
+  const membershipFinanceActive = membership.financeEnabled && !membershipNeedsXeroSetup;
   const membershipLevel: ProfileReadinessLevel = membership.legalStatus === 'current'
-    ? !membership.xeroLinked ? 'warning' : membership.financiallyCleared ? 'ready' : 'action'
+    ? !membership.financeEnabled
+      ? 'ready'
+      : membershipNeedsXeroSetup
+        ? 'warning'
+        : membership.financiallyCleared ? 'ready' : 'action'
     : membership.applicationStatus === 'pending' ? 'warning' : 'action';
   const profileLevel: ProfileReadinessLevel = missingProfileFields.length > 0 ? 'warning' : 'ready';
-  const membershipBillingProblem = membership.xeroLinked && (
+  const membershipBillingProblem = membershipFinanceActive && (
     ['failed', 'needs_review'].includes(membership.billingSyncStatus || '') ||
     membership.lastCollectionStatus === 'failed'
   );
-  const membershipBillingPending = membership.xeroLinked &&
+  const membershipBillingPending = membershipFinanceActive &&
     ['queued', 'processing'].includes(membership.billingSyncStatus || '');
   const billingLevel: ProfileReadinessLevel = membershipBillingProblem
     ? 'action'
-    : membership.xeroLinked
+    : membershipNeedsXeroSetup
+      ? 'warning'
+      : membershipFinanceActive
       ? membershipBillingPending ? 'warning' : 'ready'
-      : 'warning';
+      : 'ready';
 
   const readinessItems = useMemo(() => [
     {
       id: 'club-membership',
       label: 'BFC membership',
       value: membership.legalStatus === 'current'
-        ? !membership.xeroLinked ? 'Current' : membership.financiallyCleared ? 'Active' : 'Payment required'
+        ? !membership.financeEnabled
+          ? 'Current'
+          : membershipNeedsXeroSetup
+            ? 'Current'
+            : membership.financiallyCleared ? 'Active' : 'Payment required'
         : membership.applicationStatus === 'pending' ? 'Pending approval' : humaniseStatus(membership.legalStatus),
       level: membershipLevel,
       to: getProfileReadinessDestination('membership'),
@@ -442,19 +456,19 @@ export const ProfileDashboard: React.FC = () => {
         to: getProfileReadinessDestination('flight-review'),
       }] : []),
     ] : []),
-    {
+    ...(membership.financeEnabled ? [{
       id: 'billing',
       label: 'Billing setup',
       value: membershipBillingProblem
         ? 'Payment needs attention'
         : membershipBillingPending
           ? 'Billing in progress'
-          : membership.xeroLinked ? 'Linked' : 'Admin setup needed',
+          : membershipNeedsXeroSetup ? 'Admin setup needed' : 'Ready',
       level: billingLevel,
       to: membershipBillingProblem || membershipBillingPending
         ? getProfileReadinessDestination('membership')
         : getProfileReadinessDestination('billing'),
-    },
+    }] : []),
     {
       id: 'profile',
       label: 'Profile details',
@@ -472,10 +486,12 @@ export const ProfileDashboard: React.FC = () => {
     medicalStatus.level,
     membership.applicationStatus,
     membership.financiallyCleared,
+    membership.financeEnabled,
     membership.legalStatus,
     membershipBillingPending,
     membershipBillingProblem,
     membership.xeroLinked,
+    membershipNeedsXeroSetup,
     membershipLevel,
     missingProfileFields,
     profileLevel,
@@ -513,7 +529,7 @@ export const ProfileDashboard: React.FC = () => {
         to: getProfileReadinessDestination('membership'),
         level: membership.applicationStatus === 'pending' ? 'warning' : 'action',
       });
-    } else if (membership.xeroLinked && !membership.financiallyCleared) {
+    } else if (membershipFinanceActive && !membership.financiallyCleared) {
       actions.push({
         id: 'membership-payment',
         title: 'Membership payment required',
@@ -557,7 +573,7 @@ export const ProfileDashboard: React.FC = () => {
         level: flightReviewStatus.level === 'action' ? 'action' : 'warning',
       });
     }
-    if (!membership.xeroLinked) {
+    if (membershipNeedsXeroSetup) {
       actions.push({
         id: 'xero-link',
         title: 'Billing account needs administrator setup',
@@ -577,9 +593,11 @@ export const ProfileDashboard: React.FC = () => {
     membership.applicationStatus,
     membership.automaticCommencementAt,
     membership.financiallyCleared,
+    membershipFinanceActive,
     membership.graceExpiresAt,
     membership.legalStatus,
     membership.xeroLinked,
+    membershipNeedsXeroSetup,
     missingProfileFields,
     raausStatus.level,
     studentDetails?.licenceExpiry,
@@ -981,12 +999,14 @@ export const ProfileDashboard: React.FC = () => {
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${levelStyles[membershipLevel].badge}`}>
                   {membership.legalStatus === 'current'
-                    ? !membership.xeroLinked ? 'Current' : membership.financiallyCleared ? 'Active' : 'Payment due'
+                    ? !membership.financeEnabled || membershipNeedsXeroSetup
+                      ? 'Current'
+                      : membership.financiallyCleared ? 'Active' : 'Payment due'
                     : humaniseStatus(membership.applicationStatus || membership.legalStatus)}
                 </span>
               </div>
               <dl className="mt-5 space-y-3 text-sm">
-                {membership.xeroLinked ? <>
+                {membershipFinanceActive ? <>
                   <div className="flex justify-between gap-3">
                     <dt className="text-slate-500 dark:text-slate-400">Financial year ends</dt>
                     <dd className="text-right font-semibold text-slate-900 dark:text-white">{formatStoredDate(membership.financialYearEnd, datePattern)}</dd>
@@ -1007,9 +1027,13 @@ export const ProfileDashboard: React.FC = () => {
                       {membership.autoRenew ? 'Automatic' : membership.paymentMethod ? 'Manual' : 'Not selected'}
                     </dd>
                   </div>
-                </> : (
+                </> : membershipNeedsXeroSetup ? (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
                     Financial information is hidden until an administrator links this account to Xero.
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                    Financial features are disabled because Stripe and Xero are disconnected.
                   </div>
                 )}
                 <div className="flex justify-between gap-3">
