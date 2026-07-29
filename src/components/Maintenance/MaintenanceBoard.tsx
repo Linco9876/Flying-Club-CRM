@@ -29,6 +29,14 @@ import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { Defect } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import {
+  addCalendarMonths,
+  calculateDaysRemaining,
+  calculateHoursRemaining,
+  formatLocalDateInput,
+  getMaintenanceAlertLevel,
+  parseLocalDate
+} from '../../utils/maintenanceRules';
 import toast from 'react-hot-toast';
 
 type BoardDefect = Defect & { aircraftId: string };
@@ -69,6 +77,8 @@ interface DefectDetailsModalProps {
   onDelete: () => void;
   onShowHistory: () => void;
   onChangeStatus: () => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }
 
 const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
@@ -80,18 +90,20 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
   onEdit,
   onDelete,
   onShowHistory,
-  onChangeStatus
+  onChangeStatus,
+  canEdit,
+  canDelete
 }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div role="dialog" aria-modal="true" aria-labelledby="defect-details-title" className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start p-6 border-b border-gray-200">
           <div>
             <p className="text-sm text-gray-500">{aircraftRegistration}</p>
             {aircraftDescription && (
               <p className="text-xs text-gray-500 mt-1">{aircraftDescription}</p>
             )}
-            <h2 className="text-xl font-semibold text-gray-900 mt-2">{defect.summary || defect.description}</h2>
+            <h2 id="defect-details-title" className="text-xl font-semibold text-gray-900 mt-2">{defect.summary || defect.description}</h2>
           </div>
           <div className="flex items-start space-x-3">
             <span
@@ -101,6 +113,7 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
             </span>
             <button
               onClick={onClose}
+              aria-label="Close defect details"
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <X className="h-5 w-5" />
@@ -183,6 +196,15 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
             </div>
           )}
 
+          {defect.groundedAircraft && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <h3 className="text-sm font-semibold text-red-900">Aircraft grounded</h3>
+              <p className="mt-1 text-sm text-red-800">
+                This defect is keeping the aircraft unserviceable until staff resolve or reclassify it.
+              </p>
+            </div>
+          )}
+
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center space-x-2">
               <Camera className="h-4 w-4 text-gray-500" />
@@ -223,8 +245,8 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-between items-center p-6 border-t border-gray-200">
-          <div className="flex space-x-2">
+        <div className="flex flex-col gap-3 p-6 border-t border-gray-200 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={onShowHistory}
               className="flex items-center space-x-2 px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
@@ -232,27 +254,33 @@ const DefectDetailsModal: React.FC<DefectDetailsModalProps> = ({
               <HistoryIcon className="h-4 w-4" />
               <span>History</span>
             </button>
-            <button
-              onClick={onEdit}
-              className="flex items-center space-x-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              <EditIcon className="h-4 w-4" />
-              <span>Edit</span>
-            </button>
-            <button
-              onClick={onChangeStatus}
-              className="flex items-center space-x-2 px-4 py-2 text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-            >
-              <AlertTriangle className="h-4 w-4" />
-              <span>Change Status</span>
-            </button>
-            <button
-              onClick={onDelete}
-              className="flex items-center space-x-2 px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-            >
-              <Trash2 className="h-4 w-4" />
-              <span>Delete</span>
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  onClick={onEdit}
+                  className="flex items-center space-x-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  <EditIcon className="h-4 w-4" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  onClick={onChangeStatus}
+                  className="flex items-center space-x-2 px-4 py-2 text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Change Status</span>
+                </button>
+              </>
+            )}
+            {canDelete && (
+              <button
+                onClick={onDelete}
+                className="flex items-center space-x-2 px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Delete</span>
+              </button>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -276,13 +304,16 @@ interface StatusUpdateModalProps {
 const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, onSave, canMarkFixed }) => {
   const [status, setStatus] = useState<StatusOption>(defect.status);
   const [melNotes, setMelNotes] = useState(defect.melNotes ?? '');
-  const [fixNotes, setFixNotes] = useState('');
+  const [fixNotes, setFixNotes] = useState(defect.fixNotes ?? '');
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
     if (status === 'fixed' && !fixNotes.trim()) {
+      return;
+    }
+    if ((status === 'mel' || status === 'deferred') && !melNotes.trim()) {
       return;
     }
 
@@ -302,16 +333,20 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, 
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <form
         onSubmit={handleSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="defect-status-title"
         className="bg-white rounded-lg shadow-xl w-full max-w-lg"
       >
         <div className="flex justify-between items-start p-6 border-b border-gray-200">
           <div>
             <p className="text-xs text-gray-500 mb-1">Update Defect</p>
-            <h2 className="text-lg font-semibold text-gray-900">{defect.summary || defect.description}</h2>
+            <h2 id="defect-status-title" className="text-lg font-semibold text-gray-900">{defect.summary || defect.description}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close status update"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
@@ -370,7 +405,11 @@ const StatusUpdateModal: React.FC<StatusUpdateModalProps> = ({ defect, onClose, 
               rows={4}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Add additional notes for the maintenance team"
+              required={status === 'mel' || status === 'deferred'}
             />
+            {(status === 'mel' || status === 'deferred') && !melNotes.trim() && (
+              <p className="text-xs text-red-600 mt-1">Operational limitations or the reason for deferral are required.</p>
+            )}
           </div>
         </div>
 
@@ -404,9 +443,10 @@ interface PhotoLightboxProps {
 
 const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photo, onClose }) => (
   <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60] p-4">
-    <div className="relative bg-white rounded-lg shadow-2xl max-w-4xl w-full p-4">
+    <div role="dialog" aria-modal="true" aria-label="Defect attachment preview" className="relative bg-white rounded-lg shadow-2xl max-w-4xl w-full p-4">
       <button
         onClick={onClose}
+        aria-label="Close attachment preview"
         className="absolute top-3 right-3 p-2 rounded-full bg-black/60 text-white hover:bg-black/80"
       >
         <X className="h-5 w-5" />
@@ -561,9 +601,31 @@ const OneTimeMilestoneModal: React.FC<OneTimeMilestoneModalProps> = ({ aircraft,
 
 export const MaintenanceBoard: React.FC = () => {
   const { user } = useAuth();
-  const { aircraft, loading, reportDefect, updateDefect, updateDefectStatus, getDefectHistory, deleteDefect } = useAircraft({ includeRates: false });
-  const { milestones, loading: milestonesLoading, completeMaintenance, updateMilestone, createMilestone, deleteMilestone } = useMaintenanceMilestones();
-  const { templates, settings: maintenanceSettings, loading: templatesLoading } = useMaintenanceSettings();
+  const {
+    aircraft,
+    loading,
+    error: aircraftError,
+    reportDefect,
+    updateDefect,
+    updateDefectStatus,
+    getDefectHistory,
+    deleteDefect
+  } = useAircraft({ includeRates: false, includeResolvedDefects: true });
+  const {
+    milestones,
+    loading: milestonesLoading,
+    error: milestoneError,
+    completeMaintenance,
+    updateMilestone,
+    createMilestone,
+    deleteMilestone
+  } = useMaintenanceMilestones();
+  const {
+    templates,
+    settings: maintenanceSettings,
+    loading: templatesLoading,
+    error: settingsError
+  } = useMaintenanceSettings();
   const [selectedStatus, setSelectedStatus] = useState<'all' | StatusOption>('open');
   const [showDefectForm, setShowDefectForm] = useState(false);
   const [selectedDefect, setSelectedDefect] = useState<BoardDefect | null>(null);
@@ -592,9 +654,15 @@ export const MaintenanceBoard: React.FC = () => {
     user?.role === 'admin' ||
     user?.roles?.includes('admin')
   );
-  const canManageMaintenanceMilestones =
+  const canManageMaintenanceMilestones = Boolean(
     user?.role === 'admin' ||
-    user?.roles?.includes('admin');
+    user?.roles?.includes('admin')
+  );
+  const canEditDefects = Boolean(
+    ['admin', 'instructor', 'senior_instructor'].includes(user?.role || '') ||
+    user?.roles?.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role))
+  );
+  const canDeleteDefects = canManageMaintenanceMilestones;
 
   useEffect(() => {
     setSelectedStatus(maintenanceSettings.defaultDefectFilter);
@@ -623,7 +691,7 @@ export const MaintenanceBoard: React.FC = () => {
                   ? ac.totalHours + template.intervalHours
                   : undefined,
                 nextDueDate: template.type === 'calendar' || template.type === 'both'
-                  ? new Date(Date.now() + template.intervalMonths * 30 * 24 * 60 * 60 * 1000)
+                  ? parseLocalDate(addCalendarMonths(formatLocalDateInput(new Date()), template.intervalMonths))
                   : undefined
               }, false);
             } catch (error) {
@@ -678,6 +746,17 @@ export const MaintenanceBoard: React.FC = () => {
       await deleteDefect(defectId);
     } catch (error) {
       console.error('Failed to delete defect', error);
+    }
+  };
+
+  const handleDeleteMilestone = async (milestone: { id: string; title: string }) => {
+    if (!window.confirm(`Delete “${milestone.title}”? Completed maintenance history cannot be deleted.`)) {
+      return;
+    }
+    try {
+      await deleteMilestone(milestone.id);
+    } catch (error) {
+      console.error('Failed to delete maintenance milestone', error);
     }
   };
 
@@ -758,20 +837,6 @@ export const MaintenanceBoard: React.FC = () => {
     });
   };
 
-  const calculateDaysRemaining = (dueDate?: Date) => {
-    if (!dueDate) return null;
-    const today = new Date();
-    const due = new Date(dueDate);
-    const diffTime = due.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  const calculateHoursRemaining = (nextDueHours?: number, currentHours?: number) => {
-    if (nextDueHours === undefined || currentHours === undefined) return null;
-    return Math.max(0, nextDueHours - currentHours);
-  };
-
   const getWarnings = () => {
     const warnings: Array<{
       aircraft: string;
@@ -785,42 +850,51 @@ export const MaintenanceBoard: React.FC = () => {
         const hoursRemaining = calculateHoursRemaining(milestone.nextDueHours, ac.totalHours);
         const daysRemaining = calculateDaysRemaining(milestone.nextDueDate);
 
-        if (hoursRemaining !== null && hoursRemaining <= 0) {
+        const alertLevel = getMaintenanceAlertLevel({
+          hoursRemaining,
+          daysRemaining,
+          urgentHours: maintenanceSettings.urgentReminderHours,
+          upcomingHours: maintenanceSettings.upcomingReminderHours,
+          urgentDays: maintenanceSettings.urgentReminderDays,
+          upcomingDays: maintenanceSettings.upcomingReminderDays
+        });
+
+        if (hoursRemaining !== null && hoursRemaining < 0) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'overdue',
             message: `${ac.registration} - ${milestone.title} is ${Math.abs(hoursRemaining).toFixed(1)} hours overdue`
           });
-        } else if (daysRemaining !== null && daysRemaining <= 0) {
+        } else if (daysRemaining !== null && daysRemaining < 0) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'overdue',
             message: `${ac.registration} - ${milestone.title} is ${Math.abs(daysRemaining)} days overdue`
           });
-        } else if (hoursRemaining !== null && hoursRemaining < maintenanceSettings.urgentReminderHours) {
+        } else if (alertLevel === 'urgent' && hoursRemaining !== null && hoursRemaining <= maintenanceSettings.urgentReminderHours) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'urgent',
             message: `${ac.registration} - ${milestone.title} due in ${hoursRemaining.toFixed(1)} hours`
           });
-        } else if (daysRemaining !== null && daysRemaining < maintenanceSettings.urgentReminderDays) {
+        } else if (alertLevel === 'urgent' && daysRemaining !== null) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'urgent',
             message: `${ac.registration} - ${milestone.title} due in ${daysRemaining} days`
           });
-        } else if (hoursRemaining !== null && hoursRemaining < maintenanceSettings.upcomingReminderHours) {
+        } else if (alertLevel === 'upcoming' && hoursRemaining !== null && hoursRemaining <= maintenanceSettings.upcomingReminderHours) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
             type: 'upcoming',
             message: `${ac.registration} - ${milestone.title} due in ${hoursRemaining.toFixed(1)} hours`
           });
-        } else if (daysRemaining !== null && daysRemaining < maintenanceSettings.upcomingReminderDays) {
+        } else if (alertLevel === 'upcoming' && daysRemaining !== null) {
           warnings.push({
             aircraft: ac.registration,
             milestone: milestone.title,
@@ -900,6 +974,12 @@ export const MaintenanceBoard: React.FC = () => {
         </div>
       </div>
 
+      {(aircraftError || milestoneError || settingsError) && (
+        <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          Maintenance data could not be loaded: {aircraftError || milestoneError || settingsError}
+        </div>
+      )}
+
       {!milestonesLoading && milestones.length > 0 && getWarnings().length > 0 && (
         <div className="mb-6">
           <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm lg:rounded-lg lg:shadow-md">
@@ -965,7 +1045,7 @@ export const MaintenanceBoard: React.FC = () => {
                   </div>
                   {canManageMaintenanceMilestones && (
                     <button
-                      onClick={() => deleteMilestone(milestone.id)}
+                      onClick={() => handleDeleteMilestone(milestone)}
                       title="Delete one-time milestone"
                       aria-label="Delete one-time milestone"
                       className="p-2 text-red-600 hover:bg-red-50 rounded-md"
@@ -1356,6 +1436,8 @@ export const MaintenanceBoard: React.FC = () => {
             setStatusModalDefect(selectedDefect);
             setSelectedDefect(null);
           }}
+          canEdit={canEditDefects}
+          canDelete={canDeleteDefects}
         />
       )}
 

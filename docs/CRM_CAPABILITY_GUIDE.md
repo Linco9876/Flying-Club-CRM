@@ -10,6 +10,30 @@ This guide describes the operational capabilities of the Bendigo Flying Club (BF
 - Aircraft bookings, flight records, training, instructor duty, senior-instructor supervision, maintenance, safety, billing, Xero and Stripe integrations.
 - A separate lightweight, installable Duty Clock PWA uses the same Supabase duty records. Native APK distribution has been retired.
 
+## Aircraft maintenance and defect control
+
+The Maintenance Board is available to administrators, instructors and senior instructors. It shows the complete defect lifecycle, one-time and recurring maintenance milestones, signed hour/date remaining values, overdue alerts and secure defect attachments. Historic fixed, MEL and deferred defects remain available through the status filters; they are not hidden by the open-defect aircraft query.
+
+Any staff or full-portal user can report a defect. The database records the signed-in user as the reporter, regardless of any submitted display value, and validates the summary, description, severity, discovery time, aircraft hours, attachment count and secure-storage paths. The configurable attachment rule is enforced in the database as well as the form. Reporters may manually ground an aircraft for any defect. Major and Critical defects are automatically grounded when that rule is enabled.
+
+Grounding is fail-safe:
+
+- an active grounding defect keeps the aircraft `unserviceable` until staff resolve or reclassify it;
+- resolving one defect cannot release the aircraft while another grounding defect remains open;
+- an overdue maintenance milestone can also ground the aircraft when configured;
+- a review timer reminds administrators to investigate but never returns an unresolved aircraft to service;
+- new bookings for an unserviceable aircraft are rejected in the database, even if a browser has stale aircraft data;
+- existing future bookings are held for review and are rechecked for genuine aircraft/instructor conflicts when grounding clears; and
+- deleting or changing a defect or milestone reconciles aircraft and booking state rather than leaving stale grounding flags.
+
+Defect status changes to MEL or Deferred require operational limitations or a deferral reason. Marking a defect Fixed requires fix notes and, when maintenance approval is enabled, administrator approval with MFA. Delete controls are administrator-only.
+
+Recurring milestones support tach hours, calendar months or the first of both limits. Calendar intervals use real calendar-month arithmetic rather than 30-day approximations. Milestone state is refreshed when aircraft hours change and hourly for calendar deadlines. Upcoming, urgent and overdue administrator notifications are deduplicated for each exact deadline.
+
+Completing maintenance is one atomic database operation: it validates the completion date and tach against the aircraft and previous completion, writes an idempotent completion record, advances the next deadline, updates the aircraft maintenance date, reconciles grounding and creates an immutable audit entry. One-time milestones close without creating another deadline. A milestone with completion history cannot be deleted.
+
+Defect edits, status changes, milestone changes and completions are recorded in staff-only audit history. Browser clients cannot forge these history rows or edit/delete the audit log.
+
 ## GST-inclusive pricing
 
 All prices, rates, fees and surcharges configured or shown in the portal are GST/tax inclusive. The portal never adds tax on top of a displayed amount. Customer invoices and credit notes are sent to Xero with `LineAmountTypes: Inclusive`, so Xero extracts GST from the supplied amount using the configured tax type. Account top-ups, payments, credits, balances and liability transfers are financial movements rather than additional prices and must not have GST added merely because they appear in the billing area.

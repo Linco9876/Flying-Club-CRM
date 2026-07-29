@@ -43,9 +43,10 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
     if (!isOpen) return;
     setFormData(prev => ({
       ...prev,
-      aircraftId: preSelectedAircraftId || ''
+      aircraftId: preSelectedAircraftId || '',
+      reporter: user?.name || prev.reporter
     }));
-  }, [preSelectedAircraftId, isOpen]);
+  }, [preSelectedAircraftId, isOpen, user?.name]);
 
   useEffect(() => {
     const shouldAutoGround =
@@ -70,8 +71,20 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       toast.error('Attach at least one photo or file before submitting this defect');
       return;
     }
+    if (new Date(formData.discoveredDateTime).getTime() > Date.now() + 5 * 60 * 1000) {
+      toast.error('The discovered time cannot be in the future.');
+      return;
+    }
+    if (
+      (formData.tachHours && Number(formData.tachHours) < 0) ||
+      (formData.hobbsHours && Number(formData.hobbsHours) < 0)
+    ) {
+      toast.error('Aircraft hours cannot be negative.');
+      return;
+    }
 
     setIsSubmitting(true);
+    const uploadedPaths: string[] = [];
 
     try {
       const parseOptionalNumber = (value: string) => {
@@ -81,11 +94,10 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       };
 
       // Upload files to private Supabase Storage and store object paths.
-      const photoPaths: string[] = [];
       if (uploadedFiles.length > 0) {
         toast.loading('Uploading attachments...', { id: 'upload' });
 
-        const uploadPromises = uploadedFiles.map(async (file) => {
+        for (const file of uploadedFiles) {
           const fileExt = file.name.split('.').pop();
           const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
           const filePath = `${formData.aircraftId}/${fileName}`;
@@ -102,19 +114,9 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
             throw error;
           }
 
-          return data.path || filePath;
-        });
-
-        try {
-          const paths = await Promise.all(uploadPromises);
-          photoPaths.push(...paths);
-          toast.success('Attachments uploaded successfully', { id: 'upload' });
-        } catch (error) {
-          console.error('Error uploading attachments:', error);
-          toast.error('Failed to upload attachments. Please try again.', { id: 'upload' });
-          setIsSubmitting(false);
-          return;
+          uploadedPaths.push(data.path || filePath);
         }
+        toast.success('Attachments uploaded successfully', { id: 'upload' });
       }
 
       const defectData: Omit<Defect, 'id'> = {
@@ -124,11 +126,12 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
         summary: formData.defectSummary,
         description: formData.detailedDescription,
         status: 'open',
-        photos: photoPaths,
+        photos: uploadedPaths,
         severity: formData.severity,
         location: formData.location.trim() || undefined,
         tachHours: parseOptionalNumber(formData.tachHours),
-        hobbsHours: parseOptionalNumber(formData.hobbsHours)
+        hobbsHours: parseOptionalNumber(formData.hobbsHours),
+        groundedAircraft: formData.groundAircraft
       };
 
       await onSubmit(defectData);
@@ -157,6 +160,15 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
       setUploadedFiles([]);
     } catch (error) {
       console.error('Error submitting defect report:', error);
+      toast.dismiss('upload');
+      if (uploadedPaths.length > 0) {
+        const { error: cleanupError } = await supabase.storage
+          .from('defect-attachments')
+          .remove(uploadedPaths);
+        if (cleanupError) {
+          console.warn('Failed to clean up attachments from unsuccessful defect report:', cleanupError);
+        }
+      }
       toast.error('Failed to create defect report');
     } finally {
       setIsSubmitting(false);
@@ -165,8 +177,30 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setUploadedFiles(prev => [...prev, ...files]);
-    toast.success(`${files.length} file(s) uploaded`);
+    const acceptedTypes = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+    const validFiles = files.filter(file => {
+      if (!acceptedTypes.has(file.type)) {
+        toast.error(`${file.name} is not a JPG, PNG, or PDF.`);
+        return false;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is larger than 10 MB.`);
+        return false;
+      }
+      return true;
+    });
+
+    setUploadedFiles(prev => {
+      const remainingSlots = Math.max(0, 10 - prev.length);
+      if (validFiles.length > remainingSlots) {
+        toast.error('A defect report can have up to 10 attachments.');
+      }
+      return [...prev, ...validFiles.slice(0, remainingSlots)];
+    });
+    if (validFiles.length > 0) {
+      toast.success(`${validFiles.length} file${validFiles.length === 1 ? '' : 's'} ready to upload`);
+    }
+    e.target.value = '';
   };
 
   const removeFile = (index: number) => {
@@ -190,14 +224,15 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div role="dialog" aria-modal="true" aria-labelledby="defect-report-title" className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+          <h2 id="defect-report-title" className="text-xl font-semibold text-gray-900 flex items-center">
             <AlertTriangle className="h-5 w-5 mr-2 text-red-600" />
             Report Defect
           </h2>
           <button
             onClick={onClose}
+            aria-label="Close defect report"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
@@ -257,10 +292,11 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               <input
                 type="text"
                 value={formData.reporter}
-                onChange={(e) => setFormData(prev => ({ ...prev, reporter: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-700"
                 required
               />
+              <p className="mt-1 text-xs text-gray-500">Recorded from your signed-in account.</p>
             </div>
 
             <div>
@@ -339,6 +375,10 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
                   id="groundAircraft"
                   checked={formData.groundAircraft}
                   onChange={(e) => setFormData(prev => ({ ...prev, groundAircraft: e.target.checked }))}
+                  disabled={
+                    maintenanceSettings.autoGroundOnMajorDefect &&
+                    (formData.severity === 'Major' || formData.severity === 'Critical')
+                  }
                   className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
                 />
                 <label htmlFor="groundAircraft" className="text-sm text-gray-700">
@@ -347,7 +387,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               </div>
               {formData.groundAircraft && (
                 <p className="text-xs text-red-600 mt-1">
-                  ⚠️ Aircraft will be marked unserviceable and bookings will be blocked
+                  Aircraft will be marked unserviceable and future bookings will be held for review.
                 </p>
               )}
             </div>
@@ -362,6 +402,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               <input
                 type="number"
                 step="0.1"
+                min="0"
                 value={formData.tachHours}
                 onChange={(e) => setFormData(prev => ({ ...prev, tachHours: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -376,6 +417,7 @@ export const DefectReportForm: React.FC<DefectReportFormProps> = ({
               <input
                 type="number"
                 step="0.1"
+                min="0"
                 value={formData.hobbsHours}
                 onChange={(e) => setFormData(prev => ({ ...prev, hobbsHours: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"

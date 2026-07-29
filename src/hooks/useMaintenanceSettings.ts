@@ -24,6 +24,7 @@ export interface MaintenanceSettingsData {
   upcomingReminderDays: number;
   defaultDefectFilter: 'all' | 'open' | 'mel' | 'fixed' | 'deferred';
   autoGroundDurationHours: number;
+  autoGroundOnOverdueMaintenance: boolean;
 }
 
 const MAINTENANCE_SETTINGS_UPDATED_EVENT = 'maintenance-settings-updated';
@@ -38,13 +39,15 @@ const DEFAULT_SETTINGS: MaintenanceSettingsData = {
   urgentReminderDays: 7,
   upcomingReminderDays: 30,
   defaultDefectFilter: 'open',
-  autoGroundDurationHours: 24
+  autoGroundDurationHours: 24,
+  autoGroundOnOverdueMaintenance: true
 };
 
 export const useMaintenanceSettings = () => {
   const [templates, setTemplates] = useState<MaintenanceMilestoneTemplate[]>([]);
   const [settings, setSettings] = useState<MaintenanceSettingsData>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -85,8 +88,10 @@ export const useMaintenanceSettings = () => {
           id: settingsResult.data.id,
         });
       }
+      setError(null);
     } catch (error) {
       console.error('Error fetching maintenance settings:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load maintenance settings');
       toast.error('Failed to load maintenance settings');
     } finally {
       setLoading(false);
@@ -219,6 +224,7 @@ export const useMaintenanceSettings = () => {
     templates,
     settings,
     loading,
+    error,
     createTemplate,
     updateTemplate,
     deleteTemplate,

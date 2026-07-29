@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Loader2, Wrench, Edit } from 'lucide-react';
 import { MaintenanceMilestone } from '../../hooks/useMaintenanceMilestones';
+import toast from 'react-hot-toast';
+import {
+  addCalendarMonths,
+  formatLocalDateInput,
+  parseLocalDate
+} from '../../utils/maintenanceRules';
 
 interface MaintenanceCompleteModalProps {
   milestone: MaintenanceMilestone;
@@ -32,16 +38,34 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
 }) => {
   const [mode, setMode] = useState<ModalMode>('choose');
   const [saving, setSaving] = useState(false);
+  const today = formatLocalDateInput(new Date());
 
   const [registerData, setRegisterData] = useState({
-    completedDate: new Date().toISOString().split('T')[0],
+    completedDate: today,
     completedTach: currentTach,
     nextDueHours: milestone.intervalHours > 0 ? currentTach + milestone.intervalHours : 0,
     nextDueDate: milestone.intervalMonths > 0
-      ? new Date(Date.now() + milestone.intervalMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      ? addCalendarMonths(today, milestone.intervalMonths)
       : '',
     notes: ''
   });
+
+  useEffect(() => {
+    setRegisterData(previous => ({
+      ...previous,
+      nextDueHours: milestone.intervalHours > 0
+        ? previous.completedTach + milestone.intervalHours
+        : 0,
+      nextDueDate: milestone.intervalMonths > 0
+        ? addCalendarMonths(previous.completedDate, milestone.intervalMonths)
+        : ''
+    }));
+  }, [
+    registerData.completedDate,
+    registerData.completedTach,
+    milestone.intervalHours,
+    milestone.intervalMonths
+  ]);
 
   const [correctData, setCorrectData] = useState({
     nextDueHours: milestone.nextDueHours || 0,
@@ -50,13 +74,55 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!Number.isFinite(registerData.completedTach) || registerData.completedTach < 0) {
+      toast.error('Enter valid tach hours for the completion.');
+      return;
+    }
+    if (registerData.completedTach > currentTach) {
+      toast.error(`Completion tach cannot be above the aircraft's current ${currentTach.toFixed(1)} hours.`);
+      return;
+    }
+    if (
+      milestone.lastCompletedTach !== undefined &&
+      registerData.completedTach < milestone.lastCompletedTach
+    ) {
+      toast.error('Completion tach cannot be earlier than the previous maintenance completion.');
+      return;
+    }
+    if (registerData.completedDate > today) {
+      toast.error('Maintenance completion date cannot be in the future.');
+      return;
+    }
+    if (
+      milestone.lastCompletedDate &&
+      parseLocalDate(registerData.completedDate) < milestone.lastCompletedDate
+    ) {
+      toast.error('Completion date cannot be earlier than the previous maintenance completion.');
+      return;
+    }
+    if (
+      !milestone.isOneTime &&
+      (milestone.type === 'hours' || milestone.type === 'both') &&
+      registerData.nextDueHours <= registerData.completedTach
+    ) {
+      toast.error('The next tach deadline must be after the completion tach.');
+      return;
+    }
+    if (
+      !milestone.isOneTime &&
+      (milestone.type === 'calendar' || milestone.type === 'both') &&
+      (!registerData.nextDueDate || registerData.nextDueDate <= registerData.completedDate)
+    ) {
+      toast.error('The next calendar deadline must be after the completion date.');
+      return;
+    }
     setSaving(true);
     try {
       await onComplete({
-        completedDate: new Date(registerData.completedDate),
+        completedDate: parseLocalDate(registerData.completedDate),
         completedTach: registerData.completedTach,
         nextDueHours: registerData.nextDueHours > 0 ? registerData.nextDueHours : undefined,
-        nextDueDate: registerData.nextDueDate ? new Date(registerData.nextDueDate) : undefined,
+        nextDueDate: registerData.nextDueDate ? parseLocalDate(registerData.nextDueDate) : undefined,
         notes: registerData.notes || undefined
       });
       onClose();
@@ -69,11 +135,25 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
 
   const handleCorrectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (
+      (milestone.type === 'hours' || milestone.type === 'both') &&
+      (!Number.isFinite(correctData.nextDueHours) || correctData.nextDueHours <= 0)
+    ) {
+      toast.error('Enter a valid next due tach value.');
+      return;
+    }
+    if (
+      (milestone.type === 'calendar' || milestone.type === 'both') &&
+      !correctData.nextDueDate
+    ) {
+      toast.error('Enter a valid next due date.');
+      return;
+    }
     setSaving(true);
     try {
       await onCorrect({
         nextDueHours: correctData.nextDueHours > 0 ? correctData.nextDueHours : undefined,
-        nextDueDate: correctData.nextDueDate ? new Date(correctData.nextDueDate) : undefined
+        nextDueDate: correctData.nextDueDate ? parseLocalDate(correctData.nextDueDate) : undefined
       });
       onClose();
     } catch (error) {
@@ -85,14 +165,15 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div role="dialog" aria-modal="true" aria-labelledby="maintenance-complete-title" className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start p-6 border-b border-gray-200">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">Mark Maintenance Complete</h2>
+            <h2 id="maintenance-complete-title" className="text-xl font-semibold text-gray-900">Update Maintenance Deadline</h2>
             <p className="text-sm text-gray-600 mt-1">{aircraftRegistration} - {milestone.title}</p>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close maintenance update"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
@@ -167,6 +248,7 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
                     type="date"
                     value={registerData.completedDate}
                     onChange={(e) => setRegisterData(prev => ({ ...prev, completedDate: e.target.value }))}
+                    max={today}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -179,8 +261,10 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
                   <input
                     type="number"
                     step="0.1"
+                    min={milestone.lastCompletedTach ?? 0}
+                    max={currentTach}
                     value={registerData.completedTach}
-                    onChange={(e) => setRegisterData(prev => ({ ...prev, completedTach: parseFloat(e.target.value) }))}
+                    onChange={(e) => setRegisterData(prev => ({ ...prev, completedTach: Number(e.target.value) }))}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -199,8 +283,9 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
                     <input
                       type="number"
                       step="0.1"
+                      min={registerData.completedTach + 0.1}
                       value={registerData.nextDueHours}
-                      onChange={(e) => setRegisterData(prev => ({ ...prev, nextDueHours: parseFloat(e.target.value) }))}
+                      onChange={(e) => setRegisterData(prev => ({ ...prev, nextDueHours: Number(e.target.value) }))}
                       className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     />
                     <p className="text-xs text-blue-700 mt-1">
@@ -216,6 +301,7 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
                     </label>
                     <input
                       type="date"
+                      min={registerData.completedDate}
                       value={registerData.nextDueDate}
                       onChange={(e) => setRegisterData(prev => ({ ...prev, nextDueDate: e.target.value }))}
                       className="w-full px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
@@ -297,8 +383,9 @@ export const MaintenanceCompleteModal: React.FC<MaintenanceCompleteModalProps> =
                   <input
                     type="number"
                     step="0.1"
+                    min="0"
                     value={correctData.nextDueHours}
-                    onChange={(e) => setCorrectData(prev => ({ ...prev, nextDueHours: parseFloat(e.target.value) }))}
+                    onChange={(e) => setCorrectData(prev => ({ ...prev, nextDueHours: Number(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
