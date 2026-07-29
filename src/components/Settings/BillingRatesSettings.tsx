@@ -652,24 +652,24 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         </div>
       </section>
 
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h3 className="text-lg font-medium text-gray-900">Ground Session Types & Rates</h3>
             <p className="text-sm text-gray-500 mt-1">Set a separate GST-inclusive hourly rate for each Ground Session Type and Payment Type combination.</p>
           </div>
           {canEdit && (
-            <button onClick={addGroundSessionDescription} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            <button onClick={addGroundSessionDescription} className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
               <Plus className="h-4 w-4" />
               Add Description
             </button>
           )}
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {draftGroundSessionDescriptions.map((description, index) => (
-            <div key={description.id || `ground-description-${index}`} className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(180px,1fr)_170px_180px_140px_auto] lg:items-end">
+            <div key={description.id || `ground-description-${index}`} className="space-y-2.5 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(200px,1fr)_160px_180px_auto] lg:items-end">
                 <label className="space-y-1">
                   <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</span>
                   <input
@@ -699,7 +699,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
 
                 {description.pricingMode === 'fixed' ? (
                   <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Fixed price (incl. GST)</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price (incl. GST)</span>
                     <input
                       type="number"
                       min="0"
@@ -711,23 +711,22 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     />
                   </label>
                 ) : (
-                  <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                    Each Payment Type has its own hourly rate below.
+                  <div className="flex h-10 items-center rounded-md border border-blue-100 bg-blue-50 px-3 text-xs font-medium text-blue-800">
+                    {description.rates.filter(rate =>
+                      rate.enabled
+                      && Number(rate.hourlyRate) > 0
+                      && activeFlightTypes.some(type => type.id === rate.flightTypeId)
+                    ).length} of {activeFlightTypes.length} rates enabled
                   </div>
                 )}
-
-                <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
-                  {description.pricingMode === 'fixed'
-                    ? `$${Number(description.fixedRate || 0).toFixed(2)} total`
-                    : `${description.rates.filter(rate => rate.enabled && Number(rate.hourlyRate) > 0).length} Payment Type rate${description.rates.filter(rate => rate.enabled && Number(rate.hourlyRate) > 0).length === 1 ? '' : 's'}`}
-                </div>
 
                 {canEdit && (
                   <button
                     type="button"
                     onClick={() => removeGroundSessionDescription(index)}
-                    className="inline-flex h-10 items-center justify-center rounded-md p-2 text-red-600 hover:bg-red-50"
+                    className="inline-flex h-10 w-10 items-center justify-center justify-self-end rounded-md text-red-600 hover:bg-red-50 sm:col-start-2 lg:col-start-auto"
                     title="Remove description"
+                    aria-label={`Remove ${description.name || 'ground session type'}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -735,39 +734,34 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
               </div>
 
               {description.pricingMode === 'flight_type_hourly' && (
-                <div className="overflow-hidden rounded-lg border border-blue-100 bg-white">
-                  <div className="border-b border-blue-100 bg-blue-50 px-3 py-2">
-                    <p className="text-sm font-semibold text-blue-950">Hourly rates by Payment Type</p>
-                    <p className="mt-0.5 text-xs text-blue-700">Only enabled Payment Types will be available when this Ground Session Type is logged.</p>
-                  </div>
-                  <div className="divide-y divide-gray-100">
+                <fieldset className="rounded-md border border-blue-100 bg-white p-2">
+                  <legend className="sr-only">Hourly rates by Payment Type for {description.name || 'this ground session type'}</legend>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                     {activeFlightTypes.map(type => {
                       const rate = description.rates.find(item => item.flightTypeId === type.id);
                       const enabled = rate?.enabled === true;
                       return (
                         <div
                           key={`${description.id}-${type.id}`}
-                          className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
+                          className={`flex min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 ${
+                            enabled ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-gray-50'
+                          }`}
                         >
-                          <label className="flex items-center gap-3 text-sm font-medium text-gray-800">
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              disabled={!canEdit}
-                              onChange={event => updateGroundSessionRate(index, type.id, {
-                                enabled: event.target.checked,
-                              })}
-                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <span>
-                              {type.name}
-                              <span className="mt-0.5 block text-xs font-normal text-gray-500">
-                                Allow this Payment Type for {description.name || 'this session type'}
-                              </span>
-                            </span>
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Price / hour (incl. GST)</span>
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            disabled={!canEdit}
+                            onChange={event => updateGroundSessionRate(index, type.id, {
+                              enabled: event.target.checked,
+                            })}
+                            className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            aria-label={`Allow ${type.name} for ${description.name || 'this ground session type'}`}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800" title={type.name}>
+                            {type.name}
+                          </span>
+                          <label className="relative w-24 shrink-0">
+                            <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-500">$</span>
                             <input
                               type="number"
                               min="0"
@@ -777,15 +771,21 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                                 hourlyRate: Number(event.target.value || 0),
                               })}
                               disabled={!canEdit || !enabled}
-                              className={inputClass}
+                              className="w-full rounded-md border border-gray-300 py-1.5 pl-5 pr-7 text-right text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
                               placeholder="0.00"
+                              aria-label={`${type.name} hourly price including GST`}
                             />
+                            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] font-medium text-gray-500">/hr</span>
                           </label>
                         </div>
                       );
                     })}
                   </div>
-                </div>
+                  {activeFlightTypes.length === 0 && (
+                    <p className="px-2 py-3 text-sm text-gray-500">Add an active Payment Type before configuring hourly rates.</p>
+                  )}
+                  <p className="px-1 pt-2 text-xs text-gray-500">Enabled Payment Types appear when this session is logged. All prices include GST.</p>
+                </fieldset>
               )}
             </div>
           ))}
