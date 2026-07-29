@@ -6,6 +6,7 @@ import { openOwnXeroInvoicePdf } from '../../lib/xeroMemberBalance';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { formatBillingDescription } from '../../utils/billingDescription';
 
 type BillingHook = ReturnType<typeof useBillingAccounts>;
 
@@ -154,7 +155,7 @@ const SplitPaymentModal: React.FC<{
           <p className="text-sm text-gray-500 mt-0.5">
             <StudentFileLink studentId={userId} name={userName} />
           </p>
-          <p className="text-sm text-gray-600 mt-2 line-clamp-2">{description}</p>
+          <p className="text-sm text-gray-600 mt-2 line-clamp-2">{formatBillingDescription(description)}</p>
           <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="grid grid-cols-3 gap-3 text-center">
               <div>
@@ -296,7 +297,7 @@ const PaymentChoiceModal: React.FC<{
           <p className="mt-1 text-sm text-gray-500">
             <StudentFileLink studentId={row.userId} name={row.userName} />
           </p>
-          <p className="mt-2 line-clamp-2 text-sm text-gray-600">{row.description}</p>
+          <p className="mt-2 line-clamp-2 text-sm text-gray-600">{formatBillingDescription(row.description)}</p>
           <p className="mt-3 text-sm font-semibold text-amber-700">Remaining ${remaining.toFixed(2)}</p>
         </div>
         <div className="space-y-3 p-5">
@@ -385,7 +386,9 @@ const RejectModal: React.FC<{
               </p>
             </div>
           </div>
-          <p className="text-sm text-gray-500 mt-3 bg-gray-50 rounded-lg px-3 py-2">{description}</p>
+          <p className="text-sm text-gray-500 mt-3 bg-gray-50 rounded-lg px-3 py-2">
+            {formatBillingDescription(description)}
+          </p>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
@@ -443,7 +446,7 @@ const XeroMatchModal: React.FC<{
           <p className="mt-1 text-sm text-gray-500">
             <StudentFileLink studentId={row.userId} name={row.userName} />
           </p>
-          <p className="mt-2 text-sm text-gray-600">{row.description}</p>
+          <p className="mt-2 text-sm text-gray-600">{formatBillingDescription(row.description)}</p>
           <p className="mt-1 text-sm font-semibold text-emerald-700">Amount ${Math.abs(row.amount ?? 0).toFixed(2)}</p>
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-5">
@@ -1121,7 +1124,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
                   </div>
                 </div>
 
-                <p className="mt-3 text-sm leading-relaxed text-gray-700">{row.description}</p>
+                <p className="mt-3 text-sm leading-relaxed text-gray-700">{formatBillingDescription(row.description)}</p>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {statusBadge(row)}
@@ -1198,7 +1201,7 @@ export const TransactionsTab: React.FC<{ billing: BillingHook }> = ({ billing })
                       <div className="flex items-start gap-1.5">
                         {row.rowType === 'unpaid' && <AlertCircle className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />}
                         <div>
-                          <p>{row.description}</p>
+                          <p>{formatBillingDescription(row.description)}</p>
                           {row.xeroInvoiceId && (
                             <p className="mt-1 text-xs text-sky-700">Xero invoice {row.xeroInvoiceNumber || row.xeroInvoiceId}</p>
                           )}

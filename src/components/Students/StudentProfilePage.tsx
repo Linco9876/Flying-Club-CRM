@@ -31,6 +31,7 @@ import { InstructorComplianceProfilePanel } from '../Profile/InstructorComplianc
 import { FlightReviewsTab } from './FlightReviewsTab';
 import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
 import { shouldCompactAcknowledgedLesson } from '../../utils/lessonRecordPresentation';
+import { formatBillingDescription } from '../../utils/billingDescription';
 
 interface StudentInfoForm {
   name: string;
@@ -2838,7 +2839,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                       <div key={transaction.id} className="px-5 py-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900">{transaction.description || transactionLabel(transaction.type)}</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {formatBillingDescription(transaction.description, transactionLabel(transaction.type))}
+                            </p>
                             <p className="mt-1 text-xs text-gray-500">
                               {new Date(transaction.createdAt).toLocaleString('en-AU')} | {transaction.paymentMethodName || 'No method'}
                             </p>

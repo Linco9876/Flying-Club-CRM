@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Download, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
+import { formatBillingDescription } from '../../utils/billingDescription';
 import toast from 'react-hot-toast';
 import { StudentFileLink } from '../Students/StudentFileLink';
 
@@ -201,7 +202,7 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
                         {row.rowType === 'credit' && <TrendingUp className="h-3.5 w-3.5 text-green-500 mt-0.5 shrink-0" />}
                         {row.rowType === 'debit' && <TrendingDown className="h-3.5 w-3.5 text-blue-400 mt-0.5 shrink-0" />}
                         <span>
-                          {row.description}
+                          {formatBillingDescription(row.description)}
                           {row.aircraftRegistration && (
                             <span className="text-gray-400 ml-1">({row.aircraftRegistration}{row.flightDuration ? `, ${row.flightDuration.toFixed(1)} hrs` : ''})</span>
                           )}
