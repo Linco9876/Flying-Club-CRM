@@ -29,6 +29,7 @@ import { getFreshXeroConnection } from "../_shared/xeroConnection.ts";
 import {
   assertTenantBoundQueueItem,
   gstInclusiveImpact,
+  isConnectionIndependentXeroAction,
 } from "../_shared/xeroSafety.ts";
 
 type SupabaseAdminClient = any;
@@ -6296,6 +6297,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Queue inspection is a local, read-only operation. It must remain
+    // available when Xero is disconnected, contained or awaiting reconnection.
+    if (isConnectionIndependentXeroAction(action) && action === "list-queue") {
+      const status = clean(body.status || "all").toLowerCase();
+      const limit = Number(body.limit || 50);
+      return json(await listQueue(adminClient, status, limit));
+    }
+
     const inventoryActions = new Set([
       "search-contacts",
       "list-accounts",
@@ -6392,12 +6401,6 @@ Deno.serve(async (req: Request) => {
     if (action === "approve-mapping-version") {
       if (auth.actorType !== "user") return json({ error: "Administrator access is required." }, 403);
       return json(await approveMappingVersion(adminClient, ctx, body, auth.userId));
-    }
-
-    if (action === "list-queue") {
-      const status = clean(body.status || "all").toLowerCase();
-      const limit = Number(body.limit || 50);
-      return json(await listQueue(adminClient, status, limit));
     }
 
     if (action === "ensure-stripe-clearing-account") {
