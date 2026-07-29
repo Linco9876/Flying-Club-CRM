@@ -19,17 +19,17 @@ jobs:
         env:
           ENABLE_XERO_SYNC_WORKER: ${{ vars.ENABLE_XERO_SYNC_WORKER }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INTEGRATION_WORKER_SECRET: ${{ secrets.INTEGRATION_WORKER_SECRET }}
         run: |
           set -euo pipefail
 
-          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] && [ "${ENABLE_XERO_SYNC_WORKER:-false}" != "true" ]; then
-            echo "Membership Xero refresh is disabled. Set ENABLE_XERO_SYNC_WORKER=true to enable it."
+          if [ "${ENABLE_XERO_SYNC_WORKER:-false}" != "true" ]; then
+            echo "Membership Xero refresh is contained. Enable it only after tenant, mapping and accountant gates pass."
             exit 0
           fi
 
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "::error::SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY secrets are required."
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${INTEGRATION_WORKER_SECRET:-}" ]; then
+            echo "::error::SUPABASE_URL and INTEGRATION_WORKER_SECRET secrets are required."
             exit 1
           fi
 
@@ -38,7 +38,7 @@ jobs:
             curl --silent --show-error \
               --request POST \
               --header "Content-Type: application/json" \
-              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --header "X-Integration-Worker-Secret: ${INTEGRATION_WORKER_SECRET}" \
               --data '{"action":"send-pending"}' \
               --output "$welcome_response_file" \
               --write-out "%{http_code}" \
@@ -61,7 +61,7 @@ jobs:
             curl --silent --show-error \
               --request POST \
               --header "Content-Type: application/json" \
-              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --header "X-Integration-Worker-Secret: ${INTEGRATION_WORKER_SECRET}" \
               --data '{"action":"issue-membership-renewals","sendEmail":true}' \
               --output "$issue_response_file" \
               --write-out "%{http_code}" \
@@ -86,7 +86,7 @@ jobs:
             curl --silent --show-error \
               --request POST \
               --header "Content-Type: application/json" \
-              --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+              --header "X-Integration-Worker-Secret: ${INTEGRATION_WORKER_SECRET}" \
               --data '{"action":"refresh-membership-invoices"}' \
               --output "$refresh_response_file" \
               --write-out "%{http_code}" \

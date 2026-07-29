@@ -22,12 +22,12 @@ jobs:
         env:
           ENABLE_XERO_SYNC_WORKER: ${{ vars.ENABLE_XERO_SYNC_WORKER }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INTEGRATION_WORKER_SECRET: ${{ secrets.INTEGRATION_WORKER_SECRET }}
         run: |
           set -euo pipefail
 
-          if [ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ] && [ "${ENABLE_XERO_SYNC_WORKER:-false}" != "true" ]; then
-            echo "Xero sync worker is disabled. Set repository variable ENABLE_XERO_SYNC_WORKER=true to enable scheduled processing."
+          if [ "${ENABLE_XERO_SYNC_WORKER:-false}" != "true" ]; then
+            echo "Xero sync worker is contained. Set repository variable ENABLE_XERO_SYNC_WORKER=true only after tenant, mapping and accountant gates pass."
             exit 0
           fi
 
@@ -36,8 +36,8 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "::error::Missing SUPABASE_SERVICE_ROLE_KEY GitHub secret."
+          if [ -z "${INTEGRATION_WORKER_SECRET:-}" ]; then
+            echo "::error::Missing INTEGRATION_WORKER_SECRET GitHub secret."
             exit 1
           fi
 
@@ -49,7 +49,7 @@ jobs:
               curl --silent --show-error \
                 --request POST \
                 --header "Content-Type: application/json" \
-                --header "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+                --header "X-Integration-Worker-Secret: ${INTEGRATION_WORKER_SECRET}" \
                 --data '{"action":"process-next"}' \
                 --output "$response_file" \
                 --write-out "%{http_code}" \

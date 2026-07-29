@@ -20,11 +20,21 @@ import {
 } from "../_shared/membershipBilling.ts";
 import { findExistingActiveXeroBankAccountCode } from "../_shared/xeroAccountRules.ts";
 import { XERO_SALES_LINE_AMOUNT_TYPE } from "../_shared/pricingPolicy.ts";
+import {
+  authenticateAal2AdminOrWorker,
+  corsHeadersForRequest,
+  isAllowedBrowserOrigin,
+} from "../_shared/edgeSecurity.ts";
+import { getFreshXeroConnection } from "../_shared/xeroConnection.ts";
+import {
+  assertTenantBoundQueueItem,
+  gstInclusiveImpact,
+} from "../_shared/xeroSafety.ts";
 
 type SupabaseAdminClient = any;
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+let corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "https://portal.bendigoflyingclub.com.au",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers":
     "Content-Type, Authorization, X-Client-Info, Apikey",
@@ -82,9 +92,6 @@ const humanDate = (value: unknown) => {
     timeZone: "Australia/Sydney",
   }).format(date);
 };
-
-const basicAuthHeader = (clientId: string, clientSecret: string) =>
-  `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const parseRetryAfterMs = (value: string | null) => {
@@ -161,88 +168,6 @@ const noteXeroRateLimit = async (retryAfterSeconds: number | null) => {
   }
 };
 
-const isAdminRole = (role: string) => role === "admin";
-
-const authenticateAdmin = async ({
-  req,
-  supabaseUrl,
-  anonKey,
-  adminClient,
-  serviceRoleKey,
-}: {
-  req: Request;
-  supabaseUrl: string;
-  anonKey: string;
-  adminClient: SupabaseAdminClient;
-  serviceRoleKey: string;
-}) => {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return { ok: false, error: "No authorization header", status: 401 };
-  }
-  const bearerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-
-  if (bearerToken && bearerToken === serviceRoleKey) {
-    const { data: roleRow } = await adminClient
-      .from("user_roles")
-      .select("user_id")
-      .eq("role", "admin")
-      .limit(1)
-      .maybeSingle();
-    if (roleRow?.user_id) return { ok: true, userId: roleRow.user_id };
-
-    const { data: profileRow } = await adminClient
-      .from("users")
-      .select("id")
-      .eq("role", "admin")
-      .limit(1)
-      .maybeSingle();
-    return { ok: true, userId: profileRow?.id ?? null };
-  }
-
-  const requestApiKey = clean(
-    req.headers.get("apikey") || req.headers.get("Apikey"),
-  );
-  const authApiKey = requestApiKey || anonKey;
-  const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: {
-      apikey: authApiKey,
-      Authorization: `Bearer ${bearerToken}`,
-    },
-  });
-  if (!userResponse.ok) {
-    return {
-      ok: false,
-      error: `Unauthorized: auth user lookup failed (${userResponse.status})`,
-      status: 401,
-    };
-  }
-  const user = await userResponse.json().catch(() => null);
-  if (!user?.id) {
-    return { ok: false, error: "Unauthorized: auth user missing", status: 401 };
-  }
-
-  const [
-    { data: roles, error: rolesError },
-    { data: profile, error: profileError },
-  ] = await Promise.all([
-    adminClient.from("user_roles").select("role").eq("user_id", user.id),
-    adminClient.from("users").select("role").eq("id", user.id).maybeSingle(),
-  ]);
-  if (rolesError) return { ok: false, error: rolesError.message, status: 500 };
-  if (profileError) {
-    return { ok: false, error: profileError.message, status: 500 };
-  }
-
-  const callerIsAdmin = isAdminRole(String(profile?.role || "")) ||
-    (roles || []).some((row: any) => isAdminRole(String(row.role)));
-  if (!callerIsAdmin) {
-    return { ok: false, error: "Only admins can sync Xero", status: 403 };
-  }
-
-  return { ok: true, userId: user.id };
-};
-
 const xeroRequest = async ({
   method = "GET",
   path,
@@ -251,6 +176,7 @@ const xeroRequest = async ({
   body,
   idempotencyKey,
   bypassLocalPause = false,
+  requestHeaders = {},
 }: {
   method?: string;
   path: string;
@@ -259,7 +185,27 @@ const xeroRequest = async ({
   body?: Record<string, unknown>;
   idempotencyKey?: string;
   bypassLocalPause?: boolean;
+  requestHeaders?: Record<string, string>;
 }) => {
+  const persistentOperationId = clean(idempotencyKey);
+  if (
+    xeroRateLimitAdminClient && persistentOperationId &&
+    method.toUpperCase() !== "GET"
+  ) {
+    const { data: previousOperation, error: lookupError } =
+      await xeroRateLimitAdminClient.from("xero_operation_log")
+        .select("status,response_summary")
+        .eq("tenant_id", tenantId)
+        .eq("operation_id", persistentOperationId)
+        .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (
+      previousOperation?.status === "confirmed" &&
+      previousOperation.response_summary?.apiPayload
+    ) {
+      return previousOperation.response_summary.apiPayload;
+    }
+  }
   const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     await waitForXeroApiSlot({ bypassLocalPause });
@@ -274,11 +220,58 @@ const xeroRequest = async ({
         ...(clean(idempotencyKey)
           ? { "Idempotency-Key": clean(idempotencyKey) }
           : {}),
+        ...requestHeaders,
       },
       body: body ? JSON.stringify(body) : undefined,
     });
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : {};
+    let payload: any = {};
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { rawResponse: text.slice(0, 1000) };
+      }
+    }
+    const correlationId = clean(
+      response.headers.get("Xero-Correlation-Id") ||
+        response.headers.get("X-Correlation-Id"),
+    );
+    const minuteLimitRemaining = Number(
+      response.headers.get("X-MinLimit-Remaining"),
+    );
+    const dayLimitRemaining = Number(
+      response.headers.get("X-DayLimit-Remaining"),
+    );
+    const operationId = persistentOperationId;
+    if (xeroRateLimitAdminClient && operationId) {
+      const { error: telemetryError } = await xeroRateLimitAdminClient
+        .from("xero_operation_log").upsert({
+          tenant_id: tenantId,
+          operation_id: operationId,
+          action: `${method.toUpperCase()} ${path.split("?")[0]}`,
+          request_method: method.toUpperCase(),
+          request_path: path,
+          status: response.ok ? "confirmed" : "failed",
+          correlation_id: correlationId || null,
+          minute_limit_remaining: Number.isFinite(minuteLimitRemaining)
+            ? minuteLimitRemaining
+            : null,
+          day_limit_remaining: Number.isFinite(dayLimitRemaining)
+            ? dayLimitRemaining
+            : null,
+          retry_after_seconds: Math.ceil(
+            parseRetryAfterMs(response.headers.get("Retry-After")) / 1000,
+          ) || null,
+          response_summary: response.ok
+            ? { httpStatus: response.status, apiPayload: payload }
+            : { httpStatus: response.status, error: payload },
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "tenant_id,operation_id" });
+      if (telemetryError) {
+        console.warn("Unable to record Xero response telemetry:", telemetryError.message);
+      }
+    }
 
     if (response.status === 429) {
       const retryAfterMs = parseRetryAfterMs(
@@ -347,10 +340,7 @@ const xeroRequest = async ({
       error.payload = payload;
       throw error;
     }
-    const remainingMinuteCalls = Number(
-      response.headers.get("X-MinLimit-Remaining"),
-    );
-    if (Number.isFinite(remainingMinuteCalls) && remainingMinuteCalls <= 3) {
+    if (Number.isFinite(minuteLimitRemaining) && minuteLimitRemaining <= 3) {
       await sleep(2_500);
     }
     return payload;
@@ -382,90 +372,21 @@ const isRetriableXeroError = (error: unknown) => {
     message.includes("temporarily unavailable") || message.includes("network");
 };
 
-const refreshAccessToken = async (
+const getConnectionAndSettings = async (
   adminClient: SupabaseAdminClient,
-  connection: any,
+  options: { allowInventory?: boolean } = {},
 ) => {
-  const clientId = Deno.env.get("XERO_CLIENT_ID");
-  const clientSecret = Deno.env.get("XERO_CLIENT_SECRET");
-  if (!clientId || !clientSecret) {
-    throw new Error("Xero client ID and secret are not configured.");
-  }
-  if (!connection?.refresh_token) throw new Error("Xero is not connected.");
-
-  const expiresAt = connection.expires_at
-    ? new Date(connection.expires_at).getTime()
-    : 0;
-  if (connection.access_token && expiresAt - Date.now() > 120_000) {
-    return connection;
-  }
-
-  const form = new URLSearchParams();
-  form.set("grant_type", "refresh_token");
-  form.set("refresh_token", connection.refresh_token);
-
-  const response = await fetch("https://identity.xero.com/connect/token", {
-    method: "POST",
-    headers: {
-      Authorization: basicAuthHeader(clientId, clientSecret),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form,
-  });
-  const token = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const tokenError = clean(token?.error_description || token?.error);
-    if (
-      response.status === 401 || response.status === 403 ||
-      tokenError.toLowerCase().includes("unauthorized") ||
-      tokenError.toLowerCase().includes("invalid_grant")
-    ) {
-      throw makeXeroNeedsReviewError(
-        "Xero is no longer authorised. Reconnect Xero in Settings > Integrations, then retry this sync item.",
-      );
-    }
-    throw new Error(
-      tokenError || `Xero token refresh failed with HTTP ${response.status}`,
-    );
-  }
-
-  const expiresInSeconds = Number(token?.expires_in || 0);
-  const expires_at = expiresInSeconds > 0
-    ? new Date(Date.now() + expiresInSeconds * 1000).toISOString()
-    : null;
-
-  const update = {
-    access_token: clean(token.access_token),
-    refresh_token: clean(token.refresh_token) || connection.refresh_token,
-    token_type: clean(token.token_type) || connection.token_type,
-    scope: clean(token.scope) || connection.scope,
-    expires_at,
-    updated_at: new Date().toISOString(),
-  };
-  const { error } = await adminClient.from("xero_connection_settings").update(
-    update,
-  ).eq("id", true);
-  if (error) throw error;
-  return { ...connection, ...update };
-};
-
-const getConnectionAndSettings = async (adminClient: SupabaseAdminClient) => {
   const [
-    { data: connection, error: connectionError },
+    connection,
     { data: settings, error: settingsError },
   ] = await Promise.all([
-    adminClient.from("xero_connection_settings").select("*").eq("id", true)
-      .maybeSingle(),
+    getFreshXeroConnection(adminClient, options),
     adminClient.from("xero_sync_settings").select("*").eq("id", true)
       .maybeSingle(),
   ]);
-  if (connectionError) throw connectionError;
   if (settingsError) throw settingsError;
-  if (!connection?.tenant_id || !connection?.refresh_token) {
-    throw new Error("Xero is not connected.");
-  }
   return {
-    connection: await refreshAccessToken(adminClient, connection),
+    connection,
     settings: settings || {},
   };
 };
@@ -521,6 +442,388 @@ const listXeroItems = async (ctx: any) => {
     status: clean(item.Status),
     isTrackedAsInventory: Boolean(item.IsTrackedAsInventory),
   }));
+};
+
+const listXeroTaxRates = async (ctx: any) => {
+  const result = await xeroRequest({
+    path: "TaxRates",
+    tenantId: ctx.connection.tenant_id,
+    accessToken: ctx.connection.access_token,
+  });
+  return (Array.isArray(result?.TaxRates) ? result.TaxRates : []).map(
+    (rate: any) => ({
+      taxType: clean(rate.TaxType),
+      name: clean(rate.Name),
+      status: clean(rate.Status),
+      displayTaxRate: money(rate.DisplayTaxRate),
+      effectiveRate: money(rate.EffectiveRate),
+      canApplyToRevenue: Boolean(rate.CanApplyToRevenue),
+      canApplyToExpenses: Boolean(rate.CanApplyToExpenses),
+    }),
+  );
+};
+
+const inventoryCurrentTenant = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+) => {
+  const tenantId = clean(ctx.connection.tenant_id);
+  const modifiedSince = ctx.connection.last_inventory_at
+    ? new Date(ctx.connection.last_inventory_at).toUTCString()
+    : "Thu, 01 Jan 1970 00:00:00 GMT";
+  const resources = [
+    { path: "Contacts", collection: "Contacts", type: "contact", id: "ContactID", number: "ContactNumber" },
+    { path: "Invoices", collection: "Invoices", type: "invoice", id: "InvoiceID", number: "InvoiceNumber" },
+    { path: "Payments", collection: "Payments", type: "payment", id: "PaymentID", number: "Reference" },
+    { path: "BankTransactions", collection: "BankTransactions", type: "bank_transaction", id: "BankTransactionID", number: "Reference" },
+    { path: "ManualJournals", collection: "ManualJournals", type: "manual_journal", id: "ManualJournalID", number: "Narration" },
+  ];
+  const summary: Record<string, number> = {};
+  for (const resource of resources) {
+    let seen = 0;
+    for (let page = 1; page <= 100; page += 1) {
+      const result = await xeroRequest({
+        path: `${resource.path}?page=${page}`,
+        tenantId,
+        accessToken: ctx.connection.access_token,
+        requestHeaders: { "If-Modified-Since": modifiedSince },
+      });
+      const rows = Array.isArray(result?.[resource.collection])
+        ? result[resource.collection]
+        : [];
+      if (!rows.length) break;
+      const inventoryRows = rows.map((row: any) => ({
+        tenant_id: tenantId,
+        object_type: resource.type,
+        xero_object_id: clean(row[resource.id]),
+        object_number: clean(row[resource.number]) || null,
+        remote_status: clean(row.Status) || null,
+        origin_confidence: "xero_api_verified",
+        quarantined: true,
+        reconciliation_status: "unreviewed",
+        remote_snapshot: row,
+        last_seen_at: new Date().toISOString(),
+      })).filter((row: any) => row.xero_object_id);
+      if (inventoryRows.length) {
+        const { error } = await adminClient.from("xero_external_object_inventory")
+          .upsert(inventoryRows, {
+            onConflict: "tenant_id,object_type,xero_object_id",
+          });
+        if (error) throw error;
+      }
+      seen += inventoryRows.length;
+      if (rows.length < 100) break;
+    }
+    summary[resource.type] = seen;
+  }
+  const now = new Date().toISOString();
+  await adminClient.from("xero_external_object_inventory").update({
+    reconciliation_status: "matched",
+    reconciliation_note:
+      "The local Xero ID was found in the tenant captured during containment. It remains quarantined until its accounting disposition is reviewed.",
+    last_seen_at: now,
+  }).eq("tenant_id", tenantId)
+    .not("local_table", "is", null)
+    .eq("origin_confidence", "xero_api_verified")
+    .eq("reconciliation_status", "unreviewed");
+  await adminClient.from("xero_external_object_inventory").update({
+    reconciliation_status: "difference",
+    reconciliation_note:
+      "The local Xero ID was not found during the full tenant inventory and requires manual reconciliation.",
+    last_seen_at: now,
+  }).eq("tenant_id", tenantId)
+    .not("local_table", "is", null)
+    .eq("origin_confidence", "connection_snapshot_unverified")
+    .eq("reconciliation_status", "unreviewed");
+  const { count: differenceCount } = await adminClient
+    .from("xero_external_object_inventory")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId).eq("reconciliation_status", "difference");
+  if (Number(differenceCount || 0) > 0) {
+    const [{ data: primaryAdmins }, { data: roleAdmins }] = await Promise.all([
+      adminClient.from("users").select("id").eq("role", "admin").eq("is_active", true),
+      adminClient.from("user_roles").select("user_id").eq("role", "admin"),
+    ]);
+    const adminIds = Array.from(new Set([
+      ...(primaryAdmins || []).map((row: any) => clean(row.id)),
+      ...(roleAdmins || []).map((row: any) => clean(row.user_id)),
+    ].filter(Boolean)));
+    const { data: existingAlert } = await adminClient.from("notifications")
+      .select("id").eq("is_read", false)
+      .contains("metadata", { xeroInventoryTenantId: tenantId })
+      .limit(1).maybeSingle();
+    if (!existingAlert && adminIds.length) {
+      await adminClient.from("notifications").insert(adminIds.map(userId => ({
+        user_id: userId,
+        type: "accounting",
+        title: "Xero reconciliation differences found",
+        message: `${differenceCount} quarantined Xero identifier(s) were not found in the connected tenant inventory.`,
+        metadata: {
+          xeroInventoryTenantId: tenantId,
+          differenceCount,
+          path: "/settings?tab=integrations",
+        },
+        is_read: false,
+      })));
+    }
+  }
+  const completedAt = new Date().toISOString();
+  const { error } = await adminClient.from("xero_connection_settings").update({
+    last_inventory_at: completedAt,
+    last_inventory_summary: summary,
+    updated_at: completedAt,
+  }).eq("id", true);
+  if (error) throw error;
+  return {
+    tenantId,
+    modifiedSince,
+    completedAt,
+    summary,
+    differenceCount: Number(differenceCount || 0),
+    quarantined: true,
+  };
+};
+
+const cleanupLegacyTestArtifacts = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  body: any,
+) => {
+  const connection = ctx.connection;
+  const tenantId = clean(connection.tenant_id);
+  const required = `CLEAN TEST ARTEFACTS ${clean(connection.tenant_name).toUpperCase()}`;
+  if (
+    connection.connection_mode !== "inventory_only" ||
+    connection.expected_tenant_id ||
+    connection.posting_enabled === true
+  ) {
+    throw Object.assign(
+      new Error("Test artefact cleanup is only allowed for the contained, unpinned legacy tenant."),
+      { status: 409 },
+    );
+  }
+  if (clean(body.tenantId) !== tenantId || clean(body.confirmation).toUpperCase() !== required) {
+    throw Object.assign(
+      new Error(`Confirm tenant ${tenantId} and type "${required}".`),
+      { status: 400 },
+    );
+  }
+  const { data: artefacts, error } = await adminClient
+    .from("xero_external_object_inventory").select("*")
+    .eq("tenant_id", tenantId).not("local_table", "is", null)
+    .eq("quarantined", true)
+    .order("object_type").order("first_seen_at");
+  if (error) throw error;
+  const mutationOrder = [
+    "payment",
+    "bank_transaction",
+    "invoice",
+    "manual_journal",
+  ];
+  const ordered = [...(artefacts || [])].sort(
+    (left, right) =>
+      mutationOrder.indexOf(left.object_type) -
+      mutationOrder.indexOf(right.object_type),
+  );
+  const results: any[] = [];
+  for (const artefact of ordered) {
+    const objectId = clean(artefact.xero_object_id);
+    const type = clean(artefact.object_type);
+    if (!mutationOrder.includes(type)) {
+      const note = type === "contact"
+        ? "Retained until all linked test transactions have been removed; contact archival requires a separate relationship review."
+        : "Retained because this object type is configuration, not a financial posting.";
+      await adminClient.from("xero_external_object_inventory").update({
+        reconciliation_status: "retained",
+        reconciliation_note: note,
+        reviewed_at: new Date().toISOString(),
+      }).eq("id", artefact.id);
+      results.push({ id: artefact.id, type, objectId, action: "retained", note });
+      continue;
+    }
+    try {
+      const status = clean(artefact.remote_status).toUpperCase();
+      if (type === "invoice" && ["PAID", "PARTPAID"].includes(status)) {
+        throw makeXeroNeedsReviewError(
+          "Paid or part-paid invoices must be reconciled with their payments before voiding.",
+        );
+      }
+      const spec = type === "payment"
+        ? { path: `Payments/${objectId}`, collection: "Payments", id: "PaymentID", target: "DELETED" }
+        : type === "bank_transaction"
+        ? { path: `BankTransactions/${objectId}`, collection: "BankTransactions", id: "BankTransactionID", target: "DELETED" }
+        : type === "invoice"
+        ? { path: `Invoices/${objectId}`, collection: "Invoices", id: "InvoiceID", target: status === "DRAFT" ? "DELETED" : "VOIDED" }
+        : { path: `ManualJournals/${objectId}`, collection: "ManualJournals", id: "ManualJournalID", target: "VOIDED" };
+      await xeroRequest({
+        method: "POST",
+        path: spec.path,
+        tenantId,
+        accessToken: connection.access_token,
+        idempotencyKey: `legacy-cleanup:${tenantId}:${type}:${objectId}:${spec.target}`,
+        body: {
+          [spec.collection]: [{
+            [spec.id]: objectId,
+            Status: spec.target,
+          }],
+        },
+      });
+      const reconciliationStatus = spec.target === "DELETED" ? "deleted" : "voided";
+      await adminClient.from("xero_external_object_inventory").update({
+        reconciliation_status: reconciliationStatus,
+        reconciliation_note:
+          `Test artefact ${spec.target.toLowerCase()} in the contained legacy tenant.`,
+        remote_status: spec.target,
+        reviewed_at: new Date().toISOString(),
+      }).eq("id", artefact.id);
+      results.push({ id: artefact.id, type, objectId, action: reconciliationStatus });
+    } catch (cleanupError) {
+      const message = getErrorMessage(cleanupError);
+      await adminClient.from("xero_external_object_inventory").update({
+        reconciliation_status: "difference",
+        reconciliation_note: message,
+        reviewed_at: new Date().toISOString(),
+      }).eq("id", artefact.id);
+      results.push({ id: artefact.id, type, objectId, action: "needs_review", error: message });
+    }
+  }
+  return {
+    tenantId,
+    attempted: results.length,
+    cleaned: results.filter(item => ["deleted", "voided"].includes(item.action)).length,
+    needsReview: results.filter(item => item.action === "needs_review").length,
+    retained: results.filter(item => item.action === "retained").length,
+    results,
+  };
+};
+
+const previewMappingImpact = ({
+  purpose,
+  amount,
+  account,
+  taxType,
+}: {
+  purpose: string;
+  amount: number;
+  account: any;
+  taxType: string;
+}) => {
+  const impact = gstInclusiveImpact(amount, taxType);
+  const inclusiveAmount = impact.grossAmount;
+  const gst = impact.gstAmount;
+  const net = impact.netAmount;
+  const isReceipt = [
+    "account_topup_receipt",
+    "stripe_payment",
+    "prepaid_payment",
+  ].includes(clean(purpose));
+  return {
+    lineAmountType: impact.lineAmountType,
+    grossAmount: inclusiveAmount,
+    netAmount: net,
+    gstAmount: gst,
+    debit: isReceipt
+      ? [{ accountId: clean(account?.accountId), code: clean(account?.code), amount: inclusiveAmount }]
+      : [{ account: "Accounts Receivable", amount: inclusiveAmount }],
+    credit: isReceipt
+      ? [{ account: "Member liability or clearing account", amount: inclusiveAmount }]
+      : [
+        { accountId: clean(account?.accountId), code: clean(account?.code), amount: net },
+        ...(gst ? [{ account: "GST Payable", amount: gst }] : []),
+      ],
+    warning: inclusiveAmount <= 0
+      ? "Enter a positive sample amount before approval."
+      : null,
+  };
+};
+
+const saveMappingDraft = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  body: any,
+  actorId: string,
+) => {
+  const tenantId = clean(ctx.connection.tenant_id);
+  const entries = Array.isArray(body.entries) ? body.entries : [];
+  if (!entries.length) throw Object.assign(new Error("Add at least one mapping entry."), { status: 400 });
+  const { data: latest, error: latestError } = await adminClient
+    .from("xero_mapping_versions").select("version")
+    .eq("tenant_id", tenantId).order("version", { ascending: false })
+    .limit(1).maybeSingle();
+  if (latestError) throw latestError;
+  const version = Number(latest?.version || 0) + 1;
+  const { data: mapping, error: mappingError } = await adminClient
+    .from("xero_mapping_versions").insert({
+      tenant_id: tenantId,
+      version,
+      status: "draft",
+      created_by: actorId,
+    }).select("*").single();
+  if (mappingError) throw mappingError;
+  const rows = entries.map((entry: any) => ({
+    mapping_version_id: mapping.id,
+    resource_type: clean(entry.resourceType || "account"),
+    purpose: clean(entry.purpose),
+    local_entity_type: clean(entry.localEntityType) || null,
+    local_entity_id: clean(entry.localEntityId) || null,
+    xero_object_id: clean(entry.xeroObjectId),
+    xero_code: clean(entry.xeroCode) || null,
+    xero_name: clean(entry.xeroName) || null,
+    account_type: clean(entry.accountType) || null,
+    tax_type: clean(entry.taxType) || null,
+    effective_from: body.effectiveFrom || null,
+    impact_preview: previewMappingImpact({
+      purpose: clean(entry.purpose),
+      amount: Number(entry.sampleAmount || 110),
+      account: {
+        accountId: clean(entry.xeroObjectId),
+        code: clean(entry.xeroCode),
+      },
+      taxType: clean(entry.taxType),
+    }),
+  }));
+  if (rows.some((row: any) => !row.purpose || !row.xero_object_id)) {
+    throw Object.assign(new Error("Every mapping needs a purpose and Xero object ID."), { status: 400 });
+  }
+  const { error: entryError } = await adminClient.from("xero_mapping_entries").insert(rows);
+  if (entryError) throw entryError;
+  return { mapping, entries: rows };
+};
+
+const approveMappingVersion = async (
+  adminClient: SupabaseAdminClient,
+  ctx: any,
+  body: any,
+  actorId: string,
+) => {
+  const mappingId = clean(body.mappingVersionId);
+  const { data: mapping, error } = await adminClient
+    .from("xero_mapping_versions").select("*,xero_mapping_entries(*)")
+    .eq("id", mappingId).eq("tenant_id", ctx.connection.tenant_id)
+    .eq("status", "draft").maybeSingle();
+  if (error) throw error;
+  if (!mapping) throw Object.assign(new Error("Draft mapping version not found."), { status: 404 });
+  const required = `APPROVE XERO MAPPING ${mapping.version}`;
+  if (clean(body.confirmation).toUpperCase() !== required) {
+    throw Object.assign(new Error(`Type "${required}" to approve this immutable mapping.`), { status: 400 });
+  }
+  if (clean(body.approvalNote).length < 10) {
+    throw Object.assign(new Error("Record the accountant or treasurer approval details."), { status: 400 });
+  }
+  if (!Array.isArray(mapping.xero_mapping_entries) || !mapping.xero_mapping_entries.length) {
+    throw Object.assign(new Error("The mapping has no entries."), { status: 400 });
+  }
+  const approvedAt = new Date().toISOString();
+  const { data: approved, error: updateError } = await adminClient
+    .from("xero_mapping_versions").update({
+      status: "approved",
+      effective_from: body.effectiveFrom || approvedAt,
+      approved_by: actorId,
+      approval_note: clean(body.approvalNote),
+      approved_at: approvedAt,
+    }).eq("id", mappingId).eq("status", "draft").select("*").single();
+  if (updateError) throw updateError;
+  return { approved, postingEnabled: false };
 };
 
 const ensureMembershipSalesItem = async (
@@ -4011,6 +4314,41 @@ const notifyMembershipBillingFailure = async (
   ]);
 };
 
+const notifyXeroQueueReview = async (
+  adminClient: SupabaseAdminClient,
+  item: any,
+  message: string,
+  terminal: boolean,
+) => {
+  const { data: existing } = await adminClient.from("notifications")
+    .select("id").eq("is_read", false)
+    .contains("metadata", { xeroQueueId: item.id })
+    .limit(1).maybeSingle();
+  if (existing) return;
+  const [{ data: primaryAdmins }, { data: roleAdmins }] = await Promise.all([
+    adminClient.from("users").select("id").eq("role", "admin").eq("is_active", true),
+    adminClient.from("user_roles").select("user_id").eq("role", "admin"),
+  ]);
+  const adminIds = Array.from(new Set([
+    ...(primaryAdmins || []).map((row: any) => clean(row.id)),
+    ...(roleAdmins || []).map((row: any) => clean(row.user_id)),
+  ].filter(Boolean)));
+  if (!adminIds.length) return;
+  await adminClient.from("notifications").insert(adminIds.map(userId => ({
+    user_id: userId,
+    type: "accounting",
+    title: terminal ? "Xero operation failed" : "Xero operation needs review",
+    message: `${clean(item.entity_type)} ${clean(item.action)}: ${truncateText(message, 400)}`,
+    metadata: {
+      xeroQueueId: item.id,
+      operationId: item.operation_id || null,
+      tenantId: item.tenant_id_snapshot || null,
+      path: "/settings?tab=integrations",
+    },
+    is_read: false,
+  })));
+};
+
 const queueStatusForEntity = async (
   adminClient: SupabaseAdminClient,
   item: any,
@@ -4202,16 +4540,6 @@ const listQueue = async (
   return { items, counts };
 };
 
-const getStripeTestSyncAllowed = async (adminClient: SupabaseAdminClient) => {
-  const { data, error } = await adminClient
-    .from("stripe_connect_settings")
-    .select("allow_test_mode_xero_sync")
-    .eq("id", true)
-    .maybeSingle();
-  if (error) throw error;
-  return Boolean(data?.allow_test_mode_xero_sync);
-};
-
 const isTestModeQueueItem = async (
   adminClient: SupabaseAdminClient,
   item: any,
@@ -4283,6 +4611,61 @@ const processQueueRecord = async (
   item: any,
   processedBy: string | null,
 ) => {
+  const activeTenant = clean(ctx?.connection?.tenant_id);
+  try {
+    assertTenantBoundQueueItem(ctx?.connection, item);
+  } catch {
+    throw makeXeroNeedsReviewError(
+      "This queue item is quarantined because its tenant snapshot does not match the active, immutable Bendigo Flying Club tenant.",
+    );
+  }
+  if (!item.mapping_version_id) {
+    throw makeXeroNeedsReviewError(
+      "An accountant-approved mapping version is required before this Xero operation can run.",
+    );
+  }
+  const { data: mappingVersion, error: mappingError } = await adminClient
+    .from("xero_mapping_versions")
+    .select("id,status,effective_from,tenant_id")
+    .eq("id", item.mapping_version_id)
+    .eq("tenant_id", activeTenant)
+    .maybeSingle();
+  if (mappingError) throw mappingError;
+  if (
+    mappingVersion?.status !== "approved" ||
+    !mappingVersion.effective_from ||
+    new Date(mappingVersion.effective_from).getTime() > Date.now()
+  ) {
+    throw makeXeroNeedsReviewError(
+      "The mapping version is not approved and effective for this Xero tenant.",
+    );
+  }
+  const operationId = clean(item.operation_id);
+  const { data: existingOperation, error: operationLookupError } =
+    await adminClient.from("xero_operation_log")
+      .select("status,response_summary,xero_object_id")
+      .eq("tenant_id", activeTenant).eq("operation_id", operationId)
+      .maybeSingle();
+  if (operationLookupError) throw operationLookupError;
+  if (existingOperation?.status === "confirmed") {
+    return {
+      reconciled: true,
+      operationId,
+      xeroObjectId: existingOperation.xero_object_id,
+      ...(existingOperation.response_summary || {}),
+    };
+  }
+  const { error: operationReserveError } = await adminClient
+    .from("xero_operation_log").upsert({
+      tenant_id: activeTenant,
+      operation_id: operationId,
+      queue_id: item.id,
+      action: clean(item.action),
+      status: "reserved",
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "tenant_id,operation_id" });
+  if (operationReserveError) throw operationReserveError;
+
   const attempt = Number(item.attempts || 0) + 1;
   await adminClient.from("xero_sync_queue").update({
     status: "processing",
@@ -4301,15 +4684,9 @@ const processQueueRecord = async (
 
   try {
     if (await isTestModeQueueItem(adminClient, item)) {
-      const allowTestSync = await getStripeTestSyncAllowed(adminClient);
-      if (!allowTestSync) {
-        throw Object.assign(
-          new Error(
-            "Skipped: this is a Stripe Test Mode record. Enable test-mode Xero sync in Settings > Integrations only if this should be sent to Xero.",
-          ),
-          { queueStatus: "needs_review" },
-        );
-      }
+      throw makeXeroNeedsReviewError(
+        "Test-payment records are permanently blocked from Xero syncing.",
+      );
     }
 
     let result: Record<string, unknown>;
@@ -4404,11 +4781,21 @@ const processQueueRecord = async (
     } else {
       throw new Error(`Unsupported Xero queue action: ${item.action}`);
     }
+    await adminClient.from("xero_operation_log").update({
+      status: "confirmed",
+      response_summary: result,
+      updated_at: new Date().toISOString(),
+    }).eq("tenant_id", activeTenant).eq("operation_id", operationId);
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Xero sync failed";
     const queueStatus = (error as any)?.queueStatus;
     if (queueStatus === "needs_review") {
+      await adminClient.from("xero_operation_log").update({
+        status: "needs_review",
+        response_summary: { error: message },
+        updated_at: new Date().toISOString(),
+      }).eq("tenant_id", activeTenant).eq("operation_id", operationId);
       await adminClient.from("xero_sync_queue").update({
         status: "needs_review",
         last_error: message,
@@ -4428,6 +4815,7 @@ const processQueueRecord = async (
           message,
         );
       }
+      await notifyXeroQueueReview(adminClient, item, message, false);
       return {
         needsReview: true,
         message,
@@ -4496,6 +4884,11 @@ const processQueueRecord = async (
       processed_by: processedBy,
       updated_at: new Date().toISOString(),
     }).eq("id", item.id);
+    await adminClient.from("xero_operation_log").update({
+      status: "failed",
+      response_summary: { error: message },
+      updated_at: new Date().toISOString(),
+    }).eq("tenant_id", activeTenant).eq("operation_id", operationId);
     if (item.entity_type === "membership_period") {
       await updateMembershipBillingState(adminClient, item.entity_id, {
         status: "failed",
@@ -4509,6 +4902,7 @@ const processQueueRecord = async (
         message,
       );
     }
+    await notifyXeroQueueReview(adminClient, item, message, true);
     throw error;
   }
 };
@@ -5797,8 +6191,12 @@ const cancelMembership = async (
 };
 
 Deno.serve(async (req: Request) => {
+  corsHeaders = corsHeadersForRequest(req, "POST, OPTIONS");
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+  if (!isAllowedBrowserOrigin(req)) {
+    return json({ error: "Origin is not allowed." }, 403);
   }
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -5811,17 +6209,27 @@ Deno.serve(async (req: Request) => {
     });
     xeroRateLimitAdminClient = adminClient;
 
-    const auth = await authenticateAdmin({
+    const auth = await authenticateAal2AdminOrWorker({
       req,
       supabaseUrl,
       anonKey,
       adminClient,
-      serviceRoleKey,
+      allowWorker: true,
     });
     if (!auth.ok) return json({ error: auth.error }, auth.status);
 
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "");
+    const workerActions = new Set([
+      "process-next",
+      "issue-membership-renewals",
+      "refresh-membership-invoices",
+      "inventory-current-tenant",
+      "cleanup-legacy-test-artefacts",
+    ]);
+    if (auth.actorType === "worker" && !workerActions.has(action)) {
+      return json({ error: "The integration worker is not authorised for this action." }, 403);
+    }
 
     if (action === "cancel-membership") {
       const userId = clean(body.userId);
@@ -5841,7 +6249,21 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const ctx: any = await getConnectionAndSettings(adminClient);
+    const inventoryActions = new Set([
+      "search-contacts",
+      "list-accounts",
+      "list-items",
+      "list-tracking-categories",
+      "list-tax-rates",
+      "inventory-current-tenant",
+      "list-mapping-versions",
+      "save-mapping-draft",
+      "approve-mapping-version",
+      "cleanup-legacy-test-artefacts",
+    ]);
+    const ctx: any = await getConnectionAndSettings(adminClient, {
+      allowInventory: inventoryActions.has(action),
+    });
     ctx.priorityTopupSync = action === "sync-transaction" &&
       body.priorityTopupSync === true;
 
@@ -5890,8 +6312,39 @@ Deno.serve(async (req: Request) => {
       return json({ items: await listXeroItems(ctx) });
     }
 
+    if (action === "list-tax-rates") {
+      return json({ taxRates: await listXeroTaxRates(ctx) });
+    }
+
     if (action === "list-tracking-categories") {
       return json({ categories: await listXeroTrackingCategories(ctx) });
+    }
+
+    if (action === "inventory-current-tenant") {
+      return json(await inventoryCurrentTenant(adminClient, ctx));
+    }
+
+    if (action === "cleanup-legacy-test-artefacts") {
+      return json(await cleanupLegacyTestArtifacts(adminClient, ctx, body));
+    }
+
+    if (action === "list-mapping-versions") {
+      const { data, error } = await adminClient.from("xero_mapping_versions")
+        .select("*,xero_mapping_entries(*)")
+        .eq("tenant_id", ctx.connection.tenant_id)
+        .order("version", { ascending: false });
+      if (error) throw error;
+      return json({ versions: data || [] });
+    }
+
+    if (action === "save-mapping-draft") {
+      if (auth.actorType !== "user") return json({ error: "Administrator access is required." }, 403);
+      return json(await saveMappingDraft(adminClient, ctx, body, auth.userId));
+    }
+
+    if (action === "approve-mapping-version") {
+      if (auth.actorType !== "user") return json({ error: "Administrator access is required." }, 403);
+      return json(await approveMappingVersion(adminClient, ctx, body, auth.userId));
     }
 
     if (action === "list-queue") {
@@ -6249,16 +6702,17 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === "process-next") {
-      const { data: item, error } = await adminClient
-        .from("xero_sync_queue")
-        .select("*")
-        .eq("status", "pending")
-        .lte("next_attempt_at", new Date().toISOString())
-        .order("priority", { ascending: true })
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+      const { data: leasedItems, error } = await adminClient.rpc(
+        "lease_next_xero_sync_job",
+        {
+          p_worker_id: auth.actorType === "worker"
+            ? "github-actions"
+            : `admin:${auth.userId}`,
+          p_lease_seconds: 120,
+        },
+      );
       if (error) throw error;
+      const item = Array.isArray(leasedItems) ? leasedItems[0] : leasedItems;
       if (!item) {
         return json({
           processed: false,
@@ -6320,8 +6774,8 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     console.error("xero-sync error:", error);
     return json(
-      { error: "The accounting request could not be completed" },
-      500,
+      { error: getErrorMessage(error, "The accounting request could not be completed") },
+      Number((error as any)?.status || 500),
     );
   }
 });

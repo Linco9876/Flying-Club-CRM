@@ -1,0 +1,72 @@
+name: Xero Containment Reconciliation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Read-only inventory, or explicitly clean locally linked test artefacts
+        required: true
+        type: choice
+        default: inventory
+        options:
+          - inventory
+          - cleanup-test-artefacts
+      tenant_id:
+        description: Exact legacy tenant ID (required for cleanup)
+        required: false
+        type: string
+      confirmation:
+        description: Exact typed cleanup phrase shown by the CRM (required for cleanup)
+        required: false
+        type: string
+
+concurrency:
+  group: xero-read-only-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    name: Inventory or reconcile contained Xero tenant
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and quarantine Xero records
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          INTEGRATION_WORKER_SECRET: ${{ secrets.INTEGRATION_WORKER_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${INTEGRATION_WORKER_SECRET:-}"
+
+          action="inventory-current-tenant"
+          request_body='{"action":"inventory-current-tenant"}'
+          if [ "${{ inputs.operation }}" = "cleanup-test-artefacts" ]; then
+            action="cleanup-legacy-test-artefacts"
+            if [ -z "${{ inputs.tenant_id }}" ] || [ -z "${{ inputs.confirmation }}" ]; then
+              echo "::error::Exact tenant ID and confirmation phrase are required for cleanup."
+              exit 1
+            fi
+            request_body="$(jq -n \
+              --arg action "$action" \
+              --arg tenantId "${{ inputs.tenant_id }}" \
+              --arg confirmation "${{ inputs.confirmation }}" \
+              '{action:$action,tenantId:$tenantId,confirmation:$confirmation}')"
+          fi
+
+          response_file="$(mktemp)"
+          http_code="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "X-Integration-Worker-Secret: ${INTEGRATION_WORKER_SECRET}" \
+              --data "$request_body" \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              "${SUPABASE_URL%/}/functions/v1/xero-sync"
+          )"
+          cat "$response_file"
+          echo
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Xero ${action} failed with HTTP ${http_code}."
+            exit 1
+          fi
