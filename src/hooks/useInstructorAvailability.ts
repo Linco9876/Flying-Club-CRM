@@ -22,6 +22,7 @@ export interface WeeklySchedule {
   afternoonEndTime?: string;
   isAvailable: boolean;
   locationId?: string;
+  supervisionLocationIds: string[];
 }
 
 export interface Absence {
@@ -45,6 +46,7 @@ export interface ScheduleChange {
   afternoonEndTime?: string;
   isAvailable: boolean;
   locationId?: string;
+  supervisionLocationIds: string[];
 }
 
 const mapWeeklyScheduleRow = (s: any): WeeklySchedule => ({
@@ -57,6 +59,7 @@ const mapWeeklyScheduleRow = (s: any): WeeklySchedule => ({
   afternoonEndTime: normalizeTime(s.afternoon_end_time || s.end_time_2),
   isAvailable: s.is_available,
   locationId: s.location_id || undefined,
+  supervisionLocationIds: Array.isArray(s.supervision_location_ids) ? s.supervision_location_ids : [],
 });
 
 const mapAbsenceRow = (a: any): Absence => ({
@@ -80,6 +83,7 @@ const mapScheduleChangeRow = (c: any): ScheduleChange => ({
   afternoonEndTime: normalizeTime(c.afternoon_end_time || c.end_time_2),
   isAvailable: c.is_available,
   locationId: c.location_id || undefined,
+  supervisionLocationIds: Array.isArray(c.supervision_location_ids) ? c.supervision_location_ids : [],
 });
 
 export const useInstructorAvailability = (instructorId?: string) => {
@@ -244,6 +248,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
           afternoon_start_time: schedule.afternoonStartTime || null,
           afternoon_end_time: schedule.afternoonEndTime || null,
           location_id: schedule.locationId || null,
+          supervision_location_ids: schedule.supervisionLocationIds,
           is_available: schedule.isAvailable,
           updated_at: new Date().toISOString()
         }, {
@@ -279,6 +284,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
         afternoon_start_time: schedule.afternoonStartTime || null,
         afternoon_end_time: schedule.afternoonEndTime || null,
         location_id: schedule.locationId || null,
+        supervision_location_ids: schedule.supervisionLocationIds,
         is_available: schedule.isAvailable,
         updated_at: new Date().toISOString()
       }));
@@ -420,6 +426,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
           afternoon_start_time: change.afternoonStartTime || null,
           afternoon_end_time: change.afternoonEndTime || null,
           location_id: change.locationId || null,
+          supervision_location_ids: change.supervisionLocationIds,
           is_available: change.isAvailable
         });
 

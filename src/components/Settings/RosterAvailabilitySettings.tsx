@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, MapPin, Plus, Trash2, AlertCircle, Save } from 'lucide-react';
+import { Calendar, Clock, MapPin, Plus, Trash2, AlertCircle, Save, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../hooks/useUsers';
 import { useInstructorAvailability, WeeklySchedule } from '../../hooks/useInstructorAvailability';
 import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
+import { supabase } from '../../lib/supabase';
+import {
+  getSupervisorLocationValidationError,
+  toggleSupervisorLocation,
+} from '../../utils/supervisorRosterLocations';
 import { TimeSelect } from '../common/TimeSelect';
 
 interface RosterAvailabilitySettingsProps {
@@ -69,6 +74,8 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   const [showScheduleChangeForm, setShowScheduleChangeForm] = useState(false);
   const [newScheduleEffectiveDate, setNewScheduleEffectiveDate] = useState('');
   const [newSchedule, setNewSchedule] = useState<{[key: number]: Omit<WeeklySchedule, 'id' | 'userId'>}>({});
+  const [authorisedSupervisorIds, setAuthorisedSupervisorIds] = useState<Set<string>>(new Set());
+  const [supervisorsLoading, setSupervisorsLoading] = useState(true);
 
   // Local draft state for weekly schedule — keyed by day of week
   const [drafts, setDrafts] = useState<{[day: number]: DayDraft}>({});
@@ -87,6 +94,35 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
   } = useInstructorAvailability(selectedInstructorId);
 
   const instructors = getInstructors();
+  const isAuthorisedSupervisor = authorisedSupervisorIds.has(selectedInstructorId);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAuthorisedSupervisors = async () => {
+      setSupervisorsLoading(true);
+      const { data, error } = await supabase
+        .from('senior_instructor_authorisations')
+        .select('instructor_id')
+        .eq('is_active', true);
+
+      if (!cancelled) {
+        if (error) {
+          console.error('Failed to load authorised supervisors', error);
+          toast.error('Supervisor roster settings could not be loaded');
+          setAuthorisedSupervisorIds(new Set());
+        } else {
+          setAuthorisedSupervisorIds(new Set((data || []).map((row) => row.instructor_id)));
+        }
+        setSupervisorsLoading(false);
+      }
+    };
+
+    void loadAuthorisedSupervisors();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (isInstructorUser && !isAdmin && user?.id) {
@@ -122,6 +158,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
       afternoonEndTime: saved?.afternoonEndTime,
       isAvailable: saved?.isAvailable ?? false,
       locationId: saved?.locationId || primaryLocation?.id,
+      supervisionLocationIds: saved?.supervisionLocationIds || [],
     };
   };
 
@@ -147,6 +184,16 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
       const dayName = DAYS_OF_WEEK.find(day => day.value === schedule.dayOfWeek)?.label || 'Day';
       if (activeLocations.length > 1 && !schedule.locationId) {
         toast.error(`${dayName}: choose a working location`);
+        return;
+      }
+      const supervisionLocationError = getSupervisorLocationValidationError({
+        isAuthorisedSupervisor,
+        isAvailable: schedule.isAvailable,
+        supervisionLocationIds: schedule.supervisionLocationIds,
+        dayLabel: dayName,
+      });
+      if (supervisionLocationError) {
+        toast.error(supervisionLocationError);
         return;
       }
       if (schedule.startTime >= schedule.endTime) {
@@ -221,6 +268,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
         afternoonEndTime: existing?.afternoonEndTime,
         isAvailable: existing?.isAvailable ?? true,
         locationId: existing?.locationId || primaryLocation?.id,
+        supervisionLocationIds: existing?.supervisionLocationIds || [],
       };
     });
     setNewSchedule(currentSchedule);
@@ -251,6 +299,14 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
           const dayName = DAYS_OF_WEEK.find((day) => day.value === Number(dayOfWeek))?.label || 'Day';
           throw new Error(`${dayName}: choose a working location`);
         }
+        const dayName = DAYS_OF_WEEK.find((day) => day.value === Number(dayOfWeek))?.label || 'Day';
+        const supervisionLocationError = getSupervisorLocationValidationError({
+          isAuthorisedSupervisor,
+          isAvailable: schedule.isAvailable,
+          supervisionLocationIds: schedule.supervisionLocationIds,
+          dayLabel: dayName,
+        });
+        if (supervisionLocationError) throw new Error(supervisionLocationError);
         await addScheduleChange({
           userId: selectedInstructorId,
           effectiveFrom: newScheduleEffectiveDate,
@@ -261,18 +317,19 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
           afternoonEndTime: schedule.afternoonEndTime,
           isAvailable: schedule.isAvailable,
           locationId: schedule.locationId || primaryLocation?.id,
+          supervisionLocationIds: schedule.supervisionLocationIds,
         });
       }
       toast.success('Schedule change saved for all days');
       setShowScheduleChangeForm(false);
       setNewSchedule({});
       setNewScheduleEffectiveDate('');
-    } catch (_error) {
-      toast.error('Failed to save schedule changes');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save schedule changes');
     }
   };
 
-  if (loading || locationsLoading) {
+  if (loading || locationsLoading || supervisorsLoading) {
     return (
       <div className="p-6 flex items-center justify-center">
         <div className="text-gray-500">Loading...</div>
@@ -320,7 +377,10 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div>
                 <h3 className="text-lg font-medium text-gray-900">Weekly Schedule</h3>
-                <p className="text-sm text-gray-500">Edit any or all days, then save the full week once.</p>
+                <p className="text-sm text-gray-500">
+                  Edit any or all days, then save the full week once.
+                  {isAuthorisedSupervisor && ' Supervision coverage is set separately for each working day.'}
+                </p>
               </div>
               {canManageSelectedInstructor && (
                 <button
@@ -334,6 +394,17 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                 </button>
               )}
             </div>
+            {isAuthorisedSupervisor && (
+              <div className="mb-4 flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                <div>
+                  <p className="font-semibold">Daily supervision coverage</p>
+                  <p className="mt-0.5 text-blue-800">
+                    Choose where this person supervises on every day they are available. This is separate from where their own work is rostered.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="space-y-3">
               {DAYS_OF_WEEK.map(day => {
                 const draft = getDraftForDay(day.value);
@@ -368,7 +439,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                             {activeLocations.length > 1 && (
                               <div className="flex items-center space-x-2">
                                 <MapPin className="h-4 w-4 shrink-0 text-gray-400" />
-                                <span className="w-16 shrink-0 text-xs text-gray-600">Location:</span>
+                                <span className="w-20 shrink-0 text-xs text-gray-600">Working at:</span>
                                 <select
                                   value={draft.locationId || primaryLocation?.id || ''}
                                   onChange={(event) => handleDraftChange(day.value, 'locationId', event.target.value)}
@@ -382,6 +453,38 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                   ))}
                                 </select>
                               </div>
+                            )}
+                            {isAuthorisedSupervisor && (
+                              <fieldset className="rounded-md border border-blue-200 bg-blue-50/70 px-3 py-2">
+                                <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold text-blue-900">
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                  Supervising at
+                                </legend>
+                                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
+                                  {activeLocations.map((location) => (
+                                    <label
+                                      key={location.id}
+                                      className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-800"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={draft.supervisionLocationIds.includes(location.id)}
+                                        onChange={() => handleDraftChange(
+                                          day.value,
+                                          'supervisionLocationIds',
+                                          toggleSupervisorLocation(draft.supervisionLocationIds, location.id),
+                                        )}
+                                        disabled={!canManageSelectedInstructor}
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                                      />
+                                      <span>{location.name}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                                <p className="mt-1.5 text-xs text-blue-800">
+                                  Select every location this supervisor can cover on {day.label}.
+                                </p>
+                              </fieldset>
                             )}
                             <div className="flex items-center space-x-2">
                               <Clock className="h-4 w-4 text-gray-400 shrink-0" />
@@ -634,7 +737,7 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                 {activeLocations.length > 1 && (
                                   <div className="flex items-center space-x-2">
                                     <MapPin className="h-4 w-4 text-gray-400" />
-                                    <span className="w-16 text-xs text-gray-600">Location:</span>
+                                    <span className="w-20 text-xs text-gray-600">Working at:</span>
                                     <select
                                       value={schedule.locationId || primaryLocation?.id || ''}
                                       onChange={(event) => handleNewScheduleChange(day.value, 'locationId', event.target.value)}
@@ -647,6 +750,34 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                       ))}
                                     </select>
                                   </div>
+                                )}
+                                {isAuthorisedSupervisor && (
+                                  <fieldset className="rounded-md border border-green-200 bg-green-50/70 px-3 py-2">
+                                    <legend className="flex items-center gap-1.5 px-1 text-xs font-semibold text-green-900">
+                                      <ShieldCheck className="h-3.5 w-3.5" />
+                                      Supervising at
+                                    </legend>
+                                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
+                                      {activeLocations.map((location) => (
+                                        <label
+                                          key={location.id}
+                                          className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-800"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={schedule.supervisionLocationIds.includes(location.id)}
+                                            onChange={() => handleNewScheduleChange(
+                                              day.value,
+                                              'supervisionLocationIds',
+                                              toggleSupervisorLocation(schedule.supervisionLocationIds, location.id),
+                                            )}
+                                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                          />
+                                          <span>{location.name}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </fieldset>
                                 )}
                                 <div className="flex items-center space-x-2">
                                   <Clock className="h-4 w-4 text-gray-400" />
@@ -764,6 +895,14 @@ export const RosterAvailabilitySettings: React.FC<RosterAvailabilitySettingsProp
                                 {activeLocations.length > 1 && (
                                   <span className="ml-2 text-gray-500">
                                     · {activeLocations.find((location) => location.id === change.locationId)?.name || primaryLocation?.name}
+                                  </span>
+                                )}
+                                {isAuthorisedSupervisor && change.supervisionLocationIds.length > 0 && (
+                                  <span className="ml-2 text-blue-700">
+                                    · Supervising: {change.supervisionLocationIds
+                                      .map((locationId) => activeLocations.find((location) => location.id === locationId)?.name)
+                                      .filter(Boolean)
+                                      .join(', ')}
                                   </span>
                                 )}
                               </div>
