@@ -611,6 +611,7 @@ const cleanupLegacyTestArtifacts = async (
   const { data: artefacts, error } = await adminClient
     .from("xero_external_object_inventory").select("*")
     .eq("tenant_id", tenantId).not("local_table", "is", null)
+    .eq("origin_confidence", "xero_api_verified")
     .eq("quarantined", true)
     .order("object_type").order("first_seen_at");
   if (error) throw error;
