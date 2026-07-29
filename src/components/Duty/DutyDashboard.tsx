@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { AlertTriangle, CheckCircle2, Clock3, Coffee, Download, Edit3, History, LogIn, LogOut, Plus, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, Coffee, Download, Edit3, History, LogOut, Play, Plus, ShieldCheck, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -9,6 +9,7 @@ import { DutyPeriodInput, useDuty } from '../../hooks/useDuty';
 import { DutyTimePicker } from './DutyTimePicker';
 import { useBookingRulesSettings } from '../../hooks/useSettings';
 import { groupDutyHistoryByWeek } from '../../utils/dutyWeekSummary';
+import { PortalDutyStartInput, StartDutyModal } from './StartDutyModal';
 
 type StaffOption = { id: string; name: string };
 type SupervisionBooking = { id: string; instructorId: string; instructorName: string; startTime: Date; endTime: Date; location: string; status: string; supervisionStatus: string };
@@ -57,17 +58,17 @@ const readableMinutes = (minutes: number) => {
   return [hours ? `${hours} h` : '', remainder ? `${remainder} min` : ''].filter(Boolean).join(' ') || '0 min';
 };
 
-const emptyForm = (instructorId: string, mode: 'record' | 'start' = 'record'): FormState => {
+const emptyForm = (instructorId: string): FormState => {
   const now = new Date();
   return {
     instructorId,
     dutyDate: format(now, 'yyyy-MM-dd'),
-    actualStart: mode === 'start' ? toLocalInput(now) : '',
+    actualStart: '',
     actualEnd: '',
     plannedStart: '',
     plannedEnd: '',
     location: 'Bendigo',
-    status: mode === 'start' ? 'active' : 'completed',
+    status: 'completed',
     isExternal: false,
     externalOrganisation: '',
     flightHours: '0',
@@ -89,10 +90,12 @@ export const DutyDashboard: React.FC = () => {
   const admin = roles.includes('admin');
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [selectedInstructorId, setSelectedInstructorId] = useState(user?.id || '');
-  const { periods, loading, savePeriod } = useDuty(selectedInstructorId);
+  const { periods, loading, savePeriod, refetch } = useDuty(selectedInstructorId);
   const { settings: fatigueSettings } = useBookingRulesSettings();
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [startDutyOpen, setStartDutyOpen] = useState(false);
+  const [startingDuty, setStartingDuty] = useState(false);
   const [flightTimeTouched, setFlightTimeTouched] = useState(false);
   const [loggedFlightSummary, setLoggedFlightSummary] = useState<LoggedFlightSummary>({ minutes: 0, count: 0, loading: false });
   const [assignedSupervision, setAssignedSupervision] = useState<SupervisionBooking[]>([]);
@@ -146,10 +149,10 @@ export const DutyDashboard: React.FC = () => {
   }, 0);
   const dutyHistoryWeeks = useMemo(() => groupDutyHistoryByWeek(periods), [periods]);
 
-  const openNew = (mode: 'record' | 'start') => {
+  const openNew = () => {
     setFlightTimeTouched(false);
     setLoggedFlightSummary({ minutes: 0, count: 0, loading: true });
-    setForm(emptyForm(selectedInstructorId, mode));
+    setForm(emptyForm(selectedInstructorId));
   };
 
   const openEdit = (period: DutyPeriod, endNow = false) => {
@@ -322,6 +325,55 @@ export const DutyDashboard: React.FC = () => {
     }
   };
 
+  const startDutyFromClock = async (input: PortalDutyStartInput) => {
+    if (!user?.id) throw new Error('You must be signed in');
+    setStartingDuty(true);
+    try {
+      if (selectedInstructorId === user.id) {
+        const { error } = await supabase.rpc('mobile_start_duty', {
+          p_actual_start: input.actualStart.toISOString(),
+          p_location_label: input.locationLabel.trim(),
+          p_latitude: input.geo.latitude ?? null,
+          p_longitude: input.geo.longitude ?? null,
+          p_accuracy_metres: input.geo.accuracyMetres ?? null,
+          p_duty_clock_location_id: input.geo.nearestLocation?.id ?? null,
+          p_geofence_notes: input.geofenceNotes.trim() || null,
+          p_fit_for_duty: input.fitForDuty,
+          p_external_duty_declared: input.externalDutyDeclared,
+          p_sleep_opportunity_confirmed: input.sleepOpportunityConfirmed,
+          p_kss_score: input.kssScore ?? null,
+          p_private_note: input.privateNote.trim() || null,
+          p_device_platform: 'web',
+        });
+        if (error) throw error;
+        await refetch();
+        toast.success('Duty started');
+        return;
+      }
+
+      await savePeriod({
+        instructorId: selectedInstructorId,
+        dutyDate: format(input.actualStart, 'yyyy-MM-dd'),
+        actualStart: input.actualStart,
+        location: input.locationLabel,
+        status: 'active',
+        isExternal: false,
+        flightMinutes: 0,
+        notes: input.geofenceNotes,
+        breaks: [],
+        declaration: {
+          fitForDuty: input.fitForDuty,
+          externalDutyDeclared: input.externalDutyDeclared,
+          sleepOpportunityConfirmed: input.sleepOpportunityConfirmed,
+          kssScore: input.kssScore,
+          privateNote: input.privateNote,
+        },
+      });
+    } finally {
+      setStartingDuty(false);
+    }
+  };
+
   const exportAudit = async () => {
     const { data, error } = await supabase.from('operations_audit_events').select('created_at,entity_type,entity_id,action,actor_id,metadata').order('created_at', { ascending: false }).limit(5000);
     if (error) { toast.error('Audit export could not be prepared'); return; }
@@ -342,14 +394,9 @@ export const DutyDashboard: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             {admin && <button type="button" onClick={() => void exportAudit()} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"><Download className="h-4 w-4" /> Audit CSV</button>}
-            <button type="button" onClick={() => openNew('record')} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
+            <button type="button" onClick={openNew} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
               <Plus className="h-4 w-4" /> Add record
             </button>
-            {!activePeriod && (
-              <button type="button" onClick={() => openNew('start')} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
-                <LogIn className="h-4 w-4" /> Start duty
-              </button>
-            )}
           </div>
         </div>
 
@@ -362,12 +409,38 @@ export const DutyDashboard: React.FC = () => {
           </label>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between"><span className="text-sm font-semibold text-gray-600">Current status</span><Clock3 className="h-5 w-5 text-blue-500" /></div>
-            <p className="mt-2 text-xl font-bold text-gray-950">{activePeriod ? 'On duty' : 'Off duty'}</p>
-            {activePeriod?.actualStart && <p className="mt-1 text-xs text-gray-500">Started {format(activePeriod.actualStart, 'dd MMM, HH:mm')}</p>}
-          </div>
+        {!activePeriod && (
+          <section className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-center shadow-sm dark:border-slate-700 dark:bg-[#17232d]">
+            <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 dark:bg-slate-700">
+              <span className="h-2.5 w-2.5 rounded-full bg-slate-400 dark:bg-slate-300" />
+              <span className="text-xs font-black tracking-wide text-slate-700 dark:text-slate-100">OFF DUTY</span>
+            </div>
+            <h2 className="mt-4 text-3xl font-black tracking-tight text-[#0f2942] dark:text-[#ddefff]">Ready to start?</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Clock in when duty begins. You can adjust the start time if you are a little late.
+            </p>
+            <button
+              type="button"
+              onClick={() => setStartDutyOpen(true)}
+              aria-label="Start duty"
+              className="group mx-auto mt-7 flex h-48 w-48 flex-col items-center justify-center rounded-full bg-emerald-600 text-white shadow-[0_12px_28px_rgba(5,150,105,0.3)] transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-[0_16px_32px_rgba(5,150,105,0.36)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-300 focus-visible:ring-offset-4 dark:focus-visible:ring-offset-[#17232d] sm:h-52 sm:w-52"
+            >
+              <Play className="mb-1 h-6 w-6 fill-current transition group-hover:scale-110" />
+              <span className="text-3xl font-black tracking-wider">START</span>
+              <span className="mt-0.5 text-sm font-black tracking-[0.22em] text-emerald-100">DUTY</span>
+            </button>
+            <p className="mt-5 text-xs text-slate-500 dark:text-slate-400">GPS is checked only when you open Start duty.</p>
+          </section>
+        )}
+
+        <div className={`grid gap-3 ${activePeriod ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          {activePeriod && (
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-gray-600">Current status</span><Clock3 className="h-5 w-5 text-blue-500" /></div>
+              <p className="mt-2 text-xl font-bold text-gray-950">On duty</p>
+              {activePeriod.actualStart && <p className="mt-1 text-xs text-gray-500">Started {format(activePeriod.actualStart, 'dd MMM, HH:mm')}</p>}
+            </div>
+          )}
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between"><span className="text-sm font-semibold text-gray-600">This month</span><History className="h-5 w-5 text-indigo-500" /></div>
             <p className="mt-2 text-xl font-bold text-gray-950">{monthDutyHours.toFixed(1)} hours</p>
@@ -420,7 +493,7 @@ export const DutyDashboard: React.FC = () => {
                               <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${period.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : period.status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'}`}>{period.status}</span>
                               {period.isExternal && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800">External duty</span>}
                               {period.entrySource === 'automatic_booking' && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">Automatic start</span>}
-                              {period.entrySource === 'mobile' && <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold text-cyan-800">Mobile clock</span>}
+                              {period.entrySource === 'mobile' && <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[11px] font-bold text-cyan-800">Duty clock</span>}
                               {period.autoClosedAtLimit && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">Maximum assumed</span>}
                               {period.breakConfirmation === 'not_taken' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">No break taken</span>}
                             </div>
@@ -450,6 +523,15 @@ export const DutyDashboard: React.FC = () => {
           )}
         </section>
       </div>
+
+      {startDutyOpen && (
+        <StartDutyModal
+          instructorName={staff.find(member => member.id === selectedInstructorId)?.name}
+          working={startingDuty}
+          onClose={() => setStartDutyOpen(false)}
+          onStart={startDutyFromClock}
+        />
+      )}
 
       {form && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-3">
