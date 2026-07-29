@@ -10,6 +10,7 @@ import { useMembershipDocuments } from '../../hooks/useMembershipDocuments';
 import { membershipDocumentsAreReady } from '../../utils/membershipDocumentRules';
 import { PRIVACY_NOTICE_VERSION } from '../../utils/privacyNotice';
 import { useAuth } from '../../context/AuthContext';
+import { useFinancialProviders } from '../../context/financialProviderState';
 
 type PaymentMethod = 'becs' | 'invoice' | 'card';
 const turnstileEnabled = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY);
@@ -34,6 +35,10 @@ const steps = ['Membership', 'Your details', 'Agreements', 'Payment'];
 export const MembershipJoinPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading, refreshUser } = useAuth();
+  const {
+    capabilities: financialProviders,
+    loading: financialProvidersLoading,
+  } = useFinancialProviders();
   const prefilledUserId = useRef<string | null>(null);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -69,6 +74,23 @@ export const MembershipJoinPage: React.FC = () => {
     membershipDocumentsLoading,
     membershipDocumentsError,
   );
+  const availablePaymentMethods = useMemo(() => {
+    const methods: PaymentMethod[] = [];
+    if (financialProviders.stripe.paymentsAvailable) methods.push('becs', 'card');
+    if (financialProviders.xero.postingAvailable) methods.splice(1, 0, 'invoice');
+    return methods;
+  }, [
+    financialProviders.stripe.paymentsAvailable,
+    financialProviders.xero.postingAvailable,
+  ]);
+
+  useEffect(() => {
+    if (availablePaymentMethods.length > 0 && !availablePaymentMethods.includes(paymentMethod)) {
+      setPaymentMethod(availablePaymentMethods[0]);
+      setAutoRenew(false);
+      setAuthorityAccepted(false);
+    }
+  }, [availablePaymentMethods, paymentMethod]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,6 +207,7 @@ export const MembershipJoinPage: React.FC = () => {
   };
 
   const startPaymentSetup = async () => {
+    if (!financialProviders.financeEnabled) return false;
     const { data, error } = await supabase.functions.invoke('membership-payment-setup', {
       body: {
         action: 'save', paymentMethod, autoRenew: paymentMethod === 'invoice' ? false : autoRenew,
@@ -213,7 +236,11 @@ export const MembershipJoinPage: React.FC = () => {
       toast.error(`Enter a scholarship contribution of at least $${scholarshipSettings.minimumAmount.toFixed(2)}`);
       return;
     }
-    if (paymentMethod !== 'invoice' && !authorityAccepted) {
+    if (
+      financialProviders.stripe.paymentsAvailable &&
+      paymentMethod !== 'invoice' &&
+      !authorityAccepted
+    ) {
       toast.error('Accept the payment authority before continuing');
       return;
     }
@@ -267,8 +294,8 @@ export const MembershipJoinPage: React.FC = () => {
             supports_club_purposes: true, agrees_to_constitution: true, agrees_to_member_guarantee: true,
             agrees_to_code_of_conduct: true, agrees_to_members_manual: true,
             guardian_name: form.guardianName.trim() || null, guardian_consent: guardianConsent,
-            membership_payment_method: paymentMethod,
-            membership_auto_renew: paymentMethod !== 'invoice' && autoRenew,
+            membership_payment_method: financialProviders.financeEnabled ? paymentMethod : null,
+            membership_auto_renew: financialProviders.stripe.paymentsAvailable && paymentMethod !== 'invoice' && autoRenew,
             membership_scholarship_enabled: scholarshipEnabled,
             membership_scholarship_amount: scholarshipEnabled ? scholarshipAmount : scholarshipSettings.defaultAmount,
             privacy_notice_accepted: true,
@@ -310,7 +337,9 @@ export const MembershipJoinPage: React.FC = () => {
           <h1 className="mt-5 text-center text-2xl font-bold">{complete === 'confirm-email' ? 'Check your email' : 'Application submitted'}</h1>
           <p className="mt-3 text-center text-sm leading-6 text-slate-600">
             {complete === 'confirm-email'
-              ? 'Use the confirmation link we sent you to activate your portal account, then sign in to finish your payment setup.'
+              ? financialProviders.financeEnabled
+                ? 'Use the confirmation link we sent you to activate your portal account, then sign in to finish your payment setup.'
+                : 'Use the confirmation link we sent you to activate your portal account. Payment setup is currently unavailable while the club reconnects its financial services.'
               : 'Your portal account is ready. Membership commences when approved by the committee, or 30 days after your complete application was submitted.'}
           </p>
           <div className="mt-6 rounded-2xl bg-blue-50 p-4 text-sm leading-6 text-blue-950">
@@ -390,20 +419,32 @@ export const MembershipJoinPage: React.FC = () => {
             </div>}
 
             {step === 3 && <div>
-              <h2 className="text-xl font-bold">Choose how to pay</h2>
-              <p className="mt-1 text-sm text-slate-600">No money is taken today. Your prorated invoice is created when membership commences.</p>
-              <div className="mt-4 grid gap-3">
+              <h2 className="text-xl font-bold">{financialProviders.financeEnabled ? 'Choose how to pay' : 'Payment setup unavailable'}</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {financialProviders.xero.postingAvailable
+                  ? 'No money is taken today. Your prorated invoice is created when membership commences.'
+                  : financialProviders.stripe.paymentsAvailable
+                    ? 'No money is taken today. Your saved payment authority is used when membership commences.'
+                    : 'Stripe and Xero are disconnected. You can still submit your application; no invoice or debit will be created until an administrator reconnects a financial service or waives the fee.'}
+              </p>
+              {financialProvidersLoading ? (
+                <div className="mt-4 flex items-center gap-2 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Checking available payment methods…
+                </div>
+              ) : availablePaymentMethods.length > 0 && <div className="mt-4 grid gap-3">
                 {([
                   ['becs', Landmark, 'Bank account (BECS)', 'Preferred · secure automatic payment'],
                   ['invoice', ReceiptText, 'Invoice each year', 'Pay manually from the Xero invoice'],
                   ['card', CreditCard, 'Card', 'Secure automatic card payment'],
-                ] as const).map(([value, Icon, title, description]) => <button key={value} type="button" onClick={() => { setPaymentMethod(value); if (value === 'invoice') setAutoRenew(false); }} className={`flex items-center gap-3 rounded-2xl border-2 p-3 text-left ${paymentMethod === value ? 'border-blue-600 bg-blue-50' : 'border-slate-200'}`}><Icon className="h-5 w-5 text-blue-700" /><span><span className="block text-sm font-bold">{title}</span><span className="block text-xs text-slate-600">{description}</span></span></button>)}
-              </div>
-              {paymentMethod !== 'invoice' && <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+                ] as const)
+                  .filter(([value]) => availablePaymentMethods.includes(value))
+                  .map(([value, Icon, title, description]) => <button key={value} type="button" onClick={() => { setPaymentMethod(value); if (value === 'invoice') setAutoRenew(false); }} className={`flex items-center gap-3 rounded-2xl border-2 p-3 text-left ${paymentMethod === value ? 'border-blue-600 bg-blue-50' : 'border-slate-200'}`}><Icon className="h-5 w-5 text-blue-700" /><span><span className="block text-sm font-bold">{title}</span><span className="block text-xs text-slate-600">{description}</span></span></button>)}
+              </div>}
+              {financialProviders.stripe.paymentsAvailable && paymentMethod !== 'invoice' && <div className="mt-4 rounded-2xl border border-slate-200 p-4">
                 <label className="flex items-start gap-3 text-sm"><input type="checkbox" checked={autoRenew} onChange={e => setAutoRenew(e.target.checked)} className="mt-1" /><span><strong>Renew automatically each year</strong><span className="mt-1 block text-xs leading-5 text-slate-600">Payment is attempted on 1 July. If it fails, you have 60 days to pay before membership ceases. Aircraft self-booking is unavailable while unpaid.</span></span></label>
                 <label className="mt-4 flex items-start gap-3 text-sm"><input type="checkbox" checked={authorityAccepted} onChange={e => setAuthorityAccepted(e.target.checked)} className="mt-1" /><span>I authorise the club to securely save this payment method with Stripe and collect the initial membership invoice{autoRenew ? ' and future annual renewals after advance notice' : ''}. No payment is taken during setup.</span></label>
               </div>}
-              {paymentMethod === 'invoice' && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">A renewal invoice is raised before membership can cease. If it remains unpaid, available verified Xero prepaid credit may be applied first.</p>}
+              {financialProviders.xero.postingAvailable && paymentMethod === 'invoice' && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">A renewal invoice is raised before membership can cease. If it remains unpaid, available verified Xero prepaid credit may be applied first.</p>}
               {scholarshipSettings.available && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <label className="flex items-center gap-3 text-sm font-semibold text-emerald-950"><input type="checkbox" checked={scholarshipEnabled} onChange={e => setScholarshipEnabled(e.target.checked)} /> Add an optional scholarship contribution</label>
                 {scholarshipEnabled && <label className="mt-3 block text-xs text-emerald-900">Annual contribution amount<input type="number" min={scholarshipSettings.minimumAmount} step="0.01" value={scholarshipAmount} onChange={e => setScholarshipAmount(Number(e.target.value))} className="mt-1 w-36 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm" /><span className="ml-2">Minimum ${scholarshipSettings.minimumAmount.toFixed(2)}</span></label>}

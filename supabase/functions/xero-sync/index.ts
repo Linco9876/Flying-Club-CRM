@@ -5995,6 +5995,119 @@ const cancelPendingMembershipCollections = async (
   return results;
 };
 
+const cancelDirectMembershipCollections = async (
+  adminClient: SupabaseAdminClient,
+  userId: string,
+) => {
+  const { data: records, error } = await adminClient
+    .from("membership_provider_payments")
+    .select("id,external_payment_id,stripe_mode,status")
+    .eq("user_id", userId)
+    .in("status", ["pending", "processing"]);
+  if (error) throw error;
+  if (!records?.length) return [];
+
+  const results: any[] = [];
+  for (const record of records) {
+    const paymentIntentId = clean(record.external_payment_id);
+    if (!paymentIntentId) {
+      const now = new Date().toISOString();
+      await adminClient.from("membership_provider_payments").update({
+        status: "cancelled",
+        error:
+          "Cancelled because the membership was cancelled before Stripe collection began.",
+        updated_at: now,
+      }).eq("id", record.id).in("status", ["pending", "processing"]);
+      results.push({
+        paymentRecordId: record.id,
+        paymentIntentId: null,
+        status: "cancelled",
+      });
+      continue;
+    }
+
+    const connectedAccountId = await getConnectedStripeAccountId(adminClient);
+    if (!connectedAccountId) {
+      throw Object.assign(
+        new Error(
+          "A Stripe membership payment is still processing. Reconnect Stripe before cancelling so the debit can be stopped safely.",
+        ),
+        { status: 409 },
+      );
+    }
+    const stripeMode = clean(record.stripe_mode) === "live" ? "live" : "test";
+    const stripeSecretKey = getStripeSecretKeyForMode(stripeMode as StripeMode);
+    const retrieveResponse = await fetch(
+      `https://api.stripe.com/v1/payment_intents/${
+        encodeURIComponent(paymentIntentId)
+      }`,
+      { headers: stripeHeaders(stripeSecretKey, connectedAccountId) },
+    );
+    const paymentIntent = await retrieveResponse.json().catch(() => ({}));
+    if (!retrieveResponse.ok) {
+      throw Object.assign(
+        new Error(
+          clean(paymentIntent?.error?.message) ||
+            "The processing Stripe membership payment could not be checked.",
+        ),
+        { status: 409 },
+      );
+    }
+    if (paymentIntent.status === "succeeded") {
+      throw Object.assign(
+        new Error(
+          "The Stripe membership payment has completed and is being reconciled. Wait for confirmation, then cancel again.",
+        ),
+        { status: 409 },
+      );
+    }
+    if (paymentIntent.status !== "canceled") {
+      const cancelResponse = await fetch(
+        `https://api.stripe.com/v1/payment_intents/${
+          encodeURIComponent(paymentIntentId)
+        }/cancel`,
+        {
+          method: "POST",
+          headers: stripeHeaders(stripeSecretKey, connectedAccountId),
+        },
+      );
+      const cancelledIntent = await cancelResponse.json().catch(() => ({}));
+      if (!cancelResponse.ok || cancelledIntent.status !== "canceled") {
+        throw Object.assign(
+          new Error(
+            clean(cancelledIntent?.error?.message) ||
+              "The processing Stripe membership payment could not be stopped.",
+          ),
+          { status: 409 },
+        );
+      }
+    }
+    const now = new Date().toISOString();
+    await adminClient.from("membership_provider_payments").update({
+      status: "cancelled",
+      error:
+        "Cancelled because the membership was cancelled before collection completed.",
+      updated_at: now,
+    }).eq("id", record.id).in("status", ["pending", "processing"]);
+    results.push({
+      paymentRecordId: record.id,
+      paymentIntentId,
+      status: "cancelled",
+    });
+  }
+  return results;
+};
+
+const xeroIsUnavailable = (error: unknown) => {
+  const message = getErrorMessage(error, "").toLowerCase();
+  return message.includes("xero is not connected") ||
+    message.includes("xero refresh credentials are not configured") ||
+    message.includes("xero token encryption key") ||
+    message.includes("xero posting is contained") ||
+    message.includes("expected xero tenant") ||
+    message.includes("xero tenant");
+};
+
 const cancelMembership = async (
   adminClient: SupabaseAdminClient,
   getXeroContext: () => Promise<any>,
@@ -6044,6 +6157,8 @@ const cancelMembership = async (
   const invoiceResults: any[] = [];
   const paidPeriodIds = new Set<string>();
   const preservedPeriodIds = new Set<string>();
+  const stripeCollectionCancellations =
+    await cancelDirectMembershipCollections(adminClient, userId);
   let xeroContext: any = null;
   if (membership) {
     const { data: periods, error: periodsError } = await adminClient
@@ -6079,7 +6194,21 @@ const cancelMembership = async (
         });
         continue;
       }
-      xeroContext ||= await getXeroContext();
+      try {
+        xeroContext ||= await getXeroContext();
+      } catch (error) {
+        if (!xeroIsUnavailable(error)) throw error;
+        invoiceResults.push({
+          periodId: period.id,
+          invoiceId,
+          invoiceNumber: clean(period.xero_invoice_number) || null,
+          action: "void_deferred",
+          status: clean(period.xero_invoice_status) || null,
+          reason:
+            "Xero is disconnected. The membership was cancelled locally and this invoice must be voided after reconnection.",
+        });
+        continue;
+      }
       const invoice = await getXeroInvoice(xeroContext, invoiceId);
       if (!invoice) {
         throw new Error(
@@ -6140,6 +6269,7 @@ const cancelMembership = async (
       const invoiceResult = invoiceResults.find((item) =>
         item.periodId === period.id
       );
+      const voidDeferred = invoiceResult?.action === "void_deferred";
       const { error } = await adminClient.from("membership_financial_periods")
         .update({
           fee_disposition: "ceased",
@@ -6153,7 +6283,15 @@ const cancelMembership = async (
           xero_last_synced_at: invoiceResult?.invoiceId
             ? new Date().toISOString()
             : period.xero_last_synced_at,
-          xero_sync_error: null,
+          xero_sync_error: voidDeferred
+            ? invoiceResult.reason
+            : null,
+          billing_sync_status: voidDeferred
+            ? "needs_review"
+            : period.billing_sync_status,
+          billing_sync_error: voidDeferred
+            ? invoiceResult.reason
+            : period.billing_sync_error,
           financially_cleared_at: null,
           updated_at: new Date().toISOString(),
         }).eq("id", period.id);
@@ -6205,6 +6343,7 @@ const cancelMembership = async (
     details: {
       reason: cancellationReason,
       xeroInvoices: invoiceResults,
+      stripeCollections: stripeCollectionCancellations,
       paidInvoicesPreserved: paidPeriodIds.size,
       settledPeriodsPreserved: preservedPeriodIds.size,
     },
@@ -6216,7 +6355,9 @@ const cancelMembership = async (
     title: membership?.legal_status === "current"
       ? "BFC membership cancelled"
       : "Membership application withdrawn",
-    message: paidPeriodIds.size > 0
+    message: invoiceResults.some((item) => item.action === "void_deferred")
+      ? "Your membership has been cancelled. An unpaid Xero invoice is awaiting voiding when Xero is reconnected."
+      : paidPeriodIds.size > 0
       ? "Your membership has been cancelled. Paid Xero invoices were retained as accounting records."
       : preservedPeriodIds.size > 0
       ? "Your membership has been cancelled. Settled membership records were retained for the club's history."
@@ -6233,6 +6374,7 @@ const cancelMembership = async (
     applicationWithdrawn: application?.status === "pending",
     membershipResigned: membership?.legal_status === "current",
     invoiceResults,
+    stripeCollectionCancellations,
     paidInvoicesPreserved: paidPeriodIds.size,
     settledPeriodsPreserved: preservedPeriodIds.size,
   };

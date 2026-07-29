@@ -1,29 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { TestTube2 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-
-interface StripeStatus {
-  isTestMode?: boolean;
-}
+import { useFinancialProviders } from '../../context/financialProviderState';
 
 export const StripeTestModeBanner: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
-  const [isTestMode, setIsTestMode] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    supabase.functions.invoke<StripeStatus>('stripe-public-status', { body: {} })
-      .then(({ data }) => {
-        if (active) setIsTestMode(data?.isTestMode === true);
-      })
-      .catch(() => {
-        if (active) setIsTestMode(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (!isTestMode) return null;
+  const { capabilities } = useFinancialProviders();
+  if (!capabilities.stripe.paymentsAvailable || capabilities.stripe.mode !== 'test') {
+    return null;
+  }
 
   return (
     <div className={`rounded-xl border border-amber-300 bg-amber-50 text-amber-950 shadow-sm ${compact ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-sm'}`}>

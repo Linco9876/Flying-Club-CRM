@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
 import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { useFinancialProviders } from '../../context/financialProviderState';
 
 const defaultEmailBody =
   'This voucher includes a pre-flight welcome, a trial instructional flight with a qualified instructor, and time to ask questions about learning to fly at Bendigo Flying Club.';
@@ -152,15 +153,6 @@ interface StripePriceCreationResult {
   };
 }
 
-interface StripeConnectStatus {
-  connected: boolean;
-  configured: boolean;
-  livemode: boolean;
-  accountId: string | null;
-  connectedAt: string | null;
-  stripeMode?: 'test' | 'live';
-}
-
 type VoucherAdminTab = 'products' | 'issue' | 'recent';
 type VoucherIssuePaymentHandling = 'paid' | 'stripe_link' | 'prepaid' | 'waived';
 const SHOW_LEGACY_VOUCHER_CONTROLS = false;
@@ -184,8 +176,7 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const [instructorEndorsements, setInstructorEndorsements] = useState<InstructorEndorsementRow[]>([]);
   const [issueForm, setIssueForm] = useState(emptyIssueForm);
   const [saving, setSaving] = useState(false);
-  const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
-  const [stripeStatusLoading, setStripeStatusLoading] = useState(true);
+  const { capabilities, loading: stripeStatusLoading } = useFinancialProviders();
   const [stripeCreationLoading, setStripeCreationLoading] = useState(false);
   const [activeVoucherTab, setActiveVoucherTab] = useState<VoucherAdminTab>('products');
   const [voucherSearch, setVoucherSearch] = useState('');
@@ -195,8 +186,8 @@ export const TrialFlightVouchersPage: React.FC = () => {
   const activeProducts = products.filter(product => product.isActive);
   const selectedProduct = products.find(product => product.id === issueForm.productId);
   const minimumRecipientDeliveryAt = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 5 * 60_000)), []);
-  const stripeConnected = Boolean(stripeStatus?.configured && stripeStatus?.connected);
-  const activeStripeMode = stripeStatus?.stripeMode === 'test' ? 'test' : 'live';
+  const stripeConnected = capabilities.stripe.paymentsAvailable;
+  const activeStripeMode = capabilities.stripe.mode;
   const productStripePriceId = (product: TrialFlightVoucherProduct) =>
     activeStripeMode === 'test' ? product.stripeTestPriceId : product.stripeLivePriceId;
   const stripeReadyLabel = stripeStatusLoading ? 'Checking' : stripeConnected ? 'Connected' : 'Needs setup';
@@ -323,31 +314,6 @@ export const TrialFlightVouchersPage: React.FC = () => {
 
     void loadInstructorEndorsements();
   }, [instructorIdsKey]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadStripeStatus = async () => {
-      setStripeStatusLoading(true);
-      try {
-        const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
-          body: { action: 'status' },
-        });
-        if (error) throw error;
-        if (active) setStripeStatus(data ?? null);
-      } catch (error) {
-        console.warn('Failed to load Stripe connection status:', error);
-        if (active) setStripeStatus(null);
-      } finally {
-        if (active) setStripeStatusLoading(false);
-      }
-    };
-
-    void loadStripeStatus();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const updateArraySelection = (field: 'aircraftIds' | 'instructorIds', id: string, checked: boolean) => {
     setProductForm(form => ({

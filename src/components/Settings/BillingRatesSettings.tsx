@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CreditCard, DollarSign, GripVertical, Link2, Loader2, Lock, Plus, Trash2, Users } from 'lucide-react';
 import { useBillingSettings, FlightType, PaymentMethod } from '../../hooks/useBillingSettings';
 import { useGroundSessionDescriptions } from '../../hooks/useGroundSessionDescriptions';
@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import { TAX_INCLUSIVE_NOTICE } from '../../utils/pricingPolicy';
 import toast from 'react-hot-toast';
+import { useFinancialProviders } from '../../context/financialProviderState';
 
 interface BillingRatesSettingsProps {
   canEdit: boolean;
@@ -19,18 +20,6 @@ const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm f
 
 const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-interface StripeConnectStatus {
-  connected: boolean;
-  configured: boolean;
-  livemode: boolean;
-  accountId: string | null;
-}
-
-interface XeroConnectStatus {
-  connected: boolean;
-  configured?: boolean;
-}
-
 export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canEdit, onFormChange }) => {
   const { flightTypes, paymentMethods, loading, saveBillingSettings } = useBillingSettings();
   const {
@@ -40,44 +29,9 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   const { aircraft } = useAircraft();
   const [draftFlightTypes, setDraftFlightTypes] = useState<FlightType[]>([]);
   const [draftPaymentMethods, setDraftPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(null);
-  const [stripeLoading, setStripeLoading] = useState(false);
-  const [xeroStatus, setXeroStatus] = useState<XeroConnectStatus | null>(null);
-  const [xeroLoading, setXeroLoading] = useState(false);
+  const { capabilities, loading: providersLoading } = useFinancialProviders();
   const [xeroItemSyncingId, setXeroItemSyncingId] = useState<string | null>(null);
   const [draftGroundSessionDescriptions, setDraftGroundSessionDescriptions] = useState<GroundSessionDescriptionOption[]>([]);
-
-  const loadStripeStatus = useCallback(async () => {
-    setStripeLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke<StripeConnectStatus>('stripe-connect', {
-        body: { action: 'status' },
-      });
-      if (error) throw error;
-      setStripeStatus(data ?? null);
-    } catch (error) {
-      console.warn('Failed to load Stripe billing status:', error);
-      setStripeStatus(null);
-    } finally {
-      setStripeLoading(false);
-    }
-  }, []);
-
-  const loadXeroStatus = useCallback(async () => {
-    setXeroLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke<XeroConnectStatus>('xero-connect', {
-        body: { action: 'status' },
-      });
-      if (error) throw error;
-      setXeroStatus(data ?? null);
-    } catch (error) {
-      console.warn('Failed to load Xero billing status:', error);
-      setXeroStatus(null);
-    } finally {
-      setXeroLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     setDraftFlightTypes(flightTypes);
@@ -94,14 +48,6 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
         .map(option => ({ ...option, rates: option.rates.map(rate => ({ ...rate })) }))
     );
   }, [groundSessionDescriptionOptions]);
-
-  useEffect(() => {
-    void loadStripeStatus();
-  }, [loadStripeStatus]);
-
-  useEffect(() => {
-    void loadXeroStatus();
-  }, [loadXeroStatus]);
 
   useEffect(() => {
     (window as any).__billingSettingsSave = async () => {
@@ -160,7 +106,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
     const method = draftPaymentMethods.find(item => item.id === id);
     if (
       method?.systemKey === 'stripe_card' &&
-      !stripeStatus?.connected &&
+      !stripeConnected &&
       (updates.active === true || updates.allowAccountTopup === true)
     ) {
       toast.error('Connect Stripe in Settings > Integrations before enabling Stripe payments.');
@@ -301,8 +247,10 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
   const activeFlightTypes = draftFlightTypes.filter(type => type.active);
   const stripeMethod = draftPaymentMethods.find(method => method.systemKey === 'stripe_card');
   const pilotAccountMethod = draftPaymentMethods.find(method => method.systemKey === 'pilot_account');
-  const stripeConnected = Boolean(stripeStatus?.connected);
-  const xeroConnected = Boolean(xeroStatus?.connected);
+  const stripeConnected = capabilities.stripe.paymentsAvailable;
+  const xeroConnected = capabilities.xero.accountingAvailable;
+  const stripeLoading = providersLoading;
+  const xeroLoading = providersLoading;
 
   const ensureFlightTypeXeroItem = async (type: FlightType) => {
     if (!canEdit || !xeroConnected) return;
@@ -479,7 +427,7 @@ export const BillingRatesSettings: React.FC<BillingRatesSettingsProps> = ({ canE
                     {stripeLoading
                       ? 'Checking Stripe connection...'
                       : stripeConnected
-                        ? `Stripe connected${stripeStatus?.livemode ? ' live' : ' test'}`
+                        ? `Stripe connected · ${capabilities.stripe.mode} mode`
                         : 'Connect Stripe in Integrations first'}
                   </span>
                 )}

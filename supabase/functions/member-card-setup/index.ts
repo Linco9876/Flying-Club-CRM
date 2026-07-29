@@ -149,25 +149,6 @@ Deno.serve(async (req: Request) => {
     const user = await getAuthUser(adminClient, req);
     const body = await req.json();
     const action = cleanText(body.action || "status");
-    const { data: linkProfile, error: linkProfileError } = await adminClient
-      .from("users")
-      .select("xero_contact_id")
-      .eq("id", user.id)
-      .maybeSingle();
-    if (linkProfileError) throw linkProfileError;
-    if (!cleanText(linkProfile?.xero_contact_id)) {
-      if (action === "status") {
-        return json({
-          configured: false,
-          connected: false,
-          linked: false,
-          card: null,
-        });
-      }
-      return json({
-        error: "This account must be linked to a Xero contact before saved flight-payment cards can be managed.",
-      }, 409);
-    }
 
     if (action === "status") {
       const connectedAccountId = await getConnectedStripeAccountId(adminClient);

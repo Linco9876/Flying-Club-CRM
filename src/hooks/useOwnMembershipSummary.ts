@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useFinancialProviders } from '../context/financialProviderState';
 
 export interface OwnMembershipSummary {
   applicationStatus: string | null;
@@ -18,6 +19,9 @@ export interface OwnMembershipSummary {
   paymentMethodDisplay: string | null;
   autoRenew: boolean;
   xeroLinked: boolean;
+  financeEnabled: boolean;
+  stripeAvailable: boolean;
+  xeroAvailable: boolean;
   billingSyncStatus: string | null;
   billingSyncAttempts: number;
   billingSyncNextAttemptAt: string | null;
@@ -43,6 +47,9 @@ const EMPTY_SUMMARY: OwnMembershipSummary = {
   paymentMethodDisplay: null,
   autoRenew: false,
   xeroLinked: false,
+  financeEnabled: false,
+  stripeAvailable: false,
+  xeroAvailable: false,
   billingSyncStatus: null,
   billingSyncAttempts: 0,
   billingSyncNextAttemptAt: null,
@@ -58,6 +65,7 @@ const isFinanciallyCleared = (value?: string | null) =>
   value === 'paid' || value === 'waived' || value === 'fee_exempt';
 
 export const useOwnMembershipSummary = (userId?: string) => {
+  const { capabilities, loading: providersLoading } = useFinancialProviders();
   const [summary, setSummary] = useState<OwnMembershipSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
 
@@ -70,6 +78,7 @@ export const useOwnMembershipSummary = (userId?: string) => {
         setLoading(false);
         return;
       }
+      if (providersLoading) return;
 
       setLoading(true);
       try {
@@ -99,10 +108,11 @@ export const useOwnMembershipSummary = (userId?: string) => {
         if (firstError) throw firstError;
 
         const membership = membershipResult.data as any;
-        const xeroLinked = Boolean(userResult.data?.xero_contact_id);
+        const xeroLinked = capabilities.xero.accountingAvailable &&
+          Boolean(userResult.data?.xero_contact_id);
         let period: any = null;
         let preference: any = null;
-        if (xeroLinked) {
+        if (capabilities.financeEnabled) {
           const preferenceResult = await supabase
             .from('membership_payment_preferences')
             .select('payment_method, payment_method_display, auto_renew, last_collection_status, last_collection_error')
@@ -111,7 +121,7 @@ export const useOwnMembershipSummary = (userId?: string) => {
           if (preferenceResult.error) throw preferenceResult.error;
           preference = preferenceResult.data;
         }
-        if (membership?.id && xeroLinked) {
+        if (membership?.id && capabilities.financeEnabled) {
           const periodResult = await supabase
             .from('membership_financial_periods')
             .select('financial_year_start, financial_year_end, fee_disposition, amount_due, due_date, grace_expires_at, billing_sync_status, billing_sync_attempts, billing_sync_next_attempt_at, billing_sync_error')
@@ -146,6 +156,9 @@ export const useOwnMembershipSummary = (userId?: string) => {
           paymentMethodDisplay: preference?.payment_method_display || null,
           autoRenew: Boolean(preference?.auto_renew),
           xeroLinked,
+          financeEnabled: capabilities.financeEnabled,
+          stripeAvailable: capabilities.stripe.paymentsAvailable,
+          xeroAvailable: capabilities.xero.accountingAvailable,
           billingSyncStatus: period?.billing_sync_status || null,
           billingSyncAttempts: Number(period?.billing_sync_attempts || 0),
           billingSyncNextAttemptAt: period?.billing_sync_next_attempt_at || null,
@@ -165,7 +178,13 @@ export const useOwnMembershipSummary = (userId?: string) => {
     return () => {
       active = false;
     };
-  }, [userId]);
+  }, [
+    capabilities.financeEnabled,
+    capabilities.stripe.paymentsAvailable,
+    capabilities.xero.accountingAvailable,
+    providersLoading,
+    userId,
+  ]);
 
   return { summary, loading };
 };

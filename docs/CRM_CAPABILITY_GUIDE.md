@@ -98,7 +98,8 @@ The source-of-truth split is:
 
 | Information | Source of truth |
 | --- | --- |
-| Invoice, amount outstanding and payment status | Xero |
+| Xero invoice, amount outstanding and Xero payment status | Xero, while connected |
+| Stripe-only membership collection and provider status | Stripe plus the CRM provider-payment ledger |
 | Legal membership status and commencement/cessation | CRM |
 | Committee-authorised free membership for a financial year | CRM fee waiver audit record |
 | BFC booking eligibility decision and override | CRM |
@@ -114,7 +115,8 @@ Administrators configure a Xero sales item code whose account and tax treatment 
 
 ### Payment preferences and scholarship contributions
 
-Applicants and current members can choose one payment preference:
+Applicants and current members can choose from the payment preferences supported
+by the providers that are currently connected:
 
 - **BECS direct debit (preferred):** saves a bank debit mandate through Stripe;
 - **Xero invoice:** emails an invoice for manual payment; or
@@ -124,7 +126,12 @@ The club does not add a card or payment surcharge. A separate annual scholarship
 
 Saving a card or BECS mandate requires explicit payment authority. Stripe Checkout is used only to save and verify the payment method; completing that setup does not transfer funds. Selecting **automatic annual payment** is also optional and unchecked by default. The initial membership invoice may be collected using the selected saved method after membership commences; future annual invoices are collected automatically only when annual payment authority remains enabled. No membership payment is taken while an application is still pending.
 
-Xero remains the accounting source of truth. Successful Stripe collections are applied to the matching Xero invoice through the configured Stripe clearing account and the webhook updates the CRM from that result.
+When both providers are connected, Xero remains the accounting source of truth
+and a successful Stripe collection is applied to the matching Xero invoice
+through the configured Stripe clearing account. When Xero is disconnected,
+Stripe can collect an approved membership directly and the CRM webhook/provider
+ledger supplies financial clearance until accounting is reconnected and
+reviewed. Stripe is never presented as a Xero balance or invoice substitute.
 
 For manual annual payment, the CRM checks Xero-confirmed overpayments and prepayments when the membership invoice is issued. Verified credit is allocated to that invoice first; a partial credit leaves only the remainder payable. The legacy portal balance is not treated as spendable unless it is represented by a matching Xero credit.
 
@@ -441,13 +448,49 @@ Posting remains disabled after connection and after mapping approval. Before BFC
 
 `xero-read-only-inventory.yml` is manual-only. Its default operation is a read-only inventory; its cleanup operation is restricted to the unpinned, inventory-only legacy tenant and requires both the exact tenant ID and a phrase containing the tenant name. It can delete/void only locally linked payments, bank transactions, unpaid invoices and journals; paid/part-paid invoices become review items, while contacts and configuration records are retained. Both scheduled Xero workflows also require the repository variable `ENABLE_XERO_SYNC_WORKER=true`, including manual dispatch, so a dispatch cannot bypass containment.
 
-### Financial privacy for accounts not linked to Xero
+### Independent Stripe and Xero operation
 
-An account without a Xero contact link has no personal financial information available through the portal. Member and staff screens show a single Xero setup message instead of substituting zeroes or exposing stale CRM records. This covers balances, amounts due, financial clearance, renewal amounts, transaction counts and history, invoices, flight charges, top-ups, saved flight-payment cards and related billing actions. Public membership prices and administrator rate settings remain visible because they describe the organisation's products rather than an individual's financial record.
+The portal derives one server-authoritative financial capability state from the
+active provider credentials, provider link, disconnect marker and pinned Xero
+tenant. A stored account or tenant ID by itself is not treated as a working
+connection.
+
+| Provider state | Portal behaviour |
+| --- | --- |
+| Stripe and Xero connected | Stripe collects secure payments; Xero supplies balances, invoices and accounting; eligible payments can be reconciled together. |
+| Stripe only | Saved cards, BECS/card membership collection, payment links and local Stripe activity remain available. Xero balances, invoices, prepaid credit, sync controls and Xero renewal actions are hidden. |
+| Xero only | Xero contacts, balances, invoices, prepaid credit and enabled accounting workflows remain available. Card/BECS setup, Stripe payment links and voucher online checkout are hidden. Members can use manual Xero invoices. |
+| Neither connected | Balance/billing navigation, financial administration, payment controls and voucher sales controls are disabled. Operational membership, booking, flight, training, duty, maintenance and safety records remain usable. |
+
+Stripe-only membership collections are held in a provider-bound local payment
+record with a unique attempt ID. A failed attempt receives a new idempotency
+key; a pending, processing, successful or review-required attempt prevents a
+duplicate debit. Stripe webhooks update the membership period and payment
+preference without requiring a Xero contact.
+
+Cancellation remains safe in every state. A processing Stripe membership debit
+must be retrieved and cancelled before the legal membership is resigned. If
+Xero is offline and an unpaid Xero membership invoice already exists, the CRM
+cancels the membership locally, marks the invoice void as a review item and
+retains the Xero identifier for completion after reconnection. Paid accounting
+records are never silently removed.
+
+### Financial privacy and provider disconnection
+
+Xero balances, invoices and prepaid account values are shown only while Xero is
+operational and the person has a linked Xero contact. Disconnecting Xero clears
+those values from the header, profile, Balance tab and staff views rather than
+substituting zeroes or rendering cached figures. Stripe data is independently
+available only while Stripe is operational.
 
 The protection is enforced twice:
 
-- the interface does not request or render personal financial fields for an unlinked account, including in profiles, the membership register, pilot accounts and aircraft flight logs; and
-- restrictive PostgreSQL read policies prevent authenticated users and staff from reading unlinked account ledgers, invoices and line items, membership financial periods, saved flight cards or Xero portal payment records through the normal client API.
+- provider-aware interfaces do not request or render unavailable provider data;
+  and
+- restrictive PostgreSQL policies prevent direct client writes to provider
+  payment and reconciliation records.
 
-The service role retains access for controlled reconciliation and account repair. A pending membership applicant may still read and establish their own membership payment preference so the signup workflow can be completed before committee approval; this exception does not expose a balance, invoice, transaction or charge history. Once a current member is unlinked, financial display and billing actions remain unavailable until an administrator establishes the Xero contact link.
+Public membership prices and administrator rate settings remain visible because
+they describe the organisation's products rather than a person's balance.
+Service-role access is retained only for controlled webhook processing,
+reconciliation and account repair.

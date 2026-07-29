@@ -38,6 +38,11 @@ verify_jwt = false
 # Disabling the legacy gateway JWT check avoids valid modern sessions being rejected before that code runs.
 verify_jwt = false
 
+[functions.financial-provider-status]
+# Returns only provider availability booleans needed by public signup and authenticated
+# financial screens. Credentials and provider identifiers never leave the function.
+verify_jwt = false
+
 [functions.calendar-feed]
 # Calendar clients and guest email links cannot send a Supabase JWT. Access is controlled
 # with revocable, high-entropy bearer tokens and all data access runs through service role.

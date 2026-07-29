@@ -61,12 +61,16 @@ interface UseBillingAccountsOptions {
   enabled?: boolean;
   scope?: 'admin' | 'member';
   userId?: string | null;
+  stripeAvailable?: boolean;
+  xeroAvailable?: boolean;
 }
 
 export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
   const enabled = options.enabled !== false;
   const scope = options.scope ?? 'admin';
   const scopedUserId = options.userId ?? null;
+  const stripeAvailable = options.stripeAvailable === true;
+  const xeroAvailable = options.xeroAvailable === true;
   const [transactions, setTransactions] = useState<AccountTransaction[]>([]);
   const [unpaidFlights, setUnpaidFlights] = useState<UnpaidFlight[]>([]);
   const [pilotAccounts, setPilotAccounts] = useState<PilotAccount[]>([]);
@@ -97,7 +101,9 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
       return;
     }
     void fetchAll({ deferPilotAccounts: true });
-  }, [enabled, scope, scopedUserId]);
+    // fetchAll intentionally reloads the full provider-scoped dataset when these capability inputs change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, scope, scopedUserId, stripeAvailable, xeroAvailable]);
 
   const createAdminAuditEntry = async ({
     action,
@@ -142,30 +148,49 @@ export const useBillingAccounts = (options: UseBillingAccountsOptions = {}) => {
     setPilotAccountsLoading(true);
     setLoadWarning(null);
     const memberId = scope === 'member' ? scopedUserId : null;
-    const { data: linkedUsers, error: linkedUsersError } = await supabase
+    const eligibleUsersQuery = supabase
       .from('users')
-      .select('id')
-      .not('xero_contact_id', 'is', null)
+      .select('id, xero_contact_id')
       .neq('portal_access_scope', 'guest_placeholder');
+    const { data: eligibleUsers, error: linkedUsersError } = xeroAvailable && !stripeAvailable
+      ? await eligibleUsersQuery.not('xero_contact_id', 'is', null)
+      : memberId
+      ? await eligibleUsersQuery.eq('id', memberId)
+      : await eligibleUsersQuery;
     if (linkedUsersError) {
       console.error('Error checking Xero account links:', linkedUsersError);
       setTransactions([]);
       setUnpaidFlights([]);
       setPilotAccounts([]);
       setAccountXeroLinked(null);
-      setLoadWarning('Xero account links could not be confirmed.');
+      setLoadWarning(xeroAvailable
+        ? 'Xero account links could not be confirmed.'
+        : 'Local financial records could not be loaded.');
       setLoading(false);
       setPilotAccountsLoading(false);
       return;
     }
-    const linkedUserIds = new Set((linkedUsers || []).map(row => row.id));
-    const memberLinked = memberId ? linkedUserIds.has(memberId) : null;
+    const eligibleUserIds = new Set((eligibleUsers || []).map(row => row.id));
+    const xeroLinkedUserIds = new Set(
+      (eligibleUsers || [])
+        .filter(row => Boolean(row.xero_contact_id))
+        .map(row => row.id),
+    );
+    const memberLinked = memberId ? (xeroAvailable && xeroLinkedUserIds.has(memberId)) : null;
     setAccountXeroLinked(memberLinked);
     const coreRequest = Promise.all([
-      memberLinked === false ? Promise.resolve(setTransactions([])) : fetchTransactions(memberId, linkedUserIds),
-      memberLinked === false ? Promise.resolve(setUnpaidFlights([])) : fetchUnpaidFlights(false, memberId, linkedUserIds),
+      xeroAvailable && !stripeAvailable && memberLinked === false
+        ? Promise.resolve(setTransactions([]))
+        : fetchTransactions(memberId, eligibleUserIds),
+      xeroAvailable && !stripeAvailable && memberLinked === false
+        ? Promise.resolve(setUnpaidFlights([]))
+        : fetchUnpaidFlights(false, memberId, eligibleUserIds),
     ]);
-    const pilotAccountsRequest = fetchPilotAccounts(memberId, linkedUserIds)
+    const pilotAccountsRequest = fetchPilotAccounts(
+      memberId,
+      eligibleUserIds,
+      xeroLinkedUserIds,
+    )
       .finally(() => setPilotAccountsLoading(false));
 
     if (fetchOptions.deferPilotAccounts) {
@@ -330,9 +355,9 @@ const fetchUnpaidFlights = async (
 
       setUnpaidFlights(mappedFlights);
 
-      const xeroFlightIds = mappedFlights
+      const xeroFlightIds = xeroAvailable ? mappedFlights
         .filter((flight: UnpaidFlight) => flight.xeroInvoiceId)
-        .map((flight: UnpaidFlight) => flight.id);
+        .map((flight: UnpaidFlight) => flight.id) : [];
       if (!skipXeroRefresh && xeroFlightIds.length > 0) {
         void (async () => {
           try {
@@ -354,7 +379,11 @@ const fetchUnpaidFlights = async (
     }
   };
 
-  const fetchPilotAccounts = async (memberUserId?: string | null, linkedUserIds?: Set<string>) => {
+  const fetchPilotAccounts = async (
+    memberUserId?: string | null,
+    eligibleUserIds?: Set<string>,
+    xeroLinkedUserIds?: Set<string>,
+  ) => {
     try {
       if (memberUserId) {
         const { data: userRow, error: userError } = await supabase
@@ -368,8 +397,10 @@ const fetchUnpaidFlights = async (
           return;
         }
 
-        const xeroLinked = Boolean(userRow.xero_contact_id) && Boolean(linkedUserIds?.has(memberUserId));
-        if (!xeroLinked) {
+        const xeroLinked = xeroAvailable &&
+          Boolean(userRow.xero_contact_id) &&
+          Boolean(xeroLinkedUserIds?.has(memberUserId));
+        if (!xeroLinked && !stripeAvailable) {
           setXeroConnected(false);
           setPilotAccounts([{
             userId: userRow.id,
@@ -387,7 +418,7 @@ const fetchUnpaidFlights = async (
         const ledger = await fetchUserPrepaidLedgerBalance(memberUserId);
         let useXeroBalances = false;
         let xeroBalance = 0;
-        try {
+        if (xeroAvailable) try {
           const xeroData = await withTimeout(
             fetchUserXeroBalance(memberUserId),
             6_000,
@@ -414,7 +445,7 @@ const fetchUnpaidFlights = async (
           userId: userRow.id,
           name: userRow.name,
           email: userRow.email,
-          xeroLinked: true,
+          xeroLinked,
           balance: useXeroBalances ? xeroBalance : null,
           lastTransactionDate: ledger.lastTransactionDate,
           totalTransactions: ledger.totalTransactions,
@@ -436,7 +467,7 @@ const fetchUnpaidFlights = async (
       let xeroBalanceByUser: Record<string, number> = {};
       let useXeroBalances = false;
 
-      try {
+      if (xeroAvailable) try {
         const xeroData = await withTimeout(
           fetchAllMemberXeroBalances(),
           6_000,
@@ -465,7 +496,7 @@ const fetchUnpaidFlights = async (
       }
 
       // Get unpaid flight counts per user
-      const allowedUserIds = [...(linkedUserIds || [])];
+      const allowedUserIds = [...(eligibleUserIds || [])];
       const unpaidResult = allowedUserIds.length > 0
         ? await supabase
             .from('flight_logs')
@@ -484,7 +515,9 @@ const fetchUnpaidFlights = async (
 
       setPilotAccounts(
         (users || []).map((u: any) => {
-          const xeroLinked = Boolean(u.xero_contact_id) && Boolean(linkedUserIds?.has(u.id));
+          const xeroLinked = xeroAvailable &&
+            Boolean(u.xero_contact_id) &&
+            Boolean(xeroLinkedUserIds?.has(u.id));
           return {
             userId: u.id,
             name: u.name,
@@ -504,6 +537,7 @@ const fetchUnpaidFlights = async (
 
   const addTopUp = async (userId: string, amount: number, description: string, paymentMethodId?: string, transactionDate?: string, options?: { autoVerify?: boolean }) => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Prepaid top-ups are unavailable.');
       if (!Number.isFinite(amount) || amount < 1000 || amount % 1000 !== 0) {
         throw new Error('Top-ups must be made in $1000 increments.');
       }
@@ -583,6 +617,7 @@ const fetchUnpaidFlights = async (
 
   const createFlightPaymentCheckout = async (flightLogId: string, amount?: number) => {
     try {
+      if (!stripeAvailable) throw new Error('Stripe is disconnected. Online payment links are unavailable.');
       const returnUrl = `${window.location.origin}/billing`;
       const { data, error } = await supabase.functions.invoke('create-flight-payment-checkout', {
         body: {
@@ -608,6 +643,7 @@ const fetchUnpaidFlights = async (
 
   const chargeFlightSavedCard = async (flightLogId: string, amount?: number) => {
     try {
+      if (!stripeAvailable) throw new Error('Stripe is disconnected. Saved-card charges are unavailable.');
       const { data, error } = await supabase.functions.invoke('charge-flight-saved-card', {
         body: { flightLogId, amount },
       });
@@ -632,6 +668,7 @@ const fetchUnpaidFlights = async (
 
   const syncFlightInvoiceToXero = async (flightLogId: string) => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Accounting sync is unavailable.');
       const { data, error } = await supabase.functions.invoke('xero-sync', {
         body: { action: 'sync-flight-invoice', flightLogId },
       });
@@ -648,6 +685,7 @@ const fetchUnpaidFlights = async (
 
   const applyXeroPaymentsForFlight = async (flightLogId: string) => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Xero payments cannot be applied.');
       const { data, error } = await supabase.functions.invoke('xero-sync', {
         body: { action: 'apply-flight-payments', flightLogId },
       });
@@ -665,6 +703,7 @@ const fetchUnpaidFlights = async (
 
   const applyPilotAccountPayment = async (flightLogId: string, amount: number) => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Prepaid account payments are unavailable.');
       const paymentAmount = Math.round((amount + Number.EPSILON) * 100) / 100;
       if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
         throw new Error('Enter a payment amount greater than $0');
@@ -739,6 +778,7 @@ const fetchUnpaidFlights = async (
 
   const verifyTransaction = async (transactionId: string) => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Prepaid top-ups cannot be verified.');
       const { data: tx, error: fetchError } = await supabase
         .from('account_transactions')
         .select('id, amount, user_id, verified_status, type, xero_sync_status, xero_sync_error, rejection_notes')
@@ -856,6 +896,7 @@ const fetchUnpaidFlights = async (
 
   const retryTransactionXeroSync = async (transactionId: string) => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Reconciliation retry is unavailable.');
       const { error } = await supabase.functions.invoke('xero-sync', {
         body: { action: 'sync-transaction', transactionId },
       });
@@ -870,6 +911,7 @@ const fetchUnpaidFlights = async (
   };
 
   const listTransactionXeroMatches = async (transactionId: string) => {
+    if (!xeroAvailable) throw new Error('Xero is disconnected. Credit matching is unavailable.');
     const { data, error } = await supabase.functions.invoke('xero-sync', {
       body: { action: 'list-transaction-credit-matches', transactionId },
     });
@@ -894,6 +936,7 @@ const fetchUnpaidFlights = async (
 
   const matchTransactionToXeroCredit = async (transactionId: string, creditId: string, creditKind: 'overpayment' | 'prepayment') => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Credit matching is unavailable.');
       const { error } = await supabase.functions.invoke('xero-sync', {
         body: { action: 'match-transaction-credit', transactionId, creditId, creditKind },
       });
@@ -909,6 +952,7 @@ const fetchUnpaidFlights = async (
 
   const unlinkTransactionXeroCredit = async (transactionId: string) => {
     try {
+      if (!xeroAvailable) throw new Error('Xero is disconnected. Credit matching is unavailable.');
       const { error } = await supabase.functions.invoke('xero-sync', {
         body: { action: 'unlink-transaction-credit-match', transactionId },
       });
@@ -929,6 +973,8 @@ const fetchUnpaidFlights = async (
     loading,
     pilotAccountsLoading,
     xeroConnected,
+    stripeAvailable,
+    xeroAvailable,
     accountXeroLinked,
     loadWarning,
     minimumPrepaidPack,

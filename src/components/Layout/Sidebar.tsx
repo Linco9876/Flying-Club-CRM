@@ -22,6 +22,7 @@ import {
   Clock3,
   BadgeCheck
 } from 'lucide-react';
+import { useFinancialProviders } from '../../context/financialProviderState';
 
 interface SidebarProps {
   activeView: string;
@@ -30,6 +31,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) => {
   const { user } = useAuth();
+  const { capabilities, loading: providersLoading } = useFinancialProviders();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -62,6 +64,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
   // Get authorized menu items using RBAC
   const authorizedItems = getAuthorizedMenuItems(user);
   const filteredMenuItems = allMenuItems.filter(item => {
+    if (!providersLoading && !capabilities.financeEnabled &&
+        ['financial-dashboard', 'gift-vouchers'].includes(item.id)) {
+      return false;
+    }
+    if (!providersLoading && !capabilities.stripe.paymentsAvailable && item.id === 'gift-vouchers') {
+      return false;
+    }
     return authorizedItems.some(authItem => authItem.id === item.id);
   });
 
