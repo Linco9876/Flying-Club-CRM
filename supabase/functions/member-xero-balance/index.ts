@@ -1136,7 +1136,6 @@ Deno.serve(async (req: Request) => {
           linked: false,
           invoices: [],
           minimumPrepaidPack: MINIMUM_PREPAID_PACK,
-          ...emptyCredit,
         });
       }
 
@@ -1159,6 +1158,17 @@ Deno.serve(async (req: Request) => {
         outstandingInvoiceTotal,
         netBalance: money(Number(credit.availableCredit || 0) - outstandingInvoiceTotal),
         invoices,
+      });
+    }
+
+    if (!contactId && !["pay-invoice", "invoice-pdf"].includes(action)) {
+      return json({
+        connected: true,
+        userId: member.id,
+        name: clean(member.name),
+        email: clean(member.email),
+        linked: false,
+        minimumPrepaidPack: MINIMUM_PREPAID_PACK,
       });
     }
 

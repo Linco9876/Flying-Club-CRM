@@ -39,7 +39,8 @@ interface FlightLog {
   created_at: string;
   student_name: string;
   instructor_name: string | null;
-  total_cost: number;
+  xero_linked: boolean;
+  total_cost: number | null;
 }
 
 interface EditLogForm {
@@ -86,7 +87,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
 
       const { data: logsData, error: logsError } = await supabase
         .from('flight_logs')
-        .select('*')
+        .select('id,booking_id,aircraft_id,student_id,instructor_id,start_time,end_time,start_tach,end_tach,flight_duration,landings,observations,hobbs_start,hobbs_end,fuel_start,fuel_end,fuel_added,fuel_type,oil_start,oil_end,oil_added,aircraft_condition,maintenance_notes,created_at,passengers')
         .eq('aircraft_id', aircraftId)
         .order('created_at', { ascending: false });
 
@@ -104,11 +105,25 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
       const { data: usersData } = allUserIds.length > 0
         ? await supabase
           .from('users')
-          .select('id, name')
+          .select('id, name, xero_contact_id')
           .in('id', allUserIds)
         : { data: [] };
 
       const usersMap = new Map(usersData?.map(u => [u.id, u.name]) || []);
+      const xeroLinkedStudentIds = new Set(
+        (usersData || [])
+          .filter(userRow => Boolean(userRow.xero_contact_id))
+          .map(userRow => userRow.id)
+      );
+      const { data: financialRows, error: financialRowsError } = xeroLinkedStudentIds.size > 0
+        ? await supabase
+            .from('flight_logs')
+            .select('id,payment_type,flight_type_id,calculated_cost')
+            .in('student_id', [...xeroLinkedStudentIds])
+            .eq('aircraft_id', aircraftId)
+        : { data: [], error: null };
+      if (financialRowsError) throw financialRowsError;
+      const financialByLog = new Map((financialRows || []).map(row => [row.id, row]));
 
       const { data: ratesData } = await supabase
         .from('aircraft_rates')
@@ -116,9 +131,15 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
         .eq('aircraft_id', aircraftId);
 
       const combinedLogs: FlightLog[] = (logsData || []).map((log: any) => {
-        const rate = ratesData?.find((item: any) => item.flight_type_id === log.flight_type_id);
-        const calculatedCost = log.calculated_cost != null
-          ? parseFloat(log.calculated_cost)
+        const financial = financialByLog.get(log.id) as any;
+        const xeroLinked = xeroLinkedStudentIds.has(log.student_id);
+        const rate = financial
+          ? ratesData?.find((item: any) => item.flight_type_id === financial.flight_type_id)
+          : null;
+        const calculatedCost = !xeroLinked
+          ? null
+          : financial?.calculated_cost != null
+          ? parseFloat(financial.calculated_cost)
           : calculateFlightCost({
             rate: rate ? {
               chargeType: rate.charge_type,
@@ -145,8 +166,8 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
           end_tach: parseFloat(log.end_tach),
           flight_duration: parseFloat(log.flight_duration),
           landings: log.landings || 0,
-          payment_type: log.payment_type,
-          flight_type_id: log.flight_type_id,
+          payment_type: financial?.payment_type ?? null,
+          flight_type_id: financial?.flight_type_id ?? null,
           flight_type_name: rate?.flight_types?.name || null,
           observations: log.observations,
           hobbs_start: log.hobbs_start != null ? parseFloat(log.hobbs_start) : null,
@@ -163,6 +184,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
           created_at: log.created_at,
           student_name: usersMap.get(log.student_id) || 'Unknown',
           instructor_name: log.instructor_id ? usersMap.get(log.instructor_id) || 'Unknown' : null,
+          xero_linked: xeroLinked,
           total_cost: calculatedCost
         };
       });
@@ -214,6 +236,18 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
   };
 
   const handleDeleteLog = async (log: FlightLog) => {
+    if (!log.xero_linked) {
+      if (!window.confirm('Delete this flight log?')) return;
+      const { error: deleteError } = await deleteFlightLog(log.id, { xeroMode: 'crm-only' });
+      if (deleteError) {
+        toast.error(deleteError);
+        return;
+      }
+      setActionLog(null);
+      await fetchFlightLogs();
+      toast.success('Flight log deleted');
+      return;
+    }
     const impact = await getFlightLogDeleteImpact(log.id);
     const xeroMode: 'auto' | 'void-delete' | 'credit-note' | 'crm-only' = impact.requiresXeroAction
       ? impact.recommendedAction
@@ -253,6 +287,32 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
 
     if (Number.isNaN(duration) || duration <= 0) {
       toast.error('Flight duration must be positive');
+      return;
+    }
+
+    if (!editingLog.xero_linked) {
+      setSavingLog(true);
+      const { error: updateError } = await supabase
+        .from('flight_logs')
+        .update({
+          start_time: new Date(editForm.start_time).toISOString(),
+          end_time: new Date(editForm.end_time).toISOString(),
+          start_tach: startTach,
+          end_tach: endTach,
+          flight_duration: duration,
+          landings: parseInt(editForm.landings, 10) || 0,
+          observations: editForm.observations || null,
+        })
+        .eq('id', editingLog.id);
+      setSavingLog(false);
+      if (updateError) {
+        toast.error('Failed to update flight log');
+        return;
+      }
+      setEditingLog(null);
+      setEditForm(null);
+      await fetchFlightLogs();
+      toast.success('Flight log updated');
       return;
     }
 
@@ -388,7 +448,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
 
   const totalFlightHours = filteredLogs.reduce((sum, log) => sum + log.flight_duration, 0);
   const totalLandings = filteredLogs.reduce((sum, log) => sum + log.landings, 0);
-  const totalRevenue = filteredLogs.reduce((sum, log) => sum + log.total_cost, 0);
+  const totalRevenue = filteredLogs.reduce((sum, log) => sum + (log.total_cost ?? 0), 0);
 
   const availableMonths = Array.from(
     new Set(
@@ -533,8 +593,10 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                         <div className="mt-0.5 text-xs text-gray-500">Tach +{log.flight_duration.toFixed(1)}</div>
                       </td>
                       <td className="px-3 py-2 text-right align-top">
-                        <div className="font-semibold text-gray-900">AUD{log.total_cost.toFixed(2)}</div>
-                        <div className="mt-0.5 text-xs text-gray-500">{log.payment_type || 'No payment method'}</div>
+                        {log.xero_linked && log.total_cost !== null ? <>
+                          <div className="font-semibold text-gray-900">AUD{log.total_cost.toFixed(2)}</div>
+                          <div className="mt-0.5 text-xs text-gray-500">{log.payment_type || 'No payment method'}</div>
+                        </> : <div className="text-xs font-semibold text-amber-700">Xero setup required</div>}
                         <div className="mt-1 text-xs text-blue-600 opacity-0 transition-opacity group-hover:opacity-100">
                           Click for actions
                         </div>
@@ -692,7 +754,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                   className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </label>
-              <label className="text-sm font-medium text-gray-700">
+              {editingLog.xero_linked && <label className="text-sm font-medium text-gray-700">
                 Payment Method
                 <input
                   type="text"
@@ -700,7 +762,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
                   onChange={(e) => setEditForm({ ...editForm, payment_type: e.target.value })}
                   className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </label>
+              </label>}
               <label className="text-sm font-medium text-gray-700 md:col-span-2">
                 Observation
                 <textarea

@@ -87,7 +87,7 @@ export const fetchUserPrepaidLedgerBalance = async (userId: string) => {
 
   try {
     const xero = await fetchUserXeroBalance(userId);
-    if (xero.connected) {
+    if (xero.connected && xero.linked !== false) {
       const pendingAndHistory = summarisePrepaidLedger(rows);
       const verifiedBalance = Math.round((Number(xero.availableCredit || 0) + Number.EPSILON) * 100) / 100;
       return {
@@ -129,7 +129,7 @@ export const fetchAllPrepaidLedgerBalances = async () => {
     const xero = await fetchAllMemberXeroBalances();
     if (xero.connected) {
       (xero.balances || []).forEach(balance => {
-        if (!balance.userId) return;
+        if (!balance.userId || balance.linked === false) return;
         const pendingAndHistory = summaries[balance.userId] || zeroSummary([]);
         const verifiedBalance = Math.round((Number(balance.availableCredit || 0) + Number.EPSILON) * 100) / 100;
         summaries[balance.userId] = {

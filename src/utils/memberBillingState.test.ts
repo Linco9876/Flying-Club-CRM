@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getMemberBillingState } from './memberBillingState.ts';
+import {
+  canExposeMemberFinancialInformation,
+  getMemberBillingState,
+} from './memberBillingState.ts';
 
 test('shows billing values only when Xero and the member contact are linked', () => {
   assert.equal(
@@ -25,4 +28,10 @@ test('distinguishes an unavailable Xero connection from a missing member link', 
     getMemberBillingState({ xeroConnected: null, memberLinked: false }),
     'temporarily-unavailable'
   );
+});
+
+test('financial information is exposed only for a linked Xero account', () => {
+  assert.equal(canExposeMemberFinancialInformation('linked'), true);
+  assert.equal(canExposeMemberFinancialInformation('setup-required'), false);
+  assert.equal(canExposeMemberFinancialInformation('temporarily-unavailable'), false);
 });

@@ -626,7 +626,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   }, [fetchStudentExamResults]);
 
   const fetchStudentInvoices = useCallback(async () => {
-    if (!studentId) return;
+    if (!studentId || !student?.xeroContactId) {
+      setStudentInvoices([]);
+      return;
+    }
     setLoadingInvoices(true);
     try {
       const { data, error } = await supabase
@@ -657,7 +660,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     } finally {
       setLoadingInvoices(false);
     }
-  }, [studentId]);
+  }, [student?.xeroContactId, studentId]);
 
   useEffect(() => {
     fetchStudentInvoices();
@@ -1847,7 +1850,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const currencyDecimals = portalSettings.currency_decimals ?? 2;
   const formatCurrency = (amount: number) => `$${amount.toFixed(currencyDecimals)}`;
   const billingAccount = billing.pilotAccounts.find(account => account.userId === student.id);
-  const accountBalance = billingAccount?.balance ?? 0;
+  const accountBalance = billingAccount?.balance ?? null;
   const billingTransactions = billing.transactions
     .filter(transaction => transaction.userId === student.id)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -2316,10 +2319,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   <p className="text-lg font-bold text-orange-600">{formatDecimalTime(totalSoloTime)}</p>
                 </div>
                 
-                <div className="bg-purple-50 p-3 rounded-lg">
-                  <p className="text-xs font-medium text-purple-900">Credit</p>
-                  <p className="text-lg font-bold text-purple-600">{formatCurrency(accountBalance)}</p>
-                </div>
+                {student.xeroContactId && accountBalance !== null && (
+                  <div className="bg-purple-50 p-3 rounded-lg">
+                    <p className="text-xs font-medium text-purple-900">Credit</p>
+                    <p className="text-lg font-bold text-purple-600">{formatCurrency(accountBalance)}</p>
+                  </div>
+                )}
               </div>
               
               {lastFlightDate && (
@@ -2703,13 +2708,25 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         />
       )}
 
-      {activeTab === 'billing' && (
+      {activeTab === 'billing' && (!student.xeroContactId ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+            <div>
+              <h2 className="font-semibold">Xero billing account setup required</h2>
+              <p className="mt-1 text-sm leading-6 text-amber-900">
+                No balances, charges, transactions, invoices or payment actions are shown because this account is not linked to a Xero contact. Link the person in Xero settings before managing their billing.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Credit</p>
-              <p className={`text-2xl font-bold mt-2 ${accountBalance < 0 ? 'text-red-600' : accountBalance <= 0 ? 'text-amber-600' : 'text-gray-900'}`}>
-                {formatCurrency(accountBalance)}
+              <p className={`text-2xl font-bold mt-2 ${(accountBalance ?? 0) < 0 ? 'text-red-600' : (accountBalance ?? 0) <= 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+                {accountBalance === null ? 'Temporarily unavailable' : formatCurrency(accountBalance)}
               </p>
               <p className="text-sm text-gray-500 mt-1">Live member credit from Xero</p>
             </div>
@@ -2951,6 +2968,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             )}
           </div>
         </div>
+      )
       )}
 
       {activeTab === 'safety' && (
