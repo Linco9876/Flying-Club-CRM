@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { TrainingRecord, TrainingSequenceResult } from '../../types';
@@ -15,6 +15,9 @@ import {
   Plane,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { shouldCompactAcknowledgedLesson } from '../../utils/lessonRecordPresentation';
+import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
 
 const competenceColors: Record<string, string> = {
   C: 'bg-green-100 text-green-800 border-green-200',
@@ -64,12 +67,14 @@ const StatusBadge: React.FC<{ status: TrainingRecord['status']; studentAck: bool
 interface RecordRowProps {
   record: TrainingRecord;
   instructorName: string;
+  lessonName: string;
   onAcknowledge: (id: string, name: string, comments: string) => Promise<void>;
 }
 
-const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, onAcknowledge }) => {
+const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, lessonName, onAcknowledge }) => {
   const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
+  const [acknowledgedDetailsExpanded, setAcknowledgedDetailsExpanded] = useState(false);
   const [acknowledging, setAcknowledging] = useState(false);
   const [comments, setComments] = useState(record.studentComments || '');
   const [savingComments, setSavingComments] = useState(false);
@@ -107,12 +112,27 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, onAcknowl
 
   const dualHrs = (record.dualTimeMin / 60).toFixed(1);
   const soloHrs = (record.soloTimeMin / 60).toFixed(1);
+  const detailsOpen = record.studentAck ? acknowledgedDetailsExpanded : expanded;
+
+  if (shouldCompactAcknowledgedLesson(record, acknowledgedDetailsExpanded)) {
+    return (
+      <AcknowledgedLessonSummary
+        record={record}
+        instructorName={instructorName}
+        lessonName={lessonName}
+        onExpand={() => setAcknowledgedDetailsExpanded(true)}
+      />
+    );
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden transition-shadow hover:shadow-md">
       {/* Row header */}
       <button
-        onClick={() => setExpanded(p => !p)}
+        onClick={() => {
+          if (record.studentAck) setAcknowledgedDetailsExpanded(false);
+          else setExpanded(current => !current);
+        }}
         className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
         <div className="flex-shrink-0 h-10 w-10 bg-blue-50 rounded-lg flex items-center justify-center">
@@ -142,7 +162,7 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, onAcknowl
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           <StatusBadge status={record.status} studentAck={record.studentAck} />
-          {expanded ? (
+          {detailsOpen ? (
             <ChevronUp className="h-4 w-4 text-gray-400" />
           ) : (
             <ChevronDown className="h-4 w-4 text-gray-400" />
@@ -150,7 +170,7 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, onAcknowl
         </div>
       </button>
 
-      {expanded && (
+      {detailsOpen && (
         <div className="border-t border-gray-100 px-5 py-5 space-y-5">
           {/* Lesson details grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -271,6 +291,7 @@ const RecordRow: React.FC<RecordRowProps> = ({ record, instructorName, onAcknowl
 
 export const StudentTrainingRecords: React.FC = () => {
   const { user } = useAuth();
+  const { modules } = useTrainingModules();
   const [records, setRecords] = useState<TrainingRecord[]>([]);
   const [instructorNames, setInstructorNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -388,6 +409,13 @@ export const StudentTrainingRecords: React.FC = () => {
   };
 
   const pending = records.filter(r => r.status === 'submitted' && !r.studentAck);
+  const lessonNames = useMemo(() => {
+    const names = new Map<string, string>();
+    modules.forEach(module => module.lessons.forEach(lesson => {
+      names.set(lesson.id, lesson.name || lesson.sequenceTitle || lesson.sequenceCode || 'Lesson not recorded');
+    }));
+    return names;
+  }, [modules]);
   const filtered =
     filter === 'pending' ? pending :
     filter === 'acknowledged' ? records.filter(r => r.studentAck || r.status === 'locked') :
@@ -451,6 +479,7 @@ export const StudentTrainingRecords: React.FC = () => {
               key={record.id}
               record={record}
               instructorName={instructorNames[record.instructorId] || ''}
+              lessonName={(record.lessonId && lessonNames.get(record.lessonId)) || record.lessonCodes.join(', ') || 'Lesson not recorded'}
               onAcknowledge={handleAcknowledge}
             />
           ))}
