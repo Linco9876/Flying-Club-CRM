@@ -10,6 +10,24 @@ This guide describes the operational capabilities of the Bendigo Flying Club (BF
 - Aircraft bookings, flight records, training, instructor duty, senior-instructor supervision, maintenance, safety, billing, Xero and Stripe integrations.
 - A separate lightweight, installable Duty Clock PWA uses the same Supabase duty records. Native APK distribution has been retired.
 
+## Historical student record imports
+
+Authorised instructors, senior instructors and administrators can open a person's Pilot File and use **Import Records** to load historical lesson records or exam results from CSV. The student is selected before the template is downloaded, so names, email addresses and account identifiers are not used to match the import to a person.
+
+Lesson and exam imports use separate templates. The browser accepts Australian or ISO dates and common time formats, validates every row, and asks staff to map historical course, lesson or exam labels to existing portal records. It never silently creates courses, lessons, exams, aircraft or instructors. A server preview repeats the validation and marks exact duplicates before the import button becomes available.
+
+The import operation is atomic and subject to these controls:
+
+- only existing, active students and existing course content can be referenced;
+- one batch is limited to 500 rows and 2 MB, with MFA required above 25 rows;
+- repeated uploads are idempotently skipped using a tenant-local fingerprint plus an existing-record check;
+- the source filename, row number, historical instructor, source organisation, reference, signed-in importer and immutable batch ID remain attached to each record;
+- imported lessons are locked historical records by default and do not create an acknowledgement task unless staff explicitly request one;
+- administrators can undo an entire batch with MFA, while retaining the batch's reversal history; and
+- CSV imports never create bookings or operational flight logs, change aircraft tach/Hobbs time, affect maintenance, create invoices, alter prepaid balances, or invoke Stripe/Xero.
+
+Rows that fail browser or server validation can be downloaded as a corrected CSV with a `problem` column. Spreadsheet-active leading characters are escaped in this error export.
+
 ## Aircraft maintenance and defect control
 
 The Maintenance Board is available to administrators, instructors and senior instructors. It shows the complete defect lifecycle, one-time and recurring maintenance milestones, signed hour/date remaining values, overdue alerts and secure defect attachments. Historic fixed, MEL and deferred defects remain available through the status filters; they are not hidden by the open-defect aircraft query.

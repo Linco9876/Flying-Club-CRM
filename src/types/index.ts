@@ -513,6 +513,13 @@ export interface TrainingRecord {
   flightReviewResult?: 'pass' | 'fail' | 'not_assessed';
   flightReviewNotes?: string;
   pilotRoleGranted?: boolean;
+  recordOrigin?: 'portal' | 'csv_import';
+  importBatchId?: string;
+  importedBy?: string;
+  importSourceRow?: number;
+  sourceInstructorName?: string;
+  sourceOrganisation?: string;
+  sourceReference?: string;
   sequences: TrainingSequenceResult[];
 }
 
@@ -571,6 +578,13 @@ export interface StudentExamResult {
   kdrNotes?: string;
   kdrSignedOffBy?: string;
   kdrSignedOffAt?: Date;
+  recordOrigin?: 'portal' | 'csv_import';
+  importBatchId?: string;
+  importedBy?: string;
+  importSourceRow?: number;
+  sourceInstructorName?: string;
+  sourceOrganisation?: string;
+  sourceReference?: string;
   createdAt: Date;
 }
 

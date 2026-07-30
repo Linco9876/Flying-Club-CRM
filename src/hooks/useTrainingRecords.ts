@@ -152,6 +152,13 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
           flightReviewResult: r.flight_review_result || undefined,
           flightReviewNotes: r.flight_review_notes || undefined,
           pilotRoleGranted: r.pilot_role_granted || false,
+          recordOrigin: r.record_origin || 'portal',
+          importBatchId: r.import_batch_id || undefined,
+          importedBy: r.imported_by || undefined,
+          importSourceRow: r.import_source_row || undefined,
+          sourceInstructorName: r.source_instructor_name || undefined,
+          sourceOrganisation: r.source_organisation || undefined,
+          sourceReference: r.source_reference || undefined,
           sequences: sequenceResultsMap.get(r.id) || []
         };
       });

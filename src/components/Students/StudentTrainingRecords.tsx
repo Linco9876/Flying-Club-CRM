@@ -361,6 +361,13 @@ export const StudentTrainingRecords: React.FC = () => {
         studentAckTimestamp: r.student_ack_timestamp ? new Date(r.student_ack_timestamp) : undefined,
         attachments: r.attachments || [],
         auditLog: [],
+        recordOrigin: r.record_origin || 'portal',
+        importBatchId: r.import_batch_id || undefined,
+        importedBy: r.imported_by || undefined,
+        importSourceRow: r.import_source_row || undefined,
+        sourceInstructorName: r.source_instructor_name || undefined,
+        sourceOrganisation: r.source_organisation || undefined,
+        sourceReference: r.source_reference || undefined,
         sequences: seqMap.get(r.id) || [],
       }));
 
@@ -478,7 +485,7 @@ export const StudentTrainingRecords: React.FC = () => {
             <RecordRow
               key={record.id}
               record={record}
-              instructorName={instructorNames[record.instructorId] || ''}
+              instructorName={record.sourceInstructorName || instructorNames[record.instructorId] || ''}
               lessonName={(record.lessonId && lessonNames.get(record.lessonId)) || record.lessonCodes.join(', ') || 'Lesson not recorded'}
               onAcknowledge={handleAcknowledge}
             />
