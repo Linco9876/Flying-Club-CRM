@@ -32,6 +32,7 @@ import { FlightReviewsTab } from './FlightReviewsTab';
 import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
 import { shouldCompactAcknowledgedLesson } from '../../utils/lessonRecordPresentation';
 import { formatBillingDescription } from '../../utils/billingDescription';
+import { StudentRecordImportModal } from './StudentRecordImportModal';
 
 interface StudentInfoForm {
   name: string;
@@ -364,6 +365,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const [aircraftFilter, setAircraftFilter] = useState('');
   const [instructorFilter, setInstructorFilter] = useState('');
   const [showInfoEditor, setShowInfoEditor] = useState(false);
+  const [showRecordImporter, setShowRecordImporter] = useState(false);
   const [savingInfo, setSavingInfo] = useState(false);
   const [infoForm, setInfoForm] = useState<StudentInfoForm>({
     name: '',
@@ -615,6 +617,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         kdrNotes: row.kdr_notes || '',
         kdrSignedOffBy: row.kdr_signed_off_by || undefined,
         kdrSignedOffAt: row.kdr_signed_off_at ? new Date(row.kdr_signed_off_at) : undefined,
+        recordOrigin: row.record_origin || 'portal',
+        importBatchId: row.import_batch_id || undefined,
+        importedBy: row.imported_by || undefined,
+        importSourceRow: row.import_source_row || undefined,
+        sourceInstructorName: row.source_instructor_name || undefined,
+        sourceOrganisation: row.source_organisation || undefined,
+        sourceReference: row.source_reference || undefined,
         createdAt: row.created_at ? new Date(row.created_at) : new Date(),
       })));
     } catch (error) {
@@ -1961,7 +1970,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       title,
       description: [
         course?.title,
-        instructor?.name ? `Instructor: ${instructor.name}` : null,
+        record.sourceInstructorName || instructor?.name ? `Instructor: ${record.sourceInstructorName || instructor?.name}` : null,
         `${record.registration || 'No aircraft'}${record.aircraftType ? ` (${record.aircraftType})` : ''}`,
         recordMinutes > 0 ? `${formatDecimalTime(recordMinutes)} hrs` : null,
       ].filter(Boolean).join(' | '),
@@ -1978,7 +1987,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         date: record.instructorSignTimestamp,
         title: `Lesson record added: ${title}`,
         description: [
-          instructor?.name ? `Added by ${instructor.name}` : 'Added by instructor',
+          record.recordOrigin === 'csv_import'
+            ? `Imported from ${record.sourceOrganisation || 'historical records'}`
+            : instructor?.name ? `Added by ${instructor.name}` : 'Added by instructor',
           course?.title,
           record.registration || null,
         ].filter(Boolean).join(' | '),
@@ -2127,6 +2138,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
+        {canAddRecord && (
+          <button
+            type="button"
+            onClick={() => setShowRecordImporter(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-white/30 bg-white/10 px-4 py-2 text-white transition-colors hover:bg-white/20"
+          >
+            <Upload className="h-4 w-4" />
+            Import Records
+          </button>
+        )}
         {canEditStudentInfo && (
           <button
             onClick={openInfoEditor}
@@ -2453,7 +2474,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                               {record.date.toLocaleDateString()} - {record.registration}
                             </p>
                             <p className="text-xs text-gray-600">
-                              {instructor?.name || 'Unknown'} | {formatDecimalTime(record.dualTimeMin + record.soloTimeMin)}h
+                              {record.sourceInstructorName || instructor?.name || 'Unknown'} | {formatDecimalTime(record.dualTimeMin + record.soloTimeMin)}h
                             </p>
                           </div>
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
@@ -2641,8 +2662,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         <div>
                           <p className="font-semibold text-gray-900">{result.examName}</p>
                           <p className="text-xs text-gray-500 mt-1">
-                            {course?.title || 'Course not recorded'} · {result.examDate.toLocaleDateString()} · logged by {instructor?.name || 'Unknown'}
+                            {course?.title || 'Course not recorded'} · {result.examDate.toLocaleDateString()} · {result.recordOrigin === 'csv_import' ? 'historical instructor' : 'logged by'} {result.sourceInstructorName || instructor?.name || 'Unknown'}
                           </p>
+                          {result.recordOrigin === 'csv_import' && (
+                            <p className="mt-1 text-xs font-medium text-blue-700">
+                              Imported record{result.sourceOrganisation ? ` · ${result.sourceOrganisation}` : ''}{result.sourceReference ? ` · Ref ${result.sourceReference}` : ''}
+                            </p>
+                          )}
                         </div>
                         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${result.result === 'pass' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'}`}>
                           {result.result === 'pass' ? 'Pass' : 'Fail'} {result.score}% / {result.passMark}%
@@ -3454,7 +3480,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                                     <div>
                                       <p className="text-sm font-semibold text-gray-900">{lessonLabel}</p>
                                       <p className="mt-0.5 text-xs text-gray-500">
-                                        {formatBookingDateTime(record)} | {record.registration || 'No aircraft'} | {instructor?.name || 'Unknown instructor'}
+                                        {formatBookingDateTime(record)} | {record.registration || 'No aircraft'} | {record.sourceInstructorName || instructor?.name || 'Unknown instructor'}
                                       </p>
                                     </div>
                                     {summary ? (
@@ -3574,7 +3600,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                                     {formatBookingDateTime(record)}
                                   </td>
                                   <td className="sticky left-20 z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap max-w-[110px] truncate">
-                                    {instructor?.name || 'Unknown'}
+                                    {record.sourceInstructorName || instructor?.name || 'Unknown'}
                                   </td>
                                   <td className="sticky left-[186px] z-10 bg-white px-3 py-2.5 text-xs text-gray-800 border-r border-gray-200 whitespace-nowrap">
                                     {record.registration || record.aircraftType}
@@ -3615,7 +3641,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         <AcknowledgedLessonSummary
                           key={record.id}
                           record={record}
-                          instructorName={instructor?.name}
+                          instructorName={record.sourceInstructorName || instructor?.name}
                           lessonName={lessonTitle}
                           onExpand={() => setAcknowledgedRecordExpanded(record.id, true)}
                         />
@@ -3644,6 +3670,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                                 <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
                                   {record.status}
                                 </span>
+                                {record.recordOrigin === 'csv_import' && (
+                                  <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                    Imported record
+                                  </span>
+                                )}
                                 {record.isFlightReview && (
                                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
                                     record.flightReviewResult === 'pass'
@@ -3667,9 +3698,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                                 </span>
                                 <span className="inline-flex items-center gap-1.5">
                                   <User className="h-4 w-4 text-gray-400" />
-                                  {instructor?.name || 'Unknown instructor'}
+                                  {record.sourceInstructorName || instructor?.name || 'Unknown instructor'}
                                 </span>
                               </div>
+                              {record.recordOrigin === 'csv_import' && (record.sourceOrganisation || record.sourceReference) && (
+                                <p className="mt-2 text-xs text-gray-500">
+                                  Source: {record.sourceOrganisation || 'Historical records'}{record.sourceReference ? ` · Reference ${record.sourceReference}` : ''}
+                                </p>
+                              )}
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                               {record.studentAck && (
@@ -4426,6 +4462,19 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             </div>
           </div>
         </div>
+      )}
+
+      {showRecordImporter && student && (
+        <StudentRecordImportModal
+          studentId={student.id}
+          studentName={student.name}
+          courses={trainingCourses}
+          isAdmin={hasAnyRole(user, ['admin'])}
+          onClose={() => setShowRecordImporter(false)}
+          onImported={async () => {
+            await Promise.all([refetchTrainingRecords(), fetchStudentExamResults()]);
+          }}
+        />
       )}
 
       {showInfoEditor && (
