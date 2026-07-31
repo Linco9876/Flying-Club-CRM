@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { publicSupabaseKey, publicSupabaseUrl, supabase } from '../lib/supabase';
 import { Student, Endorsement, Licence, UserRole } from '../types';
 import toast from 'react-hot-toast';
@@ -20,14 +20,24 @@ const isSchemaCacheError = (error: unknown) => {
 
 interface UseStudentsOptions {
   participateInPageLoad?: boolean;
+  scopeStudentId?: string;
 }
 
 let studentsCache: Student[] | null = null;
 
 export const useStudents = (options?: UseStudentsOptions) => {
   const participateInPageLoad = options?.participateInPageLoad ?? true;
-  const [students, setStudents] = useState<Student[]>(() => studentsCache || []);
-  const [loading, setLoading] = useState(() => !studentsCache);
+  const scopeStudentId = options?.scopeStudentId;
+  const [students, setStudents] = useState<Student[]>(() =>
+    scopeStudentId
+      ? (studentsCache || []).filter(student => student.id === scopeStudentId)
+      : studentsCache || []
+  );
+  const [loading, setLoading] = useState(() =>
+    scopeStudentId
+      ? !studentsCache?.some(student => student.id === scopeStudentId)
+      : !studentsCache
+  );
   const [error, setError] = useState<string | null>(null);
   usePageLoadState(
     participateInPageLoad && loading,
@@ -66,18 +76,31 @@ export const useStudents = (options?: UseStudentsOptions) => {
     return result;
   };
 
-  const fetchStudents = async () => {
+  const fetchStudents = useCallback(async () => {
     try {
-      if (!studentsCache) {
+      if (!studentsCache || (scopeStudentId && !studentsCache.some(student => student.id === scopeStudentId))) {
         setLoading(true);
       }
 
+      let usersQuery = supabase.from('users').select('*');
+      let studentsQuery = supabase.from('students').select('*');
+      let endorsementsQuery = supabase.from('endorsements').select('*');
+      let licencesQuery = supabase.from('licences').select('*');
+      let rolesQuery = supabase.from('user_roles').select('user_id, role');
+      if (scopeStudentId) {
+        usersQuery = usersQuery.eq('id', scopeStudentId);
+        studentsQuery = studentsQuery.eq('id', scopeStudentId);
+        endorsementsQuery = endorsementsQuery.eq('student_id', scopeStudentId);
+        licencesQuery = licencesQuery.eq('student_id', scopeStudentId);
+        rolesQuery = rolesQuery.eq('user_id', scopeStudentId);
+      }
+
       const [usersResult, studentsResult, endorsementsResult, licencesResult, rolesResult] = await Promise.all([
-        supabase.from('users').select('*'),
-        supabase.from('students').select('*'),
-        supabase.from('endorsements').select('*'),
-        supabase.from('licences').select('*'),
-        supabase.from('user_roles').select('user_id, role')
+        usersQuery,
+        studentsQuery,
+        endorsementsQuery,
+        licencesQuery,
+        rolesQuery
       ]);
 
       const { data: usersData, error: usersError } = usersResult;
@@ -195,17 +218,28 @@ export const useStudents = (options?: UseStudentsOptions) => {
         };
       });
 
-      studentsCache = combinedStudents;
+      if (scopeStudentId) {
+        if (studentsCache) {
+          const nextStudent = combinedStudents[0];
+          if (nextStudent) {
+            studentsCache = studentsCache.some(existing => existing.id === nextStudent.id)
+              ? studentsCache.map(existing => existing.id === nextStudent.id ? nextStudent : existing)
+              : [...studentsCache, nextStudent];
+          }
+        }
+      } else {
+        studentsCache = combinedStudents;
+      }
       setStudents(combinedStudents);
       setError(null);
     } catch (err) {
       console.error('Error fetching students:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch students');
-      toast.error('Failed to load students');
+      toast.error(scopeStudentId ? 'Failed to load member profile' : 'Failed to load students');
     } finally {
       setLoading(false);
     }
-  };
+  }, [scopeStudentId]);
 
   const addStudent = async (studentData: Omit<Student, 'id'>) => {
     try {
@@ -606,8 +640,8 @@ export const useStudents = (options?: UseStudentsOptions) => {
   };
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    void fetchStudents();
+  }, [fetchStudents]);
 
   return {
     students,

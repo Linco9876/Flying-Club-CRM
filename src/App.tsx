@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, useParams, Navigate } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { RouteGuard } from './components/Layout/RouteGuard';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -22,6 +22,8 @@ import { getSupabaseFunctionErrorMessage } from './lib/supabaseFunctionErrors';
 import { Plane } from 'lucide-react';
 import { MfaGate } from './components/Auth/MfaSecurity';
 import { FinancialProviderProvider } from './context/FinancialProviderContext';
+import { StudentProfileSkeleton } from './components/Students/StudentProfileSkeleton';
+import { loadStudentProfileModule } from './components/Students/studentProfileLoader';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
 const MembershipJoinPage = lazy(() => import('./components/Auth/MembershipJoinPage').then(module => ({ default: module.MembershipJoinPage })));
@@ -30,7 +32,7 @@ const BookingForm = lazy(() => import('./components/Bookings/BookingForm'));
 const ProfileDashboard = lazy(() => import('./components/Profile/ProfileDashboard').then(module => ({ default: module.ProfileDashboard })));
 const Calendar = lazy(() => import('./components/Calendar/Calendar').then(module => ({ default: module.Calendar })));
 const StudentList = lazy(() => import('./components/Students/StudentList').then(module => ({ default: module.StudentList })));
-const StudentProfilePage = lazy(() => import('./components/Students/StudentProfilePage').then(module => ({ default: module.StudentProfilePage })));
+const StudentProfilePage = lazy(() => loadStudentProfileModule().then(module => ({ default: module.StudentProfilePage })));
 const MyLogbookPage = lazy(() => import('./components/Students/MyLogbookPage').then(module => ({ default: module.MyLogbookPage })));
 const AircraftList = lazy(() => import('./components/Aircraft/AircraftList').then(module => ({ default: module.AircraftList })));
 const AircraftFlightLogs = lazy(() => import('./components/Aircraft/AircraftFlightLogs').then(module => ({ default: module.AircraftFlightLogs })));
@@ -161,6 +163,26 @@ const PortalBootScreen = ({
 );
 
 const PageLoader = () => <PortalSectionLoader />;
+
+const StudentProfileScreen: React.FC<{ portalSection?: 'training' | 'documents' }> = ({ portalSection }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { studentId } = useParams<{ studentId: string }>();
+  const preview = (location.state as { studentPreview?: { id?: string; name?: string } } | null)?.studentPreview;
+
+  return (
+    <Suspense
+      fallback={(
+        <StudentProfileSkeleton
+          studentName={preview?.id === studentId ? preview?.name : undefined}
+          onBack={studentId ? () => navigate('/students') : undefined}
+        />
+      )}
+    >
+      <StudentProfilePage key={studentId || portalSection || 'own-profile'} portalSection={portalSection} />
+    </Suspense>
+  );
+};
 
 const OverdueTrainingRecordsLoginAlert = () => {
   const { user } = useAuth();
@@ -1067,15 +1089,15 @@ const AuthenticatedApp: React.FC<{
         return <SafetyDashboard />;
       case 'training':
         if (user?.role === 'student' || user?.role === 'pilot') {
-          return <StudentProfilePage portalSection="training" />;
+          return <StudentProfileScreen portalSection="training" />;
         }
         return <TrainingWorkspacePage />;
       case 'learning-centre':
         return <LearningCentreDashboard />;
       case 'pilot-file':
-        return <StudentProfilePage portalSection="training" />;
+        return <StudentProfileScreen portalSection="training" />;
       case 'documents':
-        return <StudentProfilePage portalSection="documents" />;
+        return <StudentProfileScreen portalSection="documents" />;
       case 'outstanding-records':
         return <OutstandingRecordsTab />;
       case 'syllabus-management':
@@ -1099,7 +1121,7 @@ const AuthenticatedApp: React.FC<{
       <Route path="/students/:studentId" element={
         <RouteGuard requiredAction="view-students">
           <AppShell activeSidebarView="students" onViewChange={handleViewChange} backgroundColor={backgroundColor}>
-            <StudentProfilePage />
+            <StudentProfileScreen />
           </AppShell>
         </RouteGuard>
       } />

@@ -36,6 +36,12 @@ The import operation is atomic and subject to these controls:
 
 Rows that fail browser or server validation can be downloaded as a corrected CSV with a `problem` column. Spreadsheet-active leading characters are escaped in this error export.
 
+## Pilot file loading and resilience
+
+Opening a student Pilot File fetches only that selected member's profile, student details, roles, licences and endorsements. It does not download the entire member directory. The profile code is prefetched while the member list is idle and again when a member row receives pointer or keyboard focus, so the transition normally begins before the user clicks.
+
+A layout-matched, accessible loading shell appears immediately and keeps the Back control usable. Once identity data is available, the real header and tabs render while training totals and course progress continue loading in their own reserved areas. The portal never presents temporary zero-hours or “No training records” messages as if loading were complete. Safety reports, exam results, billing data and payment settings are requested only when their relevant tab needs them. A failed member request remains on the Pilot File route and offers an explicit retry instead of unexpectedly returning the user to the member list.
+
 ## Aircraft maintenance and defect control
 
 The Maintenance Board is available to administrators, instructors and senior instructors. It shows the complete defect lifecycle, one-time and recurring maintenance milestones, signed hour/date remaining values, overdue alerts and secure defect attachments. Historic fixed, MEL and deferred defects remain available through the status filters; they are not hidden by the open-defect aircraft query.
