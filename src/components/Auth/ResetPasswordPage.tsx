@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { Plane, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { clearPasswordSetupMarker, hasRecentPasswordSetupMarker } from '../../utils/invitationSetup';
 
 const PASSWORD_RESET_RETURN_KEY = 'bfc_password_reset_return_to';
 
@@ -49,6 +50,7 @@ export const ResetPasswordPage: React.FC = () => {
     const code = searchParams.get('code') || hashParams.get('code');
     const linkType = hashParams.get('type') || searchParams.get('type');
     const passwordSetupType = linkType === 'recovery' || linkType === 'invite';
+    const hasPasswordSetupIntent = passwordSetupType || hasRecentPasswordSetupMarker();
     const isNonPasswordVerification = Boolean(linkType && !passwordSetupType);
     const hasRecoveryLink = passwordSetupType || Boolean((accessToken && refreshToken) || code);
 
@@ -105,7 +107,7 @@ export const ResetPasswordPage: React.FC = () => {
       }
 
       if (!hasRecoveryLink) {
-        if (passwordSetupType && await markExistingSessionValid()) return true;
+        if (hasPasswordSetupIntent && await markExistingSessionValid()) return true;
         setVerificationMessage('This reset link is missing recovery details.');
         return false;
       }
@@ -119,7 +121,7 @@ export const ResetPasswordPage: React.FC = () => {
         });
 
         if (error) {
-          if (passwordSetupType && await markExistingSessionValid()) return true;
+          if (hasPasswordSetupIntent && await markExistingSessionValid()) return true;
           throw error;
         }
 
@@ -133,7 +135,7 @@ export const ResetPasswordPage: React.FC = () => {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
         if (error) {
-          if (passwordSetupType && await markExistingSessionValid()) return true;
+          if (hasPasswordSetupIntent && await markExistingSessionValid()) return true;
           throw error;
         }
 
@@ -143,7 +145,7 @@ export const ResetPasswordPage: React.FC = () => {
         }
       }
 
-      return passwordSetupType ? markExistingSessionValid() : false;
+      return hasPasswordSetupIntent ? markExistingSessionValid() : false;
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -175,7 +177,7 @@ export const ResetPasswordPage: React.FC = () => {
     }).catch((error) => {
       console.error('Password recovery session error:', error);
       if (!cancelled && !recoveryConfirmed) {
-        const sessionFallback = passwordSetupType ? markExistingSessionValid() : Promise.resolve(false);
+        const sessionFallback = hasPasswordSetupIntent ? markExistingSessionValid() : Promise.resolve(false);
 
         sessionFallback.then((hasSession) => {
           if (!hasSession && !cancelled) {
@@ -195,7 +197,7 @@ export const ResetPasswordPage: React.FC = () => {
       if (cancelled || recoveryConfirmed) return;
 
       try {
-        if (passwordSetupType && await markExistingSessionValid()) return;
+        if (hasPasswordSetupIntent && await markExistingSessionValid()) return;
       } catch (error) {
         console.error('Password recovery timeout session check failed:', error);
       }
@@ -303,6 +305,7 @@ export const ResetPasswordPage: React.FC = () => {
 
       if (error) throw error;
 
+      clearPasswordSetupMarker();
       await markTrialVoucherPasswordSet();
       const redirect = await getPostResetRedirect();
       toast.success(redirect.keepSignedIn ? 'Password updated. Opening your voucher booking page...' : 'Password updated successfully! Redirecting to login...');
@@ -321,6 +324,7 @@ export const ResetPasswordPage: React.FC = () => {
       const message = error.message || 'Failed to update password';
 
       if (message.toLowerCase().includes('same as the old')) {
+        clearPasswordSetupMarker();
         await markTrialVoucherPasswordSet();
         const redirect = await getPostResetRedirect();
         toast.success(redirect.keepSignedIn ? 'That password is already current. Opening your voucher booking page...' : 'That password is already current for this account. Redirecting to login...');

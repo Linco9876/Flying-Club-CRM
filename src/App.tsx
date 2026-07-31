@@ -26,6 +26,7 @@ import { StudentProfileSkeleton } from './components/Students/StudentProfileSkel
 import { loadStudentProfileModule } from './components/Students/studentProfileLoader';
 
 const ResetPasswordPage = lazy(() => import('./components/Auth/ResetPasswordPage').then(module => ({ default: module.ResetPasswordPage })));
+const AcceptInvitationPage = lazy(() => import('./components/Auth/AcceptInvitationPage').then(module => ({ default: module.AcceptInvitationPage })));
 const MembershipJoinPage = lazy(() => import('./components/Auth/MembershipJoinPage').then(module => ({ default: module.MembershipJoinPage })));
 const PrivacyNoticePage = lazy(() => import('./components/Legal/PrivacyNoticePage'));
 const BookingForm = lazy(() => import('./components/Bookings/BookingForm'));
@@ -382,6 +383,16 @@ const AppContent: React.FC = () => {
       <PageLoadGate routeKey="privacy">
         <Suspense fallback={<PageLoader />}>
           <PrivacyNoticePage />
+        </Suspense>
+      </PageLoadGate>
+    );
+  }
+
+  if (normalisedPathname === '/accept-invitation') {
+    return (
+      <PageLoadGate routeKey="accept-invitation">
+        <Suspense fallback={<PageLoader />}>
+          <AcceptInvitationPage />
         </Suspense>
       </PageLoadGate>
     );
@@ -1115,6 +1126,7 @@ const AuthenticatedApp: React.FC<{
 
   return (
     <Routes>
+      <Route path="/accept-invitation" element={<Suspense fallback={<PageLoader />}><AcceptInvitationPage /></Suspense>} />
       <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense>} />
       <Route path="/trial-flight-voucher" element={<Suspense fallback={<PageLoader />}><TrialVoucherRedeemPage /></Suspense>} />
       <Route path="/trial-flight-gift-vouchers" element={<Suspense fallback={<PageLoader />}><TrialVoucherSalesPage /></Suspense>} />
