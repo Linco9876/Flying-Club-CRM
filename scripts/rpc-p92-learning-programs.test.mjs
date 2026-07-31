@@ -7,6 +7,14 @@ const quizHardeningMigration = readFileSync(
   new URL('../supabase/migrations/20260729233000_harden_learning_quiz_validation.sql', import.meta.url),
   'utf8',
 );
+const readableLessonNamesMigration = readFileSync(
+  new URL('../supabase/migrations/20260731160000_make_rpc_lesson_names_readable.sql', import.meta.url),
+  'utf8',
+);
+const trainingCourseCatalog = readFileSync(
+  new URL('../src/components/Training/TrainingCourseCatalog.tsx', import.meta.url),
+  'utf8',
+);
 
 test('provides one substantial P92 program for every live RPC course lesson', () => {
   assert.equal(manifest.length, 19);
@@ -42,4 +50,26 @@ test('enforces server-side enrolment, ordering and quiz grading', () => {
   assert.match(migration, /auto_enrol_from_lesson_links/);
   assert.match(quizHardeningMigration, /Answer every required question before submitting/);
   assert.match(quizHardeningMigration, /v_question_type = 'multiple_choice'/);
+});
+
+test('gives every RPC syllabus code a stable plain-English lesson name', () => {
+  assert.equal(manifest.length, 19);
+  for (const lesson of manifest) {
+    assert.notEqual(lesson.title.trim().toLowerCase(), lesson.code.trim().toLowerCase());
+    assert.ok(lesson.title.trim().split(/\s+/).length >= 2, `${lesson.code} needs a descriptive lesson title`);
+    const escapedCode = lesson.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(
+      readableLessonNamesMigration,
+      new RegExp(`\\('${escapedCode}',\\s*'[^']{5,}'\\)`),
+      `${lesson.code} is missing from the readable-name migration`,
+    );
+  }
+  assert.match(readableLessonNamesMigration, /set name = v_mapping\.title,\s+sequence_title = v_mapping\.title/);
+  assert.match(readableLessonNamesMigration, /set lesson_column_title = v_mapping\.title/);
+  assert.match(readableLessonNamesMigration, /Expected exactly one RPC lesson for code/);
+  assert.doesNotMatch(
+    trainingCourseCatalog,
+    /truncate text-sm font-semibold[^>]*>\{lesson\.name \|\| lesson\.sequenceTitle\}/,
+    'lesson navigation must not visually cut off the readable title',
+  );
 });

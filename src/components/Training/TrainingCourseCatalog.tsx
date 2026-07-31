@@ -1131,7 +1131,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                   }`}
                 >
                   <span className="block text-xs font-semibold opacity-80">{index + 1}. {lesson.sequenceCode || 'Lesson'}</span>
-                  <span className="mt-0.5 block truncate text-sm font-semibold">{lesson.name || lesson.sequenceTitle}</span>
+                  <span className="mt-0.5 block break-words text-sm font-semibold">{lesson.name || lesson.sequenceTitle}</span>
                   <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                     isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
                   }`}>
@@ -1350,7 +1350,7 @@ const CourseMatrixPanel: React.FC<CourseMatrixPanelProps> = ({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-500">{index + 1}. {lesson.sequenceCode || 'Lesson'}</p>
-                      <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">{lesson.name || lesson.sequenceTitle}</p>
+                      <p className="mt-0.5 break-words text-sm font-semibold text-slate-900">{lesson.name || lesson.sequenceTitle}</p>
                     </div>
                     <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
                       {lessonRequirements.length}
