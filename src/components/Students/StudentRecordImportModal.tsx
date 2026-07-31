@@ -565,6 +565,9 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     <p className="mt-1 text-sm text-blue-800">
                       The file is tied to {studentName} and the selected course version. Existing data exports in the same format and can be safely re-imported.
                     </p>
+                    <p className="mt-2 text-sm font-medium text-blue-900">
+                      Fill in the completed rows—the portal detects them automatically. Enter Skip in Include only when you want to omit a filled row.
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -600,7 +603,8 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                   <summary className="cursor-pointer font-medium">Formatting help and examples</summary>
                   {recordType === 'lesson' ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
-                      <li>Change Include to Yes only on rows you want imported.</li>
+                      <li>Completed rows are detected automatically. Include may also be Yes, X, Completed or Done.</li>
+                      <li>Enter Skip in Include to deliberately omit a filled row.</li>
                       <li>Give each row a unique record reference, such as an old lesson or logbook number.</li>
                       <li>Dates may be DD/MM/YYYY or YYYY-MM-DD.</li>
                       <li>Times may be 1.25 hours, 1:15, or 75m.</li>
@@ -609,7 +613,8 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     </ul>
                   ) : (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
-                      <li>Change Include to Yes only on rows you want imported.</li>
+                      <li>Completed rows are detected automatically. Include may also be Yes, X, Completed or Done.</li>
+                      <li>Enter Skip in Include to deliberately omit a filled row.</li>
                       <li>Give each result a unique record reference.</li>
                       <li>Scores and pass marks are percentages between 0 and 100.</li>
                       <li>Use Yes or No for KDR completed.</li>
@@ -704,7 +709,9 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                 <section className="rounded-xl border border-red-200 bg-red-50 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="font-semibold text-red-950">{validation.errors.length} row{validation.errors.length === 1 ? '' : 's'} need attention</h3>
+                      <h3 className="font-semibold text-red-950">
+                        {validation.errors.length} row{validation.errors.length === 1 ? ' needs' : 's need'} attention
+                      </h3>
                       <p className="text-sm text-red-800">Correct these before the server preview can run.</p>
                     </div>
                     <button type="button" onClick={downloadRejected} className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700">

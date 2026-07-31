@@ -370,11 +370,22 @@ export const createRejectedRowsCsv = (
   parsed: CsvParseResult,
   rowErrors: Array<{ sourceRow: number; messages: string[] }>,
 ) => {
-  const messages = new Map(rowErrors.map(error => [error.sourceRow, error.messages.join(' ')]));
+  const fileMessages = rowErrors
+    .filter(error => error.sourceRow <= 1)
+    .flatMap(error => error.messages);
+  const messages = new Map(
+    rowErrors
+      .filter(error => error.sourceRow > 1)
+      .map(error => [error.sourceRow, error.messages.join(' ')]),
+  );
   const lines = [[...parsed.headers, 'problem'].map(csvCell).join(',')];
-  for (const row of parsed.rows) {
-    const message = messages.get(row.sourceRow);
-    if (!message) continue;
+  for (const [index, row] of parsed.rows.entries()) {
+    const rowMessage = messages.get(row.sourceRow);
+    if (!rowMessage && fileMessages.length === 0) continue;
+    const message = [
+      ...(index === 0 ? fileMessages : []),
+      ...(rowMessage ? [rowMessage] : []),
+    ].join(' ');
     lines.push([...parsed.headers.map(header => row.values[header] || ''), message].map(csvCell).join(','));
   }
   return `${lines.join('\r\n')}\r\n`;

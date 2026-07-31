@@ -70,8 +70,9 @@ const normaliseColumnPart = (value: string) => value
   .replace(/[^a-z0-9]+/g, '_')
   .replace(/^_+|_+$/g, '') || 'code';
 
-const yesValues = new Set(['yes', 'y', 'true', '1']);
+const yesValues = new Set(['yes', 'y', 'true', '1', 'x', 'include', 'included', 'complete', 'completed', 'done', 'checked', '✓']);
 const noValues = new Set(['no', 'n', 'false', '0', '']);
+const skipValues = new Set(['skip', 'exclude', 'excluded']);
 
 const escapeFilename = (value: string) => value
   .trim()
@@ -143,7 +144,7 @@ export const getCourseStudentRecordTemplate = (
   competencies: CourseCompetencyDefinition[],
 ) => {
   const common = {
-    include: 'No',
+    include: '',
     student_portal_id: identity.studentId,
     student_name: identity.studentName,
     course: identity.course.title,
@@ -223,18 +224,52 @@ export const validateCourseStudentRecordCsv = (
     };
   }
 
+  const completionFields = type === 'lesson'
+    ? [
+        'record_reference',
+        'date',
+        'aircraft_registration',
+        'aircraft_type',
+        'dual_time',
+        'solo_time',
+        'instructor_name',
+        'source_organisation',
+        'comments',
+        'formal_briefing',
+        'next_lesson',
+        'student_acknowledged',
+        ...competencies.flatMap(competency => [competency.column, competency.commentsColumn]),
+      ]
+    : [
+        'record_reference',
+        'exam_date',
+        'score_percent',
+        'instructor_name',
+        'source_organisation',
+        'notes',
+        'kdr_completed',
+      ];
   const includedRows = parsed.rows.filter(row => {
     if (!parsed.headers.includes('include')) return true;
     const value = normaliseLookup(row.values.include || '');
+    const hasCompletedDetails = completionFields.some(field => Boolean((row.values[field] || '').trim()));
+    if (skipValues.has(value)) return false;
     if (yesValues.has(value)) return true;
+    // Older templates filled this cell with "No". If the user has entered
+    // record details, those details are a clearer signal than the untouched
+    // template default. "Skip" remains available for an intentional exclusion.
+    if (noValues.has(value) && hasCompletedDetails) return true;
     if (!noValues.has(value)) {
-      mergeRowError(metadataErrors, row.sourceRow, 'Include must be Yes or No.');
+      mergeRowError(metadataErrors, row.sourceRow, 'Include must be Yes, No, or Skip.');
     }
     return false;
   });
 
   if (includedRows.length === 0 && metadataErrors.length === 0) {
-    metadataErrors.push({ sourceRow: 1, messages: ['Mark Include as Yes for at least one completed row.'] });
+    metadataErrors.push({
+      sourceRow: 1,
+      messages: ['Fill in at least one completed row or mark Include as Yes. Use Skip to omit a filled row.'],
+    });
   }
 
   const prepared: CsvParseResult = {
