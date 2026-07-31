@@ -222,7 +222,12 @@ export const Calendar: React.FC<CalendarProps> = ({
     let cancelled = false;
 
     const fetchPublicInstructorDirectory = async () => {
-      if (!isLimitedCalendarUser) {
+      // Kiosk sessions intentionally run at AAL1 so a shared device does not
+      // repeatedly prompt for an administrator's MFA. Their general users
+      // query can therefore be limited to the kiosk owner. Use the restricted
+      // calendar directory in kiosk mode as well so every active instructor is
+      // available without exposing the wider member directory.
+      if (!isLimitedCalendarUser && !isKioskMode) {
         setPublicInstructorDirectory([]);
         return;
       }
@@ -269,7 +274,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isLimitedCalendarUser]);
+  }, [isKioskMode, isLimitedCalendarUser]);
   const { settings: calendarSettings, loading: calendarSettingsLoading } = useCalendarSettings();
   const { preferences: userPreferences, loading: userPreferencesLoading, updatePreferencesSilent } = useUserPreferences(user?.id || '');
   const { settings: organisationSettings, loading: organisationSettingsLoading } = useOrganisationSettings();
