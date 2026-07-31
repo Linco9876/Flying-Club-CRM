@@ -18,6 +18,7 @@ import {
   createRejectedRowsCsv,
   type CsvParseResult,
   formatLessonLabel,
+  getImportWorkflowPresentation,
   type ImportMappingState,
   parseCsv,
   withUtf8CsvBom,
@@ -661,6 +662,15 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     && validation.errors.length === 0
     && !hasMappingWork,
   );
+  const localReadyRows = validation?.rows.length || 0;
+  const importPresentation = getImportWorkflowPresentation({
+    localReadyRows,
+    previewComplete: Boolean(serverPreview),
+    serverCanImport: Boolean(serverPreview?.can_import),
+    serverReadyRows: serverPreview?.ready_rows || 0,
+    duplicateRows: serverPreview?.duplicate_rows || 0,
+    errorRows: serverPreview?.error_rows || 0,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-slate-950/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="student-import-title" aria-describedby="student-import-description">
@@ -924,16 +934,31 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                 </label>
               )}
 
+              {canPreview && !serverPreview && (
+                <section className="rounded-xl border border-blue-200 bg-blue-50 p-4" role="status">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-blue-700" />
+                    <div>
+                      <h3 className="font-semibold text-blue-950">{importPresentation.title}</h3>
+                      <p className="mt-1 text-sm text-blue-800">{importPresentation.detail}</p>
+                    </div>
+                  </div>
+                </section>
+              )}
+
               {serverPreview && (
-                <section className={`rounded-xl border p-4 ${serverPreview.can_import ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                <section className={`rounded-xl border p-4 ${serverPreview.can_import ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`} role="status">
                   <div className="flex items-start gap-3">
                     {serverPreview.can_import ? <CheckCircle2 className="h-6 w-6 text-emerald-600" /> : <AlertTriangle className="h-6 w-6 text-red-600" />}
                     <div>
                       <h3 className={`font-semibold ${serverPreview.can_import ? 'text-emerald-950' : 'text-red-950'}`}>
-                        {serverPreview.can_import ? 'Server validation passed' : 'Server validation found a problem'}
+                        {importPresentation.title}
                       </h3>
                       <p className={`mt-1 text-sm ${serverPreview.can_import ? 'text-emerald-800' : 'text-red-800'}`}>
-                        {serverPreview.ready_rows || 0} ready · {serverPreview.duplicate_rows} duplicate{serverPreview.duplicate_rows === 1 ? '' : 's'} will be skipped · {serverPreview.error_rows} errors
+                        {importPresentation.detail}
+                      </p>
+                      <p className={`mt-1 text-xs ${serverPreview.can_import ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {serverPreview.ready_rows || 0} ready · {serverPreview.duplicate_rows} duplicate{serverPreview.duplicate_rows === 1 ? '' : 's'} · {serverPreview.error_rows} errors
                       </p>
                     </div>
                   </div>
@@ -946,20 +971,26 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                   type="button"
                   onClick={() => void preview()}
                   disabled={!canPreview || previewing || importing}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                    serverPreview
+                      ? 'border border-blue-300 bg-white text-blue-700 hover:bg-blue-50'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
                 >
                   {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  Preview safely
+                  {serverPreview ? `Preview ${localReadyRows} records again` : importPresentation.actionLabel}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void commit()}
-                  disabled={!serverPreview?.can_import || importing || previewing}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  Import {serverPreview?.ready_rows || 0} records
-                </button>
+                {serverPreview && (
+                  <button
+                    type="button"
+                    onClick={() => void commit()}
+                    disabled={importPresentation.action !== 'import' || importing || previewing}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-600"
+                  >
+                    {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {importPresentation.actionLabel}
+                  </button>
+                )}
               </div>
             </main>
 
