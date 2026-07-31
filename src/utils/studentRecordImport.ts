@@ -31,7 +31,8 @@ export interface NormalizedImportRow {
   course_version?: string;
   student_portal_id?: string;
   competencies?: NormalizedImportedCompetency[];
-  [key: string]: string | number | boolean | NormalizedImportedCompetency[] | undefined;
+  criteria_grades?: Record<string, string>;
+  [key: string]: string | number | boolean | NormalizedImportedCompetency[] | Record<string, string> | undefined;
 }
 
 export interface NormalizedImportedCompetency {

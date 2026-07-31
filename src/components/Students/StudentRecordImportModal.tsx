@@ -25,6 +25,7 @@ import {
 } from '../../utils/studentRecordImport';
 import {
   buildCourseCompetencyDefinitions,
+  buildCourseCriterionDefinitions,
   createCourseTransferCsv,
   getCourseCompetencyGuideCsv,
   getCourseStudentRecordTemplate,
@@ -95,7 +96,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const dialogRef = useRef<HTMLDivElement>(null);
   const [recordType, setRecordType] = useState<StudentRecordImportType>('lesson');
   const [selectedCourseId, setSelectedCourseId] = useState('');
-  const [competencies, setCompetencies] = useState<CourseCompetencyDefinition[]>([]);
+  const [matrixCompetencies, setMatrixCompetencies] = useState<CourseCompetencyDefinition[]>([]);
   const [loadingCompetencies, setLoadingCompetencies] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
@@ -116,6 +117,15 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const identity = useMemo(
     () => selectedCourse ? { studentId, studentName, course: selectedCourse } : null,
     [selectedCourse, studentId, studentName],
+  );
+  const competencies = useMemo(
+    () => [
+      ...(selectedCourse && recordType === 'lesson'
+        ? buildCourseCriterionDefinitions(selectedCourse)
+        : []),
+      ...matrixCompetencies,
+    ],
+    [matrixCompetencies, recordType, selectedCourse],
   );
   const validation = useMemo(
     () => parsed && identity
@@ -146,7 +156,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   useEffect(() => {
     let active = true;
     if (!selectedCourseId || recordType !== 'lesson') {
-      setCompetencies([]);
+      setMatrixCompetencies([]);
       setLoadingCompetencies(false);
       return () => {
         active = false;
@@ -167,14 +177,14 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
       if (!active) return;
       if (rowsResult.error) throw rowsResult.error;
       if (requirementsResult.error) throw requirementsResult.error;
-      setCompetencies(buildCourseCompetencyDefinitions(
+      setMatrixCompetencies(buildCourseCompetencyDefinitions(
         rowsResult.data || [],
         requirementsResult.data || [],
       ));
     }).catch(error => {
       console.error('Failed to load course competency codes:', error);
       if (active) {
-        setCompetencies([]);
+        setMatrixCompetencies([]);
         toast.error('Could not load the course competency codes');
       }
     }).finally(() => {
@@ -381,7 +391,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
       if (recordType === 'lesson') {
         const { data: records, error: recordsError } = await supabase
           .from('training_records')
-          .select('id,date,lesson_id,registration,aircraft_type,dual_time_min,solo_time_min,comments,formal_briefing,next_lesson,student_ack,source_instructor_name,source_organisation,source_reference,instructor_id')
+          .select('id,date,lesson_id,registration,aircraft_type,dual_time_min,solo_time_min,comments,formal_briefing,next_lesson,student_ack,source_instructor_name,source_organisation,source_reference,instructor_id,criteria_grades')
           .eq('student_id', studentId)
           .eq('course_id', identity.course.id)
           .order('date', { ascending: true });
@@ -435,11 +445,19 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
             next_lesson: record.next_lesson || '',
             student_acknowledged: record.student_ack ? 'Yes' : 'No',
           };
+          competencies
+            .filter(competency => competency.kind === 'criterion')
+            .forEach(criterion => {
+              const grade = (record.criteria_grades as Record<string, string> | null)?.[criterion.code];
+              if (grade !== undefined && grade !== null && String(grade).trim()) {
+                row[criterion.column] = String(grade);
+              }
+            });
           (assessmentsByRecord.get(record.id) || []).forEach(assessment => {
             const competency = competencies.find(candidate => candidate.id === assessment.matrix_row_id);
             if (!competency || !assessment.achieved_standard) return;
             row[competency.column] = String(assessment.achieved_standard);
-            row[competency.commentsColumn] = assessment.comments || '';
+            if (competency.commentsColumn) row[competency.commentsColumn] = assessment.comments || '';
           });
           return row;
         });
@@ -552,10 +570,10 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                 {selectedCourse && recordType === 'lesson' && (
                   <p className={`mt-2 text-xs ${!loadingCompetencies && competencies.length === 0 ? 'font-medium text-amber-700' : 'text-gray-600'}`}>
                     {loadingCompetencies
-                      ? 'Loading competency codes...'
+                      ? 'Loading course criteria...'
                       : competencies.length > 0
-                        ? `${competencies.length} competency code${competencies.length === 1 ? '' : 's'} will be included in this course format.`
-                        : 'This course has no competency codes configured. The template will import lesson records only.'}
+                        ? `${competencies.length} criteria and competency column${competencies.length === 1 ? '' : 's'} will be included in this course format.`
+                        : 'This course has no criteria or competency codes configured. The template will import lesson records only.'}
                   </p>
                 )}
               </section>
@@ -596,7 +614,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                         disabled={!identity}
                         className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-100 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-200 disabled:opacity-50"
                       >
-                        <Download className="h-4 w-4" /> Competency code guide
+                        <Download className="h-4 w-4" /> Criteria and competency guide
                       </button>
                     )}
                   </div>
@@ -610,7 +628,12 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                       <li>Record reference is optional. Use an old lesson or logbook number when available; otherwise the portal creates a stable reference automatically.</li>
                       <li>Dates may be DD/MM/YYYY or YYYY-MM-DD.</li>
                       <li>Times may be 1.25 hours, 1:15, or 75m.</li>
-                      {competencies.length > 0 && <li>Enter 1, 2 or 3 in the relevant competency-code columns; leave unassessed codes blank.</li>}
+                      {competencies.length > 0 && (
+                        <li>
+                          Enter the grade shown in the guide—for example NC, S or C, or 1, 2 or 3 for detailed matrices.
+                          Leave unassessed columns blank.
+                        </li>
+                      )}
                       <li>Use Yes or No for formal briefing and historical student acknowledgement.</li>
                     </ul>
                   ) : (

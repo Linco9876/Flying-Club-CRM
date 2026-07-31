@@ -13,7 +13,9 @@ import {
   courseVersionsMatch,
   createAutomaticRecordReference,
   buildCourseCompetencyDefinitions,
+  buildCourseCriterionDefinitions,
   createCourseTransferCsv,
+  getCourseCompetencyGuideCsv,
   getCourseStudentRecordTemplate,
   validateCourseStudentRecordCsv,
 } from './studentCourseRecordTransfer.ts';
@@ -41,6 +43,34 @@ const competencyDefinitions = buildCourseCompetencyDefinitions(
   [{ id: '44444444-4444-4444-8444-444444444444', code: 'RPC.1.1', description: 'Prepare aircraft' }],
   [{ matrix_row_id: '44444444-4444-4444-8444-444444444444', lesson_id: course.lessons[0].id }],
 );
+const criteriaCourse = {
+  ...course,
+  assessmentCriteria: [
+    {
+      id: 'effects-of-controls',
+      name: 'Effects of Controls',
+      gradingSystem: 'NC/S/C/-',
+      passingGrade: 'S',
+    },
+    {
+      id: 'landing',
+      name: 'Landing',
+      gradingSystem: 'NC/S/C/-',
+      passingGrade: 'S',
+    },
+  ],
+  lessons: [
+    {
+      ...course.lessons[0],
+      passMarks: {
+        'effects-of-controls': 'S',
+        landing: '-',
+      },
+    },
+  ],
+} as TrainingModule;
+const criteriaIdentity = { ...identity, course: criteriaCourse };
+const criterionDefinitions = buildCourseCriterionDefinitions(criteriaCourse);
 
 test('CSV parser handles quoted commas, escaped quotes and Australian dates', () => {
   const parsed = parseCsv(`${getStudentRecordTemplate('lesson')}31/07/2026,RPC Training,RPC-01,VH-EKO,Tecnam P92,1:15,0,Jane Instructor,BFC,"Good work, ""steady""",Yes,RPC-02,BOOK-2,No\r\n`);
@@ -99,6 +129,79 @@ test('course template binds the student, course version, lessons and competency 
   assert.match(csv, /competency_rpc_1_1/);
   assert.match(csv, /,33333333-3333-4333-8333-333333333333,Test Student,RPC Training/);
   assert.match(csv, /RPC-01 · Effects of Controls/);
+});
+
+test('course template includes the authoritative NC/S/C criteria matrix and guide', () => {
+  const csv = getCourseStudentRecordTemplate('lesson', criteriaIdentity, criterionDefinitions);
+  const guide = getCourseCompetencyGuideCsv(criteriaIdentity, criterionDefinitions);
+
+  assert.match(csv, /criterion_effects_of_controls/);
+  assert.match(csv, /criterion_landing/);
+  assert.match(guide, /effects-of-controls/);
+  assert.match(guide, /NC \/ S \/ C \/ -/);
+  assert.match(guide, /RPC-01/);
+});
+
+test('course CSV normalises and validates NC/S/C grades against the selected lesson', () => {
+  const csv = createCourseTransferCsv('lesson', criterionDefinitions, [{
+    include: 'Yes',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: criteriaCourse.title,
+    course_version: criteriaCourse.version,
+    record_reference: 'CRITERIA-1',
+    date: '31/07/2026',
+    lesson: 'RPC-01',
+    dual_time: '1:00',
+    solo_time: '0',
+    instructor_name: 'Jane Instructor',
+    comments: 'Historical lesson',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+    criterion_effects_of_controls: 'nc',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    criteriaIdentity,
+    criterionDefinitions,
+    emptyMappings,
+  );
+
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.rows[0].criteria_grades, { 'effects-of-controls': 'NC' });
+});
+
+test('course CSV rejects invalid or lesson-inapplicable NC/S/C grades', () => {
+  const csv = createCourseTransferCsv('lesson', criterionDefinitions, [{
+    include: 'Yes',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: criteriaCourse.title,
+    course_version: criteriaCourse.version,
+    record_reference: 'CRITERIA-2',
+    date: '31/07/2026',
+    lesson: 'RPC-01',
+    dual_time: '1:00',
+    solo_time: '0',
+    instructor_name: 'Jane Instructor',
+    comments: 'Historical lesson',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+    criterion_effects_of_controls: 'Good',
+    criterion_landing: 'S',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    criteriaIdentity,
+    criterionDefinitions,
+    emptyMappings,
+  );
+
+  assert.ok(result.errors.some(error => error.messages.some(message => message.includes('must be NC, S, C, -'))));
+  assert.ok(result.errors.some(error => error.messages.some(message => message.includes('not configured for this lesson'))));
+  assert.equal(result.rows.length, 0);
 });
 
 test('course versions survive Excel removing insignificant decimal zeros', () => {

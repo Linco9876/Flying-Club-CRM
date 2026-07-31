@@ -1,4 +1,4 @@
-import type { TrainingModule } from '../types/index.ts';
+import type { LessonGradingSystem, TrainingModule } from '../types/index.ts';
 import {
   csvCell,
   formatLessonLabel,
@@ -16,7 +16,10 @@ export interface CourseCompetencyDefinition {
   description: string;
   lessonIds: string[];
   column: string;
-  commentsColumn: string;
+  commentsColumn?: string;
+  kind: 'syllabus' | 'criterion';
+  gradingSystem?: LessonGradingSystem;
+  allowedValues: string[];
 }
 
 export interface CourseTransferIdentity {
@@ -153,6 +156,45 @@ export const buildCourseCompetencyDefinitions = (
         .map(requirement => String(requirement.lesson_id)),
       column,
       commentsColumn: `${column}_comments`,
+      kind: 'syllabus',
+      allowedValues: ['1', '2', '3'],
+    };
+  });
+};
+
+const criterionAllowedValues = (gradingSystem: LessonGradingSystem) => {
+  if (gradingSystem === 'NC/S/C/-') return ['NC', 'S', 'C', '-'];
+  if (gradingSystem === 'Pass or Fail') return ['Pass', 'Fail', '-'];
+  return ['0–100', '-'];
+};
+
+export const buildCourseCriterionDefinitions = (
+  course: TrainingModule,
+): CourseCompetencyDefinition[] => {
+  const usedColumns = new Set<string>();
+  return (course.assessmentCriteria || []).map(criterion => {
+    const base = `criterion_${normaliseColumnPart(criterion.id || criterion.name)}`;
+    let column = base;
+    let suffix = 2;
+    while (usedColumns.has(column)) {
+      column = `${base}_${suffix}`;
+      suffix += 1;
+    }
+    usedColumns.add(column);
+    return {
+      id: criterion.id,
+      code: criterion.id,
+      description: criterion.name,
+      lessonIds: course.lessons
+        .filter(lesson => {
+          const target = lesson.passMarks?.[criterion.id];
+          return Boolean(target && target !== '-');
+        })
+        .map(lesson => lesson.id),
+      column,
+      kind: 'criterion' as const,
+      gradingSystem: criterion.gradingSystem,
+      allowedValues: criterionAllowedValues(criterion.gradingSystem),
     };
   });
 };
@@ -163,7 +205,10 @@ export const getCourseTransferHeaders = (
 ) => [
   ...(type === 'lesson' ? LESSON_BASE_HEADERS : EXAM_BASE_HEADERS),
   ...(type === 'lesson'
-    ? competencies.flatMap(competency => [competency.column, competency.commentsColumn])
+    ? competencies.flatMap(competency => [
+        competency.column,
+        ...(competency.commentsColumn ? [competency.commentsColumn] : []),
+      ])
     : []),
 ];
 
@@ -217,7 +262,7 @@ export const getCourseCompetencyGuideCsv = (
     competency.column,
     competency.description,
     competency.lessonIds.map(lessonId => lessonNames.get(lessonId) || lessonId).join('; '),
-    '1 = qualification standard; 2 = supervised solo standard; 3 = training received',
+    competency.allowedValues.join(' / '),
   ]);
   return `${[
     headers.map(csvCell).join(','),
@@ -278,7 +323,10 @@ export const validateCourseStudentRecordCsv = (
         'formal_briefing',
         'next_lesson',
         'student_acknowledged',
-        ...competencies.flatMap(competency => [competency.column, competency.commentsColumn]),
+        ...competencies.flatMap(competency => [
+          competency.column,
+          ...(competency.commentsColumn ? [competency.commentsColumn] : []),
+        ]),
       ]
     : [
         'record_reference',
@@ -353,10 +401,47 @@ export const validateCourseStudentRecordCsv = (
       const rawRow = includedRows.find(candidate => candidate.sourceRow === row.source_row);
       if (!rawRow) return;
       const importedCompetencies: NormalizedImportedCompetency[] = [];
+      const criteriaGrades: Record<string, string> = {};
       competencies.forEach(competency => {
         const rawStandard = (rawRow.values[competency.column] || '').trim();
-        const rawComments = (rawRow.values[competency.commentsColumn] || '').trim();
+        const rawComments = competency.commentsColumn
+          ? (rawRow.values[competency.commentsColumn] || '').trim()
+          : '';
         if (!rawStandard && !rawComments) return;
+
+        if (competency.kind === 'criterion') {
+          let grade = rawStandard;
+          if (competency.gradingSystem === 'NC/S/C/-') grade = rawStandard.toUpperCase();
+          if (competency.gradingSystem === 'Pass or Fail') {
+            grade = rawStandard.toLowerCase() === 'pass'
+              ? 'Pass'
+              : rawStandard.toLowerCase() === 'fail'
+                ? 'Fail'
+                : rawStandard;
+          }
+          if (competency.gradingSystem === 'Out of 100') {
+            const score = Number(rawStandard);
+            if (rawStandard !== '-' && (!Number.isFinite(score) || score < 0 || score > 100)) {
+              mergeRowError(metadataErrors, rawRow.sourceRow, `${competency.description} must be 0–100, -, or blank.`);
+              return;
+            }
+            grade = rawStandard === '-' ? '-' : String(score);
+          } else if (!competency.allowedValues.includes(grade)) {
+            mergeRowError(
+              metadataErrors,
+              rawRow.sourceRow,
+              `${competency.description} must be ${competency.allowedValues.join(', ')}, or blank.`,
+            );
+            return;
+          }
+          if (!competency.lessonIds.includes(String(row.lesson_id))) {
+            mergeRowError(metadataErrors, rawRow.sourceRow, `${competency.description} is not configured for this lesson.`);
+            return;
+          }
+          criteriaGrades[competency.code] = grade;
+          return;
+        }
+
         const standard = Number(rawStandard);
         if (![1, 2, 3].includes(standard)) {
           mergeRowError(metadataErrors, rawRow.sourceRow, `${competency.code} must be 1, 2, 3, or blank.`);
@@ -376,6 +461,7 @@ export const validateCourseStudentRecordCsv = (
       row.student_portal_id = identity.studentId;
       row.course_version = identity.course.version;
       row.competencies = importedCompetencies;
+      row.criteria_grades = criteriaGrades;
     });
   } else {
     base.rows.forEach(row => {
