@@ -12,9 +12,11 @@ This guide describes the operational capabilities of the Bendigo Flying Club (BF
 
 ## Historical student record imports
 
-Authorised instructors, senior instructors and administrators can open a person's Pilot File and use **Import Records** to load historical lesson records or exam results from CSV. The student is selected before the template is downloaded, so names, email addresses and account identifiers are not used to match the import to a person.
+Authorised instructors, senior instructors and administrators can open a person's Pilot File and use **Import / Export Data** to load historical lesson records or exam results from CSV. The open Pilot File remains the source of truth for the student. Course templates carry that student's portal ID and display name for traceability, but the server refuses a row whose portal ID differs from the open file.
 
-Lesson and exam imports use separate templates. The browser accepts Australian or ISO dates and common time formats, validates every row, and asks staff to map historical course, lesson or exam labels to existing portal records. It never silently creates courses, lessons, exams, aircraft or instructors. A server preview repeats the validation and marks exact duplicates before the import button becomes available.
+Lesson and exam imports use separate, course-specific templates. Each template is bound to the selected course version and pre-fills its lesson or exam rows; staff change **Include** to **Yes** only for completed rows. Lesson templates include the course's configured competency-code columns and optional per-code comments. A downloadable code guide describes each code, the lessons where it applies and the permitted 1/2/3 standards.
+
+The **Export current data** button produces the student's existing course data in exactly the same round-trip format, including stable record references and competency results. The browser accepts Australian or ISO dates and common time formats, validates every row, and refuses student, course-version, lesson, exam or competency mismatches. It never silently creates courses, lessons, competency codes, exams, aircraft or instructors. A server preview repeats the validation and marks exact duplicates before the import button becomes available.
 
 The import operation is atomic and subject to these controls:
 
@@ -22,6 +24,8 @@ The import operation is atomic and subject to these controls:
 - one batch is limited to 500 rows and 2 MB, with MFA required above 25 rows;
 - repeated uploads are idempotently skipped using a tenant-local fingerprint plus an existing-record check;
 - the source filename, row number, historical instructor, source organisation, reference, signed-in importer and immutable batch ID remain attached to each record;
+- lesson data and its competency results are committed atomically in the same batch, so they cannot become separated by a partial import;
+- the course ID, course version and competency-result count are retained in the student's visible import history;
 - imported lessons are locked historical records by default and do not create an acknowledgement task unless staff explicitly request one;
 - administrators can undo an entire batch with MFA, while retaining the batch's reversal history; and
 - CSV imports never create bookings or operational flight logs, change aircraft tach/Hobbs time, affect maintenance, create invoices, alter prepaid balances, or invoke Stripe/Xero.

@@ -2145,7 +2145,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             className="inline-flex items-center gap-2 rounded-lg border border-white/30 bg-white/10 px-4 py-2 text-white transition-colors hover:bg-white/20"
           >
             <Upload className="h-4 w-4" />
-            Import Records
+            Import / Export Data
           </button>
         )}
         {canEditStudentInfo && (

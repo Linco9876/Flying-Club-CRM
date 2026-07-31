@@ -16,13 +16,20 @@ import type { TrainingModule } from '../../types';
 import { supabase } from '../../lib/supabase';
 import {
   createRejectedRowsCsv,
-  downloadStudentRecordTemplate,
   type CsvParseResult,
   type ImportMappingState,
   parseCsv,
   type StudentRecordImportType,
-  validateStudentRecordCsv,
 } from '../../utils/studentRecordImport';
+import {
+  buildCourseCompetencyDefinitions,
+  createCourseTransferCsv,
+  getCourseCompetencyGuideCsv,
+  getCourseStudentRecordTemplate,
+  getCourseTransferFilename,
+  type CourseCompetencyDefinition,
+  validateCourseStudentRecordCsv,
+} from '../../utils/studentCourseRecordTransfer';
 
 interface ImportBatch {
   id: string;
@@ -32,6 +39,9 @@ interface ImportBatch {
   total_rows: number;
   imported_rows: number;
   duplicate_rows: number;
+  competency_rows?: number;
+  course_id?: string | null;
+  course_version?: string | null;
   imported_at: string;
   rolled_back_at?: string | null;
 }
@@ -82,6 +92,10 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const [recordType, setRecordType] = useState<StudentRecordImportType>('lesson');
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [competencies, setCompetencies] = useState<CourseCompetencyDefinition[]>([]);
+  const [loadingCompetencies, setLoadingCompetencies] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<CsvParseResult | null>(null);
   const [mappings, setMappings] = useState<ImportMappingState>(EMPTY_MAPPINGS);
@@ -93,9 +107,19 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
 
+  const selectedCourse = useMemo(
+    () => courses.find(course => course.id === selectedCourseId) || null,
+    [courses, selectedCourseId],
+  );
+  const identity = useMemo(
+    () => selectedCourse ? { studentId, studentName, course: selectedCourse } : null,
+    [selectedCourse, studentId, studentName],
+  );
   const validation = useMemo(
-    () => parsed ? validateStudentRecordCsv(parsed, recordType, courses, mappings) : null,
-    [courses, mappings, parsed, recordType],
+    () => parsed && identity
+      ? validateCourseStudentRecordCsv(parsed, recordType, identity, competencies, mappings)
+      : null,
+    [competencies, identity, mappings, parsed, recordType],
   );
 
   useEffect(() => setServerPreview(null), [validation]);
@@ -104,7 +128,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     setLoadingHistory(true);
     const { data, error } = await supabase
       .from('student_record_import_batches')
-      .select('id,record_type,source_filename,status,total_rows,imported_rows,duplicate_rows,imported_at,rolled_back_at')
+      .select('id,record_type,source_filename,status,total_rows,imported_rows,duplicate_rows,competency_rows,course_id,course_version,imported_at,rolled_back_at')
       .eq('student_id', studentId)
       .order('imported_at', { ascending: false })
       .limit(10);
@@ -116,6 +140,48 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedCourseId || recordType !== 'lesson') {
+      setCompetencies([]);
+      setLoadingCompetencies(false);
+      return () => {
+        active = false;
+      };
+    }
+    setLoadingCompetencies(true);
+    void Promise.all([
+      supabase
+        .from('syllabus_matrix_rows')
+        .select('id,code,description')
+        .eq('course_id', selectedCourseId)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('syllabus_matrix_requirements')
+        .select('matrix_row_id,lesson_id')
+        .eq('course_id', selectedCourseId),
+    ]).then(([rowsResult, requirementsResult]) => {
+      if (!active) return;
+      if (rowsResult.error) throw rowsResult.error;
+      if (requirementsResult.error) throw requirementsResult.error;
+      setCompetencies(buildCourseCompetencyDefinitions(
+        rowsResult.data || [],
+        requirementsResult.data || [],
+      ));
+    }).catch(error => {
+      console.error('Failed to load course competency codes:', error);
+      if (active) {
+        setCompetencies([]);
+        toast.error('Could not load the course competency codes');
+      }
+    }).finally(() => {
+      if (active) setLoadingCompetencies(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [recordType, selectedCourseId]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -165,6 +231,11 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     setRequestAcknowledgement(false);
   };
 
+  const handleCourseChange = (courseId: string) => {
+    setSelectedCourseId(courseId);
+    resetFile();
+  };
+
   const handleFile = async (file?: File) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -190,11 +261,13 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   };
 
   const preview = async () => {
-    if (!sourceFile || !validation || validation.errors.length > 0 || validation.rows.length === 0) return;
+    if (!sourceFile || !validation || !selectedCourse || validation.errors.length > 0 || validation.rows.length === 0) return;
     setPreviewing(true);
     try {
-      const { data, error } = await supabase.rpc('process_student_record_import', {
+      const { data, error } = await supabase.rpc('process_student_course_record_import', {
         p_student_id: studentId,
+        p_course_id: selectedCourse.id,
+        p_course_version: selectedCourse.version,
         p_record_type: recordType,
         p_filename: sourceFile.name,
         p_rows: validation.rows,
@@ -212,11 +285,13 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   };
 
   const commit = async () => {
-    if (!sourceFile || !validation || !serverPreview?.can_import) return;
+    if (!sourceFile || !validation || !selectedCourse || !serverPreview?.can_import) return;
     setImporting(true);
     try {
-      const { data, error } = await supabase.rpc('process_student_record_import', {
+      const { data, error } = await supabase.rpc('process_student_course_record_import', {
         p_student_id: studentId,
+        p_course_id: selectedCourse.id,
+        p_course_version: selectedCourse.version,
         p_record_type: recordType,
         p_filename: sourceFile.name,
         p_rows: validation.rows,
@@ -272,6 +347,148 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     );
   };
 
+  const downloadTemplate = () => {
+    if (!identity) return;
+    downloadTextFile(
+      getCourseStudentRecordTemplate(recordType, identity, competencies),
+      getCourseTransferFilename(identity, recordType, 'template'),
+    );
+  };
+
+  const downloadCompetencyGuide = () => {
+    if (!identity) return;
+    downloadTextFile(
+      getCourseCompetencyGuideCsv(identity, competencies),
+      getCourseTransferFilename(identity, 'lesson', 'competency-guide'),
+    );
+  };
+
+  const exportCurrentData = async () => {
+    if (!identity) return;
+    setExporting(true);
+    try {
+      const common = {
+        include: 'Yes',
+        student_portal_id: studentId,
+        student_name: studentName,
+        course: identity.course.title,
+        course_version: identity.course.version,
+      };
+      let exportRows: Array<Record<string, string>> = [];
+
+      if (recordType === 'lesson') {
+        const { data: records, error: recordsError } = await supabase
+          .from('training_records')
+          .select('id,date,lesson_id,registration,aircraft_type,dual_time_min,solo_time_min,comments,formal_briefing,next_lesson,student_ack,source_instructor_name,source_organisation,source_reference,instructor_id')
+          .eq('student_id', studentId)
+          .eq('course_id', identity.course.id)
+          .order('date', { ascending: true });
+        if (recordsError) throw recordsError;
+
+        const recordIds = (records || []).map(record => record.id);
+        const instructorIds = [...new Set((records || []).map(record => record.instructor_id).filter(Boolean))];
+        const [assessmentsResult, instructorsResult] = await Promise.all([
+          recordIds.length
+            ? supabase
+                .from('student_matrix_assessments')
+                .select('training_record_id,matrix_row_id,achieved_standard,comments')
+                .in('training_record_id', recordIds)
+            : Promise.resolve({ data: [], error: null }),
+          instructorIds.length
+            ? supabase.from('users').select('id,name,email').in('id', instructorIds)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+        if (assessmentsResult.error) throw assessmentsResult.error;
+        if (instructorsResult.error) throw instructorsResult.error;
+        const instructors = new Map((instructorsResult.data || []).map(instructor => [
+          instructor.id,
+          instructor.name || instructor.email || 'Portal instructor',
+        ]));
+        const assessmentsByRecord = new Map<string, Array<{
+          matrix_row_id: string;
+          achieved_standard: number | null;
+          comments: string | null;
+        }>>();
+        (assessmentsResult.data || []).forEach(assessment => {
+          const current = assessmentsByRecord.get(assessment.training_record_id) || [];
+          current.push(assessment);
+          assessmentsByRecord.set(assessment.training_record_id, current);
+        });
+
+        exportRows = (records || []).map(record => {
+          const lesson = identity.course.lessons.find(candidate => candidate.id === record.lesson_id);
+          const row: Record<string, string> = {
+            ...common,
+            record_reference: record.source_reference || `portal-${record.id}`,
+            date: record.date,
+            lesson: lesson?.sequenceCode || lesson?.name || '',
+            aircraft_registration: record.registration || '',
+            aircraft_type: record.aircraft_type || '',
+            dual_time: `${Math.floor((record.dual_time_min || 0) / 60)}:${String((record.dual_time_min || 0) % 60).padStart(2, '0')}`,
+            solo_time: `${Math.floor((record.solo_time_min || 0) / 60)}:${String((record.solo_time_min || 0) % 60).padStart(2, '0')}`,
+            instructor_name: record.source_instructor_name || instructors.get(record.instructor_id) || 'Portal instructor',
+            source_organisation: record.source_organisation || 'Bendigo Flying Club portal',
+            comments: record.comments || '',
+            formal_briefing: record.formal_briefing ? 'Yes' : 'No',
+            next_lesson: record.next_lesson || '',
+            student_acknowledged: record.student_ack ? 'Yes' : 'No',
+          };
+          (assessmentsByRecord.get(record.id) || []).forEach(assessment => {
+            const competency = competencies.find(candidate => candidate.id === assessment.matrix_row_id);
+            if (!competency || !assessment.achieved_standard) return;
+            row[competency.column] = String(assessment.achieved_standard);
+            row[competency.commentsColumn] = assessment.comments || '';
+          });
+          return row;
+        });
+      } else {
+        const { data: exams, error } = await supabase
+          .from('student_exam_results')
+          .select('id,exam_date,exam_id,exam_name,score,pass_mark,notes,kdr_completed,source_instructor_name,source_organisation,source_reference,instructor_id')
+          .eq('student_id', studentId)
+          .eq('course_id', identity.course.id)
+          .order('exam_date', { ascending: true });
+        if (error) throw error;
+        const instructorIds = [...new Set((exams || []).map(exam => exam.instructor_id).filter(Boolean))];
+        const { data: instructorRows, error: instructorsError } = instructorIds.length
+          ? await supabase.from('users').select('id,name,email').in('id', instructorIds)
+          : { data: [], error: null };
+        if (instructorsError) throw instructorsError;
+        const instructors = new Map((instructorRows || []).map(instructor => [
+          instructor.id,
+          instructor.name || instructor.email || 'Portal instructor',
+        ]));
+        exportRows = (exams || []).map(exam => ({
+          ...common,
+          record_reference: exam.source_reference || `portal-${exam.id}`,
+          exam_date: exam.exam_date,
+          exam: exam.exam_name || identity.course.exams?.find(candidate => candidate.id === exam.exam_id)?.name || '',
+          score_percent: String(exam.score),
+          pass_mark: String(exam.pass_mark),
+          instructor_name: exam.source_instructor_name || instructors.get(exam.instructor_id) || 'Portal instructor',
+          source_organisation: exam.source_organisation || 'Bendigo Flying Club portal',
+          notes: exam.notes || '',
+          kdr_completed: exam.kdr_completed ? 'Yes' : 'No',
+        }));
+      }
+
+      if (exportRows.length === 0) {
+        toast.error(`No ${recordType === 'lesson' ? 'lesson records' : 'exam results'} exist for this student and course`);
+        return;
+      }
+      downloadTextFile(
+        createCourseTransferCsv(recordType, competencies, exportRows),
+        getCourseTransferFilename(identity, recordType, 'export'),
+      );
+      toast.success(`Exported ${exportRows.length} ${recordType === 'lesson' ? 'lesson records' : 'exam results'}`);
+    } catch (error: any) {
+      console.error('Failed to export student course records:', error);
+      toast.error(error?.message || 'Could not export the current data');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const hasMappingWork = Boolean(
     validation?.unmatchedCourses.length
     || validation?.unmatchedLessons.length
@@ -290,7 +507,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
       <div ref={dialogRef} className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl sm:max-h-[calc(100vh-3rem)]">
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 bg-slate-900 px-5 py-4 text-white sm:px-6">
           <div className="min-w-0">
-            <h2 id="student-import-title" className="break-words text-lg font-bold sm:text-xl">Import student records</h2>
+            <h2 id="student-import-title" className="break-words text-lg font-bold sm:text-xl">Import or export student records</h2>
             <p id="student-import-description" className="mt-1 break-words text-sm text-slate-300">{studentName} · previewed and audited before anything is saved</p>
           </div>
           <button ref={closeButtonRef} type="button" onClick={onClose} className="shrink-0 rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white" aria-label="Close import records">
@@ -302,7 +519,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <main className="space-y-5">
               <section>
-                <p className="mb-2 text-sm font-semibold text-gray-900">1. Choose the record type</p>
+                <p className="mb-2 text-sm font-semibold text-gray-900">1. Choose the course and record type</p>
                 <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
                   {(['lesson', 'exam'] as StudentRecordImportType[]).map(type => (
                     <button
@@ -317,34 +534,81 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     </button>
                   ))}
                 </div>
+                <label className="mt-3 block text-sm font-medium text-gray-800">
+                  Course
+                  <select
+                    value={selectedCourseId}
+                    onChange={event => handleCourseChange(event.target.value)}
+                    className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="">Choose a course...</option>
+                    {courses.map(course => (
+                      <option key={course.id} value={course.id}>{course.title} · version {course.version}</option>
+                    ))}
+                  </select>
+                </label>
+                {selectedCourse && recordType === 'lesson' && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    {loadingCompetencies
+                      ? 'Loading competency codes...'
+                      : `${competencies.length} competency code${competencies.length === 1 ? '' : 's'} will be included in this course format.`}
+                  </p>
+                )}
               </section>
 
               <section className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-3">
                   <div>
-                    <p className="font-semibold text-blue-950">2. Download the template</p>
-                    <p className="mt-1 text-sm text-blue-800">The student is already selected, so their personal details are not placed in the CSV.</p>
+                    <p className="font-semibold text-blue-950">2. Download or export</p>
+                    <p className="mt-1 text-sm text-blue-800">
+                      The file is tied to {studentName} and the selected course version. Existing data exports in the same format and can be safely re-imported.
+                    </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => downloadStudentRecordTemplate(recordType, studentName)}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-                  >
-                    <Download className="h-4 w-4" /> Download CSV
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={downloadTemplate}
+                      disabled={!identity || loadingCompetencies}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Download className="h-4 w-4" /> Download course template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void exportCurrentData()}
+                      disabled={!identity || exporting || loadingCompetencies}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                      Export current data
+                    </button>
+                    {recordType === 'lesson' && competencies.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={downloadCompetencyGuide}
+                        disabled={!identity}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-100 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-200 disabled:opacity-50"
+                      >
+                        <Download className="h-4 w-4" /> Competency code guide
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <details className="mt-3 text-sm text-blue-900">
                   <summary className="cursor-pointer font-medium">Formatting help and examples</summary>
                   {recordType === 'lesson' ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
-                      <li>Use the portal course name and lesson code or lesson name.</li>
+                      <li>Change Include to Yes only on rows you want imported.</li>
+                      <li>Give each row a unique record reference, such as an old lesson or logbook number.</li>
                       <li>Dates may be DD/MM/YYYY or YYYY-MM-DD.</li>
                       <li>Times may be 1.25 hours, 1:15, or 75m.</li>
+                      <li>Enter 1, 2 or 3 in the relevant competency-code columns; leave unassessed codes blank.</li>
                       <li>Use Yes or No for formal briefing and historical student acknowledgement.</li>
                     </ul>
                   ) : (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
-                      <li>Use the portal course and exam names.</li>
+                      <li>Change Include to Yes only on rows you want imported.</li>
+                      <li>Give each result a unique record reference.</li>
                       <li>Scores and pass marks are percentages between 0 and 100.</li>
                       <li>Use Yes or No for KDR completed.</li>
                     </ul>
@@ -364,11 +628,14 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex w-full flex-col items-center rounded-xl border-2 border-dashed border-gray-300 px-5 py-8 text-center hover:border-blue-400 hover:bg-blue-50"
+                  disabled={!identity || loadingCompetencies}
+                  className="flex w-full flex-col items-center rounded-xl border-2 border-dashed border-gray-300 px-5 py-8 text-center hover:border-blue-400 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Upload className="h-8 w-8 text-blue-600" />
                   <span className="mt-2 font-semibold text-gray-900">{sourceFile ? sourceFile.name : 'Choose CSV file'}</span>
-                  <span className="mt-1 text-xs text-gray-500">Maximum 500 records and 2 MB</span>
+                  <span className="mt-1 text-xs text-gray-500">
+                    {identity ? 'Maximum 500 records and 2 MB' : 'Choose a course first'}
+                  </span>
                 </button>
                 {parsed?.errors.map(error => (
                   <p key={error} className="mt-2 flex items-start gap-2 text-sm text-red-700"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>
@@ -544,7 +811,13 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                             {batch.status === 'committed' ? 'Imported' : 'Undone'}
                           </span>
                         </div>
-                        <p className="mt-2 text-xs text-gray-600">{batch.imported_rows} added · {batch.duplicate_rows} skipped</p>
+                          <p className="mt-2 text-xs text-gray-600">
+                            {batch.course_id
+                              ? `${courses.find(course => course.id === batch.course_id)?.title || 'Course'}${batch.course_version ? ` v${batch.course_version}` : ''} · `
+                              : ''}
+                            {batch.imported_rows} added · {batch.duplicate_rows} skipped
+                            {batch.competency_rows ? ` · ${batch.competency_rows} competency results` : ''}
+                          </p>
                         {isAdmin && batch.status === 'committed' && (
                           <button
                             type="button"
