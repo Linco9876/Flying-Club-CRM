@@ -20,6 +20,13 @@ export const clearPasswordSetupMarker = () => {
   getStorage()?.removeItem(PASSWORD_SETUP_MARKER_KEY);
 };
 
+export type PasswordSetupMode = 'invitation' | 'password-reset';
+
+export const getPasswordSetupMode = (hash: string): PasswordSetupMode => {
+  const mode = new URLSearchParams(hash.replace(/^#/, '')).get('mode');
+  return mode === 'password-reset' ? 'password-reset' : 'invitation';
+};
+
 export const markPasswordSetupFromCurrentUrl = () => {
   if (typeof window === 'undefined') return false;
 

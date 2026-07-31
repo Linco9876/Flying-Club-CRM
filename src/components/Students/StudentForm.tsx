@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, User, Phone, Save, Loader2, Shield, FileText } from 'lucide-react';
+import { X, User, Phone, Save, Loader2, Shield, FileText, KeyRound } from 'lucide-react';
 import { Student, Endorsement, Licence } from '../../types';
 import toast from 'react-hot-toast';
 import { useAircraft } from '../../hooks/useAircraft';
@@ -12,6 +12,8 @@ interface StudentFormProps {
   student?: Student;
   isEdit?: boolean;
   canEditEmail?: boolean;
+  onSendPasswordReset?: (student: Student) => Promise<boolean>;
+  passwordResetting?: boolean;
 }
 
 const buildFormData = (student?: Student) => ({
@@ -46,7 +48,9 @@ export const StudentForm: React.FC<StudentFormProps> = ({
   onSubmit,
   student,
   isEdit = false,
-  canEditEmail = true
+  canEditEmail = true,
+  onSendPasswordReset,
+  passwordResetting = false,
 }) => {
   const [formData, setFormData] = useState(buildFormData(student));
   const { aircraft } = useAircraft();
@@ -307,6 +311,32 @@ export const StudentForm: React.FC<StudentFormProps> = ({
               </div>
             </div>
           </div>
+
+          {isEdit && student && onSendPasswordReset && (
+            <div>
+              <h3 className="mb-4 flex items-center text-lg font-medium text-gray-900">
+                <KeyRound className="mr-2 h-5 w-5" />
+                Account Access
+              </h3>
+              <div className="flex flex-col gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-amber-950">Reset portal password</p>
+                  <p className="mt-1 text-sm leading-5 text-amber-800">
+                    Sends a secure reset email to {student.email}. Their current password remains active until they choose a new one.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void onSendPasswordReset(student)}
+                  disabled={passwordResetting}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {passwordResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                  {passwordResetting ? 'Sending…' : 'Send reset email'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Contact Details */}
           <div>
