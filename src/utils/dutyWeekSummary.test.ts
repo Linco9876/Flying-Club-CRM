@@ -61,14 +61,45 @@ test('duty history groups Monday through Sunday and separates Sunday from Monday
 });
 
 test('weekly summaries total duty and flying time without counting an open duty period', () => {
-  const [week] = groupDutyHistoryByWeek([
-    period({
+  const completed = period({
       id: 'completed',
       dutyDate: '2026-07-28',
       start: '2026-07-28T08:15:00+10:00',
       end: '2026-07-28T14:45:00+10:00',
       flightMinutes: 125,
-    }),
+    });
+  completed.breaks = [
+    {
+      id: 'break-1',
+      dutyPeriodId: completed.id,
+      breakStart: new Date('2026-07-28T10:00:00+10:00'),
+      breakEnd: new Date('2026-07-28T10:30:00+10:00'),
+      breakType: 'break',
+      freeOfDuty: true,
+      affectsCalculation: false,
+    },
+    {
+      id: 'break-2',
+      dutyPeriodId: completed.id,
+      breakStart: new Date('2026-07-28T10:20:00+10:00'),
+      breakEnd: new Date('2026-07-28T10:45:00+10:00'),
+      breakType: 'break',
+      freeOfDuty: false,
+      affectsCalculation: false,
+    },
+    {
+      id: 'outside-duty',
+      dutyPeriodId: completed.id,
+      breakStart: new Date('2026-07-28T07:00:00+10:00'),
+      breakEnd: new Date('2026-07-28T08:00:00+10:00'),
+      breakType: 'break',
+      freeOfDuty: true,
+      affectsCalculation: false,
+    },
+  ];
+
+  const [week] = groupDutyHistoryByWeek([
+    completed,
     period({
       id: 'open',
       dutyDate: '2026-07-29',
@@ -78,6 +109,8 @@ test('weekly summaries total duty and flying time without counting an open duty 
   ]);
 
   assert.equal(week.dutyMinutes, 390);
+  assert.equal(week.breakMinutes, 45);
+  assert.equal(week.dutyMinutesExcludingBreaks, 345);
   assert.equal(week.flightMinutes, 155);
   assert.equal(week.openPeriods, 1);
   assert.deepEqual(week.periods.map(item => item.id), ['open', 'completed']);
@@ -95,5 +128,7 @@ test('planned times are used when actual times have not been recorded', () => {
 
   const [week] = groupDutyHistoryByWeek([planned]);
   assert.equal(week.dutyMinutes, 150);
+  assert.equal(week.breakMinutes, 0);
+  assert.equal(week.dutyMinutesExcludingBreaks, 150);
   assert.equal(week.openPeriods, 0);
 });
