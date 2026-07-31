@@ -10,6 +10,10 @@ This guide describes the operational capabilities of the Bendigo Flying Club (BF
 - Aircraft bookings, flight records, training, instructor duty, senior-instructor supervision, maintenance, safety, billing, Xero and Stripe integrations.
 - A separate lightweight, installable Duty Clock PWA uses the same Supabase duty records. Native APK distribution has been retired.
 
+## RPC course lesson identification
+
+The RAAus Ab-Initio course retains each syllabus code as its stable identifier for imports, historical records and competency mapping. Every lesson also has a plain-English title, and course navigation shows the code and title together—for example, **1.01-3 · Effects of Controls** and **RPC-FLT-TEST · Pilot Certificate Flight Test**. Long lesson titles wrap rather than being cut off.
+
 ## Historical student record imports
 
 Authorised instructors, senior instructors and administrators can open a person's Pilot File and use **Import / Export Data** to load historical lesson records or exam results from CSV. The open Pilot File remains the source of truth for the student. Course templates carry that student's portal ID and display name for traceability, but the server refuses a row whose portal ID differs from the open file.
