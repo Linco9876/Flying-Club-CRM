@@ -7,6 +7,8 @@ export interface DutyHistoryWeek {
   weekEnd: string;
   periods: DutyPeriod[];
   dutyMinutes: number;
+  breakMinutes: number;
+  dutyMinutesExcludingBreaks: number;
   flightMinutes: number;
   openPeriods: number;
 }
@@ -18,6 +20,40 @@ const effectiveDutyMinutes = (period: DutyPeriod) => {
   const end = period.actualEnd || period.plannedEnd;
   if (!start || !end) return 0;
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
+};
+
+const effectiveBreakMinutes = (period: DutyPeriod) => {
+  const dutyStart = period.actualStart || period.plannedStart;
+  const dutyEnd = period.actualEnd || period.plannedEnd;
+  if (!dutyStart || !dutyEnd || dutyEnd <= dutyStart) return 0;
+
+  const intervals = period.breaks
+    .map(item => ({
+      start: Math.max(dutyStart.getTime(), item.breakStart.getTime()),
+      end: Math.min(dutyEnd.getTime(), item.breakEnd.getTime()),
+    }))
+    .filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start)
+    .sort((left, right) => left.start - right.start);
+
+  let totalMilliseconds = 0;
+  let currentStart = 0;
+  let currentEnd = 0;
+
+  for (const interval of intervals) {
+    if (currentEnd === 0) {
+      currentStart = interval.start;
+      currentEnd = interval.end;
+    } else if (interval.start <= currentEnd) {
+      currentEnd = Math.max(currentEnd, interval.end);
+    } else {
+      totalMilliseconds += currentEnd - currentStart;
+      currentStart = interval.start;
+      currentEnd = interval.end;
+    }
+  }
+
+  if (currentEnd > currentStart) totalMilliseconds += currentEnd - currentStart;
+  return Math.max(0, Math.round(totalMilliseconds / 60_000));
 };
 
 const effectiveStartTime = (period: DutyPeriod) =>
@@ -36,6 +72,8 @@ export const groupDutyHistoryByWeek = (periods: DutyPeriod[]): DutyHistoryWeek[]
       weekEnd: format(sunday, 'yyyy-MM-dd'),
       periods: [],
       dutyMinutes: 0,
+      breakMinutes: 0,
+      dutyMinutesExcludingBreaks: 0,
       flightMinutes: 0,
       openPeriods: 0,
     };
@@ -43,7 +81,11 @@ export const groupDutyHistoryByWeek = (periods: DutyPeriod[]): DutyHistoryWeek[]
     const end = period.actualEnd || period.plannedEnd;
 
     week.periods.push(period);
-    week.dutyMinutes += effectiveDutyMinutes(period);
+    const dutyMinutes = effectiveDutyMinutes(period);
+    const breakMinutes = Math.min(dutyMinutes, effectiveBreakMinutes(period));
+    week.dutyMinutes += dutyMinutes;
+    week.breakMinutes += breakMinutes;
+    week.dutyMinutesExcludingBreaks += Math.max(0, dutyMinutes - breakMinutes);
     const flightMinutes = Number(period.flightMinutes);
     week.flightMinutes += Number.isFinite(flightMinutes) ? Math.max(0, Math.round(flightMinutes)) : 0;
     if (start && !end) week.openPeriods += 1;

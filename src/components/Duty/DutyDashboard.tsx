@@ -512,9 +512,10 @@ export const DutyDashboard: React.FC = () => {
                       </p>
                       {week.openPeriods > 0 && <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{week.openPeriods} open duty {week.openPeriods === 1 ? 'period is' : 'periods are'} not included in duty hours.</p>}
                     </div>
-                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                      <span className="font-semibold text-slate-700 dark:text-slate-200"><strong className="text-slate-950 dark:text-white">{(week.dutyMinutes / 60).toFixed(1)}</strong> duty h</span>
-                      <span className="font-semibold text-slate-700 dark:text-slate-200"><strong className="text-slate-950 dark:text-white">{(week.flightMinutes / 60).toFixed(1)}</strong> flying h</span>
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+                      <span className="font-semibold text-slate-700 dark:text-slate-200"><strong className="text-slate-950 dark:text-white">{(week.flightMinutes / 60).toFixed(1)} h</strong> total flying</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200"><strong className="text-slate-950 dark:text-white">{(week.dutyMinutes / 60).toFixed(1)} h</strong> total time</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200"><strong className="text-slate-950 dark:text-white">{(week.dutyMinutesExcludingBreaks / 60).toFixed(1)} h</strong> total minus breaks</span>
                     </div>
                   </div>
                 </React.Fragment>
