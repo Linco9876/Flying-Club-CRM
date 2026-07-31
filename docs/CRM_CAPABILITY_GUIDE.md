@@ -18,7 +18,7 @@ The RAAus Ab-Initio course retains each syllabus code as its stable identifier f
 
 Authorised instructors, senior instructors and administrators can open a person's Pilot File and use **Import / Export Data** to load historical lesson records or exam results from CSV. The open Pilot File remains the source of truth for the student. Course templates carry that student's portal ID and display name for traceability, but the server refuses a row whose portal ID differs from the open file.
 
-Lesson and exam imports use separate, course-specific templates. Each template is bound to the selected course version and pre-fills its lesson or exam rows; staff change **Include** to **Yes** only for completed rows. Lesson rows show the stable syllabus code and plain-English name together, such as **1.01-3 · Effects of Controls**. Code-only files downloaded previously remain import-compatible. Lesson templates include the course's configured competency-code columns and optional per-code comments. A downloadable code guide describes each code, the lessons where it applies and the permitted 1/2/3 standards.
+Lesson and exam imports use separate, course-specific templates. Each template is bound to the selected course version and pre-fills its lesson or exam rows. The portal automatically detects rows where record details have been entered; **Yes**, **X**, **Completed** and **Done** are also accepted in the optional **Include** column. **Skip** deliberately excludes a filled row. Older templates whose untouched Include cells contain **No** remain compatible and populated rows are still detected. Lesson rows show the stable syllabus code and plain-English name together, such as **1.01-3 · Effects of Controls**. Code-only files downloaded previously remain import-compatible. Lesson templates include the course's configured competency-code columns and optional per-code comments. A downloadable code guide describes each code, the lessons where it applies and the permitted 1/2/3 standards.
 
 The **Export current data** button produces the student's existing course data in exactly the same round-trip format, including stable record references and competency results. The browser accepts Australian or ISO dates and common time formats, validates every row, and refuses student, course-version, lesson, exam or competency mismatches. It never silently creates courses, lessons, competency codes, exams, aircraft or instructors. A server preview repeats the validation and marks exact duplicates before the import button becomes available.
 
@@ -34,7 +34,7 @@ The import operation is atomic and subject to these controls:
 - administrators can undo an entire batch with MFA, while retaining the batch's reversal history; and
 - CSV imports never create bookings or operational flight logs, change aircraft tach/Hobbs time, affect maintenance, create invoices, alter prepaid balances, or invoke Stripe/Xero.
 
-Rows that fail browser or server validation can be downloaded as a corrected CSV with a `problem` column. Spreadsheet-active leading characters are escaped in this error export.
+Rows that fail browser or server validation can be downloaded as a corrected CSV with a `problem` column. File-level errors preserve every original data row and column instead of producing only headings. Spreadsheet-active leading characters are escaped in this error export.
 
 ## Pilot file loading and resilience
 

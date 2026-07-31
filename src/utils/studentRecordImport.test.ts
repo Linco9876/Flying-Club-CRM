@@ -95,7 +95,7 @@ test('course template binds the student, course version, lessons and competency 
   assert.match(csv, /student_portal_id/);
   assert.match(csv, /course_version/);
   assert.match(csv, /competency_rpc_1_1/);
-  assert.match(csv, /No,33333333-3333-4333-8333-333333333333,Test Student,RPC Training/);
+  assert.match(csv, /,33333333-3333-4333-8333-333333333333,Test Student,RPC Training/);
   assert.match(csv, /RPC-01 · Effects of Controls/);
 });
 
@@ -184,10 +184,10 @@ test('course CSV ignores unused template rows and rejects identity or version dr
     competencyDefinitions,
     emptyMappings,
   );
-  assert.match(unused.errors[0].messages[0], /Mark Include as Yes/);
+  assert.match(unused.errors[0].messages[0], /Fill in at least one completed row/);
 
   const changed = template
-    .replace(/^No,/m, 'Yes,')
+    .replace(/^,/m, 'Yes,')
     .replace(identity.studentId, '55555555-5555-4555-8555-555555555555')
     .replace(`,${course.version},`, ',99.0,');
   const invalid = validateCourseStudentRecordCsv(
@@ -199,6 +199,80 @@ test('course CSV ignores unused template rows and rejects identity or version dr
   );
   assert.ok(invalid.errors.some(error => error.messages.some(message => message.includes('Student portal ID'))));
   assert.ok(invalid.errors.some(error => error.messages.some(message => message.includes('Course version'))));
+});
+
+test('filled template rows are included without making the user change the old default No cell', () => {
+  const legacyFilledTemplate = createCourseTransferCsv('lesson', competencyDefinitions, [{
+    include: 'No',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: course.title,
+    course_version: course.version,
+    record_reference: 'LEGACY-1',
+    date: '31/07/2026',
+    lesson: 'RPC-01',
+    aircraft_registration: 'VH-EKO',
+    aircraft_type: 'Tecnam P92',
+    dual_time: '1:00',
+    solo_time: '0',
+    instructor_name: 'Jane Instructor',
+    source_organisation: 'BFC',
+    comments: 'Completed lesson',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(legacyFilledTemplate),
+    'lesson',
+    identity,
+    competencyDefinitions,
+    emptyMappings,
+  );
+
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].source_reference, 'LEGACY-1');
+});
+
+test('Skip explicitly excludes a populated template row', () => {
+  const csv = createCourseTransferCsv('lesson', competencyDefinitions, [{
+    include: 'Skip',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: course.title,
+    course_version: course.version,
+    record_reference: 'SKIPPED-1',
+    date: '31/07/2026',
+    lesson: 'RPC-01',
+    dual_time: '1:00',
+    instructor_name: 'Jane Instructor',
+    comments: 'Do not import this row',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    identity,
+    competencyDefinitions,
+    emptyMappings,
+  );
+
+  assert.equal(result.rows.length, 0);
+  assert.match(result.errors[0].messages[0], /Fill in at least one completed row/);
+});
+
+test('file-level correction downloads preserve every original column and data row', () => {
+  const parsed = parseCsv(getCourseStudentRecordTemplate('lesson', identity, competencyDefinitions));
+  const rejected = createRejectedRowsCsv(parsed, [{
+    sourceRow: 1,
+    messages: ['Fill in at least one completed row or mark Include as Yes.'],
+  }]);
+  const reparsed = parseCsv(rejected);
+
+  assert.equal(reparsed.rows.length, parsed.rows.length);
+  assert.equal(reparsed.rows[0].values.student_portal_id, identity.studentId);
+  assert.equal(reparsed.rows[0].values.student_name, identity.studentName);
+  assert.equal(reparsed.rows[0].values.lesson, formatLessonLabel(course.lessons[0]));
+  assert.match(reparsed.rows[0].values.problem, /Fill in at least one completed row/);
 });
 
 test('course CSV requires a unique stable reference for every included record', () => {
