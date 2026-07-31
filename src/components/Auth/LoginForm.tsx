@@ -156,7 +156,7 @@ export const LoginForm: React.FC = () => {
               href="/join"
               className="text-sm text-blue-600 hover:text-blue-500 font-medium"
             >
-              Don't have an account? Join the club
+              Don't have an account? Create one
             </a>
             <span className="mx-2 text-gray-300" aria-hidden="true">·</span>
             <a href="/privacy" className="text-sm font-medium text-blue-600 hover:text-blue-500">Privacy</a>
