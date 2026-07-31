@@ -215,6 +215,18 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    const body = await req.json();
+    if (body.action === "accept_current") {
+      const acceptedAt = new Date().toISOString();
+      const { error } = await adminClient
+        .from("invitations")
+        .update({ status: "accepted", accepted_at: acceptedAt })
+        .eq("user_id", callerUser.id)
+        .eq("status", "pending");
+      if (error) return jsonResponse({ error: error.message }, 500);
+      return jsonResponse({ accepted: true, acceptedAt });
+    }
+
     const { data: callerRoles, error: callerRolesError } = await adminClient
       .from("user_roles")
       .select("role")
@@ -224,7 +236,6 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: "Only admins can invite users" }, 403);
     }
 
-    const body = await req.json();
     const email = normaliseEmail(body.email);
     const name = String(body.name || "").trim();
     const phone = body.phone ? String(body.phone).trim() : null;

@@ -27,6 +27,16 @@ export const ResetPasswordPage: React.FC = () => {
     return data;
   };
 
+  const markInvitationAccepted = async () => {
+    const { error } = await supabase.functions.invoke('invite-user', {
+      body: { action: 'accept_current' },
+    });
+
+    if (error) {
+      console.warn('Password was set, but the invitation status could not be finalised:', error);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     let recoveryConfirmed = false;
@@ -306,6 +316,7 @@ export const ResetPasswordPage: React.FC = () => {
       if (error) throw error;
 
       clearPasswordSetupMarker();
+      await markInvitationAccepted();
       await markTrialVoucherPasswordSet();
       const redirect = await getPostResetRedirect();
       toast.success(redirect.keepSignedIn ? 'Password updated. Opening your voucher booking page...' : 'Password updated successfully! Redirecting to login...');
@@ -325,6 +336,7 @@ export const ResetPasswordPage: React.FC = () => {
 
       if (message.toLowerCase().includes('same as the old')) {
         clearPasswordSetupMarker();
+        await markInvitationAccepted();
         await markTrialVoucherPasswordSet();
         const redirect = await getPostResetRedirect();
         toast.success(redirect.keepSignedIn ? 'That password is already current. Opening your voucher booking page...' : 'That password is already current for this account. Redirecting to login...');
