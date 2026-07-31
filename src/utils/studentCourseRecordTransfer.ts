@@ -28,6 +28,8 @@ export interface CourseTransferIdentity {
   course: TrainingModule;
 }
 
+export type CourseTransferRecordType = StudentRecordImportType | 'review';
+
 const LESSON_BASE_HEADERS = [
   'include',
   'student_portal_id',
@@ -95,7 +97,7 @@ const stableHash = (value: string) => {
 };
 
 export const createAutomaticRecordReference = (
-  type: StudentRecordImportType,
+  type: CourseTransferRecordType,
   studentId: string,
   values: Record<string, string>,
 ) => {
@@ -104,7 +106,8 @@ export const createAutomaticRecordReference = (
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => `${key}=${value.trim()}`)
     .join('\u001f');
-  return `${type === 'lesson' ? 'LESSON' : 'EXAM'}-AUTO-${stableHash(`${studentId}\u001e${fingerprint}`)}`;
+  const prefix = type === 'lesson' ? 'LESSON' : type === 'exam' ? 'EXAM' : 'REVIEW';
+  return `${prefix}-AUTO-${stableHash(`${studentId}\u001e${fingerprint}`)}`;
 };
 
 const normaliseColumnPart = (value: string) => value
@@ -272,7 +275,7 @@ export const getCourseCompetencyGuideCsv = (
 
 export const getCourseTransferFilename = (
   identity: CourseTransferIdentity,
-  type: StudentRecordImportType,
+  type: CourseTransferRecordType,
   suffix: 'template' | 'export' | 'competency-guide',
 ) => {
   const student = escapeFilename(identity.studentName);

@@ -54,6 +54,7 @@ import { usePageLoadState } from '../../context/PageLoadContext';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { formatSyllabusMatrixText, matrixStandardLabel, useSyllabusMatrix } from '../../hooks/useSyllabusMatrix';
 import { supabase } from '../../lib/supabase';
+import { publicationIssueSummary } from '../../utils/courseQuality';
 
 interface NewCourseState {
   title: string;
@@ -1835,6 +1836,28 @@ export const TrainingCourseCatalog: React.FC = () => {
         passMark: Math.round(passMark)
       });
     }
+    const publicationCandidate: TrainingModule = {
+      ...selectedModule,
+      title,
+      category,
+      description: editCourse.description.trim() || selectedModule.description,
+      version,
+      status: editCourse.status,
+      estimatedDurationHours: Math.max(1, Number(editCourse.estimatedDurationHours) || 1),
+      prerequisites,
+      objectives,
+      evaluationCriteria,
+      assessmentCriteria: criteria,
+      exams,
+      resources,
+    };
+    if (publicationCandidate.status === 'published') {
+      const qualitySummary = publicationIssueSummary(publicationCandidate);
+      if (qualitySummary) {
+        toast.error(`This course is not ready to remain published. ${qualitySummary}`, { duration: 8000 });
+        return;
+      }
+    }
     try {
       const declarationChanged =
         (selectedModule.flyingDeclarationTitle || 'Flying Declaration') !== (editCourse.flyingDeclarationTitle.trim() || 'Flying Declaration') ||
@@ -2149,6 +2172,13 @@ export const TrainingCourseCatalog: React.FC = () => {
       resources,
       lastUpdated: new Date()
     };
+    if (module.status === 'published') {
+      const summary = publicationIssueSummary(module);
+      if (summary) {
+        toast.error(`Save this as a draft first. ${summary}`, { duration: 8000 });
+        return;
+      }
+    }
 
     try {
       const createdModule = await addModule(module);
@@ -2384,6 +2414,11 @@ export const TrainingCourseCatalog: React.FC = () => {
 
     if (selectedModule.status === 'published') {
       toast.success('Course is already published');
+      return;
+    }
+    const qualitySummary = publicationIssueSummary(selectedModule);
+    if (qualitySummary) {
+      toast.error(`This course is not ready to publish. ${qualitySummary}`, { duration: 8000 });
       return;
     }
 

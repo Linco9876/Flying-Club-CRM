@@ -20,7 +20,6 @@ import {
   formatLessonLabel,
   type ImportMappingState,
   parseCsv,
-  type StudentRecordImportType,
   withUtf8CsvBom,
 } from '../../utils/studentRecordImport';
 import {
@@ -32,11 +31,20 @@ import {
   getCourseTransferFilename,
   type CourseCompetencyDefinition,
   validateCourseStudentRecordCsv,
+  type CourseTransferRecordType,
 } from '../../utils/studentCourseRecordTransfer';
+import {
+  buildReviewChecklistTransferDefinitions,
+  createReviewTransferCsv,
+  getReviewChecklistGuideCsv,
+  getReviewRecordTemplate,
+  type ReviewChecklistTransferDefinition,
+  validateReviewRecordCsv,
+} from '../../utils/studentReviewRecordTransfer';
 
 interface ImportBatch {
   id: string;
-  record_type: StudentRecordImportType;
+  record_type: CourseTransferRecordType;
   source_filename: string;
   status: 'committed' | 'rolled_back';
   total_rows: number;
@@ -94,7 +102,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const fileInputRef = useRef<HTMLInputElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [recordType, setRecordType] = useState<StudentRecordImportType>('lesson');
+  const [recordType, setRecordType] = useState<CourseTransferRecordType>('lesson');
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [matrixCompetencies, setMatrixCompetencies] = useState<CourseCompetencyDefinition[]>([]);
   const [loadingCompetencies, setLoadingCompetencies] = useState(false);
@@ -114,6 +122,19 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     () => courses.find(course => course.id === selectedCourseId) || null,
     [courses, selectedCourseId],
   );
+  const availableCourses = useMemo(
+    () => courses.filter(course => {
+      const purpose = course.coursePurpose || 'training';
+      if (recordType === 'review') {
+        return ['flight_review', 'flight_test', 'proficiency_check'].includes(purpose);
+      }
+      if (purpose !== 'training') return false;
+      return recordType === 'lesson'
+        ? course.lessons.length > 0
+        : Boolean(course.exams?.length);
+    }),
+    [courses, recordType],
+  );
   const identity = useMemo(
     () => selectedCourse ? { studentId, studentName, course: selectedCourse } : null,
     [selectedCourse, studentId, studentName],
@@ -127,11 +148,19 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     ],
     [matrixCompetencies, recordType, selectedCourse],
   );
+  const reviewChecklist = useMemo<ReviewChecklistTransferDefinition[]>(
+    () => selectedCourse && recordType === 'review'
+      ? buildReviewChecklistTransferDefinitions(selectedCourse)
+      : [],
+    [recordType, selectedCourse],
+  );
   const validation = useMemo(
     () => parsed && identity
-      ? validateCourseStudentRecordCsv(parsed, recordType, identity, competencies, mappings)
+      ? recordType === 'review'
+        ? validateReviewRecordCsv(parsed, identity, reviewChecklist)
+        : validateCourseStudentRecordCsv(parsed, recordType, identity, competencies, mappings)
       : null,
-    [competencies, identity, mappings, parsed, recordType],
+    [competencies, identity, mappings, parsed, recordType, reviewChecklist],
   );
 
   useEffect(() => setServerPreview(null), [validation]);
@@ -237,8 +266,9 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleTypeChange = (nextType: StudentRecordImportType) => {
+  const handleTypeChange = (nextType: CourseTransferRecordType) => {
     setRecordType(nextType);
+    setSelectedCourseId('');
     resetFile();
     setRequestAcknowledgement(false);
   };
@@ -276,16 +306,24 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     if (!sourceFile || !validation || !selectedCourse || validation.errors.length > 0 || validation.rows.length === 0) return;
     setPreviewing(true);
     try {
-      const { data, error } = await supabase.rpc('process_student_course_record_import', {
+      const rpcName = recordType === 'review'
+        ? 'process_student_review_record_import'
+        : 'process_student_course_record_import';
+      const parameters = {
         p_student_id: studentId,
         p_course_id: selectedCourse.id,
         p_course_version: selectedCourse.version,
-        p_record_type: recordType,
         p_filename: sourceFile.name,
         p_rows: validation.rows,
         p_commit: false,
-        p_request_student_acknowledgement: requestAcknowledgement,
-      });
+        ...(recordType === 'review'
+          ? {}
+          : {
+              p_record_type: recordType,
+              p_request_student_acknowledgement: requestAcknowledgement,
+            }),
+      };
+      const { data, error } = await supabase.rpc(rpcName, parameters);
       if (error) throw error;
       setServerPreview(data as ServerPreview);
     } catch (error: any) {
@@ -300,16 +338,24 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
     if (!sourceFile || !validation || !selectedCourse || !serverPreview?.can_import) return;
     setImporting(true);
     try {
-      const { data, error } = await supabase.rpc('process_student_course_record_import', {
+      const rpcName = recordType === 'review'
+        ? 'process_student_review_record_import'
+        : 'process_student_course_record_import';
+      const parameters = {
         p_student_id: studentId,
         p_course_id: selectedCourse.id,
         p_course_version: selectedCourse.version,
-        p_record_type: recordType,
         p_filename: sourceFile.name,
         p_rows: validation.rows,
         p_commit: true,
-        p_request_student_acknowledgement: requestAcknowledgement,
-      });
+        ...(recordType === 'review'
+          ? {}
+          : {
+              p_record_type: recordType,
+              p_request_student_acknowledgement: requestAcknowledgement,
+            }),
+      };
+      const { data, error } = await supabase.rpc(rpcName, parameters);
       if (error) throw error;
       const result = data as ServerPreview;
       toast.success(
@@ -362,7 +408,9 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const downloadTemplate = () => {
     if (!identity) return;
     downloadTextFile(
-      getCourseStudentRecordTemplate(recordType, identity, competencies),
+      recordType === 'review'
+        ? getReviewRecordTemplate(identity, reviewChecklist)
+        : getCourseStudentRecordTemplate(recordType, identity, competencies),
       getCourseTransferFilename(identity, recordType, 'template'),
     );
   };
@@ -370,8 +418,10 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
   const downloadCompetencyGuide = () => {
     if (!identity) return;
     downloadTextFile(
-      getCourseCompetencyGuideCsv(identity, competencies),
-      getCourseTransferFilename(identity, 'lesson', 'competency-guide'),
+      recordType === 'review'
+        ? getReviewChecklistGuideCsv(identity, reviewChecklist)
+        : getCourseCompetencyGuideCsv(identity, competencies),
+      getCourseTransferFilename(identity, recordType, 'competency-guide'),
     );
   };
 
@@ -461,7 +511,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
           });
           return row;
         });
-      } else {
+      } else if (recordType === 'exam') {
         const { data: exams, error } = await supabase
           .from('student_exam_results')
           .select('id,exam_date,exam_id,exam_name,score,pass_mark,notes,kdr_completed,source_instructor_name,source_organisation,source_reference,instructor_id')
@@ -490,17 +540,107 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
           notes: exam.notes || '',
           kdr_completed: exam.kdr_completed ? 'Yes' : 'No',
         }));
+      } else {
+        const { data: reviews, error: reviewsError } = await supabase
+          .from('flight_review_records')
+          .select('id,review_date,status,external_examiner_name,external_examiner_identifier,external_examiner_organisation,reviewer_user_id,registration,aircraft_type,aircraft_group,ground_minutes,flight_minutes,candidate_objectives,reviewer_summary,remedial_plan,minimums_override_reason,emergency_plan_confirmed,logbook_entry_confirmed,authority_submission_confirmed,candidate_ack,next_review_due,source_reference,assessment_details')
+          .eq('candidate_id', studentId)
+          .eq('template_course_id', identity.course.id)
+          .order('review_date', { ascending: true });
+        if (reviewsError) throw reviewsError;
+        const reviewIds = (reviews || []).map(review => review.id);
+        const reviewerIds = [...new Set((reviews || []).map(review => review.reviewer_user_id).filter(Boolean))];
+        const [itemsResult, reviewersResult, attachmentsResult] = await Promise.all([
+          reviewIds.length
+            ? supabase
+                .from('flight_review_record_items')
+                .select('review_record_id,template_item_key,result,notes')
+                .in('review_record_id', reviewIds)
+            : Promise.resolve({ data: [], error: null }),
+          reviewerIds.length
+            ? supabase.from('users').select('id,name,email').in('id', reviewerIds)
+            : Promise.resolve({ data: [], error: null }),
+          reviewIds.length
+            ? supabase
+                .from('flight_review_attachments')
+                .select('review_record_id,category,file_name')
+                .in('review_record_id', reviewIds)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+        if (itemsResult.error) throw itemsResult.error;
+        if (reviewersResult.error) throw reviewersResult.error;
+        if (attachmentsResult.error) throw attachmentsResult.error;
+        const reviewers = new Map((reviewersResult.data || []).map(reviewer => [
+          reviewer.id,
+          reviewer.name || reviewer.email || 'Portal reviewer',
+        ]));
+        const itemsByRecord = new Map<string, Array<{
+          template_item_key: string;
+          result: string;
+          notes: string | null;
+        }>>();
+        (itemsResult.data || []).forEach(item => {
+          const current = itemsByRecord.get(item.review_record_id) || [];
+          current.push(item);
+          itemsByRecord.set(item.review_record_id, current);
+        });
+        const attachmentsByRecord = new Map<string, string[]>();
+        (attachmentsResult.data || []).forEach(attachment => {
+          const current = attachmentsByRecord.get(attachment.review_record_id) || [];
+          current.push(`${attachment.category}: ${attachment.file_name}`);
+          attachmentsByRecord.set(attachment.review_record_id, current);
+        });
+        exportRows = (reviews || []).map(review => {
+          const assessmentDetails = (review.assessment_details || {}) as Record<string, unknown>;
+          const evidenceReference = String(assessmentDetails.historicalEvidenceReference || '').trim()
+            || (attachmentsByRecord.get(review.id) || []).join('; ');
+          const row: Record<string, string> = {
+            ...common,
+            record_reference: review.source_reference || `portal-${review.id}`,
+            review_date: review.review_date,
+            status: review.status,
+            reviewer_name: review.external_examiner_name || reviewers.get(review.reviewer_user_id) || 'Portal reviewer',
+            reviewer_identifier: review.external_examiner_identifier || '',
+            reviewer_organisation: review.external_examiner_organisation || 'Bendigo Flying Club portal',
+            aircraft_registration: review.registration || '',
+            aircraft_type: review.aircraft_type || '',
+            aircraft_group: review.aircraft_group || '',
+            ground_time: `${Math.floor((review.ground_minutes || 0) / 60)}:${String((review.ground_minutes || 0) % 60).padStart(2, '0')}`,
+            flight_time: `${Math.floor((review.flight_minutes || 0) / 60)}:${String((review.flight_minutes || 0) % 60).padStart(2, '0')}`,
+            candidate_objectives: review.candidate_objectives || '',
+            reviewer_summary: review.reviewer_summary || '',
+            further_training_plan: review.remedial_plan || '',
+            minimums_override_reason: review.minimums_override_reason || '',
+            emergency_plan_confirmed: review.emergency_plan_confirmed ? 'Yes' : 'No',
+            logbook_entry_confirmed: review.logbook_entry_confirmed ? 'Yes' : 'No',
+            authority_submission_confirmed: review.authority_submission_confirmed ? 'Yes' : 'No',
+            candidate_acknowledged: review.candidate_ack ? 'Yes' : 'No',
+            evidence_reference: evidenceReference,
+            next_review_due: review.next_review_due || '',
+          };
+          (itemsByRecord.get(review.id) || []).forEach(item => {
+            const definition = reviewChecklist.find(candidate => candidate.key === item.template_item_key);
+            if (!definition) return;
+            row[definition.resultColumn] = item.result;
+            row[definition.notesColumn] = item.notes || '';
+          });
+          return row;
+        });
       }
 
       if (exportRows.length === 0) {
-        toast.error(`No ${recordType === 'lesson' ? 'lesson records' : 'exam results'} exist for this student and course`);
+        const recordLabel = recordType === 'lesson' ? 'lesson records' : recordType === 'exam' ? 'exam results' : 'review or test records';
+        toast.error(`No ${recordLabel} exist for this student and course`);
         return;
       }
       downloadTextFile(
-        createCourseTransferCsv(recordType, competencies, exportRows),
+        recordType === 'review'
+          ? createReviewTransferCsv(reviewChecklist, exportRows)
+          : createCourseTransferCsv(recordType, competencies, exportRows),
         getCourseTransferFilename(identity, recordType, 'export'),
       );
-      toast.success(`Exported ${exportRows.length} ${recordType === 'lesson' ? 'lesson records' : 'exam results'}`);
+      const recordLabel = recordType === 'lesson' ? 'lesson records' : recordType === 'exam' ? 'exam results' : 'review or test records';
+      toast.success(`Exported ${exportRows.length} ${recordLabel}`);
     } catch (error: any) {
       console.error('Failed to export student course records:', error);
       toast.error(error?.message || 'Could not export the current data');
@@ -540,8 +680,8 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
             <main className="space-y-5">
               <section>
                 <p className="mb-2 text-sm font-semibold text-gray-900">1. Choose the course and record type</p>
-                <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
-                  {(['lesson', 'exam'] as StudentRecordImportType[]).map(type => (
+                <div className="grid grid-cols-3 gap-2 rounded-xl bg-gray-100 p-1">
+                  {(['lesson', 'exam', 'review'] as CourseTransferRecordType[]).map(type => (
                     <button
                       key={type}
                       type="button"
@@ -550,7 +690,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                         recordType === type ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
-                      {type === 'lesson' ? 'Lesson records' : 'Exam results'}
+                      {type === 'lesson' ? 'Lesson records' : type === 'exam' ? 'Exam results' : 'Reviews & tests'}
                     </button>
                   ))}
                 </div>
@@ -562,7 +702,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   >
                     <option value="">Choose a course...</option>
-                    {courses.map(course => (
+                    {availableCourses.map(course => (
                       <option key={course.id} value={course.id}>{course.title} · version {course.version}</option>
                     ))}
                   </select>
@@ -574,6 +714,11 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                       : competencies.length > 0
                         ? `${competencies.length} criteria and competency column${competencies.length === 1 ? '' : 's'} will be included in this course format.`
                         : 'This course has no criteria or competency codes configured. The template will import lesson records only.'}
+                  </p>
+                )}
+                {selectedCourse && recordType === 'review' && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    {reviewChecklist.length} checklist item{reviewChecklist.length === 1 ? '' : 's'} from this versioned review form will be included.
                   </p>
                 )}
               </section>
@@ -607,14 +752,14 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                       {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
                       Export current data
                     </button>
-                    {recordType === 'lesson' && competencies.length > 0 && (
+                    {((recordType === 'lesson' && competencies.length > 0) || (recordType === 'review' && reviewChecklist.length > 0)) && (
                       <button
                         type="button"
                         onClick={downloadCompetencyGuide}
                         disabled={!identity}
                         className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-100 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-200 disabled:opacity-50"
                       >
-                        <Download className="h-4 w-4" /> Criteria and competency guide
+                        <Download className="h-4 w-4" /> {recordType === 'review' ? 'Checklist guide' : 'Criteria and competency guide'}
                       </button>
                     )}
                   </div>
@@ -636,13 +781,21 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                       )}
                       <li>Use Yes or No for formal briefing and historical student acknowledgement.</li>
                     </ul>
-                  ) : (
+                  ) : recordType === 'exam' ? (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
                       <li>Completed rows are detected automatically. Include may also be Yes, X, Completed or Done.</li>
                       <li>Enter Skip in Include to deliberately omit a filled row.</li>
                       <li>Record reference is optional. Use the original result number when available; otherwise the portal creates one automatically.</li>
                       <li>Scores and pass marks are percentages between 0 and 100.</li>
                       <li>Use Yes or No for KDR completed.</li>
+                    </ul>
+                  ) : (
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      <li>Use one row for each review, flight test or club check.</li>
+                      <li>Completed rows are detected automatically. Enter Skip to deliberately omit a filled row.</li>
+                      <li>Dates may be DD/MM/YYYY or YYYY-MM-DD; times may be 1.25 hours, 1:15, or 75m.</li>
+                      <li>Use the checklist guide values exactly. A completed record requires every required item to be satisfactory or not_applicable.</li>
+                      <li>Attachments remain in the portal and are not embedded in CSV files.</li>
                     </ul>
                   )}
                 </details>
