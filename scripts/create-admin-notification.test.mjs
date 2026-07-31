@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { afterEach, test } from 'node:test';
 import { supabaseJson } from './create-admin-notification.mjs';
 
@@ -56,5 +57,18 @@ test('reports invalid non-empty JSON without exposing credentials', async () => 
       assert.doesNotMatch(error.message, /secret-service-role-key/);
       return true;
     },
+  );
+});
+
+test('failure monitor ignores superseded main-branch workflow runs', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/actions-failure-monitor.yml', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    workflow,
+    /github\.event\.workflow_run\.head_sha\s*==\s*github\.sha/,
+    'The monitor must only alert for a failure on the current main commit.',
   );
 });
