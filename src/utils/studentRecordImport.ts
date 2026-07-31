@@ -32,7 +32,7 @@ export interface NormalizedImportRow {
   student_portal_id?: string;
   competencies?: NormalizedImportedCompetency[];
   criteria_grades?: Record<string, string>;
-  [key: string]: string | number | boolean | NormalizedImportedCompetency[] | Record<string, string> | undefined;
+  [key: string]: string | number | boolean | NormalizedImportedCompetency[] | Array<Record<string, string>> | Record<string, string> | undefined;
 }
 
 export interface NormalizedImportedCompetency {
