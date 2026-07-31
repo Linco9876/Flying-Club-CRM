@@ -92,6 +92,9 @@ export const csvCell = (value: string) => {
   const safe = safeSpreadsheetCell(value);
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 };
+
+export const withUtf8CsvBom = (value: string) => value.startsWith('\uFEFF') ? value : `\uFEFF${value}`;
+
 export const getStudentRecordTemplate = (type: StudentRecordImportType) => {
   const headers = type === 'lesson' ? LESSON_HEADERS : EXAM_HEADERS;
   return `${headers.join(',')}\r\n`;
@@ -210,6 +213,17 @@ const parseBoolean = (value: string, defaultValue = false) => {
 const normaliseLookup = (value: string) => value.trim().toLocaleLowerCase();
 const mappingKey = (course: string, child: string) => `${normaliseLookup(course)}::${normaliseLookup(child)}`;
 
+export const formatLessonLabel = (lesson: {
+  sequenceCode?: string;
+  sequenceTitle?: string;
+  name?: string;
+}) => {
+  const code = lesson.sequenceCode?.trim() || '';
+  const title = lesson.name?.trim() || lesson.sequenceTitle?.trim() || '';
+  if (code && title && normaliseLookup(code) !== normaliseLookup(title)) return `${code} · ${title}`;
+  return code || title;
+};
+
 const findCourse = (label: string, courses: TrainingModule[], mappings: ImportMappingState) => {
   const mapped = mappings.courses[normaliseLookup(label)];
   if (mapped) return courses.find(course => course.id === mapped);
@@ -260,7 +274,8 @@ export const validateStudentRecordCsv = (
       const lesson = course?.lessons.find(candidate =>
         candidate.id === mappedLessonId ||
         candidate.id === lessonLabel ||
-        [candidate.sequenceCode, candidate.name, candidate.sequenceTitle].some(label => normaliseLookup(label) === normaliseLookup(lessonLabel))
+        [candidate.sequenceCode, candidate.name, candidate.sequenceTitle, formatLessonLabel(candidate)]
+          .some(label => normaliseLookup(label) === normaliseLookup(lessonLabel))
       );
       if (!lesson) {
         rowErrors.push(`Choose a portal lesson for "${lessonLabel || 'blank lesson'}".`);

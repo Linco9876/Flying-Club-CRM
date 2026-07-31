@@ -1,6 +1,7 @@
 import type { TrainingModule } from '../types/index.ts';
 import {
   csvCell,
+  formatLessonLabel,
   type CsvParseResult,
   type ImportMappingState,
   type ImportValidationResult,
@@ -152,7 +153,7 @@ export const getCourseStudentRecordTemplate = (
   const rows = type === 'lesson'
     ? identity.course.lessons.map(lesson => ({
         ...common,
-        lesson: lesson.sequenceCode || lesson.name,
+        lesson: formatLessonLabel(lesson),
       }))
     : (identity.course.exams || []).map(exam => ({
         ...common,
@@ -167,7 +168,7 @@ export const getCourseCompetencyGuideCsv = (
   competencies: CourseCompetencyDefinition[],
 ) => {
   const headers = ['course', 'course_version', 'competency_code', 'csv_column', 'description', 'applicable_lessons', 'allowed_values'];
-  const lessonNames = new Map(identity.course.lessons.map(lesson => [lesson.id, lesson.sequenceCode || lesson.name]));
+  const lessonNames = new Map(identity.course.lessons.map(lesson => [lesson.id, formatLessonLabel(lesson)]));
   const rows = competencies.map(competency => [
     identity.course.title,
     identity.course.version,
