@@ -58,18 +58,23 @@ export interface CreateSafetyReportData {
 }
 
 interface UseSafetyReportsOptions {
+  enabled?: boolean;
   participateInPageLoad?: boolean;
 }
 
 export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
   const { user } = useAuth();
-  const { settings, categories } = useSafetySettings();
+  const enabled = options?.enabled ?? true;
   const [reports, setReports] = useState<SafetyReport[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const participateInPageLoad = options?.participateInPageLoad ?? true;
+  const { settings, categories } = useSafetySettings({
+    enabled,
+    participateInPageLoad: enabled && participateInPageLoad,
+  });
 
   usePageLoadState(
-    participateInPageLoad && loading,
+    enabled && participateInPageLoad && loading,
     'Loading safety',
     'Preparing safety reports, involved members and incident status...'
   );
@@ -129,8 +134,13 @@ export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
   };
 
   useEffect(() => {
+    if (!enabled) {
+      setReports([]);
+      setLoading(false);
+      return;
+    }
     fetchReports();
-  }, [user?.id, user?.role]);
+  }, [enabled, user?.id, user?.role]);
 
   const createReport = async (report: CreateSafetyReportData) => {
     if (!user) throw new Error('You must be signed in to submit a report');

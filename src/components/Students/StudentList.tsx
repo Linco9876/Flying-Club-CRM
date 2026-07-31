@@ -1,5 +1,5 @@
 import React from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StudentForm } from './StudentForm';
 import { InviteUserModal } from './InviteUserModal';
@@ -30,6 +30,7 @@ import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
+import { prefetchStudentProfile } from './studentProfileLoader';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
@@ -58,6 +59,11 @@ export const StudentList: React.FC = () => {
     'Loading members',
     'Preparing member cards, roles, recent activity and training counts...'
   );
+
+  useEffect(() => {
+    const timer = window.setTimeout(prefetchStudentProfile, 700);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const normaliseSearch = (value?: string | null) =>
     (value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -411,11 +417,17 @@ export const StudentList: React.FC = () => {
   };
 
   const openViewDetails = (student: Student) => {
-    navigate(`/students/${student.id}`);
+    prefetchStudentProfile();
+    navigate(`/students/${student.id}`, {
+      state: { studentPreview: { id: student.id, name: student.name, role: student.role } },
+    });
   };
 
   const openStudentTab = (student: Student, tab: string) => {
-    navigate(`/students/${student.id}?tab=${tab}`);
+    prefetchStudentProfile();
+    navigate(`/students/${student.id}?tab=${tab}`, {
+      state: { studentPreview: { id: student.id, name: student.name, role: student.role } },
+    });
   };
 
   const handleArchiveMember = async (student: Student) => {
@@ -673,6 +685,8 @@ export const StudentList: React.FC = () => {
               return (
                 <div
                   key={student.id}
+                  onPointerEnter={prefetchStudentProfile}
+                  onFocusCapture={prefetchStudentProfile}
                   className="relative grid gap-2 px-3 py-3 pr-14 transition-colors hover:bg-gray-50 md:grid-cols-[minmax(180px,1.2fr)_minmax(180px,1.4fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_auto] md:items-center md:gap-3 md:px-4"
                 >
                   <button
@@ -732,6 +746,8 @@ export const StudentList: React.FC = () => {
           return (
             <article
               key={student.id}
+              onPointerEnter={prefetchStudentProfile}
+              onFocusCapture={prefetchStudentProfile}
               className="overflow-visible rounded-xl border border-gray-200 bg-white shadow-sm"
             >
               <div className="flex items-start gap-3 px-3 py-3">

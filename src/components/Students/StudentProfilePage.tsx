@@ -33,6 +33,8 @@ import { AcknowledgedLessonSummary } from './AcknowledgedLessonSummary';
 import { shouldCompactAcknowledgedLesson } from '../../utils/lessonRecordPresentation';
 import { formatBillingDescription } from '../../utils/billingDescription';
 import { StudentRecordImportModal } from './StudentRecordImportModal';
+import { StudentProfileSkeleton } from './StudentProfileSkeleton';
+import { getStudentProfileLoadPlan } from '../../utils/studentProfileLoading';
 
 interface StudentInfoForm {
   name: string;
@@ -423,28 +425,40 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     kdrNotes: '',
   });
 
-  const { students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
+  const loadPlan = getStudentProfileLoadPlan(activeTab, trainingSubtab);
+  const {
+    students,
+    loading: studentsLoading,
+    error: studentsError,
+    refetch: refetchStudents,
+  } = useStudents({
+    participateInPageLoad: false,
+    scopeStudentId: studentId,
+  });
   const {
     trainingRecords,
     loading: trainingRecordsLoading,
     updateTrainingRecord,
     refetch: refetchTrainingRecords,
   } = useTrainingRecords(studentId, { requireStudentId: true });
-  const { users } = useUsers();
+  const { users } = useUsers(loadPlan.userDirectory);
   const { modules: allTrainingCourses } = useTrainingModules();
   const trainingCourses = useMemo(
     () => allTrainingCourses.filter(course => (course.coursePurpose ?? 'training') === 'training'),
     [allTrainingCourses]
   );
   const { settings: portalSettings } = usePortalUxSettings();
-  const { reports: safetyReports } = useSafetyReports();
+  const { reports: safetyReports } = useSafetyReports({
+    enabled: loadPlan.safetyReports,
+    participateInPageLoad: false,
+  });
   const { settings: trainingSettings } = useTrainingSettings();
   const billing = useBillingAccounts({
-    enabled: activeTab === 'billing',
+    enabled: loadPlan.invoices,
     scope: 'member',
     userId: studentId,
   });
-  const { paymentMethods } = useBillingSettings({ enabled: activeTab === 'billing', paymentMethodsOnly: true });
+  const { paymentMethods } = useBillingSettings({ enabled: loadPlan.invoices, paymentMethodsOnly: true });
   const {
     enrolments: courseEnrolments,
     loading: courseEnrolmentsLoading,
@@ -544,11 +558,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     }
   }, [portalSection, searchParams]);
 
-  useEffect(() => {
-    if (!studentId || !['profile', 'training', 'courses'].includes(activeTab)) return;
-    void refetchTrainingRecords();
-  }, [activeTab, refetchTrainingRecords, studentId]);
-
   const handleTabChange = (tabId: string) => {
     const isTrainingSubtab = tabId === 'training' || tabId === 'reviews' || tabId === 'exams' || tabId === 'courses';
     if (isTrainingSubtab && (activeTab === 'training' || (isOwnStudentPortal && portalSection === 'training'))) {
@@ -571,13 +580,6 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     nextParams.delete('subtab');
     setSearchParams(nextParams, { replace: true });
   };
-
-  useEffect(() => {
-    if (!studentsLoading && routeStudentId && !student) {
-      toast.error('Student not found');
-      navigate('/students');
-    }
-  }, [studentsLoading, routeStudentId, student, navigate]);
 
   const isPilot = Boolean(student?.roles?.includes('pilot') || student?.role === 'pilot');
 
@@ -635,12 +637,17 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   }, [studentId]);
 
   useEffect(() => {
-    fetchStudentExamResults();
-  }, [fetchStudentExamResults]);
+    if (!loadPlan.examResults) {
+      setLoadingExams(false);
+      return;
+    }
+    void fetchStudentExamResults();
+  }, [fetchStudentExamResults, loadPlan.examResults]);
 
   const fetchStudentInvoices = useCallback(async () => {
-    if (!studentId || !student?.xeroContactId) {
+    if (activeTab !== 'billing' || !studentId || !student?.xeroContactId) {
       setStudentInvoices([]);
+      setLoadingInvoices(false);
       return;
     }
     setLoadingInvoices(true);
@@ -673,10 +680,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     } finally {
       setLoadingInvoices(false);
     }
-  }, [student?.xeroContactId, studentId]);
+  }, [activeTab, student?.xeroContactId, studentId]);
 
   useEffect(() => {
-    fetchStudentInvoices();
+    void fetchStudentInvoices();
   }, [fetchStudentInvoices]);
 
   const selectedExamCourse = trainingCourses.find(course => course.id === examForm.courseId) ?? null;
@@ -1221,6 +1228,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const loading = studentsLoading;
   const recordsLoading = trainingRecordsLoading;
+  const overviewRecordsLoading = recordsLoading || courseEnrolmentsLoading;
 
   const handleAddTrainingRecord = () => {
     if (!student?.id) return;
@@ -1799,49 +1807,47 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     }
   }, [activeTab, isOwnStudentPortal, portalSection, tabs]);
 
+  const navigationPreview = (location.state as {
+    studentPreview?: { id?: string; name?: string };
+  } | null)?.studentPreview;
+  const previewName = navigationPreview?.id === studentId ? navigationPreview?.name : undefined;
+
   if (loading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-                <div className="h-6 bg-gray-200 rounded mb-4"></div>
-                <div className="space-y-3">
-                  <div className="h-4 bg-gray-200 rounded"></div>
-                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              </div>
-            </div>
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-                <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
-                <div className="space-y-3">
-                  <div className="h-4 bg-gray-200 rounded"></div>
-                  <div className="h-4 bg-gray-200 rounded"></div>
-                  <div className="h-4 bg-gray-200 rounded"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <StudentProfileSkeleton studentName={previewName} onBack={() => navigate('/students')} />;
   }
 
   if (!student) {
     return (
-      <div className="p-6">
-        <div className="text-center py-12">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Student not found</h3>
+      <div className="p-3 sm:p-6">
+        <div className="mx-auto mt-10 max-w-lg rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-white/10 dark:bg-[#151922] sm:p-8">
+          <AlertTriangle className="mx-auto h-9 w-9 text-amber-500" />
+          <h3 className="mt-3 text-lg font-semibold text-gray-950 dark:text-gray-50">
+            {studentsError ? 'Could not open this pilot file' : 'Student not found'}
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+            {studentsError
+              ? 'The member details could not be loaded. Check your connection and try again.'
+              : 'This member may have been removed, archived, or you may not have access to their file.'}
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {studentsError && (
+              <button
+                type="button"
+                onClick={() => void refetchStudents()}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Try again
+              </button>
+            )}
           <button
+            type="button"
             onClick={() => navigate('/students')}
-            className="text-blue-600 hover:text-blue-800"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/15 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
           >
-            Return to students list
+              Return to members
           </button>
+          </div>
         </div>
       </div>
     );
@@ -2336,31 +2342,48 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 Flight Statistics
               </h2>
               
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <p className="text-xs font-medium text-blue-900">Total Hours</p>
-                  <p className="text-lg font-bold text-blue-600">{formatDecimalTime(totalFlightTime)}</p>
+              {recordsLoading ? (
+                <div
+                  className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4"
+                  role="status"
+                  aria-live="polite"
+                  aria-busy="true"
+                >
+                  <span className="sr-only">Loading flight statistics</span>
+                  {[0, 1, 2].map(item => (
+                    <div key={item} aria-hidden="true" className="rounded-lg bg-slate-50 p-3 dark:bg-white/5">
+                      <div className="h-3 w-20 animate-pulse rounded bg-slate-200 dark:bg-white/10 motion-reduce:animate-none" />
+                      <div className="mt-2 h-6 w-24 animate-pulse rounded bg-slate-200 dark:bg-white/10 motion-reduce:animate-none" />
+                    </div>
+                  ))}
                 </div>
-                
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <p className="text-xs font-medium text-green-900">Dual Time</p>
-                  <p className="text-lg font-bold text-green-600">{formatDecimalTime(totalDualTime)}</p>
-                </div>
-                
-                <div className="bg-orange-50 p-3 rounded-lg">
-                  <p className="text-xs font-medium text-orange-900">Solo Time</p>
-                  <p className="text-lg font-bold text-orange-600">{formatDecimalTime(totalSoloTime)}</p>
-                </div>
-                
-                {student.xeroContactId && accountBalance !== null && (
-                  <div className="bg-purple-50 p-3 rounded-lg">
-                    <p className="text-xs font-medium text-purple-900">Credit</p>
-                    <p className="text-lg font-bold text-purple-600">{formatCurrency(accountBalance)}</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+                  <div className="bg-blue-50 p-3 rounded-lg">
+                    <p className="text-xs font-medium text-blue-900">Total Hours</p>
+                    <p className="text-lg font-bold text-blue-600">{formatDecimalTime(totalFlightTime)}</p>
                   </div>
-                )}
-              </div>
+
+                  <div className="bg-green-50 p-3 rounded-lg">
+                    <p className="text-xs font-medium text-green-900">Dual Time</p>
+                    <p className="text-lg font-bold text-green-600">{formatDecimalTime(totalDualTime)}</p>
+                  </div>
+
+                  <div className="bg-orange-50 p-3 rounded-lg">
+                    <p className="text-xs font-medium text-orange-900">Solo Time</p>
+                    <p className="text-lg font-bold text-orange-600">{formatDecimalTime(totalSoloTime)}</p>
+                  </div>
+
+                  {student.xeroContactId && accountBalance !== null && (
+                    <div className="bg-purple-50 p-3 rounded-lg">
+                      <p className="text-xs font-medium text-purple-900">Credit</p>
+                      <p className="text-lg font-bold text-purple-600">{formatCurrency(accountBalance)}</p>
+                    </div>
+                  )}
+                </div>
+              )}
               
-              {lastFlightDate && (
+              {!recordsLoading && lastFlightDate && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Flight</p>
                   <p className="text-sm text-gray-900">{lastFlightDate.toLocaleDateString()}</p>
@@ -2422,31 +2445,60 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             {(!isOwnStudentPortal || portalSettings.show_progress_tracking) ? (
               <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Training Progress Overview</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-blue-900">Lessons Completed</p>
-                  <p className="text-2xl font-bold text-blue-600">{studentTrainingRecords.length}</p>
+              {overviewRecordsLoading ? (
+                <div
+                  className="space-y-6"
+                  role="status"
+                  aria-live="polite"
+                  aria-busy="true"
+                >
+                  <span className="sr-only">Loading training progress</span>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3" aria-hidden="true">
+                    {[0, 1, 2].map(item => (
+                      <div key={item} className="rounded-lg bg-slate-50 p-4 dark:bg-white/5">
+                        <div className="h-4 w-32 max-w-full animate-pulse rounded bg-slate-200 dark:bg-white/10 motion-reduce:animate-none" />
+                        <div className="mt-3 h-8 w-20 animate-pulse rounded bg-slate-200 dark:bg-white/10 motion-reduce:animate-none" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-3" aria-hidden="true">
+                    {[0, 1, 2].map(item => (
+                      <div key={item} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 dark:bg-white/5">
+                        <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-slate-200 dark:bg-white/10 motion-reduce:animate-none" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-2/5 animate-pulse rounded bg-slate-200 dark:bg-white/10 motion-reduce:animate-none" />
+                          <div className="h-3 w-3/5 animate-pulse rounded bg-slate-200 dark:bg-white/10 motion-reduce:animate-none" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <p className="text-sm font-medium text-blue-900">Lessons Completed</p>
+                      <p className="text-2xl font-bold text-blue-600">{studentTrainingRecords.length}</p>
+                    </div>
 
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-green-900">Competent Sequences</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {studentTrainingRecords.reduce((sum, r) => sum + r.sequences.filter(s => s.competence === 'C').length, 0)}
-                  </p>
-                </div>
-                
-                <div className="bg-orange-50 p-4 rounded-lg">
-                  <p className="text-sm font-medium text-orange-900">
-                    {mostAdvancedCourseProgress ? `Progress to ${mostAdvancedCourseProgress.course.title}` : 'Course Progress'}
-                  </p>
-                  <p className="text-2xl font-bold text-orange-600">
-                    {mostAdvancedCourseProgress?.percentage ?? 0}%
-                  </p>
-                </div>
-              </div>
+                    <div className="bg-green-50 p-4 rounded-lg">
+                      <p className="text-sm font-medium text-green-900">Competent Sequences</p>
+                      <p className="text-2xl font-bold text-green-600">
+                        {studentTrainingRecords.reduce((sum, r) => sum + r.sequences.filter(s => s.competence === 'C').length, 0)}
+                      </p>
+                    </div>
 
-              {studentTrainingRecords.length === 0 ? (
+                    <div className="bg-orange-50 p-4 rounded-lg">
+                      <p className="text-sm font-medium text-orange-900">
+                        {mostAdvancedCourseProgress ? `Progress to ${mostAdvancedCourseProgress.course.title}` : 'Course Progress'}
+                      </p>
+                      <p className="text-2xl font-bold text-orange-600">
+                        {mostAdvancedCourseProgress?.percentage ?? 0}%
+                      </p>
+                    </div>
+                  </div>
+
+                  {studentTrainingRecords.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No training records yet</h3>
@@ -2461,30 +2513,32 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     </button>
                   )}
                 </div>
-              ) : (
-                <div>
-                  <h3 className="text-md font-medium text-gray-900 mb-3">Recent Training Activity</h3>
-                  <div className="space-y-3">
-                    {studentTrainingRecords.slice(0, 5).map(record => {
-                      const instructor = users.find(u => u.id === record.instructorId);
-                      return (
-                        <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {record.date.toLocaleDateString()} - {record.registration}
-                            </p>
-                            <p className="text-xs text-gray-600">
-                              {record.sourceInstructorName || instructor?.name || 'Unknown'} | {formatDecimalTime(record.dualTimeMin + record.soloTimeMin)}h
-                            </p>
-                          </div>
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
-                            {record.status}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-md font-medium text-gray-900 mb-3">Recent Training Activity</h3>
+                      <div className="space-y-3">
+                        {studentTrainingRecords.slice(0, 5).map(record => {
+                          const instructor = users.find(u => u.id === record.instructorId);
+                          return (
+                            <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {record.date.toLocaleDateString()} - {record.registration}
+                                </p>
+                                <p className="text-xs text-gray-600">
+                                  {record.sourceInstructorName || instructor?.name || 'Unknown'} | {formatDecimalTime(record.dualTimeMin + record.soloTimeMin)}h
+                                </p>
+                              </div>
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
+                                {record.status}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
               </div>
             ) : (

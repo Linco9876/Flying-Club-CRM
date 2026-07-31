@@ -80,16 +80,18 @@ const mapSettings = (data: any): SafetyComplianceSettings => ({
 });
 
 interface UseSafetySettingsOptions {
+  enabled?: boolean;
   participateInPageLoad?: boolean;
 }
 
 export const useSafetySettings = (options: UseSafetySettingsOptions = {}) => {
+  const enabled = options.enabled ?? true;
   const participateInPageLoad = options.participateInPageLoad ?? true;
   const [settings, setSettings] = useState<SafetyComplianceSettings>(DEFAULT_SAFETY_SETTINGS);
   const [categories, setCategories] = useState<SafetyReportCategory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   usePageLoadState(
-    participateInPageLoad && loading,
+    enabled && participateInPageLoad && loading,
     'Loading safety',
     'Preparing safety rules, report categories and compliance settings...'
   );
@@ -121,11 +123,17 @@ export const useSafetySettings = (options: UseSafetySettingsOptions = {}) => {
   };
 
   useEffect(() => {
+    if (!enabled) {
+      setSettings(DEFAULT_SAFETY_SETTINGS);
+      setCategories([]);
+      setLoading(false);
+      return undefined;
+    }
     fetchData();
     const handleUpdated = () => fetchData();
     window.addEventListener(SAFETY_SETTINGS_UPDATED_EVENT, handleUpdated);
     return () => window.removeEventListener(SAFETY_SETTINGS_UPDATED_EVENT, handleUpdated);
-  }, []);
+  }, [enabled]);
 
   const updateSettings = async (updates: Partial<SafetyComplianceSettings>) => {
     const nextSettings = { ...settings, ...updates };
