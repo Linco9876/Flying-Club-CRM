@@ -64,6 +64,46 @@ const EXAM_BASE_HEADERS = [
 ];
 
 const normaliseLookup = (value: string) => value.trim().toLocaleLowerCase();
+const normaliseVersionParts = (value: string) => {
+  const cleaned = value.trim().replace(/^v(?=\d)/i, '');
+  if (!/^\d+(?:\.\d+)*$/.test(cleaned)) return null;
+  const parts = cleaned.split('.').map(part => Number(part));
+  while (parts.length > 1 && parts.at(-1) === 0) parts.pop();
+  return parts;
+};
+
+export const courseVersionsMatch = (left: string, right: string) => {
+  const leftParts = normaliseVersionParts(left);
+  const rightParts = normaliseVersionParts(right);
+  if (!leftParts || !rightParts) return left.trim() === right.trim();
+  return leftParts.length === rightParts.length
+    && leftParts.every((part, index) => part === rightParts[index]);
+};
+
+const stableHash = (value: string) => {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`;
+};
+
+export const createAutomaticRecordReference = (
+  type: StudentRecordImportType,
+  studentId: string,
+  values: Record<string, string>,
+) => {
+  const fingerprint = Object.entries(values)
+    .filter(([key]) => !['include', 'record_reference', 'problem'].includes(key))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value.trim()}`)
+    .join('\u001f');
+  return `${type === 'lesson' ? 'LESSON' : 'EXAM'}-AUTO-${stableHash(`${studentId}\u001e${fingerprint}`)}`;
+};
+
 const normaliseColumnPart = (value: string) => value
   .trim()
   .toLowerCase()
@@ -278,7 +318,8 @@ export const validateCourseStudentRecordCsv = (
       ...row,
       values: {
         ...row.values,
-        source_reference: row.values.record_reference || '',
+        source_reference: row.values.record_reference?.trim()
+          || createAutomaticRecordReference(type, identity.studentId, row.values),
       },
     })),
   };
@@ -292,19 +333,18 @@ export const validateCourseStudentRecordCsv = (
     if (normaliseLookup(values.course) !== normaliseLookup(identity.course.title)) {
       mergeRowError(metadataErrors, rawRow.sourceRow, `Course must be "${identity.course.title}".`);
     }
-    if (values.course_version.trim() !== identity.course.version.trim()) {
+    if (!courseVersionsMatch(values.course_version, identity.course.version)) {
       mergeRowError(metadataErrors, rawRow.sourceRow, `Course version must be "${identity.course.version}". Download a fresh template if the course changed.`);
     }
-    if (!values.record_reference.trim()) {
-      mergeRowError(metadataErrors, rawRow.sourceRow, 'Record reference is required and must identify this lesson or exam uniquely.');
+    const reference = normaliseLookup(
+      values.record_reference
+      || createAutomaticRecordReference(type, identity.studentId, values),
+    );
+    const previousRow = references.get(reference);
+    if (previousRow) {
+      mergeRowError(metadataErrors, rawRow.sourceRow, `Record reference duplicates row ${previousRow}.`);
     } else {
-      const reference = normaliseLookup(values.record_reference);
-      const previousRow = references.get(reference);
-      if (previousRow) {
-        mergeRowError(metadataErrors, rawRow.sourceRow, `Record reference duplicates row ${previousRow}.`);
-      } else {
-        references.set(reference, rawRow.sourceRow);
-      }
+      references.set(reference, rawRow.sourceRow);
     }
   });
 

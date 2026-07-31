@@ -211,6 +211,11 @@ const parseBoolean = (value: string, defaultValue = false) => {
 };
 
 const normaliseLookup = (value: string) => value.trim().toLocaleLowerCase();
+const normaliseLessonLookup = (value: string) => normaliseLookup(value)
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim()
+  .replace(/\s+/g, ' ');
 const mappingKey = (course: string, child: string) => `${normaliseLookup(course)}::${normaliseLookup(child)}`;
 
 export const formatLessonLabel = (lesson: {
@@ -275,7 +280,7 @@ export const validateStudentRecordCsv = (
         candidate.id === mappedLessonId ||
         candidate.id === lessonLabel ||
         [candidate.sequenceCode, candidate.name, candidate.sequenceTitle, formatLessonLabel(candidate)]
-          .some(label => normaliseLookup(label) === normaliseLookup(lessonLabel))
+          .some(label => normaliseLessonLookup(label) === normaliseLessonLookup(lessonLabel))
       );
       if (!lesson) {
         rowErrors.push(`Choose a portal lesson for "${lessonLabel || 'blank lesson'}".`);
