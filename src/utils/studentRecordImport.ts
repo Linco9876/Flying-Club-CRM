@@ -19,6 +19,71 @@ export interface ImportMappingState {
   exams: Record<string, string>;
 }
 
+export interface ImportWorkflowPresentation {
+  action: 'preview' | 'import' | 'none';
+  actionLabel: string;
+  title: string;
+  detail: string;
+}
+
+export const getImportWorkflowPresentation = ({
+  localReadyRows,
+  previewComplete,
+  serverCanImport = false,
+  serverReadyRows = 0,
+  duplicateRows = 0,
+  errorRows = 0,
+}: {
+  localReadyRows: number;
+  previewComplete: boolean;
+  serverCanImport?: boolean;
+  serverReadyRows?: number;
+  duplicateRows?: number;
+  errorRows?: number;
+}): ImportWorkflowPresentation => {
+  const localRecordLabel = `${localReadyRows} record${localReadyRows === 1 ? '' : 's'}`;
+  if (!previewComplete) {
+    return {
+      action: localReadyRows > 0 ? 'preview' : 'none',
+      actionLabel: localReadyRows > 0 ? `Preview ${localRecordLabel}` : 'No records ready',
+      title: localReadyRows > 0 ? `${localRecordLabel} matched` : 'No records ready',
+      detail: localReadyRows > 0
+        ? 'Run the safe server preview before anything is imported.'
+        : 'Complete or include at least one valid row before previewing.',
+    };
+  }
+
+  if (serverCanImport && serverReadyRows > 0) {
+    const readyLabel = `${serverReadyRows} record${serverReadyRows === 1 ? '' : 's'}`;
+    return {
+      action: 'import',
+      actionLabel: `Import ${readyLabel}`,
+      title: `${readyLabel} ready to import`,
+      detail: duplicateRows > 0
+        ? `${duplicateRows} existing duplicate${duplicateRows === 1 ? '' : 's'} will be skipped.`
+        : 'The server validation passed without changing any records.',
+    };
+  }
+
+  if (serverCanImport && serverReadyRows === 0 && duplicateRows > 0) {
+    return {
+      action: 'none',
+      actionLabel: 'Nothing new to import',
+      title: 'All records already exist',
+      detail: `${duplicateRows} duplicate record${duplicateRows === 1 ? '' : 's'} found; no changes are needed.`,
+    };
+  }
+
+  return {
+    action: 'none',
+    actionLabel: errorRows > 0 ? 'Correct errors before importing' : 'No records ready',
+    title: errorRows > 0 ? 'Server validation found a problem' : 'No records ready',
+    detail: errorRows > 0
+      ? `${errorRows} row${errorRows === 1 ? '' : 's'} must be corrected before importing.`
+      : 'The server did not find any new records to import.',
+  };
+};
+
 export interface NormalizedImportRow {
   source_row: number;
   date: string;

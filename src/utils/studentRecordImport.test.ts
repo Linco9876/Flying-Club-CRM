@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   createRejectedRowsCsv,
   formatLessonLabel,
+  getImportWorkflowPresentation,
   getStudentRecordTemplate,
   parseCsv,
   validateStudentRecordCsv,
@@ -43,6 +44,45 @@ const competencyDefinitions = buildCourseCompetencyDefinitions(
   [{ id: '44444444-4444-4444-8444-444444444444', code: 'RPC.1.1', description: 'Prepare aircraft' }],
   [{ matrix_row_id: '44444444-4444-4444-8444-444444444444', lesson_id: course.lessons[0].id }],
 );
+
+test('import workflow shows the locally matched count before server preview', () => {
+  assert.deepEqual(
+    getImportWorkflowPresentation({ localReadyRows: 60, previewComplete: false }),
+    {
+      action: 'preview',
+      actionLabel: 'Preview 60 records',
+      title: '60 records matched',
+      detail: 'Run the safe server preview before anything is imported.',
+    },
+  );
+});
+
+test('import workflow shows the server-approved count only after preview', () => {
+  const presentation = getImportWorkflowPresentation({
+    localReadyRows: 60,
+    previewComplete: true,
+    serverCanImport: true,
+    serverReadyRows: 60,
+  });
+
+  assert.equal(presentation.action, 'import');
+  assert.equal(presentation.actionLabel, 'Import 60 records');
+  assert.equal(presentation.title, '60 records ready to import');
+});
+
+test('import workflow explains an all-duplicate preview instead of offering Import 0', () => {
+  const presentation = getImportWorkflowPresentation({
+    localReadyRows: 60,
+    previewComplete: true,
+    serverCanImport: true,
+    serverReadyRows: 0,
+    duplicateRows: 60,
+  });
+
+  assert.equal(presentation.action, 'none');
+  assert.equal(presentation.actionLabel, 'Nothing new to import');
+  assert.equal(presentation.title, 'All records already exist');
+});
 const criteriaCourse = {
   ...course,
   assessmentCriteria: [
