@@ -2,7 +2,7 @@
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { LessonStudyAsset, Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, ChevronUp, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, ChevronUp, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -35,6 +35,9 @@ import { formatBillingDescription } from '../../utils/billingDescription';
 import { StudentRecordImportModal } from './StudentRecordImportModal';
 import { StudentProfileSkeleton } from './StudentProfileSkeleton';
 import { getStudentProfileLoadPlan } from '../../utils/studentProfileLoading';
+import { useFinancialProviders } from '../../context/financialProviderState';
+import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
+import { shouldShowXeroContactEditor } from '../../utils/studentProfileAdminActions';
 
 interface StudentInfoForm {
   name: string;
@@ -343,6 +346,8 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
+  const { capabilities: financialProviders, loading: financialProvidersLoading } = useFinancialProviders();
+  const { resettingUserId, sendPasswordReset } = useAdminPasswordReset();
   const studentId = routeStudentId || user?.id;
   const requestedLicenceId = searchParams.get('action') === 'review-licence'
     ? searchParams.get('licenceId')
@@ -476,6 +481,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const canEditStudentInfo = Boolean(user && student && (student.id === user.id || hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])));
   const canManageLicences = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canManageBilling = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
+  const isAdmin = hasAnyRole(user, ['admin']);
+  const showXeroContactEditor = shouldShowXeroContactEditor({
+    isAdmin,
+    providerLoading: financialProvidersLoading,
+    xeroConnected: financialProviders.xero.connected,
+  });
 
   const studentTrainingRecords = useMemo(
     () => trainingRecords.filter(record => record.studentId === studentId),
@@ -4771,7 +4782,30 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 </div>
               </section>
 
-              {hasAnyRole(user, ['admin']) && (
+              {isAdmin && student && (
+                <section>
+                  <h3 className="mb-3 text-sm font-semibold text-gray-900">Account Access</h3>
+                  <div className="flex flex-col gap-4 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-amber-950">Reset portal password</p>
+                      <p className="mt-1 text-sm leading-5 text-amber-800">
+                        Send a secure reset email to {student.email}. Their current password remains active until they choose a new one.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void sendPasswordReset(student)}
+                      disabled={resettingUserId === student.id}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {resettingUserId === student.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                      {resettingUserId === student.id ? 'Sending…' : 'Send reset email'}
+                    </button>
+                  </div>
+                </section>
+              )}
+
+              {showXeroContactEditor && (
                 <section>
                   <h3 className="text-sm font-semibold text-gray-900 mb-3">Xero Contact</h3>
                   <XeroContactPanel

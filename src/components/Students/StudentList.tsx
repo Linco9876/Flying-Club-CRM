@@ -31,12 +31,14 @@ import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { useAuth } from '../../context/AuthContext';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { prefetchStudentProfile } from './studentProfileLoader';
+import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { students, loading, addStudent, updateStudent, deleteStudent, setStudentActive, refetch } = useStudents();
   const { inviteUser } = useInvitations();
+  const { resettingUserId, sendPasswordReset } = useAdminPasswordReset();
   const { trainingRecords, loading: trainingRecordsLoading } = useTrainingRecords();
   const { flightLogs, loading: flightLogsLoading } = useFlightLogs();
   const [showStudentForm, setShowStudentForm] = useState(false);
@@ -858,6 +860,8 @@ export const StudentList: React.FC = () => {
           student={editingStudent || undefined}
           isEdit={!!editingStudent}
           canEditEmail={!editingStudent || canManageMembers}
+          onSendPasswordReset={editingStudent && canManageMembers ? sendPasswordReset : undefined}
+          passwordResetting={Boolean(editingStudent && resettingUserId === editingStudent.id)}
         />
       )}
 

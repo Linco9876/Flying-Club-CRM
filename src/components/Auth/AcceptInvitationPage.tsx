@@ -1,7 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowRight, MailCheck, Plane, ShieldCheck } from 'lucide-react';
 import { publicSupabaseUrl } from '../../lib/supabase';
-import { getInvitationActionLink, markPasswordSetupStarted } from '../../utils/invitationSetup';
+import {
+  getInvitationActionLink,
+  getPasswordSetupMode,
+  markPasswordSetupStarted,
+} from '../../utils/invitationSetup';
 
 export const AcceptInvitationPage: React.FC = () => {
   const [isContinuing, setIsContinuing] = useState(false);
@@ -9,6 +13,8 @@ export const AcceptInvitationPage: React.FC = () => {
     () => getInvitationActionLink(window.location.hash, publicSupabaseUrl),
     [],
   );
+  const setupMode = useMemo(() => getPasswordSetupMode(window.location.hash), []);
+  const isPasswordReset = setupMode === 'password-reset';
 
   const continueSetup = () => {
     if (!actionLink) return;
@@ -28,9 +34,13 @@ export const AcceptInvitationPage: React.FC = () => {
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-100">
             Bendigo Flying Club
           </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">Set up your portal account</h1>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight">
+            {isPasswordReset ? 'Reset your portal password' : 'Set up your portal account'}
+          </h1>
           <p className="mt-3 max-w-md text-sm leading-6 text-blue-100">
-            The portal brings your bookings, flying records, documents and club information together.
+            {isPasswordReset
+              ? 'Choose a new password to restore access to your Bendigo Flying Club portal account.'
+              : 'The portal brings your bookings, flying records, documents and club information together.'}
           </p>
         </div>
 
@@ -40,9 +50,9 @@ export const AcceptInvitationPage: React.FC = () => {
               <div className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
                 <MailCheck className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <div>
-                  <p className="font-semibold">Invitation ready</p>
+                  <p className="font-semibold">{isPasswordReset ? 'Password reset ready' : 'Invitation ready'}</p>
                   <p className="mt-1 text-sm leading-5 text-emerald-800">
-                    Press the button below to verify the invitation and choose your password.
+                    Press the button below to verify this request and choose your password.
                   </p>
                 </div>
               </div>
@@ -53,7 +63,11 @@ export const AcceptInvitationPage: React.FC = () => {
                 disabled={isContinuing}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-wait disabled:opacity-70"
               >
-                {isContinuing ? 'Opening secure setup…' : 'Continue account setup'}
+                {isContinuing
+                  ? 'Opening secure setup…'
+                  : isPasswordReset
+                    ? 'Continue password reset'
+                    : 'Continue account setup'}
                 {!isContinuing && <ArrowRight className="h-5 w-5" aria-hidden="true" />}
               </button>
 
@@ -66,7 +80,7 @@ export const AcceptInvitationPage: React.FC = () => {
             </>
           ) : (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
-              <p className="font-semibold">This invitation link is incomplete or no longer valid.</p>
+              <p className="font-semibold">This setup link is incomplete or no longer valid.</p>
               <p className="mt-2 text-sm leading-5 text-amber-800">
                 Ask a club administrator to resend the invitation. The newly issued email will contain a fresh link.
               </p>

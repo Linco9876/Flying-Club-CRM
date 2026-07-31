@@ -57,11 +57,20 @@ const resolveRedirectTo = (value: unknown) => {
   }
 };
 
-const buildScannerSafeLink = (actionLink: string, redirectTo: string) => {
+type SetupEmailPurpose = "invite" | "password_reset";
+
+const buildScannerSafeLink = (
+  actionLink: string,
+  redirectTo: string,
+  purpose: SetupEmailPurpose = "invite",
+) => {
   const portalUrl = new URL(redirectTo);
   portalUrl.pathname = "/accept-invitation";
   portalUrl.search = "";
-  portalUrl.hash = `setup=${encodeURIComponent(actionLink)}`;
+  portalUrl.hash = new URLSearchParams({
+    mode: purpose === "password_reset" ? "password-reset" : "invitation",
+    setup: actionLink,
+  }).toString();
   return portalUrl.toString();
 };
 
@@ -69,10 +78,12 @@ const sendSetupEmail = async ({
   email,
   name,
   setupLink,
+  purpose = "invite",
 }: {
   email: string;
   name: string;
   setupLink: string;
+  purpose?: SetupEmailPurpose;
 }) => {
   const apiKey = Deno.env.get("BREVO_API_KEY");
   if (!apiKey) return { sent: false, error: "Email delivery is not configured" };
@@ -81,6 +92,18 @@ const sendSetupEmail = async ({
   const senderName = Deno.env.get("BREVO_SENDER_NAME") || "Bendigo Flying Club";
   const safeName = escapeHtml(name);
   const safeLink = escapeHtml(setupLink);
+  const isPasswordReset = purpose === "password_reset";
+  const subject = isPasswordReset
+    ? "Reset your Bendigo Flying Club portal password"
+    : "Set up your Bendigo Flying Club portal account";
+  const heading = isPasswordReset ? "Reset your portal password" : "Your portal invitation";
+  const introduction = isPasswordReset
+    ? "A club administrator has sent you a secure link to choose a new password for your Bendigo Flying Club portal account."
+    : "You have been invited to the Bendigo Flying Club portal. Use it to manage bookings, flying records, club documents and your account information.";
+  const buttonLabel = isPasswordReset ? "Reset my portal password" : "Set up my portal account";
+  const unexpectedMessage = isPasswordReset
+    ? "If you did not expect a password reset, do not continue and contact Bendigo Flying Club."
+    : "If you did not expect this invitation, you can ignore this email.";
 
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
@@ -91,7 +114,7 @@ const sendSetupEmail = async ({
     body: JSON.stringify({
       sender: { email: senderEmail, name: senderName },
       to: [{ email, name }],
-      subject: "Set up your Bendigo Flying Club portal account",
+      subject,
       htmlContent: `<!doctype html>
 <html lang="en">
   <body style="margin:0;background:#f1f5f9;font-family:Arial,sans-serif;color:#172033;">
@@ -101,24 +124,24 @@ const sendSetupEmail = async ({
           <tr>
             <td style="padding:34px;background:linear-gradient(135deg,#1d4ed8,#4338ca);color:#ffffff;">
               <div style="font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#dbeafe;">Bendigo Flying Club</div>
-              <h1 style="margin:10px 0 0;font-size:28px;line-height:1.2;">Your portal invitation</h1>
+              <h1 style="margin:10px 0 0;font-size:28px;line-height:1.2;">${heading}</h1>
             </td>
           </tr>
           <tr>
             <td style="padding:34px;">
               <p style="margin:0 0 16px;font-size:17px;line-height:1.6;">Hello ${safeName},</p>
               <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#475569;">
-                You have been invited to the Bendigo Flying Club portal. Use it to manage bookings, flying records, club documents and your account information.
+                ${introduction}
               </p>
               <table role="presentation" cellspacing="0" cellpadding="0">
                 <tr>
                   <td style="border-radius:10px;background:#1d4ed8;">
-                    <a href="${safeLink}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;">Set up my portal account</a>
+                    <a href="${safeLink}" style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;">${buttonLabel}</a>
                   </td>
                 </tr>
               </table>
               <p style="margin:22px 0 0;font-size:13px;line-height:1.6;color:#64748b;">
-                The next page will ask you to confirm before the one-time setup link is used. If you did not expect this invitation, you can ignore this email.
+                The next page will ask you to confirm before the one-time setup link is used. ${unexpectedMessage}
               </p>
             </td>
           </tr>
@@ -233,7 +256,59 @@ Deno.serve(async (req: Request) => {
       .eq("user_id", callerUser.id);
     if (callerRolesError) return jsonResponse({ error: callerRolesError.message }, 500);
     if (!(callerRoles || []).some((row) => row.role === "admin")) {
-      return jsonResponse({ error: "Only admins can invite users" }, 403);
+      return jsonResponse({ error: "Only admins can manage user access" }, 403);
+    }
+
+    if (body.action === "send_password_reset") {
+      const targetUserId = String(body.userId || "").trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetUserId)) {
+        return jsonResponse({ error: "A valid user is required" }, 400);
+      }
+
+      const { data: targetProfile, error: targetError } = await adminClient
+        .from("users")
+        .select("id,email,name")
+        .eq("id", targetUserId)
+        .maybeSingle();
+      if (targetError) return jsonResponse({ error: targetError.message }, 500);
+      if (!targetProfile?.email) return jsonResponse({ error: "This user does not have a login email" }, 404);
+
+      const targetEmail = normaliseEmail(targetProfile.email);
+      const targetAuthUser = await findAuthUserByEmail(adminClient, targetEmail);
+      if (!targetAuthUser) return jsonResponse({ error: "This CRM profile does not have an authentication account" }, 409);
+      if (targetAuthUser.id !== targetProfile.id) {
+        return jsonResponse({ error: "The CRM profile and authentication account do not match" }, 409);
+      }
+
+      const redirectTo = resolveRedirectTo(body.redirectTo);
+      const { actionLink, error: actionError } = await generateAuthAction({
+        adminClient,
+        email: targetEmail,
+        name: targetProfile.name || targetEmail,
+        phone: null,
+        redirectTo,
+        existingAuthUser: targetAuthUser,
+      });
+      if (actionError || !actionLink) {
+        return jsonResponse({ error: actionError?.message || "Failed to generate a password reset link" }, 500);
+      }
+
+      const scannerSafeLink = buildScannerSafeLink(actionLink, redirectTo, "password_reset");
+      const delivery = await sendSetupEmail({
+        email: targetEmail,
+        name: targetProfile.name || targetEmail,
+        setupLink: scannerSafeLink,
+        purpose: "password_reset",
+      });
+      if (!delivery.sent) {
+        return jsonResponse({ error: `The reset link was generated, but the email could not be sent: ${delivery.error}` }, 502);
+      }
+
+      return jsonResponse({
+        emailSent: true,
+        message: `Password reset email sent to ${targetEmail}.`,
+        userId: targetProfile.id,
+      });
     }
 
     const email = normaliseEmail(body.email);
@@ -348,7 +423,7 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
     }
 
-    const scannerSafeLink = buildScannerSafeLink(actionLink, redirectTo);
+    const scannerSafeLink = buildScannerSafeLink(actionLink, redirectTo, "invite");
     const delivery = await sendSetupEmail({ email, name, setupLink: scannerSafeLink });
 
     return jsonResponse({
