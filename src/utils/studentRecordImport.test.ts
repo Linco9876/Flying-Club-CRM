@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createRejectedRowsCsv,
+  formatLessonLabel,
   getStudentRecordTemplate,
   parseCsv,
   validateStudentRecordCsv,
+  withUtf8CsvBom,
 } from './studentRecordImport.ts';
 import type { TrainingModule } from '../types/index.ts';
 import {
@@ -94,6 +96,46 @@ test('course template binds the student, course version, lessons and competency 
   assert.match(csv, /course_version/);
   assert.match(csv, /competency_rpc_1_1/);
   assert.match(csv, /No,33333333-3333-4333-8333-333333333333,Test Student,RPC Training/);
+  assert.match(csv, /RPC-01 · Effects of Controls/);
+});
+
+test('downloaded CSV content declares UTF-8 exactly once for Excel', () => {
+  const csv = 'lesson\r\nRPC-01 · Effects of Controls\r\n';
+  assert.equal(withUtf8CsvBom(csv), `\uFEFF${csv}`);
+  assert.equal(withUtf8CsvBom(withUtf8CsvBom(csv)), `\uFEFF${csv}`);
+});
+
+test('readable lesson labels retain the stable code and round-trip through import', () => {
+  const lessonLabel = formatLessonLabel(course.lessons[0]);
+  assert.equal(lessonLabel, 'RPC-01 · Effects of Controls');
+
+  const csv = createCourseTransferCsv('lesson', competencyDefinitions, [{
+    include: 'Yes',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: course.title,
+    course_version: course.version,
+    record_reference: 'READABLE-LESSON-1',
+    date: '31/07/2026',
+    lesson: lessonLabel,
+    dual_time: '1:00',
+    solo_time: '0',
+    instructor_name: 'Jane Instructor',
+    comments: 'Readable exported lesson',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    identity,
+    competencyDefinitions,
+    emptyMappings,
+  );
+
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.rows[0].lesson_code, 'RPC-01');
+  assert.equal(result.rows[0].lesson_name, 'Effects of Controls');
 });
 
 test('course CSV validates and normalises competency results atomically with the lesson', () => {

@@ -17,9 +17,11 @@ import { supabase } from '../../lib/supabase';
 import {
   createRejectedRowsCsv,
   type CsvParseResult,
+  formatLessonLabel,
   type ImportMappingState,
   parseCsv,
   type StudentRecordImportType,
+  withUtf8CsvBom,
 } from '../../utils/studentRecordImport';
 import {
   buildCourseCompetencyDefinitions,
@@ -71,7 +73,7 @@ const EMPTY_MAPPINGS: ImportMappingState = { courses: {}, lessons: {}, exams: {}
 const keyForCourse = (value: string) => value.trim().toLocaleLowerCase();
 
 const downloadTextFile = (contents: string, filename: string) => {
-  const blob = new Blob([contents], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob([withUtf8CsvBom(contents)], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -421,7 +423,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
             ...common,
             record_reference: record.source_reference || `portal-${record.id}`,
             date: record.date,
-            lesson: lesson?.sequenceCode || lesson?.name || '',
+            lesson: lesson ? formatLessonLabel(lesson) : '',
             aircraft_registration: record.registration || '',
             aircraft_type: record.aircraft_type || '',
             dual_time: `${Math.floor((record.dual_time_min || 0) / 60)}:${String((record.dual_time_min || 0) % 60).padStart(2, '0')}`,
