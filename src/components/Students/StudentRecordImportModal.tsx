@@ -550,10 +550,12 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                   </select>
                 </label>
                 {selectedCourse && recordType === 'lesson' && (
-                  <p className="mt-2 text-xs text-gray-600">
+                  <p className={`mt-2 text-xs ${!loadingCompetencies && competencies.length === 0 ? 'font-medium text-amber-700' : 'text-gray-600'}`}>
                     {loadingCompetencies
                       ? 'Loading competency codes...'
-                      : `${competencies.length} competency code${competencies.length === 1 ? '' : 's'} will be included in this course format.`}
+                      : competencies.length > 0
+                        ? `${competencies.length} competency code${competencies.length === 1 ? '' : 's'} will be included in this course format.`
+                        : 'This course has no competency codes configured. The template will import lesson records only.'}
                   </p>
                 )}
               </section>
@@ -605,17 +607,17 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     <ul className="mt-2 list-disc space-y-1 pl-5">
                       <li>Completed rows are detected automatically. Include may also be Yes, X, Completed or Done.</li>
                       <li>Enter Skip in Include to deliberately omit a filled row.</li>
-                      <li>Give each row a unique record reference, such as an old lesson or logbook number.</li>
+                      <li>Record reference is optional. Use an old lesson or logbook number when available; otherwise the portal creates a stable reference automatically.</li>
                       <li>Dates may be DD/MM/YYYY or YYYY-MM-DD.</li>
                       <li>Times may be 1.25 hours, 1:15, or 75m.</li>
-                      <li>Enter 1, 2 or 3 in the relevant competency-code columns; leave unassessed codes blank.</li>
+                      {competencies.length > 0 && <li>Enter 1, 2 or 3 in the relevant competency-code columns; leave unassessed codes blank.</li>}
                       <li>Use Yes or No for formal briefing and historical student acknowledgement.</li>
                     </ul>
                   ) : (
                     <ul className="mt-2 list-disc space-y-1 pl-5">
                       <li>Completed rows are detected automatically. Include may also be Yes, X, Completed or Done.</li>
                       <li>Enter Skip in Include to deliberately omit a filled row.</li>
-                      <li>Give each result a unique record reference.</li>
+                      <li>Record reference is optional. Use the original result number when available; otherwise the portal creates one automatically.</li>
                       <li>Scores and pass marks are percentages between 0 and 100.</li>
                       <li>Use Yes or No for KDR completed.</li>
                     </ul>

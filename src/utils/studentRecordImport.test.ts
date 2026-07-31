@@ -10,6 +10,8 @@ import {
 } from './studentRecordImport.ts';
 import type { TrainingModule } from '../types/index.ts';
 import {
+  courseVersionsMatch,
+  createAutomaticRecordReference,
   buildCourseCompetencyDefinitions,
   createCourseTransferCsv,
   getCourseStudentRecordTemplate,
@@ -97,6 +99,14 @@ test('course template binds the student, course version, lessons and competency 
   assert.match(csv, /competency_rpc_1_1/);
   assert.match(csv, /,33333333-3333-4333-8333-333333333333,Test Student,RPC Training/);
   assert.match(csv, /RPC-01 · Effects of Controls/);
+});
+
+test('course versions survive Excel removing insignificant decimal zeros', () => {
+  assert.equal(courseVersionsMatch('1', '1.0'), true);
+  assert.equal(courseVersionsMatch('v1.0.0', '1'), true);
+  assert.equal(courseVersionsMatch('1.1', '1.0'), false);
+  assert.equal(courseVersionsMatch('Issue 1', 'Issue 1'), true);
+  assert.equal(courseVersionsMatch('Issue 1', 'Issue 2'), false);
 });
 
 test('downloaded CSV content declares UTF-8 exactly once for Excel', () => {
@@ -232,6 +242,86 @@ test('filled template rows are included without making the user change the old d
   assert.deepEqual(result.errors, []);
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0].source_reference, 'LEGACY-1');
+});
+
+test('blank record references receive a stable content-based reference', () => {
+  const row = {
+    include: 'No',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: course.title,
+    course_version: '2.1.0',
+    record_reference: '',
+    date: '31/07/2026',
+    lesson: 'RPC-01',
+    aircraft_registration: 'VH-EKO',
+    aircraft_type: 'Tecnam P92',
+    dual_time: '1:00',
+    solo_time: '0',
+    instructor_name: 'Jane Instructor',
+    source_organisation: 'BFC',
+    comments: 'Completed lesson without a source record number',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+  };
+  const csv = createCourseTransferCsv('lesson', competencyDefinitions, [row]);
+  const first = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    identity,
+    competencyDefinitions,
+    emptyMappings,
+  );
+  const second = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    identity,
+    competencyDefinitions,
+    emptyMappings,
+  );
+
+  assert.deepEqual(first.errors, []);
+  assert.match(String(first.rows[0].source_reference), /^LESSON-AUTO-[a-f0-9]{16}$/);
+  assert.equal(first.rows[0].source_reference, second.rows[0].source_reference);
+  assert.equal(
+    first.rows[0].source_reference,
+    createAutomaticRecordReference('lesson', identity.studentId, parseCsv(csv).rows[0].values),
+  );
+});
+
+test('lesson matching tolerates ampersand and punctuation changes from spreadsheets', () => {
+  const csv = createCourseTransferCsv('lesson', competencyDefinitions, [{
+    include: 'Yes',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: course.title,
+    course_version: course.version,
+    record_reference: '',
+    date: '31/07/2026',
+    lesson: 'Effects & Controls',
+    dual_time: '1',
+    solo_time: '0',
+    instructor_name: 'Jane Instructor',
+    comments: 'Spreadsheet-friendly lesson label',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    {
+      ...identity,
+      course: {
+        ...course,
+        lessons: [{ ...course.lessons[0], name: 'Effects and Controls', sequenceTitle: 'Effects and Controls' }],
+      },
+    },
+    competencyDefinitions,
+    emptyMappings,
+  );
+
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.rows.length, 1);
 });
 
 test('Skip explicitly excludes a populated template row', () => {
