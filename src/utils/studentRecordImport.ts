@@ -28,7 +28,17 @@ export interface NormalizedImportRow {
   source_organisation: string;
   source_reference: string;
   notes: string;
-  [key: string]: string | number | boolean;
+  course_version?: string;
+  student_portal_id?: string;
+  competencies?: NormalizedImportedCompetency[];
+  [key: string]: string | number | boolean | NormalizedImportedCompetency[] | undefined;
+}
+
+export interface NormalizedImportedCompetency {
+  matrix_row_id: string;
+  code: string;
+  achieved_standard: 1 | 2 | 3;
+  comments: string;
 }
 
 export interface ImportValidationResult {
@@ -76,9 +86,9 @@ const normaliseHeader = (value: string) => value
   .replace(/[^a-z0-9]+/g, '_')
   .replace(/^_+|_+$/g, '');
 
-const safeSpreadsheetCell = (value: string) => /^[=+\-@]/.test(value) ? `'${value}` : value;
+export const safeSpreadsheetCell = (value: string) => /^[=+\-@]/.test(value) ? `'${value}` : value;
 
-const csvCell = (value: string) => {
+export const csvCell = (value: string) => {
   const safe = safeSpreadsheetCell(value);
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 };
