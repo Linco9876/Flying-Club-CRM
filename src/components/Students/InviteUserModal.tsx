@@ -162,7 +162,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                 </p>
               ) : inviteResult.emailSent ? (
                 <p className="text-sm text-green-700">
-                  An invitation email has been sent to {formData.name}. They can open the link to set their password and access the CRM.
+                  A fresh invitation email has been sent to {formData.name}. They will confirm on a club page before the one-time password setup link is used.
                 </p>
               ) : manualLink ? (
                 <p className="text-sm text-green-700">
@@ -227,7 +227,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
             ) : (
               <div className="mb-6 space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
                 {pendingInviteExists ? (
-                  <p>Generate a setup link and send it directly to the user.</p>
+                  <p>Send a fresh setup email and replace the expired link.</p>
                 ) : (
                   <p>
                     Ask them to check junk or spam if it does not arrive shortly. The invite email uses the Supabase Auth invite template and sender settings.
@@ -239,7 +239,7 @@ export const InviteUserModal: React.FC<InviteUserModalProps> = ({
                   disabled={isSubmitting}
                   className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Generating...' : 'Generate setup link'}
+                  {isSubmitting ? 'Sending...' : 'Send fresh setup email'}
                 </button>
               </div>
             )}

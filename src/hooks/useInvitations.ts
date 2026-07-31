@@ -116,7 +116,7 @@ export const useInvitations = () => {
       }
 
       await fetchInvitations();
-      toast.success(result.emailSent ? 'Invitation email sent' : 'User invited successfully');
+      toast.success(result.message || (result.emailSent ? 'Invitation email sent' : 'User invited successfully'));
 
       return {
         tempPassword: result.tempPassword,
