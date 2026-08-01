@@ -907,7 +907,7 @@ export const StudentRecordImportModal: React.FC<StudentRecordImportModalProps> =
                     </button>
                   </div>
                   <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">
-                    {validation.errors.slice(0, 30).map(error => (
+                    {validation.errors.map(error => (
                       <div key={`${error.sourceRow}-${error.messages.join()}`} className="rounded-lg bg-white p-3 text-sm text-red-900 ring-1 ring-red-100">
                         <strong>Row {error.sourceRow}:</strong> {error.messages.join(' ')}
                       </div>
