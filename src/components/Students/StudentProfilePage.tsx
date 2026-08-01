@@ -24,6 +24,7 @@ import {
 } from '../../hooks/useSyllabusMatrix';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
+import { canAccessUploadedExamSheets, examResultColumnsForViewer } from '../../utils/examSheetAccess';
 import { cleanupInstructorComment, type CommentCleanupMode } from '../../utils/commentCleanup';
 import { getConsecutivePassReadiness, getTwoOccasionReadiness } from '../../utils/trainingReadiness';
 import { formatRichTextContent, richTextToPlainText } from '../../utils/richText';
@@ -481,6 +482,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const canEditStudentInfo = Boolean(user && student && (student.id === user.id || hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])));
   const canManageLicences = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
   const canManageBilling = hasAnyRole(user, ['admin', 'instructor', 'senior_instructor']);
+  const canAccessExamSheets = canAccessUploadedExamSheets(user);
   const isAdmin = hasAnyRole(user, ['admin']);
   const showXeroContactEditor = shouldShowXeroContactEditor({
     isAdmin,
@@ -600,7 +602,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     try {
       const { data, error } = await supabase
         .from('student_exam_results')
-        .select('*')
+        .select(examResultColumnsForViewer(user))
         .eq('student_id', studentId)
         .order('exam_date', { ascending: false })
         .order('created_at', { ascending: false });
@@ -645,7 +647,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     } finally {
       setLoadingExams(false);
     }
-  }, [studentId]);
+  }, [studentId, user]);
 
   useEffect(() => {
     if (!loadPlan.examResults) {
@@ -785,7 +787,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   };
 
   const downloadExamUpload = async (result: StudentExamResult) => {
-    if (!result.storagePath) return;
+    if (!canAccessExamSheets || !result.storagePath) {
+      toast.error('Uploaded exam sheets are available to authorised instructors and administrators only');
+      return;
+    }
     try {
       const { data, error } = await supabase.storage
         .from(EXAM_UPLOAD_BUCKET)
@@ -2754,7 +2759,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                         {result.kdrNotes && <p className="mt-1 text-gray-700">{result.kdrNotes}</p>}
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
-                        {result.storagePath && (
+                        {canAccessExamSheets && result.storagePath && (
                           <button
                             type="button"
                             onClick={() => downloadExamUpload(result)}
@@ -5367,6 +5372,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 }) => {
   const { user } = useAuth();
   const { settings: trainingSettings } = useTrainingSettings();
+  const canAccessExamSheets = canAccessUploadedExamSheets(user);
   const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
   const [grantingEndorsementCourseIds, setGrantingEndorsementCourseIds] = useState<Set<string>>(new Set());
   const [selectedEnrolCourseId, setSelectedEnrolCourseId] = useState('');
@@ -5462,6 +5468,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         users,
         exportedBy: user,
         courseEnrolments: enrolments,
+        includeExamSheets: canAccessExamSheets,
       });
       toast.success('Course PDF exported');
     } catch (error) {

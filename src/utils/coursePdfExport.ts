@@ -14,6 +14,7 @@ type ExportCoursePdfInput = {
   users: User[];
   exportedBy?: User | null;
   courseEnrolments?: StudentCourseEnrolment[];
+  includeExamSheets?: boolean;
 };
 
 type Point = { x: number; y: number };
@@ -196,6 +197,7 @@ export async function exportCoursePdf({
   users,
   exportedBy,
   courseEnrolments = [],
+  includeExamSheets = false,
 }: ExportCoursePdfInput) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const dark = rgb(0.12, 0.13, 0.15);
@@ -1144,7 +1146,9 @@ export async function exportCoursePdf({
     ];
     drawLabelValueGrid(completionRows, { columns: 4, rowHeight: 30, valueSize: 8 });
     drawText(
-      'This export summarises the CRM record for the student course, including lesson records, comments, CASA matrix assessments and uploaded exam evidence available at the time of export.',
+      includeExamSheets
+        ? 'This staff export summarises the CRM record for the student course, including lesson records, comments, CASA matrix assessments and uploaded exam evidence available at the time of export.'
+        : 'This student export summarises course progress, lesson records, comments, assessment results and exam outcomes. Staff-only uploaded exam sheets are excluded.',
       { x: margin, y: cursor },
       { size: 8, color: grey, maxWidth: width - margin * 2, lineHeight: 10 }
     );
@@ -1154,7 +1158,7 @@ export async function exportCoursePdf({
 
   addFooter();
 
-  for (const exam of courseExams.filter((item) => item.storagePath)) {
+  for (const exam of includeExamSheets ? courseExams.filter((item) => item.storagePath) : []) {
     try {
       const { data, error } = await supabase.storage.from(EXAM_UPLOAD_BUCKET).download(exam.storagePath!);
       if (error || !data) continue;
