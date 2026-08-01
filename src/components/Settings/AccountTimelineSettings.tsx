@@ -35,7 +35,7 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
       setLoadingExams(true);
       const { data, error } = await supabase
         .from('student_exam_results')
-        .select('*')
+        .select('id,student_id,course_id,exam_id,exam_name,score,pass_mark,result,exam_date,notes,created_at')
         .eq('student_id', user.id)
         .order('exam_date', { ascending: false });
 
@@ -55,8 +55,6 @@ export const AccountTimelineSettings: React.FC<AccountTimelineSettingsProps> = (
           result: result.result,
           examDate: result.exam_date ? new Date(result.exam_date) : new Date(),
           notes: result.notes || '',
-          fileName: result.file_name || undefined,
-          filePath: result.file_path || undefined,
           createdAt: result.created_at ? new Date(result.created_at) : new Date(),
         })));
       }
