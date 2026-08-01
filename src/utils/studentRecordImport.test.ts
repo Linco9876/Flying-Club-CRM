@@ -212,7 +212,7 @@ test('course CSV normalises and validates NC/S/C grades against the selected les
   assert.deepEqual(result.rows[0].criteria_grades, { 'effects-of-controls': 'NC' });
 });
 
-test('course CSV rejects invalid or lesson-inapplicable NC/S/C grades', () => {
+test('course CSV rejects invalid NC/S/C grades', () => {
   const csv = createCourseTransferCsv('lesson', criterionDefinitions, [{
     include: 'Yes',
     student_portal_id: identity.studentId,
@@ -240,8 +240,41 @@ test('course CSV rejects invalid or lesson-inapplicable NC/S/C grades', () => {
   );
 
   assert.ok(result.errors.some(error => error.messages.some(message => message.includes('must be NC, S, C, -'))));
-  assert.ok(result.errors.some(error => error.messages.some(message => message.includes('not configured for this lesson'))));
   assert.equal(result.rows.length, 0);
+});
+
+test('course CSV preserves valid historical criteria outside the current lesson target matrix', () => {
+  const csv = createCourseTransferCsv('lesson', criterionDefinitions, [{
+    include: 'Yes',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: criteriaCourse.title,
+    course_version: criteriaCourse.version,
+    record_reference: 'HISTORICAL-CRITERIA-1',
+    date: '31/07/2026',
+    lesson: 'RPC-01',
+    dual_time: '1:00',
+    solo_time: '0',
+    instructor_name: 'Jane Instructor',
+    comments: 'Landing was also assessed during this historical lesson.',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+    criterion_effects_of_controls: 'S',
+    criterion_landing: 'NC',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    criteriaIdentity,
+    criterionDefinitions,
+    emptyMappings,
+  );
+
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.rows[0].criteria_grades, {
+    'effects-of-controls': 'S',
+    landing: 'NC',
+  });
 });
 
 test('course versions survive Excel removing insignificant decimal zeros', () => {

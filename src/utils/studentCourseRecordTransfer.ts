@@ -437,10 +437,12 @@ export const validateCourseStudentRecordCsv = (
             );
             return;
           }
-          if (!competency.lessonIds.includes(String(row.lesson_id))) {
-            mergeRowError(metadataErrors, rawRow.sourceRow, `${competency.description} is not configured for this lesson.`);
-            return;
-          }
+          // Course criteria are evidence recorded by the instructor, while a
+          // lesson's pass mark is the expected target for that lesson. Older
+          // records can legitimately contain a criterion that was assessed
+          // outside today's lesson matrix, so do not discard that evidence.
+          // The criterion must still belong to the course and use a valid
+          // value for its grading system.
           criteriaGrades[competency.code] = grade;
           return;
         }
