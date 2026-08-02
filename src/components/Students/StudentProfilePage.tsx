@@ -49,6 +49,11 @@ import {
   trainingLessonName,
   trainingLessonOptionLabel,
 } from '../../utils/trainingRecordEdit';
+import {
+  inferLicenceIssuingAuthority,
+  isConfiguredCredentialOption,
+  normaliseCredentialOption,
+} from '../../utils/credentialDropdowns';
 
 interface StudentInfoForm {
   name: string;
@@ -984,7 +989,11 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
   const addInfoEndorsement = () => {
     if (!infoEndorsementDraft.type.trim()) {
-      toast.error('Select or enter an endorsement type');
+      toast.error('Select an endorsement type');
+      return;
+    }
+    if (!isConfiguredCredentialOption(infoEndorsementDraft.type, trainingSettings.endorsementTypes)) {
+      toast.error('Select an endorsement from the organisation list');
       return;
     }
 
@@ -1039,6 +1048,10 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     const type = infoLicenceDraft.type.trim();
     if (!type) {
       toast.error('Select a licence type');
+      return;
+    }
+    if (!isConfiguredCredentialOption(type, trainingSettings.licenceTypes)) {
+      toast.error('Select a licence from the organisation list');
       return;
     }
     if (infoForm.licences.some(licence => licence.isActive && licence.type.trim().toLowerCase() === type.toLowerCase())) {
@@ -4788,9 +4801,48 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   </p>
                   {canManageLicences && (
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                      <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Licence</span><input list="student-profile-licence-types" value={infoLicenceDraft.type} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, type: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="Select licence" /><datalist id="student-profile-licence-types">{trainingSettings.licenceTypes.map(type => <option key={type} value={type} />)}</datalist></label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium text-gray-700">Licence</span>
+                        <select
+                          value={infoLicenceDraft.type}
+                          onChange={event => {
+                            const type = event.target.value;
+                            const inferredAuthority = inferLicenceIssuingAuthority(type);
+                            setInfoLicenceDraft(prev => ({
+                              ...prev,
+                              type,
+                              issuingAuthority: inferredAuthority,
+                            }));
+                          }}
+                          className="min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">Select licence</option>
+                          {trainingSettings.licenceTypes.map(type => {
+                            const alreadyActive = infoForm.licences.some(licence =>
+                              licence.isActive && normaliseCredentialOption(licence.type) === normaliseCredentialOption(type)
+                            );
+                            return (
+                              <option key={type} value={type} disabled={alreadyActive}>
+                                {type}{alreadyActive ? ' — already active' : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </label>
                       <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Licence number</span><input value={infoLicenceDraft.licenceNumber} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, licenceNumber: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
-                      <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Issuing authority</span><input value={infoLicenceDraft.issuingAuthority} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, issuingAuthority: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="RAAus or CASA" /></label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium text-gray-700">Issuing authority</span>
+                        <select
+                          value={infoLicenceDraft.issuingAuthority}
+                          onChange={event => setInfoLicenceDraft(prev => ({ ...prev, issuingAuthority: event.target.value }))}
+                          className="min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">Select authority</option>
+                          <option value="RAAus">RAAus</option>
+                          <option value="CASA">CASA</option>
+                          <option value="Other / overseas authority">Other / overseas authority</option>
+                        </select>
+                      </label>
                       <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Issued</span><input type="date" value={infoLicenceDraft.dateObtained} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, dateObtained: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
                       <label className="block"><span className="mb-1 block text-sm font-medium text-gray-700">Expiry</span><input type="date" value={infoLicenceDraft.expiryDate} onChange={event => setInfoLicenceDraft(prev => ({ ...prev, expiryDate: event.target.value }))} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></label>
                       <div className="flex items-end"><button type="button" onClick={addInfoLicence} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"><Plus className="h-4 w-4" />Add licence</button></div>
@@ -4857,18 +4909,23 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <label className="block md:col-span-2">
                       <span className="block text-sm font-medium text-gray-700 mb-1">Endorsement</span>
-                      <input
-                        list="student-profile-endorsement-types"
+                      <select
                         value={infoEndorsementDraft.type}
                         onChange={(event) => setInfoEndorsementDraft((prev) => ({ ...prev, type: event.target.value }))}
-                        placeholder="Select or enter endorsement"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <datalist id="student-profile-endorsement-types">
-                        {trainingSettings.endorsementTypes.map((type) => (
-                          <option key={type} value={type} />
-                        ))}
-                      </datalist>
+                        className="min-h-10 w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select endorsement</option>
+                        {trainingSettings.endorsementTypes.map((type) => {
+                          const alreadyActive = infoForm.endorsements.some(endorsement =>
+                            endorsement.isActive && normaliseCredentialOption(endorsement.type) === normaliseCredentialOption(type)
+                          );
+                          return (
+                            <option key={type} value={type} disabled={alreadyActive && infoEndorsementDraft.isActive}>
+                              {type}{alreadyActive ? ' — already active' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
                     </label>
                     <label className="block">
                       <span className="block text-sm font-medium text-gray-700 mb-1">Obtained</span>
