@@ -7,6 +7,7 @@ import type {
   ReviewChecklistTemplateItem,
 } from "../types";
 import { normaliseReviewerRoles } from "../utils/reviewerRoleRules";
+import { FORMAL_REVIEW_FINDINGS_LABEL } from "../utils/flightReviewFindings";
 
 export type FlightReviewStatus =
   | "draft"
@@ -155,6 +156,8 @@ const mapReviewConfiguration = (value: unknown): FlightReviewConfiguration => {
   const configuration = (value || {}) as FlightReviewConfiguration;
   return {
     ...configuration,
+    requires_reviewer_summary: false,
+    reviewer_summary_label: FORMAL_REVIEW_FINDINGS_LABEL,
     allowed_reviewer_roles: normaliseReviewerRoles(
       configuration.allowed_reviewer_roles,
     ),
@@ -326,6 +329,9 @@ export const useFlightReviews = (
   const [records, setRecords] = useState<FlightReviewRecord[]>([]);
   const [items, setItems] = useState<FlightReviewRecordItem[]>([]);
   const [attachments, setAttachments] = useState<FlightReviewAttachment[]>([]);
+  const [flightCommentsByRecord, setFlightCommentsByRecord] = useState<Map<string, string>>(
+    new Map(),
+  );
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
@@ -356,6 +362,7 @@ export const useFlightReviews = (
         setRecords([]);
         setItems([]);
         setAttachments([]);
+        setFlightCommentsByRecord(new Map());
         setError(null);
         return;
       }
@@ -375,6 +382,46 @@ export const useFlightReviews = (
       const nextRecords = (recordResult.data || []).map((row) =>
         mapRecord(row as Record<string, unknown>),
       );
+      const sourceTrainingRecordIds = nextRecords
+        .map(record => record.sourceTrainingRecordId)
+        .filter((id): id is string => Boolean(id));
+      const sourceFlightLogIds = nextRecords
+        .map(record => record.flightLogId)
+        .filter((id): id is string => Boolean(id));
+      const sourceRows: Array<{ id: string; flight_log_id?: string | null; comments?: string | null }> = [];
+      if (sourceTrainingRecordIds.length > 0) {
+        const sourceResult = await supabase
+          .from("training_records")
+          .select("id,flight_log_id,comments")
+          .in("id", sourceTrainingRecordIds);
+        if (!sourceResult.error) sourceRows.push(...(sourceResult.data || []));
+      }
+      if (sourceFlightLogIds.length > 0) {
+        const sourceResult = await supabase
+          .from("training_records")
+          .select("id,flight_log_id,comments")
+          .in("flight_log_id", sourceFlightLogIds);
+        if (!sourceResult.error) sourceRows.push(...(sourceResult.data || []));
+      }
+      const commentsByTrainingRecord = new Map(
+        sourceRows.map(row => [row.id, row.comments?.trim() || ""]),
+      );
+      const commentsByFlightLog = new Map(
+        sourceRows
+          .filter(row => Boolean(row.flight_log_id))
+          .map(row => [row.flight_log_id as string, row.comments?.trim() || ""]),
+      );
+      const nextFlightCommentsByRecord = new Map<string, string>();
+      nextRecords.forEach(record => {
+        const comments = (
+          (record.sourceTrainingRecordId
+            ? commentsByTrainingRecord.get(record.sourceTrainingRecordId)
+            : undefined)
+          || (record.flightLogId ? commentsByFlightLog.get(record.flightLogId) : undefined)
+          || ""
+        ).trim();
+        if (comments) nextFlightCommentsByRecord.set(record.id, comments);
+      });
       const recordIds = nextRecords.map((record) => record.id);
       let nextItems: FlightReviewRecordItem[] = [];
       let nextAttachments: FlightReviewAttachment[] = [];
@@ -408,6 +455,7 @@ export const useFlightReviews = (
       setRecords(nextRecords);
       setItems(nextItems);
       setAttachments(nextAttachments);
+      setFlightCommentsByRecord(nextFlightCommentsByRecord);
       setError(null);
     } catch (fetchError) {
       console.error("Failed to load flight reviews:", fetchError);
@@ -448,6 +496,7 @@ export const useFlightReviews = (
         review_configuration: {
           ...template.configuration,
           allowed_reviewer_roles: allowedReviewerRoles,
+          requires_reviewer_summary: false,
         },
         requires_student_acknowledgement:
           template.configuration.candidate_ack_required,
@@ -669,6 +718,7 @@ export const useFlightReviews = (
     attachments,
     itemsByRecord,
     attachmentsByRecord,
+    flightCommentsByRecord,
     loading,
     error,
     refetch,

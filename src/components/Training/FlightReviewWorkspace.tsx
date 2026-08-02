@@ -33,6 +33,10 @@ import {
   CRM_REVIEWER_ROLE_OPTIONS,
   normaliseReviewerRoles,
 } from "../../utils/reviewerRoleRules";
+import {
+  FORMAL_REVIEW_FINDINGS_LABEL,
+  requiresFormalReviewFindings,
+} from "../../utils/flightReviewFindings";
 import { StudentFileLink } from "../Students/StudentFileLink";
 
 type TemplateStep = "basic" | "rules" | "checklist" | "publish";
@@ -52,6 +56,8 @@ const blankConfiguration = (): FlightReviewConfiguration => ({
   required_evidence: [],
   source_documents: [],
   checklist: [],
+  requires_reviewer_summary: false,
+  reviewer_summary_label: FORMAL_REVIEW_FINDINGS_LABEL,
 });
 
 const blankTemplate = (): Omit<FlightReviewTemplate, "id" | "lastUpdated"> & {
@@ -115,6 +121,7 @@ interface FlightReviewRecordEditorProps {
   candidateName: string;
   reviewerName: string;
   currentUserId: string;
+  flightComments?: string;
   onClose: () => void;
   onUpdateRecord: ReturnType<typeof useFlightReviews>["updateReview"];
   onUpdateItem: ReturnType<typeof useFlightReviews>["updateItem"];
@@ -133,6 +140,7 @@ export const FlightReviewRecordEditor: React.FC<
   candidateName,
   reviewerName,
   currentUserId,
+  flightComments,
   onClose,
   onUpdateRecord,
   onUpdateItem,
@@ -193,6 +201,10 @@ export const FlightReviewRecordEditor: React.FC<
     (item) => item.result === "satisfactory",
   ).length;
   const completionReady = satisfactoryRequired === requiredItems.length;
+  const formalFindingsRequired = requiresFormalReviewFindings({
+    reviewStatus: form.status,
+    checklistResults: items.map(item => item.result),
+  });
   const belowMinimum =
     Number(form.groundMinutes || 0) < config.minimum_ground_minutes ||
     Number(form.flightMinutes || 0) < config.minimum_flight_minutes;
@@ -227,12 +239,11 @@ export const FlightReviewRecordEditor: React.FC<
       toast.error("Complete the RPC001 applicant and aeronautical experience details");
       return;
     }
-    if (
-      nextStatus === "completed" &&
-      config.requires_reviewer_summary &&
-      !form.reviewerSummary.trim()
-    ) {
-      toast.error("Record the examiner's overall notes before completing the form");
+    if (requiresFormalReviewFindings({
+      reviewStatus: nextStatus,
+      checklistResults: items.map(item => item.result),
+    }) && !form.reviewerSummary.trim()) {
+      toast.error("Record the formal findings or required follow-up for this outcome");
       return;
     }
     if (
@@ -746,9 +757,21 @@ export const FlightReviewRecordEditor: React.FC<
               <h3 className="font-bold text-gray-950 dark:text-gray-100">
                 Debrief and outcome
               </h3>
+              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-500/25 dark:bg-blue-500/10">
+                <h4 className="text-sm font-bold text-blue-950 dark:text-blue-100">
+                  Flight comments
+                </h4>
+                <p className="mt-1 text-xs leading-5 text-blue-800 dark:text-blue-200">
+                  These are the main flight narrative and debrief. Do not repeat them in the formal findings field.
+                </p>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-gray-100">
+                  {flightComments?.trim() || "No flight comments are linked to this record yet."}
+                </p>
+              </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  {config.reviewer_summary_label || "Reviewer summary"}
+                  {FORMAL_REVIEW_FINDINGS_LABEL}
+                  {formalFindingsRequired ? " (required)" : " (optional)"}
                   <textarea
                     rows={5}
                     value={form.reviewerSummary}
@@ -760,6 +783,9 @@ export const FlightReviewRecordEditor: React.FC<
                     }
                     className={inputClass}
                   />
+                  <span className="mt-1 block text-xs font-normal leading-5 text-gray-500 dark:text-gray-400">
+                    Use this only for an adverse result, further training, a limitation, or follow-up not already covered by the flight comments.
+                  </span>
                 </label>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                   {config.remedial_plan_label ||
@@ -1577,38 +1603,16 @@ export const FlightReviewWorkspace: React.FC = () => {
                         </span>
                       </span>
                     </label>
-                    <label className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-[#343b46]">
-                      <input
-                        type="checkbox"
-                        checked={
-                          editingTemplate.configuration
-                            .requires_reviewer_summary === true
-                        }
-                        onChange={(event) =>
-                          setEditingTemplate(
-                            (current) =>
-                              current && {
-                                ...current,
-                                configuration: {
-                                  ...current.configuration,
-                                  requires_reviewer_summary:
-                                    event.target.checked,
-                                },
-                              },
-                          )
-                        }
-                        className="mt-0.5 h-4 w-4"
-                      />
+                    <div className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-[#343b46]">
                       <span>
                         <strong className="text-gray-900 dark:text-gray-100">
-                          Require reviewer or examiner notes
+                          Formal findings follow the outcome
                         </strong>
                         <span className="mt-1 block text-xs text-gray-500">
-                          Completion is blocked until an overall assessment is
-                          recorded.
+                          Optional for a normal completion; required when further training or another non-standard outcome is recorded.
                         </span>
                       </span>
-                    </label>
+                    </div>
                     <label className="flex items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-[#343b46]">
                       <input
                         type="checkbox"
@@ -1673,7 +1677,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                       </span>
                     </label>
                   </div>
-                  <div className="sm:col-span-2 grid gap-4 md:grid-cols-3">
+                  <div className="sm:col-span-2 grid gap-4 md:grid-cols-2">
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                       Completion button wording
                       <input
@@ -1694,29 +1698,6 @@ export const FlightReviewWorkspace: React.FC = () => {
                           )
                         }
                         placeholder="Complete review"
-                        className={inputClass}
-                      />
-                    </label>
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                      Summary field wording
-                      <input
-                        value={
-                          editingTemplate.configuration
-                            .reviewer_summary_label || ""
-                        }
-                        onChange={(event) =>
-                          setEditingTemplate(
-                            (current) =>
-                              current && {
-                                ...current,
-                                configuration: {
-                                  ...current.configuration,
-                                  reviewer_summary_label: event.target.value,
-                                },
-                              },
-                          )
-                        }
-                        placeholder="Reviewer summary"
                         className={inputClass}
                       />
                     </label>

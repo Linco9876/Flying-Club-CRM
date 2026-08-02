@@ -29,6 +29,10 @@ import { useFlightReviews } from '../../hooks/useFlightReviews';
 import { FlightReviewRecordEditor } from './FlightReviewWorkspace';
 import { StudentFileLink } from '../Students/StudentFileLink';
 import { userCanConductReview } from '../../utils/reviewerRoleRules';
+import {
+  FORMAL_REVIEW_FINDINGS_LABEL,
+  requiresFormalReviewFindings,
+} from '../../utils/flightReviewFindings';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 type RecordEntryType = 'lesson' | 'review_test' | 'instructor_review';
@@ -1231,6 +1235,14 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
     if (trainingSettings.requireBriefingCommentsWhenFormal && form.formalBriefing && !form.briefingComments.trim()) {
       toast.error('Briefing comments are required when a formal briefing is selected');
+      return;
+    }
+    if (
+      selectedLessonIsFlightTest
+      && requiresFormalReviewFindings({ trainingResult: form.flightReviewResult })
+      && !form.flightReviewNotes.trim()
+    ) {
+      toast.error(`Enter ${FORMAL_REVIEW_FINDINGS_LABEL.toLowerCase()} for this outcome`);
       return;
     }
 
@@ -2632,13 +2644,19 @@ export const OutstandingRecordsTab: React.FC = () => {
                           </select>
                         </label>
                         <label className="block sm:col-span-2">
-                          <span className="block text-xs font-medium text-orange-800 mb-1">Review notes</span>
+                          <span className="block text-xs font-medium text-orange-800 mb-1">
+                            {FORMAL_REVIEW_FINDINGS_LABEL} {requiresFormalReviewFindings({ trainingResult: form.flightReviewResult }) ? '(required)' : '(optional)'}
+                          </span>
                           <textarea
                             rows={3}
                             value={form.flightReviewNotes}
                             onChange={event => setForm(f => ({ ...f, flightReviewNotes: event.target.value }))}
+                            required={requiresFormalReviewFindings({ trainingResult: form.flightReviewResult })}
                             className="w-full px-3 py-2 text-sm border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
                           />
+                          <span className="mt-1 block text-xs leading-5 text-orange-800">
+                            The flight comments are the main debrief. Add only formal findings, further training, limitations, or follow-up that must be recorded with the outcome.
+                          </span>
                         </label>
                         {form.flightReviewResult === 'pass' && (
                           <p className="text-xs text-orange-800 sm:col-span-2">
@@ -2706,6 +2724,7 @@ export const OutstandingRecordsTab: React.FC = () => {
           candidateName={activeLog.student_name || activeCandidate?.name || 'Member'}
           reviewerName={user.name || 'Reviewer'}
           currentUserId={user.id}
+          flightComments={flightReviews.flightCommentsByRecord.get(activeReviewRecord.id) || form.flightComments}
           onClose={() => setActiveReviewRecordId(null)}
           onUpdateRecord={async (id, input) => {
             const updated = await flightReviews.updateReview(id, input);

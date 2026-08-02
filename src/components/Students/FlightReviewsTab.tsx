@@ -24,6 +24,7 @@ import {
 import { useUsers } from "../../hooks/useUsers";
 import { hasAnyRole } from "../../utils/rbac";
 import { userCanConductReview } from "../../utils/reviewerRoleRules";
+import { FORMAL_REVIEW_FINDINGS_LABEL } from "../../utils/flightReviewFindings";
 import { PortalSectionLoader } from "../Layout/PortalSectionLoader";
 import { FlightReviewRecordEditor } from "../Training/FlightReviewWorkspace";
 
@@ -509,6 +510,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
           "Reviewer not recorded";
         const items = reviews.itemsByRecord.get(record.id) || [];
         const attachments = reviews.attachmentsByRecord.get(record.id) || [];
+        const flightComments = reviews.flightCommentsByRecord.get(record.id) || "";
         const required = items.filter((item) => item.required);
         const satisfactory = required.filter(
           (item) => item.result === "satisfactory",
@@ -597,10 +599,21 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                   </div>
                 </dl>
 
-                {(record.candidateObjectives ||
+                {(flightComments ||
+                  record.candidateObjectives ||
                   record.reviewerSummary ||
                   record.remedialPlan) && (
-                  <section className="grid gap-3 lg:grid-cols-3">
+                  <section className="grid gap-3 lg:grid-cols-2">
+                    {flightComments && (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-500/25 dark:bg-blue-500/10">
+                        <h4 className="text-xs font-bold uppercase text-blue-700 dark:text-blue-200">
+                          Flight comments
+                        </h4>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-800 dark:text-gray-100">
+                          {flightComments}
+                        </p>
+                      </div>
+                    )}
                     {record.candidateObjectives && (
                       <div className="rounded-lg bg-gray-50 p-3 dark:bg-[#11141a]">
                         <h4 className="text-xs font-bold uppercase text-gray-500">
@@ -614,7 +627,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                     {record.reviewerSummary && (
                       <div className="rounded-lg bg-gray-50 p-3 dark:bg-[#11141a]">
                         <h4 className="text-xs font-bold uppercase text-gray-500">
-                          Reviewer summary
+                          {FORMAL_REVIEW_FINDINGS_LABEL}
                         </h4>
                         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700 dark:text-gray-200">
                           {record.reviewerSummary}
@@ -777,6 +790,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
             "Reviewer"
           }
           currentUserId={user.id}
+          flightComments={reviews.flightCommentsByRecord.get(selectedRecord.id)}
           onClose={() => setSelectedRecordId(null)}
           onUpdateRecord={reviews.updateReview}
           onUpdateItem={reviews.updateItem}
