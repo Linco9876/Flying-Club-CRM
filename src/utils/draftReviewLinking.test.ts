@@ -3,8 +3,29 @@ import test from 'node:test';
 
 import {
   createReviewDraftLinkage,
+  createReviewDraftTrainingRecord,
   reviewMatchesDraftOrFlight,
 } from './draftReviewLinking.ts';
+
+test('starting a review from a new session creates a persistent formal-review draft', () => {
+  const record = createReviewDraftTrainingRecord({
+    studentId: 'student-id',
+    instructorId: 'instructor-id',
+    templateId: 'template-id',
+    templateTitle: 'RPC Flight Test',
+    startedAt: '2026-08-02T08:30:00.000Z',
+    aircraftId: 'aircraft-id',
+    aircraftType: 'Tecnam P92 Echo Super',
+    registration: '24-1234',
+  });
+
+  assert.equal(record.courseId, 'template-id');
+  assert.equal(record.isFlightReview, true);
+  assert.equal(record.flightReviewType, 'RPC Flight Test');
+  assert.equal(record.status, 'draft');
+  assert.equal(record.studentAck, false);
+  assert.equal(record.date.toISOString(), '2026-08-02T08:30:00.000Z');
+});
 
 test('saved draft reviews link to the training draft without using a synthetic flight-log id', () => {
   assert.deepEqual(createReviewDraftLinkage({
