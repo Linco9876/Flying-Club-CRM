@@ -1079,7 +1079,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={startManualPurchaseRequest}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-3 font-semibold text-white transition hover:bg-amber-600"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-700 px-5 py-3 font-semibold text-white transition hover:bg-amber-800"
                 >
                   <Mail className="h-4 w-4" />
                   Email voucher request

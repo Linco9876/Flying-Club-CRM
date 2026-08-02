@@ -3702,12 +3702,12 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     const score = Number(grade);
                     if (Number.isNaN(score)) return 'bg-gray-100 text-gray-400 border-gray-200';
                     if (score >= 80) return 'bg-emerald-600 text-white border-emerald-600';
-                    if (score >= 50) return 'bg-amber-400 text-white border-amber-400';
-                    return 'bg-red-500 text-white border-red-500';
+                    if (score >= 50) return 'border-amber-300 bg-amber-200 text-amber-950';
+                    return 'border-red-700 bg-red-700 text-white';
                   }
                   if (grade === 'C' || grade === 'Pass') return 'bg-emerald-600 text-white border-emerald-600';
-                  if (grade === 'S') return 'bg-amber-400 text-white border-amber-400';
-                  if (grade === 'NC' || grade === 'Fail') return 'bg-red-500 text-white border-red-500';
+                  if (grade === 'S') return 'border-amber-300 bg-amber-200 text-amber-950';
+                  if (grade === 'NC' || grade === 'Fail') return 'border-red-700 bg-red-700 text-white';
                   return 'bg-gray-100 text-gray-400 border-gray-200';
                 };
 
