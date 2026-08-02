@@ -1929,7 +1929,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       {activeLog && recordEntryType === 'lesson' && (
         <div className="order-1 min-w-0 lg:order-2">
           <div className="mb-3">{renderRecordTypeSelector(true)}</div>
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col dark:border-[#2c2f36] dark:bg-[#171a21]">
+          <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-[#2c2f36] dark:bg-[#171a21]">
             {/* Panel header */}
             <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-4 dark:border-[#2c2f36] dark:bg-[#11141a] sm:px-6">
               <div className="min-w-0">
@@ -1973,7 +1973,7 @@ export const OutstandingRecordsTab: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+            <div className="p-4 sm:p-6">
               <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-400/20 dark:bg-blue-950/30 dark:text-blue-100 lg:hidden">
                 <p className="font-semibold">
                   <StudentFileLink studentId={activeLog.student_id} name={activeLog.student_name ?? 'Unknown Student'} />
