@@ -1471,7 +1471,7 @@ export const OutstandingRecordsTab: React.FC = () => {
               className={`inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto ${
                 showDraftComposer
                   ? 'bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
-                  : 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-400'
+                  : 'bg-emerald-700 text-white shadow-sm hover:bg-emerald-800'
               }`}
             >
               <Save className="h-4 w-4 shrink-0" />

@@ -3108,7 +3108,7 @@ export const Calendar: React.FC<CalendarProps> = ({
               return (
                 <div
                   key={`preview-${resource.id}`}
-                  className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                  className="relative z-20 overflow-hidden rounded border-2 border-dashed border-blue-300 bg-blue-700 p-2 text-xs text-white opacity-90 shadow-lg"
                   style={{
                     gridColumn: resourceIndex + 2,
                     gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
@@ -3850,7 +3850,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 previewElements.push(
                   <div
                     key={`preview-${dayIndex}-aircraft`}
-                    className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                    className="relative z-20 overflow-hidden rounded border-2 border-dashed border-blue-300 bg-blue-700 p-2 text-xs text-white opacity-90 shadow-lg"
                     style={{
                       gridColumn: columnIndex + 2,
                       gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,
@@ -3880,7 +3880,7 @@ export const Calendar: React.FC<CalendarProps> = ({
                 previewElements.push(
                   <div
                     key={`preview-${dayIndex}-instructor`}
-                    className="bg-blue-300 border-2 border-blue-600 border-dashed relative text-white text-xs p-2 rounded shadow-lg overflow-hidden z-20 opacity-70"
+                    className="relative z-20 overflow-hidden rounded border-2 border-dashed border-blue-300 bg-blue-700 p-2 text-xs text-white opacity-90 shadow-lg"
                     style={{
                       gridColumn: columnIndex + 2,
                       gridRow: `${previewPosition.gridRowStart} / ${previewPosition.gridRowEnd}`,

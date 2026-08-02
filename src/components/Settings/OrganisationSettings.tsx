@@ -240,7 +240,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
               {logoPreview && canEdit && (
                 <button
                   onClick={handleRemoveLogo}
-                  className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+                  className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white transition-colors hover:bg-red-700"
                   title="Remove logo"
                 >
                   <X className="h-3 w-3" />

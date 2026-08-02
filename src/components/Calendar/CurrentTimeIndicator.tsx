@@ -52,7 +52,7 @@ export const CurrentTimeIndicator: React.FC<CurrentTimeIndicatorProps> = ({ isVi
       
       {/* Time label */}
       <div className="absolute left-2 top-0 transform -translate-y-1/2">
-        <div className="bg-red-500 text-white text-xs px-2 py-1 rounded shadow-sm">
+        <div className="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white shadow-sm">
           {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
