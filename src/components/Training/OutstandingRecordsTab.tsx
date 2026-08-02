@@ -28,6 +28,7 @@ import { useStudentCourseEnrolments } from '../../hooks/useStudentCourseEnrolmen
 import { useFlightReviews } from '../../hooks/useFlightReviews';
 import { FlightReviewRecordEditor } from './FlightReviewWorkspace';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { userCanConductReview } from '../../utils/reviewerRoleRules';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 type RecordEntryType = 'lesson' | 'review_test' | 'instructor_review';
@@ -583,13 +584,11 @@ export const OutstandingRecordsTab: React.FC = () => {
     return { course, lesson, previousRecord, previousLesson };
   }, [activeEnrolledCourseIds, activeStudentId, coursesWithLessons, enrolmentsLoading, trainingRecords]);
   const availableReviewTemplates = useMemo(() => {
-    const userRoles = new Set<string>(user?.roles?.length ? user.roles : user?.role ? [user.role] : []);
     return flightReviews.templates.filter(template => {
       if (template.status !== 'published') return false;
-      const allowedRoles = template.configuration.allowed_reviewer_roles ?? [];
-      return allowedRoles.length === 0 || allowedRoles.some(role => userRoles.has(role));
+      return userCanConductReview(user, template.configuration.allowed_reviewer_roles);
     });
-  }, [flightReviews.templates, user?.role, user?.roles]);
+  }, [flightReviews.templates, user]);
   const reviewForActiveFlight = useMemo(
     () => flightReviews.records.find(record => record.flightLogId === activeLog?.id && record.status !== 'cancelled') ?? null,
     [activeLog?.id, flightReviews.records]
@@ -598,6 +597,10 @@ export const OutstandingRecordsTab: React.FC = () => {
     () => flightReviews.records.find(record => record.id === activeReviewRecordId)
       ?? (reviewForActiveFlight?.id === activeReviewRecordId ? reviewForActiveFlight : null),
     [activeReviewRecordId, flightReviews.records, reviewForActiveFlight]
+  );
+  const canConductActiveReview = userCanConductReview(
+    user,
+    activeReviewRecord?.templateSnapshot.review_configuration?.allowed_reviewer_roles,
   );
   const studentOptions = useMemo(
     () => users
@@ -1032,6 +1035,13 @@ export const OutstandingRecordsTab: React.FC = () => {
     if (!activeLog || !activeStudentId || !user?.id) return;
     const existing = reviewForActiveFlight;
     if (existing) {
+      if (!userCanConductReview(
+        user,
+        existing.templateSnapshot.review_configuration?.allowed_reviewer_roles,
+      )) {
+        toast.error('Your CRM role is not authorised to conduct this review or test');
+        return;
+      }
       setActiveReviewRecordId(existing.id);
       return;
     }
@@ -1887,10 +1897,19 @@ export const OutstandingRecordsTab: React.FC = () => {
                       <h4 className="mt-1 text-base font-bold text-blue-950 dark:text-blue-100">{reviewForActiveFlight.templateSnapshot.title || reviewForActiveFlight.reviewType}</h4>
                       <p className="mt-1 text-sm text-blue-800 dark:text-blue-200">Continue this record rather than creating a duplicate for the same flight.</p>
                     </div>
-                    <button type="button" onClick={() => setActiveReviewRecordId(reviewForActiveFlight.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
-                      Continue record
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
+                    {userCanConductReview(
+                      user,
+                      reviewForActiveFlight.templateSnapshot.review_configuration?.allowed_reviewer_roles,
+                    ) ? (
+                      <button type="button" onClick={() => setActiveReviewRecordId(reviewForActiveFlight.id)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
+                        Continue record
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <p className="max-w-xs text-xs font-semibold text-blue-800 dark:text-blue-200">
+                        Assigned for completion by a user holding one of the template's authorised CRM roles.
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : availableReviewTemplates.length === 0 ? (
@@ -2679,7 +2698,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         </div>
       )}
       </div>
-      {activeReviewRecord && activeLog && user && (
+      {activeReviewRecord && activeLog && user && canConductActiveReview && (
         <FlightReviewRecordEditor
           record={activeReviewRecord}
           items={flightReviews.itemsByRecord.get(activeReviewRecord.id) ?? []}
