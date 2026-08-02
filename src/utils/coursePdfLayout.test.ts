@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { chunkPdfColumns, normalisePdfText, truncatePdfText, wrapPdfText } from './coursePdfLayout.ts';
+import {
+  calculateCourseProgressMatrixLayout,
+  chunkPdfColumns,
+  criterionCode,
+  normalisePdfText,
+  truncatePdfText,
+  wrapPdfText,
+} from './coursePdfLayout.ts';
+import { courseExamEvidenceForExport } from './coursePdfOptions.ts';
 
 const exportSource = readFileSync(new URL('./coursePdfExport.ts', import.meta.url), 'utf8');
+const studentProfileSource = readFileSync(new URL('../components/Students/StudentProfilePage.tsx', import.meta.url), 'utf8');
 
 const measure = (value: string) => value.length;
 
@@ -36,6 +45,73 @@ test('splits wide progress matrices into readable column groups', () => {
     [9, 10, 11, 12, 13, 14, 15, 16],
     [17, 18, 19],
   ]);
+});
+
+test('fits the RAAus 20-column assessment matrix on one landscape row', () => {
+  const layout = calculateCourseProgressMatrixLayout(842, 34, 20);
+  const fixedWidth = layout.coreWidths.reduce((sum, width) => sum + width, 0) + layout.timeColumnWidth * 2;
+  const criterionWidth = (842 - 34 * 2 - fixedWidth) / 20;
+
+  assert.equal(layout.columnsPerGroup, 20);
+  assert.equal(layout.compact, true);
+  assert.ok(criterionWidth >= 18);
+});
+
+test('uses distinct one-row matrix codes for landing and forced landing', () => {
+  assert.equal(criterionCode('Landing', 0), 'LD');
+  assert.equal(criterionCode('Forced Landings', 1), 'FL');
+});
+
+test('retains readable assessment widths by splitting only when one row cannot fit', () => {
+  const layout = calculateCourseProgressMatrixLayout(842, 34, 30);
+
+  assert.ok(layout.columnsPerGroup < 30);
+  assert.ok(layout.columnsPerGroup >= 20);
+});
+
+test('exam evidence prompt uses only uploaded files belonging to the selected course', () => {
+  const course = {
+    id: 'course-rpc',
+    exams: [{ id: 'exam-air-law', name: 'Air Law', passMark: 80 }],
+  } as any;
+  const exam = (overrides: Record<string, unknown>) => ({
+    id: 'result-1',
+    studentId: 'student-1',
+    examId: 'exam-air-law',
+    examName: 'Air Law',
+    score: 90,
+    passMark: 80,
+    result: 'pass',
+    examDate: new Date('2026-07-01'),
+    notes: '',
+    createdAt: new Date('2026-07-01'),
+    ...overrides,
+  }) as any;
+
+  const evidence = courseExamEvidenceForExport(course, [
+    exam({ id: 'direct', courseId: 'course-rpc', storagePath: 'direct.pdf' }),
+    exam({ id: 'legacy-name', courseId: undefined, examId: 'legacy', storagePath: 'legacy.pdf' }),
+    exam({ id: 'no-file', courseId: 'course-rpc', storagePath: undefined }),
+    exam({ id: 'other-course', courseId: 'course-other', examId: 'other', examName: 'Other', storagePath: 'other.pdf' }),
+  ]);
+
+  assert.deepEqual(evidence.map(item => item.id), ['direct', 'legacy-name']);
+});
+
+test('student declaration is deliberately rendered before details without a page-breaking paragraph', () => {
+  const declarationIndex = exportSource.indexOf("drawSectionTitle(course.flyingDeclarationTitle || 'Flying Declaration')");
+  const detailsIndex = exportSource.indexOf("drawSectionTitle(isStructuredAviationCourse ? 'Student and Course Details' : 'Details')");
+
+  assert.ok(declarationIndex >= 0 && declarationIndex < detailsIndex);
+  assert.match(exportSource, /drawFirstPageDeclarationWording\(/);
+  assert.doesNotMatch(exportSource, /const declarationRows:/);
+});
+
+test('staff are asked before uploaded exam evidence is attached', () => {
+  assert.match(studentProfileSource, /Attach exam evidence\?/);
+  assert.match(studentProfileSource, /Export without evidence/);
+  assert.match(studentProfileSource, /Attach evidence and export/);
+  assert.match(studentProfileSource, /includeExamSheets: includeExamEvidence && canAccessExamSheets/);
 });
 
 test('student certification requires acknowledgement of every exported record', () => {

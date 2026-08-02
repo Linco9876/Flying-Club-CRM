@@ -3,7 +3,15 @@ import { supabase } from '../lib/supabase';
 import { formatSyllabusMatrixText } from '../hooks/useSyllabusMatrix';
 import type { StudentCourseEnrolment } from '../hooks/useStudentCourseEnrolments';
 import { richTextToPlainText } from './richText';
-import { chunkPdfColumns, normalisePdfText, truncatePdfText, wrapPdfText } from './coursePdfLayout';
+import {
+  calculateCourseProgressMatrixLayout,
+  chunkPdfColumns,
+  criterionCode,
+  normalisePdfText,
+  truncatePdfText,
+  wrapPdfText,
+} from './coursePdfLayout';
+import { courseExamEvidenceForExport } from './coursePdfOptions';
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
@@ -50,55 +58,6 @@ const abbreviateName = (name: string) => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length <= 1) return name.slice(0, 16);
   return `${parts[0][0]}.${parts.slice(1).join(' ')}`.slice(0, 18);
-};
-
-const criterionCode = (name: string, index: number) => {
-  const lower = name.toLowerCase();
-  const known: Array<[string, string]> = [
-    ['flt. prep', 'FP'],
-    ['flight prep', 'FP'],
-    ['ground ops', 'FP'],
-    ['airmanship', 'HF'],
-    ['effects of controls', 'EC'],
-    ['straight', 'SL'],
-    ['climbing', 'CL'],
-    ['descending', 'DS'],
-    ['basic turning', 'BT'],
-    ['slow flight', 'ST'],
-    ['stalls', 'ST'],
-    ['take-off', 'TO'],
-    ['take off', 'TO'],
-    ['landing', 'LD'],
-    ['e.f.i.c', 'EF'],
-    ['efic', 'EF'],
-    ['advanced turning', 'AT'],
-    ['scenario', 'SS'],
-    ['equipment', 'EQ'],
-    ['forced landings', 'FL'],
-    ['operation in ta', 'TA'],
-    ['training area', 'TA'],
-    ['unexpected', 'US'],
-    ['practice flight test', 'PF'],
-    ['consolidation', 'CN'],
-    ['flight test', 'FT'],
-    ['circuits', 'CIR'],
-    ['circuit', 'CIR'],
-    ['medium turns', 'MT'],
-    ['climbing turns', 'CT'],
-  ];
-  const knownCode = known.find(([needle]) => lower.includes(needle))?.[1];
-  if (knownCode) return knownCode;
-
-  const words = name
-    .replace(/&/g, ' and ')
-    .replace(/[^a-zA-Z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((word) => word.length > 0 && !['and', 'the', 'of', 'in', 'to', 'for'].includes(word.toLowerCase()));
-
-  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
-  if (words.length > 1) return words.map((word) => word[0]).join('').slice(0, 4).toUpperCase();
-
-  return `CR${index + 1}`;
 };
 
 const minutesToHours = (minutes: number) => (minutes / 60).toFixed(1);
@@ -386,6 +345,31 @@ export async function exportCoursePdf({
     cursor -= 6;
   };
 
+  const drawFirstPageDeclarationWording = (title: string, value: string) => {
+    const text = stripHtml(value);
+    if (!text) return;
+
+    const maxWidth = width - margin * 2 - 20;
+    const availableHeight = Math.max(44, cursor - margin - 8);
+    let fontSize = 8.5;
+    let lineHeight = 11;
+    let lines = wrapText(text, regular, fontSize, maxWidth);
+
+    while (fontSize > 5.5 && 15 + lines.length * lineHeight > availableHeight) {
+      fontSize -= 0.25;
+      lineHeight = fontSize + 2;
+      lines = wrapText(text, regular, fontSize, maxWidth);
+    }
+
+    page.drawText(title, { x: margin, y: cursor, size: 8, font: bold, color: blue });
+    cursor -= 13;
+    lines.forEach((line) => {
+      page.drawText(line, { x: margin, y: cursor, size: fontSize, font: regular, color: dark });
+      cursor -= lineHeight;
+    });
+    cursor -= 6;
+  };
+
   const drawDigitalSignatureBox = (
     title: string,
     signatureName: string,
@@ -472,7 +456,7 @@ export async function exportCoursePdf({
       page.drawText(fitText(value || 'Not recorded', regular, 8, width - rightX - 112), { x: rightX + 92, y, size: 8, font: regular, color: dark });
     });
 
-    drawText(detail, { x: margin + 10, y: cursor - 80 }, { size: 7, color: grey, maxWidth: width - margin * 2 - 20, lineHeight: 8 });
+    drawText(detail, { x: margin + 10, y: cursor - 76 }, { size: 6.5, color: grey, maxWidth: 288, lineHeight: 7 });
     cursor -= boxHeight + 12;
   };
 
@@ -558,12 +542,13 @@ export async function exportCoursePdf({
   const courseExams = exams
     .filter((exam) => (
       exam.courseId === course.id ||
-      courseExamDefinitions.some((definition) =>
+      courseExamDefinitions.some((definition) => (
         definition.id === exam.examId ||
         definition.name.trim().toLowerCase() === exam.examName.trim().toLowerCase()
-      )
+      ))
     ))
     .sort((a, b) => b.examDate.getTime() - a.examDate.getTime());
+  const courseExamEvidence = courseExamEvidenceForExport(course, exams);
 
   const [matrixRows, matrixRequirements, matrixAssessments] = preloadedMatrixData
     ? [preloadedMatrixData.rows, preloadedMatrixData.requirements, preloadedMatrixData.assessments]
@@ -736,19 +721,6 @@ export async function exportCoursePdf({
   drawInfoBox('Latest', latestRecord ? formatDate(latestRecord.bookingStartTime || latestRecord.date) : 'No flights', margin + (boxWidth + 8) * 4, cursor, boxWidth);
   cursor -= 70;
 
-  drawSectionTitle(isStructuredAviationCourse ? 'Student and Course Details' : 'Details');
-  const detailRows: Array<[string, string]> = [
-    ['RAAus Number', student.raausId || 'Not recorded'],
-    ['RAAus Expiry', formatDate(student.licenceExpiry)],
-    ['CASA ARN', student.casaId || 'Not recorded'],
-    ['Medical Expiry', formatDate(student.medicalExpiry)],
-    ['Mobile', student.mobilePhone || student.phone || 'Not recorded'],
-    ['Address', student.address || 'Not recorded'],
-    ['Date of Birth', formatDate(student.dateOfBirth)],
-    ['Emergency Contact', student.emergencyContact ? `${student.emergencyContact.name} - ${student.emergencyContact.phone}` : 'Not recorded'],
-  ];
-  drawLabelValueGrid(detailRows, { columns: 4, rowHeight: 36, valueSize: 8.5 });
-
   if (course.requiresFlyingDeclaration) {
     drawSectionTitle(course.flyingDeclarationTitle || 'Flying Declaration');
     drawDeclarationSignatureRecord(
@@ -766,54 +738,57 @@ export async function exportCoursePdf({
         ? 'This declaration was signed electronically in the CRM. The declaration wording below is the signed wording snapshot stored with the course enrolment.'
         : 'This course requires a student flying declaration, but the CRM does not show a current signed declaration for this course enrolment.'
     );
-    const declarationRows: Array<[string, string]> = [
-      ['Status', declarationSigned ? 'Signed electronically' : 'Not signed'],
-      ['Signed by', courseEnrolment?.declarationSignedName || 'Not recorded'],
-      ['Signed date', formatDate(courseEnrolment?.declarationSignedAt)],
-      ['RAAus member number', courseEnrolment?.declarationMemberNumber || student.raausId || 'Not recorded'],
-      ['Declaration version', String(courseEnrolment?.declarationVersion ?? course.flyingDeclarationVersion ?? 1)],
-    ];
-    drawLabelValueGrid(declarationRows, { columns: 3, rowHeight: 28, valueSize: 8 });
     const declarationWording = courseEnrolment?.declarationTextSnapshot || course.flyingDeclarationText || '';
     if (declarationWording.trim()) {
-      drawParagraphBlock(declarationSigned ? 'Signed declaration wording' : 'Declaration wording awaiting signature', declarationWording, 10);
-    }
-
-    if (guardianDeclarationRequired) {
-      drawSectionTitle(course.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration');
-      drawDeclarationSignatureRecord(
-        'Parent/guardian declaration',
-        guardianDeclarationSigned,
-        courseEnrolment?.guardianDeclarationSignedName,
-        courseEnrolment?.guardianDeclarationSignedAt,
-        [
-          ['Required', 'Yes - student under 18'],
-          ['Relationship', courseEnrolment?.guardianDeclarationRelationship || 'Not recorded'],
-          ['Contact', [courseEnrolment?.guardianDeclarationEmail, courseEnrolment?.guardianDeclarationPhone].filter(Boolean).join(' / ') || 'Not recorded'],
-          ['Version', String(courseEnrolment?.guardianDeclarationVersion ?? course.flyingDeclarationVersion ?? 1)],
-        ],
-        guardianDeclarationSigned
-          ? 'This parent/guardian declaration was signed electronically using a secure one-time CRM signing link.'
-          : 'The CRM does not show a current parent/guardian declaration signature for this under-18 student.'
+      drawFirstPageDeclarationWording(
+        declarationSigned ? 'Signed declaration wording' : 'Declaration wording awaiting signature',
+        declarationWording,
       );
-      const guardianRows: Array<[string, string]> = [
+    }
+  }
+
+  drawSectionTitle(isStructuredAviationCourse ? 'Student and Course Details' : 'Details');
+  const detailRows: Array<[string, string]> = [
+    ['RAAus Number', student.raausId || 'Not recorded'],
+    ['RAAus Expiry', formatDate(student.licenceExpiry)],
+    ['CASA ARN', student.casaId || 'Not recorded'],
+    ['Medical Expiry', formatDate(student.medicalExpiry)],
+    ['Mobile', student.mobilePhone || student.phone || 'Not recorded'],
+    ['Address', student.address || 'Not recorded'],
+    ['Date of Birth', formatDate(student.dateOfBirth)],
+    ['Emergency Contact', student.emergencyContact ? `${student.emergencyContact.name} - ${student.emergencyContact.phone}` : 'Not recorded'],
+  ];
+  drawLabelValueGrid(detailRows, { columns: 4, rowHeight: 36, valueSize: 8.5 });
+
+  if (course.requiresFlyingDeclaration && guardianDeclarationRequired) {
+    drawSectionTitle(course.guardianDeclarationTitle || 'Under 18 Years - Parent/Guardian Declaration');
+    drawDeclarationSignatureRecord(
+      'Parent/guardian declaration',
+      guardianDeclarationSigned,
+      courseEnrolment?.guardianDeclarationSignedName,
+      courseEnrolment?.guardianDeclarationSignedAt,
+      [
         ['Required', 'Yes - student under 18'],
-        ['Status', guardianDeclarationSigned ? 'Signed electronically' : 'Not signed'],
-        ['Signed by', courseEnrolment?.guardianDeclarationSignedName || 'Not recorded'],
         ['Relationship', courseEnrolment?.guardianDeclarationRelationship || 'Not recorded'],
-        ['Signed date', formatDate(courseEnrolment?.guardianDeclarationSignedAt)],
         ['Contact', [courseEnrolment?.guardianDeclarationEmail, courseEnrolment?.guardianDeclarationPhone].filter(Boolean).join(' / ') || 'Not recorded'],
-      ];
-      drawLabelValueGrid(guardianRows, { columns: 3, rowHeight: 28, valueSize: 8 });
-      const guardianWording = courseEnrolment?.guardianDeclarationTextSnapshot || course.guardianDeclarationText || '';
-      if (guardianWording.trim()) {
-        drawParagraphBlock(guardianDeclarationSigned ? 'Signed parent/guardian declaration wording' : 'Parent/guardian declaration wording awaiting signature', guardianWording, 10);
-      }
+        ['Version', String(courseEnrolment?.guardianDeclarationVersion ?? course.flyingDeclarationVersion ?? 1)],
+      ],
+      guardianDeclarationSigned
+        ? 'This parent/guardian declaration was signed electronically using a secure one-time CRM signing link.'
+        : 'The CRM does not show a current parent/guardian declaration signature for this under-18 student.'
+    );
+    const guardianWording = courseEnrolment?.guardianDeclarationTextSnapshot || course.guardianDeclarationText || '';
+    if (guardianWording.trim()) {
+      drawParagraphBlock(
+        guardianDeclarationSigned ? 'Signed parent/guardian declaration wording' : 'Parent/guardian declaration wording awaiting signature',
+        guardianWording,
+        10,
+      );
     }
   }
 
   if (isStructuredAviationCourse) {
-    drawSectionTitle(isRplSyllabusCourse ? 'RPL(A) Syllabus Overview' : 'RAAus Ab-Initio Course Overview');
+    drawSectionTitle(isRplSyllabusCourse ? 'RPL(A) Syllabus Overview' : 'RAAus Ab-Initio Course Overview', 70);
     drawParagraphBlock('Course description', course.description, 5);
     if (course.prerequisites.length > 0 || course.objectives.length > 0 || course.evaluationCriteria.length > 0) {
       const overviewBlocks: Array<[string, string, number]> = [
@@ -1048,11 +1023,13 @@ export async function exportCoursePdf({
       cursor -= 6;
     }
 
-    const criteriaGroups = chunkPdfColumns(criteria, 8);
-    const coreWidths = [190, 90, 56, 42];
-    const timeColumnWidth = 38;
-    const rowHeight = 23;
-    const headerHeight = 30;
+    const matrixLayout = calculateCourseProgressMatrixLayout(width, margin, criteria.length);
+    const criteriaGroups = chunkPdfColumns(criteria, matrixLayout.columnsPerGroup);
+    const { coreWidths, timeColumnWidth, compact: compactMatrix } = matrixLayout;
+    const rowHeight = compactMatrix ? 21 : 23;
+    const headerHeight = compactMatrix ? 27 : 30;
+    const headerFontSize = compactMatrix ? 6.5 : 8;
+    const bodyFontSize = compactMatrix ? 7.2 : 8.2;
 
     criteriaGroups.forEach((criteriaGroup, groupIndex) => {
       const criterionAreaWidth = width - margin * 2 - coreWidths.reduce((sum, value) => sum + value, 0) - timeColumnWidth * 2;
@@ -1061,25 +1038,33 @@ export async function exportCoursePdf({
       const drawProgressHeader = () => {
         ensureSpace(68);
         const groupLabel = criteria.length > 0
-          ? `Assessment columns ${groupIndex + 1} of ${criteriaGroups.length}`
+          ? criteriaGroups.length === 1
+            ? `All ${criteria.length} assessment columns`
+            : `Assessment columns ${groupIndex + 1} of ${criteriaGroups.length}`
           : 'Flight and briefing summary';
         page.drawText(groupLabel, { x: margin, y: cursor, size: 8.5, font: bold, color: blue });
         cursor -= 14;
         page.drawRectangle({ x: margin, y: cursor - headerHeight, width: width - margin * 2, height: headerHeight, color: paleBlue, borderColor: borderGrey, borderWidth: 0.6 });
         let headerX = margin;
         ['Lesson', 'Instructor', 'Date', 'Brief'].forEach((header, index) => {
-          page.drawText(header, { x: headerX + 5, y: cursor - 19, size: 8, font: bold, color: dark });
+          page.drawText(header, { x: headerX + 4, y: cursor - 18, size: compactMatrix ? 7.2 : 8, font: bold, color: dark });
           headerX += coreWidths[index];
         });
         criteriaGroup.forEach((criterion) => {
           const criterionIndex = criteria.indexOf(criterion);
           const label = criterionCode(criterion.name, criterionIndex);
-          const labelWidth = bold.widthOfTextAtSize(label, 8);
-          page.drawText(label, { x: headerX + Math.max(3, (criterionWidth - labelWidth) / 2), y: cursor - 19, size: 8, font: bold, color: dark });
+          const labelWidth = bold.widthOfTextAtSize(label, headerFontSize);
+          page.drawText(label, {
+            x: headerX + Math.max(2, (criterionWidth - labelWidth) / 2),
+            y: cursor - 18,
+            size: headerFontSize,
+            font: bold,
+            color: dark,
+          });
           headerX += criterionWidth;
         });
         ['Dual', 'Solo'].forEach((header) => {
-          page.drawText(header, { x: headerX + 5, y: cursor - 19, size: 8, font: bold, color: dark });
+          page.drawText(header, { x: headerX + 3, y: cursor - 18, size: compactMatrix ? 6.8 : 8, font: bold, color: dark });
           headerX += timeColumnWidth;
         });
         cursor -= headerHeight;
@@ -1110,21 +1095,27 @@ export async function exportCoursePdf({
           borderWidth: 0.35,
         });
         cells.forEach((cell, index) => {
-          const text = fitText(cell, regular, 8.2, coreWidths[index] - 10);
-          page.drawText(text, { x: x + 5, y: cursor - 15, size: 8.2, font: regular, color: dark });
+          const text = fitText(cell, regular, bodyFontSize, coreWidths[index] - 8);
+          page.drawText(text, { x: x + 4, y: cursor - 14, size: bodyFontSize, font: regular, color: dark });
           x += coreWidths[index];
         });
         criteriaGroup.forEach((criterion) => {
           const grade = record.criteriaGrades?.[criterion.id] || '-';
           const label = matrixGradeLabel(grade, criterion.gradingSystem);
           const color = matrixGradeColor(grade, criterion.gradingSystem, { green, blue, amber, red, dark, grey }) || grey;
-          const gradeWidth = mono.widthOfTextAtSize(label, 8.2);
-          page.drawText(label, { x: x + Math.max(3, (criterionWidth - gradeWidth) / 2), y: cursor - 15, size: 8.2, font: mono, color });
+          const gradeWidth = mono.widthOfTextAtSize(label, bodyFontSize);
+          page.drawText(label, {
+            x: x + Math.max(2, (criterionWidth - gradeWidth) / 2),
+            y: cursor - 14,
+            size: bodyFontSize,
+            font: mono,
+            color,
+          });
           x += criterionWidth;
         });
         [record.dualTimeMin, record.soloTimeMin].forEach((minutes) => {
           const value = minutesToHours(minutes);
-          page.drawText(value, { x: x + 5, y: cursor - 15, size: 8.2, font: regular, color: dark });
+          page.drawText(value, { x: x + 3, y: cursor - 14, size: bodyFontSize, font: regular, color: dark });
           x += timeColumnWidth;
         });
         cursor -= rowHeight;
@@ -1133,7 +1124,14 @@ export async function exportCoursePdf({
     });
   }
 
-  drawSectionTitle(isStructuredAviationCourse ? 'Training Records and Instructor Comments' : 'Lesson Notes and Record Cards', 80);
+  const trainingRecordSectionTitle = isStructuredAviationCourse
+    ? 'Training Records and Instructor Comments'
+    : 'Lesson Notes and Record Cards';
+  if (isStructuredAviationCourse && courseRecords.length > 0) {
+    runningSection = trainingRecordSectionTitle;
+    newPage();
+  }
+  drawSectionTitle(trainingRecordSectionTitle, 80);
   if (courseRecords.length === 0) {
     drawText('No lesson comments recorded for this course.', { x: margin, y: cursor }, { size: 9, color: grey });
   } else {
@@ -1327,7 +1325,7 @@ export async function exportCoursePdf({
 
   addFooter();
 
-  for (const exam of includeExamSheets ? courseExams.filter((item) => item.storagePath) : []) {
+  for (const exam of includeExamSheets ? courseExamEvidence : []) {
     try {
       const { data, error } = await supabase.storage.from(EXAM_UPLOAD_BUCKET).download(exam.storagePath!);
       if (error || !data) continue;
