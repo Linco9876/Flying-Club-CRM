@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { TrainingRecord, TrainingSequenceResult } from '../types';
 import toast from 'react-hot-toast';
+import { getSupabaseFunctionErrorMessage } from '../lib/supabaseFunctionErrors';
 
 const toLocalDateOnly = (date: Date) => {
   const year = date.getFullYear();
@@ -206,6 +207,22 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
     }
   };
 
+  const sendTrainingRecordAcknowledgementEmail = async (trainingRecordId?: string) => {
+    if (!trainingRecordId) return false;
+
+    const { data, error } = await supabase.functions.invoke('send-training-record-acknowledgement', {
+      body: { trainingRecordId },
+    });
+
+    if (error) {
+      console.error('Failed to send training record acknowledgement email:', error);
+      toast.error(`Training record saved, but the approval email was not sent: ${await getSupabaseFunctionErrorMessage(error, 'Email delivery failed')}`);
+      return false;
+    }
+
+    return Boolean(data?.emailSent || data?.skipped);
+  };
+
   const ensureStudentCourseEnrolment = async (studentId?: string, courseId?: string | null) => {
     if (!studentId || !courseId) return undefined;
 
@@ -296,6 +313,10 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
         if (sequenceError) throw sequenceError;
       }
 
+      if (recordData.status === 'submitted' && !recordData.studentAck) {
+        await sendTrainingRecordAcknowledgementEmail(data.id);
+      }
+
       await fetchTrainingRecords(true);
       return data;
     } catch (err) {
@@ -365,6 +386,11 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
           recordData.courseId || existingRecord?.courseId
         );
         void sendDeclarationLinksForEnrolment(enrolmentId);
+      }
+
+      const nextStudentAck = recordData.studentAck ?? existingRecord?.studentAck;
+      if (nextStatus === 'submitted' && !nextStudentAck) {
+        await sendTrainingRecordAcknowledgementEmail(id);
       }
 
       await fetchTrainingRecords(true);
