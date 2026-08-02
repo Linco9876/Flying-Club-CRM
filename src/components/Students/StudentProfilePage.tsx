@@ -55,6 +55,7 @@ import {
   isConfiguredCredentialOption,
   normaliseCredentialOption,
 } from '../../utils/credentialDropdowns';
+import { courseExamEvidenceForExport } from '../../utils/coursePdfOptions';
 
 interface StudentInfoForm {
   name: string;
@@ -5595,6 +5596,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
   const { settings: trainingSettings } = useTrainingSettings();
   const canAccessExamSheets = canAccessUploadedExamSheets(user);
   const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
+  const [pendingCourseExport, setPendingCourseExport] = useState<TrainingModule | null>(null);
   const [grantingEndorsementCourseIds, setGrantingEndorsementCourseIds] = useState<Set<string>>(new Set());
   const [selectedEnrolCourseId, setSelectedEnrolCourseId] = useState('');
   const [enrolmentNotes, setEnrolmentNotes] = useState('');
@@ -5604,6 +5606,15 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
     () => calculateCourseProgress(courses, trainingRecords, trainingSettings.courseCompletionRule),
     [courses, trainingRecords, trainingSettings.courseCompletionRule]
   );
+
+  useEffect(() => {
+    if (!pendingCourseExport) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPendingCourseExport(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [pendingCourseExport]);
 
   const activeEnrolmentCourseIds = useMemo(
     () => new Set(enrolments.filter(enrolment => enrolment.status === 'active').map(enrolment => enrolment.courseId)),
@@ -5672,12 +5683,13 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
     });
   }, [enrolledCourses, grantCompletionAwards, student, user]);
 
-  const handleExportCourse = async (course: TrainingModule) => {
+  const runCourseExport = async (course: TrainingModule, includeExamEvidence: boolean) => {
     if (!student) {
       toast.error('Student file is still loading');
       return;
     }
 
+    setPendingCourseExport(null);
     setExportingCourseId(course.id);
     try {
       const { exportCoursePdf } = await import('../../utils/coursePdfExport');
@@ -5689,9 +5701,9 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         users,
         exportedBy: user,
         courseEnrolments: enrolments,
-        includeExamSheets: canAccessExamSheets,
+        includeExamSheets: includeExamEvidence && canAccessExamSheets,
       });
-      toast.success('Course PDF exported');
+      toast.success(includeExamEvidence ? 'Course PDF exported with exam evidence' : 'Course PDF exported');
     } catch (error) {
       console.error('Failed to export course PDF:', error);
       toast.error('Failed to export course PDF');
@@ -5699,6 +5711,21 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
       setExportingCourseId(null);
     }
   };
+
+  const handleExportCourse = (course: TrainingModule) => {
+    const examEvidence = courseExamEvidenceForExport(course, examResults);
+    if (canAccessExamSheets && examEvidence.length > 0) {
+      setPendingCourseExport(course);
+      return;
+    }
+
+    void runCourseExport(course, false);
+  };
+
+  const pendingExamEvidence = useMemo(
+    () => pendingCourseExport ? courseExamEvidenceForExport(pendingCourseExport, examResults) : [],
+    [examResults, pendingCourseExport],
+  );
 
   const handleEnrolCourse = async () => {
     if (!student || !user || !selectedEnrolCourseId) return;
@@ -5780,6 +5807,89 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {pendingCourseExport && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPendingCourseExport(null);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="course-pdf-evidence-title"
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                  <FileText className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 id="course-pdf-evidence-title" className="text-base font-semibold text-gray-900">
+                    Attach exam evidence?
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {pendingExamEvidence.length} uploaded exam {pendingExamEvidence.length === 1 ? 'file is' : 'files are'} available for {pendingCourseExport.title}.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingCourseExport(null)}
+                className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                aria-label="Cancel PDF export"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <p className="text-sm leading-6 text-gray-700">
+                Attaching evidence adds the uploaded marked sheets or exam files as pages at the end of the PDF. Choose the smaller progress report when the evidence is not needed.
+              </p>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">Available evidence</p>
+                <ul className="mt-2 space-y-1.5 text-sm text-gray-700">
+                  {pendingExamEvidence.slice(0, 4).map((exam) => (
+                    <li key={exam.id} className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate">{exam.examName}</span>
+                      <span className="shrink-0 text-xs text-gray-500">{exam.fileName || 'Uploaded file'}</span>
+                    </li>
+                  ))}
+                  {pendingExamEvidence.length > 4 && (
+                    <li className="text-xs font-medium text-gray-500">+ {pendingExamEvidence.length - 4} more files</li>
+                  )}
+                </ul>
+              </div>
+              <p className="flex items-start gap-2 text-xs leading-5 text-gray-500">
+                <Shield className="mt-0.5 h-4 w-4 shrink-0" />
+                Exam evidence remains staff-only in the CRM. Only attach it when the recipient is authorised to receive it.
+              </p>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => void runCourseExport(pendingCourseExport, false)}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100"
+              >
+                Export without evidence
+              </button>
+              <button
+                type="button"
+                onClick={() => void runCourseExport(pendingCourseExport, true)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800"
+              >
+                <Download className="h-4 w-4" />
+                Attach evidence and export
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {canManageCourseEnrolments && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end">

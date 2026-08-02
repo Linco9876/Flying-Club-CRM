@@ -1,5 +1,54 @@
 export type PdfTextMeasure = (text: string) => number;
 
+export const criterionCode = (name: string, index: number) => {
+  const lower = name.toLowerCase();
+  const known: Array<[string, string]> = [
+    ['flt. prep', 'FP'],
+    ['flight prep', 'FP'],
+    ['ground ops', 'FP'],
+    ['airmanship', 'HF'],
+    ['effects of controls', 'EC'],
+    ['straight', 'SL'],
+    ['climbing', 'CL'],
+    ['descending', 'DS'],
+    ['basic turning', 'BT'],
+    ['slow flight', 'ST'],
+    ['stalls', 'ST'],
+    ['take-off', 'TO'],
+    ['take off', 'TO'],
+    ['forced landings', 'FL'],
+    ['landing', 'LD'],
+    ['e.f.i.c', 'EF'],
+    ['efic', 'EF'],
+    ['advanced turning', 'AT'],
+    ['scenario', 'SS'],
+    ['equipment', 'EQ'],
+    ['operation in ta', 'TA'],
+    ['training area', 'TA'],
+    ['unexpected', 'US'],
+    ['practice flight test', 'PF'],
+    ['consolidation', 'CN'],
+    ['flight test', 'FT'],
+    ['circuits', 'CIR'],
+    ['circuit', 'CIR'],
+    ['medium turns', 'MT'],
+    ['climbing turns', 'CT'],
+  ];
+  const knownCode = known.find(([needle]) => lower.includes(needle))?.[1];
+  if (knownCode) return knownCode;
+
+  const words = name
+    .replace(/&/g, ' and ')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 0 && !['and', 'the', 'of', 'in', 'to', 'for'].includes(word.toLowerCase()));
+
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
+  if (words.length > 1) return words.map((word) => word[0]).join('').slice(0, 4).toUpperCase();
+
+  return `CR${index + 1}`;
+};
+
 const PDF_TEXT_REPLACEMENTS: Record<string, string> = {
   '\u2010': '-',
   '\u2011': '-',
@@ -126,4 +175,35 @@ export const chunkPdfColumns = <T>(items: T[], size: number): T[][] => {
     chunks.push(items.slice(index, index + size));
   }
   return chunks;
+};
+
+export type CourseProgressMatrixLayout = {
+  coreWidths: [number, number, number, number];
+  timeColumnWidth: number;
+  columnsPerGroup: number;
+  compact: boolean;
+};
+
+export const calculateCourseProgressMatrixLayout = (
+  pageWidth: number,
+  pageMargin: number,
+  criterionCount: number,
+): CourseProgressMatrixLayout => {
+  const compact = criterionCount > 8;
+  const coreWidths: [number, number, number, number] = compact
+    ? [154, 76, 52, 34]
+    : [190, 90, 56, 42];
+  const timeColumnWidth = compact ? 30 : 38;
+  const usableWidth = pageWidth - pageMargin * 2;
+  const fixedWidth = coreWidths.reduce((sum, value) => sum + value, 0) + timeColumnWidth * 2;
+  const minimumReadableCriterionWidth = compact ? 18 : 28;
+  const availableCriterionWidth = Math.max(minimumReadableCriterionWidth, usableWidth - fixedWidth);
+  const maximumColumns = Math.max(1, Math.floor(availableCriterionWidth / minimumReadableCriterionWidth));
+
+  return {
+    coreWidths,
+    timeColumnWidth,
+    columnsPerGroup: criterionCount > 0 ? Math.min(criterionCount, maximumColumns) : 1,
+    compact,
+  };
 };
