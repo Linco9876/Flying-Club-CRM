@@ -37,12 +37,16 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           test -n "${SUPABASE_DB_URL:-}"
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_ANON_KEY:-}"
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
 
@@ -77,3 +81,20 @@ jobs:
             --project-name bendigo-flying-club-portal \
             --branch main \
             --commit-hash "${{ github.event.workflow_run.head_sha }}"
+
+      - name: Verify production AI Rewrite bindings
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            headers="$(curl --silent --show-error --request OPTIONS \
+              --dump-header - --output /dev/null \
+              https://portal.bendigoflyingclub.com.au/api/instructor-comment-cleanup || true)"
+            if grep -qi '^x-bfc-ai-rewrite-ready: true' <<<"$headers"; then
+              echo "AI Rewrite production bindings are ready."
+              exit 0
+            fi
+            echo "Waiting for the new Cloudflare release (attempt $attempt of 12)..."
+            sleep 5
+          done
+          echo "::error::AI Rewrite production binding smoke test failed."
+          exit 1

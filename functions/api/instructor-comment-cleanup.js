@@ -1,5 +1,12 @@
 const STAFF_ROLES = new Set(['admin', 'senior_instructor', 'instructor']);
 const MODEL = '@cf/meta/llama-3.2-3b-instruct';
+const SERVICE_UNAVAILABLE_MESSAGE = 'AI Rewrite is temporarily unavailable. Please try again shortly.';
+
+const configurationIsReady = (env = {}) => Boolean(
+  env.SUPABASE_URL
+  && env.SUPABASE_ANON_KEY
+  && env.AI
+);
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -26,7 +33,6 @@ const normaliseRoles = (...values) =>
 const getAuthenticatedStaff = async (request, env) => {
   const token = getBearerToken(request);
   if (!token) return { error: 'Missing session token', status: 401 };
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return { error: 'Supabase environment is not configured', status: 500 };
 
   const authResponse = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
     headers: {
@@ -150,21 +156,30 @@ const buildPrompt = ({ mode, targetWordLimit, contextLines, comment }) => {
   ].join('\n');
 };
 
-export const onRequestOptions = async () =>
-  new Response(null, {
+export const onRequestOptions = async ({ env }) => {
+  if (!configurationIsReady(env)) {
+    return json({ error: SERVICE_UNAVAILABLE_MESSAGE }, 503);
+  }
+
+  return new Response(null, {
     status: 204,
     headers: {
       'access-control-allow-origin': '*',
       'access-control-allow-methods': 'POST, OPTIONS',
       'access-control-allow-headers': 'authorization, content-type',
+      'x-bfc-ai-rewrite-ready': 'true',
     },
   });
+};
 
 export const onRequestPost = async ({ request, env }) => {
   try {
+    if (!configurationIsReady(env)) {
+      return json({ error: SERVICE_UNAVAILABLE_MESSAGE }, 503);
+    }
+
     const staff = await getAuthenticatedStaff(request, env);
     if (staff.error) return json({ error: staff.error }, staff.status);
-    if (!env.AI) return json({ error: 'Cloudflare Workers AI binding "AI" is not configured' }, 500);
 
     const body = await request.json().catch(() => null);
     const comment = String(body?.comment || '').trim();

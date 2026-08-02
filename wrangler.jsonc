@@ -2,5 +2,26 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bendigo-flying-club-portal",
   "pages_build_output_dir": "./dist",
-  "compatibility_date": "2026-07-23"
+  "compatibility_date": "2026-07-23",
+  "vars": {
+    "SUPABASE_URL": "https://joarmzswpufrduectjse.supabase.co",
+    "SUPABASE_ANON_KEY": "sb_publishable_bV5KJ5tICL7ltGvPWxrqJQ_BH6MqNez"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  // Bindings are non-inheritable once an environment override exists.
+  // Repeat the complete set used by the production/main deployment.
+  "env": {
+    "production": {
+      "compatibility_date": "2026-07-23",
+      "vars": {
+        "SUPABASE_URL": "https://joarmzswpufrduectjse.supabase.co",
+        "SUPABASE_ANON_KEY": "sb_publishable_bV5KJ5tICL7ltGvPWxrqJQ_BH6MqNez"
+      },
+      "ai": {
+        "binding": "AI"
+      }
+    }
+  }
 }
