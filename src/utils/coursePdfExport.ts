@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { formatSyllabusMatrixText } from '../hooks/useSyllabusMatrix';
 import type { StudentCourseEnrolment } from '../hooks/useStudentCourseEnrolments';
 import { richTextToPlainText } from './richText';
+import { chunkPdfColumns, normalisePdfText, truncatePdfText, wrapPdfText } from './coursePdfLayout';
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
@@ -15,6 +16,12 @@ type ExportCoursePdfInput = {
   exportedBy?: User | null;
   courseEnrolments?: StudentCourseEnrolment[];
   includeExamSheets?: boolean;
+  download?: boolean;
+  preloadedMatrixData?: {
+    rows: any[];
+    requirements: any[];
+    assessments: any[];
+  };
 };
 
 type Point = { x: number; y: number };
@@ -158,21 +165,7 @@ const matrixEvidenceLabel = (item: any) => {
 };
 
 const wrapText = (text: string, font: any, size: number, maxWidth: number) => {
-  const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-  const lines: string[] = [];
-  let line = '';
-
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
-      line = candidate;
-      continue;
-    }
-    if (line) lines.push(line);
-    line = word;
-  }
-  if (line) lines.push(line);
-  return lines.length > 0 ? lines : [''];
+  return wrapPdfText(text, value => font.widthOfTextAtSize(value, size), maxWidth);
 };
 
 const stripHtml = richTextToPlainText;
@@ -198,13 +191,16 @@ export async function exportCoursePdf({
   exportedBy,
   courseEnrolments = [],
   includeExamSheets = false,
+  download = true,
+  preloadedMatrixData,
 }: ExportCoursePdfInput) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
-  const dark = rgb(0.12, 0.13, 0.15);
-  const grey = rgb(0.42, 0.45, 0.5);
-  const lightGrey = rgb(0.94, 0.95, 0.96);
-  const borderGrey = rgb(0.78, 0.8, 0.84);
-  const blue = rgb(0.05, 0.3, 0.65);
+  const dark = rgb(0.07, 0.13, 0.22);
+  const grey = rgb(0.34, 0.39, 0.47);
+  const lightGrey = rgb(0.95, 0.97, 0.98);
+  const borderGrey = rgb(0.78, 0.83, 0.88);
+  const blue = rgb(0.04, 0.32, 0.68);
+  const paleBlue = rgb(0.92, 0.96, 1);
   const green = rgb(0.04, 0.45, 0.24);
   const amber = rgb(0.72, 0.35, 0.05);
   const red = rgb(0.72, 0.08, 0.08);
@@ -222,23 +218,72 @@ export async function exportCoursePdf({
   let { width, height } = page.getSize();
   let cursor = height - margin;
   let pageNo = 1;
+  let runningSection = 'Course summary';
+
+  const fitText = (text: string, font: any, size: number, maxWidth: number) =>
+    truncatePdfText(text, value => font.widthOfTextAtSize(value, size), maxWidth);
 
   const addFooter = () => {
-    page.drawText(`Generated ${formatDate(new Date())} - Page ${pageNo}`, {
+    page.drawLine({
+      start: { x: margin, y: 28 },
+      end: { x: width - margin, y: 28 },
+      thickness: 0.5,
+      color: borderGrey,
+    });
+    page.drawText(`Generated ${formatDate(new Date())}`, {
       x: margin,
-      y: 18,
+      y: 15,
       size: 7,
       font: regular,
       color: grey,
     });
+    const footerTitle = fitText(`${student.name} - ${course.title}`, regular, 7, 360);
+    page.drawText(footerTitle, {
+      x: (width - regular.widthOfTextAtSize(footerTitle, 7)) / 2,
+      y: 15,
+      size: 7,
+      font: regular,
+      color: grey,
+    });
+    const pageLabel = `Page ${pageNo}`;
+    page.drawText(pageLabel, {
+      x: width - margin - regular.widthOfTextAtSize(pageLabel, 7),
+      y: 15,
+      size: 7,
+      font: bold,
+      color: dark,
+    });
+  };
+
+  const drawRunningHeader = () => {
+    page.drawRectangle({
+      x: margin,
+      y: height - 48,
+      width: width - margin * 2,
+      height: 24,
+      color: paleBlue,
+      borderColor: borderGrey,
+      borderWidth: 0.5,
+    });
+    const identity = fitText(`${student.name}  |  ${course.title}`, bold, 8.5, 500);
+    page.drawText(identity, { x: margin + 9, y: height - 39, size: 8.5, font: bold, color: dark });
+    const section = fitText(runningSection, regular, 8, 190);
+    page.drawText(section, {
+      x: width - margin - 9 - regular.widthOfTextAtSize(section, 8),
+      y: height - 39,
+      size: 8,
+      font: regular,
+      color: blue,
+    });
+    cursor = height - 62;
   };
 
   const newPage = () => {
     addFooter();
     page = pdfDoc.addPage(pageSize);
     ({ width, height } = page.getSize());
-    cursor = height - margin;
     pageNo += 1;
+    drawRunningHeader();
   };
 
   const ensureSpace = (required: number) => {
@@ -250,24 +295,27 @@ export async function exportCoursePdf({
     const font = options.font ?? regular;
     const color = options.color ?? dark;
     const lineHeight = options.lineHeight ?? size + 3;
-    const lines = options.maxWidth ? wrapText(text, font, size, options.maxWidth) : [text];
+    const safeText = normalisePdfText(text);
+    const lines = options.maxWidth ? wrapText(safeText, font, size, options.maxWidth) : [safeText];
     lines.forEach((line, index) => {
       page.drawText(line, { x: at.x, y: at.y - index * lineHeight, size, font, color });
     });
     return lines.length * lineHeight;
   };
 
-  const drawSectionTitle = (title: string) => {
-    ensureSpace(34);
-    page.drawRectangle({ x: margin, y: cursor - 22, width: width - margin * 2, height: 22, color: dark });
-    page.drawText(title, { x: margin + 10, y: cursor - 15, size: 10, font: bold, color: rgb(1, 1, 1) });
-    cursor -= 32;
+  const drawSectionTitle = (title: string, minimumFollowingSpace = 16) => {
+    runningSection = title;
+    ensureSpace(34 + minimumFollowingSpace);
+    page.drawRectangle({ x: margin, y: cursor - 24, width: width - margin * 2, height: 24, color: blue });
+    page.drawRectangle({ x: margin, y: cursor - 24, width: 5, height: 24, color: dark });
+    page.drawText(fitText(title, bold, 10, width - margin * 2 - 24), { x: margin + 12, y: cursor - 16, size: 10, font: bold, color: rgb(1, 1, 1) });
+    cursor -= 34;
   };
 
   const drawInfoBox = (title: string, value: string, x: number, y: number, boxWidth: number, boxHeight = 46) => {
     page.drawRectangle({ x, y: y - boxHeight, width: boxWidth, height: boxHeight, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.8 });
     page.drawText(title, { x: x + 8, y: y - 14, size: 7, font: bold, color: grey });
-    drawText(value || 'Not recorded', { x: x + 8, y: y - 29 }, { size: 10, font: bold, maxWidth: boxWidth - 16, lineHeight: 11 });
+    page.drawText(fitText(value || 'Not recorded', bold, 10, boxWidth - 16), { x: x + 8, y: y - 30, size: 10, font: bold, color: dark });
   };
 
   const drawLabelValueGrid = (
@@ -311,18 +359,31 @@ export async function exportCoursePdf({
     cursor -= totalHeight + 8;
   };
 
-  const drawParagraphBlock = (title: string, value: string, maxLines = 7) => {
+  const drawParagraphBlock = (title: string, value: string, _legacyMaxLines?: number) => {
     const text = stripHtml(value);
     if (!text) return;
-    const lines = wrapText(text, regular, 8, width - margin * 2 - 20).slice(0, maxLines);
-    ensureSpace(18 + lines.length * 10);
-    page.drawText(title, { x: margin, y: cursor, size: 8, font: bold, color: grey });
-    cursor -= 12;
+    const fontSize = 8.5;
+    const lineHeight = 11;
+    const lines = wrapText(text, regular, fontSize, width - margin * 2 - 20);
+    let continued = false;
+
+    const drawLabel = () => {
+      ensureSpace(26);
+      page.drawText(`${title}${continued ? ' (continued)' : ''}`, { x: margin, y: cursor, size: 8, font: bold, color: blue });
+      cursor -= 13;
+      continued = true;
+    };
+
+    drawLabel();
     lines.forEach((line) => {
-      page.drawText(line, { x: margin, y: cursor, size: 8, font: regular, color: dark });
-      cursor -= 10;
+      if (cursor - lineHeight < margin) {
+        newPage();
+        drawLabel();
+      }
+      page.drawText(line, { x: margin, y: cursor, size: fontSize, font: regular, color: dark });
+      cursor -= lineHeight;
     });
-    cursor -= 4;
+    cursor -= 6;
   };
 
   const drawDigitalSignatureBox = (
@@ -345,14 +406,14 @@ export async function exportCoursePdf({
       borderWidth: 0.7,
     });
     page.drawText(title, { x: x + 10, y: y - 14, size: 7, font: bold, color: grey });
-    page.drawText(signatureName || 'Not digitally signed', {
+    page.drawText(fitText(signatureName || 'Not digitally signed', signatureName ? bold : regular, signatureName ? 16 : 10, boxWidth - 20), {
       x: x + 10,
       y: y - 36,
       size: signatureName ? 16 : 10,
       font: signatureName ? bold : regular,
       color: signatureName ? dark : grey,
     });
-    page.drawText(`Date: ${dateText || 'Not recorded'}`, { x: x + 10, y: y - 52, size: 8, font: regular, color: dark });
+    page.drawText(fitText(`Date: ${dateText || 'Not recorded'}`, regular, 8, boxWidth - 20), { x: x + 10, y: y - 52, size: 8, font: regular, color: dark });
     drawText(detail, { x: x + 10, y: y - 64 }, { size: 6.5, color: grey, maxWidth: boxWidth - 20, lineHeight: 7 });
   };
 
@@ -382,14 +443,14 @@ export async function exportCoursePdf({
       height: 24,
       color: isSigned ? green : amber,
     });
-    page.drawText(`${isSigned ? 'SIGNED ELECTRONICALLY' : 'NOT SIGNED'} - ${title}`, {
+    page.drawText(fitText(`${isSigned ? 'SIGNED ELECTRONICALLY' : 'NOT SIGNED'} - ${title}`, bold, 9, width - margin * 2 - 20), {
       x: margin + 10,
       y: cursor - 16,
       size: 9,
       font: bold,
       color: rgb(1, 1, 1),
     });
-    page.drawText(isSigned ? (signatureName || 'Signature name not recorded') : 'Awaiting electronic signature', {
+    page.drawText(fitText(isSigned ? (signatureName || 'Signature name not recorded') : 'Awaiting electronic signature', bold, 16, 292), {
       x: margin + 10,
       y: cursor - 45,
       size: 16,
@@ -407,8 +468,8 @@ export async function exportCoursePdf({
     const rightX = margin + 322;
     rows.slice(0, 4).forEach(([label, value], index) => {
       const y = cursor - 42 - index * 14;
-      page.drawText(label, { x: rightX, y, size: 7, font: bold, color: grey });
-      drawText(value || 'Not recorded', { x: rightX + 92, y }, { size: 8, color: dark, maxWidth: width - rightX - 112, lineHeight: 9 });
+      page.drawText(fitText(label, bold, 7, 88), { x: rightX, y, size: 7, font: bold, color: grey });
+      page.drawText(fitText(value || 'Not recorded', regular, 8, width - rightX - 112), { x: rightX + 92, y, size: 8, font: regular, color: dark });
     });
 
     drawText(detail, { x: margin + 10, y: cursor - 80 }, { size: 7, color: grey, maxWidth: width - margin * 2 - 20, lineHeight: 8 });
@@ -509,29 +570,31 @@ export async function exportCoursePdf({
     ))
     .sort((a, b) => b.examDate.getTime() - a.examDate.getTime());
 
-  const [matrixRows, matrixRequirements, matrixAssessments] = await Promise.all([
-    fetchAllPages<any>(() =>
-      supabase
-        .from('syllabus_matrix_rows')
-        .select('*')
-        .eq('course_id', course.id)
-        .order('sort_order', { ascending: true })
-    ),
-    fetchAllPages<any>(() =>
-      supabase
-        .from('syllabus_matrix_requirements')
-        .select('*')
-        .eq('course_id', course.id)
-        .order('lesson_sequence_code', { ascending: true })
-    ),
-    fetchAllPages<any>(() =>
-      supabase
-        .from('student_matrix_assessments')
-        .select('*')
-        .eq('course_id', course.id)
-        .eq('student_id', student.id)
-    ),
-  ]);
+  const [matrixRows, matrixRequirements, matrixAssessments] = preloadedMatrixData
+    ? [preloadedMatrixData.rows, preloadedMatrixData.requirements, preloadedMatrixData.assessments]
+    : await Promise.all([
+        fetchAllPages<any>(() =>
+          supabase
+            .from('syllabus_matrix_rows')
+            .select('*')
+            .eq('course_id', course.id)
+            .order('sort_order', { ascending: true })
+        ),
+        fetchAllPages<any>(() =>
+          supabase
+            .from('syllabus_matrix_requirements')
+            .select('*')
+            .eq('course_id', course.id)
+            .order('lesson_sequence_code', { ascending: true })
+        ),
+        fetchAllPages<any>(() =>
+          supabase
+            .from('student_matrix_assessments')
+            .select('*')
+            .eq('course_id', course.id)
+            .eq('student_id', student.id)
+        ),
+      ]);
 
   const matrixRowById = new Map(matrixRows.map((row: any) => [row.id, row]));
   const bestAssessmentByRow = new Map<string, any>();
@@ -568,6 +631,8 @@ export async function exportCoursePdf({
   const hasMatrixRows = matrixRows.length > 0;
   const hasMatrixRequirements = matrixRequirements.length > 0;
   const isRplSyllabusCourse = hasMatrixRequirements || hasMatrixRows || /rpl|casa/i.test(`${course.title} ${course.category}`);
+  const isRaausSyllabusCourse = /raaus|rpc|ab[-\s]?initio|recreational pilot/i.test(`${course.title} ${course.category}`);
+  const isStructuredAviationCourse = isRplSyllabusCourse || isRaausSyllabusCourse;
   const assessmentsByTrainingRecord = new Map<string, any[]>();
   matrixAssessments.forEach((assessment: any) => {
     if (!assessment.training_record_id) return;
@@ -661,10 +726,11 @@ export async function exportCoursePdf({
   );
 
   page.drawRectangle({ x: 0, y: height - 86, width, height: 86, color: dark });
-  page.drawText(student.name, { x: margin, y: height - 38, size: 22, font: bold, color: rgb(1, 1, 1) });
-  page.drawText(course.title, { x: margin, y: height - 60, size: 12, font: regular, color: rgb(0.88, 0.91, 0.95) });
-  page.drawText(isRplSyllabusCourse ? 'RPL(A) syllabus completion pack' : 'Student course file export', { x: width - 226, y: height - 38, size: 10, font: bold, color: rgb(1, 1, 1) });
-  page.drawText(`Status: ${course.status}`, { x: width - 190, y: height - 56, size: 9, font: regular, color: rgb(0.88, 0.91, 0.95) });
+  page.drawRectangle({ x: 0, y: height - 86, width: 8, height: 86, color: blue });
+  page.drawText(fitText(student.name, bold, 22, 500), { x: margin, y: height - 38, size: 22, font: bold, color: rgb(1, 1, 1) });
+  page.drawText(fitText(course.title, regular, 12, 500), { x: margin, y: height - 60, size: 12, font: regular, color: rgb(0.88, 0.91, 0.95) });
+  page.drawText(isRplSyllabusCourse ? 'RPL(A) syllabus completion pack' : isRaausSyllabusCourse ? 'RAAus training course record' : 'Student course file export', { x: width - 226, y: height - 38, size: 10, font: bold, color: rgb(1, 1, 1) });
+  page.drawText(fitText(`Status: ${course.status}`, regular, 9, 154), { x: width - 190, y: height - 56, size: 9, font: regular, color: rgb(0.88, 0.91, 0.95) });
   cursor = height - 112;
 
   const boxWidth = (width - margin * 2 - 32) / 5;
@@ -675,7 +741,7 @@ export async function exportCoursePdf({
   drawInfoBox('Latest', latestRecord ? formatDate(latestRecord.bookingStartTime || latestRecord.date) : 'No flights', margin + (boxWidth + 8) * 4, cursor, boxWidth);
   cursor -= 70;
 
-  drawSectionTitle(isRplSyllabusCourse ? 'Student and Course Details' : 'Details');
+  drawSectionTitle(isStructuredAviationCourse ? 'Student and Course Details' : 'Details');
   const detailRows: Array<[string, string]> = [
     ['RAAus Number', student.raausId || 'Not recorded'],
     ['RAAus Expiry', formatDate(student.licenceExpiry)],
@@ -751,8 +817,8 @@ export async function exportCoursePdf({
     }
   }
 
-  if (isRplSyllabusCourse) {
-    drawSectionTitle('RPL(A) Syllabus Overview');
+  if (isStructuredAviationCourse) {
+    drawSectionTitle(isRplSyllabusCourse ? 'RPL(A) Syllabus Overview' : 'RAAus Ab-Initio Course Overview');
     drawParagraphBlock('Course description', course.description, 5);
     if (course.prerequisites.length > 0 || course.objectives.length > 0 || course.evaluationCriteria.length > 0) {
       const overviewBlocks: Array<[string, string, number]> = [
@@ -766,37 +832,48 @@ export async function exportCoursePdf({
       });
     }
 
-    drawSectionTitle('Performance Standard Key');
+    drawSectionTitle('Performance Standard Key', 54);
     ensureSpace(54);
     const standardWidth = (width - margin * 2 - 16) / 3;
-    [
-      ['3', 'Training received', 'Has received training in the element but is not yet consistently competent.'],
-      ['2', 'Supervised solo standard', 'Developing proficiency and considered safe for supervised solo practice.'],
-      ['1', 'Qualification standard', 'Competent to the standard required for qualification issue.'],
-    ].forEach(([standard, title, description], index) => {
+    const performanceStandards = isRplSyllabusCourse
+      ? [
+          ['3', 'Training received', 'Has received training in the element but is not yet consistently competent.'],
+          ['2', 'Supervised solo standard', 'Developing proficiency and considered safe for supervised solo practice.'],
+          ['1', 'Qualification standard', 'Competent to the standard required for qualification issue.'],
+        ]
+      : [
+          ['NC', 'Not yet competent', 'More training or practice is required before the element is satisfactory.'],
+          ['S', 'Solo standard', 'The element is satisfactory for the applicable supervised solo stage.'],
+          ['C', 'Competent', 'The element is consistently demonstrated to the required course standard.'],
+        ];
+    performanceStandards.forEach(([standard, title, description], index) => {
       const x = margin + index * (standardWidth + 8);
+      const standardLabelWidth = bold.widthOfTextAtSize(standard, 16);
+      const textX = x + Math.max(34, standardLabelWidth + 18);
       page.drawRectangle({ x, y: cursor - 48, width: standardWidth, height: 48, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.8 });
       page.drawText(standard, { x: x + 9, y: cursor - 20, size: 16, font: bold, color: blue });
-      page.drawText(title, { x: x + 30, y: cursor - 16, size: 8, font: bold, color: dark });
-      drawText(description, { x: x + 30, y: cursor - 28 }, { size: 7, color: grey, maxWidth: standardWidth - 38, lineHeight: 8 });
+      page.drawText(fitText(title, bold, 8, standardWidth - (textX - x) - 8), { x: textX, y: cursor - 16, size: 8, font: bold, color: dark });
+      drawText(description, { x: textX, y: cursor - 28 }, { size: 7, color: grey, maxWidth: standardWidth - (textX - x) - 8, lineHeight: 8 });
     });
     cursor -= 62;
 
-    drawSectionTitle('Flight Training and Theory Summary');
-    const lessonSummaryColumns = [74, 188, 42, 42, 52, 52, 86, 112];
+    drawSectionTitle('Flight Training and Theory Summary', 70);
+    const lessonSummaryColumns = [88, 260, 48, 48, 64, 64, 84, 118];
     const lessonHeader = ['Lesson #', 'Lesson description', 'Dual', 'Solo', 'Prog dual', 'Prog solo', 'Matrix', 'Records'];
-    let x = margin;
-    page.drawRectangle({ x: margin, y: cursor - 20, width: width - margin * 2, height: 20, color: lightGrey, borderColor: borderGrey, borderWidth: 0.5 });
-    lessonHeader.forEach((header, index) => {
-      page.drawText(header, { x: x + 4, y: cursor - 13, size: 7, font: bold, color: dark });
-      x += lessonSummaryColumns[index];
-    });
-    cursor -= 20;
+    const drawLessonSummaryHeader = () => {
+      let headerX = margin;
+      page.drawRectangle({ x: margin, y: cursor - 24, width: width - margin * 2, height: 24, color: paleBlue, borderColor: borderGrey, borderWidth: 0.6 });
+      lessonHeader.forEach((header, index) => {
+        page.drawText(header, { x: headerX + 5, y: cursor - 16, size: 7.5, font: bold, color: dark });
+        headerX += lessonSummaryColumns[index];
+      });
+      cursor -= 24;
+    };
+    drawLessonSummaryHeader();
 
     let progressiveDual = 0;
     let progressiveSolo = 0;
-    for (const lesson of course.lessons) {
-      ensureSpace(18);
+    for (const [lessonIndex, lesson] of course.lessons.entries()) {
       const lessonRecords = chronologicalCourseRecords.filter((record) =>
         record.lessonId === lesson.id ||
         record.lessonCodes.includes(lesson.sequenceCode) ||
@@ -816,9 +893,7 @@ export async function exportCoursePdf({
           requirement.required_standard
         )
       ).length;
-      x = margin;
-      page.drawRectangle({ x: margin, y: cursor - 18, width: width - margin * 2, height: 18, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.35 });
-      [
+      const values = [
         lesson.sequenceCode || lesson.sequenceTitle || '',
         lesson.name,
         lessonDual ? minutesToHours(lessonDual) : '-',
@@ -827,11 +902,37 @@ export async function exportCoursePdf({
         minutesToHours(progressiveSolo),
         lessonRequirements.length > 0 ? `${lessonMet}/${lessonRequirements.length}` : '-',
         lessonRecords.length ? `${lessonRecords.length} attempt${lessonRecords.length === 1 ? '' : 's'}` : 'Not yet logged',
-      ].forEach((value, index) => {
-        page.drawText(String(value).slice(0, index === 1 ? 34 : 18), { x: x + 4, y: cursor - 12, size: 7, font: index === 0 || index === 1 ? bold : regular, color: dark });
+      ];
+      const lessonLines = wrapText(String(values[1]), bold, 8, lessonSummaryColumns[1] - 10);
+      const rowHeight = Math.max(24, lessonLines.length * 10 + 8);
+      if (cursor - rowHeight < margin) {
+        newPage();
+        drawLessonSummaryHeader();
+      }
+
+      let x = margin;
+      page.drawRectangle({
+        x: margin,
+        y: cursor - rowHeight,
+        width: width - margin * 2,
+        height: rowHeight,
+        color: lessonIndex % 2 === 0 ? rgb(1, 1, 1) : lightGrey,
+        borderColor: borderGrey,
+        borderWidth: 0.35,
+      });
+      values.forEach((value, index) => {
+        if (index === 1) {
+          lessonLines.forEach((line, lineIndex) => {
+            page.drawText(line, { x: x + 5, y: cursor - 15 - lineIndex * 10, size: 8, font: bold, color: dark });
+          });
+        } else {
+          const font = index === 0 ? bold : regular;
+          const text = fitText(String(value), font, 8, lessonSummaryColumns[index] - 10);
+          page.drawText(text, { x: x + 5, y: cursor - 15, size: 8, font, color: dark });
+        }
         x += lessonSummaryColumns[index];
       });
-      cursor -= 18;
+      cursor -= rowHeight;
     }
     cursor -= 12;
   }
@@ -841,18 +942,17 @@ export async function exportCoursePdf({
     drawText('No exam results recorded for this course.', { x: margin, y: cursor }, { size: 9, color: grey });
     cursor -= 20;
   } else {
-    const columns = [60, 60, 80, 230, 130, 140];
+    const columns = [60, 64, 82, 250, 150, 168];
     const headers = ['Score', 'Result', 'Date', 'Exam', 'Answer sheet', 'KDR'];
     let x = margin;
-    page.drawRectangle({ x: margin, y: cursor - 18, width: width - margin * 2, height: 18, color: lightGrey, borderColor: borderGrey, borderWidth: 0.5 });
+    page.drawRectangle({ x: margin, y: cursor - 22, width: width - margin * 2, height: 22, color: paleBlue, borderColor: borderGrey, borderWidth: 0.5 });
     headers.forEach((header, i) => {
-      page.drawText(header, { x: x + 4, y: cursor - 12, size: 7.5, font: bold, color: dark });
+      page.drawText(header, { x: x + 5, y: cursor - 15, size: 8, font: bold, color: dark });
       x += columns[i];
     });
-    cursor -= 18;
+    cursor -= 22;
 
     for (const exam of courseExams) {
-      ensureSpace(22);
       x = margin;
       const rowText = [
         `${exam.score}%`,
@@ -864,13 +964,18 @@ export async function exportCoursePdf({
           ? `Verbal KDR${exam.kdrSignedOffAt ? ` ${formatDate(exam.kdrSignedOffAt)}` : ''}`
           : 'Not recorded',
       ];
+      const wrappedCells = rowText.map((text, index) => wrapText(text, index === 1 ? bold : regular, 8.2, columns[index] - 10));
+      const rowHeight = Math.max(24, Math.max(...wrappedCells.map(lines => lines.length)) * 10 + 8);
+      ensureSpace(rowHeight + 4);
       const rowColor = exam.result === 'pass' ? green : amber;
-      page.drawRectangle({ x: margin, y: cursor - 18, width: width - margin * 2, height: 18, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.35 });
-      rowText.forEach((text, i) => {
-        page.drawText(text.slice(0, i === 3 ? 42 : i === 4 || i === 5 ? 26 : 20), { x: x + 4, y: cursor - 12, size: 8, font: i === 1 ? bold : regular, color: i === 1 ? rowColor : dark });
+      page.drawRectangle({ x: margin, y: cursor - rowHeight, width: width - margin * 2, height: rowHeight, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.35 });
+      wrappedCells.forEach((lines, i) => {
+        lines.forEach((line, lineIndex) => {
+          page.drawText(line, { x: x + 5, y: cursor - 15 - lineIndex * 10, size: 8.2, font: i === 1 ? bold : regular, color: i === 1 ? rowColor : dark });
+        });
         x += columns[i];
       });
-      cursor -= 18;
+      cursor -= rowHeight;
     }
     cursor -= 12;
   }
@@ -891,14 +996,18 @@ export async function exportCoursePdf({
       page.drawText('Highest priority remaining items', { x: margin, y: cursor, size: 9, font: bold, color: dark });
       cursor -= 14;
       for (const item of remainingMatrixRequirements.slice(0, 12)) {
-        ensureSpace(22);
         const row = item.row;
         const achieved = item.achieved ? String(item.achieved) : '-';
         const required = String(item.requirement.required_standard);
         const label = `${row.element_code || row.unit_code || row.code} ${achieved}/${required}`;
-        page.drawText(label.slice(0, 24), { x: margin, y: cursor - 8, size: 7, font: bold, color: amber });
-        drawText(formatSyllabusMatrixText(row.description).slice(0, 150), { x: margin + 88, y: cursor - 8 }, { size: 7, color: dark, maxWidth: width - margin * 2 - 98, lineHeight: 8 });
-        cursor -= 18;
+        const descriptionLines = wrapText(formatSyllabusMatrixText(row.description), regular, 8.2, width - margin * 2 - 124);
+        const rowHeight = Math.max(22, descriptionLines.length * 10 + 6);
+        ensureSpace(rowHeight + 4);
+        page.drawText(fitText(label, bold, 8, 108), { x: margin, y: cursor - 10, size: 8, font: bold, color: amber });
+        descriptionLines.forEach((line, lineIndex) => {
+          page.drawText(line, { x: margin + 118, y: cursor - 10 - lineIndex * 10, size: 8.2, font: regular, color: dark });
+        });
+        cursor -= rowHeight;
       }
       cursor -= 8;
     } else {
@@ -915,77 +1024,121 @@ export async function exportCoursePdf({
     cursor -= 34;
   }
 
-  drawSectionTitle('Course Progress Matrix');
+  drawSectionTitle('Course Progress Matrix', 100);
   if (course.lessons.length === 0) {
     drawText('No lessons are configured for this course.', { x: margin, y: cursor }, { size: 9, color: grey });
   } else {
     const criteria = course.assessmentCriteria;
     if (criteria.length > 0) {
-      ensureSpace(42);
-      drawText('Criteria key', { x: margin, y: cursor }, { size: 8, font: bold, color: grey });
-      const keyLines = criteria.map((criterion, index) =>
-        `${criterionCode(criterion.name, index)} = ${criterion.name} (${criterion.gradingSystem}, pass ${criterion.passingGrade})`
-      );
-      const keyColumnWidth = (width - margin * 2) / 3;
-      keyLines.forEach((line, index) => {
-        const col = index % 3;
-        const row = Math.floor(index / 3);
-        drawText(line, { x: margin + col * keyColumnWidth, y: cursor - 14 - row * 10 }, { size: 6.5, maxWidth: keyColumnWidth - 8, lineHeight: 8 });
-      });
-      cursor -= 16 + Math.ceil(keyLines.length / 3) * 10;
+      page.drawText('Assessment key', { x: margin, y: cursor, size: 9, font: bold, color: blue });
+      cursor -= 15;
+      const keyColumnWidth = (width - margin * 2 - 16) / 2;
+      for (let index = 0; index < criteria.length; index += 2) {
+        const cells = criteria.slice(index, index + 2).map((criterion, cellIndex) => {
+          const criterionIndex = index + cellIndex;
+          const label = `${criterionCode(criterion.name, criterionIndex)} - ${criterion.name} (${criterion.gradingSystem}; pass ${criterion.passingGrade})`;
+          return wrapText(label, regular, 7.8, keyColumnWidth - 12);
+        });
+        const keyRowHeight = Math.max(20, ...cells.map(lines => lines.length * 9 + 7));
+        ensureSpace(keyRowHeight + 4);
+        cells.forEach((lines, cellIndex) => {
+          const cellX = margin + cellIndex * (keyColumnWidth + 16);
+          page.drawRectangle({ x: cellX, y: cursor - keyRowHeight, width: keyColumnWidth, height: keyRowHeight, color: lightGrey });
+          lines.forEach((line, lineIndex) => {
+            page.drawText(line, { x: cellX + 6, y: cursor - 12 - lineIndex * 9, size: 7.8, font: lineIndex === 0 ? bold : regular, color: dark });
+          });
+        });
+        cursor -= keyRowHeight + 4;
+      }
+      cursor -= 6;
     }
 
-    const improvedLeftWidths = [150, 92, 50, 34];
-    const matrixWidth = width - margin * 2 - improvedLeftWidths.reduce((a, b) => a + b, 0) - 54;
-    const criterionWidth = criteria.length > 0 ? Math.max(18, Math.min(34, matrixWidth / criteria.length)) : 0;
-    const rowHeight = 20;
-    const headerHeight = 46;
+    const criteriaGroups = chunkPdfColumns(criteria, 8);
+    const coreWidths = [190, 90, 56, 42];
+    const timeColumnWidth = 38;
+    const rowHeight = 23;
+    const headerHeight = 30;
 
-    ensureSpace(headerHeight + rowHeight * Math.min(courseRecords.length + 1, 12));
-    page.drawRectangle({ x: margin, y: cursor - headerHeight, width: width - margin * 2, height: headerHeight, color: lightGrey, borderColor: borderGrey, borderWidth: 0.5 });
-    let x = margin;
-    ['Lesson', 'Instructor', 'Date', 'Brief'].forEach((header, i) => {
-      page.drawText(header, { x: x + 4, y: cursor - headerHeight + 8, size: 7, font: bold, color: dark });
-      x += improvedLeftWidths[i];
-    });
-    criteria.forEach((criterion, index) => {
-      const label = criterionCode(criterion.name, index);
-      page.drawText(label, { x: x + Math.max(2, criterionWidth / 2 - 5), y: cursor - headerHeight + 8, size: 6.5, font: bold, color: dark });
-      x += criterionWidth;
-    });
-    page.drawText('Dual', { x: width - margin - 50, y: cursor - headerHeight + 8, size: 7, font: bold, color: dark });
-    page.drawText('Solo', { x: width - margin - 24, y: cursor - headerHeight + 8, size: 7, font: bold, color: dark });
-    cursor -= headerHeight;
+    criteriaGroups.forEach((criteriaGroup, groupIndex) => {
+      const criterionAreaWidth = width - margin * 2 - coreWidths.reduce((sum, value) => sum + value, 0) - timeColumnWidth * 2;
+      const criterionWidth = criteriaGroup.length > 0 ? criterionAreaWidth / criteriaGroup.length : criterionAreaWidth;
 
-    for (const record of chronologicalCourseRecords) {
-      ensureSpace(rowHeight + 24);
-      x = margin;
-      const instructor = users.find((u) => u.id === record.instructorId)?.name || 'Unknown';
-      const cells = [
-        resolveLessonName(record),
-        abbreviateName(instructor),
-        formatShortDate(record.bookingStartTime || record.date),
-        record.formalBriefing ? 'Yes' : 'No',
-      ];
-      page.drawRectangle({ x: margin, y: cursor - rowHeight, width: width - margin * 2, height: rowHeight, color: rgb(1, 1, 1), borderColor: borderGrey, borderWidth: 0.35 });
-      cells.forEach((cell, i) => {
-        page.drawText(cell.slice(0, i === 0 ? 32 : 18), { x: x + 4, y: cursor - 13, size: 7, font: regular, color: dark });
-        x += improvedLeftWidths[i];
+      const drawProgressHeader = () => {
+        ensureSpace(68);
+        const groupLabel = criteria.length > 0
+          ? `Assessment columns ${groupIndex + 1} of ${criteriaGroups.length}`
+          : 'Flight and briefing summary';
+        page.drawText(groupLabel, { x: margin, y: cursor, size: 8.5, font: bold, color: blue });
+        cursor -= 14;
+        page.drawRectangle({ x: margin, y: cursor - headerHeight, width: width - margin * 2, height: headerHeight, color: paleBlue, borderColor: borderGrey, borderWidth: 0.6 });
+        let headerX = margin;
+        ['Lesson', 'Instructor', 'Date', 'Brief'].forEach((header, index) => {
+          page.drawText(header, { x: headerX + 5, y: cursor - 19, size: 8, font: bold, color: dark });
+          headerX += coreWidths[index];
+        });
+        criteriaGroup.forEach((criterion) => {
+          const criterionIndex = criteria.indexOf(criterion);
+          const label = criterionCode(criterion.name, criterionIndex);
+          const labelWidth = bold.widthOfTextAtSize(label, 8);
+          page.drawText(label, { x: headerX + Math.max(3, (criterionWidth - labelWidth) / 2), y: cursor - 19, size: 8, font: bold, color: dark });
+          headerX += criterionWidth;
+        });
+        ['Dual', 'Solo'].forEach((header) => {
+          page.drawText(header, { x: headerX + 5, y: cursor - 19, size: 8, font: bold, color: dark });
+          headerX += timeColumnWidth;
+        });
+        cursor -= headerHeight;
+      };
+
+      drawProgressHeader();
+      chronologicalCourseRecords.forEach((record, recordIndex) => {
+        if (cursor - rowHeight < margin) {
+          newPage();
+          drawProgressHeader();
+        }
+
+        let x = margin;
+        const instructor = users.find((user) => user.id === record.instructorId)?.name || 'Unknown';
+        const cells = [
+          resolveLessonName(record),
+          abbreviateName(instructor),
+          formatShortDate(record.bookingStartTime || record.date),
+          record.formalBriefing ? 'Yes' : 'No',
+        ];
+        page.drawRectangle({
+          x: margin,
+          y: cursor - rowHeight,
+          width: width - margin * 2,
+          height: rowHeight,
+          color: recordIndex % 2 === 0 ? rgb(1, 1, 1) : lightGrey,
+          borderColor: borderGrey,
+          borderWidth: 0.35,
+        });
+        cells.forEach((cell, index) => {
+          const text = fitText(cell, regular, 8.2, coreWidths[index] - 10);
+          page.drawText(text, { x: x + 5, y: cursor - 15, size: 8.2, font: regular, color: dark });
+          x += coreWidths[index];
+        });
+        criteriaGroup.forEach((criterion) => {
+          const grade = record.criteriaGrades?.[criterion.id] || '-';
+          const label = matrixGradeLabel(grade, criterion.gradingSystem);
+          const color = matrixGradeColor(grade, criterion.gradingSystem, { green, blue, amber, red, dark, grey }) || grey;
+          const gradeWidth = mono.widthOfTextAtSize(label, 8.2);
+          page.drawText(label, { x: x + Math.max(3, (criterionWidth - gradeWidth) / 2), y: cursor - 15, size: 8.2, font: mono, color });
+          x += criterionWidth;
+        });
+        [record.dualTimeMin, record.soloTimeMin].forEach((minutes) => {
+          const value = minutesToHours(minutes);
+          page.drawText(value, { x: x + 5, y: cursor - 15, size: 8.2, font: regular, color: dark });
+          x += timeColumnWidth;
+        });
+        cursor -= rowHeight;
       });
-      criteria.forEach((criterion) => {
-        const grade = record.criteriaGrades?.[criterion.id] || '-';
-        const label = matrixGradeLabel(grade, criterion.gradingSystem);
-        const color = matrixGradeColor(grade, criterion.gradingSystem, { green, blue, amber, red, dark, grey }) || grey;
-        page.drawText(label.slice(0, 5), { x: x + Math.max(2, criterionWidth / 2 - 8), y: cursor - 13, size: 7, font: mono, color });
-        x += criterionWidth;
-      });
-      page.drawText(minutesToHours(record.dualTimeMin), { x: width - margin - 50, y: cursor - 13, size: 7, font: regular, color: dark });
-      page.drawText(minutesToHours(record.soloTimeMin), { x: width - margin - 24, y: cursor - 13, size: 7, font: regular, color: dark });
-      cursor -= rowHeight;
-    }
+      cursor -= 16;
+    });
   }
 
-  drawSectionTitle(isRplSyllabusCourse ? 'Training Record Evidence and Comments' : 'Lesson Notes and Record Cards');
+  drawSectionTitle(isStructuredAviationCourse ? 'Training Records and Instructor Comments' : 'Lesson Notes and Record Cards', 80);
   if (courseRecords.length === 0) {
     drawText('No lesson comments recorded for this course.', { x: margin, y: cursor }, { size: 9, color: grey });
   } else {
@@ -996,10 +1149,6 @@ export async function exportCoursePdf({
       const briefing = stripHtml(record.briefingComments);
       const reviewNotes = stripHtml(record.flightReviewNotes || '');
       const matrixSummary = getRecordMatrixSummary(record);
-      const cardHeightBase = 74;
-      const commentsLines = comments ? wrapText(comments, regular, 8, width - margin * 2 - 24).slice(0, 7) : [];
-      const briefingLines = briefing ? wrapText(briefing, regular, 8, width - margin * 2 - 24).slice(0, 4) : [];
-      const reviewLines = reviewNotes ? wrapText(reviewNotes, regular, 8, width - margin * 2 - 24).slice(0, 4) : [];
       const matrixLines = isRplSyllabusCourse && matrixSummary.total > 0
         ? [
             {
@@ -1043,35 +1192,6 @@ export async function exportCoursePdf({
             }] : []),
           ]
         : [];
-      const cardHeight = cardHeightBase
-        + (commentsLines.length + briefingLines.length + reviewLines.length) * 10
-        + matrixLines.length * 10
-        + (briefingLines.length ? 18 : 0)
-        + (reviewLines.length ? 18 : 0)
-        + (matrixLines.length ? 18 : 0);
-
-      ensureSpace(Math.min(cardHeight, height - margin * 2));
-      const cardTop = cursor;
-      page.drawRectangle({
-        x: margin,
-        y: cardTop - cardHeight,
-        width: width - margin * 2,
-        height: cardHeight,
-        color: rgb(1, 1, 1),
-        borderColor: borderGrey,
-        borderWidth: 0.6,
-      });
-      page.drawRectangle({
-        x: margin,
-        y: cardTop - 26,
-        width: width - margin * 2,
-        height: 26,
-        color: lightGrey,
-      });
-      page.drawText(lessonName.slice(0, 84), { x: margin + 10, y: cardTop - 17, size: 10, font: bold, color: dark });
-      page.drawText(formatDate(record.bookingStartTime || record.date), { x: width - margin - 98, y: cardTop - 17, size: 8, font: bold, color: grey });
-
-      let y = cardTop - 43;
       const meta = [
         `Instructor: ${instructor}`,
         `Aircraft: ${record.registration || record.aircraftType || 'Not recorded'}`,
@@ -1079,67 +1199,118 @@ export async function exportCoursePdf({
         `Solo: ${minutesToHours(record.soloTimeMin)} hr`,
         `Briefing: ${record.formalBriefing ? 'Yes' : 'No'}`,
         `Student ack: ${record.studentAck ? formatDate(record.studentAckTimestamp) : 'No'}`,
-      ].join('   ');
-      drawText(meta, { x: margin + 10, y }, { size: 7.5, color: grey, maxWidth: width - margin * 2 - 20, lineHeight: 9 });
-      y -= 18;
+      ].join('  |  ');
 
-      if (commentsLines.length > 0) {
-        page.drawText('Instructor comments', { x: margin + 10, y, size: 7, font: bold, color: grey });
-        y -= 11;
-        commentsLines.forEach((line) => {
-          page.drawText(line, { x: margin + 10, y, size: 8, font: regular, color: dark });
-          y -= 10;
+      const drawRecordHeading = (continued = false) => {
+        const metaLines = wrapText(meta, regular, 8.2, width - margin * 2 - 24);
+        const headingHeight = 36 + metaLines.length * 10;
+        const minimumBodySpace = continued ? 28 : 52;
+        if (cursor - headingHeight - minimumBodySpace < margin) newPage();
+
+        page.drawRectangle({
+          x: margin,
+          y: cursor - headingHeight,
+          width: width - margin * 2,
+          height: headingHeight,
+          color: paleBlue,
+          borderColor: borderGrey,
+          borderWidth: 0.6,
         });
-      } else {
-        page.drawText('No instructor comments recorded.', { x: margin + 10, y, size: 8, font: regular, color: grey });
-        y -= 12;
+        page.drawRectangle({ x: margin, y: cursor - headingHeight, width: 5, height: headingHeight, color: blue });
+        const date = formatDate(record.bookingStartTime || record.date);
+        const dateWidth = bold.widthOfTextAtSize(date, 8.5);
+        const title = fitText(`${lessonName}${continued ? ' (continued)' : ''}`, bold, 11, width - margin * 2 - dateWidth - 42);
+        page.drawText(title, { x: margin + 13, y: cursor - 18, size: 11, font: bold, color: dark });
+        page.drawText(date, { x: width - margin - 10 - dateWidth, y: cursor - 18, size: 8.5, font: bold, color: grey });
+        metaLines.forEach((line, lineIndex) => {
+          page.drawText(line, { x: margin + 13, y: cursor - 34 - lineIndex * 10, size: 8.2, font: regular, color: grey });
+        });
+        cursor -= headingHeight + 8;
+      };
+
+      const drawRecordSection = (
+        label: string,
+        entries: Array<{ text: string; font?: any; color?: any; size?: number }>,
+        labelColor = blue,
+      ) => {
+        if (entries.length === 0) return;
+        let needsLabel = true;
+        let labelIsContinuation = false;
+
+        entries.forEach((entry) => {
+          const entryFont = entry.font ?? regular;
+          const entryColor = entry.color ?? dark;
+          const entrySize = entry.size ?? 9;
+          const lineHeight = entrySize + 3;
+          const lines = wrapText(entry.text, entryFont, entrySize, width - margin * 2 - 24);
+
+          lines.forEach((line) => {
+            const required = lineHeight + (needsLabel ? 18 : 0);
+            if (cursor - required < margin) {
+              newPage();
+              drawRecordHeading(true);
+              needsLabel = true;
+              labelIsContinuation = true;
+            }
+            if (needsLabel) {
+              page.drawText(`${label}${labelIsContinuation ? ' (continued)' : ''}`, { x: margin + 12, y: cursor, size: 8, font: bold, color: labelColor });
+              cursor -= 14;
+              needsLabel = false;
+              labelIsContinuation = false;
+            }
+            page.drawText(line, { x: margin + 12, y: cursor, size: entrySize, font: entryFont, color: entryColor });
+            cursor -= lineHeight;
+          });
+          cursor -= 3;
+        });
+        cursor -= 5;
+      };
+
+      drawRecordHeading();
+      drawRecordSection(
+        'Instructor comments',
+        [{
+          text: comments || 'No instructor comments recorded.',
+          color: comments ? dark : grey,
+          size: 9,
+        }],
+      );
+
+      if (briefing) {
+        drawRecordSection('Briefing comments', [{ text: briefing, size: 8.8 }]);
       }
 
-      if (briefingLines.length > 0) {
-        y -= 4;
-        page.drawText('Briefing comments', { x: margin + 10, y, size: 7, font: bold, color: grey });
-        y -= 11;
-        briefingLines.forEach((line) => {
-          page.drawText(line, { x: margin + 10, y, size: 8, font: regular, color: dark });
-          y -= 10;
-        });
-      }
-
-      if (record.isFlightReview || reviewLines.length > 0) {
-        y -= 4;
-        page.drawText(`Flight review / test: ${record.flightReviewResult || 'not assessed'}`, { x: margin + 10, y, size: 7, font: bold, color: record.flightReviewResult === 'pass' ? green : amber });
-        y -= 11;
-        reviewLines.forEach((line) => {
-          page.drawText(line, { x: margin + 10, y, size: 8, font: regular, color: dark });
-          y -= 10;
-        });
+      if (record.isFlightReview || reviewNotes) {
+        const reviewLabel = `Review / test - ${record.flightReviewResult || 'not assessed'}`;
+        drawRecordSection(reviewLabel, reviewNotes ? [{ text: reviewNotes, size: 8.8 }] : [{ text: 'No formal findings or follow-up recorded.', color: grey, size: 8.8 }], record.flightReviewResult === 'pass' ? green : amber);
       }
 
       if (matrixLines.length > 0) {
-        y -= 4;
-        page.drawText('CASA matrix evidence', { x: margin + 10, y, size: 7, font: bold, color: grey });
-        y -= 11;
-        matrixLines.forEach((line, index) => {
-          page.drawText(line.text.slice(0, index === 0 ? 150 : 132), {
-            x: margin + 10,
-            y,
-            size: 7.4,
-            font: line.font,
-            color: line.color,
-          });
-          y -= 10;
-        });
+        drawRecordSection('CASA matrix evidence', matrixLines.map(line => ({
+          text: line.text,
+          font: line.font,
+          color: line.color,
+          size: 8,
+        })));
       }
 
-      cursor -= cardHeight + 10;
+      ensureSpace(18);
+      page.drawLine({ start: { x: margin, y: cursor }, end: { x: width - margin, y: cursor }, thickness: 0.6, color: borderGrey });
+      cursor -= 14;
     }
   }
 
-  if (isRplSyllabusCourse) {
+  if (isStructuredAviationCourse) {
     drawSectionTitle('Certification and Completion');
+    const assessedLessonCount = new Set(courseRecords.map(record => record.lessonId).filter(Boolean)).size;
+    const acknowledgedRecordCount = courseRecords.filter(record => record.studentAck).length;
     const completionRows: Array<[string, string]> = [
-      ['Matrix completion', hasMatrixRequirements ? `${metMatrixRequirements.length} of ${matrixRequirements.length} required items met` : hasMatrixRows ? 'Matrix rows configured, lesson requirements missing' : 'No CASA matrix configured'],
-      ['Remaining items', hasMatrixRequirements ? (remainingMatrixRequirements.length > 0 ? String(remainingMatrixRequirements.length) : 'None recorded') : hasMatrixRows ? 'Cannot calculate until lesson requirements are linked' : 'None recorded'],
+      isRplSyllabusCourse
+        ? ['Matrix completion', hasMatrixRequirements ? `${metMatrixRequirements.length} of ${matrixRequirements.length} required items met` : hasMatrixRows ? 'Matrix rows configured, lesson requirements missing' : 'No CASA matrix configured']
+        : ['Training records', `${courseRecords.length} records across ${assessedLessonCount} lessons`],
+      isRplSyllabusCourse
+        ? ['Remaining items', hasMatrixRequirements ? (remainingMatrixRequirements.length > 0 ? String(remainingMatrixRequirements.length) : 'None recorded') : hasMatrixRows ? 'Cannot calculate until lesson requirements are linked' : 'None recorded']
+        : ['Student acknowledgements', `${acknowledgedRecordCount} of ${courseRecords.length} records acknowledged`],
       ['Flight test lesson', course.lessons.find((lesson) => lesson.isFlightTest)?.name || 'Not designated in course editor'],
       ['Course endorsement', course.completionEndorsementEnabled && course.completionEndorsementType ? course.completionEndorsementType : 'No automatic endorsement configured'],
       ['Course licence', course.completionLicenceEnabled && course.completionLicenceType ? course.completionLicenceType : 'No automatic licence configured'],
@@ -1147,7 +1318,7 @@ export async function exportCoursePdf({
     drawLabelValueGrid(completionRows, { columns: 4, rowHeight: 30, valueSize: 8 });
     drawText(
       includeExamSheets
-        ? 'This staff export summarises the CRM record for the student course, including lesson records, comments, CASA matrix assessments and uploaded exam evidence available at the time of export.'
+        ? `This staff export summarises the CRM record for the student course, including lesson records, comments, ${isRplSyllabusCourse ? 'CASA matrix assessments, ' : ''}and uploaded exam evidence available at the time of export.`
         : 'This student export summarises course progress, lesson records, comments, assessment results and exam outcomes. Staff-only uploaded exam sheets are excluded.',
       { x: margin, y: cursor },
       { size: 8, color: grey, maxWidth: width - margin * 2, lineHeight: 10 }
@@ -1176,7 +1347,7 @@ export async function exportCoursePdf({
         const copiedPages = await pdfDoc.copyPages(evidencePdf, evidencePdf.getPageIndices());
         copiedPages.forEach((copiedPage, index) => {
           pdfDoc.addPage(copiedPage);
-          copiedPage.drawText(`${exam.examName} evidence - ${exam.fileName || 'uploaded PDF'} - page ${index + 1}`, {
+          copiedPage.drawText(fitText(`${exam.examName} evidence - ${exam.fileName || 'uploaded PDF'} - page ${index + 1}`, regular, 7, copiedPage.getWidth() - 48), {
             x: 24,
             y: 18,
             size: 7,
@@ -1192,8 +1363,9 @@ export async function exportCoursePdf({
         const pageW = evidencePage.getWidth();
         const pageH = evidencePage.getHeight();
         evidencePage.drawRectangle({ x: 0, y: pageH - 44, width: pageW, height: 44, color: dark });
-        evidencePage.drawText(`${exam.examName} evidence`, { x: margin, y: pageH - 28, size: 14, font: bold, color: rgb(1, 1, 1) });
-        evidencePage.drawText(exam.fileName || 'Uploaded exam image', { x: pageW - 260, y: pageH - 28, size: 8, font: regular, color: rgb(0.9, 0.92, 0.95) });
+        evidencePage.drawText(fitText(`${exam.examName} evidence`, bold, 14, pageW - margin * 2 - 250), { x: margin, y: pageH - 28, size: 14, font: bold, color: rgb(1, 1, 1) });
+        const evidenceFileName = fitText(exam.fileName || 'Uploaded exam image', regular, 8, 220);
+        evidencePage.drawText(evidenceFileName, { x: pageW - margin - regular.widthOfTextAtSize(evidenceFileName, 8), y: pageH - 28, size: 8, font: regular, color: rgb(0.9, 0.92, 0.95) });
         const maxW = pageW - margin * 2;
         const maxH = pageH - 84;
         const scale = Math.min(maxW / image.width, maxH / image.height);
@@ -1212,5 +1384,8 @@ export async function exportCoursePdf({
   }
 
   const pdfBytes = await pdfDoc.save();
-  downloadBlob(pdfBytes, `${safeFilename(student.name)}-${safeFilename(course.title)}.pdf`);
+  if (download) {
+    downloadBlob(pdfBytes, `${safeFilename(student.name)}-${safeFilename(course.title)}.pdf`);
+  }
+  return pdfBytes;
 }

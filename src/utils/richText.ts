@@ -56,7 +56,24 @@ export const formatRichTextContent = (value: string) => {
   return sanitizeRichText(source);
 };
 
+const richTextToPlainTextWithoutDom = (value: string) => String(value || '')
+  .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+  .replace(/<\s*\/\s*(p|li|div|section|article|h[1-6]|ul|ol)\s*>/gi, '\n')
+  .replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/&amp;/gi, '&')
+  .replace(/&lt;/gi, '<')
+  .replace(/&gt;/gi, '>')
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;|&apos;/gi, "'")
+  .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
 export const richTextToPlainText = (value: string) => {
+  if (typeof document === 'undefined' || typeof DOMParser === 'undefined') {
+    return richTextToPlainTextWithoutDom(value);
+  }
   const clean = formatRichTextContent(value);
   if (!clean) return '';
   const parsed = new DOMParser().parseFromString(`<body>${clean}</body>`, 'text/html');
