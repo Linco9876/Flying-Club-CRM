@@ -13,6 +13,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -36,6 +37,7 @@ import {
   LearningQuizAnswers,
   LearningQuizGrade,
 } from '../../utils/learningQuiz';
+import { canDeleteLearningProgram } from '../../utils/learningProgramPermissions';
 
 type BuilderTab = 'basic' | 'schedule' | 'enrolment' | 'settings' | 'content' | 'links' | 'preview';
 
@@ -105,6 +107,7 @@ export const LearningCentreDashboard: React.FC = () => {
     loading,
     isStaff,
     saveProgram,
+    deleteProgram,
     saveSections,
     saveSteps,
     saveLessonLinks,
@@ -126,6 +129,9 @@ export const LearningCentreDashboard: React.FC = () => {
   const [learnerProgramId, setLearnerProgramId] = useState<string>('');
   const [programSearch, setProgramSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [programPendingDeletion, setProgramPendingDeletion] = useState<LearningProgram | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deletingProgram, setDeletingProgram] = useState(false);
 
   const selectedProgram = programs.find(program => program.id === selectedProgramId) || programs[0];
   const learnerProgram = programs.find(program => program.id === learnerProgramId) || selectedProgram;
@@ -182,6 +188,31 @@ export const LearningCentreDashboard: React.FC = () => {
   };
 
   const activeStep = draftSteps.find(step => step.id === activeStepId) || draftSteps[0];
+
+  const requestProgramDeletion = () => {
+    const program = programs.find(item => item.id === draftProgram.id);
+    if (!program || !canDeleteLearningProgram(user, program)) return;
+    setDeleteConfirmation('');
+    setProgramPendingDeletion(program);
+  };
+
+  const confirmProgramDeletion = async () => {
+    if (!programPendingDeletion || deleteConfirmation !== programPendingDeletion.name) return;
+    setDeletingProgram(true);
+    try {
+      await deleteProgram(programPendingDeletion.id);
+      setBuilderOpen(false);
+      if (selectedProgramId === programPendingDeletion.id) setSelectedProgramId('');
+      if (learnerProgramId === programPendingDeletion.id) setLearnerProgramId('');
+      setProgramPendingDeletion(null);
+      setDeleteConfirmation('');
+    } catch (error) {
+      console.error('Error deleting online program:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete online program');
+    } finally {
+      setDeletingProgram(false);
+    }
+  };
 
   const visiblePrograms = useMemo(() => {
     const available = isStaff ? programs : programs.filter(program => program.status === 'published');
@@ -344,6 +375,16 @@ export const LearningCentreDashboard: React.FC = () => {
                 <p className="text-sm text-gray-500">Work through the tabs left to right, preview, then publish when ready.</p>
               </div>
               <div className="flex gap-2">
+                {draftProgram.id && canDeleteLearningProgram(user, draftProgram) && (
+                  <button
+                    type="button"
+                    onClick={requestProgramDeletion}
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                )}
                 <button onClick={() => setBuilderOpen(false)} className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50">Close</button>
                 <button onClick={saveAll} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
                   <Save className="h-4 w-4" />
@@ -502,6 +543,62 @@ export const LearningCentreDashboard: React.FC = () => {
                   <ProgramPreview program={{ ...(draftProgram as LearningProgram), sections: draftSections, steps: draftSteps, enrolments: [], lessonLinks: draftLinks }} />
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {programPendingDeletion && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-online-program-title"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-700">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <h2 id="delete-online-program-title" className="mt-4 text-xl font-bold text-gray-950">
+              Delete {programPendingDeletion.name}?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              This permanently deletes the program, its {programPendingDeletion.steps.length} steps,
+              {' '}{programPendingDeletion.enrolments.length} enrolments, participant progress and flying lesson links. This cannot be undone.
+            </p>
+            <label className="mt-5 block">
+              <span className="text-sm font-semibold text-gray-800">
+                Type <span className="font-bold text-gray-950">{programPendingDeletion.name}</span> to confirm
+              </span>
+              <input
+                autoFocus
+                value={deleteConfirmation}
+                onChange={event => setDeleteConfirmation(event.target.value)}
+                className="input mt-2"
+                autoComplete="off"
+              />
+            </label>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setProgramPendingDeletion(null);
+                  setDeleteConfirmation('');
+                }}
+                disabled={deletingProgram}
+                className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmProgramDeletion}
+                disabled={deletingProgram || deleteConfirmation !== programPendingDeletion.name}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deletingProgram ? 'Deleting...' : 'Delete program'}
+              </button>
             </div>
           </div>
         </div>
