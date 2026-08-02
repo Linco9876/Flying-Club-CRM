@@ -39,6 +39,10 @@ import { getStudentProfileLoadPlan } from '../../utils/studentProfileLoading';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
 import { shouldShowXeroContactEditor } from '../../utils/studentProfileAdminActions';
+import {
+  FORMAL_REVIEW_FINDINGS_LABEL,
+  requiresFormalReviewFindings,
+} from '../../utils/flightReviewFindings';
 
 interface StudentInfoForm {
   name: string;
@@ -1540,6 +1544,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     const isCourseDefinedTestFlight = Boolean(getRecordLesson(editingTrainingRecord)?.isFlightTest);
     const keepLegacyFlightReview = Boolean(editingTrainingRecord.isFlightReview && !isCourseDefinedTestFlight);
     const isFlightReviewRecord = isCourseDefinedTestFlight || keepLegacyFlightReview;
+    if (
+      isFlightReviewRecord
+      && requiresFormalReviewFindings({ trainingResult: trainingEditForm.flightReviewResult })
+      && !trainingEditForm.flightReviewNotes.trim()
+    ) {
+      toast.error(`Enter ${FORMAL_REVIEW_FINDINGS_LABEL.toLowerCase()} for this outcome`);
+      return;
+    }
     const updatedAuditLog = [
       ...(editingTrainingRecord.auditLog || []),
       {
@@ -4073,7 +4085,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                               )}
                               {record.isFlightReview && record.flightReviewNotes && (
                                 <section className="rounded-lg border border-orange-200 bg-orange-50 p-4">
-                                  <h4 className="text-xs font-semibold uppercase text-orange-700">Flight Review Notes</h4>
+                                  <h4 className="text-xs font-semibold uppercase text-orange-700">{FORMAL_REVIEW_FINDINGS_LABEL}</h4>
                                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-orange-950">{record.flightReviewNotes}</p>
                                 </section>
                               )}
@@ -4292,13 +4304,19 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                       </select>
                     </label>
                     <label className="block md:col-span-3">
-                      <span className="block text-xs font-medium text-orange-800 mb-1">Review notes</span>
+                      <span className="block text-xs font-medium text-orange-800 mb-1">
+                        {FORMAL_REVIEW_FINDINGS_LABEL} {requiresFormalReviewFindings({ trainingResult: trainingEditForm.flightReviewResult }) ? '(required)' : '(optional)'}
+                      </span>
                       <textarea
                         value={trainingEditForm.flightReviewNotes}
                         onChange={event => setTrainingEditForm(form => form ? { ...form, flightReviewNotes: event.target.value } : form)}
                         rows={3}
+                        required={requiresFormalReviewFindings({ trainingResult: trainingEditForm.flightReviewResult })}
                         className="w-full px-3 py-2 border border-orange-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
+                      <span className="mt-1 block text-xs leading-5 text-orange-800">
+                        Flight comments remain the main debrief. Use this field only for formal findings or follow-up required by the outcome.
+                      </span>
                     </label>
                     {trainingEditForm.flightReviewResult === 'pass' && (
                       <p className="text-xs text-orange-800 md:col-span-3">

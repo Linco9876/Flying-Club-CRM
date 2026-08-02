@@ -156,7 +156,7 @@ test('completed review validation enforces course minimums and completion eviden
   const result = validateReviewRecordCsv(parseCsv(invalid), identity, definitions);
   const messages = result.errors.flatMap(error => error.messages);
   assert.ok(messages.some(message => message.includes('Evidence reference')));
-  assert.ok(messages.some(message => message.includes('Reviewer summary')));
+  assert.ok(messages.some(message => message.includes('Formal findings')));
   assert.ok(messages.some(message => message.includes('Logbook entry')));
   assert.ok(messages.some(message => message.includes('Candidate acknowledged')));
   assert.ok(messages.some(message => message.includes('minimums override')));

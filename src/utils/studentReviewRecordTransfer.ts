@@ -10,6 +10,10 @@ import {
   createAutomaticRecordReference,
   type CourseTransferIdentity,
 } from './studentCourseRecordTransfer.ts';
+import {
+  FORMAL_REVIEW_FINDINGS_LABEL,
+  requiresFormalReviewFindings,
+} from './flightReviewFindings.ts';
 
 export interface ReviewChecklistTransferDefinition {
   key: string;
@@ -299,6 +303,12 @@ export const validateReviewRecordCsv = (
         notes: values[definition.notesColumn] || '',
       };
     });
+    if (requiresFormalReviewFindings({
+      reviewStatus: status,
+      checklistResults: checklistResults.map(item => item.result),
+    }) && !(values.reviewer_summary || '').trim()) {
+      mergeError(errors, rawRow.sourceRow, `${FORMAL_REVIEW_FINDINGS_LABEL} are required for this outcome.`);
+    }
     if (status === 'completed') {
       definitions.forEach((definition, index) => {
         const result = checklistResults[index].result;
@@ -309,9 +319,6 @@ export const validateReviewRecordCsv = (
       const config = identity.course.reviewConfiguration;
       if ((config?.required_evidence.length || 0) > 0 && !(values.evidence_reference || '').trim()) {
         mergeError(errors, rawRow.sourceRow, 'Evidence reference is required for a completed review. Enter the source file, logbook entry or authority record reference.');
-      }
-      if (config?.requires_reviewer_summary && !(values.reviewer_summary || '').trim()) {
-        mergeError(errors, rawRow.sourceRow, 'Reviewer summary is required for a completed review.');
       }
       if (config?.requires_logbook_confirmation && !parsedBooleans.logbook_entry_confirmed) {
         mergeError(errors, rawRow.sourceRow, 'Logbook entry confirmed must be Yes for a completed review.');
