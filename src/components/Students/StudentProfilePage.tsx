@@ -1652,8 +1652,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
         } : {}),
       } as Partial<Omit<TrainingRecord, 'id' | 'sequences'>>);
 
+      setEditingTrainingRecord(null);
+      setTrainingEditForm(null);
+      toast.success(wasAcknowledged ? 'Record updated and sent back to the student for approval' : 'Training record updated');
+
+      const backgroundTasks: PromiseLike<unknown>[] = [refetchStudents()];
       if (wasAcknowledged) {
-        await supabase.from('notifications').insert({
+        backgroundTasks.push(supabase.from('notifications').insert({
           user_id: editingTrainingRecord.studentId,
           type: 'training_record',
           title: 'Training record changed - review required',
@@ -1664,13 +1669,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
             training_record_id: editingTrainingRecord.id,
             change_summary: changes.join('; '),
           },
-        });
+        }));
       }
 
-      setEditingTrainingRecord(null);
-      setTrainingEditForm(null);
-      await refetchStudents();
-      toast.success(wasAcknowledged ? 'Record updated and sent back to the student for approval' : 'Training record updated');
+      void Promise.allSettled(backgroundTasks).then(results => {
+        results.forEach(result => {
+          if (result.status === 'rejected') {
+            console.error('A training record edit follow-up failed:', result.reason);
+          }
+        });
+      });
     } catch (error) {
       console.error('Failed to update training record:', error);
     } finally {

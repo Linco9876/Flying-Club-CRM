@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { TrainingRecord, TrainingSequenceResult } from '../types';
 import toast from 'react-hot-toast';
-import { getSupabaseFunctionErrorMessage } from '../lib/supabaseFunctionErrors';
 
 const toLocalDateOnly = (date: Date) => {
   const year = date.getFullYear();
@@ -216,7 +215,6 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
     if (error) {
       console.error('Failed to send training record acknowledgement email:', error);
-      toast.error(`Training record saved, but the approval email was not sent: ${await getSupabaseFunctionErrorMessage(error, 'Email delivery failed')}`);
       return false;
     }
 
@@ -242,11 +240,53 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
     if (error) {
       console.error('Failed to ensure student course enrolment:', error);
-      toast.error('Training record saved, but the course enrolment could not be updated');
       return undefined;
     }
 
     return data?.id as string | undefined;
+  };
+
+  const continueTrainingRecordFollowUps = ({
+    trainingRecordId,
+    studentId: followUpStudentId,
+    courseId,
+    ensureEnrolment,
+    sendAcknowledgement,
+  }: {
+    trainingRecordId: string;
+    studentId?: string;
+    courseId?: string | null;
+    ensureEnrolment: boolean;
+    sendAcknowledgement: boolean;
+  }) => {
+    // The record write is the only operation that blocks the form. These follow-ups
+    // are intentionally detached so users can keep working while email, enrolment
+    // and UI refresh work finishes. Each operation is safe to repeat.
+    void (async () => {
+      const followUps: Promise<unknown>[] = [];
+
+      if (ensureEnrolment && followUpStudentId && courseId) {
+        followUps.push(
+          ensureStudentCourseEnrolment(followUpStudentId, courseId)
+            .then(enrolmentId => sendDeclarationLinksForEnrolment(enrolmentId))
+        );
+      }
+
+      if (sendAcknowledgement) {
+        followUps.push(sendTrainingRecordAcknowledgementEmail(trainingRecordId));
+      }
+
+      const results = await Promise.allSettled(followUps);
+      results.forEach(result => {
+        if (result.status === 'rejected') {
+          console.error('A training record background follow-up failed:', result.reason);
+        }
+      });
+
+      await fetchTrainingRecords(true);
+    })().catch(error => {
+      console.error('Training record background processing failed:', error);
+    });
   };
 
   const addTrainingRecord = async (recordData: Omit<TrainingRecord, 'id' | 'sequences' | 'auditLog'> & { sequences?: TrainingSequenceResult[] }) => {
@@ -291,11 +331,6 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
       if (error) throw error;
 
-      if (recordData.status !== 'draft') {
-        const enrolmentId = await ensureStudentCourseEnrolment(recordData.studentId, recordData.courseId);
-        void sendDeclarationLinksForEnrolment(enrolmentId);
-      }
-
       const sequenceRows = recordData.sequences
         ?.filter(sequence => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sequence.sequenceId))
         .map(sequence => ({
@@ -313,11 +348,13 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
         if (sequenceError) throw sequenceError;
       }
 
-      if (recordData.status === 'submitted' && !recordData.studentAck) {
-        await sendTrainingRecordAcknowledgementEmail(data.id);
-      }
-
-      await fetchTrainingRecords(true);
+      continueTrainingRecordFollowUps({
+        trainingRecordId: data.id,
+        studentId: recordData.status === 'draft' ? undefined : recordData.studentId,
+        courseId: recordData.courseId,
+        ensureEnrolment: recordData.status !== 'draft',
+        sendAcknowledgement: recordData.status === 'submitted' && !recordData.studentAck,
+      });
       return data;
     } catch (err) {
       console.error('Error adding training record:', err);
@@ -380,20 +417,18 @@ export const useTrainingRecords = (studentId?: string, options: UseTrainingRecor
 
       const existingRecord = trainingRecords.find(record => record.id === id);
       const nextStatus = recordData.status || existingRecord?.status;
-      if (nextStatus !== 'draft' && (recordData.studentId || recordData.courseId || recordData.status)) {
-        const enrolmentId = await ensureStudentCourseEnrolment(
-          recordData.studentId || existingRecord?.studentId,
-          recordData.courseId || existingRecord?.courseId
-        );
-        void sendDeclarationLinksForEnrolment(enrolmentId);
-      }
-
+      const shouldEnsureEnrolment = nextStatus !== 'draft'
+        && (recordData.studentId !== undefined || recordData.courseId !== undefined || recordData.status !== undefined);
       const nextStudentAck = recordData.studentAck ?? existingRecord?.studentAck;
-      if (nextStatus === 'submitted' && !nextStudentAck) {
-        await sendTrainingRecordAcknowledgementEmail(id);
-      }
-
-      await fetchTrainingRecords(true);
+      continueTrainingRecordFollowUps({
+        trainingRecordId: id,
+        studentId: nextStatus === 'draft'
+          ? undefined
+          : (recordData.studentId || existingRecord?.studentId),
+        courseId: recordData.courseId || existingRecord?.courseId,
+        ensureEnrolment: shouldEnsureEnrolment,
+        sendAcknowledgement: nextStatus === 'submitted' && !nextStudentAck,
+      });
     } catch (err) {
       console.error('Error updating training record:', err);
       toast.error('Failed to update training record');
