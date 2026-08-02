@@ -36,6 +36,7 @@ import { formatBillingDescription } from '../../utils/billingDescription';
 import { StudentRecordImportModal } from './StudentRecordImportModal';
 import { StudentProfileSkeleton } from './StudentProfileSkeleton';
 import { getStudentProfileLoadPlan } from '../../utils/studentProfileLoading';
+import { shouldUseTrainingSubtab } from '../../utils/studentProfileTabNavigation';
 import { useFinancialProviders } from '../../context/financialProviderState';
 import { useAdminPasswordReset } from '../../hooks/useAdminPasswordReset';
 import { shouldShowXeroContactEditor } from '../../utils/studentProfileAdminActions';
@@ -588,10 +589,14 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   }, [portalSection, searchParams]);
 
   const handleTabChange = (tabId: string) => {
-    const isTrainingSubtab = tabId === 'training' || tabId === 'reviews' || tabId === 'exams' || tabId === 'courses';
-    if (isTrainingSubtab && (activeTab === 'training' || (isOwnStudentPortal && portalSection === 'training'))) {
+    if (shouldUseTrainingSubtab({
+      tabId,
+      activeTab,
+      isOwnStudentPortal,
+      portalSection,
+    })) {
       setActiveTab('training');
-      setTrainingSubtab(tabId);
+      setTrainingSubtab(tabId as 'training' | 'reviews' | 'exams' | 'courses');
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set('subtab', tabId);
       nextParams.delete('tab');
