@@ -53,6 +53,7 @@ const OutstandingRecordsTab = lazy(() => import('./components/Training/Outstandi
 const LearningCentreDashboard = lazy(() => import('./components/LearningCentre/LearningCentreDashboard').then(module => ({ default: module.LearningCentreDashboard })));
 const StudentAcknowledgementModal = lazy(() => import('./components/Training/StudentAcknowledgementModal').then(module => ({ default: module.StudentAcknowledgementModal })));
 const DeclarationSigningPage = lazy(() => import('./components/Training/DeclarationSigningPage').then(module => ({ default: module.DeclarationSigningPage })));
+const LessonAcknowledgementPage = lazy(() => import('./components/Training/LessonAcknowledgementPage').then(module => ({ default: module.LessonAcknowledgementPage })));
 const SettingsDashboard = lazy(() => import('./components/Settings/SettingsDashboard').then(module => ({ default: module.SettingsDashboard })));
 const TrialFlightVouchersPage = lazy(() => import('./components/Vouchers/TrialFlightVouchersPage').then(module => ({ default: module.TrialFlightVouchersPage })));
 const TrialVoucherRedeemPage = lazy(() => import('./components/Vouchers/TrialVoucherRedeemPage').then(module => ({ default: module.TrialVoucherRedeemPage })));
@@ -363,6 +364,16 @@ const AppContent: React.FC = () => {
       <PageLoadGate routeKey="declaration-sign">
         <Suspense fallback={<PageLoader />}>
           <DeclarationSigningPage />
+        </Suspense>
+      </PageLoadGate>
+    );
+  }
+
+  if (normalisedPathname === '/lesson-acknowledgement') {
+    return (
+      <PageLoadGate routeKey="lesson-acknowledgement">
+        <Suspense fallback={<PageLoader />}>
+          <LessonAcknowledgementPage />
         </Suspense>
       </PageLoadGate>
     );
