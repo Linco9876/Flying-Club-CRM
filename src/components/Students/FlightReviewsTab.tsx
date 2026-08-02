@@ -23,6 +23,7 @@ import {
 } from "../../hooks/useFlightReviews";
 import { useUsers } from "../../hooks/useUsers";
 import { hasAnyRole } from "../../utils/rbac";
+import { userCanConductReview } from "../../utils/reviewerRoleRules";
 import { PortalSectionLoader } from "../Layout/PortalSectionLoader";
 import { FlightReviewRecordEditor } from "../Training/FlightReviewWorkspace";
 
@@ -91,11 +92,7 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
     );
     return users
       .filter((candidate) => candidate.isActive !== false)
-      .filter((candidate) =>
-        [...(candidate.roles || []), candidate.role].some((role) =>
-          allowedRoles.has(role),
-        ),
-      )
+      .filter((candidate) => userCanConductReview(candidate, [...allowedRoles]))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [selectedTemplate, users]);
 
@@ -127,10 +124,24 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
       return;
     }
     if (
+      startForm.examinerMode === "internal" &&
+      !eligibleReviewers.some(reviewer => reviewer.id === startForm.reviewerUserId)
+    ) {
+      toast.error("The selected user no longer holds an authorised CRM reviewer role");
+      return;
+    }
+    if (
       startForm.examinerMode === "external" &&
       !startForm.externalName.trim()
     ) {
       toast.error("Enter the external examiner name");
+      return;
+    }
+    if (
+      startForm.examinerMode === "external" &&
+      !userCanConductReview(user, selectedTemplate?.configuration.allowed_reviewer_roles)
+    ) {
+      toast.error("Your CRM role is not authorised to verify this external examiner record");
       return;
     }
     setStarting(true);
@@ -158,8 +169,12 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
         candidateObjectives: startForm.candidateObjectives,
       });
       setStartOpen(false);
-      setSelectedRecordId(record.id);
-      toast.success("Review started in this Pilot File");
+      if (userCanConductReview(user, selectedTemplate?.configuration.allowed_reviewer_roles)) {
+        setSelectedRecordId(record.id);
+        toast.success("Review started in this Pilot File");
+      } else {
+        toast.success("Review created and assigned to the authorised reviewer");
+      }
     } catch (error) {
       console.error("Failed to start review:", error);
       toast.error(
@@ -724,7 +739,10 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
                     )}
                 </div>
 
-                {isStaff && record.status !== "cancelled" && (
+                {isStaff && record.status !== "cancelled" && userCanConductReview(
+                  user,
+                  record.templateSnapshot.review_configuration?.allowed_reviewer_roles,
+                ) && (
                   <div className="flex justify-end border-t border-gray-200 pt-4 dark:border-[#2c3440]">
                     <button
                       type="button"
@@ -742,7 +760,10 @@ export const FlightReviewsTab: React.FC<FlightReviewsTabProps> = ({
         );
       })}
       {startOpen && renderStartModal()}
-      {selectedRecord && user && (
+      {selectedRecord && user && userCanConductReview(
+        user,
+        selectedRecord.templateSnapshot.review_configuration?.allowed_reviewer_roles,
+      ) && (
         <FlightReviewRecordEditor
           record={selectedRecord}
           items={reviews.itemsByRecord.get(selectedRecord.id) || []}

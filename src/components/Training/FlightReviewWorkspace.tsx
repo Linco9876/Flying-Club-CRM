@@ -29,6 +29,10 @@ import {
 } from "../../hooks/useFlightReviews";
 import type { CoursePurpose, FlightReviewConfiguration } from "../../types";
 import { hasAnyRole } from "../../utils/rbac";
+import {
+  CRM_REVIEWER_ROLE_OPTIONS,
+  normaliseReviewerRoles,
+} from "../../utils/reviewerRoleRules";
 import { StudentFileLink } from "../Students/StudentFileLink";
 
 type TemplateStep = "basic" | "rules" | "checklist" | "publish";
@@ -97,15 +101,6 @@ const evidenceLabels: Record<FlightReviewAttachmentCategory, string> = {
   external_test_report: "External test report",
   certificate: "Certificate",
   other: "Other evidence",
-};
-
-const roleLabels: Record<string, string> = {
-  admin: "Admin",
-  instructor: "Instructor",
-  senior_instructor: "Senior Instructor",
-  cfi: "CFI",
-  pilot_examiner: "Pilot Examiner",
-  flight_examiner: "Flight Examiner",
 };
 
 const inputClass =
@@ -1038,6 +1033,9 @@ export const FlightReviewWorkspace: React.FC = () => {
             ...template,
             configuration: {
               ...template.configuration,
+              allowed_reviewer_roles: normaliseReviewerRoles(
+                template.configuration.allowed_reviewer_roles,
+              ),
               checklist: template.configuration.checklist.map((item) => ({
                 ...item,
               })),
@@ -1062,9 +1060,22 @@ export const FlightReviewWorkspace: React.FC = () => {
       toast.error("Add at least one checklist item");
       return;
     }
+    const reviewerRoles = normaliseReviewerRoles(
+      editingTemplate.configuration.allowed_reviewer_roles,
+    );
+    if (reviewerRoles.length === 0) {
+      toast.error("Choose at least one CRM role that can conduct or verify this review");
+      return;
+    }
     setSavingTemplate(true);
     try {
-      await reviewData.saveTemplate(editingTemplate);
+      await reviewData.saveTemplate({
+        ...editingTemplate,
+        configuration: {
+          ...editingTemplate.configuration,
+          allowed_reviewer_roles: reviewerRoles,
+        },
+      });
       toast.success("Review template saved");
       setEditingTemplate(null);
     } catch (templateError) {
@@ -1738,7 +1749,7 @@ export const FlightReviewWorkspace: React.FC = () => {
                       Who can conduct or verify this review?
                     </legend>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {Object.entries(roleLabels).map(([role, label]) => (
+                      {CRM_REVIEWER_ROLE_OPTIONS.map(({ role, label }) => (
                         <label
                           key={role}
                           className={`cursor-pointer rounded-full border px-3 py-2 text-sm font-semibold ${editingTemplate.configuration.allowed_reviewer_roles.includes(role) ? "border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200" : "border-gray-300 text-gray-600 dark:border-[#39414d] dark:text-gray-300"}`}

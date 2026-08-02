@@ -6,6 +6,7 @@ import type {
   FlightReviewConfiguration,
   ReviewChecklistTemplateItem,
 } from "../types";
+import { normaliseReviewerRoles } from "../utils/reviewerRoleRules";
 
 export type FlightReviewStatus =
   | "draft"
@@ -150,6 +151,16 @@ type RecordUpdate = Partial<
   >
 >;
 
+const mapReviewConfiguration = (value: unknown): FlightReviewConfiguration => {
+  const configuration = (value || {}) as FlightReviewConfiguration;
+  return {
+    ...configuration,
+    allowed_reviewer_roles: normaliseReviewerRoles(
+      configuration.allowed_reviewer_roles,
+    ),
+  };
+};
+
 const mapTemplate = (row: Record<string, unknown>): FlightReviewTemplate => ({
   id: row.id as string,
   title: (row.title as string) || "Untitled review",
@@ -159,7 +170,7 @@ const mapTemplate = (row: Record<string, unknown>): FlightReviewTemplate => ({
   status: (row.status as FlightReviewTemplate["status"]) || "draft",
   tags: (row.tags as string[]) || [],
   coursePurpose: (row.course_purpose as CoursePurpose) || "flight_review",
-  configuration: (row.review_configuration as FlightReviewConfiguration) || {
+  configuration: mapReviewConfiguration(row.review_configuration || {
     review_type: "custom_review",
     authority: "club",
     outcome_scheme: "completion",
@@ -172,7 +183,7 @@ const mapTemplate = (row: Record<string, unknown>): FlightReviewTemplate => ({
     required_evidence: [],
     source_documents: [],
     checklist: [],
-  },
+  }),
   lastUpdated: (row.last_updated as string) || new Date().toISOString(),
 });
 
@@ -420,6 +431,12 @@ export const useFlightReviews = (
         id?: string;
       },
     ) => {
+      const allowedReviewerRoles = normaliseReviewerRoles(
+        template.configuration.allowed_reviewer_roles,
+      );
+      if (allowedReviewerRoles.length === 0) {
+        throw new Error("Choose at least one CRM reviewer role before saving this template");
+      }
       const payload = {
         title: template.title.trim(),
         description: template.description.trim(),
@@ -428,7 +445,10 @@ export const useFlightReviews = (
         status: template.status,
         tags: template.tags,
         course_purpose: template.coursePurpose,
-        review_configuration: template.configuration,
+        review_configuration: {
+          ...template.configuration,
+          allowed_reviewer_roles: allowedReviewerRoles,
+        },
         requires_student_acknowledgement:
           template.configuration.candidate_ack_required,
         last_updated: new Date().toISOString(),
@@ -456,11 +476,20 @@ export const useFlightReviews = (
     async (input: StartFlightReviewInput) => {
       const template = templates.find((item) => item.id === input.templateId);
       if (!template) throw new Error("Select a review or test template");
+      const allowedReviewerRoles = normaliseReviewerRoles(
+        template.configuration.allowed_reviewer_roles,
+      );
+      if (allowedReviewerRoles.length === 0) {
+        throw new Error("This template has no valid CRM reviewer role configured");
+      }
       const snapshot = {
         title: template.title,
         version: template.version,
         course_purpose: template.coursePurpose,
-        review_configuration: template.configuration,
+        review_configuration: {
+          ...template.configuration,
+          allowed_reviewer_roles: allowedReviewerRoles,
+        },
         captured_at: new Date().toISOString(),
       };
       const recordResult = await supabase
