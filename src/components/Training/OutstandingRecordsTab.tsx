@@ -33,6 +33,10 @@ import {
   FORMAL_REVIEW_FINDINGS_LABEL,
   requiresFormalReviewFindings,
 } from '../../utils/flightReviewFindings';
+import {
+  createReviewDraftLinkage,
+  reviewMatchesDraftOrFlight,
+} from '../../utils/draftReviewLinking';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 type RecordEntryType = 'lesson' | 'review_test' | 'instructor_review';
@@ -235,7 +239,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const isDraftSession = Boolean(draftSession && activeLog?.id === draftSession.id);
   const { enrolments: activeStudentEnrolments, loading: enrolmentsLoading } = useStudentCourseEnrolments(activeStudentId);
   const flightReviews = useFlightReviews({
-    enabled: Boolean(activeStudentId && activeLog && !isDraftSession),
+    enabled: Boolean(activeStudentId && activeLog),
     candidateId: activeStudentId,
     includeRecords: true,
   });
@@ -594,8 +598,11 @@ export const OutstandingRecordsTab: React.FC = () => {
     });
   }, [flightReviews.templates, user]);
   const reviewForActiveFlight = useMemo(
-    () => flightReviews.records.find(record => record.flightLogId === activeLog?.id && record.status !== 'cancelled') ?? null,
-    [activeLog?.id, flightReviews.records]
+    () => flightReviews.records.find(record => record.status !== 'cancelled' && reviewMatchesDraftOrFlight(record, {
+      activeFlightLogId: isDraftSession ? undefined : activeLog?.id,
+      draftTrainingRecordId: activeDraftRecord?.id,
+    })) ?? null,
+    [activeDraftRecord?.id, activeLog?.id, flightReviews.records, isDraftSession]
   );
   const activeReviewRecord = useMemo(
     () => flightReviews.records.find(record => record.id === activeReviewRecordId)
@@ -1037,6 +1044,10 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   async function handleStartReview(templateId: string) {
     if (!activeLog || !activeStudentId || !user?.id) return;
+    if (isDraftSession && !activeDraftRecord?.id) {
+      toast.error('Save this draft first, then reopen it to start a review or test');
+      return;
+    }
     const existing = reviewForActiveFlight;
     if (existing) {
       if (!userCanConductReview(
@@ -1057,7 +1068,11 @@ export const OutstandingRecordsTab: React.FC = () => {
         candidateId: activeStudentId,
         reviewerUserId: user.id,
         reviewDate: format(new Date(activeLog.start_time), 'yyyy-MM-dd'),
-        flightLogId: activeLog.id,
+        ...createReviewDraftLinkage({
+          isDraftSession,
+          activeFlightLogId: activeLog.id,
+          draftTrainingRecordId: activeDraftRecord?.id,
+        }),
         aircraftId: activeLog.aircraft_id || undefined,
         aircraftType: activeLog.aircraft_type || '',
         registration: activeLog.aircraft_registration || '',
@@ -1931,7 +1946,13 @@ export const OutstandingRecordsTab: React.FC = () => {
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Publish a form in Training Courses, or check its permitted reviewer roles.</p>
                 </div>
               ) : (
-                <div className="grid gap-3 xl:grid-cols-2">
+                <div className="space-y-3">
+                  {isDraftSession && !activeDraftRecord?.id && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/25 dark:bg-amber-950/25 dark:text-amber-100">
+                      Save this draft once before starting a review or test so the form can remain linked to this session.
+                    </div>
+                  )}
+                  <div className="grid gap-3 xl:grid-cols-2">
                   {availableReviewTemplates.map(template => (
                     <button
                       key={template.id}
@@ -1951,6 +1972,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                       <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-gray-300 transition group-hover:text-blue-500" />
                     </button>
                   ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -2727,8 +2749,11 @@ export const OutstandingRecordsTab: React.FC = () => {
           flightComments={flightReviews.flightCommentsByRecord.get(activeReviewRecord.id) || form.flightComments}
           onClose={() => setActiveReviewRecordId(null)}
           onUpdateRecord={async (id, input) => {
-            const updated = await flightReviews.updateReview(id, input);
-            if (input.status === 'completed') {
+            const updateInput = !isDraftSession && !activeReviewRecord.flightLogId
+              ? { ...input, flightLogId: activeLog.id }
+              : input;
+            const updated = await flightReviews.updateReview(id, updateInput);
+            if (input.status === 'completed' && !isDraftSession) {
               await markRecorded(activeLog.id);
               await refetch();
             }
