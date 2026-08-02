@@ -368,7 +368,7 @@ export const useLearningCentre = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     fetchPrograms();
@@ -397,7 +397,26 @@ export const useLearningCentre = () => {
     await fetchPrograms();
     toast.success('Program saved');
     return programs.find(item => item.id === program.id) || null;
-  }, [fetchPrograms, programs, user?.id]);
+  }, [fetchPrograms, programs, user]);
+
+  const deleteProgram = useCallback(async (programId: string) => {
+    if (!user) throw new Error('Not signed in');
+
+    const { data, error } = await supabase
+      .from('learning_programs')
+      .delete()
+      .eq('id', programId)
+      .select('id');
+
+    if (error) throw error;
+    if (!data?.length) {
+      throw new Error('This program was not deleted. Only an administrator or its creator can delete it.');
+    }
+
+    setPrograms(current => current.filter(program => program.id !== programId));
+    setProgress(current => current.filter(item => item.programId !== programId));
+    toast.success('Online program deleted');
+  }, [user]);
 
   const saveSections = useCallback(async (programId: string, sections: LearningSection[]) => {
     const current = programs.find(program => program.id === programId);
@@ -499,7 +518,7 @@ export const useLearningCentre = () => {
     if (error) throw error;
     await fetchPrograms();
     toast.success(status === 'active' ? 'Joined program' : 'Enrolment request sent');
-  }, [fetchPrograms, user?.id]);
+  }, [fetchPrograms, user]);
 
   const completeLearningStep = useCallback(async (stepId: string) => {
     if (!user) throw new Error('Not signed in');
@@ -508,7 +527,7 @@ export const useLearningCentre = () => {
     });
     if (error) throw error;
     await fetchPrograms();
-  }, [fetchPrograms, user?.id]);
+  }, [fetchPrograms, user]);
 
   const submitLearningQuiz = useCallback(async (
     stepId: string,
@@ -528,7 +547,7 @@ export const useLearningCentre = () => {
       correctCount: number;
       questionCount: number;
     };
-  }, [fetchPrograms, user?.id]);
+  }, [fetchPrograms, user]);
 
   const approveEnrolment = useCallback(async (enrolmentId: string) => {
     if (!user) throw new Error('Not signed in');
@@ -544,7 +563,7 @@ export const useLearningCentre = () => {
       .eq('id', enrolmentId);
     if (error) throw error;
     await fetchPrograms();
-  }, [fetchPrograms, user?.id]);
+  }, [fetchPrograms, user]);
 
   const programProgress = useMemo(() => {
     const byProgram = new Map<string, { completed: number; total: number; percent: number }>();
@@ -570,6 +589,7 @@ export const useLearningCentre = () => {
     isStaff,
     refetch: fetchPrograms,
     saveProgram,
+    deleteProgram,
     saveSections,
     saveSteps,
     saveLessonLinks,
