@@ -136,6 +136,7 @@ export interface StartFlightReviewInput {
   reviewDate: string;
   bookingId?: string;
   flightLogId?: string;
+  sourceTrainingRecordId?: string;
   aircraftId?: string;
   aircraftType?: string;
   registration?: string;
@@ -555,6 +556,7 @@ export const useFlightReviews = (
             input.externalExaminerOrganisation?.trim() || null,
           booking_id: input.bookingId || null,
           flight_log_id: input.flightLogId || null,
+          source_training_record_id: input.sourceTrainingRecordId || null,
           review_type: template.configuration.review_type,
           authority: template.configuration.authority,
           status: "draft",
