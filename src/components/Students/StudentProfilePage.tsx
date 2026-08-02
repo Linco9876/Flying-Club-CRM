@@ -43,6 +43,12 @@ import {
   FORMAL_REVIEW_FINDINGS_LABEL,
   requiresFormalReviewFindings,
 } from '../../utils/flightReviewFindings';
+import {
+  briefingCommentsForTrainingRecord,
+  defaultNextTrainingLesson,
+  trainingLessonName,
+  trainingLessonOptionLabel,
+} from '../../utils/trainingRecordEdit';
 
 interface StudentInfoForm {
   name: string;
@@ -76,6 +82,7 @@ interface StudentInfoLicenceDraft {
 }
 
 interface TrainingRecordEditForm {
+  lessonId: string;
   comments: string;
   briefingComments: string;
   formalBriefing: boolean;
@@ -1360,12 +1367,22 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     };
   };
 
-  const getNextLessonFromAssessment = (
+  const getEditedRecordLesson = (
     record: TrainingRecord,
-    criteriaGrades: Record<string, string>
+    form?: TrainingRecordEditForm | null,
   ) => {
     const course = getRecordCourse(record);
-    const lesson = getRecordLesson(record);
+    const selectedLesson = course?.lessons.find(lesson => lesson.id === form?.lessonId);
+    return selectedLesson || getRecordLesson(record);
+  };
+
+  const getNextLessonFromAssessment = (
+    record: TrainingRecord,
+    criteriaGrades: Record<string, string>,
+    lessonId?: string,
+  ) => {
+    const course = getRecordCourse(record);
+    const lesson = course?.lessons.find(item => item.id === lessonId) || getRecordLesson(record);
     if (!course || !lesson) return record.nextLesson || '';
 
     const lessonIndex = course.lessons.findIndex(courseLesson => courseLesson.id === lesson.id);
@@ -1418,6 +1435,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     setEditingTrainingRecord(record);
     setCommentCleanupOriginal(null);
     setTrainingEditForm({
+      lessonId: getRecordLesson(record)?.id || record.lessonId || '',
       comments: record.comments || '',
       briefingComments: record.briefingComments || '',
       formalBriefing: record.formalBriefing,
@@ -1439,7 +1457,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
 
     setCommentCleanupLoading(mode);
     try {
-      const lesson = getRecordLesson(editingTrainingRecord);
+      const lesson = getEditedRecordLesson(editingTrainingRecord, trainingEditForm);
       const course = getRecordCourse(editingTrainingRecord);
       const rewritten = await cleanupInstructorComment(trainingEditForm.comments, {
         studentName: student?.name,
@@ -1471,19 +1489,25 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   ) => {
     const course = getRecordCourse(record);
     const changes: string[] = [];
-    const calculatedNextLesson = getNextLessonFromAssessment(record, form.criteriaGrades);
+    const beforeLesson = getRecordLesson(record);
+    const afterLesson = getEditedRecordLesson(record, form);
+    const briefingComments = briefingCommentsForTrainingRecord(form.formalBriefing, form.briefingComments);
+
+    if ((beforeLesson?.id || record.lessonId || '') !== form.lessonId) {
+      changes.push(`Lesson changed from "${trainingLessonName(beforeLesson)}" to "${trainingLessonName(afterLesson)}"`);
+    }
 
     if ((record.comments || '').trim() !== form.comments.trim()) {
       changes.push('Lesson comments changed');
     }
-    if ((record.briefingComments || '').trim() !== form.briefingComments.trim()) {
+    if ((record.briefingComments || '').trim() !== briefingComments) {
       changes.push('Briefing comments changed');
     }
     if (record.formalBriefing !== form.formalBriefing) {
       changes.push(`Formal briefing changed to ${form.formalBriefing ? 'Yes' : 'No'}`);
     }
-    if ((record.nextLesson || '').trim() !== calculatedNextLesson.trim()) {
-      changes.push(`Next lesson changed from "${record.nextLesson || 'Not set'}" to "${calculatedNextLesson || 'Not set'}"`);
+    if ((record.nextLesson || '').trim() !== form.nextLesson.trim()) {
+      changes.push(`Next lesson changed from "${record.nextLesson || 'Not set'}" to "${form.nextLesson || 'Not set'}"`);
     }
     if ((record.flightReviewResult || 'not_assessed') !== form.flightReviewResult) {
       changes.push(`Flight review result changed to ${form.flightReviewResult.replace('_', ' ')}`);
@@ -1529,6 +1553,21 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const handleSaveTrainingRecordEdit = async () => {
     if (!editingTrainingRecord || !trainingEditForm || !user || !canEditRecord(editingTrainingRecord)) return;
 
+    const recordCourse = getRecordCourse(editingTrainingRecord);
+    const selectedLesson = getEditedRecordLesson(editingTrainingRecord, trainingEditForm);
+    if (recordCourse && (!selectedLesson || !trainingEditForm.lessonId)) {
+      toast.error('Select the lesson this record is about');
+      return;
+    }
+    if (
+      trainingSettings.requireBriefingCommentsWhenFormal
+      && trainingEditForm.formalBriefing
+      && !trainingEditForm.briefingComments.trim()
+    ) {
+      toast.error('Add briefing comments for the formal briefing');
+      return;
+    }
+
     const changes = describeTrainingRecordChanges(editingTrainingRecord, trainingEditForm);
     if (changes.length === 0) {
       toast('No changes to save');
@@ -1540,9 +1579,9 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       getRecordCourse(editingTrainingRecord)?.requiresStudentAcknowledgement
     );
     const wasAcknowledged = editingTrainingRecord.studentAck && courseRequiresAck;
-    const calculatedNextLesson = getNextLessonFromAssessment(editingTrainingRecord, trainingEditForm.criteriaGrades);
-    const isCourseDefinedTestFlight = Boolean(getRecordLesson(editingTrainingRecord)?.isFlightTest);
-    const keepLegacyFlightReview = Boolean(editingTrainingRecord.isFlightReview && !isCourseDefinedTestFlight);
+    const originalIsCourseDefinedTestFlight = Boolean(getRecordLesson(editingTrainingRecord)?.isFlightTest);
+    const isCourseDefinedTestFlight = Boolean(selectedLesson?.isFlightTest);
+    const keepLegacyFlightReview = Boolean(editingTrainingRecord.isFlightReview && !originalIsCourseDefinedTestFlight);
     const isFlightReviewRecord = isCourseDefinedTestFlight || keepLegacyFlightReview;
     if (
       isFlightReviewRecord
@@ -1570,10 +1609,17 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     setSavingTrainingRecord(true);
     try {
       await updateTrainingRecord(editingTrainingRecord.id, {
+        ...(selectedLesson ? {
+          lessonId: selectedLesson.id,
+          lessonCodes: selectedLesson.sequenceCode ? [selectedLesson.sequenceCode] : [],
+        } : {}),
         comments: trainingEditForm.comments.trim(),
-        briefingComments: trainingEditForm.briefingComments.trim(),
+        briefingComments: briefingCommentsForTrainingRecord(
+          trainingEditForm.formalBriefing,
+          trainingEditForm.briefingComments,
+        ),
         formalBriefing: trainingEditForm.formalBriefing,
-        nextLesson: calculatedNextLesson,
+        nextLesson: trainingEditForm.nextLesson.trim(),
         criteriaGrades: trainingEditForm.criteriaGrades,
         isFlightReview: isFlightReviewRecord,
         flightReviewType: isFlightReviewRecord ? (trainingEditForm.flightReviewType.trim() || (isCourseDefinedTestFlight ? 'Flight Test' : 'Flight Review')) : '',
@@ -4187,28 +4233,104 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="block">
-                  <span className="block text-sm font-medium text-gray-700 mb-1">Next Lesson</span>
-                  <input
-                    value={getNextLessonFromAssessment(editingTrainingRecord, trainingEditForm.criteriaGrades)}
-                    readOnly
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-sm text-gray-700"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Automatically set from this lesson's pass marks. Pass advances to the next lesson; below pass repeats this lesson.
-                  </p>
-                </label>
-                <label className="flex items-center gap-2 pt-7">
-                  <input
-                    type="checkbox"
-                    checked={trainingEditForm.formalBriefing}
-                    onChange={event => setTrainingEditForm(form => form ? { ...form, formalBriefing: event.target.checked } : form)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Formal briefing conducted</span>
-                </label>
-              </div>
+              {(() => {
+                const course = getRecordCourse(editingTrainingRecord);
+                if (!course) {
+                  return (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      This record is not linked to an available course. Selectable lesson changes are unavailable until its course is restored.
+                    </div>
+                  );
+                }
+                const suggestedNextLesson = getNextLessonFromAssessment(
+                  editingTrainingRecord,
+                  trainingEditForm.criteriaGrades,
+                  trainingEditForm.lessonId,
+                );
+                const configuredNextLessonValues = new Set([
+                  ...course.lessons.map(trainingLessonName),
+                  'Course complete',
+                ]);
+                return (
+                  <section className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <span className="block text-sm font-medium text-gray-700 mb-1">Course</span>
+                        <div className="min-h-10 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900">
+                          {course.title}
+                        </div>
+                      </div>
+                      <label className="block">
+                        <span className="block text-sm font-medium text-gray-700 mb-1">Lesson</span>
+                        <select
+                          value={trainingEditForm.lessonId}
+                          onChange={event => {
+                            const lessonId = event.target.value;
+                            setTrainingEditForm(form => form ? {
+                              ...form,
+                              lessonId,
+                              nextLesson: defaultNextTrainingLesson(course.lessons, lessonId),
+                            } : form);
+                          }}
+                          className="w-full min-h-10 px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select lesson</option>
+                          {course.lessons.map(lesson => (
+                            <option key={lesson.id} value={lesson.id}>
+                              {trainingLessonOptionLabel(lesson)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <label className="block">
+                        <span className="block text-sm font-medium text-gray-700 mb-1">Next Lesson</span>
+                        <select
+                          value={trainingEditForm.nextLesson}
+                          onChange={event => setTrainingEditForm(form => form ? { ...form, nextLesson: event.target.value } : form)}
+                          className="w-full min-h-10 px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Not set</option>
+                          {trainingEditForm.nextLesson && !configuredNextLessonValues.has(trainingEditForm.nextLesson) && (
+                            <option value={trainingEditForm.nextLesson}>
+                              Existing value — {trainingEditForm.nextLesson}
+                            </option>
+                          )}
+                          {course.lessons.map(lesson => {
+                            const value = trainingLessonName(lesson);
+                            return (
+                              <option key={lesson.id} value={value}>
+                                {trainingLessonOptionLabel(lesson, trainingEditForm.lessonId)}
+                              </option>
+                            );
+                          })}
+                          <option value="Course complete">Course complete</option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Suggested from the selected lesson and grades: {suggestedNextLesson || 'Not set'}.
+                        </p>
+                      </label>
+                      <label className="flex min-h-10 items-center gap-2 md:mt-6">
+                        <input
+                          type="checkbox"
+                          checked={trainingEditForm.formalBriefing}
+                          onChange={event => {
+                            const checked = event.target.checked;
+                            setTrainingEditForm(form => form ? {
+                              ...form,
+                              formalBriefing: checked,
+                              briefingComments: checked ? form.briefingComments : '',
+                            } : form);
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Formal briefing conducted</span>
+                      </label>
+                    </div>
+                  </section>
+                );
+              })()}
 
               <label className="block">
                 <span className="mb-1 flex items-center justify-between gap-3">
@@ -4255,19 +4377,26 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                 />
               </label>
 
-              <label className="block">
-                <span className="block text-sm font-medium text-gray-700 mb-1">Briefing Comments</span>
-                <textarea
-                  value={trainingEditForm.briefingComments}
-                  onChange={event => setTrainingEditForm(form => form ? { ...form, briefingComments: event.target.value } : form)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </label>
+              {trainingEditForm.formalBriefing && (
+                <label className="block">
+                  <span className="block text-sm font-medium text-gray-700 mb-1">
+                    Briefing Comments {trainingSettings.requireBriefingCommentsWhenFormal ? '(required)' : '(optional)'}
+                  </span>
+                  <textarea
+                    value={trainingEditForm.briefingComments}
+                    onChange={event => setTrainingEditForm(form => form ? { ...form, briefingComments: event.target.value } : form)}
+                    rows={3}
+                    required={trainingSettings.requireBriefingCommentsWhenFormal}
+                    placeholder="Record the topics covered in the formal briefing."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </label>
+              )}
 
               {(() => {
-                const isCourseDefinedTestFlight = Boolean(getRecordLesson(editingTrainingRecord)?.isFlightTest);
-                const isLegacyFlightReview = Boolean(editingTrainingRecord.isFlightReview && !isCourseDefinedTestFlight);
+                const isCourseDefinedTestFlight = Boolean(getEditedRecordLesson(editingTrainingRecord, trainingEditForm)?.isFlightTest);
+                const originalIsCourseDefinedTestFlight = Boolean(getRecordLesson(editingTrainingRecord)?.isFlightTest);
+                const isLegacyFlightReview = Boolean(editingTrainingRecord.isFlightReview && !originalIsCourseDefinedTestFlight);
                 const showFlightOutcome = isCourseDefinedTestFlight || isLegacyFlightReview;
                 if (!showFlightOutcome) return null;
                 return (
@@ -4337,12 +4466,16 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {course.assessmentCriteria.map(criterion => {
                         const grade = trainingEditForm.criteriaGrades[criterion.id] || '-';
+                        const passMark = getEditedRecordLesson(editingTrainingRecord, trainingEditForm)?.passMarks?.[criterion.id];
                         const gradeOptions = criterion.gradingSystem === 'Out of 100'
                           ? ['-', '0', '25', '50', '75', '100']
                           : GRADE_ORDER[criterion.gradingSystem];
                         return (
                           <label key={criterion.id} className="block rounded-lg border border-gray-200 p-3">
                             <span className="block text-sm font-medium text-gray-900 mb-2">{criterion.name}</span>
+                            {passMark && passMark !== '-' && (
+                              <span className="mb-2 block text-xs text-gray-500">Required for the selected lesson: {passMark}</span>
+                            )}
                             {criterion.gradingSystem === 'Out of 100' ? (
                               <input
                                 type="number"
