@@ -35,6 +35,7 @@ import {
 } from '../../utils/flightReviewFindings';
 import {
   createReviewDraftLinkage,
+  createReviewDraftTrainingRecord,
   reviewMatchesDraftOrFlight,
 } from '../../utils/draftReviewLinking';
 
@@ -807,7 +808,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       : null;
 
     if (draftRecord) {
-      setRecordEntryType('lesson');
+      setRecordEntryType(draftRecord.isFlightReview ? 'review_test' : 'lesson');
       setForm({
         ...emptyForm(),
         courseId: draftRecord.courseId || '',
@@ -886,7 +887,7 @@ export const OutstandingRecordsTab: React.FC = () => {
       aircraft_type: aircraft?.type || record?.aircraftType || undefined,
     });
     setActiveDraftRecord(record ?? null);
-    setRecordEntryType('lesson');
+    setRecordEntryType(record?.isFlightReview ? 'review_test' : 'lesson');
     setActiveReviewRecordId(null);
     setForm(record ? {
       ...emptyForm(),
@@ -1044,10 +1045,6 @@ export const OutstandingRecordsTab: React.FC = () => {
 
   async function handleStartReview(templateId: string) {
     if (!activeLog || !activeStudentId || !user?.id) return;
-    if (isDraftSession && !activeDraftRecord?.id) {
-      toast.error('Save this draft first, then reopen it to start a review or test');
-      return;
-    }
     const existing = reviewForActiveFlight;
     if (existing) {
       if (!userCanConductReview(
@@ -1063,6 +1060,32 @@ export const OutstandingRecordsTab: React.FC = () => {
 
     setStartingReview(true);
     try {
+      let sourceDraftRecordId = activeDraftRecord?.id;
+      if (isDraftSession && !sourceDraftRecordId) {
+        const template = flightReviews.templates.find(item => item.id === templateId);
+        if (!template) throw new Error('Select a review or test template');
+
+        const draftPayload = createReviewDraftTrainingRecord({
+          studentId: activeStudentId,
+          instructorId: user.id,
+          templateId,
+          templateTitle: template.title,
+          startedAt: activeLog.start_time,
+          aircraftId: activeLog.aircraft_id,
+          aircraftType: activeLog.aircraft_type,
+          registration: activeLog.aircraft_registration,
+        });
+        const createdDraft = await addTrainingRecord(draftPayload);
+        if (!createdDraft?.id) throw new Error('The review draft could not be created');
+        sourceDraftRecordId = createdDraft.id as string;
+        setActiveDraftRecord({
+          ...draftPayload,
+          id: sourceDraftRecordId,
+          auditLog: [],
+          sequences: [],
+        });
+      }
+
       const record = await flightReviews.startReview({
         templateId,
         candidateId: activeStudentId,
@@ -1071,7 +1094,7 @@ export const OutstandingRecordsTab: React.FC = () => {
         ...createReviewDraftLinkage({
           isDraftSession,
           activeFlightLogId: activeLog.id,
-          draftTrainingRecordId: activeDraftRecord?.id,
+          draftTrainingRecordId: sourceDraftRecordId,
         }),
         aircraftId: activeLog.aircraft_id || undefined,
         aircraftType: activeLog.aircraft_type || '',
@@ -1551,14 +1574,14 @@ export const OutstandingRecordsTab: React.FC = () => {
                         name={student?.name || 'Unknown member'}
                         className="block truncate font-semibold"
                       />
-                      <span className="block truncate opacity-80">{lesson?.name || lesson?.sequenceTitle || course?.title || 'Draft training record'}</span>
+                      <span className="block truncate opacity-80">{lesson?.name || lesson?.sequenceTitle || course?.title || record.flightReviewType || 'Draft training record'}</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => void handleDeleteDraftRecord(record)}
                       disabled={deletingDraftId === record.id}
-                      title="Delete draft lesson record"
-                      aria-label={`Delete draft lesson record for ${student?.name || 'member'}`}
+                      title={`Delete draft ${record.isFlightReview ? 'review/test' : 'lesson'} record`}
+                      aria-label={`Delete draft ${record.isFlightReview ? 'review/test' : 'lesson'} record for ${student?.name || 'member'}`}
                       className="flex w-11 shrink-0 items-center justify-center border-l border-blue-100 text-red-500 transition hover:bg-red-50 hover:text-red-700 disabled:cursor-wait disabled:opacity-50 dark:border-blue-400/20 dark:hover:bg-red-950/30 dark:hover:text-red-300"
                     >
                       {deletingDraftId === record.id
@@ -1947,11 +1970,6 @@ export const OutstandingRecordsTab: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {isDraftSession && !activeDraftRecord?.id && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/25 dark:bg-amber-950/25 dark:text-amber-100">
-                      Save this draft once before starting a review or test so the form can remain linked to this session.
-                    </div>
-                  )}
                   <div className="grid gap-3 xl:grid-cols-2">
                   {availableReviewTemplates.map(template => (
                     <button
