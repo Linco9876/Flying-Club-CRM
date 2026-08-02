@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { ClipboardList, CheckCircle, XCircle, ChevronRight, Plane, Clock, BookOpen, AlertCircle, ChevronDown, ChevronUp, Sparkles, RotateCcw, Loader2, Save, Link as LinkIcon, Trash2, Undo2, Award, ShieldCheck, Target, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
@@ -38,6 +38,7 @@ import {
   createReviewDraftTrainingRecord,
   reviewMatchesDraftOrFlight,
 } from '../../utils/draftReviewLinking';
+import { enqueueTrainingRecordJob } from '../../utils/trainingRecordBackgroundQueue';
 
 type Step = 'action' | 'course' | 'lesson' | 'form';
 type RecordEntryType = 'lesson' | 'review_test' | 'instructor_review';
@@ -226,6 +227,7 @@ export const OutstandingRecordsTab: React.FC = () => {
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [pendingSubmits, setPendingSubmits] = useState<QueuedTrainingRecordSubmit[]>(() => readQueuedSubmits());
   const [syncingOfflineQueue, setSyncingOfflineQueue] = useState(false);
+  const syncingOfflineQueueRef = useRef(false);
   const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const [proceedWithCarryForward, setProceedWithCarryForward] = useState(false);
   const [queueView, setQueueView] = useState<'mine' | 'others' | 'dismissed'>('mine');
@@ -686,12 +688,9 @@ export const OutstandingRecordsTab: React.FC = () => {
     )
   );
   const queueSubmit = useCallback((job: QueuedTrainingRecordSubmit) => {
-    setPendingSubmits(current => {
-      const withoutDuplicate = current.filter(item => item.id !== job.id && item.flightLogId !== job.flightLogId);
-      const next = [...withoutDuplicate, job];
-      writeQueuedSubmits(next);
-      return next;
-    });
+    const next = enqueueTrainingRecordJob(readQueuedSubmits(), job);
+    writeQueuedSubmits(next);
+    setPendingSubmits(next);
   }, []);
 
   const clearDraft = useCallback((flightLogId?: string) => {
@@ -750,21 +749,38 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
 
     if (job.shouldNotifyStudent) {
-      await supabase.from('notifications').insert({
-        user_id: job.recordData.studentId,
-        type: 'training_record',
-        title: 'Lesson record requires your sign-off',
-        message: `${job.instructorName || 'Your instructor'} has submitted a training record for your flight on ${format(recordDate, 'd MMM yyyy')}. Please review and acknowledge it.`,
-        is_read: false,
-        metadata: { student_id: job.recordData.studentId },
-      });
+      const { data: existingNotification, error: notificationLookupError } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', job.recordData.studentId)
+        .eq('type', 'training_record')
+        .contains('metadata', { training_record_id: trainingRecordId })
+        .limit(1)
+        .maybeSingle();
+      if (notificationLookupError) throw notificationLookupError;
+
+      if (!existingNotification) {
+        const { error: notificationError } = await supabase.from('notifications').insert({
+          user_id: job.recordData.studentId,
+          type: 'training_record',
+          title: 'Lesson record requires your sign-off',
+          message: `${job.instructorName || 'Your instructor'} has submitted a training record for your flight on ${format(recordDate, 'd MMM yyyy')}. Please review and acknowledge it.`,
+          is_read: false,
+          metadata: {
+            student_id: job.recordData.studentId,
+            training_record_id: trainingRecordId,
+          },
+        });
+        if (notificationError) throw notificationError;
+      }
     }
   }, [addTrainingRecord, markRecorded, saveMatrixAssessments, updateTrainingRecord]);
 
   const syncPendingSubmits = useCallback(async () => {
     const queue = readQueuedSubmits();
-    if (queue.length === 0 || syncingOfflineQueue || !navigator.onLine) return;
+    if (queue.length === 0 || syncingOfflineQueueRef.current || !navigator.onLine) return;
 
+    syncingOfflineQueueRef.current = true;
     setSyncingOfflineQueue(true);
     try {
       const remaining: QueuedTrainingRecordSubmit[] = [];
@@ -793,9 +809,10 @@ export const OutstandingRecordsTab: React.FC = () => {
         void refetch();
       }
     } finally {
+      syncingOfflineQueueRef.current = false;
       setSyncingOfflineQueue(false);
     }
-  }, [clearDraft, refetch, submitQueuedJob, syncingOfflineQueue]);
+  }, [clearDraft, refetch, submitQueuedJob]);
 
   function openLog(log: OutstandingFlightLog, draftRecord?: typeof trainingRecords[number]) {
     setActiveLog(log);
@@ -1284,40 +1301,22 @@ export const OutstandingRecordsTab: React.FC = () => {
       return;
     }
 
-    const student = users.find(u => u.id === activeLog.student_id);
     const submitJob = buildSubmitJob();
     if (!submitJob) {
       toast.error('Could not prepare this training record');
       return;
     }
 
-    setSubmitting(true);
-    try {
-      if (!navigator.onLine) {
-        queueSubmit(submitJob);
-        toast.success('Training record saved on this device. It will sync when signal returns.');
-        closePanel();
-        return;
-      }
+    queueSubmit(submitJob);
+    closePanel();
 
-      await submitQueuedJob(submitJob);
-      clearDraft(activeLog.id);
-
-      toast.success(selectedCourseRequiresAck
-        ? `Training record submitted - ${student?.name ?? 'student'} has been notified`
-        : 'Training record submitted and locked');
-      closePanel();
-    } catch (error) {
-      if (isNetworkLikeError(error)) {
-        queueSubmit(submitJob);
-        toast.success('Signal dropped. Training record saved on this device and will sync automatically.');
-        closePanel();
-      } else {
-        toast.error('Failed to submit training record');
-      }
-    } finally {
-      setSubmitting(false);
+    if (!navigator.onLine) {
+      toast.success('Training record saved on this device. It will sync when signal returns.');
+      return;
     }
+
+    toast.success('Training record is being completed in the background. You can keep working.');
+    void syncPendingSubmits();
   }
 
   async function handleSaveDraftRecord() {
