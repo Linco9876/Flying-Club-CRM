@@ -477,17 +477,9 @@ export async function exportCoursePdf({
   };
 
   const drawDigitalSignatureCertification = () => {
-    const requiredLessonIds = new Set(course.lessons.filter((lesson) => !lesson.isFlightTest).map((lesson) => lesson.id));
     const acknowledgedCourseRecords = chronologicalCourseRecords.filter((record) => record.studentAck);
-    const acknowledgedLessonIds = new Set(
-      acknowledgedCourseRecords.flatMap((record) => [
-        record.lessonId,
-        ...record.lessonCodes.map((code) => lessonsByCode.get(code)?.id),
-      ]).filter(Boolean) as string[]
-    );
-    const allLessonsAcknowledged = requiredLessonIds.size > 0
-      ? [...requiredLessonIds].every((lessonId) => acknowledgedLessonIds.has(lessonId))
-      : chronologicalCourseRecords.length > 0 && chronologicalCourseRecords.every((record) => record.studentAck);
+    const allLessonsAcknowledged = chronologicalCourseRecords.length > 0 &&
+      chronologicalCourseRecords.every((record) => record.studentAck);
     const latestStudentAck = acknowledgedCourseRecords
       .map((record) => record.studentAckTimestamp)
       .filter(Boolean)
@@ -545,7 +537,7 @@ export async function exportCoursePdf({
       .filter((lesson) => lesson.sequenceCode)
       .map((lesson) => [lesson.sequenceCode, lesson])
   );
-  const resolveLessonName = (record: TrainingRecord) => {
+  const resolveLesson = (record: TrainingRecord) => {
     const lesson = record.lessonId ? lessonsById.get(record.lessonId) : undefined;
     const fallbackLesson = record.lessonCodes
       .map((code) => lessonsByCode.get(code))
@@ -557,7 +549,10 @@ export async function exportCoursePdf({
           `${item.sequenceCode} ${item.name}`.trim().toLowerCase() === recordedCode.trim().toLowerCase()
         )
       : undefined;
-    return lesson?.name || fallbackLesson?.name || byName?.name || recordedCode || record.registration || 'Flight';
+    return lesson || fallbackLesson || byName;
+  };
+  const resolveLessonName = (record: TrainingRecord) => {
+    return resolveLesson(record)?.name || record.lessonCodes[0] || record.registration || 'Flight';
   };
   const courseExamDefinitions = course.exams || [];
   const courseExams = exams
@@ -1302,7 +1297,10 @@ export async function exportCoursePdf({
 
   if (isStructuredAviationCourse) {
     drawSectionTitle('Certification and Completion');
-    const assessedLessonCount = new Set(courseRecords.map(record => record.lessonId).filter(Boolean)).size;
+    const assessedLessonCount = new Set(courseRecords.map((record) => {
+      const lesson = resolveLesson(record);
+      return lesson?.id || record.lessonCodes[0]?.trim().toLowerCase();
+    }).filter(Boolean)).size;
     const acknowledgedRecordCount = courseRecords.filter(record => record.studentAck).length;
     const completionRows: Array<[string, string]> = [
       isRplSyllabusCourse

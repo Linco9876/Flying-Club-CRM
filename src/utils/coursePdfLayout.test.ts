@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { chunkPdfColumns, normalisePdfText, truncatePdfText, wrapPdfText } from './coursePdfLayout.ts';
+
+const exportSource = readFileSync(new URL('./coursePdfExport.ts', import.meta.url), 'utf8');
 
 const measure = (value: string) => value.length;
 
@@ -33,4 +36,15 @@ test('splits wide progress matrices into readable column groups', () => {
     [9, 10, 11, 12, 13, 14, 15, 16],
     [17, 18, 19],
   ]);
+});
+
+test('student certification requires acknowledgement of every exported record', () => {
+  assert.match(
+    exportSource,
+    /chronologicalCourseRecords\.length > 0 &&\s*chronologicalCourseRecords\.every\(\(record\) => record\.studentAck\)/,
+  );
+});
+
+test('completion totals resolve legacy lesson codes before counting lessons', () => {
+  assert.match(exportSource, /const lesson = resolveLesson\(record\);\s*return lesson\?\.id \|\| record\.lessonCodes\[0\]/);
 });
