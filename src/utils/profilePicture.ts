@@ -5,6 +5,11 @@ const publicObjectMarker = `/storage/v1/object/public/${PROFILE_PICTURE_BUCKET}/
 export const profilePictureSettingsDestination =
   '/settings?tab=account-info&accountTab=info&focus=profile-photo#account-profile-photo';
 
+export const profilePictureUploadFailureMessage = (kind: 'avatar' | 'cover') =>
+  kind === 'avatar'
+    ? 'Your profile photo could not be uploaded. Refresh the page and try again.'
+    : 'Your cover photo could not be uploaded. Refresh the page and try again.';
+
 /**
  * Returns the object path only for a portal-managed image owned by the user.
  * External/legacy URLs are deliberately ignored so cleanup can never delete

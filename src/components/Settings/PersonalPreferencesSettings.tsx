@@ -29,7 +29,11 @@ import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 import { safeImageSource } from '../../utils/imageSource';
 import { parseSettingsDeepLink, type SettingsFocus } from '../../utils/settingsDeepLink';
-import { managedProfilePicturePath, PROFILE_PICTURE_BUCKET } from '../../utils/profilePicture';
+import {
+  managedProfilePicturePath,
+  PROFILE_PICTURE_BUCKET,
+  profilePictureUploadFailureMessage,
+} from '../../utils/profilePicture';
 import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 import { MfaSettings } from '../Auth/MfaSecurity';
 
@@ -474,7 +478,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           upsert: false,
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error(`Failed to upload ${kind} image:`, error);
+        throw new Error(profilePictureUploadFailureMessage(kind));
+      }
 
       const { data } = supabase.storage.from(PROFILE_PICTURE_BUCKET).getPublicUrl(path);
       return data.publicUrl;
