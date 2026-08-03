@@ -48,7 +48,6 @@ const MembershipDashboard = lazy(() => import('./components/Membership/Membershi
 const SafetyLoginWarningModal = lazy(() => import('./components/Safety/SafetyLoginWarningModal').then(module => ({ default: module.SafetyLoginWarningModal })));
 const TrainingRecordForm = lazy(() => import('./components/Training/TrainingRecordForm').then(module => ({ default: module.TrainingRecordForm })));
 const TrainingWorkspacePage = lazy(() => import('./components/Training/TrainingWorkspacePage').then(module => ({ default: module.TrainingWorkspacePage })));
-const TrainingModuleBuilder = lazy(() => import('./components/Training/TrainingModuleBuilder').then(module => ({ default: module.TrainingModuleBuilder })));
 const OutstandingRecordsTab = lazy(() => import('./components/Training/OutstandingRecordsTab').then(module => ({ default: module.OutstandingRecordsTab })));
 const LearningCentreDashboard = lazy(() => import('./components/LearningCentre/LearningCentreDashboard').then(module => ({ default: module.LearningCentreDashboard })));
 const StudentAcknowledgementModal = lazy(() => import('./components/Training/StudentAcknowledgementModal').then(module => ({ default: module.StudentAcknowledgementModal })));
@@ -1032,6 +1031,8 @@ const AuthenticatedApp: React.FC<{
   React.useEffect(() => {
     if (location.pathname.startsWith('/bookings')) {
       navigate('/calendar?view=list', { replace: true });
+    } else if (location.pathname.startsWith('/training/syllabus')) {
+      navigate('/training', { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -1122,8 +1123,6 @@ const AuthenticatedApp: React.FC<{
         return <StudentProfileScreen portalSection="documents" />;
       case 'outstanding-records':
         return <OutstandingRecordsTab />;
-      case 'syllabus-management':
-        return <TrainingModuleBuilder />;
       case 'profile':
         return <ProfileDashboard />;
       case 'mylogbook':
@@ -1223,7 +1222,6 @@ const viewPathMap: Record<string, string> = {
   'pilot-file': '/pilot-file',
   documents: '/documents',
   'outstanding-records': '/training/outstanding-records',
-  'syllabus-management': '/training/syllabus',
   billing: '/billing',
   'financial-dashboard': '/financial-dashboard',
   'gift-vouchers': '/gift-vouchers',
@@ -1247,7 +1245,6 @@ const getViewForPath = (pathname: string) => {
   if (pathname.startsWith('/students')) return 'students';
   if (pathname.startsWith('/aircraft')) return 'aircraft';
   if (pathname.startsWith('/training/outstanding-records')) return 'outstanding-records';
-  if (pathname.startsWith('/training/syllabus')) return 'syllabus-management';
   if (pathname.startsWith('/training')) return 'training';
   if (pathname.startsWith('/learning-centre')) return 'learning-centre';
   if (pathname.startsWith('/pilot-file')) return 'pilot-file';
@@ -1270,7 +1267,6 @@ const getRequiredActionForView = (view: string) => {
     'learning-centre': 'view-learning-centre',
     'pilot-file': 'view-training',
     'outstanding-records': 'view-outstanding-records',
-    'syllabus-management': 'edit-settings',
     'documents': 'view-training',
     'billing': 'view-billing',
     'financial-dashboard': 'view-billing',

@@ -42,9 +42,12 @@ test('production workflows use the explicit Australian Supabase secrets', () => 
 
 test('recovery automation is non-interactive and cannot select production as its target', () => {
   const recovery = read('../../.github/workflows/monthly-backup-restore-drill.yml');
+  const recoveryScript = read('../../scripts/run-isolated-recovery-drill.ps1');
   assert.match(recovery, /gpg --batch --yes --dearmor/);
   assert.match(recovery, /SUPABASE_RECOVERY_PROJECT_REF: hohmmwvtisnuuoumipjq/);
   assert.match(recovery, /SUPABASE_PROJECT_REF: \$\{\{ secrets\.SUPABASE_AU_PROJECT_REF \}\}/);
+  assert.match(recoveryScript, /\[IO\.Path\]::GetTempPath\(\)/);
+  assert.doesNotMatch(recoveryScript, /Join-Path \$env:TEMP/);
 
   const acceptance = read('../../.github/workflows/quality-gates.yml');
   assert.match(acceptance, /SUPABASE_PROJECT_REF: hohmmwvtisnuuoumipjq/);
