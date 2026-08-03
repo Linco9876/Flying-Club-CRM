@@ -664,6 +664,7 @@ export interface GroundSessionLog {
   notes?: string;
   calculatedCost: number;
   paymentStatus: 'free' | 'pending' | 'paid';
+  financialCaptureSuppressed?: boolean;
   xeroInvoiceId?: string | null;
   xeroInvoiceNumber?: string | null;
   xeroInvoiceStatus?: string | null;

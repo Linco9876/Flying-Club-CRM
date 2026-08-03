@@ -5,6 +5,8 @@ import { GroundSessionLog } from '../types';
 import { fetchUserPrepaidLedgerBalance } from '../lib/prepaidLedger';
 import { getSupabaseFunctionErrorMessage } from '../lib/supabaseFunctionErrors';
 import { useLatestEffect } from './useLatestEffect';
+import { useFinancialProviders } from '../context/financialProviderState';
+import { shouldCaptureFinancialDetails } from '../utils/financialProviderPresentation';
 
 export interface CreateGroundSessionLogData {
   booking_id?: string;
@@ -14,7 +16,7 @@ export interface CreateGroundSessionLogData {
   end_time: string;
   duration_hours: number;
   flight_type_id?: string;
-  payment_type: string;
+  payment_type?: string;
   description_option_id?: string;
   description_text?: string;
   notes?: string;
@@ -40,6 +42,7 @@ const mapLog = (row: any): GroundSessionLog => ({
   notes: row.notes || undefined,
   calculatedCost: Number(row.calculated_cost || 0),
   paymentStatus: row.payment_status || 'pending',
+  financialCaptureSuppressed: Boolean(row.financial_capture_suppressed),
   xeroInvoiceId: row.xero_invoice_id || null,
   xeroInvoiceNumber: row.xero_invoice_number || null,
   xeroInvoiceStatus: row.xero_invoice_status || null,
@@ -58,6 +61,8 @@ const roundUpToQuarterHour = (hours: number) => {
 };
 
 export const useGroundSessionLogs = (bookingId?: string) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
+  const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
   const [logs, setLogs] = useState<GroundSessionLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -182,12 +187,15 @@ export const useGroundSessionLogs = (bookingId?: string) => {
       if (!currentUser) throw new Error('User not authenticated');
 
       const durationHours = roundUpToQuarterHour(Number(logData.duration_hours || 0));
-      const pricing = await calculatePricing(logData.flight_type_id, logData.description_option_id, durationHours);
+      const pricing = financialCaptureEnabled
+        ? await calculatePricing(logData.flight_type_id, logData.description_option_id, durationHours)
+        : { calculatedCost: null, effectiveFlightTypeId: undefined };
       const calculatedCost = pricing.calculatedCost;
-      const prepaidSelected = isPrepaidLike(logData.payment_type);
+      const billableAmount = calculatedCost ?? 0;
+      const prepaidSelected = financialCaptureEnabled && isPrepaidLike(logData.payment_type);
 
       let paymentMethodId: string | null = null;
-      if (logData.payment_type) {
+      if (financialCaptureEnabled && logData.payment_type) {
         const query = supabase
           .from('payment_methods')
           .select('id, system_key')
@@ -199,7 +207,7 @@ export const useGroundSessionLogs = (bookingId?: string) => {
       }
 
       let balanceAfter: number | null = null;
-      if (prepaidSelected && calculatedCost > 0) {
+      if (prepaidSelected && billableAmount > 0) {
         const ledger = await fetchUserPrepaidLedgerBalance(logData.student_id);
         const available = Number(ledger.verifiedBalance ?? 0);
         if (!ledger.xeroConnected) {
@@ -208,23 +216,26 @@ export const useGroundSessionLogs = (bookingId?: string) => {
         if (available <= 0.005) {
           throw new Error('Prepaid is locked until the member has positive Xero credit. Top-ups can only be made in $1000.00 increments.');
         }
-        if (available + 0.005 < calculatedCost) {
+        if (available + 0.005 < billableAmount) {
           throw new Error(`This member only has $${available.toFixed(2)} of Xero credit available, so prepaid cannot cover this ground session. Add a $1000.00 top-up first.`);
         }
-        balanceAfter = Math.round((available - calculatedCost + Number.EPSILON) * 100) / 100;
+        balanceAfter = Math.round((available - billableAmount + Number.EPSILON) * 100) / 100;
       }
 
-      const paymentStatus: GroundSessionLog['paymentStatus'] =
-        calculatedCost <= 0 ? 'free' : prepaidSelected ? 'paid' : 'pending';
+      const paymentStatus: GroundSessionLog['paymentStatus'] | null = financialCaptureEnabled
+        ? billableAmount <= 0 ? 'free' : prepaidSelected ? 'paid' : 'pending'
+        : null;
 
       const { data, error } = await supabase
         .from('ground_session_logs')
         .insert({
           ...logData,
           duration_hours: durationHours,
-          flight_type_id: pricing.effectiveFlightTypeId || null,
+          flight_type_id: financialCaptureEnabled ? pricing.effectiveFlightTypeId || null : null,
+          payment_type: financialCaptureEnabled ? logData.payment_type || null : null,
           calculated_cost: calculatedCost,
           payment_status: paymentStatus,
+          financial_capture_suppressed: !financialCaptureEnabled,
           created_by: currentUser.id,
         })
         .select('*')
@@ -232,13 +243,13 @@ export const useGroundSessionLogs = (bookingId?: string) => {
 
       if (error) throw error;
 
-      if (prepaidSelected && calculatedCost > 0) {
+      if (prepaidSelected && billableAmount > 0) {
         const { error: txError } = await supabase
           .from('account_transactions')
           .insert({
             user_id: logData.student_id,
             type: 'flight_charge',
-            amount: calculatedCost,
+            amount: billableAmount,
             description: `Ground session charge - ${new Date(logData.start_time).toLocaleDateString('en-AU')}`,
             ground_session_log_id: data.id,
             payment_method_id: paymentMethodId,
@@ -268,7 +279,7 @@ export const useGroundSessionLogs = (bookingId?: string) => {
         }
       }
 
-      if (calculatedCost > 0) {
+      if (financialCaptureEnabled && billableAmount > 0) {
         const synced = await syncXeroInvoiceIfAvailable(data.id);
         if (synced && prepaidSelected) {
           await applyGroundPaymentsIfNeeded(data.id);
@@ -288,6 +299,24 @@ export const useGroundSessionLogs = (bookingId?: string) => {
     try {
       const current = logs.find(log => log.id === id);
       const nextDuration = roundUpToQuarterHour(Number(updates.duration_hours ?? current?.durationHours ?? 0));
+      if (!financialCaptureEnabled) {
+        const operationalUpdates = { ...updates };
+        delete operationalUpdates.flight_type_id;
+        delete operationalUpdates.payment_type;
+        const { error } = await supabase
+          .from('ground_session_logs')
+          .update({
+            ...operationalUpdates,
+            duration_hours: nextDuration,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id);
+
+        if (error) throw error;
+        await fetchLogs();
+        return { error: null };
+      }
+
       const nextFlightTypeId = updates.flight_type_id ?? current?.flightTypeId;
       const nextDescriptionOptionId = updates.description_option_id ?? current?.descriptionOptionId;
       const pricing = await calculatePricing(nextFlightTypeId, nextDescriptionOptionId, nextDuration);

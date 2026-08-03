@@ -16,6 +16,8 @@ import { SafetyConcern, buildSafetyComplianceSummary } from '../../utils/safetyC
 import { resolveBookingBillingSelection } from '../../utils/groundSessionBilling';
 import toast from 'react-hot-toast';
 import { supabase } from '../../lib/supabase';
+import { useFinancialProviders } from '../../context/financialProviderState';
+import { shouldCaptureFinancialDetails } from '../../utils/financialProviderPresentation';
 
 interface BookingFormProps {
   isOpen: boolean;
@@ -75,6 +77,8 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const { settings: safetySettings } = useSafetySettings({ participateInPageLoad: false });
   const { settings: bookingFieldSettings, isFieldRequired, isFieldVisible } = useBookingFieldSettings();
   const { flightTypes, paymentMethods } = useBillingSettings();
+  const { capabilities: financialProviders, loading: financialProvidersLoading } = useFinancialProviders();
+  const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
   const {
     activeLocations,
     primaryLocation,
@@ -237,7 +241,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const isStudentOnlyUser = displayUserRoles.includes('student') && !displayUserRoles.some(role => ['pilot', 'instructor', 'senior_instructor', 'admin'].includes(role));
   const isLimitedCalendarUser = displayUserRoles.some(role => role === 'student' || role === 'pilot')
     && !displayUserRoles.some(role => ['admin', 'instructor', 'senior_instructor'].includes(role));
-  const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading || locationsLoading;
+  const isLoading = aircraftLoading || usersLoading || studentsLoading || flightLogsLoading || locationsLoading || financialProvidersLoading;
   const showModalLoader = isLoading || isSubmitting;
   const selectedGuestVoucher = guestVoucherOptions.find(option => option.id === formData.trialFlightVoucherId);
   const voucherScheduleChanged = Boolean(
@@ -460,6 +464,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   }, [formData.aircraftId, formData.isGuestBooking, guestEligibleAircraftIds]);
 
   React.useEffect(() => {
+    if (!financialCaptureEnabled) return;
     if (!formData.isGuestBooking) return;
     if (recurrence.enabled) {
       setRecurrence(prev => ({ ...prev, enabled: false }));
@@ -473,7 +478,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
         flightTypeId: '',
       }));
     }
-  }, [flightTypes, formData.flightTypeId, formData.isGuestBooking, formData.paymentType, recurrence.enabled]);
+  }, [financialCaptureEnabled, flightTypes, formData.flightTypeId, formData.isGuestBooking, formData.paymentType, recurrence.enabled]);
 
   React.useEffect(() => {
     if (!isGroundSessionBooking) return;
@@ -491,6 +496,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   }, [formData.aircraftId, formData.isGuestBooking, formData.trialFlightVoucherId, isGroundSessionBooking]);
 
   React.useEffect(() => {
+    if (!financialCaptureEnabled) return;
     if (!formData.flightTypeId || formData.trialFlightVoucherId) return;
     const selectedFlightType = flightTypes.find(ft => ft.id === formData.flightTypeId);
     if (!isPrepaidLikeFlightType(selectedFlightType?.name)) return;
@@ -498,7 +504,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     const forcedPaymentType = getPilotAccountPaymentType();
     if (formData.paymentType === forcedPaymentType) return;
     setFormData(prev => ({ ...prev, paymentType: forcedPaymentType }));
-  }, [flightTypes, formData.flightTypeId, formData.paymentType, formData.trialFlightVoucherId, getPilotAccountPaymentType]);
+  }, [financialCaptureEnabled, flightTypes, formData.flightTypeId, formData.paymentType, formData.trialFlightVoucherId, getPilotAccountPaymentType]);
+
+  React.useEffect(() => {
+    if (financialProvidersLoading || financialCaptureEnabled || isEdit) return;
+    setFormData(prev => prev.flightTypeId === '' && prev.paymentType === ''
+      ? prev
+      : { ...prev, flightTypeId: '', paymentType: '' });
+  }, [financialCaptureEnabled, financialProvidersLoading, isEdit]);
 
   const validateFormData = () => {
     const userRole = user?.role || 'student';
@@ -569,7 +582,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
       toast.error('End time is required');
       return;
     }
-    if (isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.flightTypeId) {
+    if (financialCaptureEnabled && isFieldRequired('paymentType', userRole) && !formData.trialFlightVoucherId && !formData.flightTypeId) {
       toast.error('Payment Type is required');
       return;
     }
@@ -632,12 +645,16 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setIsSubmitting(true);
     try {
       const effectiveBookingKind = data.bookingKind === 'ground' || (!data.aircraftId && !data.trialFlightVoucherId) ? 'ground' : 'flight';
-      const billingSelection = resolveBookingBillingSelection({
-        paymentTypeId: data.flightTypeId,
-        paymentTypeName: data.paymentType,
-        derivedPaymentTypeName: derivePaymentTypeForFlightType(data.flightTypeId),
-        isVoucherBooking: Boolean(data.trialFlightVoucherId),
-      });
+      const billingSelection = financialCaptureEnabled
+        ? resolveBookingBillingSelection({
+          paymentTypeId: data.flightTypeId,
+          paymentTypeName: data.paymentType,
+          derivedPaymentTypeName: derivePaymentTypeForFlightType(data.flightTypeId),
+          isVoucherBooking: Boolean(data.trialFlightVoucherId),
+        })
+        : isEdit
+          ? { paymentType: data.paymentType, flightTypeId: data.flightTypeId }
+          : { paymentType: '', flightTypeId: '' };
       const normalisedBookingData = effectiveBookingKind === 'ground'
         ? {
             ...data,
@@ -1255,12 +1272,14 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
                 ))}
               </select>
               <p className="mt-1 text-xs text-gray-500">
-                Ground sessions are scheduled against the instructor only. The selected Payment Type will pre-fill the ground-session log; its description and Payment Method can be confirmed when logging.
+                {financialCaptureEnabled
+                  ? 'Ground sessions are scheduled against the instructor only. The selected Payment Type will pre-fill the ground-session log; its description and Payment Method can be confirmed when logging.'
+                  : 'Ground sessions are scheduled against the instructor only. Payment details are off while Stripe and Xero are disconnected.'}
               </p>
             </div>
           )}
 
-          {!isLoading && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && (
+          {!isLoading && financialCaptureEnabled && isFieldVisible('paymentType', userRole) && !formData.trialFlightVoucherId && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
               <CreditCard className="h-3.5 w-3.5 inline mr-1" />

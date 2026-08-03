@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { useBookingRulesSettings, useCalendarSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
 import { useLatestEffect } from './useLatestEffect';
+import { useFinancialProviders } from '../context/financialProviderState';
+import { shouldCaptureFinancialDetails } from '../utils/financialProviderPresentation';
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message;
@@ -35,6 +37,8 @@ export interface BookingCancellationInput {
 }
 
 export const useBookings = (enabled = true) => {
+  const { capabilities: financialProviders } = useFinancialProviders();
+  const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1348,7 +1352,13 @@ export const useBookings = (enabled = true) => {
           tach_end: flightLogData.tachEnd,
           engine_start: flightLogData.engineStart,
           engine_end: flightLogData.engineEnd,
-          total_cost: flightLogData.totalCost,
+          total_cost: financialCaptureEnabled ? flightLogData.totalCost : null,
+          calculated_cost: financialCaptureEnabled ? flightLogData.totalCost : null,
+          payment_status: financialCaptureEnabled
+            ? flightLogData.totalCost > 0 ? 'pending' : 'free'
+            : null,
+          xero_sync_status: financialCaptureEnabled ? 'not_synced' : null,
+          financial_capture_suppressed: !financialCaptureEnabled,
           notes: flightLogData.notes
         });
 
