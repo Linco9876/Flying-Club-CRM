@@ -47,11 +47,11 @@ export const AcceptInvitationPage: React.FC = () => {
         <div className="space-y-6 px-7 py-8 sm:px-10">
           {actionLink ? (
             <>
-              <div className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+              <div className="flex gap-3 rounded-xl border border-[#a7f3d0] bg-[#ecfdf5] p-4 text-[#064e3b]">
                 <MailCheck className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <div>
                   <p className="font-semibold">{isPasswordReset ? 'Password reset ready' : 'Invitation ready'}</p>
-                  <p className="mt-1 text-sm leading-5 text-emerald-800">
+                  <p className="mt-1 text-sm leading-5 text-[#065f46]">
                     Press the button below to verify this request and choose your password.
                   </p>
                 </div>
