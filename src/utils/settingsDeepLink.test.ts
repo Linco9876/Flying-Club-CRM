@@ -29,6 +29,21 @@ test('derives Update My Info from a valid focus when tab is omitted', () => {
   );
 });
 
+test('links directly to the profile photo control', () => {
+  assert.deepEqual(
+    parseSettingsDeepLink(
+      '?tab=account-info&accountTab=info&focus=profile-photo',
+      '#account-profile-photo',
+    ),
+    {
+      sectionId: 'account-info',
+      focus: 'profile-photo',
+      focusElementId: 'account-profile-photo',
+      focusLabel: 'Profile Photo',
+    },
+  );
+});
+
 test('uses the hash target as a fallback for older links', () => {
   assert.deepEqual(
     parseSettingsDeepLink('', '#account-emergency-contact'),

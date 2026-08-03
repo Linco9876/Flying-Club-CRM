@@ -6,6 +6,7 @@ import {
   BookOpen,
   Calendar,
   CalendarPlus,
+  Camera,
   CheckCircle2,
   ChevronRight,
   CreditCard,
@@ -43,6 +44,8 @@ import {
   usesRaausCredentials,
 } from '../../utils/profileReadiness';
 import type { BrowserCalendarEvent } from '../../utils/calendar';
+import { profilePictureSettingsDestination } from '../../utils/profilePicture';
+import { safeImageSource } from '../../utils/imageSource';
 import { AddToCalendarModal } from '../Bookings/AddToCalendarModal';
 
 interface ProfileStudentDetails {
@@ -643,6 +646,7 @@ export const ProfileDashboard: React.FC = () => {
   const todayOtherBookings = stats.recentBookingsToday.filter(
     booking => booking.id !== stats.nextBooking?.id
   );
+  const profileAvatarSource = safeImageSource(user?.avatar);
 
   return (
     <div className="min-h-full bg-transparent p-3 sm:p-6">
@@ -654,12 +658,23 @@ export const ProfileDashboard: React.FC = () => {
           <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-900/85 to-blue-950/70" />
           <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-center gap-4">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-blue-700 shadow-md sm:h-24 sm:w-24">
-                {user?.avatar ? (
-                  <img src={user.avatar} alt={`${user.name} profile`} className="h-full w-full object-cover object-top" />
-                ) : (
-                  <UserIcon className="h-10 w-10 text-white" />
-                )}
+              <div className="relative h-20 w-20 shrink-0 sm:h-24 sm:w-24">
+                <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-blue-700 shadow-md">
+                  {profileAvatarSource ? (
+                    <img src={profileAvatarSource} alt={`${user?.name || 'User'} profile`} className="h-full w-full object-cover object-top" />
+                  ) : (
+                    <UserIcon className="h-10 w-10 text-white" />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(profilePictureSettingsDestination)}
+                  className="absolute -bottom-2 -right-2 inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-slate-900 bg-white text-slate-800 shadow-md transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-white"
+                  aria-label={user?.avatar ? 'Change profile photo' : 'Add profile photo'}
+                  title={user?.avatar ? 'Change profile photo' : 'Add profile photo'}
+                >
+                  <Camera className="h-4 w-4" />
+                </button>
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">

@@ -29,6 +29,7 @@ import { defaultUserPreferences, useUserPreferences, UserPreferences } from '../
 import { applyPortalTheme, storePortalTheme } from '../../utils/theme';
 import { safeImageSource } from '../../utils/imageSource';
 import { parseSettingsDeepLink, type SettingsFocus } from '../../utils/settingsDeepLink';
+import { managedProfilePicturePath, PROFILE_PICTURE_BUCKET } from '../../utils/profilePicture';
 import { CalendarSubscriptionSettings } from './CalendarSubscriptionSettings';
 import { MfaSettings } from '../Auth/MfaSecurity';
 
@@ -95,7 +96,6 @@ interface PendingEndorsementDraft {
 }
 
 const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50';
-const AVATAR_BUCKET = 'user-avatars';
 const STUDENT_DOCUMENTS_BUCKET = 'student-documents';
 const MAX_SOURCE_IMAGE_BYTES = 15 * 1024 * 1024;
 const MAX_UPLOAD_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -194,6 +194,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const personalDetailsSectionRef = useRef<HTMLElement | null>(null);
+  const profilePhotoSectionRef = useRef<HTMLElement | null>(null);
   const aviationCredentialsSectionRef = useRef<HTMLElement | null>(null);
   const contactDetailsSectionRef = useRef<HTMLElement | null>(null);
   const emergencyContactSectionRef = useRef<HTMLElement | null>(null);
@@ -466,7 +467,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       const uploadFile = await compressImageForUpload(file, kind);
       const path = `${user.id}/${kind}-${Date.now()}-${safeImageFilename(uploadFile.name)}`;
       const { error } = await supabase.storage
-        .from(AVATAR_BUCKET)
+        .from(PROFILE_PICTURE_BUCKET)
         .upload(path, uploadFile, {
           cacheControl: '3600',
           contentType: uploadFile.type,
@@ -475,7 +476,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
       if (error) throw error;
 
-      const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+      const { data } = supabase.storage.from(PROFILE_PICTURE_BUCKET).getPublicUrl(path);
       return data.publicUrl;
     } finally {
       setImageUploading(false);
@@ -593,6 +594,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     const focus = requestedSettings.focus;
     const focusTargets: Record<string, HTMLElement | null> = {
       'personal-details': personalDetailsSectionRef.current,
+      'profile-photo': profilePhotoSectionRef.current,
       'aviation-credentials': aviationCredentialsSectionRef.current,
       'contact-details': contactDetailsSectionRef.current,
       'emergency-contact': emergencyContactSectionRef.current,
@@ -819,7 +821,31 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
       .update(profileUpdates)
       .eq('id', user.id);
 
-    if (updateUserError) throw updateUserError;
+    if (updateUserError) {
+      const unusedAvatarPath = avatarFile
+        ? managedProfilePicturePath(avatarUrl, user.id)
+        : null;
+      if (unusedAvatarPath) {
+        const { error: cleanupError } = await supabase.storage
+          .from(PROFILE_PICTURE_BUCKET)
+          .remove([unusedAvatarPath]);
+        if (cleanupError) {
+          console.error('The unused profile photo upload could not be cleaned up:', cleanupError);
+        }
+      }
+      throw updateUserError;
+    }
+
+    const previousAvatarPath = managedProfilePicturePath(savedProfile.avatarUrl, user.id);
+    if (previousAvatarPath && savedProfile.avatarUrl !== avatarUrl) {
+      const { error: avatarCleanupError } = await supabase.storage
+        .from(PROFILE_PICTURE_BUCKET)
+        .remove([previousAvatarPath]);
+      if (avatarCleanupError) {
+        console.error('The old profile photo could not be removed from storage:', avatarCleanupError);
+        toast.error('Your profile photo was updated, but the old file could not be cleaned up.');
+      }
+    }
 
     if (hasFlyingRole) {
       const { error: studentError } = await supabase
@@ -1045,10 +1071,10 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
   }) => {
     const imageSource = safeImageSource(preview);
     return (
-    <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-[#30343c] dark:bg-[#171a21] sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-4">
         <div className={`relative flex flex-shrink-0 items-center justify-center overflow-hidden bg-blue-600 text-white ${
-          shape === 'avatar' ? 'h-20 w-20 rounded-full ring-4 ring-blue-50' : 'h-20 w-32 rounded-lg border border-gray-200'
+          shape === 'avatar' ? 'h-20 w-20 rounded-full ring-4 ring-blue-50 dark:ring-blue-950/70' : 'h-20 w-32 rounded-lg border border-gray-200 dark:border-[#30343c]'
         }`}>
           {imageSource ? (
             <img src={imageSource} alt="" className="h-full w-full object-cover" />
@@ -1059,9 +1085,9 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           )}
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-900">{label}</p>
-          <p className="mt-1 text-xs text-gray-500">{description}</p>
-          {file && <p className="mt-1 truncate text-xs text-blue-600">{file.name}</p>}
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{label}</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{description}</p>
+          {file && <p className="mt-1 truncate text-xs text-blue-600 dark:text-blue-300">{file.name}</p>}
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -1077,7 +1103,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={!canEdit || imageUploading}
-          className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#414753] dark:bg-[#20242d] dark:text-gray-100 dark:hover:bg-[#292e38]"
         >
           {imageUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
           Change
@@ -1087,7 +1113,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             type="button"
             onClick={onRemove}
             disabled={!canEdit || imageUploading}
-            className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/70 dark:bg-[#20242d] dark:text-red-300 dark:hover:bg-red-950/40"
           >
             <Trash2 className="h-4 w-4" />
             Remove
@@ -1110,7 +1136,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
 
   const tabLabel = tabs.find(tab => tab.id === selectedTab)?.label || 'Account & Preferences';
   const introText = {
-    info: 'Update your personal details, contact numbers, emergency contact, preferred aircraft, licences and endorsements.',
+    info: 'Update your profile photo, personal details, contact numbers, emergency contact, preferred aircraft, licences and endorsements.',
     security: 'Manage your password and account sign-in security.',
     calendar: 'Choose your personal date, time and calendar defaults.',
     notifications: 'Tune notifications for your own account.',
@@ -1179,6 +1205,19 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
               </div>
             </div>
             <p className="text-xs text-gray-500">The new email will need to be verified and will replace your login email once verified.</p>
+          </section>
+
+          <section ref={profilePhotoSectionRef} id="account-profile-photo" tabIndex={-1} className={infoSectionClass('profile-photo')}>
+            <ImageSetting
+              label="Profile photo"
+              description="Shown in the header, member directory and your profile. Choose a clear, appropriate photo; originals up to 15 MB are saved as an optimised 512px image."
+              preview={avatarPreview || profileForm.avatarUrl}
+              file={avatarFile}
+              inputRef={avatarInputRef}
+              onChoose={file => handleImageChange(file, 'avatar')}
+              onRemove={removeAvatar}
+              shape="avatar"
+            />
           </section>
 
           {hasFlyingRole && (
@@ -1631,16 +1670,6 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
             </div>
           </div>
           <div className="space-y-3">
-            <ImageSetting
-              label="Profile photo"
-              description="Shown in the header, members list and your profile card. Originals up to 15 MB are saved as a 512px WebP."
-              preview={avatarPreview || profileForm.avatarUrl}
-              file={avatarFile}
-              inputRef={avatarInputRef}
-              onChoose={file => handleImageChange(file, 'avatar')}
-              onRemove={removeAvatar}
-              shape="avatar"
-            />
             <ImageSetting
               label="Cover photo"
               description="Shown across the top of your profile page. Saved as an optimized 1600 x 600 WebP."

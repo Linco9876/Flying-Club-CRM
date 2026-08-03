@@ -3,6 +3,10 @@ export const SETTINGS_FOCUS_TARGETS = {
     elementId: 'account-personal-details',
     label: 'Personal Details',
   },
+  'profile-photo': {
+    elementId: 'account-profile-photo',
+    label: 'Profile Photo',
+  },
   'aviation-credentials': {
     elementId: 'account-aviation-credentials',
     label: 'Aviation Credentials',
