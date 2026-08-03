@@ -81,6 +81,11 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
       alert('File must be under 2 MB');
       return;
     }
+    if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+      alert('Choose a PNG, JPG, GIF, SVG or WebP image');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setLogoFile(file);
     setLogoPreview(URL.createObjectURL(file));
     onFormChange();
@@ -130,7 +135,6 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
   // Register save/discard handlers for the dashboard's global Save/Cancel bar
   useEffect(() => {
     (window as any).__organisationSettingsSave = async () => {
-      await saveLocations(locationDrafts);
       await updateSettings(
         {
           club_name: formData.clubName,
@@ -148,6 +152,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
         },
         logoFile
       );
+      await saveLocations(locationDrafts);
       setLogoFile(null);
     };
     (window as any).__organisationSettingsCancel = () => {

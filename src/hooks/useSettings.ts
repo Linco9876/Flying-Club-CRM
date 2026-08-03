@@ -267,12 +267,25 @@ export const useOrganisationSettings = () => {
   }, []);
 
   const uploadLogo = async (file: File): Promise<string | null> => {
-    const ext = file.name.split('.').pop();
+    const extensionsByMimeType: Record<string, string> = {
+      'image/gif': 'gif',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/svg+xml': 'svg',
+      'image/webp': 'webp',
+    };
+    const ext = extensionsByMimeType[file.type];
+    if (!ext) {
+      throw new Error('Choose a PNG, JPG, GIF, SVG or WebP image.');
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      throw new Error('The business logo must be smaller than 2 MB.');
+    }
     const path = `logo.${ext}`;
     const { error } = await supabase.storage
       .from('org-logos')
       .upload(path, file, { upsert: true, contentType: file.type });
-    if (error) throw error;
+    if (error) throw new Error(`Logo upload failed: ${error.message}`);
     const { data } = supabase.storage.from('org-logos').getPublicUrl(path);
     // Bust the browser cache by appending a timestamp
     return `${data.publicUrl}?t=${Date.now()}`;
@@ -315,7 +328,10 @@ export const useOrganisationSettings = () => {
       window.dispatchEvent(new Event('organisation-settings-updated'));
       toast.success('Organisation settings saved');
     } catch (err: any) {
-      toast.error('Failed to save organisation settings');
+      const message = err instanceof Error ? err.message : '';
+      toast.error(message.startsWith('Logo upload failed:')
+        ? 'The logo could not be uploaded. Please try again.'
+        : message || 'Failed to save organisation settings');
       throw err;
     }
   };
