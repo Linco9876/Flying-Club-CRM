@@ -48,7 +48,7 @@ assert.equal(
 assert.match(migration, /alter default privileges[\s\S]+revoke execute on functions from public,anon,authenticated,service_role/i);
 assert.match(migration, /revoke all privileges on function %s from public,anon,authenticated,service_role/i);
 assert.match(migration, /Unmanifested public function/);
-assert.match(migration, /has_function_privilege\(%L,%L,%L\)/i);
+assert.match(migration, /has_function_privilege\(permission_record\.role_name,permission_record\.function_oid,'EXECUTE'\)/i);
 assert.match(migration, /select private\.assert_function_permission_manifest\(\)/i);
 
 const laterMigrationNames = (await readdir(migrationsDirectoryUrl))
