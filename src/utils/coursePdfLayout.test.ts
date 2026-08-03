@@ -9,7 +9,11 @@ import {
   truncatePdfText,
   wrapPdfText,
 } from './coursePdfLayout.ts';
-import { courseExamEvidenceForExport } from './coursePdfOptions.ts';
+import {
+  courseExamEvidenceForExport,
+  courseRecordAcknowledgementEvidence,
+  courseRecordAcknowledgementLabel,
+} from './coursePdfOptions.ts';
 
 const exportSource = readFileSync(new URL('./coursePdfExport.ts', import.meta.url), 'utf8');
 const studentProfileSource = readFileSync(new URL('../components/Students/StudentProfilePage.tsx', import.meta.url), 'utf8');
@@ -117,8 +121,47 @@ test('staff are asked before uploaded exam evidence is attached', () => {
 test('student certification requires acknowledgement of every exported record', () => {
   assert.match(
     exportSource,
-    /chronologicalCourseRecords\.length > 0 &&\s*chronologicalCourseRecords\.every\(\(record\) => record\.studentAck\)/,
+    /chronologicalCourseRecords\.length > 0 &&\s*acknowledgementEvidence\.every\(\(\{ evidence \}\) => evidence\.acknowledged\)/,
   );
+});
+
+test('historical imported acknowledgements remain explicit when no timestamp was imported', () => {
+  const importedRecord = {
+    studentAck: true,
+    studentAckTimestamp: undefined,
+    recordOrigin: 'csv_import',
+  } as const;
+
+  assert.deepEqual(courseRecordAcknowledgementEvidence(importedRecord), {
+    acknowledged: true,
+    acknowledgedAt: undefined,
+    historicalImport: true,
+  });
+  assert.equal(
+    courseRecordAcknowledgementLabel(importedRecord, () => 'unused'),
+    'Acknowledged (historical import; date not recorded)',
+  );
+  assert.match(exportSource, /Student acknowledgement status/);
+  assert.match(exportSource, /status evidence rather than a timestamped portal signature/);
+});
+
+test('timestamped portal acknowledgements retain their recorded date', () => {
+  const acknowledgedAt = new Date('2026-07-31T09:15:00+10:00');
+  const label = courseRecordAcknowledgementLabel({
+    studentAck: true,
+    studentAckTimestamp: acknowledgedAt,
+    recordOrigin: 'portal',
+  }, date => date === acknowledgedAt ? '31 Jul 2026' : 'wrong date');
+
+  assert.equal(label, 'Acknowledged 31 Jul 2026');
+});
+
+test('records that were not acknowledged still say No', () => {
+  assert.equal(courseRecordAcknowledgementLabel({
+    studentAck: false,
+    studentAckTimestamp: undefined,
+    recordOrigin: 'csv_import',
+  }, () => 'unused'), 'No');
 });
 
 test('completion totals resolve legacy lesson codes before counting lessons', () => {
