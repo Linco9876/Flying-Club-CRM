@@ -97,8 +97,73 @@ $devices = if ($BrowserStack) {
 $createdUserIds = New-Object Collections.Generic.List[string]
 $credentials = @{}
 $runId = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$temporaryOriginsConfigured = $false
+$previousSupabaseAccessToken = $env:SUPABASE_ACCESS_TOKEN
 
 try {
+  $existingSecrets = npx supabase secrets list `
+    --project-ref $RecoveryProjectRef `
+    --output json 2>$null |
+    ConvertFrom-Json
+  if ($existingSecrets | Where-Object { $_.name -eq 'ADDITIONAL_ALLOWED_ORIGINS' }) {
+    throw 'The acceptance project already has ADDITIONAL_ALLOWED_ORIGINS configured; refusing to overwrite it.'
+  }
+  $env:SUPABASE_ACCESS_TOKEN = $token
+  npx supabase secrets set `
+    --project-ref $RecoveryProjectRef `
+    'ADDITIONAL_ALLOWED_ORIGINS=http://127.0.0.1:4178,http://bs-local.com:4178' |
+    Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Could not configure the temporary acceptance-test browser origins.'
+  }
+  $temporaryOriginsConfigured = $true
+
+  $corsOrigin = if ($BrowserStack) { 'http://bs-local.com:4178' } else { 'http://127.0.0.1:4178' }
+  $corsReady = $false
+  for ($attempt = 1; $attempt -le 20; $attempt += 1) {
+    try {
+      $preflight = Invoke-WebRequest `
+        -Method Options `
+        -Uri "$projectUrl/functions/v1/financial-provider-status" `
+        -Headers @{
+          Origin = $corsOrigin
+          'Access-Control-Request-Method' = 'POST'
+          'Access-Control-Request-Headers' = 'authorization,apikey,content-type'
+        } `
+        -UseBasicParsing
+      if ($preflight.Headers['Access-Control-Allow-Origin'] -eq $corsOrigin) {
+        $corsReady = $true
+        break
+      }
+    } catch {
+      # Edge Function secret propagation can briefly restart the function.
+    }
+    Start-Sleep -Seconds 2
+  }
+  if (-not $corsReady) {
+    throw 'The temporary acceptance-test browser origins did not become active.'
+  }
+
+  $providerStatus = $null
+  for ($attempt = 1; $attempt -le 20; $attempt += 1) {
+    try {
+      $providerStatus = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$projectUrl/functions/v1/financial-provider-status" `
+        -Headers $serviceHeaders `
+        -Body '{}'
+      break
+    } catch {
+      # Secret changes restart the function fleet. Preflight can recover a few
+      # seconds before database-backed requests are ready on every isolate.
+      Start-Sleep -Seconds 2
+    }
+  }
+  if ($null -eq $providerStatus) {
+    throw 'Financial provider status did not recover after the temporary acceptance configuration change.'
+  }
+  $env:EXPECT_FINANCIAL_DASHBOARD = if ($providerStatus.financeEnabled) { 'true' } else { 'false' }
+
   $existingUsers = Invoke-RestMethod `
     -Uri "$projectUrl/auth/v1/admin/users?page=1&per_page=1000" `
     -Headers $serviceHeaders
@@ -213,4 +278,26 @@ try {
   Remove-Item Env:ACCEPTANCE_USERS_JSON -ErrorAction SilentlyContinue
   Remove-Item Env:VITE_SUPABASE_ANON_KEY -ErrorAction SilentlyContinue
   Remove-Item Env:VITE_SUPABASE_URL -ErrorAction SilentlyContinue
+  Remove-Item Env:EXPECT_FINANCIAL_DASHBOARD -ErrorAction SilentlyContinue
+  $originCleanupSucceeded = -not $temporaryOriginsConfigured
+  if ($temporaryOriginsConfigured) {
+    for ($attempt = 1; $attempt -le 5; $attempt += 1) {
+      'y' | npx supabase secrets unset ADDITIONAL_ALLOWED_ORIGINS `
+        --project-ref $RecoveryProjectRef 2>$null |
+        Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        $originCleanupSucceeded = $true
+        break
+      }
+      Start-Sleep -Seconds ([Math]::Min(10, $attempt * 2))
+    }
+  }
+  if ($previousSupabaseAccessToken) {
+    $env:SUPABASE_ACCESS_TOKEN = $previousSupabaseAccessToken
+  } else {
+    Remove-Item Env:SUPABASE_ACCESS_TOKEN -ErrorAction SilentlyContinue
+  }
+  if (-not $originCleanupSucceeded) {
+    throw 'Acceptance completed, but the temporary browser-origin secret could not be removed after five attempts.'
+  }
 }

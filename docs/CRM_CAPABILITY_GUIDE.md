@@ -348,6 +348,17 @@ The `/kiosk` calendar uses a dedicated high-entropy kiosk key instead of an emai
 
 Local full-database reset requires Docker Desktop. If Docker is unavailable, run the migration first in a Supabase staging branch and exercise the checklist above before production rollout.
 
+## Australian hosting migration (3 August 2026)
+
+- The primary Supabase project is hosted in Sydney (`ap-southeast-2`). Cloudflare Pages remains a global edge frontend; CRM data, Auth identities and Storage objects use the Sydney Supabase project.
+- The controlled migration restores the `public`, `private`, `auth` and `storage` schemas, preserves user UUIDs and password hashes, copies every Storage object and verifies each file with SHA-256. All 148 public-table counts must match before cutover.
+- Auth redirects allow only `https://portal.bendigoflyingclub.com.au/**`; the retired Bolt hostname is not carried into the Australian project. Existing custom SMTP and application email delivery are preserved without placing provider secrets in source control.
+- Production deployment reads the immutable project reference from the protected `SUPABASE_PROJECT_REF` GitHub secret. Database migrations, Edge Functions and the frontend therefore cannot silently target different Supabase tenants.
+- Recoverable Edge Function secrets are re-applied through the manually approved **Configure Supabase runtime secrets** workflow. Stripe and Xero credentials are deliberately excluded: each provider remains independently disconnected until an administrator completes its approved live connection process.
+- The normally dormant Sydney recovery project is started automatically for the monthly restore drill and paused again afterward. The old Singapore project is retained only as a short rollback point after cutover, then paused rather than deleted.
+- Authenticated acceptance covers administrator, CFI, senior-instructor, instructor, pilot and student navigation on iPhone and Android. The test runner permits its two exact local origins only for the duration of a run, uses disposable users and removes those origins and accounts in `finally` cleanup.
+- Account deletion now permits nested cleanup of role-mandated supervision records and preserves maintenance audit history by nulling the deleted actor reference. Direct attempts to remove a mandatory supervision rule remain blocked.
+
 ## Platform hardening and extensibility release (23 July 2026)
 
 ### Recovery
