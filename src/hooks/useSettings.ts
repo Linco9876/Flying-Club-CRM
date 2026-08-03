@@ -61,6 +61,44 @@ export interface BookingRulesSettings {
   fatigue_block_on_breach: boolean;
 }
 
+let bookingRulesSettingsRequest: Promise<BookingRulesSettings | null> | null = null;
+let lastBookingRulesErrorToastAt = 0;
+
+const requestBookingRulesSettings = () => {
+  if (bookingRulesSettingsRequest) return bookingRulesSettingsRequest;
+
+  const request = (async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { data, error } = await supabase
+        .from('booking_rules_settings')
+        .select('*')
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!error) return data as BookingRulesSettings | null;
+      lastError = error;
+      if (attempt === 0) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 300));
+      }
+    }
+    throw lastError;
+  })();
+
+  bookingRulesSettingsRequest = request;
+  void request.then(
+    () => {
+      if (bookingRulesSettingsRequest === request) bookingRulesSettingsRequest = null;
+    },
+    () => {
+      if (bookingRulesSettingsRequest === request) bookingRulesSettingsRequest = null;
+    },
+  );
+  return request;
+};
+
 export interface NotificationSettings {
   id: string;
   email_notifications_enabled: boolean;
@@ -445,16 +483,16 @@ export const useBookingRulesSettings = () => {
 
   const fetchSettings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('booking_rules_settings')
-        .select('*')
-        .maybeSingle();
-
-      if (error) throw error;
+      const data = await requestBookingRulesSettings();
       setSettings(data);
+      setError(null);
     } catch (err: any) {
-      setError(err.message);
-      toast.error('Failed to load booking rules settings');
+      setError(err?.message || 'Booking rules could not be loaded');
+      const now = Date.now();
+      if (now - lastBookingRulesErrorToastAt > 10_000) {
+        lastBookingRulesErrorToastAt = now;
+        toast.error('Booking rules could not be loaded. Please refresh and try again.');
+      }
     } finally {
       setLoading(false);
     }
