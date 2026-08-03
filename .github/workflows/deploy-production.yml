@@ -55,12 +55,12 @@ jobs:
       - name: Preview database migration plan
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: npx --yes supabase@latest db push --db-url "$SUPABASE_DB_URL" --dry-run
+        run: npx --yes supabase@latest db push --db-url "$SUPABASE_DB_URL" --dry-run --include-all
 
       - name: Apply database migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: npx --yes supabase@latest db push --db-url "$SUPABASE_DB_URL" --yes
+        run: npx --yes supabase@latest db push --db-url "$SUPABASE_DB_URL" --yes --include-all
 
       - name: Deploy every Edge Function
         env:
