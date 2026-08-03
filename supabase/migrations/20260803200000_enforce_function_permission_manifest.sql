@@ -139,7 +139,7 @@ insert into private.function_permission_manifest(signature,function_name,classif
   ('public.queue_xero_voucher_sync_from_flight_log()','queue_xero_voucher_sync_from_flight_log','trigger_internal',ARRAY[]::text[],true,true,'Invoked only by a database trigger; client EXECUTE is unnecessary.'),
   ('public.queue_xero_voucher_sync_from_voucher()','queue_xero_voucher_sync_from_voucher','trigger_internal',ARRAY[]::text[],true,true,'Invoked only by a database trigger; client EXECUTE is unnecessary.'),
   ('public.reconcile_aircraft_maintenance_status(p_aircraft_id uuid, p_cause text)','reconcile_aircraft_maintenance_status','service_worker',ARRAY['service_role']::text[],true,true,'Background, privileged or internal helper not exposed to browser roles.'),
-  ('public.reconcile_automatic_duty_periods(p_now timestamp with time zone)','reconcile_automatic_duty_periods','authenticated_self_service',ARRAY['authenticated','service_role']::text[],true,true,'Portal RPC or authenticated support helper with internal ownership/role checks.'),
+  ('public.reconcile_automatic_duty_periods(p_now timestamp with time zone)','reconcile_automatic_duty_periods','service_worker',ARRAY['service_role']::text[],true,true,'Club-wide scheduler with a caller-supplied reconciliation time; only the trusted service worker may execute it.'),
   ('public.reconcile_flight_review_endorsements()','reconcile_flight_review_endorsements','staff_aal2',ARRAY['authenticated','service_role']::text[],true,true,'Staff operation; the function must enforce role and AAL2 internally.'),
   ('public.reconcile_role_based_supervision_requirements()','reconcile_role_based_supervision_requirements','service_worker',ARRAY['service_role']::text[],true,true,'Background, privileged or internal helper not exposed to browser roles.'),
   ('public.record_booking_duty_and_supervision()','record_booking_duty_and_supervision','trigger_internal',ARRAY[]::text[],true,true,'Invoked only by a database trigger; client EXECUTE is unnecessary.'),
@@ -218,12 +218,27 @@ revoke all on table private.function_permission_manifest from public,anon,authen
 comment on table private.function_permission_manifest is 'Versioned source of truth for public-schema function execution privileges.';
 
 create or replace function private.assert_function_permission_manifest() returns void language plpgsql security definer set search_path=pg_catalog,private as $assert$
-declare missing text;unexpected text;
+declare missing text;unexpected text;permission_record record;actual_execute boolean;
 begin
  select string_agg(l.signature,', ' order by l.signature) into missing from(select format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) signature from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')l left join private.function_permission_manifest m using(signature) where m.signature is null;
  select string_agg(m.signature,', ' order by m.signature) into unexpected from private.function_permission_manifest m left join(select format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) signature from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')l using(signature) where l.signature is null;
  if missing is not null or unexpected is not null then raise exception 'Function permission manifest drift. Missing: %. Unexpected: %.',coalesce(missing,'none'),coalesce(unexpected,'none');end if;
+ for permission_record in
+  select m.signature,expected.role_name,expected.should_execute
+  from private.function_permission_manifest m
+  cross join lateral(values
+   ('anon'::text,'anon'=any(m.allowed_roles)),
+   ('authenticated'::text,'authenticated'=any(m.allowed_roles)),
+   ('service_role'::text,'service_role'=any(m.allowed_roles))
+  )expected(role_name,should_execute)
+ loop
+  execute format('select has_function_privilege(%L,%L,%L)',permission_record.role_name,permission_record.signature,'EXECUTE') into actual_execute;
+  if actual_execute is distinct from permission_record.should_execute then
+   raise exception 'Function permission grant drift: % role % expected %, found %',permission_record.signature,permission_record.role_name,permission_record.should_execute,actual_execute;
+  end if;
+ end loop;
 end
 $assert$;
 revoke all on function private.assert_function_permission_manifest() from public,anon,authenticated,service_role;
+select private.assert_function_permission_manifest();
 

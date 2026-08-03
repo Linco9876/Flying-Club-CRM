@@ -1323,14 +1323,13 @@
     {
       "signature": "public.reconcile_automatic_duty_periods(p_now timestamp with time zone)",
       "name": "reconcile_automatic_duty_periods",
-      "classification": "authenticated_self_service",
+      "classification": "service_worker",
       "allowed_roles": [
-        "authenticated",
         "service_role"
       ],
       "security_definer": true,
       "fixed_search_path": true,
-      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+      "rationale": "Club-wide scheduler with a caller-supplied reconciliation time; only the trusted service worker may execute it."
     },
     {
       "signature": "public.reconcile_flight_review_endorsements()",
