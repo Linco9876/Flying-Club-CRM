@@ -224,15 +224,19 @@ begin
  select string_agg(m.signature,', ' order by m.signature) into unexpected from private.function_permission_manifest m left join(select format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid)) signature from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public')l using(signature) where l.signature is null;
  if missing is not null or unexpected is not null then raise exception 'Function permission manifest drift. Missing: %. Unexpected: %.',coalesce(missing,'none'),coalesce(unexpected,'none');end if;
  for permission_record in
-  select m.signature,expected.role_name,expected.should_execute
+  select m.signature,live.function_oid,expected.role_name,expected.should_execute
   from private.function_permission_manifest m
+  join(
+   select p.oid function_oid,format('%I.%I(%s)',n.nspname,p.proname,pg_get_function_identity_arguments(p.oid))signature
+   from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+  )live using(signature)
   cross join lateral(values
    ('anon'::text,'anon'=any(m.allowed_roles)),
    ('authenticated'::text,'authenticated'=any(m.allowed_roles)),
    ('service_role'::text,'service_role'=any(m.allowed_roles))
-  )expected(role_name,should_execute)
+ )expected(role_name,should_execute)
  loop
-  execute format('select has_function_privilege(%L,%L,%L)',permission_record.role_name,permission_record.signature,'EXECUTE') into actual_execute;
+  select pg_catalog.has_function_privilege(permission_record.role_name,permission_record.function_oid,'EXECUTE') into actual_execute;
   if actual_execute is distinct from permission_record.should_execute then
    raise exception 'Function permission grant drift: % role % expected %, found %',permission_record.signature,permission_record.role_name,permission_record.should_execute,actual_execute;
   end if;
