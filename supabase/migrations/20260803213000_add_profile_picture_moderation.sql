@@ -35,7 +35,7 @@ end;
 $$;
 
 revoke all on function public.guard_users_self_service_update() from public, anon, authenticated;
-grant execute on function public.guard_users_self_service_update() to service_role;
+revoke all on function public.guard_users_self_service_update() from service_role;
 
 drop policy if exists "Admins can delete any avatar" on storage.objects;
 create policy "Admins can delete any avatar"

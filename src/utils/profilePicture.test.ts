@@ -65,4 +65,6 @@ test('database moderation requires an MFA-verified admin and records the change'
   assert.match(moderationMigration, /audit_user_profile_picture_updates[\s\S]+private\.audit_profile_picture_change\(\)/i);
   assert.match(moderationMigration, /jsonb_build_object\('avatar_url', old\.avatar_url\)/i);
   assert.match(moderationMigration, /select private\.assert_function_permission_manifest\(\)/i);
+  assert.match(moderationMigration, /revoke all on function public\.guard_users_self_service_update\(\) from service_role/i);
+  assert.doesNotMatch(moderationMigration, /grant execute on function public\.guard_users_self_service_update\(\) to service_role/i);
 });
