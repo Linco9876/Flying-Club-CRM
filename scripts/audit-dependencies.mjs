@@ -8,9 +8,10 @@ const npmCli = process.env.npm_execpath;
 const temporaryExceptions = new Map([
   ['https://github.com/advisories/GHSA-qwww-vcr4-c8h2', {
     packages: new Set(['react-router', 'react-router-dom']),
-    versions: new Set(['7.18.1']),
+    versions: new Set(['7.18.2']),
+    reviewedOn: '2026-08-03',
     expiresOn: '2026-08-15',
-    reason: 'The advisory applies only to unstable RSC APIs. This client-only Vite SPA does not enable or import React Router RSC.',
+    reason: 'The React Router maintainer advisory identifies >=7.18.2 as patched, while npm advisory metadata still flags 7.18.2. The portal also does not use the affected unstable RSC APIs. Recheck npm metadata before expiry.',
   }],
 ]);
 
@@ -87,10 +88,10 @@ const runAudit = (directory, label, allowExceptions) => {
   }
 
   const acceptedUrls = new Set(accepted.flatMap(item => item.urls));
-  console.log(`${label}: 0 actionable vulnerabilities; ${acceptedUrls.size} time-limited, non-applicable advisory exception.`);
+  console.log(`${label}: 0 actionable vulnerabilities; ${acceptedUrls.size} time-limited, reviewed advisory exception.`);
   for (const url of acceptedUrls) {
     const exception = temporaryExceptions.get(url);
-    console.log(`- ${url} (expires ${exception.expiresOn}): ${exception.reason}`);
+    console.log(`- ${url} (reviewed ${exception.reviewedOn}; expires ${exception.expiresOn}): ${exception.reason}`);
   }
 };
 
