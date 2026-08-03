@@ -103,22 +103,22 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "^1.62.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "autoprefixer": "^10.4.18",
     "browserstack-local": "^1.5.13",
     "eslint": "^10.8.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
-    "globals": "^17.7.0",
-    "postcss": "^8.4.35",
+    "globals": "^17.8.0",
+    "postcss": "^8.5.25",
     "selenium-webdriver": "^4.46.0",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5.5.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.65.0",
-    "vite": "^8.1.5"
+    "vite": "^8.2.0"
   }
 }
