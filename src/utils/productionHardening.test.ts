@@ -61,6 +61,8 @@ test('recovery automation is non-interactive and cannot select production as its
   assert.match(projectStateScript, /request_transition restore/);
   assert.match(projectStateScript, /request_transition pause/);
   assert.match(projectStateScript, /status_code" =~ \^2/);
+  assert.match(projectStateScript, /project status was temporarily unavailable/);
+  assert.match(projectStateScript, /transient transport failure/);
 
   const acceptance = read('../../.github/workflows/quality-gates.yml');
   const sharedRecoveryLock = /group: isolated-supabase-recovery-project/g;

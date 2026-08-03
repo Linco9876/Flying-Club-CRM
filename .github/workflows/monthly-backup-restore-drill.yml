@@ -82,15 +82,7 @@ jobs:
           set -euo pipefail
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           test -n "${SUPABASE_RECOVERY_PROJECT_REF:-}"
-          status="$(curl --fail --silent --show-error \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF" \
-            | jq -r '.status')"
-          if [ "$status" = "ACTIVE_HEALTHY" ]; then
-            echo "RECOVERY_STARTED_BY_WORKFLOW=false" >> "$GITHUB_ENV"
-          else
-            echo "RECOVERY_STARTED_BY_WORKFLOW=true" >> "$GITHUB_ENV"
-          fi
+          echo "RECOVERY_STARTED_BY_WORKFLOW=true" >> "$GITHUB_ENV"
           bash ./scripts/set-supabase-project-state.sh \
             active "$SUPABASE_RECOVERY_PROJECT_REF"
 

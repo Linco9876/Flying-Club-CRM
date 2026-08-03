@@ -35,13 +35,17 @@ request_transition() {
   local response_file
   local status_code
   response_file="$(mktemp)"
-  status_code="$(curl --silent --show-error \
-    --output "$response_file" \
-    --write-out '%{http_code}' \
-    --request POST \
-    --header "Authorization: Bearer $access_token" \
-    --header "Content-Type: application/json" \
-    "$project_url/$action")"
+  if ! status_code="$(curl --silent --show-error \
+      --output "$response_file" \
+      --write-out '%{http_code}' \
+      --request POST \
+      --header "Authorization: Bearer $access_token" \
+      --header "Content-Type: application/json" \
+      "$project_url/$action")"; then
+    rm -f "$response_file"
+    echo "Supabase $action request had a transient transport failure; retrying."
+    return 0
+  fi
   rm -f "$response_file"
   if [[ "$status_code" =~ ^2 ]]; then
     echo "Supabase $action request accepted."
@@ -55,7 +59,11 @@ request_transition() {
 }
 
 for ((attempt = 1; attempt <= maximum_attempts; attempt += 1)); do
-  status="$(get_status)"
+  if ! status="$(get_status)"; then
+    echo "Supabase project status was temporarily unavailable; retrying (attempt $attempt of $maximum_attempts)."
+    sleep 10
+    continue
+  fi
 
   if [[ "$desired_state" == "active" && "$status" == "ACTIVE_HEALTHY" ]]; then
     echo "Supabase project is active and healthy."
