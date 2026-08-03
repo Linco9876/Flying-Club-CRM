@@ -58,6 +58,17 @@ test('recovery automation is non-interactive and cannot select production as its
   );
 
   const acceptance = read('../../.github/workflows/quality-gates.yml');
+  const sharedRecoveryLock = /group: isolated-supabase-recovery-project/g;
+  assert.equal(
+    (recovery.match(sharedRecoveryLock) ?? []).length,
+    1,
+    'the restore job must hold the shared recovery-project lock',
+  );
+  assert.equal(
+    (acceptance.match(sharedRecoveryLock) ?? []).length,
+    1,
+    'the physical-device job must hold the shared recovery-project lock',
+  );
   assert.match(acceptance, /SUPABASE_PROJECT_REF: hohmmwvtisnuuoumipjq/);
   assert.match(acceptance, /Start the isolated recovery project when needed/);
   assert.match(
