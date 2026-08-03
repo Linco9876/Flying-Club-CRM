@@ -18,7 +18,7 @@ jobs:
       - name: Issue renewals and refresh membership invoices in Xero
         env:
           ENABLE_XERO_SYNC_WORKER: ${{ vars.ENABLE_XERO_SYNC_WORKER }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
           INTEGRATION_WORKER_SECRET: ${{ secrets.INTEGRATION_WORKER_SECRET }}
         run: |
           set -euo pipefail

@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Fetch and quarantine Xero records
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
           INTEGRATION_WORKER_SECRET: ${{ secrets.INTEGRATION_WORKER_SECRET }}
         run: |
           set -euo pipefail

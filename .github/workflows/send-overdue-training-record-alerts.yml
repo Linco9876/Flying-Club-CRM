@@ -15,8 +15,8 @@ jobs:
       - name: Trigger overdue training record reminders
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_AU_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
 

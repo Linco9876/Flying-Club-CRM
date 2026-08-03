@@ -16,7 +16,7 @@ jobs:
       - name: Trigger due voucher email delivery
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
           TRIAL_VOUCHER_CRON_SECRET: ${{ secrets.TRIAL_VOUCHER_CRON_SECRET }}
         run: |
           set -euo pipefail

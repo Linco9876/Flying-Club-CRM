@@ -50,7 +50,7 @@ export const LoginScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView role="main" style={styles.safe}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.brandMark}><Text style={styles.plane}>✈</Text></View>
         <Text style={styles.eyebrow}>BENDIGO FLYING CLUB</Text>

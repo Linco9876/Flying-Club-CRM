@@ -30,7 +30,7 @@ const AppContent = () => {
     <SafeAreaProvider>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       {loading ? (
-        <View style={styles.loading}><ActivityIndicator size="large" color={colours.blue} /></View>
+        <View role="main" style={styles.loading}><ActivityIndicator size="large" color={colours.blue} /></View>
       ) : session?.user ? (
         <DutyScreen user={session.user} />
       ) : (

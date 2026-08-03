@@ -72,8 +72,8 @@ jobs:
 
       - name: Inspect or restore selected duty records
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_AU_SERVICE_ROLE_KEY }}
           RESTORE_CONFIRMATION: ${{ inputs.confirmation }}
           RECOVERY_MODE: ${{ inputs.mode }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}

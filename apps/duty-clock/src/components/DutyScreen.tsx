@@ -47,12 +47,12 @@ export const DutyScreen = ({ user }: Props) => {
   };
 
   if (loading) {
-    return <SafeAreaView style={styles.loading}><ActivityIndicator size="large" color={colours.blue} /><Text style={styles.loadingText}>Loading duty status…</Text></SafeAreaView>;
+    return <SafeAreaView role="main" style={styles.loading}><ActivityIndicator size="large" color={colours.blue} /><Text style={styles.loadingText}>Loading duty status…</Text></SafeAreaView>;
   }
 
   if (!context.allowed) {
     return (
-      <SafeAreaView style={styles.loading}>
+      <SafeAreaView role="main" style={styles.loading}>
         <View style={styles.deniedIcon}><Text style={styles.deniedIconText}>!</Text></View>
         <Text style={styles.deniedTitle}>Instructor access required</Text>
         <Text style={styles.deniedText}>Your account is signed in, but it is not assigned an instructor, senior instructor or administrator role.</Text>
@@ -65,7 +65,7 @@ export const DutyScreen = ({ user }: Props) => {
   const breakElapsed = context.activeBreak ? now - new Date(context.activeBreak.startedAt).getTime() : 0;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+    <SafeAreaView role="main" style={styles.safe} edges={['top', 'left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} tintColor={colours.blue} />}

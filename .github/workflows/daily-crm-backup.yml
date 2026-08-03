@@ -30,8 +30,8 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/crm-backup"
           cat > "$RUNNER_TEMP/backup-crm.env" <<'EOF'
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL=${{ secrets.SUPABASE_AU_URL }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_AU_SERVICE_ROLE_KEY }}
           BACKUP_ROOT=${{ runner.temp }}/crm-backup
           RETENTION_DAYS=45
           PAGE_SIZE=1000
