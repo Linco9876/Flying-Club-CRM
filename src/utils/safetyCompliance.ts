@@ -1,6 +1,7 @@
 import { Student, UserRole } from '../types';
 import { SafetyComplianceSettings } from '../hooks/useSafetySettings';
 import { FlightLog } from '../hooks/useFlightLogs';
+import { getFlightReviewDueDate } from './pilotReviewCurrency';
 
 export type SafetyConcernType = 'recency' | 'medical' | 'licence' | 'bfr';
 export type SafetyConcernSeverity = 'warning' | 'lapsed' | 'blocked';
@@ -120,10 +121,7 @@ export const isStudentOnly = (person: Pick<Student, 'role' | 'roles'>) => {
 };
 
 export const getBfrDueDate = (person: Pick<Student, 'lastFlightReview'>) => {
-  if (!person.lastFlightReview) return null;
-  const due = new Date(person.lastFlightReview);
-  due.setFullYear(due.getFullYear() + 2);
-  return due;
+  return getFlightReviewDueDate(person.lastFlightReview);
 };
 
 export const buildSafetyComplianceSummary = (

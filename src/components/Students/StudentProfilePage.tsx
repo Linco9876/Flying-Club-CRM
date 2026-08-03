@@ -56,6 +56,7 @@ import {
   normaliseCredentialOption,
 } from '../../utils/credentialDropdowns';
 import { courseExamEvidenceForExport } from '../../utils/coursePdfOptions';
+import { getCourseAwardDate } from '../../utils/pilotReviewCurrency';
 
 interface StudentInfoForm {
   name: string;
@@ -5649,7 +5650,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
 
     setGrantingEndorsementCourseIds((current) => new Set(current).add(course.id));
     try {
-      const obtained = new Date();
+      const obtained = getCourseAwardDate(trainingRecords, course.id);
       if (needsEndorsement && endorsementType) {
         const expiryDate = course.completionEndorsementExpiryMonths ? new Date(obtained.getFullYear(), obtained.getMonth() + course.completionEndorsementExpiryMonths, obtained.getDate()) : null;
         const { error } = await supabase.from('endorsements').insert({ student_id: student.id, type: endorsementType, date_obtained: obtained.toISOString().slice(0, 10), expiry_date: expiryDate?.toISOString().slice(0, 10) || null, instructor_id: user.id, is_active: true });
@@ -5672,7 +5673,7 @@ const CourseProgressTab: React.FC<CourseProgressTabProps> = ({
         return next;
       });
     }
-  }, [grantingEndorsementCourseIds, refetchStudents, student, user]);
+  }, [grantingEndorsementCourseIds, refetchStudents, student, trainingRecords, user]);
 
   useEffect(() => {
     if (!student || !user || !hasAnyRole(user, ['admin', 'instructor', 'senior_instructor'])) return;

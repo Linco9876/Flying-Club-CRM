@@ -1294,6 +1294,13 @@ export const OutstandingRecordsTab: React.FC = () => {
     }
     if (
       selectedLessonIsFlightTest
+      && form.flightReviewResult === 'not_assessed'
+    ) {
+      toast.error('Select Pass or Further training required for this flight test');
+      return;
+    }
+    if (
+      selectedLessonIsFlightTest
       && requiresFormalReviewFindings({ trainingResult: form.flightReviewResult })
       && !form.flightReviewNotes.trim()
     ) {
@@ -2679,7 +2686,7 @@ export const OutstandingRecordsTab: React.FC = () => {
                           >
                             <option value="not_assessed">Not assessed</option>
                             <option value="pass">Pass</option>
-                            <option value="fail">Fail</option>
+                            <option value="fail">Further training required</option>
                           </select>
                         </label>
                         <label className="block sm:col-span-2">

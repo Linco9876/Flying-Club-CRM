@@ -384,7 +384,10 @@ begin
   order by created_at
   limit 1;
   if v_course_id is null then
-    raise exception 'RAAus Ab-Initio training course was not found';
+    -- The production course is reference data, not part of the schema
+    -- baseline. A clean recovery database can therefore legitimately omit it.
+    raise notice 'RAAus Ab-Initio training course was not found; skipping learning-program seed';
+    return;
   end if;
 
   for v_item in

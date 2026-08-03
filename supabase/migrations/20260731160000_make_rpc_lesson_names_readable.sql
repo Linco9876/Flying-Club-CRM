@@ -14,7 +14,8 @@ begin
   limit 1;
 
   if v_course_id is null then
-    raise exception 'RAAus Ab-Initio training course was not found';
+    raise notice 'RAAus Ab-Initio training course was not found; skipping readable-name update';
+    return;
   end if;
 
   for v_mapping in
