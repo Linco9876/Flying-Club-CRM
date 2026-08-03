@@ -4,7 +4,9 @@ import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherP
 import { fetchUserPrepaidLedgerBalance } from '../lib/prepaidLedger';
 import { useAuth } from '../context/AuthContext';
 import { usePageLoadState } from '../context/PageLoadContext';
+import { useFinancialProviders } from '../context/financialProviderState';
 import { useLatestEffect } from './useLatestEffect';
+import { shouldCaptureFinancialDetails } from '../utils/financialProviderPresentation';
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 const roundCurrency = (value: number) => Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
@@ -37,6 +39,7 @@ export interface FlightLog {
   flight_type_id?: string;
   calculated_cost?: number;
   payment_status?: 'free' | 'pending' | 'paid';
+  financial_capture_suppressed?: boolean;
   observations?: string;
   hobbs_start?: number;
   hobbs_end?: number;
@@ -160,6 +163,8 @@ interface UseFlightLogsOptions {
 
 export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
   const { user: currentUser } = useAuth();
+  const { capabilities: financialProviders } = useFinancialProviders();
+  const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
   const participateInPageLoad = options?.participateInPageLoad ?? true;
   const [flightLogs, setFlightLogs] = useState<FlightLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -436,11 +441,13 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       };
       const prepaidPaymentAcknowledged = Boolean(normalisedLogData.prepaid_payment_acknowledged);
       delete (normalisedLogData as any).prepaid_payment_acknowledged;
-      const requestedCostOverride = typeof normalisedLogData.calculated_cost === 'number' && Number.isFinite(normalisedLogData.calculated_cost)
+      const requestedCostOverride = financialCaptureEnabled
+        && typeof normalisedLogData.calculated_cost === 'number'
+        && Number.isFinite(normalisedLogData.calculated_cost)
         ? roundCurrency(normalisedLogData.calculated_cost)
         : undefined;
 
-      const { data: rateData } = normalisedLogData.flight_type_id
+      const { data: rateData } = financialCaptureEnabled && normalisedLogData.flight_type_id
         ? await supabase
           .from('aircraft_rates')
           .select('*, payment_methods(id, name, system_key), flight_types(forced_payment_method_id)')
@@ -481,14 +488,17 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
           canOverrideCost = profile?.role === 'admin';
         }
       }
-      const calculatedCost = requestedCostOverride !== undefined && canOverrideCost
-        ? requestedCostOverride
-        : rateCalculatedCost;
-      const noCharge = isNoChargeRate(selectedRate?.chargeType);
+      const calculatedCost = financialCaptureEnabled
+        ? requestedCostOverride !== undefined && canOverrideCost
+          ? requestedCostOverride
+          : rateCalculatedCost
+        : null;
+      const billableAmount = calculatedCost ?? 0;
+      const noCharge = financialCaptureEnabled && isNoChargeRate(selectedRate?.chargeType);
       let paymentMethodId = rateData?.default_payment_method_id ?? rateData?.flight_types?.forced_payment_method_id ?? null;
-      const voucherPayment = isVoucherPaymentMethod(normalisedLogData.payment_type);
-      const prepaidPayment = isPrepaidPaymentMethod(normalisedLogData.payment_type);
-      if (!paymentMethodId && normalisedLogData.payment_type) {
+      const voucherPayment = financialCaptureEnabled && isVoucherPaymentMethod(normalisedLogData.payment_type);
+      const prepaidPayment = financialCaptureEnabled && isPrepaidPaymentMethod(normalisedLogData.payment_type);
+      if (financialCaptureEnabled && !paymentMethodId && normalisedLogData.payment_type) {
         const query = supabase
           .from('payment_methods')
           .select('id, system_key, active')
@@ -504,14 +514,14 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       const selectedPaymentMethodName = String(rateData?.payment_methods?.name || normalisedLogData.payment_type || '').toLowerCase();
       const shouldCreateStripePaymentLink = !voucherPayment
         && !prepaidPayment
-        && calculatedCost > 0
+        && billableAmount > 0
         && (
           selectedPaymentMethodSystemKey === 'stripe_card'
           || selectedPaymentMethodSystemKey === 'stripe'
           || selectedPaymentMethodName.includes('stripe')
         );
       let prepaidBalanceAfter: number | null = null;
-      if (!voucherPayment && prepaidPayment && calculatedCost > 0 && normalisedLogData.student_id) {
+      if (financialCaptureEnabled && !voucherPayment && prepaidPayment && billableAmount > 0 && normalisedLogData.student_id) {
         const ledger = await fetchUserPrepaidLedgerBalance(normalisedLogData.student_id);
         const availableCredit = Number(ledger.verifiedBalance ?? 0);
         const topUpIncrement = 1000;
@@ -521,17 +531,19 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         if (availableCredit <= 0.005 && !prepaidPaymentAcknowledged) {
           throw new Error(`Prepaid is locked until the member has positive Xero credit. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
-        if (availableCredit + 0.005 < calculatedCost && !prepaidPaymentAcknowledged) {
-          const requiredTopUp = Math.max(topUpIncrement, Math.ceil((calculatedCost - availableCredit) / topUpIncrement) * topUpIncrement);
+        if (availableCredit + 0.005 < billableAmount && !prepaidPaymentAcknowledged) {
+          const requiredTopUp = Math.max(topUpIncrement, Math.ceil((billableAmount - availableCredit) / topUpIncrement) * topUpIncrement);
           throw new Error(`This member only has $${availableCredit.toFixed(2)} of Xero credit available, so prepaid cannot cover this flight. Add a $${requiredTopUp.toFixed(2)} top-up first. Top-ups can only be made in $${topUpIncrement.toFixed(2)} increments.`);
         }
-        prepaidBalanceAfter = Math.round((availableCredit - calculatedCost + Number.EPSILON) * 100) / 100;
+        prepaidBalanceAfter = Math.round((availableCredit - billableAmount + Number.EPSILON) * 100) / 100;
       }
-      const initialPaymentStatus: 'free' | 'pending' | 'paid' = voucherPayment || prepaidPayment
-        ? 'paid'
-        : noCharge || calculatedCost <= 0
-          ? 'free'
-          : 'pending';
+      const initialPaymentStatus: 'free' | 'pending' | 'paid' | null = financialCaptureEnabled
+        ? voucherPayment || prepaidPayment
+          ? 'paid'
+          : noCharge || billableAmount <= 0
+            ? 'free'
+            : 'pending'
+        : null;
 
       const { data, error: insertError } = await supabase
         .from('flight_logs')
@@ -540,9 +552,13 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
           duration: normalisedLogData.flight_duration,
           tach_start: normalisedLogData.start_tach,
           tach_end: normalisedLogData.end_tach,
+          flight_type_id: financialCaptureEnabled ? normalisedLogData.flight_type_id || null : null,
+          payment_type: financialCaptureEnabled ? normalisedLogData.payment_type || null : null,
           total_cost: calculatedCost,
           calculated_cost: calculatedCost,
           payment_status: initialPaymentStatus,
+          xero_sync_status: financialCaptureEnabled ? 'not_synced' : null,
+          financial_capture_suppressed: !financialCaptureEnabled,
           created_by: user.id,
         })
         .select()
@@ -550,13 +566,13 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
 
       if (insertError) throw insertError;
 
-      if (!voucherPayment && initialPaymentStatus === 'paid' && calculatedCost > 0 && normalisedLogData.student_id) {
+      if (financialCaptureEnabled && !voucherPayment && initialPaymentStatus === 'paid' && billableAmount > 0 && normalisedLogData.student_id) {
         const { error: txError } = await supabase
           .from('account_transactions')
           .insert({
             user_id: normalisedLogData.student_id,
             type: 'flight_charge',
-            amount: calculatedCost,
+            amount: billableAmount,
             description: `Flight charge - ${new Date(normalisedLogData.start_time).toLocaleDateString('en-AU')}`,
             flight_log_id: data.id,
             payment_method_id: paymentMethodId,
@@ -623,7 +639,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
       }
 
       let paymentLink: FlightPaymentLinkResult | null = null;
-      if (shouldCreateStripePaymentLink) {
+      if (financialCaptureEnabled && shouldCreateStripePaymentLink) {
         try {
           const { data: paymentLinkData, error: paymentLinkError } = await supabase.functions.invoke('create-flight-payment-checkout', {
             body: {
@@ -650,7 +666,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
         }
       }
 
-      if (!voucherPayment && calculatedCost > 0) {
+      if (financialCaptureEnabled && !voucherPayment && billableAmount > 0) {
         const synced = await syncXeroInvoiceIfAvailable(data.id);
         if (synced && prepaidPayment) {
           await applyFlightPaymentsIfNeeded(data.id);
@@ -706,6 +722,11 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
             solo_time: Number(updatedLog.solo_time ?? 0),
           });
         }
+      }
+
+      if (!financialCaptureEnabled) {
+        await fetchFlightLogs();
+        return { error: null };
       }
 
       const { data: xeroCheckLog, error: xeroCheckError } = await supabase

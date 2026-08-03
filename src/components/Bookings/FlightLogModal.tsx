@@ -15,6 +15,8 @@ import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
 import { useLatestEffect } from '../../hooks/useLatestEffect';
 import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
+import { useFinancialProviders } from '../../context/financialProviderState';
+import { shouldCaptureFinancialDetails } from '../../utils/financialProviderPresentation';
 
 interface Booking {
   id: string;
@@ -91,6 +93,8 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const { users } = useUsers();
   const { flightTypes, paymentMethods } = useBillingSettings();
   const { rates: aircraftRates } = useAircraftRates(booking.aircraftId);
+  const { capabilities: financialProviders, loading: financialProvidersLoading } = useFinancialProviders();
+  const financialCaptureEnabled = shouldCaptureFinancialDetails(financialProviders);
 
   const aircraft = aircraftList.find((a) => a.id === booking.aircraftId);
   const currentTach = aircraft?.totalHours || 0;
@@ -206,7 +210,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     passengerCount: formData.passengers,
     startTime: formData.start_time,
   });
-  const showAdminChargeOverride = mode === 'create' && isAdmin && !!formData.flight_type_id && formData.flight_duration !== '' && !isVoucherBooking;
+  const showAdminChargeOverride = financialCaptureEnabled && mode === 'create' && isAdmin && !!formData.flight_type_id && formData.flight_duration !== '' && !isVoucherBooking;
   const finalCharge = showAdminChargeOverride && adminChargeOverride !== ''
     ? Number(adminChargeOverride)
     : estimatedCost;
@@ -291,6 +295,15 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
 
   // Re-derive the Payment Method when billing data loads or the Payment Type changes.
   useLatestEffect(() => {
+    if (financialProvidersLoading) return;
+    if (!financialCaptureEnabled) {
+      if (mode === 'create') {
+        setFormData(prev => prev.flight_type_id === '' && prev.payment_type === ''
+          ? prev
+          : { ...prev, flight_type_id: '', payment_type: '' });
+      }
+      return;
+    }
     if (!flightTypes.length) return;
 
     if (isVoucherBooking) {
@@ -305,7 +318,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     if (!formData.flight_type_id) return;
     const derived = derivePaymentType(formData.flight_type_id);
     setFormData(prev => ({ ...prev, payment_type: derived }));
-  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking]);
+  }, [formData.flight_type_id, flightTypes.length, aircraftRates.length, paymentMethods.length, isVoucherBooking, financialCaptureEnabled, financialProvidersLoading, mode]);
 
   useEffect(() => {
     if (!showAdminChargeOverride || adminChargeTouched) return;
@@ -496,16 +509,16 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   const isFieldMandatory = (fieldName: string) => getFieldSetting(fieldName)?.is_mandatory ?? fieldDefaultMandatory[fieldName] ?? false;
   const isTakeoffsLandingsEnabled = isFieldEnabled('takeoffs_landings') || isFieldEnabled('landings');
   const isTakeoffsLandingsMandatory = isFieldMandatory('takeoffs_landings') || isFieldMandatory('landings');
-  const isPaymentSelectorEnabled = isFieldEnabled('payment_type');
+  const isPaymentSelectorEnabled = financialCaptureEnabled && isFieldEnabled('payment_type');
 
   const validateForm = (): string | null => {
     if (formData.end_tach === '') return 'Please enter end tach';
     if (formData.flight_duration === '') return 'Please enter flight duration';
     if (formData.start_tach >= formData.end_tach) return 'End tach must be greater than start tach';
     if (formData.flight_duration <= 0) return 'Flight duration must be positive';
-    if (!isVoucherBooking && !formData.flight_type_id) return 'Please select a Payment Type';
+    if (financialCaptureEnabled && !isVoucherBooking && !formData.flight_type_id) return 'Please select a Payment Type';
     if (showAdminChargeOverride && adminChargeOverride !== '' && (!Number.isFinite(adminChargeOverride) || adminChargeOverride < 0)) return 'Flight charge cannot be negative';
-    if (!isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a Payment Method';
+    if (financialCaptureEnabled && !isFree && isPaymentSelectorEnabled && isFieldMandatory('payment_type') && !formData.payment_type) return 'Please select a Payment Method';
     if (isTakeoffsLandingsMandatory && (formData.takeoffs === undefined || formData.landings === undefined)) return 'Please enter takeoffs and landings';
     if (isFieldMandatory('comments') && !formData.comments.trim()) return 'Please enter debrief comments';
     if (isFieldMandatory('observations') && !formData.observations.trim()) return 'Please enter observations';
@@ -530,9 +543,13 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
       toast.error('This flight is pending supervision and cannot be logged until an authorised senior instructor is available.');
       return;
     }
-    setSubmissionMessage(mode === 'edit'
-      ? 'Saving the flight log and updating linked billing records...'
-      : 'Logging the flight and syncing billing, Xero and payment records...');
+    setSubmissionMessage(financialCaptureEnabled
+      ? mode === 'edit'
+        ? 'Saving the flight log and updating linked billing records...'
+        : 'Logging the flight and syncing billing, Xero and payment records...'
+      : mode === 'edit'
+        ? 'Saving the flight log...'
+        : 'Logging the flight...');
 
     if (booking.status === 'pending_approval' && onApproveBooking) {
       await onApproveBooking(booking.id);
@@ -576,7 +593,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   };
 
   const ensurePrepaidCanCoverFlight = async (logData: any) => {
-    if (isVoucherBooking) return true;
+    if (!financialCaptureEnabled || isVoucherBooking) return true;
     const selectedType = flightTypes.find(type => type.id === logData.flight_type_id);
     const usesPrepaid = isPrepaidFlightType(selectedType?.name) || isPrepaidPaymentMethod(logData.payment_type);
     if (!usesPrepaid || !logData.student_id) return true;
@@ -717,9 +734,11 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         solo_time: roundFlightDecimal(formData.solo_time),
         takeoffs: isTakeoffsLandingsEnabled ? formData.takeoffs : undefined,
         comments: isFieldEnabled('comments') ? formData.comments || undefined : undefined,
-        flight_type_id: isVoucherBooking ? undefined : formData.flight_type_id || undefined,
-        payment_type: isVoucherBooking ? voucherPaymentType : formData.payment_type || undefined,
-        ...(showAdminChargeOverride && { calculated_cost: Number(finalCharge.toFixed(2)) }),
+        ...(financialCaptureEnabled && {
+          flight_type_id: isVoucherBooking ? undefined : formData.flight_type_id || undefined,
+          payment_type: isVoucherBooking ? voucherPaymentType : formData.payment_type || undefined,
+          ...(showAdminChargeOverride && { calculated_cost: Number(finalCharge.toFixed(2)) }),
+        }),
         ...(isTakeoffsLandingsEnabled && { landings: formData.landings }),
         ...(isFieldEnabled('observations') && { observations: formData.observations }),
         ...(isFieldEnabled('hobbs_start') && { hobbs_start: formData.hobbs_start }),
@@ -803,7 +822,12 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
-          <StripeTestModeBanner compact />
+          {financialCaptureEnabled && <StripeTestModeBanner compact />}
+          {!financialProvidersLoading && !financialCaptureEnabled && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              Payment details are off while Stripe and Xero are disconnected. This flight will be saved without financial information.
+            </div>
+          )}
           {/* Flight Summary */}
           <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div>
@@ -914,7 +938,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             )}
           </div>
 
-          {isVoucherBooking && (
+          {financialCaptureEnabled && isVoucherBooking && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <p className="font-semibold">Covered by linked gift voucher</p>
               <p className="mt-1 text-xs text-amber-800">
@@ -924,6 +948,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
           )}
 
           {/* Payment Type + Payment Method */}
+          {financialCaptureEnabled && (
           <div className={`${isVoucherBooking ? 'hidden' : 'grid'} grid-cols-1 md:grid-cols-2 gap-3`}>
             <div>
               <label className={labelClass}>
@@ -998,8 +1023,9 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               </div>
             )}
           </div>
+          )}
 
-          {!isVoucherBooking && formData.flight_type_id && formData.flight_duration !== '' && (
+          {financialCaptureEnabled && !isVoucherBooking && formData.flight_type_id && formData.flight_duration !== '' && (
             <div className="rounded-lg border border-gray-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -1289,13 +1315,13 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
               type="button"
               onClick={onClose}
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={isSubmitting}
+              disabled={isSubmitting || financialProvidersLoading}
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || financialProvidersLoading}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -1325,19 +1351,23 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
             <p className="text-sm font-medium text-gray-900">
               {submissionMessage || 'Finishing the flight workflow...'}
             </p>
-            <div className="grid grid-cols-3 gap-2 text-center text-xs text-gray-600">
+            <div className={`grid gap-2 text-center text-xs text-gray-600 ${financialCaptureEnabled ? 'grid-cols-3' : 'grid-cols-1'}`}>
               <div className="rounded-xl border border-blue-100 bg-blue-50 px-2 py-2">
                 <p className="font-semibold text-blue-900">Flight log</p>
                 <p>Saving</p>
               </div>
-              <div className="rounded-xl border border-amber-100 bg-amber-50 px-2 py-2">
-                <p className="font-semibold text-amber-900">Billing</p>
-                <p>Checking</p>
-              </div>
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-2 py-2">
-                <p className="font-semibold text-emerald-900">Xero</p>
-                <p>Syncing</p>
-              </div>
+              {financialCaptureEnabled && (
+                <>
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 px-2 py-2">
+                    <p className="font-semibold text-amber-900">Billing</p>
+                    <p>Checking</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-2 py-2">
+                    <p className="font-semibold text-emerald-900">Xero</p>
+                    <p>Syncing</p>
+                  </div>
+                </>
+              )}
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-gray-100">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-blue-600" />

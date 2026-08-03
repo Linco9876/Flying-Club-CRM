@@ -31,3 +31,10 @@ export const financialProviderModeDescription = (
       return 'Connect Stripe or Xero in Settings → Integrations to enable financial features.';
   }
 };
+
+export const shouldCaptureFinancialDetails = (
+  capabilities: FinancialProviderCapabilities,
+) => Boolean(
+  capabilities.financeEnabled &&
+    (capabilities.stripe.connected || capabilities.xero.connected),
+);
