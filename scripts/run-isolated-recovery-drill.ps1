@@ -603,6 +603,13 @@ $bfc$;
     -HostName $recoveryHost `
     -ProjectRef $RecoveryProjectRef `
     -Login $recoveryLogin)
+  # Supabase CLI login-role secrets are deliberately short lived. A schema
+  # restore can consume most or all of that lifetime, so never reuse the
+  # pre-restore secret for the separate data connection.
+  $recoveryLogin = Get-TemporaryDatabaseLogin `
+    -Token $token `
+    -ProjectRef $RecoveryProjectRef `
+    -ReadOnly $false
   [void](Invoke-PostgresTool `
     -Executable 'psql' `
     -Arguments "-X --single-transaction --set ON_ERROR_STOP=1 --file=`"$restoredAuthDump`"" `
@@ -611,6 +618,17 @@ $bfc$;
     -Login $recoveryLogin)
 
   Write-Output 'Stage 6/6: comparing source and recovery schema counts.'
+  # Refresh both credentials after the potentially long dump and restore so
+  # validation proves the recovered contents instead of failing on an expired
+  # temporary database secret.
+  $sourceLogin = Get-TemporaryDatabaseLogin `
+    -Token $token `
+    -ProjectRef $SourceProjectRef `
+    -ReadOnly $false
+  $recoveryLogin = Get-TemporaryDatabaseLogin `
+    -Token $token `
+    -ProjectRef $RecoveryProjectRef `
+    -ReadOnly $false
   $sourceTables = Invoke-PostgresTool `
     -Executable 'psql' `
     -Arguments '-X -qAt -c "select count(*) from pg_catalog.pg_tables where schemaname=''public''"' `
