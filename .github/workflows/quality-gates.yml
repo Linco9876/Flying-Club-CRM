@@ -120,15 +120,15 @@ jobs:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_RECOVERY_PROJECT_REF: ${{ secrets.SUPABASE_RECOVERY_PROJECT_REF }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           if (-not $env:BROWSERSTACK_USERNAME -or -not $env:BROWSERSTACK_ACCESS_KEY) {
             throw 'BrowserStack credentials are required.'
           }
-          if (-not $env:SUPABASE_ACCESS_TOKEN -or -not $env:SUPABASE_RECOVERY_PROJECT_REF) {
-            throw 'Supabase recovery credentials are required.'
+          if (-not $env:SUPABASE_ACCESS_TOKEN -or -not $env:SUPABASE_PROJECT_REF) {
+            throw 'Supabase acceptance project credentials are required.'
           }
           ./scripts/run-recovery-acceptance.ps1 `
-            -RecoveryProjectRef $env:SUPABASE_RECOVERY_PROJECT_REF `
+            -RecoveryProjectRef $env:SUPABASE_PROJECT_REF `
             -SupabaseAccessToken $env:SUPABASE_ACCESS_TOKEN `
             -BrowserStack

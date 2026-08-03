@@ -63,12 +63,49 @@ jobs:
   restore-isolated-database:
     needs: verify-latest-backup
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       SUPABASE_RECOVERY_PROJECT_REF: ${{ secrets.SUPABASE_RECOVERY_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Start the isolated recovery project when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_RECOVERY_PROJECT_REF:-}"
+          status="$({ curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF"; } \
+            | jq -r '.status')"
+          if [ "$status" = "ACTIVE_HEALTHY" ]; then
+            echo "RECOVERY_STARTED_BY_WORKFLOW=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "RECOVERY_STARTED_BY_WORKFLOW=true" >> "$GITHUB_ENV"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header "Content-Type: application/json" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF/restore" \
+            >/dev/null
+          for attempt in {1..90}; do
+            status="$({ curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF"; } \
+              | jq -r '.status')"
+            if [ "$status" = "ACTIVE_HEALTHY" ]; then
+              echo "Recovery project is healthy."
+              exit 0
+            fi
+            echo "Waiting for recovery project (status: $status, attempt $attempt of 90)..."
+            sleep 10
+          done
+          echo "::error::Recovery project did not become healthy within 15 minutes."
+          exit 1
 
       - name: Install PostgreSQL 17 client
         shell: bash
@@ -88,8 +125,25 @@ jobs:
           if (-not $env:SUPABASE_ACCESS_TOKEN) {
             throw 'SUPABASE_ACCESS_TOKEN is required.'
           }
+          if (-not $env:SUPABASE_PROJECT_REF) {
+            throw 'SUPABASE_PROJECT_REF is required.'
+          }
           if (-not $env:SUPABASE_RECOVERY_PROJECT_REF) {
             throw 'SUPABASE_RECOVERY_PROJECT_REF is required.'
           }
           ./scripts/run-isolated-recovery-drill.ps1 `
+            -SourceProjectRef $env:SUPABASE_PROJECT_REF `
             -RecoveryProjectRef $env:SUPABASE_RECOVERY_PROJECT_REF
+
+      - name: Pause the normally dormant recovery project
+        if: ${{ always() && env.RECOVERY_STARTED_BY_WORKFLOW == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header "Content-Type: application/json" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF/pause" \
+            >/dev/null
+          echo "Recovery project pause requested."

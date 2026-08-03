@@ -12,7 +12,7 @@
     "cloudflare:status": "npx --yes wrangler@latest pages project list",
     "supabase:status": "supabase migration list",
     "supabase:push": "supabase db push",
-    "supabase:functions:deploy": "supabase functions deploy --project-ref joarmzswpufrduectjse",
+    "supabase:functions:deploy": "supabase functions deploy --project-ref kcfjnpngnouyvcuvfleu",
     "audit:migrations": "node scripts/audit-supabase-migrations.mjs",
     "audit:migrations:local": "node scripts/audit-supabase-migrations.mjs --local",
     "check:vouchers": "node scripts/check-voucher-readiness.mjs",

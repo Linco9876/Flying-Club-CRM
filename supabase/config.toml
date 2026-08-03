@@ -16,6 +16,14 @@ verify_jwt = false
 [functions.create-trial-voucher-checkout]
 verify_jwt = false
 
+[functions.create-flight-payment-checkout]
+# Validates the caller session and role inside the function before creating a payment link.
+verify_jwt = false
+
+[functions.charge-flight-saved-card]
+# Validates the caller session and staff role inside the function before charging a card.
+verify_jwt = false
+
 [functions.trial-voucher-stripe-webhook]
 verify_jwt = false
 
