@@ -407,7 +407,7 @@ if ($VerifyOnly) {
   $recoveryHost = Get-SessionPoolerHost -Token $token -ProjectRef $RecoveryProjectRef
   $sourceLogin = Get-TemporaryDatabaseLogin -Token $token -ProjectRef $SourceProjectRef -ReadOnly $false
   $recoveryLogin = Get-TemporaryDatabaseLogin -Token $token -ProjectRef $RecoveryProjectRef -ReadOnly $false
-  $snapshotQuery = 'set role postgres; select concat_ws(''|'', (select count(*) from pg_catalog.pg_tables where schemaname = ''public''), (select count(*) from auth.users), (select count(*) from public.users), (select count(*) from public.bookings), (select count(*) from public.flight_logs), (select count(*) from public.club_memberships), (select count(*) from storage.buckets), (select count(*) from storage.objects))'
+  $snapshotQuery = 'set role postgres; select concat_ws(''|'', (select count(*) from pg_catalog.pg_tables where schemaname = ''public''), (select count(*) from auth.users), (select count(*) from public.users), (select count(*) from public.bookings), (select count(*) from public.flight_logs), (select count(*) from public.club_memberships), (select count(*) from storage.buckets), (select count(*) from storage.objects), (select count(*) from supabase_migrations.schema_migrations))'
   $snapshotArguments = "-X -qAt -c `"$snapshotQuery`""
   $sourceSnapshot = Invoke-PostgresTool `
     -Executable 'psql' `
@@ -429,7 +429,8 @@ if ($VerifyOnly) {
     'Recovery verification passed: ' +
     "$($values[0]) public tables, $($values[1]) Auth users, " +
     "$($values[2]) profiles, $($values[3]) bookings, $($values[4]) flight logs, " +
-    "$($values[5]) memberships, $($values[6]) storage buckets and $($values[7]) storage objects."
+    "$($values[5]) memberships, $($values[6]) storage buckets, $($values[7]) storage objects and " +
+    "$($values[8]) migration-history entries."
   )
   return
 }
@@ -473,10 +474,19 @@ try {
     -HostName $sourceHost `
     -ProjectRef $SourceProjectRef `
     -Login $sourceLogin)
+  # Supabase's managed migration table can gain platform-specific audit columns
+  # independently in each region. Transfer only the portable columns used by
+  # the CLI so a restored schema is not mistaken for an unmigrated database.
+  $migrationHistorySql = Invoke-PostgresTool `
+    -Executable 'psql' `
+    -Arguments '-X -qAt -c "set role postgres; select format(''insert into supabase_migrations.schema_migrations (version, statements, name) values (%L, %L::text[], %L);'', version, statements, name) from supabase_migrations.schema_migrations order by version"' `
+    -HostName $sourceHost `
+    -ProjectRef $SourceProjectRef `
+    -Login $sourceLogin
   $dataSql = [IO.File]::ReadAllText($plainAuthDump)
   [IO.File]::WriteAllText(
     $plainAuthDump,
-    "SET ROLE postgres;`r`nSET session_replication_role = replica;`r`n$dataSql`r`nRESET ALL;`r`n",
+    "SET ROLE postgres;`r`nSET session_replication_role = replica;`r`n$dataSql`r`nTRUNCATE supabase_migrations.schema_migrations;`r`n$migrationHistorySql`r`nRESET ALL;`r`n",
     [Text.UTF8Encoding]::new($false)
   )
 
@@ -557,7 +567,8 @@ begin
     or (
       schemaname = 'storage'
       and tablename not in ('migrations', 'buckets_vectors', 'vector_indexes')
-    );
+    )
+    or schemaname = 'supabase_migrations';
 
   if recoverable_tables is not null then
     execute 'truncate table ' || recoverable_tables || ' cascade';
@@ -626,7 +637,23 @@ $bfc$;
     throw "Recovery Auth user count mismatch: source $sourceAuthCount, recovery $recoveryAuthCount."
   }
 
-  Write-Output "Recovery drill passed: restored $recoveryTables public tables and $recoveryAuthCount Auth users into isolated project $RecoveryProjectRef."
+  $sourceMigrationCount = Invoke-PostgresTool `
+    -Executable 'psql' `
+    -Arguments '-X -qAt -c "set role postgres; select count(*) from supabase_migrations.schema_migrations"' `
+    -HostName $sourceHost `
+    -ProjectRef $SourceProjectRef `
+    -Login $sourceLogin
+  $recoveryMigrationCount = Invoke-PostgresTool `
+    -Executable 'psql' `
+    -Arguments '-X -qAt -c "set role postgres; select count(*) from supabase_migrations.schema_migrations"' `
+    -HostName $recoveryHost `
+    -ProjectRef $RecoveryProjectRef `
+    -Login $recoveryLogin
+  if ($sourceMigrationCount -ne $recoveryMigrationCount) {
+    throw "Recovery migration-history mismatch: source $sourceMigrationCount, recovery $recoveryMigrationCount."
+  }
+
+  Write-Output "Recovery drill passed: restored $recoveryTables public tables, $recoveryAuthCount Auth users and $recoveryMigrationCount migration-history entries into isolated project $RecoveryProjectRef."
   Write-Output "Verified public SHA-256: $sourceHash"
   Write-Output "Verified Auth SHA-256: $sourceAuthHash"
 } finally {
