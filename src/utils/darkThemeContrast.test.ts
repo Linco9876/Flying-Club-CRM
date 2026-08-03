@@ -17,6 +17,10 @@ const collectTsxSource = (directory: URL): string => readdirSync(directory, { wi
   .join('\n');
 
 const componentSource = collectTsxSource(sourceRoot);
+const invitationSource = readFileSync(
+  new URL('../components/Auth/AcceptInvitationPage.tsx', import.meta.url),
+  'utf8',
+);
 
 const relativeLuminance = ([red, green, blue]: Rgb) => {
   const [r, g, b] = [red, green, blue].map((value) => {
@@ -89,4 +93,17 @@ test('known low-contrast white-on-light utility pairs are not reintroduced', () 
   const lowContrastPair = /bg-(?:blue-300|amber-(?:400|500)|red-500)\s+[^"'`]{0,100}text-white|text-white\s+[^"'`]{0,100}bg-(?:blue-300|amber-(?:400|500)|red-500)/g;
   const matches = componentSource.match(lowContrastPair) ?? [];
   assert.deepEqual(matches, []);
+});
+
+test('invitation success copy stays readable on its forced light surface in either portal theme', () => {
+  const bannerBackground: Rgb = [236, 253, 245];
+  const heading: Rgb = [6, 78, 59];
+  const supportingCopy: Rgb = [6, 95, 70];
+
+  assert.ok(contrastRatio(heading, bannerBackground) >= 4.5);
+  assert.ok(contrastRatio(supportingCopy, bannerBackground) >= 4.5);
+  assert.match(invitationSource, /bg-\[#ecfdf5\]/);
+  assert.match(invitationSource, /text-\[#064e3b\]/);
+  assert.match(invitationSource, /text-\[#065f46\]/);
+  assert.doesNotMatch(invitationSource, /bg-emerald-50/);
 });
