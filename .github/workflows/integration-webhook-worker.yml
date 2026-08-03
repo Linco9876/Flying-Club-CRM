@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Deliver pending integration events
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
           INTEGRATION_WORKER_SECRET: ${{ secrets.INTEGRATION_WORKER_SECRET }}
         run: |
           set -euo pipefail

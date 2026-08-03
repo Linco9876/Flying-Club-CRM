@@ -6964,10 +6964,15 @@ Deno.serve(async (req: Request) => {
 
     return json({ error: "Unknown action" }, 400);
   } catch (error) {
-    console.error("xero-sync error:", error);
+    const errorReference = crypto.randomUUID();
+    console.error("xero-sync error:", { errorReference, error });
     return json(
-      { error: getErrorMessage(error, "The accounting request could not be completed") },
-      Number((error as any)?.status || 500),
+      {
+        error:
+          "The accounting request could not be completed. Review the Xero sync log using the supplied reference.",
+        errorReference,
+      },
+      500,
     );
   }
 });

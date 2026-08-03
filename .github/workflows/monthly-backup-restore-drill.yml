@@ -66,8 +66,10 @@ jobs:
     timeout-minutes: 60
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      SUPABASE_RECOVERY_PROJECT_REF: ${{ secrets.SUPABASE_RECOVERY_PROJECT_REF }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_AU_PROJECT_REF }}
+      # Project references are public identifiers. Keeping the isolated target
+      # explicit prevents an absent or renamed secret from ever selecting production.
+      SUPABASE_RECOVERY_PROJECT_REF: hohmmwvtisnuuoumipjq
     steps:
       - uses: actions/checkout@v7
 
@@ -113,7 +115,8 @@ jobs:
           set -euo pipefail
           sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            | sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+            | sudo gpg --batch --yes --dearmor \
+              -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update

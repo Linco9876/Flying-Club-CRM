@@ -58,8 +58,8 @@ jobs:
 
       - name: Create in-app admin notification
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_AU_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_AU_SERVICE_ROLE_KEY }}
           ADMIN_NOTIFICATION_TITLE: Bendigo Flying Club CRM automation failed
           ADMIN_NOTIFICATION_MESSAGE: "${{ github.event.workflow_run.name }} finished with ${{ github.event.workflow_run.conclusion }}. Check the linked GitHub Actions run."
           ADMIN_NOTIFICATION_ALERT_TYPE: github_actions_failure
