@@ -25,6 +25,14 @@ begin
   end if;
 
   if v_corrected = v_definition then
+    -- A fresh rebuild already receives the corrected declaration from the
+    -- preceding migration. Treat that state as success so recovery restores
+    -- remain repeatable, while retaining the repair for older deployments.
+    if position('v_codes text[] := array[]::text[];' in v_definition) > 0 then
+      raise notice 'Duty assessment array declaration is already correct';
+      return;
+    end if;
+
     raise exception 'Could not locate the duty assessment array declaration to repair';
   end if;
 
