@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
 const defaultTables = [
   'account_transactions',
@@ -128,10 +129,25 @@ async function supabaseFetch(url, serviceRoleKey, endpoint, options = {}) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`${endpoint} failed with ${response.status}: ${body.slice(0, 500)}`);
+    const error = new Error(`${endpoint} failed with ${response.status}: ${body.slice(0, 500)}`);
+    error.name = 'SupabaseHttpError';
+    error.status = response.status;
+    error.body = body;
+    error.endpoint = endpoint;
+    throw error;
   }
 
   return response;
+}
+
+export function isMissingStorageObjectError(error) {
+  if (!error || typeof error !== 'object') return false;
+  const status = Number(error.status || 0);
+  const body = typeof error.body === 'string' ? error.body : '';
+  return (
+    (status === 400 || status === 404) &&
+    (/"code"\s*:\s*"NoSuchKey"/i.test(body) || /"statusCode"\s*:\s*"404"/i.test(body))
+  );
 }
 
 async function discoverTables({ url, serviceRoleKey }) {
@@ -236,20 +252,32 @@ async function backupBucket({ url, serviceRoleKey, bucket, outDir }) {
     return { bucket, objects: 0, error: error.message };
   }
 
+  const backedUpObjects = [];
+  const missingObjects = [];
   for (const object of objects) {
-    const response = await supabaseFetch(
-      url,
-      serviceRoleKey,
-      `/storage/v1/object/${encodeURIComponent(bucket)}/${object.path.split('/').map(encodeURIComponent).join('/')}`
-    );
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const filePath = path.join(bucketDir, ...object.path.split('/').map(safeName));
-    await ensureDir(path.dirname(filePath));
-    await fs.writeFile(filePath, buffer);
+    try {
+      const response = await supabaseFetch(
+        url,
+        serviceRoleKey,
+        `/storage/v1/object/${encodeURIComponent(bucket)}/${object.path.split('/').map(encodeURIComponent).join('/')}`
+      );
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const filePath = path.join(bucketDir, ...object.path.split('/').map(safeName));
+      await ensureDir(path.dirname(filePath));
+      await fs.writeFile(filePath, buffer);
+      backedUpObjects.push(object);
+    } catch (error) {
+      if (!isMissingStorageObjectError(error)) throw error;
+      missingObjects.push(object.path);
+    }
   }
 
-  await writeJson(path.join(bucketDir, '_objects.json'), objects);
-  return { bucket, objects: objects.length };
+  if (missingObjects.length) {
+    console.warn(`Skipped ${missingObjects.length} object(s) listed by ${bucket} but absent at download time.`);
+  }
+
+  await writeJson(path.join(bucketDir, '_objects.json'), backedUpObjects);
+  return { bucket, objects: backedUpObjects.length, missingObjects };
 }
 
 async function sha256File(filePath) {
@@ -334,6 +362,7 @@ async function main() {
     auth: null,
     storage: [],
     warnings: [],
+    notices: [],
     integrity: {
       algorithm: 'sha256',
       files: []
@@ -358,6 +387,14 @@ async function main() {
     const result = await backupBucket({ url, serviceRoleKey, bucket, outDir: storageDir });
     manifest.storage.push(result);
     if (result.error) manifest.warnings.push({ type: 'bucket', name: bucket, message: result.error });
+    if (result.missingObjects?.length) {
+      manifest.notices.push({
+        type: 'storage-objects-missing',
+        name: bucket,
+        count: result.missingObjects.length,
+        message: 'Objects returned by the storage listing were absent at download time and were excluded from the restore manifest.'
+      });
+    }
   }
 
   manifest.integrity.files = await collectChecksums(backupDir);
@@ -367,6 +404,7 @@ async function main() {
     authUsers: manifest.auth?.users || 0,
     bucketCount: manifest.storage.length,
     storageObjects: manifest.storage.reduce((sum, bucket) => sum + bucket.objects, 0),
+    storageObjectsMissing: manifest.storage.reduce((sum, bucket) => sum + (bucket.missingObjects?.length || 0), 0),
     integrityFiles: manifest.integrity.files.length
   };
   manifest.pruned = await pruneOldBackups(backupRoot, retentionDays);
@@ -379,7 +417,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (isEntryPoint) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
