@@ -82,35 +82,17 @@ jobs:
           set -euo pipefail
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           test -n "${SUPABASE_RECOVERY_PROJECT_REF:-}"
-          status="$({ curl --fail --silent --show-error \
+          status="$(curl --fail --silent --show-error \
             --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF"; } \
+            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF" \
             | jq -r '.status')"
           if [ "$status" = "ACTIVE_HEALTHY" ]; then
             echo "RECOVERY_STARTED_BY_WORKFLOW=false" >> "$GITHUB_ENV"
-            exit 0
+          else
+            echo "RECOVERY_STARTED_BY_WORKFLOW=true" >> "$GITHUB_ENV"
           fi
-          echo "RECOVERY_STARTED_BY_WORKFLOW=true" >> "$GITHUB_ENV"
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            --header "Content-Type: application/json" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF/restore" \
-            >/dev/null
-          for attempt in {1..90}; do
-            status="$({ curl --fail --silent --show-error \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF"; } \
-              | jq -r '.status')"
-            if [ "$status" = "ACTIVE_HEALTHY" ]; then
-              echo "Recovery project is healthy."
-              exit 0
-            fi
-            echo "Waiting for recovery project (status: $status, attempt $attempt of 90)..."
-            sleep 10
-          done
-          echo "::error::Recovery project did not become healthy within 15 minutes."
-          exit 1
+          bash ./scripts/set-supabase-project-state.sh \
+            active "$SUPABASE_RECOVERY_PROJECT_REF"
 
       - name: Install PostgreSQL 17 client
         shell: bash
@@ -144,12 +126,4 @@ jobs:
       - name: Pause the normally dormant recovery project
         if: ${{ always() && env.RECOVERY_STARTED_BY_WORKFLOW == 'true' }}
         shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            --header "Content-Type: application/json" \
-            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF/pause" \
-            >/dev/null
-          echo "Recovery project pause requested."
+        run: bash ./scripts/set-supabase-project-state.sh inactive "$SUPABASE_RECOVERY_PROJECT_REF"

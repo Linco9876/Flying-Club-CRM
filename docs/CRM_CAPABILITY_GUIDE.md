@@ -451,7 +451,7 @@ Before the first gated production release, configure or complete:
 - The Cloudflare Turnstile secret in Supabase Auth CAPTCHA settings when Turnstile is enabled.
 - A durable, scoped Cloudflare API token with Pages Write access in `CLOUDFLARE_API_TOKEN`. The local Wrangler OAuth token is intentionally not copied to CI because it expires.
 - Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The manual Quality Gates workflow provisions disposable recovery-project accounts and MFA factors, connects through BrowserStack Local, runs the matrix, and removes the test identities.
-- The manual physical-device job now starts the normally dormant recovery project, deploys the current Edge Functions, performs the authenticated device matrix and pauses the project again when it started it. This keeps the test repeatable without leaving the recovery environment active.
+- The manual physical-device job now starts the normally dormant recovery project, refreshes it from production and validates source/recovery counts, deploys the current Edge Functions, performs the authenticated device matrix and waits for confirmed dormancy when it started the project. A shared lock prevents this lifecycle from overlapping the monthly recovery drill.
 - An independent manual web/API penetration test, remediation of all critical/high findings, and a clean retest before live payments or broad third-party API access. See `docs/PENETRATION_TEST_SCOPE.md`.
 
 ### Release-readiness evidence (25 July 2026)
