@@ -279,14 +279,25 @@ try {
   Remove-Item Env:VITE_SUPABASE_ANON_KEY -ErrorAction SilentlyContinue
   Remove-Item Env:VITE_SUPABASE_URL -ErrorAction SilentlyContinue
   Remove-Item Env:EXPECT_FINANCIAL_DASHBOARD -ErrorAction SilentlyContinue
+  $originCleanupSucceeded = -not $temporaryOriginsConfigured
   if ($temporaryOriginsConfigured) {
-    'y' | npx supabase secrets unset ADDITIONAL_ALLOWED_ORIGINS `
-      --project-ref $RecoveryProjectRef 2>$null |
-      Out-Null
+    for ($attempt = 1; $attempt -le 5; $attempt += 1) {
+      'y' | npx supabase secrets unset ADDITIONAL_ALLOWED_ORIGINS `
+        --project-ref $RecoveryProjectRef 2>$null |
+        Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        $originCleanupSucceeded = $true
+        break
+      }
+      Start-Sleep -Seconds ([Math]::Min(10, $attempt * 2))
+    }
   }
   if ($previousSupabaseAccessToken) {
     $env:SUPABASE_ACCESS_TOKEN = $previousSupabaseAccessToken
   } else {
     Remove-Item Env:SUPABASE_ACCESS_TOKEN -ErrorAction SilentlyContinue
+  }
+  if (-not $originCleanupSucceeded) {
+    throw 'Acceptance completed, but the temporary browser-origin secret could not be removed after five attempts.'
   }
 }
