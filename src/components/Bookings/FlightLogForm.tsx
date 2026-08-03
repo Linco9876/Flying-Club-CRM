@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { useFlightLogs } from '../../hooks/useFlightLogs';
 import { TachOverlapWarningModal } from './TachOverlapWarningModal';
 import { supabase } from '../../lib/supabase';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface FlightLogFormProps {
   isOpen: boolean;
@@ -51,7 +52,7 @@ export const FlightLogForm: React.FC<FlightLogFormProps> = ({
   const [overlappingLogs, setOverlappingLogs] = useState<any[]>([]);
   const [pendingFlightLogData, setPendingFlightLogData] = useState<Omit<FlightLog, 'id'> | null>(null);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!isOpen) return;
     setFormData(buildDefaultFormData());
     setShowOverlapWarning(false);

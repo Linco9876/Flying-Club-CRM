@@ -384,7 +384,7 @@ export const TrialVoucherSalesPage: React.FC = () => {
     );
     return `mailto:${recipients}?subject=${subject}&body=${body}`;
   };
-  const mailtoHref = useMemo(() => buildMailtoHref(), [adminContactEmails]);
+  const mailtoHref = buildMailtoHref();
 
   const resetPurchaseForm = (
     product?: PublicVoucherProduct | null,

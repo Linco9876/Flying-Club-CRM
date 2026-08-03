@@ -9,6 +9,7 @@ import { useTrainingRecords } from '../../hooks/useTrainingRecords';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { TrainingModule, TrainingRecord } from '../../types';
 import { richTextToPlainText } from '../../utils/richText';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 const stripHtml = richTextToPlainText;
 
@@ -75,7 +76,7 @@ export const StudentAcknowledgementModal: React.FC = () => {
 
   const activeDeclaration = pendingDeclarations[0];
 
-  React.useEffect(() => {
+  useLatestEffect(() => {
     if (!activeDeclaration || !user) return;
     setDeclarationSignatureName(activeDeclaration.enrolment.declarationSignedName || user.name || user.email || '');
     setDeclarationMemberNumber(activeDeclaration.enrolment.declarationMemberNumber || '');

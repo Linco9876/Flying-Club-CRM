@@ -142,23 +142,9 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     };
   }, [
     activeLocations,
-    booking?.id,
-    booking?.studentId,
-    booking?.aircraftId,
-    booking?.instructorId,
-    booking?.paymentType,
-    booking?.flightTypeId,
-    booking?.notes,
-    booking?.isGuestBooking,
-    booking?.guestName,
-    booking?.guestEmail,
-    booking?.guestPhone,
-    booking?.trialFlightVoucherId,
-    booking?.location,
-    booking?.locationId,
-    booking?.startTime,
-    booking?.endTime,
+    booking,
     prefilledData?.date,
+    prefilledData?.bookingKind,
     prefilledData?.endDate,
     prefilledData?.startTime,
     prefilledData?.endTime,
@@ -189,7 +175,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const [publicInstructors, setPublicInstructors] = useState<PublicInstructorOption[]>([]);
   type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
   type RecurrenceEndMode = 'never' | 'on' | 'after';
-  const buildDefaultRecurrence = (): {
+  const buildDefaultRecurrence = React.useCallback((): {
     enabled: boolean;
     frequency: RecurrenceFrequency;
     interval: number;
@@ -205,7 +191,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     endMode: 'after',
     untilDate: '',
     count: 2,
-  });
+  }), []);
   const [recurrence, setRecurrence] = useState<{
     enabled: boolean;
     frequency: RecurrenceFrequency;
@@ -265,7 +251,10 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
   const selectedPilot = users.find(item => item.id === formData.studentId);
   const getPilotSearchLabel = (member: { name?: string; email?: string; id: string }) =>
     `${member.name || 'Unnamed member'}${member.email ? ` - ${member.email}` : ''}`;
-  const guestEligibleAircraftIds = selectedGuestVoucher?.eligibleAircraftIds ?? [];
+  const guestEligibleAircraftIds = React.useMemo(
+    () => selectedGuestVoucher?.eligibleAircraftIds ?? [],
+    [selectedGuestVoucher?.eligibleAircraftIds],
+  );
   const isPrepaidLikeFlightType = (name?: string | null) => {
     const normalised = (name || '').toLowerCase().replace(/[-_]/g, ' ');
     return normalised.includes('pilot account') || normalised.includes('prepaid') || normalised.includes('pre paid');
@@ -395,7 +384,7 @@ const BookingForm: React.FC<BookingFormProps> = ({ isOpen, onClose, onSubmit, bo
     setRecurrence(buildDefaultRecurrence());
     setIsSubmitting(false);
     setSendVoucherUpdateEmail(null);
-  }, [buildInitialFormData, isOpen, users]);
+  }, [buildDefaultRecurrence, buildInitialFormData, isOpen, users]);
 
   React.useEffect(() => {
     if (!isOpen || !canCreateGuestBooking || !formData.isGuestBooking) {

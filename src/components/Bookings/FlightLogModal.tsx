@@ -13,6 +13,7 @@ import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } f
 import { TachOverlapWarningModal } from './TachOverlapWarningModal';
 import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
 import { getSupabaseFunctionErrorMessage } from '../../lib/supabaseFunctionErrors';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 import { StripeTestModeBanner } from '../Billing/StripeTestModeBanner';
 
 interface Booking {
@@ -210,7 +211,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     ? Number(adminChargeOverride)
     : estimatedCost;
 
-  useEffect(() => {
+  useLatestEffect(() => {
     setIsSubmitting(false);
     setTachAutoFilled(false);
     setHobbsAutoFilled(false);
@@ -289,7 +290,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
   }, [topUpLinkResult]);
 
   // Re-derive the Payment Method when billing data loads or the Payment Type changes.
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!flightTypes.length) return;
 
     if (isVoucherBooking) {
@@ -311,7 +312,7 @@ export const FlightLogModal: React.FC<FlightLogModalProps> = ({
     setAdminChargeOverride(Number(estimatedCost.toFixed(2)));
   }, [showAdminChargeOverride, adminChargeTouched, estimatedCost]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (mode !== 'edit') return;
 
     const loadExistingFlightLog = async () => {

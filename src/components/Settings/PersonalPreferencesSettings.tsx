@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   CalendarDays,
@@ -20,6 +20,7 @@ import {
 import toast from 'react-hot-toast';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useLatestEffect, useLatestLayoutEffect } from '../../hooks/useLatestEffect';
 import { supabase } from '../../lib/supabase';
 import { useAircraft } from '../../hooks/useAircraft';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
@@ -322,7 +323,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchProfile();
   }, [user?.id]);
 
@@ -354,7 +355,7 @@ export const PersonalPreferencesSettings: React.FC<PersonalPreferencesSettingsPr
     return () => URL.revokeObjectURL(previewUrl);
   }, [coverFile]);
 
-  useLayoutEffect(() => {
+  useLatestLayoutEffect(() => {
     const globalSaveKey = `__${saveKey.replace(/-/g, '')}SettingsSave`;
     const globalCancelKey = `__${saveKey.replace(/-/g, '')}SettingsCancel`;
 

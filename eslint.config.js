@@ -42,7 +42,24 @@ export default tseslint.config(
       'no-useless-assignment': 'off',
       'react-refresh/only-export-components': [
         'warn',
-        { allowConstantExport: true },
+        {
+          allowConstantExport: true,
+          // These exports are either context hooks or components returned by the
+          // account-section component factory. Vite can safely preserve their
+          // refresh boundary; keeping the allow-list explicit prevents arbitrary
+          // non-component exports from being added to component modules.
+          allowExportNames: [
+            'useAuth',
+            'usePageLoadState',
+            'useTrainingModules',
+            'UpdateMyInfoSettings',
+            'AccountSecuritySettings',
+            'AccountCalendarSettings',
+            'AccountNotificationSettings',
+            'AccountAppearanceSettings',
+            'AccountDashboardSettings',
+          ],
+        },
       ],
     },
   }

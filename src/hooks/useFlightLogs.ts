@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { calculateFlightCost, isNoChargeRate, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../utils/billing';
 import { fetchUserPrepaidLedgerBalance } from '../lib/prepaidLedger';
 import { useAuth } from '../context/AuthContext';
 import { usePageLoadState } from '../context/PageLoadContext';
+import { useLatestEffect } from './useLatestEffect';
 
 const roundFlightDecimal = (value: number) => Math.round((value + Number.EPSILON) * 10) / 10;
 const roundCurrency = (value: number) => Math.max(0, Math.round((value + Number.EPSILON) * 100) / 100);
@@ -240,7 +241,7 @@ export function useFlightLogs(userId?: string, options?: UseFlightLogsOptions) {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchFlightLogs();
   }, [userId]);
 

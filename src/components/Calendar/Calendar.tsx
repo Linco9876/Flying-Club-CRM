@@ -51,6 +51,7 @@ import { BookingCancellationModal } from '../Bookings/BookingCancellationModal';
 import type { BookingCancellationInput } from '../../hooks/useBookings';
 import toast from 'react-hot-toast';
 import { NextAvailableSlotModal, type NextAvailableSlot } from './NextAvailableSlotModal';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface CalendarProps {
   bookings: Booking[];
@@ -643,7 +644,7 @@ export const Calendar: React.FC<CalendarProps> = ({
 
 
   // Compute slot height on mount and resize
-  useEffect(() => {
+  useLatestEffect(() => {
     const computeSlotHeight = () => {
       const headerHeight = 200;
       const availableHeight = Math.max(420, window.innerHeight - headerHeight);
@@ -2123,7 +2124,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     resetBookingInteractionState,
   ]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!pendingBookingDrag || draggedBooking || resizingBooking) {
       return;
     }
@@ -2152,7 +2153,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     };
   }, [pendingBookingDrag, draggedBooking, resizingBooking]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!draggedBooking && !resizingBooking) {
       return;
     }
@@ -2206,7 +2207,7 @@ export const Calendar: React.FC<CalendarProps> = ({
     resetBookingInteractionState,
   ]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     const handleWindowPointerMove = (event: PointerEvent) => {
       if (event.pointerType !== 'touch') return;
 

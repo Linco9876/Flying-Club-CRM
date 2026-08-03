@@ -73,12 +73,12 @@ export const StudentList: React.FC = () => {
   const getMemberRoles = (student: Student): UserRole[] =>
     student.roles && student.roles.length > 0 ? student.roles : [student.role as UserRole];
 
-  const matchesRoleFilter = (student: Student) => {
+  const matchesRoleFilter = React.useCallback((student: Student) => {
     if (roleFilter === 'all') return true;
     const roles = getMemberRoles(student);
     if (roleFilter === 'instructor') return roles.includes('instructor') || roles.includes('senior_instructor');
     return roles.includes(roleFilter);
-  };
+  }, [roleFilter]);
 
   const memberStatusCounts = useMemo(() => {
     const active = students.filter(student => student.isActive !== false).length;
@@ -124,7 +124,7 @@ export const StudentList: React.FC = () => {
 
       return terms.every(term => haystack.includes(term));
     });
-  }, [roleFilter, searchTerm, statusFilter, students]);
+  }, [matchesRoleFilter, searchTerm, statusFilter, students]);
 
   const statsByStudent = useMemo(() => {
     const stats = new Map<string, { totalHours: number; lessonCount: number; lastFlight?: Date }>();
@@ -156,7 +156,10 @@ export const StudentList: React.FC = () => {
     return stats;
   }, [flightLogs, trainingRecords, rawVisibleMembers]);
 
-  const getStudentStats = (studentId: string) => statsByStudent.get(studentId) || { totalHours: 0, lessonCount: 0 };
+  const getStudentStats = React.useCallback(
+    (studentId: string) => statsByStudent.get(studentId) || { totalHours: 0, lessonCount: 0 },
+    [statsByStudent],
+  );
 
   const visibleMembers = useMemo(() => {
     const roleRank: Record<UserRole, number> = {
@@ -188,7 +191,7 @@ export const StudentList: React.FC = () => {
 
       return a.name.localeCompare(b.name);
     });
-  }, [rawVisibleMembers, sortBy, statsByStudent]);
+  }, [getStudentStats, rawVisibleMembers, sortBy]);
 
   const roleFilters: { id: typeof roleFilter; label: string }[] = [
     { id: 'all', label: 'All' },

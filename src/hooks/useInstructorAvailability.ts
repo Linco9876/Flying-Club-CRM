@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { hasAnyRole } from '../utils/rbac';
+import { useLatestEffect } from './useLatestEffect';
 
 const AVAILABILITY_UPDATED_EVENT = 'instructor-availability-updated';
 
@@ -489,7 +490,7 @@ export const useInstructorAvailability = (instructorId?: string) => {
     return () => window.removeEventListener(AVAILABILITY_UPDATED_EVENT, refreshAvailability);
   }, [instructorId]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     const rowMatchesInstructor = (row: any) => {
       if (!instructorId) return true;
       return (row?.user_id || row?.instructor_id) === instructorId;

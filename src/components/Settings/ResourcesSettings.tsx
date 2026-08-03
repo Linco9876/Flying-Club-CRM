@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Building2, Lock, Pencil, Plane, Plus, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -7,6 +7,7 @@ import {
   RoomResource,
   useResourceSettings,
 } from '../../hooks/useResourceSettings';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface ResourcesSettingsProps {
   canEdit: boolean;
@@ -44,9 +45,9 @@ export const ResourcesSettings: React.FC<ResourcesSettingsProps> = ({ canEdit, o
     setDocumentTypes(savedDocumentTypes);
   };
 
-  useEffect(resetDrafts, [savedFields, savedDocumentTypes]);
+  useLatestEffect(resetDrafts, [savedFields, savedDocumentTypes]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     (window as any).__resourcesSettingsSave = async () => {
       await saveSettings(aircraftFields, documentTypes);
     };

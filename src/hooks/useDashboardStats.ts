@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { fetchOwnXeroBalance } from '../lib/xeroMemberBalance';
+import { useLatestEffect } from './useLatestEffect';
 
 export interface DashboardStats {
   totalStudents: number;
@@ -330,7 +331,7 @@ export function useDashboardStats(userId?: string, userRole?: string, scheduleSc
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchStats();
   }, [userId, userRole, scheduleScope]);
 

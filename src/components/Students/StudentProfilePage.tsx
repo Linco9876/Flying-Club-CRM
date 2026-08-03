@@ -10,6 +10,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { LogbookTab } from './LogbookTab';
 import { StudentDocumentsTab } from './StudentDocumentsTab';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 import { usePortalUxSettings } from '../../hooks/useSettings';
 import { useSafetyReports } from '../../hooks/useSafetyReports';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
@@ -1568,7 +1569,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     } finally {
       setAcknowledgingId(null);
     }
-  }, [student, studentTrainingRecords, trainingSettings.lockRecordAfterStudentAck, updateTrainingRecord]);
+  }, [student, trainingSettings.lockRecordAfterStudentAck, updateTrainingRecord]);
 
   const handleSaveTrainingRecordEdit = async () => {
     if (!editingTrainingRecord || !trainingEditForm || !user || !canEditRecord(editingTrainingRecord)) return;
@@ -1902,7 +1903,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
       : []),
   ], [isOwnStudentPortal]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (isOwnStudentPortal && portalSection) return;
     if (!tabs.some(tab => tab.id === activeTab)) {
       handleTabChange(tabs[0]?.id || 'training');

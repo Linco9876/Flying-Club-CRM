@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { calculateFlightCost, isPrepaidPaymentMethod, isVoucherPaymentMethod } from '../../utils/billing';
 import { fetchUserPrepaidLedgerBalance } from '../../lib/prepaidLedger';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface FlightLog {
   id: string;
@@ -198,7 +199,7 @@ export const AircraftFlightLogs: React.FC<AircraftFlightLogsProps> = ({ aircraft
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchFlightLogs();
   }, [aircraftId]);
 

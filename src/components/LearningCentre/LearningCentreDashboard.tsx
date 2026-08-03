@@ -18,6 +18,7 @@ import {
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useTrainingModules } from '../../context/TrainingModulesContext';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 import {
   createBlankLearningProgram,
   createLearningId,
@@ -979,7 +980,7 @@ const QuizPlayer = ({
       },
   );
 
-  useEffect(() => {
+  useLatestEffect(() => {
     setAnswers((existingProgress?.quizAnswers || {}) as LearningQuizAnswers);
     setGrade(
       existingProgress?.quizScorePercent === null || existingProgress?.quizScorePercent === undefined

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, Download, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format, parseISO } from 'date-fns';
 import { formatBillingDescription } from '../../utils/billingDescription';
 import toast from 'react-hot-toast';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface AccountHistoryModalProps {
   isOpen: boolean;
@@ -40,7 +41,7 @@ export const AccountHistoryModal: React.FC<AccountHistoryModalProps> = ({
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!isOpen || !userId) return;
     fetchHistory();
   }, [isOpen, userId]);

@@ -7,6 +7,7 @@ import { useResourceSettings } from '../../hooks/useResourceSettings';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface AircraftFormProps {
   isOpen: boolean;
@@ -128,7 +129,7 @@ export const AircraftForm: React.FC<AircraftFormProps> = ({
   });
 
   // Re-fetch rates whenever the form opens for an aircraft
-  useEffect(() => {
+  useLatestEffect(() => {
     if (isOpen && aircraft?.id) {
       refetchRates();
     }

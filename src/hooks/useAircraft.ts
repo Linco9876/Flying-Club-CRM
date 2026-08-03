@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Aircraft, Defect } from '../types';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { usePageLoadState } from '../context/PageLoadContext';
+import { useLatestEffect } from './useLatestEffect';
 
 let staffAircraftCache: Aircraft[] | null = null;
 let publicAircraftCache: Aircraft[] | null = null;
@@ -757,7 +758,7 @@ export const useAircraft = (options?: UseAircraftOptions) => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     const cachedAircraft = includeResolvedDefects ? null : includeRates
       ? (canSeePrivateAircraftData ? staffAircraftCache : publicAircraftCache)
       : (canSeePrivateAircraftData

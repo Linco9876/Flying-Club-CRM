@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { GroundSessionLog } from '../types';
 import { fetchUserPrepaidLedgerBalance } from '../lib/prepaidLedger';
 import { getSupabaseFunctionErrorMessage } from '../lib/supabaseFunctionErrors';
+import { useLatestEffect } from './useLatestEffect';
 
 export interface CreateGroundSessionLogData {
   booking_id?: string;
@@ -82,7 +83,7 @@ export const useGroundSessionLogs = (bookingId?: string) => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     void fetchLogs();
   }, [bookingId]);
 

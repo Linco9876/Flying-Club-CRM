@@ -8,6 +8,7 @@ import {
   isActiveXeroBankAccount,
 } from '../../utils/xeroAccountRules';
 import { requestFinancialProviderRefresh } from '../../context/financialProviderState';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface XeroIntegrationCardProps {
   canEdit: boolean;
@@ -596,7 +597,7 @@ export const XeroIntegrationCard: React.FC<XeroIntegrationCardProps> = ({ canEdi
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     (window as any).__integrationsSettingsSave = saveSettings;
     (window as any).__integrationsSettingsCancel = () => {
       setForm(fromStatus(xeroStatus));

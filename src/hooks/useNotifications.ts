@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Notification } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useLatestEffect } from './useLatestEffect';
 
 export const useNotifications = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -99,7 +100,7 @@ export const useNotifications = () => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchNotifications();
 
     const channel = supabase
