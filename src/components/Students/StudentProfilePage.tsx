@@ -2,7 +2,7 @@
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { LessonStudyAsset, Student, StudentExamResult, TrainingRecord, TrainingModule, LessonGradingSystem, User as AppUser } from '../../types';
-import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, ChevronUp, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image, KeyRound } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Calendar, Award, Clock, FileText, Plus, CreditCard as Edit, CheckCircle, AlertTriangle, BookOpen, GraduationCap, Shield, Wallet, History, Save, X, Loader2, Plane, Upload, Download, ChevronDown, ChevronUp, Sparkles, RotateCcw, RefreshCw, Search, ChevronRight, Image, KeyRound, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useStudents } from '../../hooks/useStudents';
 import { useTrainingRecords } from '../../hooks/useTrainingRecords';
@@ -58,6 +58,8 @@ import {
 } from '../../utils/credentialDropdowns';
 import { courseExamEvidenceForExport } from '../../utils/coursePdfOptions';
 import { getCourseAwardDate } from '../../utils/pilotReviewCurrency';
+import { safeImageSource } from '../../utils/imageSource';
+import { managedProfilePicturePath, PROFILE_PICTURE_BUCKET } from '../../utils/profilePicture';
 
 interface StudentInfoForm {
   name: string;
@@ -395,6 +397,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const [showInfoEditor, setShowInfoEditor] = useState(false);
   const [showRecordImporter, setShowRecordImporter] = useState(false);
   const [savingInfo, setSavingInfo] = useState(false);
+  const [removingProfilePicture, setRemovingProfilePicture] = useState(false);
   const [infoForm, setInfoForm] = useState<StudentInfoForm>({
     name: '',
     phone: '',
@@ -963,6 +966,54 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
     nextParams.delete('action');
     nextParams.delete('licenceId');
     setSearchParams(nextParams, { replace: true });
+  };
+
+  const removeStudentProfilePicture = async () => {
+    if (!student?.avatar || !isAdmin || removingProfilePicture) return;
+
+    const confirmed = window.confirm(
+      `Remove ${student.name}'s profile picture? They can upload a new appropriate photo later.`,
+    );
+    if (!confirmed) return;
+
+    setRemovingProfilePicture(true);
+    const storagePath = managedProfilePicturePath(student.avatar, student.id);
+
+    try {
+      const { data: updatedUsers, error: updateError } = await supabase
+        .from('users')
+        .update({ avatar_url: null, updated_at: new Date().toISOString() })
+        .eq('id', student.id)
+        .select('id');
+
+      if (updateError) throw updateError;
+      if (!updatedUsers || updatedUsers.length === 0) {
+        throw new Error('Administrator permission is required to remove this profile picture.');
+      }
+
+      let cleanupFailed = false;
+      if (storagePath) {
+        const { error: storageError } = await supabase.storage
+          .from(PROFILE_PICTURE_BUCKET)
+          .remove([storagePath]);
+        cleanupFailed = Boolean(storageError);
+        if (storageError) {
+          console.error('The removed profile picture could not be cleaned up from storage:', storageError);
+        }
+      }
+
+      await refetchStudents();
+      if (cleanupFailed) {
+        toast.error('The picture is no longer visible, but its stored file could not be cleaned up.');
+      } else {
+        toast.success('Profile picture removed');
+      }
+    } catch (error) {
+      console.error('Failed to remove profile picture:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to remove profile picture');
+    } finally {
+      setRemovingProfilePicture(false);
+    }
   };
 
   useEffect(() => {
@@ -1959,6 +2010,7 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
   const totalDualTime = studentTrainingRecords.reduce((sum, record) => sum + record.dualTimeMin, 0);
   const totalSoloTime = studentTrainingRecords.reduce((sum, record) => sum + record.soloTimeMin, 0);
   const totalFlightTime = totalDualTime + totalSoloTime;
+  const studentAvatarSource = safeImageSource(student.avatar);
   const lastFlightDate = studentTrainingRecords.length > 0
     ? new Date(Math.max(...studentTrainingRecords.map(r => r.date.getTime())))
     : null;
@@ -2236,6 +2288,13 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-blue-700 shadow-sm sm:h-14 sm:w-14">
+            {studentAvatarSource ? (
+              <img src={studentAvatarSource} alt={`${student.name} profile`} className="h-full w-full object-cover object-top" />
+            ) : (
+              <User className="h-6 w-6 text-white" />
+            )}
+          </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="min-w-0 truncate text-xl font-bold text-white sm:text-2xl">{student.name}</h1>
@@ -2264,6 +2323,17 @@ export const StudentProfilePage: React.FC<StudentProfilePageProps> = ({ portalSe
           >
             <Edit className="h-4 w-4" />
             Edit Info
+          </button>
+        )}
+        {isAdmin && studentAvatarSource && (
+          <button
+            type="button"
+            onClick={removeStudentProfilePicture}
+            disabled={removingProfilePicture}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200/60 bg-red-950/30 px-4 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {removingProfilePicture ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Remove photo
           </button>
         )}
         </div>
