@@ -144,11 +144,24 @@ try {
     throw 'The temporary acceptance-test browser origins did not become active.'
   }
 
-  $providerStatus = Invoke-RestMethod `
-    -Method Post `
-    -Uri "$projectUrl/functions/v1/financial-provider-status" `
-    -Headers $serviceHeaders `
-    -Body '{}'
+  $providerStatus = $null
+  for ($attempt = 1; $attempt -le 20; $attempt += 1) {
+    try {
+      $providerStatus = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$projectUrl/functions/v1/financial-provider-status" `
+        -Headers $serviceHeaders `
+        -Body '{}'
+      break
+    } catch {
+      # Secret changes restart the function fleet. Preflight can recover a few
+      # seconds before database-backed requests are ready on every isolate.
+      Start-Sleep -Seconds 2
+    }
+  }
+  if ($null -eq $providerStatus) {
+    throw 'Financial provider status did not recover after the temporary acceptance configuration change.'
+  }
   $env:EXPECT_FINANCIAL_DASHBOARD = if ($providerStatus.financeEnabled) { 'true' } else { 'false' }
 
   $existingUsers = Invoke-RestMethod `
