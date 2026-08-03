@@ -30,6 +30,8 @@ jobs:
         run: npm run quality:ratchet
       - name: Audit migration safety and ordering
         run: npm run audit:migrations:local
+      - name: Enforce database function permission manifest
+        run: npm run audit:function-permissions
       - name: Test automation alert handling
         run: npm run test:automation-alerts
       - name: Build portal and PWAs

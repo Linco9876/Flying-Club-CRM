@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Booking, DutyAssessment, FlightLog, GroundSessionLog } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useBookingRulesSettings, useCalendarSettings, usePortalUxSettings } from './useSettings';
 import toast from 'react-hot-toast';
+import { useLatestEffect } from './useLatestEffect';
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) return error.message;
@@ -1507,7 +1508,7 @@ export const useBookings = (enabled = true) => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!enabled) {
       setBookings([]);
       setLoading(false);

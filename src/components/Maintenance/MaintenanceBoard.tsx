@@ -29,6 +29,7 @@ import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import { usePageLoadState } from '../../context/PageLoadContext';
 import { Defect } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 import {
   addCalendarMonths,
   calculateDaysRemaining,
@@ -668,7 +669,7 @@ export const MaintenanceBoard: React.FC = () => {
     setSelectedStatus(maintenanceSettings.defaultDefectFilter);
   }, [maintenanceSettings.defaultDefectFilter]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     const initializeMilestones = async () => {
       if (!canManageMaintenanceMilestones || aircraft.length === 0 || templates.length === 0 || milestonesLoading || templatesLoading) return;
 

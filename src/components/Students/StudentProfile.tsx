@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { User, Phone, Mail, Calendar, Award, CreditCard as Edit, Save, X, AlertCircle, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { StudentTrainingRecords } from './StudentTrainingRecords';
 import { fetchUserXeroBalance } from '../../lib/xeroMemberBalance';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface ProfileData {
   name: string;
@@ -53,7 +54,7 @@ export const StudentProfile: React.FC = () => {
   const [xeroLinked, setXeroLinked] = useState(false);
   const [flightStats, setFlightStats] = useState({ total: 0, solo: 0, dual: 0 });
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!user?.id) return;
     fetchAll();
   }, [user?.id]);

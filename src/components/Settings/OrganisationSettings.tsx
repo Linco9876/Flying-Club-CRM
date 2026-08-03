@@ -7,6 +7,7 @@ import {
 } from '../../hooks/useOrganisationLocations';
 import { safeImageSource } from '../../utils/imageSource';
 import { OrganisationDocumentsSettings } from './OrganisationDocumentsSettings';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface OrganisationSettingsProps {
   canEdit: boolean;
@@ -41,7 +42,7 @@ export const OrganisationSettings: React.FC<OrganisationSettingsProps> = ({ canE
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoImageSource = safeImageSource(logoPreview);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (settings) {
       setFormData({
         clubName: settings.club_name ?? '',

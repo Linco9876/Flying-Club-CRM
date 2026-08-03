@@ -13,6 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { hasAnyRole } from '../../utils/rbac';
 import { getAircraftIconSrc } from '../../utils/aircraftIcons';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 type AircraftProfileTab = 'documents' | 'defects' | 'flight-log' | 'milestones' | 'bookings' | 'pricing';
 
@@ -105,7 +106,7 @@ export const AircraftProfilePage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (activeTab === 'documents') {
       fetchDocuments();
     }
@@ -144,7 +145,7 @@ export const AircraftProfilePage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchCompletions();
   }, [aircraftId, maintenanceTabActive]);
 

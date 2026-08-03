@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Save, Settings } from 'lucide-react';
 import { useBookingFieldSettings } from '../../hooks/useBookingFieldSettings';
 import { useOrganisationLocations } from '../../hooks/useOrganisationLocations';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 import toast from 'react-hot-toast';
 
 interface BookingFieldSettingsProps {
@@ -87,7 +88,7 @@ export const BookingFieldSettings: React.FC<BookingFieldSettingsProps> = ({ canE
     setHasChanges(false);
   };
 
-  React.useEffect(() => {
+  useLatestEffect(() => {
     if (!embedded) return;
     (window as any).__bookingFieldsEmbeddedSave = handleSaveChanges;
     (window as any).__bookingFieldsEmbeddedCancel = handleResetChanges;

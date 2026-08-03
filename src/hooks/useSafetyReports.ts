@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useSafetySettings } from './useSafetySettings';
 import toast from 'react-hot-toast';
 import { usePageLoadState } from '../context/PageLoadContext';
+import { useLatestEffect } from './useLatestEffect';
 
 export type SafetyReportType = 'incident' | 'hazard' | 'risk_assessment' | 'near_miss' | 'accident';
 export type SafetyReportSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -133,7 +134,7 @@ export const useSafetyReports = (options?: UseSafetyReportsOptions) => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!enabled) {
       setReports([]);
       setLoading(false);

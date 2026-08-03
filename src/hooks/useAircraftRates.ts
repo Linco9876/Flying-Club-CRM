@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { useLatestEffect } from './useLatestEffect';
 
 export interface AircraftRate {
   id: string;
@@ -19,7 +20,7 @@ export const useAircraftRates = (aircraftId?: string, enabled = true) => {
   const [rates, setRates] = useState<AircraftRate[]>([]);
   const [loading, setLoading] = useState(enabled && Boolean(aircraftId));
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (aircraftId && enabled) {
       fetchRates();
     } else {

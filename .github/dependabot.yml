@@ -8,6 +8,26 @@ updates:
       time: "18:00"
       timezone: Australia/Sydney
     open-pull-requests-limit: 5
+    # Framework/toolchain majors are migration projects, not routine dependency
+    # updates. Their project charters and evidence gates live in
+    # docs/MAJOR_DEPENDENCY_MIGRATIONS.md.
+    ignore:
+      - dependency-name: react
+        versions: [">=19"]
+      - dependency-name: react-dom
+        versions: [">=19"]
+      - dependency-name: "@types/react"
+        versions: [">=19"]
+      - dependency-name: "@types/react-dom"
+        versions: [">=19"]
+      - dependency-name: tailwindcss
+        versions: [">=4"]
+      - dependency-name: typescript
+        versions: [">=7"]
+      - dependency-name: lucide-react
+        versions: [">=1"]
+      - dependency-name: "@types/node"
+        versions: [">=25"]
     groups:
       production-dependencies:
         dependency-type: production

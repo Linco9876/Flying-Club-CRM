@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { storePortalTheme } from '../utils/theme';
+import { useLatestEffect } from './useLatestEffect';
 
 export interface OrganisationSettings {
   id: string;
@@ -603,7 +604,7 @@ export const useNotificationSettings = () => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchSettings();
   }, []);
 
@@ -768,13 +769,13 @@ export const useUserPreferences = (userId: string) => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (userId) {
       fetchPreferences();
     }
   }, [userId]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!userId) return;
 
     const handlePreferencesUpdated = () => {

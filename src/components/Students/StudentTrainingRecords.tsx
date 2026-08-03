@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 import { supabase } from '../../lib/supabase';
 import { TrainingRecord, TrainingSequenceResult } from '../../types';
 import { format } from 'date-fns';
@@ -392,7 +393,7 @@ export const StudentTrainingRecords: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchRecords();
   }, [user?.id]);
 

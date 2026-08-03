@@ -3,6 +3,7 @@ import { Wrench, Plus, Trash2, Loader2 } from 'lucide-react';
 import { useMaintenanceSettings } from '../../hooks/useMaintenanceSettings';
 import toast from 'react-hot-toast';
 import { validateMaintenanceThresholds } from '../../utils/maintenanceRules';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface MaintenanceSettingsProps {
   canEdit: boolean;
@@ -174,7 +175,7 @@ export const MaintenanceSettings: React.FC<MaintenanceSettingsProps> = ({ canEdi
     setHasChanges(false);
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     (window as any).__maintenanceSettingsSave = handleSaveSettings;
     (window as any).__maintenanceSettingsCancel = handleCancelSettings;
     return () => {

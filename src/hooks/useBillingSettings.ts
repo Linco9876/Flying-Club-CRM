@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { UserRole } from '../types';
+import { useLatestEffect } from './useLatestEffect';
 
 export interface FlightType {
   id: string;
@@ -53,7 +54,7 @@ export const useBillingSettings = (options: UseBillingSettingsOptions = {}) => {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (!enabled) {
       setLoading(false);
       return;

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Calendar, Download, Edit3, FileText, Loader2, Plus, Save, Trash2, Upload, User, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Student } from '../../types';
 import { hasAnyRole } from '../../utils/rbac';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface StudentDocumentsTabProps {
   student: Student;
@@ -93,7 +94,7 @@ export const StudentDocumentsTab: React.FC<StudentDocumentsTabProps> = ({ studen
     }
   };
 
-  useEffect(() => {
+  useLatestEffect(() => {
     fetchDocuments();
   }, [student.id]);
 

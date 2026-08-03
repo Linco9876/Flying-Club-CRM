@@ -2,7 +2,7 @@
 
 Review date: 3 August 2026  
 Environment reviewed: Bendigo Flying Club production Supabase project  
-Status: remediation required; no confirmed privilege-escalation exploit
+Status: manifest enforced; grant reduction implemented and pending release evidence
 
 ## What was found
 
@@ -26,9 +26,10 @@ operations, such as narrowly scoped acknowledgement links, may legitimately
 remain anonymous when their token validation, expiry, replay protection and data
 minimisation are tested.
 
-## Required target state
+## Implemented target state
 
-Every function signature must be listed in a version-controlled permission
+Every production-derived function signature is listed in the version-controlled
+`config/database-function-permissions.json` manifest and classified as exactly one of:
 manifest as exactly one of:
 
 1. anonymous/token-public;
@@ -37,26 +38,41 @@ manifest as exactly one of:
 4. service worker only; or
 5. trigger/internal only.
 
-Each migration must revoke `EXECUTE` from `PUBLIC` first and then grant only the
-classified roles. `SECURITY DEFINER` functions must use a fixed safe
+Migration `20260803200000_enforce_function_permission_manifest.sql` revokes
+`EXECUTE` from `PUBLIC`, `anon`, `authenticated` and `service_role` for every
+public function, then re-grants only the roles in the manifest. It also revokes
+the default implicit function grants for future public-schema functions. Of the
+178 reviewed signatures, 81 trigger/internal functions have no client execute
+grant and only five deliberately public token/configuration functions retain
+anonymous execution.
+
+CI runs `npm run audit:function-permissions` and fails on duplicate or invalid
+signatures, unexpected anonymous access, client-executable trigger functions,
+or a migration that does not enforce the recorded grants. The database
+migration itself refuses to run if the live public-function inventory or
+security metadata differs from the reviewed manifest.
+
+`SECURITY DEFINER` functions must continue to use a fixed safe
 `search_path`, schema-qualified object names, internal authorisation checks and
 tests proving denial for every lower-privilege role. New functions must not
 receive an implicit `PUBLIC` execute grant.
 
-## Safe remediation sequence
+## Incremental follow-up sequence
 
-1. Add default-privilege revocation for future functions.
-2. Inventory exact signatures and their application callers.
-3. Revoke trigger/internal and clearly worker-only functions first.
-4. Migrate staff functions to explicit AAL2 and role checks, then narrow grants.
-5. Test anonymous, member, instructor, CFI, admin and worker access after each
-   batch.
-6. Deploy in small batches with database and Edge Function rollback scripts.
+1. Keep the exact-signature manifest synchronized with every function migration.
+2. Add direct denial tests for anonymous, member, instructor, CFI, admin and
+   worker callers as each functional area changes.
+3. Continue body-level review of staff functions for server-enforced AAL2,
+   fixed `search_path` and schema qualification.
+4. Review the final matrix in the independent penetration test and remediate
+   any privilege boundary finding before broad integration access.
 
-A blanket revoke is deliberately not being applied in one release. It could
-silently break sign-up, secure email links, booking rules or queue workers. The
-incremental approach reduces the current exposure without trading it for an
-uncontrolled availability incident.
+The grant change is exact rather than name-only: secure email links retain only
+their five reviewed anonymous RPCs, browser workflows retain authenticated
+execution, workers retain service-role execution, and trigger functions retain
+no client execution. Recovery and six-role physical-device acceptance remain
+required release evidence so availability regressions are detected outside the
+production database.
 
 ## Completion criteria
 

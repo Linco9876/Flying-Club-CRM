@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { formatLocalDateInput } from '../utils/maintenanceRules';
+import { useLatestEffect } from './useLatestEffect';
 
 export interface MaintenanceMilestone {
   id: string;
@@ -43,7 +44,7 @@ export const useMaintenanceMilestones = (options?: UseMaintenanceMilestonesOptio
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (enabled) {
       fetchMilestones();
       return;

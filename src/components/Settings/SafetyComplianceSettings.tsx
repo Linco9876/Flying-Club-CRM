@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Shield, Users, Plus, Trash2, Loader2 } from 'lucide-react';
 import { SafetyReportCategory, useSafetySettings } from '../../hooks/useSafetySettings';
 import { useTrainingSettings } from '../../hooks/useTrainingSettings';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface SafetyComplianceSettingsProps {
   canEdit: boolean;
@@ -56,7 +57,7 @@ export const SafetyComplianceSettings: React.FC<SafetyComplianceSettingsProps> =
     setFormData(settings);
   }, [settings]);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     const settingsWindow = window as Window & {
       __safetySettingsSave?: () => Promise<void>;
       __safetySettingsCancel?: () => void;

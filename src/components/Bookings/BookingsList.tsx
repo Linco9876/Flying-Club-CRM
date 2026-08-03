@@ -76,16 +76,16 @@ export const BookingsList: React.FC<BookingsListProps> = ({
       hour12: portalSettings.time_format === '12h',
     });
 
-  const getAircraftInfo = (aircraftId: string) => {
+  const getAircraftInfo = React.useCallback((aircraftId: string) => {
     return aircraft.find(a => a.id === aircraftId);
-  };
+  }, [aircraft]);
 
-  const getPersonName = (personId?: string) => {
+  const getPersonName = React.useCallback((personId?: string) => {
     if (!personId) return '';
     return students.find(s => s.id === personId)?.name
       || users.find(u => u.id === personId)?.name
       || '';
-  };
+  }, [students, users]);
 
   const getDateOnly = (date: Date) => {
     const copy = new Date(date);
@@ -123,7 +123,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
     }));
   };
 
-  const matchesDatePreset = (booking: Booking) => {
+  const matchesDatePreset = React.useCallback((booking: Booking) => {
     if (filters.datePreset === 'all' || filters.datePreset === 'custom') return true;
 
     const now = new Date();
@@ -140,7 +140,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
     if (filters.datePreset === 'week') return startTime >= todayStart && startTime < weekEnd;
     if (filters.datePreset === 'past') return isPastBooking(booking);
     return startTime >= now || !isPastBooking(booking);
-  };
+  }, [filters.datePreset]);
 
   const filteredBookings = React.useMemo(() => {
     const searchTerm = filters.search.trim().toLowerCase();
@@ -182,7 +182,7 @@ export const BookingsList: React.FC<BookingsListProps> = ({
         ].some(value => value?.toLowerCase().includes(searchTerm));
       })
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-  }, [userBookings, filters, aircraft, students, users]);
+  }, [userBookings, filters, getAircraftInfo, getPersonName, matchesDatePreset]);
 
   const activeFilterCount = [
     filters.search,

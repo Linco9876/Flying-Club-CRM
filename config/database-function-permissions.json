@@ -1,0 +1,1895 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-08-03",
+  "source_project": "Flying Club CRM Australia",
+  "rules": {
+    "anonymous_token_public": [
+      "anon",
+      "authenticated",
+      "service_role"
+    ],
+    "authenticated_self_service": [
+      "authenticated",
+      "service_role"
+    ],
+    "staff_aal2": [
+      "authenticated",
+      "service_role"
+    ],
+    "service_worker": [
+      "service_role"
+    ],
+    "trigger_internal": []
+  },
+  "functions": [
+    {
+      "signature": "public.account_is_linked_to_xero(target_user_id uuid)",
+      "name": "account_is_linked_to_xero",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.acknowledge_booking_supervision(p_booking_id uuid)",
+      "name": "acknowledge_booking_supervision",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.acknowledge_training_record_with_token(p_token text, p_user_agent text)",
+      "name": "acknowledge_training_record_with_token",
+      "classification": "anonymous_token_public",
+      "allowed_roles": [
+        "anon",
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Login-free workflow protected by an expiring, scoped token."
+    },
+    {
+      "signature": "public.admin_audit_trigger()",
+      "name": "admin_audit_trigger",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.apply_booking_conflict_policy()",
+      "name": "apply_booking_conflict_policy",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.apply_flight_review_completion()",
+      "name": "apply_flight_review_completion",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.apply_ground_session_rate_matrix()",
+      "name": "apply_ground_session_rate_matrix",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.apply_membership_scholarship_contribution()",
+      "name": "apply_membership_scholarship_contribution",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.archive_organisation_document(p_document_id uuid)",
+      "name": "archive_organisation_document",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.archive_trial_voucher_account_after_logged_flight()",
+      "name": "archive_trial_voucher_account_after_logged_flight",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.assert_current_membership_documents_acknowledged(p_document_ids uuid[])",
+      "name": "assert_current_membership_documents_acknowledged",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.assert_learning_step_access(p_step_id uuid, p_require_previous boolean)",
+      "name": "assert_learning_step_access",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.assess_instructor_duty_booking(p_instructor_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_exclude_booking_id uuid)",
+      "name": "assess_instructor_duty_booking",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.assess_member_booking_eligibility(p_user_id uuid, p_booking_start timestamp with time zone, p_is_guest boolean, p_has_aircraft boolean)",
+      "name": "assess_member_booking_eligibility",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.audit_and_reconcile_maintenance_milestone()",
+      "name": "audit_and_reconcile_maintenance_milestone",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.audit_changed_fields(old_row jsonb, new_row jsonb)",
+      "name": "audit_changed_fields",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.audit_defect_change()",
+      "name": "audit_defect_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.audit_flight_review_record_change()",
+      "name": "audit_flight_review_record_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.audit_instructor_compliance_record()",
+      "name": "audit_instructor_compliance_record",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.audit_operations_row()",
+      "name": "audit_operations_row",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.audit_record_label(table_name text, row_data jsonb)",
+      "name": "audit_record_label",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.audit_xero_configuration_change()",
+      "name": "audit_xero_configuration_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.audit_xero_connection_change()",
+      "name": "audit_xero_connection_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.authorize_membership_fee_waiver(p_period_id uuid, p_waiver_type text, p_reason text, p_authority_reference text)",
+      "name": "authorize_membership_fee_waiver",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.bind_new_xero_reference_to_tenant()",
+      "name": "bind_new_xero_reference_to_tenant",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.bind_xero_queue_tenant()",
+      "name": "bind_xero_queue_tenant",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.book_trial_flight_voucher_slot(p_voucher_id uuid, p_student_id uuid, p_aircraft_id uuid, p_instructor_id uuid, p_start_time timestamp with time zone, p_end_time timestamp with time zone, p_notes text)",
+      "name": "book_trial_flight_voucher_slot",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.casa_appendix_6_fdp_limit_hours(p_start timestamp with time zone)",
+      "name": "casa_appendix_6_fdp_limit_hours",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.claim_integration_webhook_deliveries(p_limit integer, p_lease_timeout_seconds integer)",
+      "name": "claim_integration_webhook_deliveries",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.claim_xero_api_slot(max_calls_per_minute integer, max_calls_per_day integer, spacing_ms integer)",
+      "name": "claim_xero_api_slot",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.claim_xero_token_refresh(p_lock_id uuid, p_lease_seconds integer)",
+      "name": "claim_xero_token_refresh",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.commence_membership_application_internal(p_application_id uuid, p_method text, p_actor_id uuid)",
+      "name": "commence_membership_application_internal",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.complete_learning_step(p_step_id uuid)",
+      "name": "complete_learning_step",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.complete_maintenance_milestone(p_milestone_id uuid, p_completed_date date, p_completed_tach numeric, p_next_due_hours numeric, p_next_due_date date, p_notes text, p_operation_id uuid)",
+      "name": "complete_maintenance_milestone",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.create_integration_api_key(p_name text, p_scopes text[], p_expires_at timestamp with time zone)",
+      "name": "create_integration_api_key",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.create_integration_webhook(p_name text, p_url text, p_events text[])",
+      "name": "create_integration_webhook",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.create_membership_application_for_new_user()",
+      "name": "create_membership_application_for_new_user",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.create_membership_payment_preference_for_new_user()",
+      "name": "create_membership_payment_preference_for_new_user",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.current_user_has_full_portal_access()",
+      "name": "current_user_has_full_portal_access",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.current_user_has_staff_role()",
+      "name": "current_user_has_staff_role",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.current_user_is_admin()",
+      "name": "current_user_is_admin",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.current_user_is_cfi()",
+      "name": "current_user_is_cfi",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.current_user_is_staff()",
+      "name": "current_user_is_staff",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.decide_membership_application(p_application_id uuid, p_decision text, p_reason text)",
+      "name": "decide_membership_application",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.delete_training_record_draft(p_record_id uuid)",
+      "name": "delete_training_record_draft",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.disable_kiosk_access_internal(p_actor_user_id uuid)",
+      "name": "disable_kiosk_access_internal",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.duty_geo_distance_metres(p_latitude_a double precision, p_longitude_a double precision, p_latitude_b double precision, p_longitude_b double precision)",
+      "name": "duty_geo_distance_metres",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": false,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.effective_daily_duty_limit_hours(p_start timestamp with time zone)",
+      "name": "effective_daily_duty_limit_hours",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.enforce_aircraft_maintenance_serviceability()",
+      "name": "enforce_aircraft_maintenance_serviceability",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.enforce_aircraft_solo_hire_qualifications()",
+      "name": "enforce_aircraft_solo_hire_qualifications",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.enforce_booking_membership_eligibility()",
+      "name": "enforce_booking_membership_eligibility",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.enforce_cfi_instructor_dependency()",
+      "name": "enforce_cfi_instructor_dependency",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.enforce_member_active_booking_limit()",
+      "name": "enforce_member_active_booking_limit",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.enqueue_integration_event()",
+      "name": "enqueue_integration_event",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.find_available_supervisor(p_trainee_instructor_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_location text, p_activity_type text, p_exclude_booking_id uuid)",
+      "name": "find_available_supervisor",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.find_next_available_slots(p_after timestamp with time zone, p_duration_minutes integer, p_search_days integer, p_aircraft_ids uuid[], p_instructor_ids uuid[], p_location_id uuid, p_limit integer)",
+      "name": "find_next_available_slots",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.get_declaration_signing_request(p_token text)",
+      "name": "get_declaration_signing_request",
+      "classification": "anonymous_token_public",
+      "allowed_roles": [
+        "anon",
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Login-free workflow protected by an expiring, scoped token."
+    },
+    {
+      "signature": "public.get_logged_instructor_flight_summary(p_instructor_id uuid, p_duty_date date)",
+      "name": "get_logged_instructor_flight_summary",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.get_public_membership_configuration()",
+      "name": "get_public_membership_configuration",
+      "classification": "anonymous_token_public",
+      "allowed_roles": [
+        "anon",
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Minimal public membership configuration used before sign-in."
+    },
+    {
+      "signature": "public.get_training_record_acknowledgement(p_token text)",
+      "name": "get_training_record_acknowledgement",
+      "classification": "anonymous_token_public",
+      "allowed_roles": [
+        "anon",
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Login-free workflow protected by an expiring, scoped token."
+    },
+    {
+      "signature": "public.guard_and_audit_training_record_update()",
+      "name": "guard_and_audit_training_record_update",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.guard_students_self_service_update()",
+      "name": "guard_students_self_service_update",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.guard_users_self_service_update()",
+      "name": "guard_users_self_service_update",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.handle_aircraft_grounding()",
+      "name": "handle_aircraft_grounding",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.handle_endorsement_flight_review_sync()",
+      "name": "handle_endorsement_flight_review_sync",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.handle_endorsement_role_sync()",
+      "name": "handle_endorsement_role_sync",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.handle_licence_role_sync()",
+      "name": "handle_licence_role_sync",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.handle_maintenance_settings_reconciliation()",
+      "name": "handle_maintenance_settings_reconciliation",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.handle_new_user()",
+      "name": "handle_new_user",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.import_legacy_membership(p_user_id uuid, p_membership_class_code text, p_commenced_at date, p_fee_disposition text, p_reason text)",
+      "name": "import_legacy_membership",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.instructor_available_at_location_for_slot(p_instructor_id uuid, p_start_time timestamp with time zone, p_end_time timestamp with time zone, p_location_id uuid)",
+      "name": "instructor_available_at_location_for_slot",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.instructor_requires_role_supervision(p_instructor_id uuid)",
+      "name": "instructor_requires_role_supervision",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.instructor_roster_location_for_slot(p_instructor_id uuid, p_start_time timestamp with time zone, p_end_time timestamp with time zone)",
+      "name": "instructor_roster_location_for_slot",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.lease_next_xero_sync_job(p_worker_id text, p_lease_seconds integer)",
+      "name": "lease_next_xero_sync_job",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.link_membership_xero_invoice(p_period_id uuid, p_invoice_id text, p_invoice_number text, p_invoice_status text, p_amount_due numeric)",
+      "name": "link_membership_xero_invoice",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.list_calendar_instructors()",
+      "name": "list_calendar_instructors",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.maximum_duty_end(p_start timestamp with time zone)",
+      "name": "maximum_duty_end",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.membership_financial_year_bounds(p_date date)",
+      "name": "membership_financial_year_bounds",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.membership_is_linked_to_xero(target_membership_id uuid)",
+      "name": "membership_is_linked_to_xero",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.membership_period_amount(p_class_id uuid, p_commencement_date date)",
+      "name": "membership_period_amount",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.mobile_end_break(p_ended_at timestamp with time zone)",
+      "name": "mobile_end_break",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.mobile_end_duty(p_actual_end timestamp with time zone, p_flight_minutes integer, p_notes text, p_device_platform text, p_break_taken boolean, p_break_start timestamp with time zone, p_break_end timestamp with time zone)",
+      "name": "mobile_end_duty",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.mobile_get_duty_context()",
+      "name": "mobile_get_duty_context",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.mobile_start_break(p_started_at timestamp with time zone)",
+      "name": "mobile_start_break",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.mobile_start_duty(p_actual_start timestamp with time zone, p_location_label text, p_latitude double precision, p_longitude double precision, p_accuracy_metres numeric, p_duty_clock_location_id uuid, p_geofence_notes text, p_fit_for_duty boolean, p_external_duty_declared boolean, p_sleep_opportunity_confirmed boolean, p_kss_score integer, p_private_note text, p_device_platform text)",
+      "name": "mobile_start_duty",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.mobile_user_can_clock_duty(p_user_id uuid)",
+      "name": "mobile_user_can_clock_duty",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.note_xero_rate_limit(retry_after_seconds integer)",
+      "name": "note_xero_rate_limit",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.notify_booking_cancellation_fee()",
+      "name": "notify_booking_cancellation_fee",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.notify_instructor_booking_request(booking_id uuid)",
+      "name": "notify_instructor_booking_request",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.notify_instructor_compliance_result()",
+      "name": "notify_instructor_compliance_result",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.notify_staff_of_licence_submission()",
+      "name": "notify_staff_of_licence_submission",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prepare_booking_duty_and_supervision()",
+      "name": "prepare_booking_duty_and_supervision",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prepare_defect_write()",
+      "name": "prepare_defect_write",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prepare_instructor_compliance_record()",
+      "name": "prepare_instructor_compliance_record",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prepare_maintenance_milestone()",
+      "name": "prepare_maintenance_milestone",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prepare_maintenance_settings()",
+      "name": "prepare_maintenance_settings",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prepare_maintenance_template()",
+      "name": "prepare_maintenance_template",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prepare_membership_renewals(p_as_of date)",
+      "name": "prepare_membership_renewals",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.prevent_approved_xero_mapping_change()",
+      "name": "prevent_approved_xero_mapping_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prevent_expected_xero_tenant_change()",
+      "name": "prevent_expected_xero_tenant_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prevent_self_service_access_field_changes()",
+      "name": "prevent_self_service_access_field_changes",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prevent_trial_voucher_booking_overlap()",
+      "name": "prevent_trial_voucher_booking_overlap",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prevent_uncovered_supervised_flight_log()",
+      "name": "prevent_uncovered_supervised_flight_log",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.prevent_xero_tenant_rebind()",
+      "name": "prevent_xero_tenant_rebind",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.process_membership_lifecycle(p_as_of timestamp with time zone)",
+      "name": "process_membership_lifecycle",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.process_student_course_record_import(p_student_id uuid, p_course_id uuid, p_course_version text, p_record_type text, p_filename text, p_rows jsonb, p_commit boolean, p_request_student_acknowledgement boolean)",
+      "name": "process_student_course_record_import",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.process_student_course_record_import_core(p_student_id uuid, p_course_id uuid, p_course_version text, p_record_type text, p_filename text, p_rows jsonb, p_commit boolean, p_request_student_acknowledgement boolean)",
+      "name": "process_student_course_record_import_core",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.process_student_record_import(p_student_id uuid, p_record_type text, p_filename text, p_rows jsonb, p_commit boolean, p_request_student_acknowledgement boolean)",
+      "name": "process_student_record_import",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.process_student_review_record_import(p_student_id uuid, p_course_id uuid, p_course_version text, p_filename text, p_rows jsonb, p_commit boolean)",
+      "name": "process_student_review_record_import",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.promote_pilot_after_passed_flight_review()",
+      "name": "promote_pilot_after_passed_flight_review",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.protect_and_sync_organisation_location()",
+      "name": "protect_and_sync_organisation_location",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.protect_candidate_flight_review_update()",
+      "name": "protect_candidate_flight_review_update",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.protect_flight_review_import_provenance()",
+      "name": "protect_flight_review_import_provenance",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.protect_role_mandated_supervision_requirement()",
+      "name": "protect_role_mandated_supervision_requirement",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.protect_student_matrix_import_provenance()",
+      "name": "protect_student_matrix_import_provenance",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.protect_student_record_import_provenance()",
+      "name": "protect_student_record_import_provenance",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.protect_system_payment_methods()",
+      "name": "protect_system_payment_methods",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.publish_organisation_document_version(p_replaces_document_id uuid, p_code text, p_title text, p_version text, p_effective_date date, p_storage_path text, p_uploaded_file_name text, p_file_size_bytes bigint, p_mime_type text, p_acknowledgement_required boolean, p_notes text)",
+      "name": "publish_organisation_document_version",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.queue_xero_contact_sync_on_user_change()",
+      "name": "queue_xero_contact_sync_on_user_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.queue_xero_flight_invoice_sync()",
+      "name": "queue_xero_flight_invoice_sync",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.queue_xero_verified_payment_sync()",
+      "name": "queue_xero_verified_payment_sync",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.queue_xero_voucher_sync_from_flight_log()",
+      "name": "queue_xero_voucher_sync_from_flight_log",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.queue_xero_voucher_sync_from_voucher()",
+      "name": "queue_xero_voucher_sync_from_voucher",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.reconcile_aircraft_maintenance_status(p_aircraft_id uuid, p_cause text)",
+      "name": "reconcile_aircraft_maintenance_status",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.reconcile_automatic_duty_periods(p_now timestamp with time zone)",
+      "name": "reconcile_automatic_duty_periods",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Club-wide scheduler with a caller-supplied reconciliation time; only the trusted service worker may execute it."
+    },
+    {
+      "signature": "public.reconcile_flight_review_endorsements()",
+      "name": "reconcile_flight_review_endorsements",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.reconcile_role_based_supervision_requirements()",
+      "name": "reconcile_role_based_supervision_requirements",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.record_booking_duty_and_supervision()",
+      "name": "record_booking_duty_and_supervision",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.record_membership_booking_override()",
+      "name": "record_membership_booking_override",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.refresh_aircraft_milestones_after_hours_change()",
+      "name": "refresh_aircraft_milestones_after_hours_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.refresh_future_supervision_assignments()",
+      "name": "refresh_future_supervision_assignments",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.refresh_learning_program_completion(p_program_id uuid, p_user_id uuid)",
+      "name": "refresh_learning_program_completion",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.refresh_maintenance_milestone_statuses()",
+      "name": "refresh_maintenance_milestone_statuses",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.refresh_role_based_supervision_requirements()",
+      "name": "refresh_role_based_supervision_requirements",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.release_aircraft_auto_grounding(p_aircraft_id uuid, p_defect_id uuid)",
+      "name": "release_aircraft_auto_grounding",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.release_expired_aircraft_auto_groundings()",
+      "name": "release_expired_aircraft_auto_groundings",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.release_trial_voucher_when_booking_cancelled()",
+      "name": "release_trial_voucher_when_booking_cancelled",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.release_xero_token_refresh(p_lock_id uuid)",
+      "name": "release_xero_token_refresh",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.rename_aircraft_endorsement_requirement(old_value text, new_value text)",
+      "name": "rename_aircraft_endorsement_requirement",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.rename_aircraft_licence_requirement(old_value text, new_value text)",
+      "name": "rename_aircraft_licence_requirement",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.revoke_integration_api_key(p_key_id uuid)",
+      "name": "revoke_integration_api_key",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.rollback_student_record_import(p_batch_id uuid)",
+      "name": "rollback_student_record_import",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.rotate_kiosk_access_token_internal(p_token_prefix text, p_token_hash text, p_token_ciphertext text, p_actor_user_id uuid)",
+      "name": "rotate_kiosk_access_token_internal",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.save_instructor_compliance_template(p_course_id uuid, p_name text, p_description text, p_version text, p_source_documents jsonb, p_check_type text, p_is_active boolean, p_items jsonb)",
+      "name": "save_instructor_compliance_template",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.save_membership_products(p_products jsonb)",
+      "name": "save_membership_products",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.save_organisation_locations(p_locations jsonb)",
+      "name": "save_organisation_locations",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.send_maintenance_due_notifications()",
+      "name": "send_maintenance_due_notifications",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.set_booking_location_and_roster()",
+      "name": "set_booking_location_and_roster",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.set_integration_webhook_active(p_endpoint_id uuid, p_active boolean)",
+      "name": "set_integration_webhook_active",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.set_membership_fee_disposition(p_period_id uuid, p_disposition text, p_reason text)",
+      "name": "set_membership_fee_disposition",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.set_organisation_document_acknowledgement(p_document_id uuid, p_acknowledgement_required boolean)",
+      "name": "set_organisation_document_acknowledgement",
+      "classification": "staff_aal2",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Staff operation; the function must enforce role and AAL2 internally."
+    },
+    {
+      "signature": "public.sign_course_declaration_with_token(p_token text, p_signature_name text, p_member_number text, p_guardian_relationship text, p_guardian_email text, p_guardian_phone text, p_user_agent text)",
+      "name": "sign_course_declaration_with_token",
+      "classification": "anonymous_token_public",
+      "allowed_roles": [
+        "anon",
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Login-free workflow protected by an expiring, scoped token."
+    },
+    {
+      "signature": "public.staff_session_has_required_assurance()",
+      "name": "staff_session_has_required_assurance",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.student_record_import_fingerprint(p_student_id uuid, p_record_type text, p_row jsonb)",
+      "name": "student_record_import_fingerprint",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.submit_learning_quiz(p_step_id uuid, p_answers jsonb)",
+      "name": "submit_learning_quiz",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.submit_membership_application(p_membership_class_code text, p_residential_address text, p_service_address text, p_date_of_birth date, p_guardian_name text, p_guardian_consent boolean, p_supports_club_purposes boolean, p_agrees_to_constitution boolean, p_agrees_to_member_guarantee boolean, p_agrees_to_code_of_conduct boolean, p_agrees_to_members_manual boolean, p_privacy_notice_accepted boolean, p_privacy_notice_version text, p_acknowledged_document_ids uuid[], p_applicant_name text, p_phone text, p_update_profile boolean)",
+      "name": "submit_membership_application",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.supervisor_available_for_slot(p_supervisor_id uuid, p_start timestamp with time zone, p_end timestamp with time zone, p_exclude_booking_id uuid)",
+      "name": "supervisor_available_for_slot",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.supervisor_roster_locations_for_slot(p_supervisor_id uuid, p_start_time timestamp with time zone, p_end_time timestamp with time zone)",
+      "name": "supervisor_roster_locations_for_slot",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.sync_duty_segments(p_duty_period_id uuid)",
+      "name": "sync_duty_segments",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.sync_duty_segments_after_flight_log_change()",
+      "name": "sync_duty_segments_after_flight_log_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.sync_duty_segments_after_period_change()",
+      "name": "sync_duty_segments_after_period_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.sync_instructor_absence_identity_columns()",
+      "name": "sync_instructor_absence_identity_columns",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.sync_linked_learning_enrolments_for_course()",
+      "name": "sync_linked_learning_enrolments_for_course",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.sync_linked_learning_enrolments_for_link()",
+      "name": "sync_linked_learning_enrolments_for_link",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.sync_member_flight_review_from_endorsements(target_user_id uuid)",
+      "name": "sync_member_flight_review_from_endorsements",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.sync_member_role_from_endorsements(target_user_id uuid)",
+      "name": "sync_member_role_from_endorsements",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.sync_member_role_from_licences(target_user_id uuid)",
+      "name": "sync_member_role_from_licences",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.sync_public_user_email_from_auth()",
+      "name": "sync_public_user_email_from_auth",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.sync_trial_voucher_booking_link()",
+      "name": "sync_trial_voucher_booking_link",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.sync_user_primary_role()",
+      "name": "sync_user_primary_role",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.touch_calendar_integration_updated_at()",
+      "name": "touch_calendar_integration_updated_at",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.training_record_audit_entry(p_action text, p_changes jsonb)",
+      "name": "training_record_audit_entry",
+      "classification": "authenticated_self_service",
+      "allowed_roles": [
+        "authenticated",
+        "service_role"
+      ],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Portal RPC or authenticated support helper with internal ownership/role checks."
+    },
+    {
+      "signature": "public.trial_voucher_instructor_available_for_slot(p_instructor_id uuid, p_start_time timestamp with time zone, p_end_time timestamp with time zone)",
+      "name": "trial_voucher_instructor_available_for_slot",
+      "classification": "service_worker",
+      "allowed_roles": [
+        "service_role"
+      ],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Background, privileged or internal helper not exposed to browser roles."
+    },
+    {
+      "signature": "public.validate_duty_break_change()",
+      "name": "validate_duty_break_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.validate_duty_period_change()",
+      "name": "validate_duty_period_change",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.validate_flight_review_completion()",
+      "name": "validate_flight_review_completion",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": false,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.validate_membership_application_privacy()",
+      "name": "validate_membership_application_privacy",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    },
+    {
+      "signature": "public.validate_supervisor_roster_locations()",
+      "name": "validate_supervisor_roster_locations",
+      "classification": "trigger_internal",
+      "allowed_roles": [],
+      "security_definer": true,
+      "fixed_search_path": true,
+      "rationale": "Invoked only by a database trigger; client EXECUTE is unnecessary."
+    }
+  ]
+}
+

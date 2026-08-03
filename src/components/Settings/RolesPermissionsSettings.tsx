@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Check, Loader2, Shield, UserCheck, Users, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -6,6 +6,7 @@ import { useUsers } from '../../hooks/useUsers';
 import { Action, Resource, rolePermissions } from '../../utils/rbac';
 import { UserRole } from '../../types';
 import { StudentFileLink } from '../Students/StudentFileLink';
+import { useLatestEffect } from '../../hooks/useLatestEffect';
 
 interface RolesPermissionsSettingsProps {
   canEdit: boolean;
@@ -76,7 +77,7 @@ export const RolesPermissionsSettings: React.FC<RolesPermissionsSettingsProps> =
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
+  useLatestEffect(() => {
     refetch();
   }, []);
 

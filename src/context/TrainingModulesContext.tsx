@@ -1,8 +1,9 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { LessonStudyAsset, TrainingExam, TrainingLesson, TrainingModule, TrainingResource } from '../types';
 import { useAuth } from './AuthContext';
+import { useLatestEffect } from '../hooks/useLatestEffect';
 
 type TrainingModulesContextValue = {
   modules: TrainingModule[];
@@ -226,7 +227,7 @@ export const TrainingModulesProvider: React.FC<{ children: React.ReactNode }> = 
     }
   }, []);
 
-  useEffect(() => {
+  useLatestEffect(() => {
     if (authLoading) return;
     if (!user) {
       setModules([]);
