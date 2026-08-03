@@ -61,7 +61,7 @@
     "test:logbook-filters": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/logbookFilters.test.ts",
     "test:lesson-record-presentation": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/lessonRecordPresentation.test.ts",
     "test:student-record-import": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/studentRecordImport.test.ts src/utils/studentReviewRecordTransfer.test.ts",
-    "test:course-quality": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/courseQuality.test.ts",
+    "test:course-quality": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/courseQuality.test.ts src/utils/legacyTrainingInterface.test.ts",
     "test:course-pdf-layout": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/coursePdfLayout.test.ts",
     "test:dark-theme-contrast": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/darkThemeContrast.test.ts",
     "test:billing-description": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/utils/billingDescription.test.ts",

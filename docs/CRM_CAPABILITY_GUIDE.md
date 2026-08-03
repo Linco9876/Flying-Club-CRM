@@ -368,6 +368,7 @@ Local full-database reset requires Docker Desktop. If Docker is unavailable, run
 - Every file has a size and SHA-256 digest in the manifest. Any skipped table, Auth failure or bucket failure makes the job fail rather than publishing a partial recovery point.
 - Cloud backups are packaged and encrypted with `age` before leaving the runner. Only encrypted archives and their external checksums reach OneDrive or GitHub artifacts.
 - A monthly recovery drill first validates the latest encrypted OneDrive archive, then performs a real encrypted database restore into a separate Supabase recovery project. It compares public-table and Auth-user counts after restoring application schemas, grants, data, Storage metadata, Auth identities and password hashes. The reset is repeatable, preserves Supabase-managed publications and excludes only provider-managed migration/vector tables. Keep a second copy of the private `age` identity offline.
+- Recovery tooling uses the runtime-provided temporary directory rather than a Windows-only environment variable, so the same encrypted restore path is exercised by Linux GitHub runners and Windows break-glass administration.
 
 ### Quality-gated releases
 
@@ -387,6 +388,12 @@ Local full-database reset requires Docker Desktop. If Docker is unavailable, run
 - Public membership signup supports Cloudflare Turnstile when `VITE_TURNSTILE_SITE_KEY` and the matching Supabase CAPTCHA secret are configured.
 - Password creation and reset screens require at least 12 characters.
 - Stripe is explicitly pinned to Test Mode, the database default is Test Mode, failures report the fail-safe test state, and test transactions cannot sync into Xero. A later switch to live collection remains a deliberate MFA-protected administrator action.
+- The deliberately owner-evaluated shared-calendar projection is governed by the time-limited `SEC-EXC-001` register entry in `docs/SECURITY_EXCEPTIONS.md`. Anonymous access remains revoked, private fields are masked and the exception must be reviewed before 3 November 2026.
+
+### Training interface consolidation
+
+- The legacy **Syllabus Management / Training Module Builder** interface has been retired. Staff create and manage database-backed courses through **Training Courses**, while published student preparation remains in **Learning Centre**.
+- Existing bookmarks to `/training/syllabus` are redirected to the supported Training Courses workspace. The legacy component and navigation entry are no longer shipped in the production bundle.
 
 ### Membership privacy and usability
 

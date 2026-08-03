@@ -52,7 +52,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange }) =>
     { id: 'pilot-file', label: 'Pilot File', icon: FileText, roles: ['admin', 'senior_instructor', 'instructor', 'pilot', 'student'] },
     { id: 'documents', label: 'Documents', icon: FolderOpen, roles: ['pilot', 'student'] },
     { id: 'outstanding-records', label: 'Outstanding Records', icon: AlertCircle, roles: ['admin', 'instructor'] },
-    { id: 'syllabus-management', label: 'Syllabus Management', icon: BookOpen, roles: ['admin', 'instructor'] },
     { id: 'mylogbook', label: 'My Logbook', icon: BookOpen, roles: ['instructor', 'admin', 'pilot', 'student'] },
     { id: 'financial-dashboard', label: 'Financial Dashboard', icon: DollarSign, roles: ['admin'] },
     { id: 'gift-vouchers', label: 'Gift Vouchers', icon: Gift, roles: ['admin'] },

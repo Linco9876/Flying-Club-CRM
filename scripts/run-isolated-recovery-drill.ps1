@@ -435,7 +435,11 @@ if ($VerifyOnly) {
   return
 }
 
-$drillDirectory = Join-Path $env:TEMP "bfc-recovery-drill-$([guid]::NewGuid().ToString('N'))"
+$systemTempDirectory = [IO.Path]::GetTempPath()
+if (-not $systemTempDirectory) {
+  throw 'The runtime did not provide a temporary directory for the isolated recovery drill.'
+}
+$drillDirectory = Join-Path $systemTempDirectory "bfc-recovery-drill-$([guid]::NewGuid().ToString('N'))"
 $plainDump = Join-Path $drillDirectory 'production-public.dump'
 $encryptedDump = Join-Path $drillDirectory 'production-public.dump.encrypted'
 $restoredDump = Join-Path $drillDirectory 'restore-input.dump'
