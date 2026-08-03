@@ -11,7 +11,11 @@ import {
   truncatePdfText,
   wrapPdfText,
 } from './coursePdfLayout';
-import { courseExamEvidenceForExport } from './coursePdfOptions';
+import {
+  courseExamEvidenceForExport,
+  courseRecordAcknowledgementEvidence,
+  courseRecordAcknowledgementLabel,
+} from './coursePdfOptions';
 
 const EXAM_UPLOAD_BUCKET = 'student-exam-uploads';
 
@@ -461,17 +465,43 @@ export async function exportCoursePdf({
   };
 
   const drawDigitalSignatureCertification = () => {
-    const acknowledgedCourseRecords = chronologicalCourseRecords.filter((record) => record.studentAck);
+    const acknowledgementEvidence = chronologicalCourseRecords.map((record) => ({
+      record,
+      evidence: courseRecordAcknowledgementEvidence(record),
+    }));
+    const acknowledgedCourseRecords = acknowledgementEvidence.filter(({ evidence }) => evidence.acknowledged);
     const allLessonsAcknowledged = chronologicalCourseRecords.length > 0 &&
-      chronologicalCourseRecords.every((record) => record.studentAck);
+      acknowledgementEvidence.every(({ evidence }) => evidence.acknowledged);
     const latestStudentAck = acknowledgedCourseRecords
-      .map((record) => record.studentAckTimestamp)
-      .filter(Boolean)
-      .sort((a, b) => (b as Date).getTime() - (a as Date).getTime())[0];
+      .map(({ evidence }) => evidence.acknowledgedAt)
+      .filter((date): date is Date => Boolean(date))
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    const hasUndatedAcknowledgement = acknowledgedCourseRecords.some(
+      ({ evidence }) => !evidence.acknowledgedAt,
+    );
+    const hasHistoricalAcknowledgement = acknowledgedCourseRecords.some(
+      ({ evidence }) => evidence.historicalImport,
+    );
     const instructorName = exportedBy?.name || exportedBy?.email || 'Exporting instructor/admin';
+    const recordedStudentName = acknowledgedCourseRecords
+      .map(({ record }) => record.studentAckName?.trim())
+      .find((name) => name && !/^historical acknowledgement\s*\(imported\)$/i.test(name));
     const studentSignatureName = allLessonsAcknowledged
-      ? chronologicalCourseRecords.find((record) => record.studentAckName)?.studentAckName || student.name
+      ? recordedStudentName || student.name
       : '';
+    const studentCertificationTitle = allLessonsAcknowledged && hasUndatedAcknowledgement
+      ? 'Student acknowledgement status'
+      : 'Student digital signature';
+    const studentAcknowledgementDate = !allLessonsAcknowledged
+      ? 'Not added'
+      : hasUndatedAcknowledgement
+        ? (latestStudentAck ? `Latest recorded ${formatDate(latestStudentAck)}; some dates unavailable` : 'Historical import - date not recorded')
+        : formatDate(latestStudentAck);
+    const studentAcknowledgementDetail = !allLessonsAcknowledged
+      ? 'Not generated because not every lesson record in this course has been acknowledged by the student.'
+      : hasUndatedAcknowledgement
+        ? `Every lesson record is marked acknowledged in the CRM. ${hasHistoricalAcknowledgement ? 'Historical imports do not contain a portal acknowledgement timestamp and are shown as status evidence, not a timestamped portal signature.' : 'At least one acknowledgement date was not recorded, so this is shown as status evidence rather than a timestamped portal signature.'}`
+        : 'Generated because every lesson record in this course has a timestamped student acknowledgement in the CRM.';
     const boxGap = 12;
     const boxWidth = (width - margin * 2 - boxGap) / 2;
     const boxHeight = 78;
@@ -488,12 +518,10 @@ export async function exportCoursePdf({
       boxHeight
     );
     drawDigitalSignatureBox(
-      'Student digital signature',
+      studentCertificationTitle,
       studentSignatureName,
-      allLessonsAcknowledged ? formatDate(latestStudentAck as Date | undefined) : 'Not added',
-      allLessonsAcknowledged
-        ? 'Generated because every lesson record in this course has been acknowledged by the student in the CRM.'
-        : 'Not generated because not every lesson record in this course has been acknowledged by the student.',
+      studentAcknowledgementDate,
+      studentAcknowledgementDetail,
       margin + boxWidth + boxGap,
       cursor,
       boxWidth,
@@ -502,7 +530,7 @@ export async function exportCoursePdf({
     cursor -= boxHeight + 12;
 
     drawText(
-      'Digital signature note: These signatures are system-generated electronic signature labels. The instructor/exporter signature is based on the signed-in CRM user who created the export. The student signature is only added when the CRM shows every lesson record for this course has been acknowledged by the student; the displayed date is the latest acknowledgement date.',
+      'Digital signature note: The instructor/exporter label is based on the signed-in CRM user who created the export. A student digital signature is shown only when every exported lesson has a recorded acknowledgement timestamp. Historical imported acknowledgements remain clearly marked as acknowledged, but are shown as status evidence rather than a timestamped portal signature.',
       { x: margin, y: cursor },
       { size: 7.5, color: grey, maxWidth: width - margin * 2, lineHeight: 10 }
     );
@@ -1191,7 +1219,7 @@ export async function exportCoursePdf({
         `Dual: ${minutesToHours(record.dualTimeMin)} hr`,
         `Solo: ${minutesToHours(record.soloTimeMin)} hr`,
         `Briefing: ${record.formalBriefing ? 'Yes' : 'No'}`,
-        `Student ack: ${record.studentAck ? formatDate(record.studentAckTimestamp) : 'No'}`,
+        `Student ack: ${courseRecordAcknowledgementLabel(record, formatDate)}`,
       ].join('  |  ');
 
       const drawRecordHeading = (continued = false) => {
