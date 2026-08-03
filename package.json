@@ -108,7 +108,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@vitejs/plugin-react": "6.0.5",
     "autoprefixer": "^10.4.18",
     "browserstack-local": "^1.5.13",
     "eslint": "^10.8.0",
