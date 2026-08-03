@@ -239,7 +239,7 @@ function Reset-RecoveryDatabasePassword {
     Out-Null
 
   if (Get-Command gh -ErrorAction SilentlyContinue) {
-    $password | & gh secret set SUPABASE_RECOVERY_DB_PASSWORD
+    & gh secret set SUPABASE_RECOVERY_DB_PASSWORD --body $password
     if ($LASTEXITCODE -ne 0) {
       throw 'The recovery password was rotated, but its GitHub secret could not be updated.'
     }
