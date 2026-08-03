@@ -525,9 +525,11 @@ try {
       $filteredDefaultAclCount += 1
     }
   }
-  if ($filteredDefaultAclCount -eq 0) {
-    throw 'The schema dump did not contain the expected managed supabase_admin default ACL entries.'
-  }
+  # Supabase has stopped emitting these platform-owned entries in some current
+  # project dump formats. Their absence is safe; when older projects still emit
+  # them, exclude them because a recovery login cannot and should not recreate
+  # provider-managed default privileges.
+  Write-Output "  Excluded $filteredDefaultAclCount managed supabase_admin default ACL entries."
   [IO.File]::WriteAllLines($restoreList, $restoreEntries, [Text.UTF8Encoding]::new($false))
 
   Write-Output 'Stage 4/6: resetting only the isolated recovery public schema.'

@@ -48,9 +48,27 @@ test('recovery automation is non-interactive and cannot select production as its
   assert.match(recovery, /SUPABASE_PROJECT_REF: \$\{\{ secrets\.SUPABASE_AU_PROJECT_REF \}\}/);
   assert.match(recoveryScript, /\[IO\.Path\]::GetTempPath\(\)/);
   assert.doesNotMatch(recoveryScript, /Join-Path \$env:TEMP/);
+  assert.doesNotMatch(
+    recoveryScript,
+    /did not contain the expected managed supabase_admin default ACL entries/,
+  );
+  assert.match(
+    recoveryScript,
+    /Excluded \$filteredDefaultAclCount managed supabase_admin default ACL entries/,
+  );
 
   const acceptance = read('../../.github/workflows/quality-gates.yml');
   assert.match(acceptance, /SUPABASE_PROJECT_REF: hohmmwvtisnuuoumipjq/);
+  assert.match(acceptance, /Start the isolated recovery project when needed/);
+  assert.match(
+    acceptance,
+    /functions deploy --project-ref hohmmwvtisnuuoumipjq/,
+  );
+  assert.match(
+    acceptance,
+    /always\(\) && env\.RECOVERY_STARTED_BY_ACCEPTANCE == 'true'/,
+  );
+  assert.match(acceptance, /projects\/\$SUPABASE_RECOVERY_PROJECT_REF\/pause/);
 });
 
 test('Xero errors retain diagnostic references without exposing upstream messages', () => {

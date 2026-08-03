@@ -389,6 +389,7 @@ Local full-database reset requires Docker Desktop. If Docker is unavailable, run
 - Password creation and reset screens require at least 12 characters.
 - Stripe is explicitly pinned to Test Mode, the database default is Test Mode, failures report the fail-safe test state, and test transactions cannot sync into Xero. A later switch to live collection remains a deliberate MFA-protected administrator action.
 - The deliberately owner-evaluated shared-calendar projection is governed by the time-limited `SEC-EXC-001` register entry in `docs/SECURITY_EXCEPTIONS.md`. Anonymous access remains revoked, private fields are masked and the exception must be reviewed before 3 November 2026.
+- The production database function grant snapshot, risk explanation and staged least-privilege remediation criteria are maintained in `docs/DATABASE_FUNCTION_PERMISSIONS.md`.
 
 ### Training interface consolidation
 
@@ -450,6 +451,7 @@ Before the first gated production release, configure or complete:
 - The Cloudflare Turnstile secret in Supabase Auth CAPTCHA settings when Turnstile is enabled.
 - A durable, scoped Cloudflare API token with Pages Write access in `CLOUDFLARE_API_TOKEN`. The local Wrangler OAuth token is intentionally not copied to CI because it expires.
 - Real authenticated acceptance on at least one current physical iPhone and one current physical Android device for all six roles. The manual Quality Gates workflow provisions disposable recovery-project accounts and MFA factors, connects through BrowserStack Local, runs the matrix, and removes the test identities.
+- The manual physical-device job now starts the normally dormant recovery project, deploys the current Edge Functions, performs the authenticated device matrix and pauses the project again when it started it. This keeps the test repeatable without leaving the recovery environment active.
 - An independent manual web/API penetration test, remediation of all critical/high findings, and a clean retest before live payments or broad third-party API access. See `docs/PENETRATION_TEST_SCOPE.md`.
 
 ### Release-readiness evidence (25 July 2026)
