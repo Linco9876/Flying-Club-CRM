@@ -45,3 +45,26 @@ The view is not public internet access. `anon` has no privilege, `authenticated`
 At each review, confirm the live grants, view definition, projected columns, access helper and representative member/staff masking results. Revoke the exception immediately if anonymous access appears or a private field is disclosed.
 
 The preferred long-term replacement is a versioned, narrowly parameterised calendar-occupancy RPC with an explicit return type, internal authorisation, fixed `search_path`, row limits and database integration tests for anonymous, member, owner and staff callers. Remove this exception after the replacement has passed those tests and the view has been revoked.
+
+## SEC-EXC-002 — React Router advisory metadata discrepancy
+
+| Field | Decision |
+| --- | --- |
+| Status | Active, time-limited |
+| Reviewed | 3 August 2026 |
+| Risk owner | Bendigo Flying Club CRM owner |
+| Review by | 15 August 2026, or immediately when npm advisory metadata changes |
+| Affected packages | `react-router` and `react-router-dom` 7.18.2 |
+| Advisory | [GHSA-qwww-vcr4-c8h2](https://github.com/remix-run/react-router/security/advisories/GHSA-qwww-vcr4-c8h2) |
+
+The React Router maintainer advisory identifies 7.18.2 and later v7 releases as
+patched. npm's aggregate audit metadata currently reports the broader range
+`>=7.12.0 <8.3.0`, so it continues to flag 7.18.2. The portal has been upgraded
+from 7.18.1 to 7.18.2 and does not enable or import the affected unstable RSC
+APIs.
+
+The dependency audit accepts only exact version 7.18.2 for this advisory and
+automatically fails after 15 August 2026. At review, rerun `npm audit`, confirm
+the maintainer advisory and either remove the exception when metadata converges
+or open an isolated React Router migration project. The exception must not be
+expanded to another version or advisory without a new security review.
