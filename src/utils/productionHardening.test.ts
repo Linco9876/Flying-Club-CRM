@@ -43,6 +43,7 @@ test('production workflows use the explicit Australian Supabase secrets', () => 
 test('recovery automation is non-interactive and cannot select production as its target', () => {
   const recovery = read('../../.github/workflows/monthly-backup-restore-drill.yml');
   const recoveryScript = read('../../scripts/run-isolated-recovery-drill.ps1');
+  const projectStateScript = read('../../scripts/set-supabase-project-state.sh');
   assert.match(recovery, /gpg --batch --yes --dearmor/);
   assert.match(recovery, /SUPABASE_RECOVERY_PROJECT_REF: hohmmwvtisnuuoumipjq/);
   assert.match(recovery, /SUPABASE_PROJECT_REF: \$\{\{ secrets\.SUPABASE_AU_PROJECT_REF \}\}/);
@@ -56,6 +57,10 @@ test('recovery automation is non-interactive and cannot select production as its
     recoveryScript,
     /Excluded \$filteredDefaultAclCount managed supabase_admin default ACL entries/,
   );
+  assert.match(projectStateScript, /status" == "PAUSING"|status: \$status/);
+  assert.match(projectStateScript, /request_transition restore/);
+  assert.match(projectStateScript, /request_transition pause/);
+  assert.match(projectStateScript, /status_code" =~ \^2/);
 
   const acceptance = read('../../.github/workflows/quality-gates.yml');
   const sharedRecoveryLock = /group: isolated-supabase-recovery-project/g;
@@ -70,7 +75,13 @@ test('recovery automation is non-interactive and cannot select production as its
     'the physical-device job must hold the shared recovery-project lock',
   );
   assert.match(acceptance, /SUPABASE_PROJECT_REF: hohmmwvtisnuuoumipjq/);
+  assert.match(
+    acceptance,
+    /SUPABASE_PROJECT_REF: \$\{\{ secrets\.SUPABASE_AU_PROJECT_REF \}\}/,
+  );
   assert.match(acceptance, /Start the isolated recovery project when needed/);
+  assert.match(acceptance, /Refresh isolated recovery data and validate source counts/);
+  assert.match(acceptance, /run-isolated-recovery-drill\.ps1/);
   assert.match(
     acceptance,
     /functions deploy --project-ref hohmmwvtisnuuoumipjq/,
@@ -79,7 +90,22 @@ test('recovery automation is non-interactive and cannot select production as its
     acceptance,
     /always\(\) && env\.RECOVERY_STARTED_BY_ACCEPTANCE == 'true'/,
   );
-  assert.match(acceptance, /projects\/\$SUPABASE_RECOVERY_PROJECT_REF\/pause/);
+  assert.match(
+    acceptance,
+    /set-supabase-project-state\.sh\s+\\\s+active "\$SUPABASE_RECOVERY_PROJECT_REF"/,
+  );
+  assert.match(
+    acceptance,
+    /set-supabase-project-state\.sh inactive "\$SUPABASE_RECOVERY_PROJECT_REF"/,
+  );
+  assert.match(
+    recovery,
+    /set-supabase-project-state\.sh\s+\\\s+active "\$SUPABASE_RECOVERY_PROJECT_REF"/,
+  );
+  assert.match(
+    recovery,
+    /set-supabase-project-state\.sh inactive "\$SUPABASE_RECOVERY_PROJECT_REF"/,
+  );
 });
 
 test('Xero errors retain diagnostic references without exposing upstream messages', () => {
