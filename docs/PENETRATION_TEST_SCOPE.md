@@ -44,3 +44,14 @@ The supplier receives disposable accounts for `admin`, `cfi`, `senior_instructor
 ## Procurement shortlist
 
 Obtain comparable fixed-scope quotes from at least two independent Australian providers. Appropriate candidates include CREST-accredited providers such as CyberCX, Vectra, Borderless CS or Stratus Security, or a senior-led provider offering equivalent CREST/OSCP application-testing credentials. Confirm the named tester and subcontractors, data location, professional indemnity insurance, start date, retest terms and conflict of interest before appointment.
+
+### Procurement status
+
+Fixed-price quote requests were sent on 3 August 2026 to CyberCX, Stratus
+Security and Vectra, with Lincoln Cottingham copied at
+`lincoln@bbkm.com.au`. The requests specify the preferred 25 July–30 August
+2026 window, this scope, fixed pricing including GST, named tester credentials,
+data and subcontractor locations, insurance, reporting, critical escalation and
+one remediation retest. The requests explicitly do not authorise testing or
+commit the club to a purchase. Testing remains blocked until the club selects a
+provider, approves its quote and signs provider-specific rules of engagement.

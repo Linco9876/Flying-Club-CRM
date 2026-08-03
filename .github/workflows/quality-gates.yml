@@ -107,6 +107,9 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    concurrency:
+      group: isolated-supabase-recovery-project
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -114,6 +117,47 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Start the isolated recovery project when needed
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_RECOVERY_PROJECT_REF: hohmmwvtisnuuoumipjq
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          status="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF" \
+            | jq -r '.status')"
+          if [ "$status" = "ACTIVE_HEALTHY" ]; then
+            echo "RECOVERY_STARTED_BY_ACCEPTANCE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "RECOVERY_STARTED_BY_ACCEPTANCE=true" >> "$GITHUB_ENV"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header "Content-Type: application/json" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF/restore" \
+            >/dev/null
+          for attempt in {1..90}; do
+            status="$(curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF" \
+              | jq -r '.status')"
+            if [ "$status" = "ACTIVE_HEALTHY" ]; then
+              echo "Recovery project is healthy."
+              exit 0
+            fi
+            echo "Waiting for recovery project (status: $status, attempt $attempt of 90)..."
+            sleep 10
+          done
+          echo "::error::Recovery project did not become healthy within 15 minutes."
+          exit 1
+      - name: Deploy current Edge Functions to the isolated recovery project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: npx --yes supabase@latest functions deploy --project-ref hohmmwvtisnuuoumipjq
       - name: Run authenticated acceptance on physical iPhone and Android devices
         shell: pwsh
         env:
@@ -132,3 +176,18 @@ jobs:
             -RecoveryProjectRef $env:SUPABASE_PROJECT_REF `
             -SupabaseAccessToken $env:SUPABASE_ACCESS_TOKEN `
             -BrowserStack
+      - name: Pause the normally dormant recovery project
+        if: ${{ always() && env.RECOVERY_STARTED_BY_ACCEPTANCE == 'true' }}
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_RECOVERY_PROJECT_REF: hohmmwvtisnuuoumipjq
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header "Content-Type: application/json" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_RECOVERY_PROJECT_REF/pause" \
+            >/dev/null
+          echo "Recovery project pause requested."

@@ -64,6 +64,9 @@ jobs:
     needs: verify-latest-backup
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    concurrency:
+      group: isolated-supabase-recovery-project
+      cancel-in-progress: false
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_AU_PROJECT_REF }}
