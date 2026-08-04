@@ -18,6 +18,7 @@ import {
   createCourseTransferCsv,
   getCourseCompetencyGuideCsv,
   getCourseStudentRecordTemplate,
+  normaliseImportedFlightTestResult,
   validateCourseStudentRecordCsv,
 } from './studentCourseRecordTransfer.ts';
 
@@ -111,6 +112,17 @@ const criteriaCourse = {
 } as TrainingModule;
 const criteriaIdentity = { ...identity, course: criteriaCourse };
 const criterionDefinitions = buildCourseCriterionDefinitions(criteriaCourse);
+const flightTestCourse = {
+  ...course,
+  lessons: [{
+    id: '66666666-6666-4666-8666-666666666666',
+    sequenceCode: 'RPC-FT',
+    sequenceTitle: 'Pilot Certificate Flight Test',
+    name: 'Pilot Certificate Flight Test',
+    isFlightTest: true,
+  }],
+} as TrainingModule;
+const flightTestIdentity = { ...identity, course: flightTestCourse };
 
 test('CSV parser handles quoted commas, escaped quotes and Australian dates', () => {
   const parsed = parseCsv(`${getStudentRecordTemplate('lesson')}31/07/2026,RPC Training,RPC-01,VH-EKO,Tecnam P92,1:15,0,Jane Instructor,BFC,"Good work, ""steady""",Yes,RPC-02,BOOK-2,No\r\n`);
@@ -169,6 +181,90 @@ test('course template binds the student, course version, lessons and competency 
   assert.match(csv, /competency_rpc_1_1/);
   assert.match(csv, /,33333333-3333-4333-8333-333333333333,Test Student,RPC Training/);
   assert.match(csv, /RPC-01 · Effects of Controls/);
+  assert.match(csv, /flight_test_result/);
+  assert.match(csv, /flight_test_findings/);
+});
+
+test('course flight-test results normalise from CSV labels and remain optional for legacy files', () => {
+  assert.equal(normaliseImportedFlightTestResult('Pass'), 'pass');
+  assert.equal(normaliseImportedFlightTestResult('Further training required'), 'fail');
+  assert.equal(normaliseImportedFlightTestResult(''), 'not_assessed');
+  assert.equal(normaliseImportedFlightTestResult('Almost passed'), null);
+
+  const completedCsv = createCourseTransferCsv('lesson', [], [{
+    include: 'Yes',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: flightTestCourse.title,
+    course_version: flightTestCourse.version,
+    record_reference: 'FLIGHT-TEST-1',
+    date: '31/07/2026',
+    lesson: 'RPC-FT',
+    aircraft_registration: '24-0001',
+    aircraft_type: 'Tecnam P92',
+    dual_time: '1:15',
+    solo_time: '0',
+    instructor_name: 'Jane Examiner',
+    comments: 'Historical flight test',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+    flight_test_result: 'Further training required',
+    flight_test_findings: 'Repeat forced landing and circuit assessment.',
+  }]);
+  const completed = validateCourseStudentRecordCsv(
+    parseCsv(completedCsv),
+    'lesson',
+    flightTestIdentity,
+    [],
+    emptyMappings,
+  );
+  assert.deepEqual(completed.errors, []);
+  assert.equal(completed.rows[0].is_flight_review, true);
+  assert.equal(completed.rows[0].flight_review_result, 'fail');
+  assert.equal(completed.rows[0].flight_review_notes, 'Repeat forced landing and circuit assessment.');
+
+  const legacyCsv = completedCsv
+    .replace(',flight_test_result,flight_test_findings', '')
+    .replace(',Further training required,Repeat forced landing and circuit assessment.', '');
+  const legacy = validateCourseStudentRecordCsv(
+    parseCsv(legacyCsv),
+    'lesson',
+    flightTestIdentity,
+    [],
+    emptyMappings,
+  );
+  assert.deepEqual(legacy.errors, []);
+  assert.equal(legacy.rows[0].flight_review_result, 'not_assessed');
+});
+
+test('course flight-test CSV rejects an unknown result instead of guessing', () => {
+  const csv = createCourseTransferCsv('lesson', [], [{
+    include: 'Yes',
+    student_portal_id: identity.studentId,
+    student_name: identity.studentName,
+    course: flightTestCourse.title,
+    course_version: flightTestCourse.version,
+    record_reference: 'FLIGHT-TEST-INVALID',
+    date: '31/07/2026',
+    lesson: 'RPC-FT',
+    dual_time: '1:00',
+    solo_time: '0',
+    instructor_name: 'Jane Examiner',
+    comments: 'Historical flight test',
+    formal_briefing: 'No',
+    student_acknowledged: 'No',
+    flight_test_result: 'Maybe',
+  }]);
+  const result = validateCourseStudentRecordCsv(
+    parseCsv(csv),
+    'lesson',
+    flightTestIdentity,
+    [],
+    emptyMappings,
+  );
+
+  assert.equal(result.rows.length, 0);
+  assert.ok(result.errors.some(error => error.messages.some(message => message.includes('Flight test result'))));
 });
 
 test('course template includes the authoritative NC/S/C criteria matrix and guide', () => {
